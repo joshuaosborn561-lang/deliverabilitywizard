@@ -1,0 +1,211 @@
+import type { AppConfig } from "../config.js";
+import type { SlackClient } from "../clients/slack.js";
+import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
+import {
+  asBlacklistRows,
+  normalizeTestList,
+  testIdOf,
+} from "../clients/smartdelivery.js";
+import type { StateStore } from "../state/store.js";
+import type { BlacklistRow, MailboxSummaryRow, SpamTestSummary } from "../types/index.js";
+
+export interface MonitorResult {
+  testsChecked: number;
+  blacklistAlerts: number;
+  lowDeliverabilityAlerts: number;
+  errors: string[];
+}
+
+export class ResultMonitor {
+  constructor(
+    private readonly config: AppConfig,
+    private readonly smartDelivery: SmartDeliveryClient,
+    private readonly slack: SlackClient,
+    private readonly state: StateStore,
+  ) {}
+
+  async run(): Promise<MonitorResult> {
+    const result: MonitorResult = {
+      testsChecked: 0,
+      blacklistAlerts: 0,
+      lowDeliverabilityAlerts: 0,
+      errors: [],
+    };
+
+    console.log("[monitor] Starting result monitoring");
+
+    let tests: SpamTestSummary[] = [];
+    try {
+      const raw = await this.smartDelivery.listTests({});
+      tests = normalizeTestList(raw);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`listTests: ${message}`);
+      this.state.setLastMonitorAt(new Date().toISOString());
+      await this.state.save();
+      return result;
+    }
+
+    // Prefer tests we created; also check recent completed tests so nothing is missed.
+    const trackedIds = new Set(
+      Object.values(this.state.get().testedCampaigns).flatMap((c) => c.testIds),
+    );
+
+    const interesting = tests.filter((test) => {
+      const id = testIdOf(test);
+      if (!id) return false;
+      const status = String(test.status ?? "").toLowerCase();
+      const completed =
+        status.includes("complete") ||
+        status.includes("done") ||
+        status.includes("finished") ||
+        status === "active" ||
+        status === "";
+      return trackedIds.has(id) || completed;
+    });
+
+    // Cap work per run to stay within rate limits
+    const toCheck = interesting.slice(0, 40);
+    result.testsChecked = toCheck.length;
+
+    for (const test of toCheck) {
+      const testId = testIdOf(test);
+      if (!testId) continue;
+      try {
+        result.blacklistAlerts += await this.checkBlacklists(testId, test.test_name);
+        result.lowDeliverabilityAlerts += await this.checkProviderDeliverability(
+          testId,
+          test.test_name,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`test ${testId}: ${message}`);
+      }
+    }
+
+    try {
+      result.lowDeliverabilityAlerts += await this.checkMailboxSummary();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`mailbox-summary: ${message}`);
+    }
+
+    this.state.setLastMonitorAt(new Date().toISOString());
+    await this.state.save();
+    console.log("[monitor] Done", result);
+    return result;
+  }
+
+  private async checkBlacklists(testId: string, testName?: string): Promise<number> {
+    let alerts = 0;
+
+    const domainRaw = await this.smartDelivery.getDomainBlacklist(testId).catch(() => []);
+    const ipRaw = await this.smartDelivery.getIpBlacklist(testId).catch(() => []);
+    const rows = [...asBlacklistRows(domainRaw), ...asBlacklistRows(ipRaw)];
+
+    for (const row of rows) {
+      if (!isBlacklisted(row)) continue;
+      const domain = row.domain || row.blacklist_type_value || "unknown";
+      const key = `blacklist:${testId}:${domain}:${row.ip ?? ""}`;
+      if (this.state.hasAlert(key)) continue;
+
+      await this.slack.notifyBlacklist({
+        testId,
+        testName,
+        domain,
+        total: row.total_blacklist,
+        ip: row.ip,
+        fromEmail: row.reply?.from_email ?? row["reply.from_email"],
+      });
+      this.state.markAlert(key);
+      alerts += 1;
+    }
+
+    return alerts;
+  }
+
+  private async checkProviderDeliverability(
+    testId: string,
+    testName?: string,
+  ): Promise<number> {
+    let alerts = 0;
+    const report = await this.smartDelivery.getProviderwiseReport(testId);
+    const rows = report.result ?? [];
+    for (const row of rows) {
+      const score = typeof row.inbox_rate === "number" ? row.inbox_rate : undefined;
+      if (score === undefined) continue;
+      if (score >= this.config.deliverabilityThreshold) continue;
+
+      const label = row.provider || "unknown provider";
+      const key = `low-inbox:${testId}:${label}:${Math.floor(score)}`;
+      if (this.state.hasAlert(key)) continue;
+
+      await this.slack.notifyLowDeliverability({
+        label,
+        score,
+        threshold: this.config.deliverabilityThreshold,
+        context: testName
+          ? `Test: *${testName}* (\`${testId}\`)`
+          : `Test: \`${testId}\``,
+      });
+      this.state.markAlert(key);
+      alerts += 1;
+    }
+    return alerts;
+  }
+
+  private async checkMailboxSummary(): Promise<number> {
+    let alerts = 0;
+    const rows: MailboxSummaryRow[] = await this.smartDelivery.getMailboxSummary();
+    if (!Array.isArray(rows)) return 0;
+
+    for (const row of rows) {
+      const score =
+        typeof row.placement_score === "number"
+          ? row.placement_score
+          : computePlacementScore(row);
+      if (score === undefined) continue;
+      if (score >= this.config.deliverabilityThreshold) continue;
+
+      const label = `${row.from_email ?? "unknown"} / ${row.esp ?? "inbox"}`;
+      const key = `low-mailbox:${row.id ?? label}:${Math.floor(score)}`;
+      if (this.state.hasAlert(key)) continue;
+
+      await this.slack.notifyLowDeliverability({
+        label,
+        score,
+        threshold: this.config.deliverabilityThreshold,
+        context: row.spam_test_id
+          ? `SmartDelivery mailbox summary (test \`${row.spam_test_id}\`)`
+          : "SmartDelivery mailbox summary",
+      });
+      this.state.markAlert(key);
+      alerts += 1;
+    }
+    return alerts;
+  }
+}
+
+function isBlacklisted(row: BlacklistRow): boolean {
+  if (typeof row.total_blacklist === "number" && row.total_blacklist > 0) {
+    return true;
+  }
+  const details = String(row.details ?? "").toLowerCase();
+  if (details.includes("listed") && !details.includes("not listed")) {
+    return true;
+  }
+  // Domain blacklist payloads sometimes omit totals; presence of a domain + ip/type is a hit.
+  if (row.domain && row.blacklist_type_value && row.total_blacklist === undefined) {
+    return true;
+  }
+  return false;
+}
+
+function computePlacementScore(row: MailboxSummaryRow): number | undefined {
+  const total = row.total_email_count;
+  const inbox = row.inbox_count;
+  if (typeof total === "number" && total > 0 && typeof inbox === "number") {
+    return (inbox / total) * 100;
+  }
+  return undefined;
+}

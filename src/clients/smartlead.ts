@@ -41,13 +41,22 @@ export class SmartleadClient {
   }
 }
 
-export function extractSenderEmails(accounts: SmartleadEmailAccount[]): string[] {
+export function extractSenderEmails(
+  accounts: Array<SmartleadEmailAccount | Record<string, unknown>>,
+): string[] {
   const emails: string[] = [];
   for (const account of accounts) {
+    const nested =
+      (account as { email_account?: SmartleadEmailAccount }).email_account ??
+      account;
+    const row = nested as SmartleadEmailAccount;
     const email =
-      account.from_email?.trim() ||
-      account.email?.trim() ||
-      account.username?.trim();
+      row.from_email?.trim() ||
+      row.email?.trim() ||
+      row.username?.trim() ||
+      (typeof (account as { fromEmail?: string }).fromEmail === "string"
+        ? (account as { fromEmail?: string }).fromEmail!.trim()
+        : undefined);
     if (email) emails.push(email);
   }
   return emails;
@@ -61,6 +70,15 @@ export function pickSequence(
   const byNumber = sequences.find((s) => s.seq_number === sequenceNumber);
   if (byNumber) return byNumber;
   return [...sequences].sort((a, b) => a.seq_number - b.seq_number)[0];
+}
+
+/** Prefer sequence id; fall back to first variant id (API accepts either). */
+export function sequenceMappingIdOf(sequence: SmartleadSequence): number | undefined {
+  if (typeof sequence.id === "number" && sequence.id > 0) return sequence.id;
+  const variant =
+    sequence.sequence_variants?.find((v) => typeof v.id === "number") ??
+    sequence.variants?.find((v) => typeof v.id === "number");
+  return typeof variant?.id === "number" ? variant.id : undefined;
 }
 
 export function sequenceSubjectPreview(sequence: SmartleadSequence): string {

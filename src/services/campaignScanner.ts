@@ -4,6 +4,7 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   extractSenderEmails,
   pickSequence,
+  sequenceMappingIdOf,
   sequenceSubjectPreview,
 } from "../clients/smartlead.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
@@ -268,7 +269,8 @@ export class CampaignScanner {
     }
 
     const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
-    if (!sequence?.id) {
+    const mappingId = sequence ? sequenceMappingIdOf(sequence) : undefined;
+    if (!sequence || mappingId === undefined) {
       console.log(`[scan] Skipping campaign ${campaign.id} — no sequence / mapping id`);
       return null;
     }
@@ -277,7 +279,7 @@ export class CampaignScanner {
     return {
       campaign,
       senderEmails,
-      sequenceMappingId: sequence.id,
+      sequenceMappingId: mappingId,
       sequenceNumber: sequence.seq_number,
       subjectPreview: sequenceSubjectPreview(sequence),
       batches,

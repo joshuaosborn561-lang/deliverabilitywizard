@@ -13,6 +13,8 @@ const ConfigSchema = z.object({
   smartleadApiKey: z.string().default(""),
   smartDeliveryApiKey: z.string().default(""),
   slackWebhookUrl: z.string().default(""),
+  slackBotToken: z.string().default(""),
+  slackChannelId: z.string().default(""),
   slackChannel: z.string().default("#deliverability"),
   totalTestQuota: z.coerce.number().int().positive().default(120),
   maxMailboxesPerTest: z.coerce.number().int().positive().max(50).default(50),
@@ -59,7 +61,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smartleadApiKey,
     smartDeliveryApiKey,
     slackWebhookUrl: env.SLACK_WEBHOOK_URL ?? "",
-    slackChannel: env.SLACK_CHANNEL ?? "#deliverability",
+    slackBotToken: env.SLACK_BOT_TOKEN ?? "",
+    slackChannelId: env.SLACK_CHANNEL_ID ?? "",
+    slackChannel: env.SLACK_CHANNEL ?? env.SLACK_CHANNEL_ID ?? "#deliverability",
     totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
     deliverabilityThreshold: env.DELIVERABILITY_THRESHOLD ?? "90",
@@ -88,8 +92,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
 export function assertRuntimeSecrets(config: AppConfig): void {
   const missing: string[] = [];
   if (!config.smartleadApiKey) missing.push("SMARTLEAD_API_KEY");
-  if (!config.smartDeliveryApiKey) missing.push("SMARTDELIVERY_API_KEY / SMARTLEAD_API_KEY");
-  if (!config.slackWebhookUrl) missing.push("SLACK_WEBHOOK_URL");
+  if (!config.smartDeliveryApiKey) {
+    missing.push("SMARTDELIVERY_API_KEY / SMARTLEAD_API_KEY");
+  }
+  const hasSlack =
+    Boolean(config.slackWebhookUrl) ||
+    (Boolean(config.slackBotToken) &&
+      Boolean(config.slackChannelId || config.slackChannel));
+  if (!hasSlack) {
+    missing.push("SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN+SLACK_CHANNEL_ID");
+  }
   if (missing.length) {
     throw new Error(
       `Missing required secrets: ${missing.join(", ")}. Set them as Railway environment variables.`,

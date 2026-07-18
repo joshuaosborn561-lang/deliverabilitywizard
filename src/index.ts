@@ -24,7 +24,12 @@ async function main(): Promise<void> {
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
   );
-  const slack = new SlackClient(config.slackWebhookUrl, config.slackChannel);
+  const slack = new SlackClient({
+    webhookUrl: config.slackWebhookUrl,
+    botToken: config.slackBotToken,
+    channelId: config.slackChannelId,
+    channelLabel: config.slackChannel,
+  });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, slack, state);
 

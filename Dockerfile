@@ -14,7 +14,6 @@ ENV STATE_FILE_PATH=/data/state.json
 ENV PORT=3000
 
 RUN mkdir -p /data
-VOLUME ["/data"]
 
 EXPOSE 3000
 CMD ["npm", "run", "start"]

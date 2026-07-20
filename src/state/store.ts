@@ -20,6 +20,17 @@ export interface AppState {
   alertedKeys: Record<string, string>;
   /** Dedupe keys for remediation actions already taken */
   remediatedKeys: Record<string, string>;
+  /** Inboxes held off campaigns until holdUntil (ISO date or datetime) */
+  heldInboxes: Record<string, HeldInboxRecord>;
+}
+
+export interface HeldInboxRecord {
+  accountId: number;
+  email: string;
+  heldAt: string;
+  holdUntil: string;
+  tagName: string;
+  inboxRate?: number;
 }
 
 const EMPTY_STATE: AppState = {
@@ -30,6 +41,7 @@ const EMPTY_STATE: AppState = {
   testedCampaigns: {},
   alertedKeys: {},
   remediatedKeys: {},
+  heldInboxes: {},
 };
 
 export class StateStore {
@@ -48,6 +60,7 @@ export class StateStore {
         testedCampaigns: parsed.testedCampaigns ?? {},
         alertedKeys: parsed.alertedKeys ?? {},
         remediatedKeys: parsed.remediatedKeys ?? {},
+        heldInboxes: parsed.heldInboxes ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -90,6 +103,18 @@ export class StateStore {
   markRemediation(key: string): void {
     this.state.remediatedKeys[key] = new Date().toISOString();
     this.state.lastRemediationAt = new Date().toISOString();
+  }
+
+  markHeldInbox(record: HeldInboxRecord): void {
+    this.state.heldInboxes[record.email.toLowerCase()] = record;
+  }
+
+  getHeldInbox(email: string): HeldInboxRecord | undefined {
+    return this.state.heldInboxes[email.toLowerCase()];
+  }
+
+  listHeldInboxes(): HeldInboxRecord[] {
+    return Object.values(this.state.heldInboxes);
   }
 
   /** Drop inbox-recovery dedupe keys so a follow-up run can retry rate-limited work. */

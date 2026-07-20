@@ -27,7 +27,11 @@ export interface RemediationResult {
     email: string;
     inboxRate: number;
     removedFromCampaigns: number[];
+    holdUntil?: string;
+    tagName?: string;
+    warmupEnabled?: boolean;
   }>;
+  holdTagged: number;
   pausedCampaigns: number[];
   errors: string[];
   dryRun: boolean;
@@ -49,6 +53,7 @@ export class RemediationService {
       deletedSmartleadAccounts: [],
       purgedInboxKitDomains: [],
       recoveredInboxes: [],
+      holdTagged: 0,
       pausedCampaigns: [],
       errors: [],
       dryRun: this.config.dryRun || !this.config.enableRemediation,
@@ -221,8 +226,18 @@ export class RemediationService {
       this.state.markRemediation(legacyKey);
     }
 
-    // 5) Recover low-inbox (non-blacklisted) senders: remove from ACTIVE campaigns + warmup
+    // 5) Recover low-inbox (non-blacklisted) senders: remove from ACTIVE campaigns + warmup + HOLD tag
     const threshold = this.config.remediationInboxThreshold;
+    const holdDays = this.config.recoveryHoldDays;
+    const holdUntilDate = addDaysIsoDate(new Date(), holdDays);
+    let holdTag: { id: number; name: string } | null = null;
+    const pendingHold: Array<{
+      accountId: number;
+      email: string;
+      rate: number;
+      heldAt: string;
+    }> = [];
+
     const recoverCandidates = accounts.filter((account) => {
       const email = accountEmail(account)?.toLowerCase();
       const domain = accountDomain(account);
@@ -329,11 +344,37 @@ export class RemediationService {
         continue;
       }
 
+      let tagName: string | undefined;
+      if (warmupOk) {
+        try {
+          if (!result.dryRun) {
+            if (!holdTag) {
+              holdTag = await this.smartlead.ensureHoldUntilTag(holdUntilDate);
+            }
+            pendingHold.push({
+              accountId: account.id,
+              email,
+              rate,
+              heldAt: new Date().toISOString(),
+            });
+            tagName = holdTag.name;
+          } else {
+            tagName = `HOLD-UNTIL-${holdUntilDate}`;
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`hold-tag ${email}: ${message}`);
+        }
+      }
+
       result.recoveredInboxes.push({
         id: account.id,
         email,
         inboxRate: rate,
         removedFromCampaigns: removedFrom,
+        holdUntil: holdUntilDate,
+        tagName,
+        warmupEnabled: warmupOk,
       });
 
       if (warmupOk && removeFailures === 0) {
@@ -345,8 +386,144 @@ export class RemediationService {
       }
     }
 
+    // Backfill HOLD tags for previously recovered inboxes that never got tagged
+    await this.backfillHoldTags({
+      accounts,
+      result,
+      holdDays,
+      alreadyQueued: new Set(pendingHold.map((p) => p.accountId)),
+    });
+
+    // Flush tag assignments in batches of 25
+    if (!result.dryRun && pendingHold.length && holdTag) {
+      for (const batch of chunkIds(
+        pendingHold.map((p) => p.accountId),
+        25,
+      )) {
+        try {
+          await this.smartlead.assignTags(batch, [holdTag.id]);
+          result.holdTagged += batch.length;
+          const batchSet = new Set(batch);
+          for (const row of pendingHold) {
+            if (!batchSet.has(row.accountId)) continue;
+            this.state.markHeldInbox({
+              accountId: row.accountId,
+              email: row.email,
+              heldAt: row.heldAt,
+              holdUntil: holdUntilDate,
+              tagName: holdTag.name,
+              inboxRate: row.rate,
+            });
+          }
+          await sleep(300);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`assign HOLD tag batch: ${message}`);
+        }
+      }
+    } else if (result.dryRun) {
+      result.holdTagged += pendingHold.length;
+    }
+
     await this.finish(result);
     return result;
+  }
+
+  private async backfillHoldTags(opts: {
+    accounts: SmartleadAccountWithCampaigns[];
+    result: RemediationResult;
+    holdDays: number;
+    alreadyQueued: Set<number>;
+  }): Promise<void> {
+    const { accounts, result, holdDays, alreadyQueued } = opts;
+    const byEmail = new Map(
+      accounts
+        .map((a) => [accountEmail(a)?.toLowerCase(), a] as const)
+        .filter((x): x is [string, SmartleadAccountWithCampaigns] => Boolean(x[0])),
+    );
+
+    // From state remediations that lack a heldInboxes record
+    const missing: Array<{ accountId: number; email: string; heldAt: string }> = [];
+    for (const [key, heldAt] of Object.entries(this.state.get().remediatedKeys)) {
+      if (!key.startsWith("remediate-inbox:")) continue;
+      const email = key.slice("remediate-inbox:".length);
+      if (this.state.getHeldInbox(email)) continue;
+      const account = byEmail.get(email);
+      if (!account) continue;
+      if (alreadyQueued.has(account.id)) continue;
+      missing.push({ accountId: account.id, email, heldAt });
+    }
+
+    if (!missing.length) return;
+
+    // Group by hold-until date derived from original pull time
+    const byHoldDate = new Map<string, typeof missing>();
+    for (const row of missing) {
+      const base = new Date(row.heldAt);
+      const holdUntil = addDaysIsoDate(
+        Number.isNaN(base.getTime()) ? new Date() : base,
+        holdDays,
+      );
+      const list = byHoldDate.get(holdUntil) ?? [];
+      list.push(row);
+      byHoldDate.set(holdUntil, list);
+    }
+
+    for (const [holdUntil, rows] of byHoldDate) {
+      let tag: { id: number; name: string };
+      try {
+        if (result.dryRun) {
+          tag = { id: 0, name: `HOLD-UNTIL-${holdUntil}` };
+        } else {
+          tag = await this.smartlead.ensureHoldUntilTag(holdUntil);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`backfill hold-tag ${holdUntil}: ${message}`);
+        continue;
+      }
+
+      const ids: number[] = [];
+      for (const row of rows) {
+        ids.push(row.accountId);
+      }
+
+      if (result.dryRun) {
+        for (const row of rows) {
+          this.state.markHeldInbox({
+            accountId: row.accountId,
+            email: row.email,
+            heldAt: row.heldAt,
+            holdUntil,
+            tagName: tag.name,
+          });
+        }
+        result.holdTagged += ids.length;
+        continue;
+      }
+
+      for (const batch of chunkIds(ids, 25)) {
+        try {
+          await this.smartlead.assignTags(batch, [tag.id]);
+          result.holdTagged += batch.length;
+          const batchSet = new Set(batch);
+          for (const row of rows) {
+            if (!batchSet.has(row.accountId)) continue;
+            this.state.markHeldInbox({
+              accountId: row.accountId,
+              email: row.email,
+              heldAt: row.heldAt,
+              holdUntil,
+              tagName: tag.name,
+            });
+          }
+          await sleep(300);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`backfill assign HOLD tag: ${message}`);
+        }
+      }
+    }
   }
 
   private async finish(result: RemediationResult): Promise<void> {
@@ -357,6 +534,7 @@ export class RemediationService {
       deletedAccounts: result.deletedSmartleadAccounts.length,
       purgedInboxKit: result.purgedInboxKitDomains.length,
       recoveredInboxes: result.recoveredInboxes.length,
+      holdTagged: result.holdTagged,
       pausedCampaigns: result.pausedCampaigns.length,
       errors: result.errors.length,
     });
@@ -365,7 +543,8 @@ export class RemediationService {
       result.deletedSmartleadAccounts.length > 0 ||
       result.purgedInboxKitDomains.length > 0 ||
       result.recoveredInboxes.length > 0 ||
-      result.blacklistedDomains.length > 0;
+      result.blacklistedDomains.length > 0 ||
+      result.holdTagged > 0;
 
     if (acted || result.errors.length) {
       await this.slack.notifyRemediation(result).catch((error) => {
@@ -373,4 +552,19 @@ export class RemediationService {
       });
     }
   }
+}
+
+/** YYYY-MM-DD in UTC, N days from base. */
+export function addDaysIsoDate(base: Date, days: number): string {
+  const d = new Date(
+    Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()),
+  );
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function chunkIds(ids: number[], size: number): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
 }

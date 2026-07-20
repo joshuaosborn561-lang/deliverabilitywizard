@@ -234,7 +234,11 @@ export class SlackClient {
       email: string;
       inboxRate: number;
       removedFromCampaigns: number[];
+      holdUntil?: string;
+      tagName?: string;
+      warmupEnabled?: boolean;
     }>;
+    holdTagged?: number;
     pausedCampaigns: number[];
     errors: string[];
   }): Promise<void> {
@@ -245,12 +249,15 @@ export class SlackClient {
       .join("\n");
     const recoveredLines = details.recoveredInboxes
       .slice(0, 25)
-      .map(
-        (a) =>
-          `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}% inbox, removed from campaigns: ${
-            a.removedFromCampaigns.join(", ") || "none"
-          }`,
-      )
+      .map((a) => {
+        const hold = a.holdUntil
+          ? `, hold until *${a.holdUntil}* (\`${a.tagName || `HOLD-UNTIL-${a.holdUntil}`}\`)`
+          : "";
+        const warmup = a.warmupEnabled === false ? ", warmup FAILED" : ", warmup on";
+        return `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}% inbox, removed from campaigns: ${
+          a.removedFromCampaigns.join(", ") || "none"
+        }${warmup}${hold}`;
+      })
       .join("\n");
     const errorBlock =
       details.errors.length > 0
@@ -277,6 +284,9 @@ export class SlackClient {
         deletedLines || undefined,
         `*Inboxes pulled for warmup (<80%, not blacklisted):* ${details.recoveredInboxes.length}`,
         recoveredLines || undefined,
+        typeof details.holdTagged === "number"
+          ? `*HOLD-UNTIL tags applied:* ${details.holdTagged} (do not re-add to campaigns until that date)`
+          : undefined,
         details.pausedCampaigns.length
           ? `*Campaigns paused (would be empty):* ${details.pausedCampaigns.join(", ")}`
           : undefined,

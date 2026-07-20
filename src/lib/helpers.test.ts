@@ -231,4 +231,10 @@ describe("sender inbox rate parsing", () => {
     assert.equal(rows[0]?.email, "low@brand.com");
     assert.equal(rows[0]?.inboxRate, 20);
   });
+
+  it("computes hold-until date 28 days out in UTC", async () => {
+    const { addDaysIsoDate } = await import("../services/remediation.js");
+    assert.equal(addDaysIsoDate(new Date("2026-07-20T15:00:00Z"), 28), "2026-08-17");
+    assert.equal(addDaysIsoDate(new Date("2026-01-31T12:00:00Z"), 28), "2026-02-28");
+  });
 });

@@ -174,8 +174,24 @@ async function main(): Promise<void> {
         return;
       }
       if (mode === "remediate") {
+        const reset =
+          String(req.query.reset ?? req.body?.reset ?? "") === "1" ||
+          String(req.query.reset ?? req.body?.reset ?? "").toLowerCase() ===
+            "true";
+        if (reset) {
+          const cleared = state.clearInboxRemediations();
+          await state.save();
+          console.log(
+            `[remediation] Cleared ${cleared} inbox remediation dedupe keys before retry`,
+          );
+        }
         const result = await runRemediation();
-        res.json({ ok: true, mode: "remediate", result });
+        res.json({
+          ok: true,
+          mode: "remediate",
+          resetInboxDedupe: reset,
+          result,
+        });
         return;
       }
       if (mode === "both" || mode === "all") {

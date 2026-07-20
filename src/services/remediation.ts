@@ -235,6 +235,7 @@ export class RemediationService {
       });
 
       const removedFrom: number[] = [];
+      let removeFailures = 0;
       for (const campaignId of campaignIds) {
         try {
           if (!result.dryRun) {
@@ -242,6 +243,11 @@ export class RemediationService {
             const onCampaign = await this.smartlead.getCampaignEmailAccounts(
               campaignId,
             );
+            if (!onCampaign.some((a) => a.id === account.id)) {
+              // Already off this campaign (prior partial run)
+              removedFrom.push(campaignId);
+              continue;
+            }
             const remainingOthers = onCampaign.filter((a) => a.id !== account.id);
             if (remainingOthers.length === 0) {
               const pauseKey = `remediate-pause-campaign:${campaignId}`;
@@ -254,11 +260,12 @@ export class RemediationService {
             await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
               account.id,
             ]);
-            await sleep(150);
+            await sleep(350);
           }
           removedFrom.push(campaignId);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
+          removeFailures += 1;
           // If API rejects removing last account, try pause then remove
           if (
             !result.dryRun &&
@@ -272,6 +279,7 @@ export class RemediationService {
                 account.id,
               ]);
               removedFrom.push(campaignId);
+              removeFailures -= 1;
               continue;
             } catch (inner) {
               const innerMsg =
@@ -288,6 +296,7 @@ export class RemediationService {
         }
       }
 
+      let warmupOk = result.dryRun;
       try {
         if (!result.dryRun) {
           await this.smartlead.configureWarmup(account.id, {
@@ -296,10 +305,18 @@ export class RemediationService {
             daily_rampup: this.config.warmupDailyRampup,
             reply_rate_percentage: this.config.warmupReplyRatePercentage,
           });
+          await sleep(250);
         }
+        warmupOk = true;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`warmup ${email}: ${message}`);
+      }
+
+      // Only record + dedupe when we actually recovered (warmup on) or removed from campaigns.
+      // Leave incomplete work unmarked so a later run can retry after rate limits.
+      if (!warmupOk && removedFrom.length === 0 && !result.dryRun) {
+        continue;
       }
 
       result.recoveredInboxes.push({
@@ -308,7 +325,14 @@ export class RemediationService {
         inboxRate: rate,
         removedFromCampaigns: removedFrom,
       });
-      this.state.markRemediation(key);
+
+      if (warmupOk && removeFailures === 0) {
+        this.state.markRemediation(key);
+      } else if (warmupOk) {
+        // Warmup on, but some campaign removals failed — mark so we don't keep re-warming;
+        // leave a soft error for visibility.
+        this.state.markRemediation(key);
+      }
     }
 
     await this.finish(result);

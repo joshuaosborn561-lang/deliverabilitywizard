@@ -15,6 +15,8 @@ export interface RequestOptions {
   body?: unknown;
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /** Retries for 429 / 5xx / network errors (default 4). */
+  retries?: number;
 }
 
 function buildUrl(
@@ -40,50 +42,80 @@ export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = "GET", query, body, headers = {}, timeoutMs = 60_000 } = options;
+  const {
+    method = "GET",
+    query,
+    body,
+    headers = {},
+    timeoutMs = 60_000,
+    retries = 4,
+  } = options;
   const url = buildUrl(baseUrl, path, apiKey, query);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  try {
-    const response = await fetch(url, {
-      method,
-      headers: {
-        Accept: "application/json",
-        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-        ...headers,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-      signal: controller.signal,
-    });
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: {
+          Accept: "application/json",
+          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          ...headers,
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: controller.signal,
+      });
 
-    const text = await response.text();
-    let parsed: unknown = null;
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = text;
+      const text = await response.text();
+      let parsed: unknown = null;
+      if (text) {
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          parsed = text;
+        }
       }
-    }
 
-    if (!response.ok) {
-      const message =
-        typeof parsed === "object" &&
-        parsed !== null &&
-        ("message" in parsed || "error" in parsed)
-          ? String(
-              (parsed as { message?: unknown; error?: unknown }).message ??
-                (parsed as { error?: unknown }).error,
-            )
-          : `HTTP ${response.status}`;
-      throw new ApiError(message, response.status, parsed);
-    }
+      if (response.status === 429 || response.status >= 500) {
+        if (attempt < retries) {
+          const backoff = Math.min(30_000, 500 * 2 ** attempt);
+          await sleep(backoff);
+          continue;
+        }
+      }
 
-    return parsed as T;
-  } finally {
-    clearTimeout(timer);
+      if (!response.ok) {
+        const message =
+          typeof parsed === "object" &&
+          parsed !== null &&
+          ("message" in parsed || "error" in parsed)
+            ? String(
+                (parsed as { message?: unknown; error?: unknown }).message ??
+                  (parsed as { error?: unknown }).error,
+              )
+            : `HTTP ${response.status}`;
+        throw new ApiError(message, response.status, parsed);
+      }
+
+      return parsed as T;
+    } catch (error) {
+      lastError = error;
+      if (error instanceof ApiError) throw error;
+      if (attempt < retries) {
+        const backoff = Math.min(30_000, 500 * 2 ** attempt);
+        await sleep(backoff);
+        continue;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError ?? "request failed"));
 }
 
 export function sleep(ms: number): Promise<void> {

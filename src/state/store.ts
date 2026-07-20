@@ -92,6 +92,18 @@ export class StateStore {
     this.state.lastRemediationAt = new Date().toISOString();
   }
 
+  /** Drop inbox-recovery dedupe keys so a follow-up run can retry rate-limited work. */
+  clearInboxRemediations(): number {
+    let cleared = 0;
+    for (const key of Object.keys(this.state.remediatedKeys)) {
+      if (key.startsWith("remediate-inbox:")) {
+        delete this.state.remediatedKeys[key];
+        cleared += 1;
+      }
+    }
+    return cleared;
+  }
+
   setLastScanAt(iso: string): void {
     this.state.lastScanAt = iso;
   }

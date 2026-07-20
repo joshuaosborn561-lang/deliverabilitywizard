@@ -148,12 +148,13 @@ export class ResultMonitor {
     const report = await this.smartDelivery.getProviderwiseReport(testId);
     const rows = report.result ?? [];
     for (const row of rows) {
-      const score = typeof row.inbox_rate === "number" ? row.inbox_rate : undefined;
+      const score = providerInboxRate(row);
       if (score === undefined) continue;
       if (score >= this.config.deliverabilityThreshold) continue;
 
-      const label = row.provider || "unknown provider";
-      const key = `low-inbox:${testId}:${label}:${Math.floor(score)}`;
+      const label =
+        row.provider_name || row.provider || String(row.provider_id ?? "unknown provider");
+      const key = `low-inbox:v2:${testId}:${label}:${Math.floor(score)}`;
       if (this.state.hasAlert(key)) continue;
 
       await this.slack.notifyLowDeliverability({
@@ -209,4 +210,38 @@ function computePlacementScore(row: MailboxSummaryRow): number | undefined {
     return (inbox / total) * 100;
   }
   return undefined;
+}
+
+/** SmartDelivery providerwise may return inbox_rate OR inbox_count/total counts. */
+function providerInboxRate(row: {
+  inbox_rate?: number;
+  inbox_count?: number;
+  spam_count?: number;
+  tab_count?: number;
+  adjusted_total_email_count?: number;
+  total_email_count?: number;
+  mailbox_count?: number;
+}): number | undefined {
+  if (typeof row.inbox_rate === "number") return row.inbox_rate;
+
+  const inbox = row.inbox_count;
+  if (typeof inbox !== "number") return undefined;
+
+  const total =
+    (typeof row.adjusted_total_email_count === "number" &&
+    row.adjusted_total_email_count > 0
+      ? row.adjusted_total_email_count
+      : undefined) ??
+    (typeof row.total_email_count === "number" && row.total_email_count > 0
+      ? row.total_email_count
+      : undefined) ??
+    (typeof row.mailbox_count === "number" && row.mailbox_count > 0
+      ? row.mailbox_count
+      : undefined) ??
+    ([inbox, row.spam_count, row.tab_count]
+      .filter((n): n is number => typeof n === "number")
+      .reduce((a, b) => a + b, 0) || undefined);
+
+  if (!total || total <= 0) return undefined;
+  return (inbox / total) * 100;
 }

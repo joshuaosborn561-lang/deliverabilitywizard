@@ -322,6 +322,11 @@ function isIpBlacklisted(row: BlacklistRow): boolean {
   if (details.includes("listed") && !details.includes("not listed")) {
     return true;
   }
+  // SmartDelivery sometimes uses details like "Spam" with total_blacklist > 0 already handled;
+  // also treat explicit spam folder + blacklist count payloads as hits.
+  if (details === "spam" && (row.ip || row.blacklist_type_value)) {
+    return true;
+  }
   return false;
 }
 

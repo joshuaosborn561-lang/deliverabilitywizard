@@ -59,10 +59,18 @@ export interface CreatedPlacementTest {
 
 export interface ProviderwiseRow {
   provider?: string;
+  provider_name?: string;
+  provider_id?: number | string;
   inbox_rate?: number;
   spam_rate?: number;
   bounce_rate?: number;
   mailbox_count?: number;
+  inbox_count?: number;
+  tab_count?: number;
+  spam_count?: number;
+  adjusted_total_email_count?: number;
+  total_email_count?: number;
+  overallTotalCount?: number;
 }
 
 export interface MailboxSummaryRow {

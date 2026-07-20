@@ -185,6 +185,37 @@ describe("sender inbox rate parsing", () => {
     assert.deepEqual(recover, ["a@brand.com"]);
   });
 
+  it("computes inbox rate from seed mail_folder details arrays", async () => {
+    const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
+    const rows = parseSenderInboxRates([
+      {
+        email: "spammy@brand.com",
+        details: [
+          { reply: { mail_folder: "Spam" } },
+          { reply: { mail_folder: "Spam" } },
+          { reply: { mail_folder: "Inbox" } },
+          { reply: { mail_folder: "Spam" } },
+        ],
+      },
+      {
+        email: "healthy@brand.com",
+        details: [
+          { reply: { mail_folder: "Inbox" } },
+          { reply: { mail_folder: "Inbox" } },
+          { reply: { mail_folder: "Inbox" } },
+          { reply: { mail_folder: "Spam" } },
+        ],
+      },
+    ]);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]?.inboxRate, 25);
+    assert.equal(rows[1]?.inboxRate, 75);
+    assert.deepEqual(
+      rows.filter((r) => r.inboxRate < 80).map((r) => r.email),
+      ["spammy@brand.com", "healthy@brand.com"],
+    );
+  });
+
   it("computes inbox rate from inbox_count when avg is missing", async () => {
     const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
     const rows = parseSenderInboxRates({

@@ -193,7 +193,14 @@ export class RemediationService {
           result.purgedInboxKitDomains.push(domain);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          result.errors.push(`InboxKit purge ${domain}: ${message}`);
+          // Domain may live outside InboxKit (Google Workspace, etc.)
+          if (/not found|404/i.test(message)) {
+            result.errors.push(
+              `InboxKit: domain ${domain} not found (skipped purge — may not be managed there)`,
+            );
+          } else {
+            result.errors.push(`InboxKit purge ${domain}: ${message}`);
+          }
         }
       } else {
         result.errors.push(

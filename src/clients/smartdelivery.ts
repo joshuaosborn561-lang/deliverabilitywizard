@@ -395,52 +395,87 @@ export function parseSenderInboxRates(
       obj.email || obj.from_email || obj.sender_email || "",
     ).trim();
     if (!email) continue;
-    const details =
-      obj.details && typeof obj.details === "object"
-        ? (obj.details as Record<string, unknown>)
-        : obj;
-    let rate: number | undefined =
-      typeof details.avg_inbox_rate === "number"
-        ? details.avg_inbox_rate
-        : typeof details.inbox_rate === "number"
-          ? details.inbox_rate
-          : typeof details.placement_score === "number"
-            ? details.placement_score
-            : typeof obj.avg_inbox_rate === "number"
-              ? obj.avg_inbox_rate
-              : typeof obj.inbox_rate === "number"
-                ? obj.inbox_rate
-                : undefined;
 
-    // Fallback: compute from inbox_count / adjusted_total_email_count
-    if (rate === undefined) {
-      const inboxCount =
-        typeof details.inbox_count === "number"
-          ? details.inbox_count
-          : typeof obj.inbox_count === "number"
-            ? obj.inbox_count
-            : undefined;
-      const total =
-        typeof details.adjusted_total_email_count === "number"
-          ? details.adjusted_total_email_count
-          : typeof details.total_email_count === "number"
-            ? details.total_email_count
-            : typeof obj.adjusted_total_email_count === "number"
-              ? obj.adjusted_total_email_count
-              : typeof obj.total_email_count === "number"
-                ? obj.total_email_count
-                : undefined;
-      if (
-        typeof inboxCount === "number" &&
-        typeof total === "number" &&
-        total > 0
-      ) {
-        rate = (inboxCount / total) * 100;
-      }
-    }
-
+    const rate = extractSenderInboxRate(obj);
     if (typeof rate !== "number") continue;
     out.push({ email, inboxRate: rate, testId });
   }
   return out;
+}
+
+function extractSenderInboxRate(obj: Record<string, unknown>): number | undefined {
+  // SmartDelivery sender-account-wise: details is an array of seed placements
+  if (Array.isArray(obj.details)) {
+    const fromFolders = inboxRateFromSeedDetails(obj.details);
+    if (fromFolders !== undefined) return fromFolders;
+  }
+
+  const details =
+    obj.details && typeof obj.details === "object" && !Array.isArray(obj.details)
+      ? (obj.details as Record<string, unknown>)
+      : obj;
+
+  let rate: number | undefined =
+    typeof details.avg_inbox_rate === "number"
+      ? details.avg_inbox_rate
+      : typeof details.inbox_rate === "number"
+        ? details.inbox_rate
+        : typeof details.placement_score === "number"
+          ? details.placement_score
+          : typeof obj.avg_inbox_rate === "number"
+            ? obj.avg_inbox_rate
+            : typeof obj.inbox_rate === "number"
+              ? obj.inbox_rate
+              : undefined;
+
+  // Fallback: compute from inbox_count / adjusted_total_email_count
+  if (rate === undefined) {
+    const inboxCount =
+      typeof details.inbox_count === "number"
+        ? details.inbox_count
+        : typeof obj.inbox_count === "number"
+          ? obj.inbox_count
+          : undefined;
+    const total =
+      typeof details.adjusted_total_email_count === "number"
+        ? details.adjusted_total_email_count
+        : typeof details.total_email_count === "number"
+          ? details.total_email_count
+          : typeof obj.adjusted_total_email_count === "number"
+            ? obj.adjusted_total_email_count
+            : typeof obj.total_email_count === "number"
+              ? obj.total_email_count
+              : undefined;
+    if (
+      typeof inboxCount === "number" &&
+      typeof total === "number" &&
+      total > 0
+    ) {
+      rate = (inboxCount / total) * 100;
+    }
+  }
+
+  return rate;
+}
+
+/** Compute inbox % from seed placement rows with mail_folder = Inbox/Spam/... */
+export function inboxRateFromSeedDetails(details: unknown[]): number | undefined {
+  let total = 0;
+  let inbox = 0;
+  for (const item of details) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const reply =
+      row.reply && typeof row.reply === "object"
+        ? (row.reply as Record<string, unknown>)
+        : undefined;
+    const folder = String(
+      reply?.mail_folder ?? row.mail_folder ?? row.folder ?? "",
+    ).trim();
+    if (!folder) continue;
+    total += 1;
+    if (folder.toLowerCase() === "inbox") inbox += 1;
+  }
+  if (total === 0) return undefined;
+  return (inbox / total) * 100;
 }

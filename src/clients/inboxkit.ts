@@ -232,13 +232,7 @@ export class InboxKitClient {
       .filter((x): x is string => Boolean(x));
 
     if (uids.length) {
-      await this.cancelMailboxes(uids, {
-        workspaceId: ws,
-        domainUids:
-          found.domain.uid || found.domain.id
-            ? [String(found.domain.uid || found.domain.id)]
-            : undefined,
-      });
+      await this.cancelMailboxes(uids, { workspaceId: ws });
     }
 
     const domainUid = found.domain.uid || found.domain.id;

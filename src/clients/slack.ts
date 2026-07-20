@@ -320,8 +320,20 @@ export class SlackClient {
               .join(", ")}`
           : undefined;
 
+      const orderLine = (() => {
+        const d = a.domainsToReplace.length;
+        const i = a.inboxesToReplace;
+        if (d && i) {
+          return `1. In InboxKit, order *${d}* domain${d === 1 ? "" : "s"} + *${i}* mailbox${i === 1 ? "" : "es"} for *${a.clientName}*`;
+        }
+        if (d) {
+          return `1. In InboxKit, order *${d}* replacement domain${d === 1 ? "" : "s"} (+ mailboxes) for *${a.clientName}*`;
+        }
+        return `1. In InboxKit, order *${i}* replacement mailbox${i === 1 ? "" : "es"} for *${a.clientName}*`;
+      })();
+
       const steps = [
-        `1. In InboxKit, order *${a.domainsToReplace.length || 0}* domain${a.domainsToReplace.length === 1 ? "" : "s"} + *${a.inboxesToReplace}* mailbox${a.inboxesToReplace === 1 ? "" : "es"} for *${a.clientName}*`,
+        orderLine,
         `2. Connect the new mailboxes in Smartlead under client *${a.clientName}*`,
         a.affectedCampaignIds.length
           ? `3. Attach them to campaigns: ${a.affectedCampaignIds.map((id) => `\`${id}\``).join(", ")}`

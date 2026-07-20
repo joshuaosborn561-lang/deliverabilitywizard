@@ -202,6 +202,13 @@ export class SlackClient {
         "",
         `*Blacklisted domain${domains.length === 1 ? "" : "s"}:*`,
         ...domainLines,
+        "",
+        `*ACTION REQUIRED*`,
+        `You need to backfill *${domains.length}* domain${domains.length === 1 ? "" : "s"} (and their mailboxes) for the affected client.`,
+        `1. Confirm remediation deleted these from Smartlead + InboxKit`,
+        `2. Buy/provision replacement domain(s) + mailboxes for that client`,
+        `3. Connect new mailboxes in Smartlead and attach to the client's campaigns`,
+        `4. Do *not* reuse the blacklisted domain(s)`,
       ].join("\n"),
     );
   }
@@ -218,6 +225,13 @@ export class SlackClient {
         `Inbox / mailbox: *${details.label}*`,
         `Placement: *${details.score.toFixed(1)}%*`,
         details.context,
+        "",
+        `*ACTION REQUIRED*`,
+        `If remediation is enabled, low inboxes (<80%) are pulled for warmup automatically.`,
+        `1. Check the remediation Slack message for *how many inboxes per client* to backfill`,
+        `2. Order replacement mailboxes for that client`,
+        `3. Connect them in Smartlead and add to active campaigns`,
+        `4. Leave any \`HOLD-UNTIL-*\` tagged inboxes on warmup until the date on the tag`,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -227,7 +241,13 @@ export class SlackClient {
   async notifyRemediation(details: {
     dryRun: boolean;
     blacklistedDomains: string[];
-    deletedSmartleadAccounts: Array<{ id: number; email: string; domain: string }>;
+    deletedSmartleadAccounts: Array<{
+      id: number;
+      email: string;
+      domain: string;
+      clientId?: number | null;
+      clientName?: string;
+    }>;
     purgedInboxKitDomains: string[];
     recoveredInboxes: Array<{
       id: number;
@@ -237,28 +257,114 @@ export class SlackClient {
       holdUntil?: string;
       tagName?: string;
       warmupEnabled?: boolean;
+      clientId?: number | null;
+      clientName?: string;
+    }>;
+    clientActions?: Array<{
+      clientId: number | null;
+      clientName: string;
+      domainsToReplace: string[];
+      inboxesToReplace: number;
+      sampleEmails: string[];
+      holdUntil?: string;
+      affectedCampaignIds: number[];
+      pausedCampaignIds: number[];
     }>;
     holdTagged?: number;
     pausedCampaigns: number[];
     errors: string[];
   }): Promise<void> {
     const mode = details.dryRun ? "DRY RUN (no changes applied)" : "LIVE";
+    const actions = details.clientActions ?? [];
+
+    const headlineParts = actions.map((a) => {
+      const bits: string[] = [];
+      if (a.domainsToReplace.length) {
+        bits.push(
+          `*${a.domainsToReplace.length}* domain${a.domainsToReplace.length === 1 ? "" : "s"}`,
+        );
+      }
+      if (a.inboxesToReplace) {
+        bits.push(
+          `*${a.inboxesToReplace}* inbox${a.inboxesToReplace === 1 ? "" : "es"}`,
+        );
+      }
+      return `• *${a.clientName}* — backfill ${bits.join(" + ")}`;
+    });
+
+    const perClientBlocks = actions.map((a) => {
+      const domainLine = a.domainsToReplace.length
+        ? `• Replace *${a.domainsToReplace.length}* domain${a.domainsToReplace.length === 1 ? "" : "s"}: ${a.domainsToReplace
+            .map((d) => `\`${d}\``)
+            .join(", ")}`
+        : undefined;
+      const inboxLine = a.inboxesToReplace
+        ? `• Replace *${a.inboxesToReplace}* inbox${a.inboxesToReplace === 1 ? "" : "es"} pulled for warmup${
+            a.holdUntil ? ` (hold until *${a.holdUntil}*)` : ""
+          }`
+        : undefined;
+      const sample =
+        a.sampleEmails.length > 0
+          ? `  samples: ${a.sampleEmails.map((e) => `\`${e}\``).join(", ")}${
+              a.inboxesToReplace > a.sampleEmails.length ? ", …" : ""
+            }`
+          : undefined;
+      const campaigns =
+        a.affectedCampaignIds.length > 0
+          ? `• Affected campaigns: ${a.affectedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
+          : undefined;
+      const paused =
+        a.pausedCampaignIds.length > 0
+          ? `• Paused (would have been empty): ${a.pausedCampaignIds
+              .map((id) => `\`${id}\``)
+              .join(", ")}`
+          : undefined;
+
+      const steps = [
+        `1. In InboxKit, order *${a.domainsToReplace.length || 0}* domain${a.domainsToReplace.length === 1 ? "" : "s"} + *${a.inboxesToReplace}* mailbox${a.inboxesToReplace === 1 ? "" : "es"} for *${a.clientName}*`,
+        `2. Connect the new mailboxes in Smartlead under client *${a.clientName}*`,
+        a.affectedCampaignIds.length
+          ? `3. Attach them to campaigns: ${a.affectedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
+          : `3. Attach them to that client's active campaigns`,
+        a.pausedCampaignIds.length
+          ? `4. Restart paused campaigns once stocked: ${a.pausedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
+          : undefined,
+        a.holdUntil
+          ? `${a.pausedCampaignIds.length ? "5" : "4"}. Do *NOT* put \`HOLD-UNTIL-*\` inboxes back on campaigns until *${a.holdUntil}*`
+          : `${a.pausedCampaignIds.length ? "5" : "4"}. Leave pulled inboxes on warmup until their HOLD-UNTIL tag date`,
+      ].filter(Boolean);
+
+      return [
+        `*${a.clientName}*${a.clientId != null ? ` (\`${a.clientId}\`)` : ""}`,
+        domainLine,
+        inboxLine,
+        sample,
+        campaigns,
+        paused,
+        `*Do this next:*`,
+        ...steps,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    });
+
     const deletedLines = details.deletedSmartleadAccounts
-      .slice(0, 25)
-      .map((a) => `• \`${a.email}\` (domain *${a.domain}*)`)
-      .join("\n");
-    const recoveredLines = details.recoveredInboxes
-      .slice(0, 25)
+      .slice(0, 15)
       .map((a) => {
-        const hold = a.holdUntil
-          ? `, hold until *${a.holdUntil}* (\`${a.tagName || `HOLD-UNTIL-${a.holdUntil}`}\`)`
-          : "";
-        const warmup = a.warmupEnabled === false ? ", warmup FAILED" : ", warmup on";
-        return `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}% inbox, removed from campaigns: ${
-          a.removedFromCampaigns.join(", ") || "none"
-        }${warmup}${hold}`;
+        const client = a.clientName ? ` · *${a.clientName}*` : "";
+        return `• \`${a.email}\` (\`${a.domain}\`)${client}`;
       })
       .join("\n");
+
+    const recoveredLines = details.recoveredInboxes
+      .slice(0, 15)
+      .map((a) => {
+        const client = a.clientName ? ` · *${a.clientName}*` : "";
+        const hold = a.holdUntil ? ` · hold *${a.holdUntil}*` : "";
+        return `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}%${client}${hold}`;
+      })
+      .join("\n");
+
     const errorBlock =
       details.errors.length > 0
         ? `\n:warning: Errors:\n${details.errors
@@ -267,28 +373,41 @@ export class SlackClient {
             .join("\n")}`
         : "";
 
+    const actionHeader =
+      actions.length > 0
+        ? [
+            `:rotating_light: *ACTION REQUIRED — backfill by client* (${mode})`,
+            `You need to backfill inventory for *${actions.length}* client${actions.length === 1 ? "" : "s"}:`,
+            ...headlineParts,
+            "",
+            ...perClientBlocks,
+          ].join("\n\n")
+        : `:hammer_and_wrench: *Deliverability remediation (${mode})* — no new domain/inbox replacements needed this run`;
+
     await this.send(
       [
-        `:hammer_and_wrench: *Deliverability remediation (${mode})*`,
+        actionHeader,
+        "",
+        `*Summary*`,
         details.blacklistedDomains.length
-          ? `*Blacklisted domains:* ${details.blacklistedDomains
-              .map((d) => `\`${d}\``)
-              .join(", ")}`
-          : "*Blacklisted domains:* none",
-        details.purgedInboxKitDomains.length
-          ? `*InboxKit purged:* ${details.purgedInboxKitDomains
+          ? `Blacklisted domains seen: ${details.blacklistedDomains
               .map((d) => `\`${d}\``)
               .join(", ")}`
           : undefined,
-        `*Smartlead accounts deleted:* ${details.deletedSmartleadAccounts.length}`,
+        details.purgedInboxKitDomains.length
+          ? `InboxKit purged: ${details.purgedInboxKitDomains
+              .map((d) => `\`${d}\``)
+              .join(", ")}`
+          : undefined,
+        `Smartlead accounts deleted: *${details.deletedSmartleadAccounts.length}*`,
         deletedLines || undefined,
-        `*Inboxes pulled for warmup (<80%, not blacklisted):* ${details.recoveredInboxes.length}`,
+        `Inboxes pulled for warmup: *${details.recoveredInboxes.length}*`,
         recoveredLines || undefined,
-        typeof details.holdTagged === "number"
-          ? `*HOLD-UNTIL tags applied:* ${details.holdTagged} (do not re-add to campaigns until that date)`
+        typeof details.holdTagged === "number" && details.holdTagged > 0
+          ? `HOLD-UNTIL tags applied/confirmed: *${details.holdTagged}*`
           : undefined,
         details.pausedCampaigns.length
-          ? `*Campaigns paused (would be empty):* ${details.pausedCampaigns.join(", ")}`
+          ? `Campaigns paused: ${details.pausedCampaigns.join(", ")}`
           : undefined,
         errorBlock,
       ]

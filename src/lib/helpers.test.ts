@@ -237,4 +237,53 @@ describe("sender inbox rate parsing", () => {
     assert.equal(addDaysIsoDate(new Date("2026-07-20T15:00:00Z"), 28), "2026-08-17");
     assert.equal(addDaysIsoDate(new Date("2026-01-31T12:00:00Z"), 28), "2026-02-28");
   });
+
+  it("groups backfill actions by client with obvious counts", async () => {
+    const { buildClientBackfillActions } = await import(
+      "../services/remediation.js"
+    );
+    const actions = buildClientBackfillActions({
+      deletedSmartleadAccounts: [
+        {
+          id: 1,
+          email: "a@bad.example",
+          domain: "bad.example",
+          clientId: 10,
+          clientName: "MSRS (Randy Gaines)",
+        },
+      ],
+      purgedInboxKitDomains: ["bad.example"],
+      recoveredInboxes: [
+        {
+          id: 2,
+          email: "b@ok.example",
+          inboxRate: 40,
+          removedFromCampaigns: [100, 200],
+          holdUntil: "2026-08-17",
+          clientId: 10,
+          clientName: "MSRS (Randy Gaines)",
+        },
+        {
+          id: 3,
+          email: "c@other.example",
+          inboxRate: 10,
+          removedFromCampaigns: [300],
+          holdUntil: "2026-08-17",
+          clientId: 20,
+          clientName: "SalesGlider",
+        },
+      ],
+      pausedCampaigns: [200],
+    });
+
+    assert.equal(actions.length, 2);
+    const msrs = actions.find((a) => a.clientName.startsWith("MSRS"));
+    assert.ok(msrs);
+    assert.deepEqual(msrs!.domainsToReplace, ["bad.example"]);
+    assert.equal(msrs!.inboxesToReplace, 1);
+    assert.deepEqual(msrs!.pausedCampaignIds, [200]);
+    const sg = actions.find((a) => a.clientName === "SalesGlider");
+    assert.equal(sg!.inboxesToReplace, 1);
+    assert.deepEqual(sg!.domainsToReplace, []);
+  });
 });

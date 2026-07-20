@@ -13,14 +13,33 @@ import {
   accountDomain,
   accountEmail,
   campaignIdsOf,
+  resolveAccountClient,
   type SmartleadAccountWithCampaigns,
+  type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import { ApiError, sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 
+export interface ClientBackfillAction {
+  clientId: number | null;
+  clientName: string;
+  domainsToReplace: string[];
+  inboxesToReplace: number;
+  sampleEmails: string[];
+  holdUntil?: string;
+  affectedCampaignIds: number[];
+  pausedCampaignIds: number[];
+}
+
 export interface RemediationResult {
   blacklistedDomains: string[];
-  deletedSmartleadAccounts: Array<{ id: number; email: string; domain: string }>;
+  deletedSmartleadAccounts: Array<{
+    id: number;
+    email: string;
+    domain: string;
+    clientId?: number | null;
+    clientName?: string;
+  }>;
   purgedInboxKitDomains: string[];
   recoveredInboxes: Array<{
     id: number;
@@ -30,7 +49,10 @@ export interface RemediationResult {
     holdUntil?: string;
     tagName?: string;
     warmupEnabled?: boolean;
+    clientId?: number | null;
+    clientName?: string;
   }>;
+  clientActions: ClientBackfillAction[];
   holdTagged: number;
   pausedCampaigns: number[];
   errors: string[];
@@ -53,6 +75,7 @@ export class RemediationService {
       deletedSmartleadAccounts: [],
       purgedInboxKitDomains: [],
       recoveredInboxes: [],
+      clientActions: [],
       holdTagged: 0,
       pausedCampaigns: [],
       errors: [],
@@ -151,17 +174,29 @@ export class RemediationService {
       return result;
     }
 
-    // Index campaigns for status checks
+    // Index campaigns for status + client ownership
     let campaignStatus = new Map<number, string>();
+    let campaignClientById = new Map<number, number | null | undefined>();
+    let clientsById = new Map<number, SmartleadClientRecord>();
     try {
-      const campaigns = await this.smartlead.listCampaigns();
+      const [campaigns, clients] = await Promise.all([
+        this.smartlead.listCampaigns(),
+        this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
+      ]);
       campaignStatus = new Map(
         campaigns.map((c) => [c.id, String(c.status || "").toUpperCase()]),
       );
+      campaignClientById = new Map(
+        campaigns.map((c) => [c.id, c.client_id ?? null]),
+      );
+      clientsById = new Map(clients.map((c) => [c.id, c]));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`list campaigns: ${message}`);
+      result.errors.push(`list campaigns/clients: ${message}`);
     }
+
+    const accountClient = (account: SmartleadAccountWithCampaigns) =>
+      resolveAccountClient(account, campaignClientById, clientsById);
 
     // 4) Delete blacklisted domains from Smartlead + InboxKit
     for (const domain of blacklistedDomains) {
@@ -186,6 +221,7 @@ export class RemediationService {
               id: account.id,
               email,
               domain,
+              ...accountClient(account),
             });
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -375,6 +411,7 @@ export class RemediationService {
         holdUntil: holdUntilDate,
         tagName,
         warmupEnabled: warmupOk,
+        ...accountClient(account),
       });
 
       if (warmupOk && removeFailures === 0) {
@@ -425,6 +462,7 @@ export class RemediationService {
       result.holdTagged += pendingHold.length;
     }
 
+    result.clientActions = buildClientBackfillActions(result);
     await this.finish(result);
     return result;
   }
@@ -535,6 +573,7 @@ export class RemediationService {
       purgedInboxKit: result.purgedInboxKitDomains.length,
       recoveredInboxes: result.recoveredInboxes.length,
       holdTagged: result.holdTagged,
+      clientActions: result.clientActions.length,
       pausedCampaigns: result.pausedCampaigns.length,
       errors: result.errors.length,
     });
@@ -544,7 +583,8 @@ export class RemediationService {
       result.purgedInboxKitDomains.length > 0 ||
       result.recoveredInboxes.length > 0 ||
       result.blacklistedDomains.length > 0 ||
-      result.holdTagged > 0;
+      result.holdTagged > 0 ||
+      result.clientActions.length > 0;
 
     if (acted || result.errors.length) {
       await this.slack.notifyRemediation(result).catch((error) => {
@@ -561,6 +601,82 @@ export function addDaysIsoDate(base: Date, days: number): string {
   );
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+export function buildClientBackfillActions(
+  result: Pick<
+    RemediationResult,
+    | "deletedSmartleadAccounts"
+    | "purgedInboxKitDomains"
+    | "recoveredInboxes"
+    | "pausedCampaigns"
+  >,
+): ClientBackfillAction[] {
+  type Acc = {
+    clientId: number | null;
+    clientName: string;
+    domains: Set<string>;
+    emails: string[];
+    campaignIds: Set<number>;
+    holdUntil?: string;
+  };
+  const byClient = new Map<string, Acc>();
+
+  const bucket = (clientId: number | null | undefined, clientName?: string) => {
+    const id = clientId ?? null;
+    const name = clientName?.trim() || "Unassigned / Agency";
+    const key = id == null ? `name:${name.toLowerCase()}` : `id:${id}`;
+    let acc = byClient.get(key);
+    if (!acc) {
+      acc = {
+        clientId: id,
+        clientName: name,
+        domains: new Set(),
+        emails: [],
+        campaignIds: new Set(),
+      };
+      byClient.set(key, acc);
+    }
+    return acc;
+  };
+
+  for (const row of result.deletedSmartleadAccounts) {
+    const acc = bucket(row.clientId, row.clientName);
+    acc.domains.add(row.domain.toLowerCase());
+  }
+  for (const domain of result.purgedInboxKitDomains) {
+    // Prefer attaching purged domains to a client that already has that domain deleted
+    const match = result.deletedSmartleadAccounts.find(
+      (a) => a.domain.toLowerCase() === domain.toLowerCase(),
+    );
+    const acc = bucket(match?.clientId ?? null, match?.clientName);
+    acc.domains.add(domain.toLowerCase());
+  }
+  for (const row of result.recoveredInboxes) {
+    const acc = bucket(row.clientId, row.clientName);
+    acc.emails.push(row.email);
+    for (const campaignId of row.removedFromCampaigns) {
+      acc.campaignIds.add(campaignId);
+    }
+    if (row.holdUntil) acc.holdUntil = row.holdUntil;
+  }
+
+  const paused = new Set(result.pausedCampaigns);
+  return [...byClient.values()]
+    .map((acc) => ({
+      clientId: acc.clientId,
+      clientName: acc.clientName,
+      domainsToReplace: [...acc.domains].sort(),
+      inboxesToReplace: acc.emails.length,
+      sampleEmails: acc.emails.slice(0, 8),
+      holdUntil: acc.holdUntil,
+      affectedCampaignIds: [...acc.campaignIds].sort((a, b) => a - b),
+      pausedCampaignIds: [...acc.campaignIds]
+        .filter((id) => paused.has(id))
+        .sort((a, b) => a - b),
+    }))
+    .filter((a) => a.domainsToReplace.length > 0 || a.inboxesToReplace > 0)
+    .sort((a, b) => a.clientName.localeCompare(b.clientName));
 }
 
 function chunkIds(ids: number[], size: number): number[][] {

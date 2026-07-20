@@ -13,6 +13,7 @@ export interface SmartleadEmailAccount {
   from_name?: string;
   username?: string;
   email?: string;
+  client_id?: number | null;
   is_smtp_success?: boolean;
   is_imap_success?: boolean;
   message_per_day?: number;

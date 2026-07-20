@@ -9,7 +9,16 @@ const BASE_URL = "https://server.smartlead.ai/api/v1/";
 
 export interface SmartleadAccountWithCampaigns extends SmartleadEmailAccount {
   campaign_ids?: number[];
+  client_id?: number | null;
   campaigns?: Array<{ id?: number; campaign_id?: number; status?: string; name?: string }>;
+}
+
+export interface SmartleadClientRecord {
+  id: number;
+  name?: string;
+  email?: string;
+  logo?: string | null;
+  uuid?: string;
 }
 
 export class SmartleadClient {
@@ -19,6 +28,10 @@ export class SmartleadClient {
     return apiRequest<SmartleadCampaign[]>(BASE_URL, this.apiKey, "campaigns/", {
       query: clientId === undefined ? undefined : { client_id: clientId },
     });
+  }
+
+  listClients(): Promise<SmartleadClientRecord[]> {
+    return apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/");
   }
 
   getCampaign(campaignId: number): Promise<SmartleadCampaign> {
@@ -196,6 +209,52 @@ export function campaignIdsOf(account: SmartleadAccountWithCampaigns): number[] 
       .filter((n): n is number => typeof n === "number" && Number.isFinite(n));
   }
   return [];
+}
+
+export function clientDisplayName(client?: {
+  name?: string | null;
+  logo?: string | null;
+  id?: number;
+}): string {
+  const logo = client?.logo?.trim();
+  const name = client?.name?.trim();
+  if (logo && name && logo.toLowerCase() !== name.toLowerCase()) {
+    return `${logo} (${name})`;
+  }
+  return logo || name || (client?.id ? `Client ${client.id}` : "Unassigned / Agency");
+}
+
+/**
+ * Resolve which Smartlead client owns an email account via account.client_id
+ * or any linked campaign's client_id.
+ */
+export function resolveAccountClient(
+  account: SmartleadAccountWithCampaigns,
+  campaignClientById: Map<number, number | null | undefined>,
+  clientsById: Map<number, SmartleadClientRecord>,
+): { clientId: number | null; clientName: string } {
+  const direct =
+    typeof account.client_id === "number" && Number.isFinite(account.client_id)
+      ? account.client_id
+      : null;
+  if (direct != null) {
+    return {
+      clientId: direct,
+      clientName: clientDisplayName(clientsById.get(direct) ?? { id: direct }),
+    };
+  }
+
+  for (const campaignId of campaignIdsOf(account)) {
+    const cid = campaignClientById.get(campaignId);
+    if (typeof cid === "number" && Number.isFinite(cid)) {
+      return {
+        clientId: cid,
+        clientName: clientDisplayName(clientsById.get(cid) ?? { id: cid }),
+      };
+    }
+  }
+
+  return { clientId: null, clientName: "Unassigned / Agency" };
 }
 
 export function extractSenderEmails(

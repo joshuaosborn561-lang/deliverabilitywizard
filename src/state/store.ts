@@ -14,17 +14,22 @@ export interface AppState {
   version: 1;
   lastScanAt: string | null;
   lastMonitorAt: string | null;
+  lastRemediationAt: string | null;
   testedCampaigns: Record<string, TestedCampaignRecord>;
   /** Dedupe keys for Slack alerts already sent */
   alertedKeys: Record<string, string>;
+  /** Dedupe keys for remediation actions already taken */
+  remediatedKeys: Record<string, string>;
 }
 
 const EMPTY_STATE: AppState = {
   version: 1,
   lastScanAt: null,
   lastMonitorAt: null,
+  lastRemediationAt: null,
   testedCampaigns: {},
   alertedKeys: {},
+  remediatedKeys: {},
 };
 
 export class StateStore {
@@ -42,6 +47,7 @@ export class StateStore {
         ...parsed,
         testedCampaigns: parsed.testedCampaigns ?? {},
         alertedKeys: parsed.alertedKeys ?? {},
+        remediatedKeys: parsed.remediatedKeys ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -75,6 +81,15 @@ export class StateStore {
 
   markAlert(key: string): void {
     this.state.alertedKeys[key] = new Date().toISOString();
+  }
+
+  hasRemediation(key: string): boolean {
+    return Boolean(this.state.remediatedKeys[key]);
+  }
+
+  markRemediation(key: string): void {
+    this.state.remediatedKeys[key] = new Date().toISOString();
+    this.state.lastRemediationAt = new Date().toISOString();
   }
 
   setLastScanAt(iso: string): void {

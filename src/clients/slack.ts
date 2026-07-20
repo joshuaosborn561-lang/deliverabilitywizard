@@ -223,4 +223,67 @@ export class SlackClient {
         .join("\n"),
     );
   }
+
+  async notifyRemediation(details: {
+    dryRun: boolean;
+    blacklistedDomains: string[];
+    deletedSmartleadAccounts: Array<{ id: number; email: string; domain: string }>;
+    purgedInboxKitDomains: string[];
+    recoveredInboxes: Array<{
+      id: number;
+      email: string;
+      inboxRate: number;
+      removedFromCampaigns: number[];
+    }>;
+    pausedCampaigns: number[];
+    errors: string[];
+  }): Promise<void> {
+    const mode = details.dryRun ? "DRY RUN (no changes applied)" : "LIVE";
+    const deletedLines = details.deletedSmartleadAccounts
+      .slice(0, 25)
+      .map((a) => `• \`${a.email}\` (domain *${a.domain}*)`)
+      .join("\n");
+    const recoveredLines = details.recoveredInboxes
+      .slice(0, 25)
+      .map(
+        (a) =>
+          `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}% inbox, removed from campaigns: ${
+            a.removedFromCampaigns.join(", ") || "none"
+          }`,
+      )
+      .join("\n");
+    const errorBlock =
+      details.errors.length > 0
+        ? `\n:warning: Errors:\n${details.errors
+            .slice(0, 15)
+            .map((e) => `• ${e}`)
+            .join("\n")}`
+        : "";
+
+    await this.send(
+      [
+        `:hammer_and_wrench: *Deliverability remediation (${mode})*`,
+        details.blacklistedDomains.length
+          ? `*Blacklisted domains:* ${details.blacklistedDomains
+              .map((d) => `\`${d}\``)
+              .join(", ")}`
+          : "*Blacklisted domains:* none",
+        details.purgedInboxKitDomains.length
+          ? `*InboxKit purged:* ${details.purgedInboxKitDomains
+              .map((d) => `\`${d}\``)
+              .join(", ")}`
+          : undefined,
+        `*Smartlead accounts deleted:* ${details.deletedSmartleadAccounts.length}`,
+        deletedLines || undefined,
+        `*Inboxes pulled for warmup (<80%, not blacklisted):* ${details.recoveredInboxes.length}`,
+        recoveredLines || undefined,
+        details.pausedCampaigns.length
+          ? `*Campaigns paused (would be empty):* ${details.pausedCampaigns.join(", ")}`
+          : undefined,
+        errorBlock,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
 }

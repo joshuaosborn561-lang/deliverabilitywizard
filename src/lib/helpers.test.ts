@@ -165,3 +165,39 @@ describe("quota gate math", () => {
     assert.equal(needed > Math.max(0, quota - tightUsed), true);
   });
 });
+
+describe("sender inbox rate parsing", () => {
+  it("reads avg_inbox_rate from sender-account-wise payloads", async () => {
+    const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
+    const rows = parseSenderInboxRates([
+      {
+        email: "a@brand.com",
+        details: { avg_inbox_rate: 72.5 },
+      },
+      {
+        email: "b@brand.com",
+        details: { avg_inbox_rate: 91 },
+      },
+    ]);
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0]?.inboxRate, 72.5);
+    const recover = rows.filter((r) => r.inboxRate < 80).map((r) => r.email);
+    assert.deepEqual(recover, ["a@brand.com"]);
+  });
+
+  it("computes inbox rate from inbox_count when avg is missing", async () => {
+    const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
+    const rows = parseSenderInboxRates({
+      data: [
+        {
+          from_email: "low@brand.com",
+          inbox_count: 2,
+          adjusted_total_email_count: 10,
+        },
+      ],
+    });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.email, "low@brand.com");
+    assert.equal(rows[0]?.inboxRate, 20);
+  });
+});

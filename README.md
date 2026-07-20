@@ -14,8 +14,11 @@ Internal automation service that finds new Smartlead campaigns and automatically
 5. On a separate schedule (every 6 hours by default), monitors results and Slack-alerts when:
    - a **domain/IP is blacklisted**, or
    - **inbox deliverability falls below 90%** (provider or sender-mailbox level)
+6. When `ENABLE_REMEDIATION=true`, automatically remediates:
+   - **Blacklisted sending domains** → delete matching Smartlead email accounts and purge the domain from InboxKit
+   - **Inboxes under 80%** (not blacklisted) → remove from all ACTIVE campaigns and enable warmup to recover
 
-Manual trigger is available via `POST /run`.
+Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|all`).
 
 ## SmartDelivery access
 
@@ -33,7 +36,7 @@ Docs:
 |--------|------|---------|
 | `GET` | `/health` | Liveness + last run timestamps |
 | `GET` | `/status` | Full state + effective config |
-| `POST` | `/run` | Manual scan (`?mode=scan\|monitor\|both`) |
+| `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|all`) |
 
 If `RUN_TOKEN` is set, pass header `X-Run-Token: <token>`.
 
@@ -54,12 +57,17 @@ Common optional vars:
 | `TOTAL_TEST_QUOTA` | `120` | Hard cap before refusing a batch |
 | `MAX_MAILBOXES_PER_TEST` | `50` | Split threshold |
 | `DELIVERABILITY_THRESHOLD` | `90` | Slack when inbox placement is below this % |
+| `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull non-blacklisted inboxes below this % for warmup |
+| `ENABLE_REMEDIATION` | `false` | When true, auto-delete blacklisted domains + recover low inboxes |
+| `INBOXKIT_API_KEY` | _(empty)_ | Required for InboxKit domain purge |
+| `INBOXKIT_WORKSPACE_ID` | _(auto)_ | Optional; resolved from InboxKit workspaces if empty |
 | `CRON_SCAN` | `0 9 * * 1,4` | Twice weekly scan |
-| `CRON_MONITOR` | `0 */6 * * *` | Results / blacklist polling |
+| `CRON_MONITOR` | `0 */6 * * *` | Results / blacklist / remediation polling |
 | `CAMPAIGN_STATUSES` | `ACTIVE,PAUSED` | Which campaigns are eligible |
 | `PROVIDER_IDS` | _(auto)_ | Comma-separated seed provider ints; empty = auto-fetch |
 | `STATE_FILE_PATH` | `/data/state.json` | Persist tested campaigns + alert dedupe |
 | `RUN_TOKEN` | _(empty)_ | Protects `/run` when set |
+| `DRY_RUN` | `false` | Plan remediation without applying writes |
 
 **Do not hardcode secrets.** Set them as Railway service variables.
 

@@ -3,10 +3,12 @@ import cron from "node-cron";
 import { assertRuntimeSecrets, configIsReady, loadConfig } from "./config.js";
 import { SmartleadClient } from "./clients/smartlead.js";
 import { SmartDeliveryClient } from "./clients/smartdelivery.js";
+import { InboxKitClient } from "./clients/inboxkit.js";
 import { SlackClient } from "./clients/slack.js";
 import { StateStore } from "./state/store.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
+import { RemediationService } from "./services/remediation.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -16,7 +18,7 @@ async function main(): Promise<void> {
   const secretsReady = configIsReady(config);
   if (!secretsReady) {
     console.warn(
-      "[boot] SMARTLEAD_API_KEY and/or SLACK_WEBHOOK_URL not set yet — HTTP health is up, scans will fail until secrets are configured.",
+      "[boot] SMARTLEAD_API_KEY and/or Slack credentials not set yet — HTTP health is up, scans will fail until secrets are configured.",
     );
   }
 
@@ -24,6 +26,9 @@ async function main(): Promise<void> {
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
   );
+  const inboxkit = config.inboxkitApiKey
+    ? new InboxKitClient(config.inboxkitApiKey, config.inboxkitWorkspaceId || undefined)
+    : null;
   const slack = new SlackClient({
     webhookUrl: config.slackWebhookUrl,
     botToken: config.slackBotToken,
@@ -32,9 +37,18 @@ async function main(): Promise<void> {
   });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, slack, state);
+  const remediation = new RemediationService(
+    config,
+    smartlead,
+    smartDelivery,
+    inboxkit,
+    slack,
+    state,
+  );
 
   let scanInFlight: Promise<unknown> | null = null;
   let monitorInFlight: Promise<unknown> | null = null;
+  let remediationInFlight: Promise<unknown> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -48,13 +62,35 @@ async function main(): Promise<void> {
     return scanInFlight;
   };
 
-  const runMonitor = async () => {
+  const runRemediation = async () => {
+    assertRuntimeSecrets(config);
+    if (remediationInFlight) {
+      console.log("[remediation] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    remediationInFlight = remediation.run().finally(() => {
+      remediationInFlight = null;
+    });
+    return remediationInFlight;
+  };
+
+  const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
       console.log("[monitor] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
-    monitorInFlight = monitor.run().finally(() => {
+    monitorInFlight = (async () => {
+      const monitorResult = await monitor.run();
+      const shouldRemediate =
+        opts.remediate !== false &&
+        (config.enableRemediation || config.dryRun);
+      let remediationResult: unknown = null;
+      if (shouldRemediate) {
+        remediationResult = await runRemediation();
+      }
+      return { monitor: monitorResult, remediation: remediationResult };
+    })().finally(() => {
       monitorInFlight = null;
     });
     return monitorInFlight;
@@ -74,7 +110,7 @@ async function main(): Promise<void> {
   });
 
   cron.schedule(config.cronMonitor, () => {
-    void runMonitor().catch((error) => {
+    void runMonitor({ remediate: true }).catch((error) => {
       console.error("[monitor] Unhandled cron error", error);
     });
   });
@@ -88,13 +124,17 @@ async function main(): Promise<void> {
       ok: true,
       service: "deliverabilitywizard",
       secretsConfigured: secretsReady,
+      remediationEnabled: config.enableRemediation,
+      inboxkitConfigured: Boolean(config.inboxkitApiKey),
       lastScanAt: s.lastScanAt,
       lastMonitorAt: s.lastMonitorAt,
+      lastRemediationAt: s.lastRemediationAt,
       testedCampaignCount: Object.keys(s.testedCampaigns).length,
       cronScan: config.cronScan,
       cronMonitor: config.cronMonitor,
       totalTestQuota: config.totalTestQuota,
       maxMailboxesPerTest: config.maxMailboxesPerTest,
+      remediationInboxThreshold: config.remediationInboxThreshold,
     });
   });
 
@@ -108,6 +148,9 @@ async function main(): Promise<void> {
         totalTestQuota: config.totalTestQuota,
         maxMailboxesPerTest: config.maxMailboxesPerTest,
         deliverabilityThreshold: config.deliverabilityThreshold,
+        remediationInboxThreshold: config.remediationInboxThreshold,
+        enableRemediation: config.enableRemediation,
+        inboxkitConfigured: Boolean(config.inboxkitApiKey),
         sequenceNumber: config.sequenceNumber,
         dryRun: config.dryRun,
       },
@@ -126,14 +169,25 @@ async function main(): Promise<void> {
     try {
       const mode = String(req.query.mode ?? req.body?.mode ?? "scan");
       if (mode === "monitor") {
-        const result = await runMonitor();
+        const result = await runMonitor({ remediate: false });
         res.json({ ok: true, mode: "monitor", result });
         return;
       }
-      if (mode === "both") {
+      if (mode === "remediate") {
+        const result = await runRemediation();
+        res.json({ ok: true, mode: "remediate", result });
+        return;
+      }
+      if (mode === "both" || mode === "all") {
         const scan = await runScan("manual");
-        const monitorResult = await runMonitor();
-        res.json({ ok: true, mode: "both", scan, monitor: monitorResult });
+        const monitorBundle = await runMonitor({ remediate: true });
+        res.json({
+          ok: true,
+          mode,
+          scan,
+          monitor: (monitorBundle as { monitor?: unknown })?.monitor ?? monitorBundle,
+          remediation: (monitorBundle as { remediation?: unknown })?.remediation ?? null,
+        });
         return;
       }
       const result = await runScan("manual");
@@ -151,6 +205,10 @@ async function main(): Promise<void> {
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
+    console.log(
+      `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
+    );
+    console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(`[boot] State file: ${config.stateFilePath}`);
   });
 }

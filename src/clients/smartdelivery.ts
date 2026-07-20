@@ -138,6 +138,14 @@ export class SmartDeliveryClient {
       `spam-test/report/${spamTestId}/blacklist`,
     );
   }
+
+  getSenderAccountReport(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/sender-account-wise`,
+    );
+  }
 }
 
 function collectIntegerIds(value: unknown, depth = 0): number[] {
@@ -355,6 +363,84 @@ export function uniqueBlacklistedDomains(hits: BlacklistedDomainHit[]): string[]
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(hit.domain);
+  }
+  return out;
+}
+
+export interface SenderInboxRate {
+  email: string;
+  inboxRate: number;
+  testId?: string;
+}
+
+/** Parse sender-account-wise report into email → inbox rate rows. */
+export function parseSenderInboxRates(
+  raw: unknown,
+  testId?: string,
+): SenderInboxRate[] {
+  const rows = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+      ? ((raw as Record<string, unknown>).result as unknown[]) ||
+        ((raw as Record<string, unknown>).data as unknown[]) ||
+        ((raw as Record<string, unknown>).items as unknown[]) ||
+        []
+      : [];
+
+  const out: SenderInboxRate[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const obj = row as Record<string, unknown>;
+    const email = String(
+      obj.email || obj.from_email || obj.sender_email || "",
+    ).trim();
+    if (!email) continue;
+    const details =
+      obj.details && typeof obj.details === "object"
+        ? (obj.details as Record<string, unknown>)
+        : obj;
+    let rate: number | undefined =
+      typeof details.avg_inbox_rate === "number"
+        ? details.avg_inbox_rate
+        : typeof details.inbox_rate === "number"
+          ? details.inbox_rate
+          : typeof details.placement_score === "number"
+            ? details.placement_score
+            : typeof obj.avg_inbox_rate === "number"
+              ? obj.avg_inbox_rate
+              : typeof obj.inbox_rate === "number"
+                ? obj.inbox_rate
+                : undefined;
+
+    // Fallback: compute from inbox_count / adjusted_total_email_count
+    if (rate === undefined) {
+      const inboxCount =
+        typeof details.inbox_count === "number"
+          ? details.inbox_count
+          : typeof obj.inbox_count === "number"
+            ? obj.inbox_count
+            : undefined;
+      const total =
+        typeof details.adjusted_total_email_count === "number"
+          ? details.adjusted_total_email_count
+          : typeof details.total_email_count === "number"
+            ? details.total_email_count
+            : typeof obj.adjusted_total_email_count === "number"
+              ? obj.adjusted_total_email_count
+              : typeof obj.total_email_count === "number"
+                ? obj.total_email_count
+                : undefined;
+      if (
+        typeof inboxCount === "number" &&
+        typeof total === "number" &&
+        total > 0
+      ) {
+        rate = (inboxCount / total) * 100;
+      }
+    }
+
+    if (typeof rate !== "number") continue;
+    out.push({ email, inboxRate: rate, testId });
   }
   return out;
 }

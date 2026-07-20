@@ -132,21 +132,77 @@ export class SlackClient {
     ip?: string;
     fromEmail?: string;
   }): Promise<void> {
+    await this.notifyBlacklistedDomains({
+      testId: details.testId,
+      testName: details.testName,
+      domains: [details.domain],
+      hits: [
+        {
+          domain: details.domain,
+          fromEmail: details.fromEmail,
+          source: details.ip ? "ip-blacklist" : "domain-blacklist",
+          ip: details.ip,
+          totalHits: details.total,
+        },
+      ],
+    });
+  }
+
+  /**
+   * Call out every blacklisted sending domain by name.
+   * Example Slack body leads with an explicit domain list.
+   */
+  async notifyBlacklistedDomains(details: {
+    testId: string;
+    testName?: string;
+    domains: string[];
+    hits: Array<{
+      domain: string;
+      fromEmail?: string;
+      source: "domain-blacklist" | "ip-blacklist";
+      ip?: string;
+      listName?: string;
+      totalHits?: number;
+      details?: string;
+      seedEspHits?: string[];
+    }>;
+  }): Promise<void> {
+    const domains = [...new Set(details.domains.map((d) => d.toLowerCase()))];
+    if (!domains.length) return;
+
+    const domainLines = domains.map((domain) => {
+      const related = details.hits.filter(
+        (h) => h.domain.toLowerCase() === domain,
+      );
+      const fromEmail =
+        related.find((h) => h.fromEmail)?.fromEmail ?? undefined;
+      const ipBits = related
+        .filter((h) => h.ip)
+        .map((h) => {
+          const list = h.listName ? ` on ${h.listName}` : "";
+          return `\`${h.ip}\`${list}`;
+        });
+      const extras = [
+        fromEmail ? `sender \`${fromEmail}\`` : undefined,
+        ipBits.length ? `IP ${ipBits.join(", ")}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return extras
+        ? `• *${domain}* — ${extras}`
+        : `• *${domain}*`;
+    });
+
     await this.send(
       [
-        `:rotating_light: *Domain / IP blacklist detected*`,
+        `:rotating_light: *Blacklisted domain${domains.length === 1 ? "" : "s"} detected*`,
         details.testName
           ? `Test: *${details.testName}* (\`${details.testId}\`)`
           : `Test: \`${details.testId}\``,
-        `Domain: *${details.domain}*`,
-        details.ip ? `IP: \`${details.ip}\`` : undefined,
-        details.fromEmail ? `Sender: \`${details.fromEmail}\`` : undefined,
-        details.total !== undefined
-          ? `Blacklist hits: *${details.total}*`
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join("\n"),
+        "",
+        `*Blacklisted domain${domains.length === 1 ? "" : "s"}:*`,
+        ...domainLines,
+      ].join("\n"),
     );
   }
 

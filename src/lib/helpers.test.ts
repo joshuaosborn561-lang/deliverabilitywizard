@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { chunkArray, uniqueStrings } from "./http.js";
 import { extractSenderEmails, pickSequence } from "../clients/smartlead.js";
-import { asBlacklistRows, normalizeTestList } from "../clients/smartdelivery.js";
+import {
+  asBlacklistRows,
+  domainFromEmail,
+  normalizeTestList,
+  parseDomainBlacklistHits,
+  parseIpBlacklistHits,
+  uniqueBlacklistedDomains,
+} from "../clients/smartdelivery.js";
 
 describe("chunkArray", () => {
   it("splits mailboxes into batches of at most 50", () => {
@@ -63,9 +70,81 @@ describe("SmartDelivery helpers", () => {
   });
 
   it("normalizes blacklist payloads", () => {
-    assert.equal(asBlacklistRows([{ domain: "a.com", total_blacklist: 1 }]).length, 1);
+    assert.equal(
+      asBlacklistRows([{ domain: "a.com", total_blacklist: 1 }]).length,
+      1,
+    );
     assert.equal(asBlacklistRows({ result: [{ domain: "b.com" }] }).length, 1);
     assert.equal(asBlacklistRows({}).length, 0);
+  });
+});
+
+describe("domain blacklist callouts", () => {
+  it("extracts sending domain from email", () => {
+    assert.equal(
+      domainFromEmail("pedro@parlaytechlab.info"),
+      "parlaytechlab.info",
+    );
+    assert.equal(domainFromEmail("Bad@Input.COM"), "input.com");
+    assert.equal(domainFromEmail("nope"), undefined);
+  });
+
+  it("calls out specifically blacklisted sending domains from domain-blacklist API", () => {
+    const hits = parseDomainBlacklistHits([
+      {
+        from_email: "pedrokemmer@parlaytechlab.info",
+        seed_accounts: [
+          { email: "seed1@gmail.com", esp: "Gmail", domain_blacklisted: true },
+          {
+            email: "seed2@outlook.com",
+            esp: "Outlook",
+            domain_blacklisted: false,
+          },
+        ],
+      },
+      {
+        from_email: "clean@healthy-domain.com",
+        seed_accounts: [
+          { email: "seed3@yahoo.com", esp: "Yahoo", domain_blacklisted: false },
+        ],
+      },
+      {
+        from_email: "john@parlaytechhub.info",
+        seed_accounts: [
+          { email: "seed4@gmail.com", esp: "Gmail", domain_blacklisted: true },
+        ],
+      },
+    ]);
+
+    assert.deepEqual(uniqueBlacklistedDomains(hits), [
+      "parlaytechlab.info",
+      "parlaytechhub.info",
+    ]);
+    assert.equal(hits[0]?.fromEmail, "pedrokemmer@parlaytechlab.info");
+  });
+
+  it("attributes IP blacklist hits to the sender domain, not the seed ESP domain", () => {
+    const hits = parseIpBlacklistHits([
+      {
+        reply: { from_email: "sender@mybrand.io" },
+        to_email: "seed@gmail.com",
+        domain: "gmail.com",
+        blacklist_type_value: "spamhaus",
+        total_blacklist: 2,
+        ip: "1.2.3.4",
+        details: "IP listed on Spamhaus",
+      },
+      {
+        reply: { from_email: "ok@safe.com" },
+        domain: "gmail.com",
+        total_blacklist: 0,
+        details: "IP not listed",
+      },
+    ]);
+
+    assert.deepEqual(uniqueBlacklistedDomains(hits), ["mybrand.io"]);
+    assert.equal(hits[0]?.ip, "1.2.3.4");
+    assert.equal(hits[0]?.listName, "spamhaus");
   });
 });
 
@@ -73,7 +152,7 @@ describe("quota gate math", () => {
   it("blocks when needed tests exceed remaining quota", () => {
     const used = 110;
     const quota = 120;
-    const mailboxCounts = [45, 60]; // -> 1 + 2 = 3 tests
+    const mailboxCounts = [45, 60];
     const needed = mailboxCounts
       .map((n) => Math.ceil(n / 50))
       .reduce((a, b) => a + b, 0);

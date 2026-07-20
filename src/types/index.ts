@@ -78,6 +78,7 @@ export interface MailboxSummaryRow {
   spam_test_id?: string | number;
 }
 
+/** IP blacklist row from /spam-test/report/{id}/blacklist */
 export interface BlacklistRow {
   reply_id?: string | number;
   to_email?: string;
@@ -89,6 +90,35 @@ export interface BlacklistRow {
   details?: string;
   reply?: { from_email?: string };
   "reply.from_email"?: string;
+  from_email?: string;
+}
+
+/** Domain blacklist report from /spam-test/report/{id}/domain-blacklist */
+export interface DomainBlacklistSeedAccount {
+  id?: string | number;
+  email?: string;
+  esp?: string;
+  domain_blacklisted?: boolean;
+}
+
+export interface DomainBlacklistReport {
+  from_email?: string;
+  seed_accounts?: DomainBlacklistSeedAccount[];
+  /** Some payloads may flatten the flag onto the parent */
+  domain_blacklisted?: boolean;
+  domain?: string;
+}
+
+export interface BlacklistedDomainHit {
+  /** Sending domain that is blacklisted, e.g. parlaytechlab.info */
+  domain: string;
+  fromEmail?: string;
+  source: "domain-blacklist" | "ip-blacklist";
+  ip?: string;
+  listName?: string;
+  totalHits?: number;
+  details?: string;
+  seedEspHits?: string[];
 }
 
 export interface CampaignTestPlan {

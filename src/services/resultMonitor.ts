@@ -2,12 +2,18 @@ import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import {
-  asBlacklistRows,
   normalizeTestList,
+  parseDomainBlacklistHits,
+  parseIpBlacklistHits,
   testIdOf,
+  uniqueBlacklistedDomains,
 } from "../clients/smartdelivery.js";
 import type { StateStore } from "../state/store.js";
-import type { BlacklistRow, MailboxSummaryRow, SpamTestSummary } from "../types/index.js";
+import type {
+  BlacklistedDomainHit,
+  MailboxSummaryRow,
+  SpamTestSummary,
+} from "../types/index.js";
 
 export interface MonitorResult {
   testsChecked: number;
@@ -72,7 +78,10 @@ export class ResultMonitor {
       const testId = testIdOf(test);
       if (!testId) continue;
       try {
-        result.blacklistAlerts += await this.checkBlacklists(testId, test.test_name);
+        result.blacklistAlerts += await this.checkBlacklists(
+          testId,
+          test.test_name,
+        );
         result.lowDeliverabilityAlerts += await this.checkProviderDeliverability(
           testId,
           test.test_name,
@@ -96,32 +105,39 @@ export class ResultMonitor {
     return result;
   }
 
-  private async checkBlacklists(testId: string, testName?: string): Promise<number> {
-    let alerts = 0;
-
-    const domainRaw = await this.smartDelivery.getDomainBlacklist(testId).catch(() => []);
+  private async checkBlacklists(
+    testId: string,
+    testName?: string,
+  ): Promise<number> {
+    const domainRaw = await this.smartDelivery
+      .getDomainBlacklist(testId)
+      .catch(() => []);
     const ipRaw = await this.smartDelivery.getIpBlacklist(testId).catch(() => []);
-    const rows = [...asBlacklistRows(domainRaw), ...asBlacklistRows(ipRaw)];
 
-    for (const row of rows) {
-      if (!isBlacklisted(row)) continue;
-      const domain = row.domain || row.blacklist_type_value || "unknown";
-      const key = `blacklist:${testId}:${domain}:${row.ip ?? ""}`;
-      if (this.state.hasAlert(key)) continue;
+    const hits: BlacklistedDomainHit[] = [
+      ...parseDomainBlacklistHits(domainRaw),
+      ...parseIpBlacklistHits(ipRaw),
+    ];
 
-      await this.slack.notifyBlacklist({
-        testId,
-        testName,
-        domain,
-        total: row.total_blacklist,
-        ip: row.ip,
-        fromEmail: row.reply?.from_email ?? row["reply.from_email"],
-      });
-      this.state.markAlert(key);
-      alerts += 1;
-    }
+    if (!hits.length) return 0;
 
-    return alerts;
+    const domains = uniqueBlacklistedDomains(hits);
+    // Deduped per test+domain set so Slack clearly names every blacklisted domain once.
+    const key = `blacklist-domains:v2:${testId}:${domains.map((d) => d.toLowerCase()).sort().join(",")}`;
+    if (this.state.hasAlert(key)) return 0;
+
+    await this.slack.notifyBlacklistedDomains({
+      testId,
+      testName,
+      domains,
+      hits,
+    });
+    this.state.markAlert(key);
+
+    console.log(
+      `[monitor] Blacklisted domains on test ${testId}: ${domains.join(", ")}`,
+    );
+    return 1;
   }
 
   private async checkProviderDeliverability(
@@ -184,21 +200,6 @@ export class ResultMonitor {
     }
     return alerts;
   }
-}
-
-function isBlacklisted(row: BlacklistRow): boolean {
-  if (typeof row.total_blacklist === "number" && row.total_blacklist > 0) {
-    return true;
-  }
-  const details = String(row.details ?? "").toLowerCase();
-  if (details.includes("listed") && !details.includes("not listed")) {
-    return true;
-  }
-  // Domain blacklist payloads sometimes omit totals; presence of a domain + ip/type is a hit.
-  if (row.domain && row.blacklist_type_value && row.total_blacklist === undefined) {
-    return true;
-  }
-  return false;
 }
 
 function computePlacementScore(row: MailboxSummaryRow): number | undefined {

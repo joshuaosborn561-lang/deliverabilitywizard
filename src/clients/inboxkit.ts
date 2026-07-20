@@ -78,8 +78,13 @@ export class InboxKitClient {
   }
 
   async listWorkspaces(): Promise<InboxKitWorkspace[]> {
-    const raw = await this.request<unknown>("GET", "/v1/api/workspaces");
-    return normalizeList<InboxKitWorkspace>(raw);
+    const raw = await this.request<unknown>("GET", "/v1/api/workspaces/list");
+    return normalizeList<InboxKitWorkspace>(raw, [
+      "workspaces",
+      "result",
+      "data",
+      "items",
+    ]);
   }
 
   async resolveWorkspaceId(): Promise<string> {
@@ -93,15 +98,28 @@ export class InboxKitClient {
     return id;
   }
 
-  async listDomains(workspaceId?: string): Promise<InboxKitDomain[]> {
+  async listDomains(
+    workspaceId?: string,
+    opts: { keyword?: string; limit?: number } = {},
+  ): Promise<InboxKitDomain[]> {
     const ws = workspaceId || (await this.resolveWorkspaceId());
+    const body: Record<string, unknown> = {
+      page: 1,
+      limit: opts.limit ?? 200,
+    };
+    if (opts.keyword) body.keyword = opts.keyword;
     const raw = await this.request<unknown>(
       "POST",
       "/v1/api/domains/list",
-      { page: 1, limit: 200 },
+      body,
       ws,
     );
-    return normalizeList<InboxKitDomain>(raw);
+    return normalizeList<InboxKitDomain>(raw, [
+      "domains",
+      "result",
+      "data",
+      "items",
+    ]);
   }
 
   async listMailboxes(opts: {
@@ -121,7 +139,12 @@ export class InboxKitClient {
       body,
       ws,
     );
-    return normalizeList<InboxKitMailbox>(raw);
+    return normalizeList<InboxKitMailbox>(raw, [
+      "mailboxes",
+      "result",
+      "data",
+      "items",
+    ]);
   }
 
   async removeDomains(
@@ -148,59 +171,117 @@ export class InboxKitClient {
   }
 
   /**
+   * Locate a domain across all workspaces (or a single configured workspace).
+   */
+  async findDomain(domain: string): Promise<{
+    workspaceId: string;
+    workspaceName?: string;
+    domain: InboxKitDomain;
+  } | null> {
+    const target = domain.toLowerCase();
+    const workspaces = this.workspaceId
+      ? [{ uid: this.workspaceId, name: undefined }]
+      : await this.listWorkspaces();
+
+    for (const ws of workspaces) {
+      const wsId = ws.uid || ws.id;
+      if (!wsId) continue;
+      const domains = await this.listDomains(wsId, {
+        keyword: target,
+        limit: 50,
+      });
+      const match = domains.find((d) => {
+        const name = (d.name || d.domain || "").toLowerCase();
+        return name === target;
+      });
+      if (match) {
+        return { workspaceId: wsId, workspaceName: ws.name, domain: match };
+      }
+    }
+    return null;
+  }
+
+  /**
    * Cancel all mailboxes for a domain, then schedule the domain for deletion.
+   * Searches every InboxKit workspace unless INBOXKIT_WORKSPACE_ID is pinned.
    */
   async purgeDomain(domain: string): Promise<{
     domain: string;
+    workspaceId: string;
+    workspaceName?: string;
     cancelledMailboxUids: string[];
     removeResult: unknown;
   }> {
-    const ws = await this.resolveWorkspaceId();
-    const mailboxes = await this.listMailboxes({ domain, workspaceId: ws });
+    const found = await this.findDomain(domain);
+    if (!found) {
+      throw new ApiError(
+        `Domain ${domain} not found in InboxKit workspaces`,
+        404,
+        null,
+      );
+    }
+
+    const ws = found.workspaceId;
+    const mailboxes = await this.listMailboxes({
+      domain: domain.toLowerCase(),
+      keyword: domain.toLowerCase(),
+      workspaceId: ws,
+    });
     const uids = mailboxes
       .map((m) => m.uid || m.id)
       .filter((x): x is string => Boolean(x));
 
     if (uids.length) {
-      await this.cancelMailboxes(uids, { workspaceId: ws });
+      await this.cancelMailboxes(uids, {
+        workspaceId: ws,
+        domainUids:
+          found.domain.uid || found.domain.id
+            ? [String(found.domain.uid || found.domain.id)]
+            : undefined,
+      });
     }
 
-    const domains = await this.listDomains(ws);
-    const match = domains.find((d) => {
-      const name = (d.name || d.domain || "").toLowerCase();
-      return name === domain.toLowerCase();
-    });
-    const domainUids = match?.uid || match?.id ? [String(match.uid || match.id)] : undefined;
-
-    // domains/remove requires domains array; uids optional
+    const domainUid = found.domain.uid || found.domain.id;
     const removeResult = await this.request(
       "POST",
       "/v1/api/domains/remove",
       {
         domains: [domain.toLowerCase()],
-        ...(domainUids ? { uids: domainUids } : {}),
+        ...(domainUid ? { uids: [String(domainUid)] } : {}),
       },
       ws,
     );
 
     return {
       domain,
+      workspaceId: ws,
+      workspaceName: found.workspaceName,
       cancelledMailboxUids: uids,
       removeResult,
     };
   }
 }
 
-function normalizeList<T>(raw: unknown): T[] {
+function normalizeList<T>(
+  raw: unknown,
+  preferredKeys: string[] = [
+    "result",
+    "data",
+    "items",
+    "domains",
+    "mailboxes",
+    "workspaces",
+  ],
+): T[] {
   if (Array.isArray(raw)) return raw as T[];
   if (raw && typeof raw === "object") {
     const obj = raw as Record<string, unknown>;
-    for (const key of ["result", "data", "items", "domains", "mailboxes", "workspaces"]) {
+    for (const key of preferredKeys) {
       const value = obj[key];
       if (Array.isArray(value)) return value as T[];
       if (value && typeof value === "object") {
         const nested = value as Record<string, unknown>;
-        for (const k2 of ["items", "data", "results", "rows"]) {
+        for (const k2 of ["items", "data", "results", "rows", "workspaces"]) {
           if (Array.isArray(nested[k2])) return nested[k2] as T[];
         }
       }

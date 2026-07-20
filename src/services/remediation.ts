@@ -160,55 +160,65 @@ export class RemediationService {
 
     // 4) Delete blacklisted domains from Smartlead + InboxKit
     for (const domain of blacklistedDomains) {
-      const key = `remediate-domain:${domain}`;
-      if (this.state.hasRemediation(key)) continue;
+      const slKey = `remediate-domain-sl:${domain}`;
+      const ikKey = `remediate-domain-ik:${domain}`;
+      // Back-compat with older single-key dedupe
+      const legacyKey = `remediate-domain:${domain}`;
 
       const domainAccounts = accounts.filter(
         (a) => accountDomain(a) === domain,
       );
 
-      for (const account of domainAccounts) {
-        const email = accountEmail(account) || `id:${account.id}`;
-        try {
-          if (!result.dryRun) {
-            await this.smartlead.deleteEmailAccount(account.id);
-            await sleep(200);
+      if (!this.state.hasRemediation(slKey) && !this.state.hasRemediation(legacyKey)) {
+        for (const account of domainAccounts) {
+          const email = accountEmail(account) || `id:${account.id}`;
+          try {
+            if (!result.dryRun) {
+              await this.smartlead.deleteEmailAccount(account.id);
+              await sleep(200);
+            }
+            result.deletedSmartleadAccounts.push({
+              id: account.id,
+              email,
+              domain,
+            });
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            result.errors.push(`delete SL account ${email}: ${message}`);
           }
-          result.deletedSmartleadAccounts.push({
-            id: account.id,
-            email,
-            domain,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          result.errors.push(`delete SL account ${email}: ${message}`);
+        }
+        this.state.markRemediation(slKey);
+      }
+
+      if (!this.state.hasRemediation(ikKey)) {
+        if (this.inboxkit) {
+          try {
+            if (!result.dryRun) {
+              await this.inboxkit.purgeDomain(domain);
+            }
+            result.purgedInboxKitDomains.push(domain);
+            this.state.markRemediation(ikKey);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            // Domain may live outside InboxKit (Google Workspace, etc.)
+            if (/not found|404/i.test(message)) {
+              result.errors.push(
+                `InboxKit: domain ${domain} not found (skipped purge — may not be managed there)`,
+              );
+              // Don't mark — a later run may find it after workspace fixes
+            } else {
+              result.errors.push(`InboxKit purge ${domain}: ${message}`);
+            }
+          }
+        } else {
+          result.errors.push(
+            `InboxKit not configured — skipped purge for ${domain}`,
+          );
         }
       }
 
-      if (this.inboxkit) {
-        try {
-          if (!result.dryRun) {
-            await this.inboxkit.purgeDomain(domain);
-          }
-          result.purgedInboxKitDomains.push(domain);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          // Domain may live outside InboxKit (Google Workspace, etc.)
-          if (/not found|404/i.test(message)) {
-            result.errors.push(
-              `InboxKit: domain ${domain} not found (skipped purge — may not be managed there)`,
-            );
-          } else {
-            result.errors.push(`InboxKit purge ${domain}: ${message}`);
-          }
-        }
-      } else {
-        result.errors.push(
-          `InboxKit not configured — skipped purge for ${domain}`,
-        );
-      }
-
-      this.state.markRemediation(key);
+      // Keep legacy key so older monitors don't re-delete Smartlead accounts
+      this.state.markRemediation(legacyKey);
     }
 
     // 5) Recover low-inbox (non-blacklisted) senders: remove from ACTIVE campaigns + warmup

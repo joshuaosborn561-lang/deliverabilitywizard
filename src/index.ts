@@ -137,6 +137,10 @@ async function main(): Promise<void> {
       remediationInboxThreshold: config.remediationInboxThreshold,
       scoreSameEspOnly: config.scoreSameEspOnly,
       minSameEspSamples: config.minSameEspSamples,
+      enableRecoveryPool: config.enableRecoveryPool,
+      poolWarmupDays: config.poolWarmupDays,
+      poolMailboxCount: Object.keys(s.poolMailboxes).length,
+      activeSwapCount: Object.keys(s.activeSwaps).length,
     });
   });
 
@@ -154,6 +158,10 @@ async function main(): Promise<void> {
         scoreSameEspOnly: config.scoreSameEspOnly,
         minSameEspSamples: config.minSameEspSamples,
         enableRemediation: config.enableRemediation,
+        enableRecoveryPool: config.enableRecoveryPool,
+        poolWarmupDays: config.poolWarmupDays,
+        clientDomainBudgetUsd: config.clientDomainBudgetUsd,
+        clientMailboxMonthlyCap: config.clientMailboxMonthlyCap,
         inboxkitConfigured: Boolean(config.inboxkitApiKey),
         sequenceNumber: config.sequenceNumber,
         dryRun: config.dryRun,

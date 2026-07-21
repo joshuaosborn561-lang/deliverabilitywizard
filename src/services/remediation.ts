@@ -20,6 +20,10 @@ import {
 } from "../clients/smartlead.js";
 import { ApiError, sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
+import {
+  RecoveryPoolService,
+  type RecoveryPoolResult,
+} from "./recoveryPool.js";
 
 export interface ClientBackfillAction {
   clientId: number | null;
@@ -78,6 +82,7 @@ export interface RemediationResult {
     clientName?: string;
   }>;
   sameEspAudit?: SameEspAuditResult;
+  recoveryPool?: RecoveryPoolResult;
   clientActions: ClientBackfillAction[];
   holdTagged: number;
   pausedCampaigns: number[];
@@ -86,6 +91,8 @@ export interface RemediationResult {
 }
 
 export class RemediationService {
+  private readonly recoveryPool: RecoveryPoolService;
+
   constructor(
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
@@ -93,7 +100,14 @@ export class RemediationService {
     private readonly inboxkit: InboxKitClient | null,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
-  ) {}
+  ) {
+    this.recoveryPool = new RecoveryPoolService(
+      config,
+      smartlead,
+      slack,
+      state,
+    );
+  }
 
   async run(): Promise<RemediationResult> {
     const result: RemediationResult = {
@@ -534,6 +548,50 @@ export class RemediationService {
       result.holdTagged += pendingHold.length;
     }
 
+    // 6) Recovery pool: restore healthy originals that were covered by generics,
+    //    then swap generics into newly held campaign slots (ESP-matched).
+    if (this.config.enableRecoveryPool) {
+      const recoveredOriginals: Array<{ email: string; inboxRate: number }> =
+        [];
+      for (const swap of this.state.listActiveSwaps()) {
+        const rateRow = inboxRateRows.get(swap.originalEmail.toLowerCase());
+        if (!rateRow) continue;
+        const rate =
+          typeof rateRow.inboxRateSameEsp === "number" &&
+          (rateRow.sameEspSamples ?? 0) >= this.config.minSameEspSamples
+            ? rateRow.inboxRateSameEsp
+            : rateRow.inboxRate;
+        if (rate >= threshold) {
+          recoveredOriginals.push({
+            email: swap.originalEmail,
+            inboxRate: rate,
+          });
+        }
+      }
+
+      const byId = new Map(accounts.map((a) => [a.id, a]));
+      result.recoveryPool = await this.recoveryPool.run({
+        accounts,
+        newlyHeld: result.recoveredInboxes.map((r) => {
+          const acc = byId.get(r.id);
+          return {
+            accountId: r.id,
+            email: r.email,
+            removedFromCampaigns: r.removedFromCampaigns,
+            clientId: r.clientId,
+            clientName: r.clientName,
+            type: acc?.type,
+            fromName: acc?.from_name,
+          };
+        }),
+        recoveredOriginals,
+        dryRun: result.dryRun,
+        campaignClientById,
+        clientsById,
+      });
+      result.errors.push(...result.recoveryPool.errors);
+    }
+
     result.clientActions = buildClientBackfillActions(result);
     await this.finish(result);
     return result;
@@ -628,6 +686,8 @@ export class RemediationService {
     const held = this.state.listHeldInboxes();
     for (const record of held) {
       const email = record.email.toLowerCase();
+      // Active pool swap — RecoveryPoolService restores these when healthy
+      if (this.state.getSwap(email)) continue;
       const row = opts.inboxRateRows.get(email);
       if (!row) continue;
 
@@ -863,6 +923,8 @@ export class RemediationService {
       purgedInboxKit: result.purgedInboxKitDomains.length,
       recoveredInboxes: result.recoveredInboxes.length,
       holdTagged: result.holdTagged,
+      poolSwaps: result.recoveryPool?.swaps.length ?? 0,
+      poolRestores: result.recoveryPool?.restores.length ?? 0,
       clientActions: result.clientActions.length,
       pausedCampaigns: result.pausedCampaigns.length,
       errors: result.errors.length,
@@ -875,7 +937,9 @@ export class RemediationService {
       result.blacklistedDomains.length > 0 ||
       result.holdTagged > 0 ||
       result.clientActions.length > 0 ||
-      (result.sameEspAudit?.restored.length ?? 0) > 0;
+      (result.sameEspAudit?.restored.length ?? 0) > 0 ||
+      (result.recoveryPool?.swaps.length ?? 0) > 0 ||
+      (result.recoveryPool?.restores.length ?? 0) > 0;
 
     if (acted || result.errors.length) {
       await this.slack.notifyRemediation(result).catch((error) => {

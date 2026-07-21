@@ -14,6 +14,9 @@ export interface InboxKitDomain {
   name?: string;
   domain?: string;
   status?: string;
+  nameserver_match_status?: string;
+  nameservers?: string[];
+  platform?: string;
 }
 
 export interface InboxKitMailbox {
@@ -104,8 +107,11 @@ export class InboxKitClient {
   ): Promise<InboxKitDomain[]> {
     const ws = workspaceId || (await this.resolveWorkspaceId());
     const body: Record<string, unknown> = {
+      workspace_id: ws,
       page: 1,
+      current: 1,
       limit: opts.limit ?? 200,
+      page_size: opts.limit ?? 200,
     };
     if (opts.keyword) body.keyword = opts.keyword;
     const raw = await this.request<unknown>(
@@ -120,6 +126,112 @@ export class InboxKitClient {
       "data",
       "items",
     ]);
+  }
+
+  /**
+   * Connect external domains and receive Cloudflare nameservers to set at registrar.
+   */
+  async connectNameservers(
+    domains: string[],
+    workspaceId?: string,
+  ): Promise<
+    Array<{
+      domain: string;
+      nameservers?: string[];
+      uid?: string;
+      name?: string;
+    }>
+  > {
+    const ws = workspaceId || (await this.resolveWorkspaceId());
+    const raw = await this.request<unknown>(
+      "POST",
+      "/v1/api/domains/nameservers",
+      {
+        workspace_id: ws,
+        domains: domains.map((d) => d.toLowerCase()),
+      },
+      ws,
+    );
+    return normalizeList(raw, ["data", "domains", "result", "items"]);
+  }
+
+  /**
+   * Buy Google/Microsoft mailboxes. One platform per domain (InboxKit cannot mix).
+   */
+  async buyMailboxes(
+    mailboxes: Array<{
+      first_name: string;
+      last_name: string;
+      username: string;
+      platform: "GOOGLE" | "MICROSOFT";
+      domain_name: string;
+    }>,
+    opts: {
+      workspaceId?: string;
+      useWalletBalance?: boolean;
+      idempotencyKey?: string;
+    } = {},
+  ): Promise<unknown> {
+    const ws = opts.workspaceId || (await this.resolveWorkspaceId());
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.apiKey}`,
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "DeliverabilityWizard/1.0 (+railway)",
+      "X-Workspace-Id": ws,
+    };
+    if (opts.idempotencyKey) {
+      headers["Idempotency-Key"] = opts.idempotencyKey;
+    }
+    const body = {
+      workspace_id: ws,
+      mailboxes,
+      ...(opts.useWalletBalance ? { use_wallet_balance: true } : {}),
+    };
+    const response = await fetch(`${BASE_URL}/v1/api/mailboxes/buy`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    let parsed: unknown = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = text;
+      }
+    }
+    if (!response.ok) {
+      const message =
+        typeof parsed === "object" &&
+        parsed !== null &&
+        ("message" in parsed || "error" in parsed)
+          ? String(
+              (parsed as { message?: unknown; error?: unknown }).message ??
+                (parsed as { error?: unknown }).error,
+            )
+          : `HTTP ${response.status}`;
+      throw new ApiError(message, response.status, parsed);
+    }
+    return parsed;
+  }
+
+  /** True when InboxKit reports nameservers as matched/propagated. */
+  static nameserversReady(domain: InboxKitDomain): boolean {
+    const status = String(domain.nameserver_match_status ?? "").toLowerCase();
+    const life = String(domain.status ?? "").toLowerCase();
+    if (
+      status.includes("match") ||
+      status.includes("synced") ||
+      status.includes("propagat") ||
+      status === "ok" ||
+      status === "ready"
+    ) {
+      return true;
+    }
+    if (life === "active" || life === "ready") return true;
+    return false;
   }
 
   async listMailboxes(opts: {

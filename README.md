@@ -17,8 +17,21 @@ Internal automation service that finds new Smartlead campaigns and automatically
 6. When `ENABLE_REMEDIATION=true`, automatically remediates:
    - **Blacklisted sending domains** → delete matching Smartlead email accounts and purge the domain from InboxKit
    - **Inboxes under 80%** (not blacklisted) → remove from all ACTIVE campaigns and enable warmup to recover
+7. When `ENABLE_RECOVERY_POOL=true` (and pool inventory is in state), swaps a warmed **generic** mailbox (ESP-matched) into those campaigns with signature `First Last\\n{Client Brand}`; when the original recovers ≥80% same-ESP, swaps back and frees the generic.
 
 Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|all`).
+
+## Generic recovery pool (setup)
+
+25 `.info` domains live in InboxKit workspace **DW Generic Pool** (`data/generic-pool-domains.json`). After Porkbun nameserver updates:
+
+1. Wait **3–4 hours** for NS sync (do not buy mailboxes early).
+2. Check status: `npx tsx scripts/provision-pool-mailboxes.ts --status`
+3. Optionally poll: `npx tsx scripts/provision-pool-mailboxes.ts --wait 4`
+4. When ready: `npx tsx scripts/provision-pool-mailboxes.ts --buy` (75 mailboxes: 13 Google domains + 12 Microsoft × 3). Mailbox processing can take **6–8 hours**.
+5. Import into Smartlead, enable warmup **14 days**, no campaigns; then set `ENABLE_RECOVERY_POOL=true`.
+
+Per-client replace caps (after initial setup): **$25 domains / month** (Porkbun) and **25 mailboxes / month**.
 
 ## SmartDelivery access
 
@@ -59,6 +72,12 @@ Common optional vars:
 | `DELIVERABILITY_THRESHOLD` | `90` | Slack when inbox placement is below this % |
 | `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull non-blacklisted inboxes below this % for warmup |
 | `ENABLE_REMEDIATION` | `false` | When true, auto-delete blacklisted domains + recover low inboxes |
+| `ENABLE_RECOVERY_POOL` | `false` | Swap warmed generics into campaigns while originals recover |
+| `POOL_WARMUP_DAYS` | `14` | Days before a pool generic is free for swaps |
+| `CLIENT_DOMAIN_BUDGET_USD` | `25` | Porkbun domain $ cap per client / UTC month |
+| `CLIENT_MAILBOX_MONTHLY_CAP` | `25` | New mailboxes per client / UTC month |
+| `GENERIC_POOL_WORKSPACE_ID` | _(empty)_ | InboxKit workspace for the 75 generics |
+| `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY` | _(empty)_ | Domain purchase for replaces |
 | `INBOXKIT_API_KEY` | _(empty)_ | Required for InboxKit domain purge |
 | `INBOXKIT_WORKSPACE_ID` | _(auto)_ | Optional; resolved from InboxKit workspaces if empty |
 | `CRON_SCAN` | `0 9 * * 1,4` | Twice weekly scan |

@@ -18,6 +18,10 @@ const ConfigSchema = z.object({
   slackChannel: z.string().default("#deliverability"),
   inboxkitApiKey: z.string().default(""),
   inboxkitWorkspaceId: z.string().default(""),
+  /** Dedicated InboxKit workspace for the 75 generic recovery-pool mailboxes */
+  genericPoolWorkspaceId: z.string().default(""),
+  porkbunApiKey: z.string().default(""),
+  porkbunSecretApiKey: z.string().default(""),
   totalTestQuota: z.coerce.number().int().positive().default(120),
   maxMailboxesPerTest: z.coerce.number().int().positive().max(50).default(50),
   deliverabilityThreshold: z.coerce.number().min(0).max(100).default(90),
@@ -28,6 +32,14 @@ const ConfigSchema = z.object({
   /** Min same-ESP seed hits before trusting same-ESP % (else fall back to all-ESP). */
   minSameEspSamples: z.coerce.number().int().positive().default(3),
   recoveryHoldDays: z.coerce.number().int().positive().default(28),
+  /** Sub in warmed generics while originals recover (requires pool inventory in state). */
+  enableRecoveryPool: boolFromEnv(false),
+  /** Days of Smartlead-only warmup before a generic is free for swaps. */
+  poolWarmupDays: z.coerce.number().int().positive().default(14),
+  /** Porkbun domain spend cap per client per UTC month (USD). */
+  clientDomainBudgetUsd: z.coerce.number().nonnegative().default(25),
+  /** New mailboxes per client per UTC month (blacklist replace). */
+  clientMailboxMonthlyCap: z.coerce.number().int().nonnegative().default(25),
   warmupTotalPerDay: z.coerce.number().int().positive().default(20),
   warmupDailyRampup: z.coerce.number().int().positive().default(5),
   warmupReplyRatePercentage: z.coerce.number().int().positive().default(30),
@@ -78,6 +90,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     slackChannel: env.SLACK_CHANNEL ?? env.SLACK_CHANNEL_ID ?? "#deliverability",
     inboxkitApiKey: env.INBOXKIT_API_KEY ?? "",
     inboxkitWorkspaceId: env.INBOXKIT_WORKSPACE_ID ?? "",
+    genericPoolWorkspaceId:
+      env.GENERIC_POOL_WORKSPACE_ID ??
+      env.INBOXKIT_GENERIC_POOL_WORKSPACE_ID ??
+      "",
+    porkbunApiKey: env.PORKBUN_API_KEY ?? "",
+    porkbunSecretApiKey: env.PORKBUN_SECRET_API_KEY ?? "",
     totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
     deliverabilityThreshold: env.DELIVERABILITY_THRESHOLD ?? "90",
@@ -86,6 +104,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "28",
+    enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
+    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
+    clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
+    clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",
     warmupTotalPerDay: env.WARMUP_TOTAL_PER_DAY ?? "20",
     warmupDailyRampup: env.WARMUP_DAILY_RAMPUP ?? "5",
     warmupReplyRatePercentage: env.WARMUP_REPLY_RATE_PERCENTAGE ?? "30",

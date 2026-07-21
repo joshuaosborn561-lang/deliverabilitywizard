@@ -139,6 +139,27 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * Update email account fields (signature, from_name, etc.).
+   * Used by recovery-pool swaps to set `First Last\\n{Client Brand}`.
+   */
+  updateEmailAccount(
+    emailAccountId: number,
+    fields: {
+      signature?: string;
+      from_name?: string;
+      client_id?: number | null;
+      message_per_day?: number;
+    },
+  ): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `email-accounts/${emailAccountId}`,
+      { method: "POST", body: fields },
+    );
+  }
+
   listTags(): Promise<Array<{ id: number; name: string; color?: string }>> {
     return apiRequest(BASE_URL, this.apiKey, "email-accounts/tags");
   }

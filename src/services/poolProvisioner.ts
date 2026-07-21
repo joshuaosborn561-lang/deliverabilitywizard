@@ -524,12 +524,9 @@ export class PoolProvisioner {
         );
       }
 
-      // --- Warming / ready: keep forcing warmup so late imports never sit cold ---
-      const shouldRefreshWarmup =
-        previousPhase === "warming" ||
-        previousPhase === "ready" ||
-        phase === "warming";
-      if (shouldRefreshWarmup) {
+      // --- Warming: keep forcing warmup so late imports never sit cold ---
+      // (ready returns early above, so only warming reaches here for refresh)
+      if (previousPhase === "warming" || phase === "warming") {
         // Keep forcing warmup on every tick for any newly imported pool accounts
         try {
           const planDomains = new Set(

@@ -25,8 +25,13 @@ export interface InboxKitMailbox {
   email?: string;
   address?: string;
   domain?: string;
+  domain_name?: string;
   domain_uid?: string;
   status?: string;
+  platform?: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
 }
 
 export class InboxKitClient {
@@ -107,11 +112,8 @@ export class InboxKitClient {
   ): Promise<InboxKitDomain[]> {
     const ws = workspaceId || (await this.resolveWorkspaceId());
     const body: Record<string, unknown> = {
-      workspace_id: ws,
       page: 1,
-      current: 1,
       limit: opts.limit ?? 200,
-      page_size: opts.limit ?? 200,
     };
     if (opts.keyword) body.keyword = opts.keyword;
     const raw = await this.request<unknown>(
@@ -147,7 +149,6 @@ export class InboxKitClient {
       "POST",
       "/v1/api/domains/nameservers",
       {
-        workspace_id: ws,
         domains: domains.map((d) => d.toLowerCase()),
       },
       ws,
@@ -184,7 +185,6 @@ export class InboxKitClient {
       headers["Idempotency-Key"] = opts.idempotencyKey;
     }
     const body = {
-      workspace_id: ws,
       mailboxes,
       ...(opts.useWalletBalance ? { use_wallet_balance: true } : {}),
     };
@@ -217,6 +217,67 @@ export class InboxKitClient {
     return parsed;
   }
 
+  async listSequencers(
+    workspaceId?: string,
+  ): Promise<Array<{ uid?: string; id?: string; name?: string; platform?: string }>> {
+    const ws = workspaceId || (await this.resolveWorkspaceId());
+    const raw = await this.request<unknown>(
+      "POST",
+      "/v1/api/sequencers/list",
+      {},
+      ws,
+    );
+    return normalizeList(raw, ["data", "sequencers", "result", "items"]);
+  }
+
+  async addSequencer(
+    fields: Record<string, unknown>,
+    workspaceId?: string,
+  ): Promise<string> {
+    const ws = workspaceId || (await this.resolveWorkspaceId());
+    const raw = await this.request<{ uid?: string; data?: { uid?: string } }>(
+      "POST",
+      "/v1/api/sequencers/add",
+      fields,
+      ws,
+    );
+    const uid = raw.uid || raw.data?.uid;
+    if (!uid) {
+      throw new ApiError("InboxKit add sequencer returned no uid", 500, raw);
+    }
+    return uid;
+  }
+
+  async exportMailboxesToSequencer(
+    sequencerUid: string,
+    mailboxUids: string[],
+    workspaceId?: string,
+  ): Promise<unknown> {
+    const ws = workspaceId || (await this.resolveWorkspaceId());
+    return this.request(
+      "POST",
+      "/v1/api/sequencers/export",
+      { sequencer_uid: sequencerUid, mailbox_uids: mailboxUids },
+      ws,
+    );
+  }
+
+  async getExportStatus(
+    workspaceId?: string,
+    opts: { sequencerUid?: string; status?: string } = {},
+  ): Promise<unknown> {
+    const ws = workspaceId || (await this.resolveWorkspaceId());
+    const body: Record<string, unknown> = {};
+    if (opts.sequencerUid) body.sequencer_uid = opts.sequencerUid;
+    if (opts.status) body.status = opts.status;
+    return this.request(
+      "POST",
+      "/v1/api/sequencers/export/status",
+      body,
+      ws,
+    );
+  }
+
   /** True when InboxKit reports nameservers as matched/propagated. */
   static nameserversReady(domain: InboxKitDomain): boolean {
     const status = String(domain.nameserver_match_status ?? "").toLowerCase();
@@ -239,9 +300,13 @@ export class InboxKitClient {
     domainUid?: string;
     keyword?: string;
     workspaceId?: string;
+    limit?: number;
   } = {}): Promise<InboxKitMailbox[]> {
     const ws = opts.workspaceId || (await this.resolveWorkspaceId());
-    const body: Record<string, unknown> = { page: 1, limit: 200 };
+    const body: Record<string, unknown> = {
+      page: 1,
+      limit: opts.limit ?? 200,
+    };
     if (opts.domain) body.domain = opts.domain;
     if (opts.domainUid) body.domain_uid = opts.domainUid;
     if (opts.keyword) body.keyword = opts.keyword;

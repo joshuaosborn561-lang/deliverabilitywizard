@@ -22,6 +22,33 @@ export type PoolMailboxStatus =
   | "assigned"
   | "provisioning";
 
+export type PoolProvisionPhase =
+  | "idle"
+  | "awaiting_ns"
+  | "buying"
+  | "awaiting_mailboxes"
+  | "awaiting_sequencer"
+  | "exporting"
+  | "awaiting_export"
+  | "importing_state"
+  | "warming"
+  | "ready"
+  | "failed";
+
+export interface PoolProvisionState {
+  phase: PoolProvisionPhase;
+  lastCheckedAt?: string;
+  lastMessage?: string;
+  lastError?: string;
+  nsMatched?: number;
+  nsTotal?: number;
+  mailboxOrdered?: number;
+  mailboxActive?: number;
+  sequencerUid?: string;
+  warmupStartedAt?: string;
+  completedAt?: string;
+}
+
 export interface PoolMailboxRecord {
   email: string;
   domain: string;
@@ -72,6 +99,8 @@ export interface AppState {
   activeSwaps: Record<string, ActiveSwapRecord>;
   /** Per-client monthly domain $ / mailbox caps (key = client id or name) */
   clientMonthlyUsage: Record<string, MonthlyUsageBucket>;
+  /** Self-advancing pool provisioning pipeline */
+  poolProvision: PoolProvisionState;
 }
 
 export interface HeldInboxRecord {
@@ -89,6 +118,10 @@ export interface HeldInboxRecord {
   swappedWithPoolEmail?: string;
 }
 
+const EMPTY_POOL_PROVISION: PoolProvisionState = {
+  phase: "idle",
+};
+
 const EMPTY_STATE: AppState = {
   version: 1,
   lastScanAt: null,
@@ -101,6 +134,7 @@ const EMPTY_STATE: AppState = {
   poolMailboxes: {},
   activeSwaps: {},
   clientMonthlyUsage: {},
+  poolProvision: { ...EMPTY_POOL_PROVISION },
 };
 
 export class StateStore {
@@ -123,6 +157,10 @@ export class StateStore {
         poolMailboxes: parsed.poolMailboxes ?? {},
         activeSwaps: parsed.activeSwaps ?? {},
         clientMonthlyUsage: parsed.clientMonthlyUsage ?? {},
+        poolProvision: {
+          ...EMPTY_POOL_PROVISION,
+          ...(parsed.poolProvision ?? {}),
+        },
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -197,6 +235,17 @@ export class StateStore {
       }
     }
     return cleared;
+  }
+
+  getPoolProvision(): PoolProvisionState {
+    return this.state.poolProvision;
+  }
+
+  setPoolProvision(patch: Partial<PoolProvisionState>): void {
+    this.state.poolProvision = {
+      ...this.state.poolProvision,
+      ...patch,
+    };
   }
 
   upsertPoolMailbox(record: PoolMailboxRecord): void {

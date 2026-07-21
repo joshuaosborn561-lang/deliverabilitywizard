@@ -23,13 +23,17 @@ Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|all`)
 
 ## Generic recovery pool (setup)
 
-25 `.info` domains live in InboxKit workspace **DW Generic Pool** (`data/generic-pool-domains.json`). After Porkbun nameserver updates:
+25 `.info` domains live in InboxKit workspace **DW Generic Pool** (`data/generic-pool-domains.json`).
 
-1. Wait **3–4 hours** for NS sync (do not buy mailboxes early).
-2. Check status: `npx tsx scripts/provision-pool-mailboxes.ts --status`
-3. Optionally poll: `npx tsx scripts/provision-pool-mailboxes.ts --wait 4`
-4. When ready: `npx tsx scripts/provision-pool-mailboxes.ts --buy` (75 mailboxes: 13 Google domains + 12 Microsoft × 3). Mailbox processing can take **6–8 hours**.
-5. Import into Smartlead, enable warmup **14 days**, no campaigns; then set `ENABLE_RECOVERY_POOL=true`.
+**You do not need to babysit.** With `ENABLE_POOL_PROVISIONER=true` (default), a cron (`CRON_POOL_PROVISION`, every 30m) self-advances:
+
+`awaiting_ns` → `buying` → `awaiting_mailboxes` → `awaiting_sequencer` → `exporting` → `awaiting_export` → `warming` → `ready`
+
+Slack pings only on phase transitions / the one-time Smartlead login need.
+
+One-time requirement for Smartlead export: set `SMARTLEAD_LOGIN_EMAIL` + `SMARTLEAD_LOGIN_PASSWORD` on Railway, **or** connect Smartlead once in InboxKit → DW Generic Pool → Sequencers. After that, cron finishes export + 14-day warmup alone.
+
+Manual kick: `POST /run?mode=pool`.
 
 Per-client replace caps (after initial setup): **$25 domains / month** (Porkbun) and **25 mailboxes / month**.
 

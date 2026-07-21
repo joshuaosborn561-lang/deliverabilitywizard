@@ -22,6 +22,12 @@ const ConfigSchema = z.object({
   genericPoolWorkspaceId: z.string().default(""),
   porkbunApiKey: z.string().default(""),
   porkbunSecretApiKey: z.string().default(""),
+  /** Self-advancing cron that polls NS → buy → export → warmup → ready */
+  enablePoolProvisioner: boolFromEnv(true),
+  cronPoolProvision: z.string().default("*/30 * * * *"),
+  /** InboxKit→Smartlead sequencer login (one-time; password not the API key) */
+  smartleadLoginEmail: z.string().default(""),
+  smartleadLoginPassword: z.string().default(""),
   totalTestQuota: z.coerce.number().int().positive().default(120),
   maxMailboxesPerTest: z.coerce.number().int().positive().max(50).default(50),
   deliverabilityThreshold: z.coerce.number().min(0).max(100).default(90),
@@ -96,6 +102,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       "",
     porkbunApiKey: env.PORKBUN_API_KEY ?? "",
     porkbunSecretApiKey: env.PORKBUN_SECRET_API_KEY ?? "",
+    enablePoolProvisioner: env.ENABLE_POOL_PROVISIONER,
+    cronPoolProvision: env.CRON_POOL_PROVISION ?? "*/30 * * * *",
+    smartleadLoginEmail: env.SMARTLEAD_LOGIN_EMAIL ?? "",
+    smartleadLoginPassword: env.SMARTLEAD_LOGIN_PASSWORD ?? "",
     totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
     deliverabilityThreshold: env.DELIVERABILITY_THRESHOLD ?? "90",

@@ -9,6 +9,7 @@ import { StateStore } from "./state/store.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
+import { PoolProvisioner } from "./services/poolProvisioner.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -27,7 +28,12 @@ async function main(): Promise<void> {
     config.smartDeliveryApiKey || "missing",
   );
   const inboxkit = config.inboxkitApiKey
-    ? new InboxKitClient(config.inboxkitApiKey, config.inboxkitWorkspaceId || undefined)
+    ? new InboxKitClient(
+        config.inboxkitApiKey,
+        config.inboxkitWorkspaceId ||
+          config.genericPoolWorkspaceId ||
+          undefined,
+      )
     : null;
   const slack = new SlackClient({
     webhookUrl: config.slackWebhookUrl,
@@ -45,10 +51,18 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const poolProvisioner = new PoolProvisioner(
+    config,
+    inboxkit,
+    smartlead,
+    slack,
+    state,
+  );
 
   let scanInFlight: Promise<unknown> | null = null;
   let monitorInFlight: Promise<unknown> | null = null;
   let remediationInFlight: Promise<unknown> | null = null;
+  let poolInFlight: Promise<unknown> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -72,6 +86,17 @@ async function main(): Promise<void> {
       remediationInFlight = null;
     });
     return remediationInFlight;
+  };
+
+  const runPoolProvision = async () => {
+    if (poolInFlight) {
+      console.log("[pool-provision] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    poolInFlight = poolProvisioner.run().finally(() => {
+      poolInFlight = null;
+    });
+    return poolInFlight;
   };
 
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
@@ -102,6 +127,11 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronMonitor)) {
     throw new Error(`Invalid CRON_MONITOR expression: ${config.cronMonitor}`);
   }
+  if (!cron.validate(config.cronPoolProvision)) {
+    throw new Error(
+      `Invalid CRON_POOL_PROVISION expression: ${config.cronPoolProvision}`,
+    );
+  }
 
   cron.schedule(config.cronScan, () => {
     void runScan("cron").catch((error) => {
@@ -115,6 +145,19 @@ async function main(): Promise<void> {
     });
   });
 
+  if (config.enablePoolProvisioner) {
+    cron.schedule(config.cronPoolProvision, () => {
+      void runPoolProvision().catch((error) => {
+        console.error("[pool-provision] Unhandled cron error", error);
+      });
+    });
+    // Kick once shortly after boot so we don't wait up to 30m
+    setTimeout(() => {
+      void runPoolProvision().catch((error) => {
+        console.error("[pool-provision] Boot kick failed", error);
+      });
+    }, 15_000);
+  }
   const app = express();
   app.use(express.json({ limit: "100kb" }));
 
@@ -139,8 +182,11 @@ async function main(): Promise<void> {
       minSameEspSamples: config.minSameEspSamples,
       enableRecoveryPool: config.enableRecoveryPool,
       poolWarmupDays: config.poolWarmupDays,
+      enablePoolProvisioner: config.enablePoolProvisioner,
+      poolProvisionPhase: s.poolProvision?.phase ?? "idle",
       poolMailboxCount: Object.keys(s.poolMailboxes).length,
       activeSwapCount: Object.keys(s.activeSwaps).length,
+      cronPoolProvision: config.cronPoolProvision,
     });
   });
 
@@ -151,6 +197,7 @@ async function main(): Promise<void> {
         campaignStatuses: config.campaignStatuses,
         cronScan: config.cronScan,
         cronMonitor: config.cronMonitor,
+        cronPoolProvision: config.cronPoolProvision,
         totalTestQuota: config.totalTestQuota,
         maxMailboxesPerTest: config.maxMailboxesPerTest,
         deliverabilityThreshold: config.deliverabilityThreshold,
@@ -159,6 +206,7 @@ async function main(): Promise<void> {
         minSameEspSamples: config.minSameEspSamples,
         enableRemediation: config.enableRemediation,
         enableRecoveryPool: config.enableRecoveryPool,
+        enablePoolProvisioner: config.enablePoolProvisioner,
         poolWarmupDays: config.poolWarmupDays,
         clientDomainBudgetUsd: config.clientDomainBudgetUsd,
         clientMailboxMonthlyCap: config.clientMailboxMonthlyCap,
@@ -206,15 +254,24 @@ async function main(): Promise<void> {
         });
         return;
       }
+      if (mode === "pool" || mode === "pool-provision") {
+        const result = await runPoolProvision();
+        res.json({ ok: true, mode: "pool", result });
+        return;
+      }
       if (mode === "both" || mode === "all") {
         const scan = await runScan("manual");
         const monitorBundle = await runMonitor({ remediate: true });
+        const pool = config.enablePoolProvisioner
+          ? await runPoolProvision()
+          : null;
         res.json({
           ok: true,
           mode,
           scan,
           monitor: (monitorBundle as { monitor?: unknown })?.monitor ?? monitorBundle,
           remediation: (monitorBundle as { remediation?: unknown })?.remediation ?? null,
+          pool,
         });
         return;
       }
@@ -235,6 +292,9 @@ async function main(): Promise<void> {
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
+    );
+    console.log(
+      `[boot] Pool provisioner: ${config.enablePoolProvisioner ? `ENABLED (${config.cronPoolProvision})` : "disabled"} phase=${state.get().poolProvision.phase}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(`[boot] State file: ${config.stateFilePath}`);

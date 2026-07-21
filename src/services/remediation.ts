@@ -582,13 +582,7 @@ export class RemediationService {
       ["ACTIVE", "PAUSED"].includes(String(c.status ?? "").toUpperCase()),
     );
     const domainToCampaignIds = new Map<string, number[]>();
-    const clientToCampaignIds = new Map<number, number[]>();
     for (const campaign of attachable) {
-      if (typeof campaign.client_id === "number") {
-        const list = clientToCampaignIds.get(campaign.client_id) ?? [];
-        list.push(campaign.id);
-        clientToCampaignIds.set(campaign.client_id, list);
-      }
       try {
         const onCampaign = await this.smartlead.getCampaignEmailAccounts(
           campaign.id,
@@ -670,20 +664,14 @@ export class RemediationService {
       const targetCampaigns = new Set<number>(
         record.removedFromCampaigns ?? [],
       );
+      // Only reattach where the same sending domain is already present on an
+      // ACTIVE/PAUSED campaign — never dump onto every campaign for the client.
       if (domain) {
         for (const id of domainToCampaignIds.get(domain) ?? []) {
           targetCampaigns.add(id);
         }
       }
-      if (typeof client.clientId === "number") {
-        // Prefer ACTIVE/PAUSED campaigns for this client when domain map is empty
-        if (targetCampaigns.size === 0) {
-          for (const id of clientToCampaignIds.get(client.clientId) ?? []) {
-            targetCampaigns.add(id);
-          }
-        }
-      }
-      // Never reattach to COMPLETED-only leftovers stored on the account
+      // Keep if the account is still linked to an attachable campaign in Smartlead
       for (const id of campaignIdsOf(account)) {
         const camp = attachable.find((c) => c.id === id);
         if (camp) targetCampaigns.add(id);

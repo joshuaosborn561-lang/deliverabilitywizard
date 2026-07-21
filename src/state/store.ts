@@ -31,6 +31,10 @@ export interface HeldInboxRecord {
   holdUntil: string;
   tagName: string;
   inboxRate?: number;
+  inboxRateAll?: number;
+  inboxRateSameEsp?: number;
+  scoredSameEsp?: boolean;
+  removedFromCampaigns?: number[];
 }
 
 const EMPTY_STATE: AppState = {
@@ -115,6 +119,14 @@ export class StateStore {
 
   listHeldInboxes(): HeldInboxRecord[] {
     return Object.values(this.state.heldInboxes);
+  }
+
+  clearHeldInbox(email: string): void {
+    delete this.state.heldInboxes[email.toLowerCase()];
+  }
+
+  clearInboxRemediation(email: string): void {
+    delete this.state.remediatedKeys[`remediate-inbox:${email.toLowerCase()}`];
   }
 
   /** Drop inbox-recovery dedupe keys so a follow-up run can retry rate-limited work. */

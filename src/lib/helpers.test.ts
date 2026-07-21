@@ -216,6 +216,79 @@ describe("sender inbox rate parsing", () => {
     );
   });
 
+  it("scores Gmail senders on G Suite seeds only (same-ESP)", async () => {
+    const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
+    const googleAuth = {
+      spf_result: { spf: "google.com: domain of a@brand.com" },
+      dkim_result: { dkim: "mx.google.com; dkim=pass" },
+    };
+    const outlookAuth = {
+      spf_result: {
+        spf: "Pass (protection.outlook.com: domain of brand.com)",
+      },
+      dkim_result: { dkim: "protection.outlook.com; dkim=pass" },
+    };
+    const rows = parseSenderInboxRates(
+      [
+        {
+          email: "gmail-sender@brand.com",
+          details: [
+            { reply: { mail_folder: "Inbox", ...googleAuth } },
+            { reply: { mail_folder: "Inbox", ...googleAuth } },
+            { reply: { mail_folder: "Inbox", ...googleAuth } },
+            { reply: { mail_folder: "Spam", ...outlookAuth } },
+            { reply: { mail_folder: "Spam", ...outlookAuth } },
+            { reply: { mail_folder: "Spam", ...outlookAuth } },
+          ],
+        },
+      ],
+      "t1",
+      {
+        senderTypeByEmail: new Map([["gmail-sender@brand.com", "GMAIL"]]),
+        preferSameEsp: true,
+        minSameEspSamples: 3,
+      },
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.inboxRateAll, 50);
+    assert.equal(rows[0]?.inboxRateSameEsp, 100);
+    assert.equal(rows[0]?.inboxRate, 100);
+    assert.equal(rows[0]?.scoredSameEsp, true);
+    assert.equal(rows[0]?.sameEspSamples, 3);
+  });
+
+  it("falls back to all-ESP when same-ESP samples are below minimum", async () => {
+    const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
+    const googleAuth = {
+      dkim_result: { dkim: "mx.google.com; dkim=pass" },
+    };
+    const outlookAuth = {
+      spf_result: { spf: "Pass (protection.outlook.com: domain of x.com)" },
+    };
+    const rows = parseSenderInboxRates(
+      [
+        {
+          email: "outlook-sender@brand.com",
+          details: [
+            { reply: { mail_folder: "Spam", ...outlookAuth } },
+            { reply: { mail_folder: "Inbox", ...googleAuth } },
+            { reply: { mail_folder: "Inbox", ...googleAuth } },
+            { reply: { mail_folder: "Inbox", ...googleAuth } },
+          ],
+        },
+      ],
+      undefined,
+      {
+        senderTypeByEmail: new Map([["outlook-sender@brand.com", "OUTLOOK"]]),
+        preferSameEsp: true,
+        minSameEspSamples: 3,
+      },
+    );
+    assert.equal(rows[0]?.sameEspSamples, 1);
+    assert.equal(rows[0]?.scoredSameEsp, false);
+    assert.equal(rows[0]?.inboxRate, 75);
+  });
+
   it("computes inbox rate from inbox_count when avg is missing", async () => {
     const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
     const rows = parseSenderInboxRates({

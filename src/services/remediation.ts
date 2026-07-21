@@ -7,6 +7,7 @@ import {
   parseIpBlacklistHits,
   parseSenderInboxRates,
   uniqueBlacklistedDomains,
+  type SenderInboxRate,
 } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
@@ -31,6 +32,28 @@ export interface ClientBackfillAction {
   pausedCampaignIds: number[];
 }
 
+export interface RestoredInbox {
+  id: number;
+  email: string;
+  inboxRate: number;
+  inboxRateAll?: number;
+  reattachedCampaignIds: number[];
+  holdTagRemoved?: boolean;
+  clientId?: number | null;
+  clientName?: string;
+  reason: string;
+}
+
+export interface SameEspAuditResult {
+  dryRun: boolean;
+  scoredSenders: number;
+  falseHoldsFound: number;
+  restored: RestoredInbox[];
+  stillHeldBelowThreshold: number;
+  skippedLowSamples: number;
+  errors: string[];
+}
+
 export interface RemediationResult {
   blacklistedDomains: string[];
   deletedSmartleadAccounts: Array<{
@@ -45,6 +68,8 @@ export interface RemediationResult {
     id: number;
     email: string;
     inboxRate: number;
+    inboxRateAll?: number;
+    scoredSameEsp?: boolean;
     removedFromCampaigns: number[];
     holdUntil?: string;
     tagName?: string;
@@ -52,6 +77,7 @@ export interface RemediationResult {
     clientId?: number | null;
     clientName?: string;
   }>;
+  sameEspAudit?: SameEspAuditResult;
   clientActions: ClientBackfillAction[];
   holdTagged: number;
   pausedCampaigns: number[];
@@ -90,7 +116,7 @@ export class RemediationService {
     }
 
     console.log(
-      `[remediation] Starting (${result.dryRun ? "DRY RUN" : "LIVE"})`,
+      `[remediation] Starting (${result.dryRun ? "DRY RUN" : "LIVE"}; same-ESP=${this.config.scoreSameEspOnly})`,
     );
 
     const testIds = [
@@ -99,7 +125,26 @@ export class RemediationService {
       ),
     ];
 
-    // 1) Collect blacklisted sending domains from SmartDelivery reports
+    // 1) Load Smartlead accounts (needed for ESP type → same-ESP scoring)
+    let accounts: SmartleadAccountWithCampaigns[] = [];
+    try {
+      accounts = await this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: true,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`list email accounts: ${message}`);
+      await this.finish(result);
+      return result;
+    }
+
+    const senderTypeByEmail = new Map<string, string | undefined>();
+    for (const account of accounts) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (email) senderTypeByEmail.set(email, account.type);
+    }
+
+    // 2) Collect blacklisted sending domains from SmartDelivery reports
     const blacklistHits = [];
     for (const testId of testIds.slice(0, 40)) {
       try {
@@ -122,17 +167,21 @@ export class RemediationService {
     result.blacklistedDomains = blacklistedDomains;
     const blacklistedSet = new Set(blacklistedDomains);
 
-    // 2) Collect per-sender inbox rates
-    const inboxRates = new Map<string, number>();
+    // 3) Collect per-sender inbox rates (same-ESP when ESP matching is on)
+    const inboxRateRows = new Map<string, SenderInboxRate>();
     for (const testId of testIds.slice(0, 40)) {
       try {
         const raw = await this.smartDelivery.getSenderAccountReport(testId);
-        for (const row of parseSenderInboxRates(raw, testId)) {
+        for (const row of parseSenderInboxRates(raw, testId, {
+          senderTypeByEmail,
+          preferSameEsp: this.config.scoreSameEspOnly,
+          minSameEspSamples: this.config.minSameEspSamples,
+        })) {
           const key = row.email.toLowerCase();
-          const prev = inboxRates.get(key);
-          // Keep the worst (lowest) observed rate
-          if (prev === undefined || row.inboxRate < prev) {
-            inboxRates.set(key, row.inboxRate);
+          const prev = inboxRateRows.get(key);
+          // Keep the worst (lowest) observed decision rate
+          if (prev === undefined || row.inboxRate < prev.inboxRate) {
+            inboxRateRows.set(key, row);
           }
         }
       } catch (error) {
@@ -141,38 +190,45 @@ export class RemediationService {
       }
     }
 
-    // Also fold mailbox-summary placement scores
-    try {
-      const summary = await this.smartDelivery.getMailboxSummary();
-      if (Array.isArray(summary)) {
-        for (const row of summary) {
-          const email = row.from_email?.trim().toLowerCase();
-          const score =
-            typeof row.placement_score === "number"
-              ? row.placement_score
-              : undefined;
-          if (!email || score === undefined) continue;
-          const prev = inboxRates.get(email);
-          if (prev === undefined || score < prev) inboxRates.set(email, score);
+    // Mailbox-summary is blended across ESPs — skip when scoring same-ESP only.
+    if (!this.config.scoreSameEspOnly) {
+      try {
+        const summary = await this.smartDelivery.getMailboxSummary();
+        if (Array.isArray(summary)) {
+          for (const row of summary) {
+            const email = row.from_email?.trim().toLowerCase();
+            const score =
+              typeof row.placement_score === "number"
+                ? row.placement_score
+                : undefined;
+            if (!email || score === undefined) continue;
+            const prev = inboxRateRows.get(email);
+            if (prev === undefined || score < prev.inboxRate) {
+              inboxRateRows.set(email, {
+                email,
+                inboxRate: score,
+                scoredSameEsp: false,
+              });
+            }
+          }
         }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`mailbox-summary: ${message}`);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`mailbox-summary: ${message}`);
     }
 
-    // 3) Load Smartlead accounts
-    let accounts: SmartleadAccountWithCampaigns[] = [];
-    try {
-      accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: true,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`list email accounts: ${message}`);
-      await this.finish(result);
-      return result;
-    }
+    const inboxRates = new Map<string, number>(
+      [...inboxRateRows.entries()].map(([k, v]) => [k, v.inboxRate]),
+    );
+
+    // 3b) Undo prior pulls that fail the same-ESP audit (blended false positives)
+    result.sameEspAudit = await this.auditAndRestoreFalseHolds({
+      accounts,
+      inboxRateRows,
+      dryRun: result.dryRun,
+    });
+    result.errors.push(...result.sameEspAudit.errors);
 
     // Index campaigns for status + client ownership
     let campaignStatus = new Map<number, string>();
@@ -272,6 +328,9 @@ export class RemediationService {
       email: string;
       rate: number;
       heldAt: string;
+      removedFromCampaigns?: number[];
+      inboxRateAll?: number;
+      scoredSameEsp?: boolean;
     }> = [];
 
     const recoverCandidates = accounts.filter((account) => {
@@ -286,9 +345,11 @@ export class RemediationService {
 
     for (const account of recoverCandidates) {
       const email = accountEmail(account)!;
+      const rateRow = inboxRateRows.get(email.toLowerCase());
       const rate = inboxRates.get(email.toLowerCase())!;
       const key = `remediate-inbox:${email.toLowerCase()}`;
       if (this.state.hasRemediation(key)) continue;
+      if (this.state.getHeldInbox(email)) continue;
 
       const campaignIds = campaignIdsOf(account).filter((id) => {
         const status = campaignStatus.get(id);
@@ -392,6 +453,9 @@ export class RemediationService {
               email,
               rate,
               heldAt: new Date().toISOString(),
+              removedFromCampaigns: [],
+              inboxRateAll: rateRow?.inboxRateAll,
+              scoredSameEsp: rateRow?.scoredSameEsp,
             });
             tagName = holdTag.name;
           } else {
@@ -407,12 +471,17 @@ export class RemediationService {
         id: account.id,
         email,
         inboxRate: rate,
+        inboxRateAll: rateRow?.inboxRateAll,
+        scoredSameEsp: rateRow?.scoredSameEsp,
         removedFromCampaigns: removedFrom,
         holdUntil: holdUntilDate,
         tagName,
         warmupEnabled: warmupOk,
         ...accountClient(account),
       });
+
+      const pending = pendingHold.find((p) => p.accountId === account.id);
+      if (pending) pending.removedFromCampaigns = removedFrom;
 
       if (warmupOk && removeFailures === 0) {
         this.state.markRemediation(key);
@@ -450,6 +519,9 @@ export class RemediationService {
               holdUntil: holdUntilDate,
               tagName: holdTag.name,
               inboxRate: row.rate,
+              inboxRateAll: row.inboxRateAll,
+              scoredSameEsp: row.scoredSameEsp,
+              removedFromCampaigns: row.removedFromCampaigns,
             });
           }
           await sleep(300);
@@ -465,6 +537,236 @@ export class RemediationService {
     result.clientActions = buildClientBackfillActions(result);
     await this.finish(result);
     return result;
+  }
+
+  /**
+   * Re-score held inboxes with same-ESP rules and restore any that were
+   * pulled only because cross-ESP (blended) scores looked bad.
+   */
+  async auditAndRestoreFalseHolds(opts: {
+    accounts: SmartleadAccountWithCampaigns[];
+    inboxRateRows: Map<string, SenderInboxRate>;
+    dryRun: boolean;
+  }): Promise<SameEspAuditResult> {
+    const out: SameEspAuditResult = {
+      dryRun: opts.dryRun,
+      scoredSenders: opts.inboxRateRows.size,
+      falseHoldsFound: 0,
+      restored: [],
+      stillHeldBelowThreshold: 0,
+      skippedLowSamples: 0,
+      errors: [],
+    };
+
+    if (!this.config.scoreSameEspOnly) return out;
+
+    const threshold = this.config.remediationInboxThreshold;
+    const minSame = this.config.minSameEspSamples;
+    const byEmail = new Map(
+      opts.accounts
+        .map((a) => [accountEmail(a)?.toLowerCase(), a] as const)
+        .filter((x): x is [string, SmartleadAccountWithCampaigns] => Boolean(x[0])),
+    );
+
+    // Index ACTIVE/PAUSED campaigns by client and by domain currently on them
+    let campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>> = [];
+    try {
+      campaigns = await this.smartlead.listCampaigns();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      out.errors.push(`audit list campaigns: ${message}`);
+      return out;
+    }
+
+    const attachable = campaigns.filter((c) =>
+      ["ACTIVE", "PAUSED"].includes(String(c.status ?? "").toUpperCase()),
+    );
+    const domainToCampaignIds = new Map<string, number[]>();
+    const clientToCampaignIds = new Map<number, number[]>();
+    for (const campaign of attachable) {
+      if (typeof campaign.client_id === "number") {
+        const list = clientToCampaignIds.get(campaign.client_id) ?? [];
+        list.push(campaign.id);
+        clientToCampaignIds.set(campaign.client_id, list);
+      }
+      try {
+        const onCampaign = await this.smartlead.getCampaignEmailAccounts(
+          campaign.id,
+        );
+        for (const account of onCampaign) {
+          const domain = accountDomain(account);
+          if (!domain) continue;
+          const list = domainToCampaignIds.get(domain) ?? [];
+          if (!list.includes(campaign.id)) list.push(campaign.id);
+          domainToCampaignIds.set(domain, list);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        out.errors.push(`audit campaign accounts ${campaign.id}: ${message}`);
+      }
+      await sleep(120);
+    }
+
+    let clientsById = new Map<number, SmartleadClientRecord>();
+    let campaignClientById = new Map<number, number | null | undefined>();
+    try {
+      const clients = await this.smartlead.listClients();
+      clientsById = new Map(clients.map((c) => [c.id, c]));
+      for (const c of campaigns) {
+        campaignClientById.set(c.id, c.client_id);
+      }
+    } catch {
+      // non-fatal for restore labeling
+    }
+
+    // Resolve HOLD tag id(s) once
+    let holdTags: Array<{ id: number; name: string }> = [];
+    try {
+      const tags = await this.smartlead.listTags();
+      holdTags = tags.filter((t) =>
+        /^HOLD-UNTIL-/i.test(String(t.name ?? "")),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      out.errors.push(`audit list tags: ${message}`);
+    }
+
+    const held = this.state.listHeldInboxes();
+    for (const record of held) {
+      const email = record.email.toLowerCase();
+      const row = opts.inboxRateRows.get(email);
+      if (!row) continue;
+
+      const sameSamples = row.sameEspSamples ?? 0;
+      const sameRate = row.inboxRateSameEsp;
+      const allRate = row.inboxRateAll ?? row.inboxRate;
+
+      if (typeof sameRate !== "number" || sameSamples < minSame) {
+        out.skippedLowSamples += 1;
+        // Fall back: if decision rate (possibly blended) is still bad, count as held-bad
+        if (row.inboxRate < threshold) out.stillHeldBelowThreshold += 1;
+        continue;
+      }
+
+      // Held but same-ESP is healthy → restore (prior blended-score false positive)
+      if (sameRate < threshold) {
+        out.stillHeldBelowThreshold += 1;
+        continue;
+      }
+
+      out.falseHoldsFound += 1;
+      const account = byEmail.get(email);
+      if (!account) {
+        out.errors.push(`audit restore ${email}: account not found`);
+        continue;
+      }
+
+      const client = resolveAccountClient(
+        account,
+        campaignClientById,
+        clientsById,
+      );
+      const domain = accountDomain(account);
+      const targetCampaigns = new Set<number>(
+        record.removedFromCampaigns ?? [],
+      );
+      if (domain) {
+        for (const id of domainToCampaignIds.get(domain) ?? []) {
+          targetCampaigns.add(id);
+        }
+      }
+      if (typeof client.clientId === "number") {
+        // Prefer ACTIVE/PAUSED campaigns for this client when domain map is empty
+        if (targetCampaigns.size === 0) {
+          for (const id of clientToCampaignIds.get(client.clientId) ?? []) {
+            targetCampaigns.add(id);
+          }
+        }
+      }
+      // Never reattach to COMPLETED-only leftovers stored on the account
+      for (const id of campaignIdsOf(account)) {
+        const camp = attachable.find((c) => c.id === id);
+        if (camp) targetCampaigns.add(id);
+      }
+
+      const reattached: number[] = [];
+      let holdTagRemoved = false;
+
+      try {
+        if (!opts.dryRun) {
+          const tagIds = new Set<number>();
+          for (const t of holdTags) tagIds.add(t.id);
+          for (const t of account.tags ?? []) {
+            const id = t.tag_id ?? t.id;
+            const name = t.tag_name ?? t.name ?? "";
+            if (typeof id === "number" && /^HOLD-UNTIL-/i.test(name)) {
+              tagIds.add(id);
+            }
+          }
+          if (tagIds.size) {
+            await this.smartlead.removeTags(account.id ? [account.id] : [], [
+              ...tagIds,
+            ]);
+            holdTagRemoved = true;
+            await sleep(250);
+          }
+
+          for (const campaignId of targetCampaigns) {
+            try {
+              const onCampaign =
+                await this.smartlead.getCampaignEmailAccounts(campaignId);
+              if (onCampaign.some((a) => a.id === account.id)) {
+                reattached.push(campaignId);
+                continue;
+              }
+              await this.smartlead.addEmailAccountsToCampaign(campaignId, [
+                account.id,
+              ]);
+              reattached.push(campaignId);
+              await sleep(350);
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              out.errors.push(
+                `reattach ${email} → campaign ${campaignId}: ${message}`,
+              );
+            }
+          }
+
+          this.state.clearHeldInbox(email);
+          this.state.clearInboxRemediation(email);
+        } else {
+          holdTagRemoved = true;
+          reattached.push(...targetCampaigns);
+        }
+
+        out.restored.push({
+          id: account.id,
+          email,
+          inboxRate: sameRate,
+          inboxRateAll: allRate,
+          reattachedCampaignIds: reattached,
+          holdTagRemoved,
+          clientId: client.clientId,
+          clientName: client.clientName,
+          reason: `same-ESP ${sameRate.toFixed(1)}% (≥${threshold}%) over ${sameSamples} seeds; blended was ${
+            typeof allRate === "number" ? `${allRate.toFixed(1)}%` : "n/a"
+          }`,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        out.errors.push(`audit restore ${email}: ${message}`);
+      }
+    }
+
+    console.log("[remediation] same-ESP audit", {
+      falseHoldsFound: out.falseHoldsFound,
+      restored: out.restored.length,
+      stillHeldBelowThreshold: out.stillHeldBelowThreshold,
+      errors: out.errors.length,
+    });
+
+    return out;
   }
 
   private async backfillHoldTags(opts: {
@@ -584,7 +886,8 @@ export class RemediationService {
       result.recoveredInboxes.length > 0 ||
       result.blacklistedDomains.length > 0 ||
       result.holdTagged > 0 ||
-      result.clientActions.length > 0;
+      result.clientActions.length > 0 ||
+      (result.sameEspAudit?.restored.length ?? 0) > 0;
 
     if (acted || result.errors.length) {
       await this.slack.notifyRemediation(result).catch((error) => {

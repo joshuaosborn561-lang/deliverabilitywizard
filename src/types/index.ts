@@ -13,11 +13,20 @@ export interface SmartleadEmailAccount {
   from_name?: string;
   username?: string;
   email?: string;
+  /** Smartlead mailbox ESP type, e.g. GMAIL / OUTLOOK */
+  type?: string;
   client_id?: number | null;
   is_smtp_success?: boolean;
   is_imap_success?: boolean;
   message_per_day?: number;
   daily_sent_count?: number;
+  tags?: Array<{
+    tag_id?: number;
+    id?: number;
+    tag_name?: string;
+    name?: string;
+    tag_color?: string;
+  }>;
 }
 
 export interface SmartleadSequenceVariant {

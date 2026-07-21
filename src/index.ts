@@ -135,6 +135,8 @@ async function main(): Promise<void> {
       totalTestQuota: config.totalTestQuota,
       maxMailboxesPerTest: config.maxMailboxesPerTest,
       remediationInboxThreshold: config.remediationInboxThreshold,
+      scoreSameEspOnly: config.scoreSameEspOnly,
+      minSameEspSamples: config.minSameEspSamples,
     });
   });
 
@@ -149,6 +151,8 @@ async function main(): Promise<void> {
         maxMailboxesPerTest: config.maxMailboxesPerTest,
         deliverabilityThreshold: config.deliverabilityThreshold,
         remediationInboxThreshold: config.remediationInboxThreshold,
+        scoreSameEspOnly: config.scoreSameEspOnly,
+        minSameEspSamples: config.minSameEspSamples,
         enableRemediation: config.enableRemediation,
         inboxkitConfigured: Boolean(config.inboxkitApiKey),
         sequenceNumber: config.sequenceNumber,

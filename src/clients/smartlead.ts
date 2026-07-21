@@ -96,6 +96,16 @@ export class SmartleadClient {
     });
   }
 
+  addEmailAccountsToCampaign(
+    campaignId: number,
+    emailAccountIds: number[],
+  ): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
+      method: "POST",
+      body: { email_account_ids: emailAccountIds },
+    });
+  }
+
   deleteEmailAccount(emailAccountId: number): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, `email-accounts/${emailAccountId}`, {
       method: "DELETE",
@@ -149,6 +159,14 @@ export class SmartleadClient {
   assignTags(emailAccountIds: number[], tagIds: number[]): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, "email-accounts/tag-mapping", {
       method: "POST",
+      body: { email_account_ids: emailAccountIds, tag_ids: tagIds },
+    });
+  }
+
+  /** Remove tag associations from email accounts (does not delete the tags). */
+  removeTags(emailAccountIds: number[], tagIds: number[]): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, "email-accounts/tag-mapping", {
+      method: "DELETE",
       body: { email_account_ids: emailAccountIds, tag_ids: tagIds },
     });
   }

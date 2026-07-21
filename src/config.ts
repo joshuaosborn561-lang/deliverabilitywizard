@@ -23,6 +23,10 @@ const ConfigSchema = z.object({
   deliverabilityThreshold: z.coerce.number().min(0).max(100).default(90),
   remediationInboxThreshold: z.coerce.number().min(0).max(100).default(80),
   enableRemediation: boolFromEnv(false),
+  /** Score Gmail→G Suite / Outlook→O365 only (matches ESP-matched campaigns). */
+  scoreSameEspOnly: boolFromEnv(true),
+  /** Min same-ESP seed hits before trusting same-ESP % (else fall back to all-ESP). */
+  minSameEspSamples: z.coerce.number().int().positive().default(3),
   recoveryHoldDays: z.coerce.number().int().positive().default(28),
   warmupTotalPerDay: z.coerce.number().int().positive().default(20),
   warmupDailyRampup: z.coerce.number().int().positive().default(5),
@@ -79,6 +83,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     deliverabilityThreshold: env.DELIVERABILITY_THRESHOLD ?? "90",
     remediationInboxThreshold: env.REMEDIATION_INBOX_THRESHOLD ?? "80",
     enableRemediation: env.ENABLE_REMEDIATION,
+    scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
+    minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "28",
     warmupTotalPerDay: env.WARMUP_TOTAL_PER_DAY ?? "20",
     warmupDailyRampup: env.WARMUP_DAILY_RAMPUP ?? "5",

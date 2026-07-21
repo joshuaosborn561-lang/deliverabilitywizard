@@ -1,4 +1,10 @@
 import { apiRequest, ApiError } from "../lib/http.js";
+import {
+  classifySeedEsp,
+  mailFolderOf,
+  normalizeSenderEspFamily,
+  type EspFamily,
+} from "../lib/esp.js";
 import type {
   BlacklistedDomainHit,
   BlacklistRow,
@@ -8,6 +14,9 @@ import type {
   ProviderwiseRow,
   SpamTestSummary,
 } from "../types/index.js";
+
+/** Default minimum same-ESP seed placements before trusting same-ESP %. */
+export const DEFAULT_MIN_SAME_ESP_SAMPLES = 3;
 
 const BASE_URL = "https://smartdelivery.smartlead.ai/api/v1/";
 
@@ -369,14 +378,36 @@ export function uniqueBlacklistedDomains(hits: BlacklistedDomainHit[]): string[]
 
 export interface SenderInboxRate {
   email: string;
+  /** Decision rate: same-ESP when available, otherwise all-ESP. */
   inboxRate: number;
+  /** All seed ESPs blended (G Suite + Office365). */
+  inboxRateAll?: number;
+  /** Same-ESP only (Gmail→G Suite / Outlook→O365). */
+  inboxRateSameEsp?: number;
+  sameEspSamples?: number;
+  allEspSamples?: number;
+  senderEsp?: EspFamily;
+  scoredSameEsp?: boolean;
   testId?: string;
+}
+
+export interface ParseSenderInboxRateOptions {
+  /** email (lowercase) → Smartlead account type */
+  senderTypeByEmail?: Map<string, string | undefined>;
+  /**
+   * Prefer same-ESP % when we have enough matching seed samples.
+   * Default true.
+   */
+  preferSameEsp?: boolean;
+  /** Minimum same-ESP seed placements required (default 3). */
+  minSameEspSamples?: number;
 }
 
 /** Parse sender-account-wise report into email → inbox rate rows. */
 export function parseSenderInboxRates(
   raw: unknown,
   testId?: string,
+  options: ParseSenderInboxRateOptions = {},
 ): SenderInboxRate[] {
   const rows = Array.isArray(raw)
     ? raw
@@ -387,6 +418,10 @@ export function parseSenderInboxRates(
         []
       : [];
 
+  const preferSameEsp = options.preferSameEsp !== false;
+  const minSame =
+    options.minSameEspSamples ?? DEFAULT_MIN_SAME_ESP_SAMPLES;
+
   const out: SenderInboxRate[] = [];
   for (const row of rows) {
     if (!row || typeof row !== "object") continue;
@@ -396,18 +431,61 @@ export function parseSenderInboxRates(
     ).trim();
     if (!email) continue;
 
-    const rate = extractSenderInboxRate(obj);
-    if (typeof rate !== "number") continue;
-    out.push({ email, inboxRate: rate, testId });
+    const senderEsp = normalizeSenderEspFamily(
+      options.senderTypeByEmail?.get(email.toLowerCase()),
+    );
+    const parsed = extractSenderInboxRates(obj, senderEsp);
+    if (typeof parsed.all !== "number" && typeof parsed.same !== "number") {
+      continue;
+    }
+
+    const useSame =
+      preferSameEsp &&
+      senderEsp !== "other" &&
+      typeof parsed.same === "number" &&
+      (parsed.sameSamples ?? 0) >= minSame;
+
+    const inboxRate = useSame
+      ? parsed.same!
+      : (parsed.all ?? parsed.same);
+    if (typeof inboxRate !== "number") continue;
+
+    out.push({
+      email,
+      inboxRate,
+      inboxRateAll: parsed.all,
+      inboxRateSameEsp: parsed.same,
+      sameEspSamples: parsed.sameSamples,
+      allEspSamples: parsed.allSamples,
+      senderEsp,
+      scoredSameEsp: useSame,
+      testId,
+    });
   }
   return out;
 }
 
-function extractSenderInboxRate(obj: Record<string, unknown>): number | undefined {
-  // SmartDelivery sender-account-wise: details is an array of seed placements
+function extractSenderInboxRates(
+  obj: Record<string, unknown>,
+  senderEsp: EspFamily,
+): {
+  all?: number;
+  same?: number;
+  allSamples?: number;
+  sameSamples?: number;
+} {
   if (Array.isArray(obj.details)) {
-    const fromFolders = inboxRateFromSeedDetails(obj.details);
-    if (fromFolders !== undefined) return fromFolders;
+    const all = inboxRateFromSeedDetails(obj.details);
+    const same =
+      senderEsp === "other"
+        ? undefined
+        : inboxRateFromSeedDetails(obj.details, { sameEspAs: senderEsp });
+    return {
+      all: all?.rate,
+      same: same?.rate,
+      allSamples: all?.samples,
+      sameSamples: same?.samples,
+    };
   }
 
   const details =
@@ -428,7 +506,6 @@ function extractSenderInboxRate(obj: Record<string, unknown>): number | undefine
               ? obj.inbox_rate
               : undefined;
 
-  // Fallback: compute from inbox_count / adjusted_total_email_count
   if (rate === undefined) {
     const inboxCount =
       typeof details.inbox_count === "number"
@@ -455,27 +532,32 @@ function extractSenderInboxRate(obj: Record<string, unknown>): number | undefine
     }
   }
 
-  return rate;
+  return { all: rate, same: undefined, allSamples: undefined, sameSamples: 0 };
+}
+
+export interface SeedInboxRateResult {
+  rate: number;
+  samples: number;
+  inbox: number;
 }
 
 /** Compute inbox % from seed placement rows with mail_folder = Inbox/Spam/... */
-export function inboxRateFromSeedDetails(details: unknown[]): number | undefined {
+export function inboxRateFromSeedDetails(
+  details: unknown[],
+  options: { sameEspAs?: EspFamily } = {},
+): SeedInboxRateResult | undefined {
   let total = 0;
   let inbox = 0;
   for (const item of details) {
-    if (!item || typeof item !== "object") continue;
-    const row = item as Record<string, unknown>;
-    const reply =
-      row.reply && typeof row.reply === "object"
-        ? (row.reply as Record<string, unknown>)
-        : undefined;
-    const folder = String(
-      reply?.mail_folder ?? row.mail_folder ?? row.folder ?? "",
-    ).trim();
+    const folder = mailFolderOf(item);
     if (!folder) continue;
+    if (options.sameEspAs && options.sameEspAs !== "other") {
+      const seedEsp = classifySeedEsp(item);
+      if (seedEsp !== options.sameEspAs) continue;
+    }
     total += 1;
     if (folder.toLowerCase() === "inbox") inbox += 1;
   }
   if (total === 0) return undefined;
-  return (inbox / total) * 100;
+  return { rate: (inbox / total) * 100, samples: total, inbox };
 }

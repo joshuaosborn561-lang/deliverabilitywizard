@@ -253,6 +253,8 @@ export class SlackClient {
       id: number;
       email: string;
       inboxRate: number;
+      inboxRateAll?: number;
+      scoredSameEsp?: boolean;
       removedFromCampaigns: number[];
       holdUntil?: string;
       tagName?: string;
@@ -260,6 +262,18 @@ export class SlackClient {
       clientId?: number | null;
       clientName?: string;
     }>;
+    sameEspAudit?: {
+      falseHoldsFound: number;
+      restored: Array<{
+        email: string;
+        inboxRate: number;
+        inboxRateAll?: number;
+        reattachedCampaignIds: number[];
+        clientName?: string;
+        reason: string;
+      }>;
+      stillHeldBelowThreshold: number;
+    };
     clientActions?: Array<{
       clientId: number | null;
       clientName: string;
@@ -373,7 +387,28 @@ export class SlackClient {
       .map((a) => {
         const client = a.clientName ? ` · *${a.clientName}*` : "";
         const hold = a.holdUntil ? ` · hold *${a.holdUntil}*` : "";
-        return `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}%${client}${hold}`;
+        const same = a.scoredSameEsp ? " same-ESP" : "";
+        const blended =
+          typeof a.inboxRateAll === "number" && a.scoredSameEsp
+            ? ` (all-ESP ${a.inboxRateAll.toFixed(1)}%)`
+            : "";
+        return `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}%${same}${blended}${client}${hold}`;
+      })
+      .join("\n");
+
+    const restored = details.sameEspAudit?.restored ?? [];
+    const restoredLines = restored
+      .slice(0, 20)
+      .map((a) => {
+        const client = a.clientName ? ` · *${a.clientName}*` : "";
+        const camps = a.reattachedCampaignIds.length
+          ? ` → campaigns ${a.reattachedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
+          : " → no active/paused campaign to reattach (HOLD cleared)";
+        const blended =
+          typeof a.inboxRateAll === "number"
+            ? ` · was blended ${a.inboxRateAll.toFixed(1)}%`
+            : "";
+        return `• \`${a.email}\` — same-ESP *${a.inboxRate.toFixed(1)}%*${blended}${client}${camps}`;
       })
       .join("\n");
 
@@ -400,6 +435,8 @@ export class SlackClient {
       [
         actionHeader,
         "",
+        `*Scoring:* same-ESP only (Gmail→G Suite / Outlook→Office365), matching campaign ESP matching`,
+        "",
         `*Summary*`,
         details.blacklistedDomains.length
           ? `Blacklisted domains seen: ${details.blacklistedDomains
@@ -413,7 +450,14 @@ export class SlackClient {
           : undefined,
         `Smartlead accounts deleted: *${details.deletedSmartleadAccounts.length}*`,
         deletedLines || undefined,
-        `Inboxes pulled for warmup: *${details.recoveredInboxes.length}*`,
+        restored.length
+          ? `*Same-ESP audit restore:* put back *${restored.length}* inbox${restored.length === 1 ? "" : "es"} that were pulled on blended scores but are ≥threshold same-ESP`
+          : undefined,
+        restoredLines || undefined,
+        details.sameEspAudit
+          ? `Still held (same-ESP below threshold): *${details.sameEspAudit.stillHeldBelowThreshold}*`
+          : undefined,
+        `Inboxes pulled for warmup (same-ESP): *${details.recoveredInboxes.length}*`,
         recoveredLines || undefined,
         typeof details.holdTagged === "number" && details.holdTagged > 0
           ? `HOLD-UNTIL tags applied/confirmed: *${details.holdTagged}*`

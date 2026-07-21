@@ -1,0 +1,467 @@
+{
+  "sequencer_uid": "232f4cac-a2a7-4b44-ae86-6b0d98cafb5e",
+  "smartlead_pool": 46,
+  "warmed": 46,
+  "inventory": [
+    {
+      "email": "angelanguyen@getmeetconnect.info",
+      "domain": "getmeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592366,
+      "firstName": "Angela",
+      "lastName": "Nguyen",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "nicholasgomez@outreachdeskpro.info",
+      "domain": "outreachdeskpro.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592365,
+      "firstName": "Nicholas",
+      "lastName": "Gomez",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "meganhill@meetconnectpro.info",
+      "domain": "meetconnectpro.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592256,
+      "firstName": "Megan",
+      "lastName": "Hill",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "nathanlong@meetconnectlab.info",
+      "domain": "meetconnectlab.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592230,
+      "firstName": "Nathan",
+      "lastName": "Long",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "patriciataylor@meetconnectpro.info",
+      "domain": "meetconnectpro.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592221,
+      "firstName": "Patricia",
+      "lastName": "Taylor",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "larrysanders@gooutreachdesk.info",
+      "domain": "gooutreachdesk.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592217,
+      "firstName": "Larry",
+      "lastName": "Sanders",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "carolynmoore@getmeetconnect.info",
+      "domain": "getmeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592216,
+      "firstName": "Carolyn",
+      "lastName": "Moore",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "donnaward@mymeetconnect.info",
+      "domain": "mymeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592215,
+      "firstName": "Donna",
+      "lastName": "Ward",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "kellywright@outreachdesklab.info",
+      "domain": "outreachdesklab.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592213,
+      "firstName": "Kelly",
+      "lastName": "Wright",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "emilybrown@trymeetconnect.info",
+      "domain": "trymeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592212,
+      "firstName": "Emily",
+      "lastName": "Brown",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "kimberlyross@mymeetconnect.info",
+      "domain": "mymeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592211,
+      "firstName": "Kimberly",
+      "lastName": "Ross",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "scottcampbell@myoutreachdesk.info",
+      "domain": "myoutreachdesk.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592210,
+      "firstName": "Scott",
+      "lastName": "Campbell",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "rebeccawhite@outreachdeskhq.info",
+      "domain": "outreachdeskhq.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592209,
+      "firstName": "Rebecca",
+      "lastName": "White",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "amandarobinson@meetconnectlab.info",
+      "domain": "meetconnectlab.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592208,
+      "firstName": "Amanda",
+      "lastName": "Robinson",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "sarahramos@usemeetconnect.info",
+      "domain": "usemeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592207,
+      "firstName": "Sarah",
+      "lastName": "Ramos",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "meganclark@outreachdesklab.info",
+      "domain": "outreachdesklab.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592206,
+      "firstName": "Megan",
+      "lastName": "Clark",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "donnarobinson@gomeetconnect.info",
+      "domain": "gomeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592205,
+      "firstName": "Donna",
+      "lastName": "Robinson",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "johnmorgan@outreachdeskhq.info",
+      "domain": "outreachdeskhq.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592204,
+      "firstName": "John",
+      "lastName": "Morgan",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "rebeccastewart@outreachdeskpro.info",
+      "domain": "outreachdeskpro.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592203,
+      "firstName": "Rebecca",
+      "lastName": "Stewart",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "charlesharris@usemeetconnect.info",
+      "domain": "usemeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592202,
+      "firstName": "Charles",
+      "lastName": "Harris",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "andreaadams@myoutreachdesk.info",
+      "domain": "myoutreachdesk.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592201,
+      "firstName": "Andrea",
+      "lastName": "Adams",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "christinaevans@getoutreachdesk.info",
+      "domain": "getoutreachdesk.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592200,
+      "firstName": "Christina",
+      "lastName": "Evans",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "kellycarter@goquickconnectsales.info",
+      "domain": "goquickconnectsales.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592111,
+      "firstName": "Kelly",
+      "lastName": "Carter",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "dianewood@getintroducedhq.info",
+      "domain": "getintroducedhq.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592109,
+      "firstName": "Diane",
+      "lastName": "Wood",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "sandrabailey@mygetintroduced.info",
+      "domain": "mygetintroduced.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592108,
+      "firstName": "Sandra",
+      "lastName": "Bailey",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "sandrajohnson@myquickconnectsales.info",
+      "domain": "myquickconnectsales.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592107,
+      "firstName": "Sandra",
+      "lastName": "Johnson",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "jonathanparker@getquickconnectsales.info",
+      "domain": "getquickconnectsales.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592106,
+      "firstName": "Jonathan",
+      "lastName": "Parker",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "scottchavez@usegetintroduced.info",
+      "domain": "usegetintroduced.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592105,
+      "firstName": "Scott",
+      "lastName": "Chavez",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "joyceadams@getintroducedlab.info",
+      "domain": "getintroducedlab.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592104,
+      "firstName": "Joyce",
+      "lastName": "Adams",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "brendaramirez@outreachdeskpro.info",
+      "domain": "outreachdeskpro.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592103,
+      "firstName": "Brenda",
+      "lastName": "Ramirez",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "williamdiaz@getintroducedpro.info",
+      "domain": "getintroducedpro.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592101,
+      "firstName": "William",
+      "lastName": "Diaz",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "jackharris@usequickconnectsales.info",
+      "domain": "usequickconnectsales.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592098,
+      "firstName": "Jack",
+      "lastName": "Harris",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "johncollins@gogetintroduced.info",
+      "domain": "gogetintroduced.info",
+      "platform": "MICROSOFT",
+      "smartleadAccountId": 21592097,
+      "firstName": "John",
+      "lastName": "Collins",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "ryanprice@meetconnectlab.info",
+      "domain": "meetconnectlab.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592096,
+      "firstName": "Ryan",
+      "lastName": "Price",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "brianbrown@usemeetconnect.info",
+      "domain": "usemeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592094,
+      "firstName": "Brian",
+      "lastName": "Brown",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "davidprice@outreachdeskhq.info",
+      "domain": "outreachdeskhq.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592093,
+      "firstName": "David",
+      "lastName": "Price",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "keithflores@trymeetconnect.info",
+      "domain": "trymeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592091,
+      "firstName": "Keith",
+      "lastName": "Flores",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "joyceramirez@getmeetconnect.info",
+      "domain": "getmeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592090,
+      "firstName": "Joyce",
+      "lastName": "Ramirez",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "jenniferedwards@gomeetconnect.info",
+      "domain": "gomeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592089,
+      "firstName": "Jennifer",
+      "lastName": "Edwards",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "kimberlyprice@gooutreachdesk.info",
+      "domain": "gooutreachdesk.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592088,
+      "firstName": "Kimberly",
+      "lastName": "Price",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "jerryward@meetconnectpro.info",
+      "domain": "meetconnectpro.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592086,
+      "firstName": "Jerry",
+      "lastName": "Ward",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "tylerortiz@getoutreachdesk.info",
+      "domain": "getoutreachdesk.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592085,
+      "firstName": "Tyler",
+      "lastName": "Ortiz",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "samanthamorgan@trymeetconnect.info",
+      "domain": "trymeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592084,
+      "firstName": "Samantha",
+      "lastName": "Morgan",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "stephanierivera@outreachdesklab.info",
+      "domain": "outreachdesklab.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592083,
+      "firstName": "Stephanie",
+      "lastName": "Rivera",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "samanthabrown@mymeetconnect.info",
+      "domain": "mymeetconnect.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592082,
+      "firstName": "Samantha",
+      "lastName": "Brown",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    },
+    {
+      "email": "nathanrodriguez@gooutreachdesk.info",
+      "domain": "gooutreachdesk.info",
+      "platform": "GOOGLE",
+      "smartleadAccountId": 21592081,
+      "firstName": "Nathan",
+      "lastName": "Rodriguez",
+      "status": "warming",
+      "warmedAt": "2026-07-21T14:41:09Z"
+    }
+  ]
+}

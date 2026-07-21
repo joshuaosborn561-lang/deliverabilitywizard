@@ -25,6 +25,7 @@ const DEFAULT_PLAN_PATH = path.resolve(
 export interface PoolDomainPlan {
   workspaceId: string;
   mailboxesPerDomain: number;
+  smartleadSequencerUid?: string;
   domains: Array<{
     domain: string;
     parent: string;
@@ -279,7 +280,11 @@ export class PoolProvisioner {
 
       // --- Sequencer ---
       if (phase === "awaiting_sequencer") {
-        const seq = await this.ensureSmartleadSequencer(workspaceId, errors);
+        const seq = await this.ensureSmartleadSequencer(
+          workspaceId,
+          errors,
+          plan.smartleadSequencerUid,
+        );
         stats.hasSequencer = Boolean(seq);
         if (!seq) {
           await this.notifyOnce(
@@ -316,7 +321,11 @@ export class PoolProvisioner {
       if (phase === "exporting") {
         const seq =
           this.state.getPoolProvision().sequencerUid ||
-          (await this.ensureSmartleadSequencer(workspaceId, errors));
+          (await this.ensureSmartleadSequencer(
+            workspaceId,
+            errors,
+            plan.smartleadSequencerUid,
+          ));
         if (!seq) {
           phase = "awaiting_sequencer";
           return this.finish(phase, previousPhase, true, "sequencer lost", stats, errors);
@@ -544,8 +553,13 @@ export class PoolProvisioner {
   private async ensureSmartleadSequencer(
     workspaceId: string,
     errors: string[],
+    planSequencerUid?: string,
   ): Promise<string | null> {
     try {
+      if (planSequencerUid) {
+        this.state.setPoolProvision({ sequencerUid: planSequencerUid });
+        return planSequencerUid;
+      }
       const listed = await this.inboxkit!.listSequencers(workspaceId);
       const existing = listed.find((s) =>
         /smartlead/i.test(String(s.platform ?? s.name ?? "")),

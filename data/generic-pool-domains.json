@@ -5,30 +5,132 @@
   "warmupDaysBeforeAvailable": 14,
   "note": "Cannot mix GOOGLE and MICROSOFT on the same domain. 13 Google + 12 Microsoft domains = 75 mailboxes.",
   "domains": [
-    { "domain": "getmeetconnect.info", "parent": "meet-connect.com", "platform": "GOOGLE" },
-    { "domain": "trymeetconnect.info", "parent": "meet-connect.com", "platform": "GOOGLE" },
-    { "domain": "gomeetconnect.info", "parent": "meet-connect.com", "platform": "GOOGLE" },
-    { "domain": "usemeetconnect.info", "parent": "meet-connect.com", "platform": "GOOGLE" },
-    { "domain": "mymeetconnect.info", "parent": "meet-connect.com", "platform": "GOOGLE" },
-    { "domain": "meetconnectlab.info", "parent": "meet-connect.com", "platform": "GOOGLE" },
-    { "domain": "meetconnectpro.info", "parent": "meet-connect.com", "platform": "GOOGLE" },
-    { "domain": "getoutreachdesk.info", "parent": "theoutreachdesk.com", "platform": "GOOGLE" },
-    { "domain": "gooutreachdesk.info", "parent": "theoutreachdesk.com", "platform": "GOOGLE" },
-    { "domain": "myoutreachdesk.info", "parent": "theoutreachdesk.com", "platform": "GOOGLE" },
-    { "domain": "outreachdesklab.info", "parent": "theoutreachdesk.com", "platform": "GOOGLE" },
-    { "domain": "outreachdeskpro.info", "parent": "theoutreachdesk.com", "platform": "GOOGLE" },
-    { "domain": "outreachdeskhq.info", "parent": "theoutreachdesk.com", "platform": "GOOGLE" },
-    { "domain": "trygetintroduced.info", "parent": "getintroduced.io", "platform": "MICROSOFT" },
-    { "domain": "gogetintroduced.info", "parent": "getintroduced.io", "platform": "MICROSOFT" },
-    { "domain": "usegetintroduced.info", "parent": "getintroduced.io", "platform": "MICROSOFT" },
-    { "domain": "mygetintroduced.info", "parent": "getintroduced.io", "platform": "MICROSOFT" },
-    { "domain": "getintroducedlab.info", "parent": "getintroduced.io", "platform": "MICROSOFT" },
-    { "domain": "getintroducedpro.info", "parent": "getintroduced.io", "platform": "MICROSOFT" },
-    { "domain": "getintroducedhq.info", "parent": "getintroduced.io", "platform": "MICROSOFT" },
-    { "domain": "getquickconnectsales.info", "parent": "quickconnectsales.com", "platform": "MICROSOFT" },
-    { "domain": "tryquickconnectsales.info", "parent": "quickconnectsales.com", "platform": "MICROSOFT" },
-    { "domain": "goquickconnectsales.info", "parent": "quickconnectsales.com", "platform": "MICROSOFT" },
-    { "domain": "usequickconnectsales.info", "parent": "quickconnectsales.com", "platform": "MICROSOFT" },
-    { "domain": "myquickconnectsales.info", "parent": "quickconnectsales.com", "platform": "MICROSOFT" }
-  ]
+    {
+      "domain": "getmeetconnect.info",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "trymeetconnect.info",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "gomeetconnect.info",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "usemeetconnect.info",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "mymeetconnect.info",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "meetconnectlab.info",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "meetconnectpro.info",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "getoutreachdesk.info",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "gooutreachdesk.info",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "myoutreachdesk.info",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "outreachdesklab.info",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "outreachdeskpro.info",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "outreachdeskhq.info",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "trygetintroduced.info",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "gogetintroduced.info",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "usegetintroduced.info",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "mygetintroduced.info",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "getintroducedlab.info",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "getintroducedpro.info",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "getintroducedhq.info",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "getquickconnectsales.info",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "tryquickconnectsales.info",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "goquickconnectsales.info",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "usequickconnectsales.info",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "myquickconnectsales.info",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    }
+  ],
+  "smartleadSequencerUid": "232f4cac-a2a7-4b44-ae86-6b0d98cafb5e",
+  "smartleadSequencerName": "SmartLead Account"
 }

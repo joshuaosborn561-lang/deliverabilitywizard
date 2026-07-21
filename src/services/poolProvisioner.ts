@@ -391,6 +391,49 @@ export class PoolProvisioner {
         stats.smartleadPoolAccounts = poolAccounts.length;
         stats.targetMailboxes = targetCount;
 
+        // Always re-export any InboxKit actives still missing from Smartlead
+        try {
+          const seq =
+            this.state.getPoolProvision().sequencerUid ||
+            plan.smartleadSequencerUid;
+          if (seq) {
+            const ikMailboxes = await this.listAllMailboxes(workspaceId);
+            const inSmartlead = new Set(
+              poolAccounts
+                .map((a) => accountEmail(a)?.toLowerCase())
+                .filter((x): x is string => Boolean(x)),
+            );
+            const missingUids = ikMailboxes
+              .filter((m) => {
+                const email =
+                  `${m.username ?? ""}@${m.domain_name ?? m.domain ?? ""}`.toLowerCase();
+                return (
+                  String(m.status ?? "").toLowerCase() === "active" &&
+                  Boolean(m.uid || m.id) &&
+                  email.includes("@") &&
+                  !inSmartlead.has(email)
+                );
+              })
+              .map((m) => m.uid || m.id)
+              .filter((x): x is string => Boolean(x));
+            if (missingUids.length) {
+              for (const chunk of chunkArray(missingUids, 20)) {
+                await this.inboxkit!.exportMailboxesToSequencer(
+                  seq,
+                  chunk,
+                  workspaceId,
+                );
+                await sleep(800);
+              }
+              stats.reexportedMissing = missingUids.length;
+            }
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          errors.push(`re-export missing: ${message}`);
+        }
+
         if (poolAccounts.length < targetCount * 0.9) {
           // Check export status if possible
           try {
@@ -419,7 +462,8 @@ export class PoolProvisioner {
           );
         }
 
-        // Warmup + register in state (no campaigns)
+        // Warmup + register in state (no campaigns). Re-apply every tick so
+        // late-imported mailboxes never sit without warmup.
         const warmedAt = new Date().toISOString();
         let warmed = 0;
         for (const account of poolAccounts) {
@@ -427,9 +471,6 @@ export class PoolProvisioner {
           const domain = email.split("@")[1]!;
           const platform = platformByDomain.get(domain) ?? "GOOGLE";
           const existing = this.state.getPoolMailbox(email);
-          if (existing?.status === "warming" || existing?.status === "available") {
-            continue;
-          }
           try {
             await this.smartlead.configureWarmup(account.id, {
               warmup_enabled: true,
@@ -438,11 +479,19 @@ export class PoolProvisioner {
               reply_rate_percentage: this.config.warmupReplyRatePercentage,
             });
             warmed += 1;
-            await sleep(200);
+            await sleep(150);
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
             errors.push(`warmup ${email}: ${message}`);
+          }
+          if (existing?.status === "available" || existing?.status === "assigned") {
+            // Keep status; just ensure smartlead id is current
+            this.state.upsertPoolMailbox({
+              ...existing,
+              smartleadAccountId: account.id,
+            });
+            continue;
           }
           const nameParts = (account.from_name || email.split("@")[0] || "Pool User")
             .trim()
@@ -455,7 +504,7 @@ export class PoolProvisioner {
             firstName: nameParts[0] || "Pool",
             lastName: nameParts.slice(1).join(" ") || "User",
             status: "warming",
-            warmedAt,
+            warmedAt: existing?.warmedAt || warmedAt,
           });
         }
         stats.warmed = warmed;
@@ -476,6 +525,44 @@ export class PoolProvisioner {
       }
 
       // --- Warming ---
+      if (phase === "warming" || phase === "ready") {
+        // Keep forcing warmup on every tick for any newly imported pool accounts
+        try {
+          const planDomains = new Set(
+            plan.domains.map((d) => d.domain.toLowerCase()),
+          );
+          const accounts = await this.smartlead.listAllEmailAccounts({
+            fetchCampaigns: false,
+          });
+          let forced = 0;
+          for (const account of accounts) {
+            const email = accountEmail(account)?.toLowerCase();
+            if (!email) continue;
+            const domain = email.split("@")[1] ?? "";
+            if (!planDomains.has(domain)) continue;
+            try {
+              await this.smartlead.configureWarmup(account.id, {
+                warmup_enabled: true,
+                total_warmup_per_day: this.config.warmupTotalPerDay,
+                daily_rampup: this.config.warmupDailyRampup,
+                reply_rate_percentage: this.config.warmupReplyRatePercentage,
+              });
+              forced += 1;
+              await sleep(120);
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              errors.push(`warmup-refresh ${email}: ${message}`);
+            }
+          }
+          stats.warmupForced = forced;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          errors.push(`warmup-refresh list: ${message}`);
+        }
+      }
+
       if (phase === "warming") {
         const flipped = this.state.refreshPoolAvailability(
           this.config.poolWarmupDays,

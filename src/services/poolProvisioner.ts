@@ -121,17 +121,50 @@ export class PoolProvisioner {
     }
 
     if (previousPhase === "ready") {
-      // Still refresh availability so swaps unlock after warmup days
+      // Still refresh availability so swaps unlock after warmup days,
+      // and re-assert warmup so UI toggles / late imports stay covered.
       const flipped = this.state.refreshPoolAvailability(
         this.config.poolWarmupDays,
       );
-      if (flipped) await this.state.save();
+      let forced = 0;
+      try {
+        const plan = JSON.parse(
+          await readFile(this.planPath, "utf8"),
+        ) as PoolDomainPlan;
+        const planDomains = new Set(
+          plan.domains.map((d) => d.domain.toLowerCase()),
+        );
+        const accounts = await this.smartlead.listAllEmailAccounts({
+          fetchCampaigns: false,
+        });
+        for (const account of accounts) {
+          const email = accountEmail(account)?.toLowerCase();
+          if (!email) continue;
+          const domain = email.split("@")[1] ?? "";
+          if (!planDomains.has(domain)) continue;
+          try {
+            await this.smartlead.configureWarmup(account.id, {
+              warmup_enabled: true,
+              total_warmup_per_day: this.config.warmupTotalPerDay,
+              daily_rampup: this.config.warmupDailyRampup,
+              reply_rate_percentage: this.config.warmupReplyRatePercentage,
+            });
+            forced += 1;
+            await sleep(120);
+          } catch {
+            // non-fatal on ready refresh
+          }
+        }
+      } catch (error) {
+        console.warn("[pool-provision] ready warmup refresh failed", error);
+      }
+      await this.state.save();
       return {
         phase: "ready",
         previousPhase,
         advanced: false,
-        message: `Pool ready (${flipped} newly available)`,
-        stats: { flippedAvailable: flipped },
+        message: `Pool ready (${flipped} newly available; warmup refreshed on ${forced})`,
+        stats: { flippedAvailable: flipped, warmupForced: forced },
         errors,
       };
     }

@@ -439,7 +439,7 @@ export class SlackClient {
         "",
         `*Summary*`,
         details.blacklistedDomains.length
-          ? `Blacklisted domains seen: ${details.blacklistedDomains
+          ? `Blacklisted domains still needing action: ${details.blacklistedDomains
               .map((d) => `\`${d}\``)
               .join(", ")}`
           : undefined,

@@ -178,8 +178,25 @@ export class RemediationService {
     const blacklistedDomains = uniqueBlacklistedDomains(blacklistHits).map((d) =>
       d.toLowerCase(),
     );
-    result.blacklistedDomains = blacklistedDomains;
+    // Historical SmartDelivery tests keep reporting purged domains forever.
+    // Only treat a blacklist as actionable if accounts still exist or we have
+    // not finished remediation yet — otherwise Slack would spam every cron.
+    const actionableBlacklistedDomains = blacklistedDomains.filter((domain) => {
+      const stillHasAccounts = accounts.some(
+        (a) => accountDomain(a) === domain,
+      );
+      const alreadyDone =
+        this.state.hasRemediation(`remediate-domain-sl:${domain}`) ||
+        this.state.hasRemediation(`remediate-domain:${domain}`);
+      return stillHasAccounts || !alreadyDone;
+    });
+    result.blacklistedDomains = actionableBlacklistedDomains;
     const blacklistedSet = new Set(blacklistedDomains);
+    if (blacklistedDomains.length && !actionableBlacklistedDomains.length) {
+      console.log(
+        `[remediation] Ignoring ${blacklistedDomains.length} historical blacklist hit(s) already remediated with no remaining accounts: ${blacklistedDomains.join(", ")}`,
+      );
+    }
 
     // 3) Collect per-sender inbox rates (same-ESP when ESP matching is on)
     const inboxRateRows = new Map<string, SenderInboxRate>();
@@ -269,7 +286,7 @@ export class RemediationService {
       resolveAccountClient(account, campaignClientById, clientsById);
 
     // 4) Delete blacklisted domains from Smartlead + InboxKit
-    for (const domain of blacklistedDomains) {
+    for (const domain of actionableBlacklistedDomains) {
       const slKey = `remediate-domain-sl:${domain}`;
       const ikKey = `remediate-domain-ik:${domain}`;
       // Back-compat with older single-key dedupe
@@ -934,7 +951,6 @@ export class RemediationService {
       result.deletedSmartleadAccounts.length > 0 ||
       result.purgedInboxKitDomains.length > 0 ||
       result.recoveredInboxes.length > 0 ||
-      result.blacklistedDomains.length > 0 ||
       result.holdTagged > 0 ||
       result.clientActions.length > 0 ||
       (result.sameEspAudit?.restored.length ?? 0) > 0 ||

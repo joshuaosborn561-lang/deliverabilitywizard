@@ -19,8 +19,9 @@ Internal automation service that finds new Smartlead campaigns and automatically
    - **Inboxes under 80%** (not blacklisted) → remove from all ACTIVE campaigns and enable warmup to recover
 7. When `ENABLE_RECOVERY_POOL=true` (and pool inventory is in state), swaps a warmed **generic** mailbox (ESP-matched) into those campaigns with signature `First Last\\n{Client Brand}`; when the original recovers ≥80% same-ESP, swaps back and frees the generic.
 8. **Daily at 3:00am America/New_York** (`ENABLE_ACCOUNT_RECONNECT=true`), polls Smartlead for accounts with failed SMTP/IMAP and calls `/email-accounts/{id}/reauth` to reconnect them (then re-enables warmup). Also re-queues failed InboxKit→Smartlead exports for the generic pool workspace.
+9. **Warmup gate** (`ENABLE_WARMUP_GATE=true`, runs with the monitor cron): removes mailboxes from ACTIVE campaigns if they have warmed fewer than **14 days** (configurable) or still carry an active `HOLD-UNTIL-YYYY-MM-DD` tag from remediation.
 
-Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|pool|reconnect|all`).
+Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|pool|reconnect|warmup-gate|all`).
 
 ## Generic recovery pool (setup)
 
@@ -54,7 +55,7 @@ Docs:
 |--------|------|---------|
 | `GET` | `/health` | Liveness + last run timestamps |
 | `GET` | `/status` | Full state + effective config |
-| `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|all`) |
+| `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|warmup-gate\|all`) |
 
 If `RUN_TOKEN` is set, pass header `X-Run-Token: <token>`.
 
@@ -89,6 +90,8 @@ Common optional vars:
 | `CRON_MONITOR` | `0 */6 * * *` | Results / blacklist / remediation polling |
 | `ENABLE_ACCOUNT_RECONNECT` | `true` | Daily reauth of disconnected Smartlead accounts |
 | `CRON_ACCOUNT_RECONNECT` | `0 3 * * *` | Runs in `America/New_York` (3am EST/EDT) |
+| `ENABLE_WARMUP_GATE` | `true` | Strip under-warmed / HOLD mailboxes from ACTIVE campaigns |
+| `MIN_CAMPAIGN_WARMUP_DAYS` | `14` | Min warmup days before an inbox may stay on ACTIVE campaigns |
 | `CAMPAIGN_STATUSES` | `ACTIVE,PAUSED` | Which campaigns are eligible |
 | `PROVIDER_IDS` | _(auto)_ | Comma-separated seed provider ints; empty = auto-fetch |
 | `STATE_FILE_PATH` | `/data/state.json` | Persist tested campaigns + alert dedupe |

@@ -50,6 +50,20 @@ export class SmartleadClient {
     );
   }
 
+  getEmailAccount(
+    emailAccountId: number,
+    options: { fetchCampaigns?: boolean } = {},
+  ): Promise<SmartleadAccountWithCampaigns> {
+    return apiRequest<SmartleadAccountWithCampaigns>(
+      BASE_URL,
+      this.apiKey,
+      `email-accounts/${emailAccountId}`,
+      {
+        query: options.fetchCampaigns ? { fetch_campaigns: true } : undefined,
+      },
+    );
+  }
+
   getCampaignSequences(campaignId: number): Promise<SmartleadSequence[]> {
     return apiRequest<SmartleadSequence[]>(
       BASE_URL,

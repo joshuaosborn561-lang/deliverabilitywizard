@@ -87,6 +87,7 @@ export interface AppState {
   lastMonitorAt: string | null;
   lastRemediationAt: string | null;
   lastReconnectAt: string | null;
+  lastWarmupGateAt: string | null;
   testedCampaigns: Record<string, TestedCampaignRecord>;
   /** Dedupe keys for Slack alerts already sent */
   alertedKeys: Record<string, string>;
@@ -129,6 +130,7 @@ const EMPTY_STATE: AppState = {
   lastMonitorAt: null,
   lastRemediationAt: null,
   lastReconnectAt: null,
+  lastWarmupGateAt: null,
   testedCampaigns: {},
   alertedKeys: {},
   remediatedKeys: {},
@@ -380,6 +382,10 @@ export class StateStore {
 
   setLastReconnectAt(iso: string): void {
     this.state.lastReconnectAt = iso;
+  }
+
+  setLastWarmupGateAt(iso: string): void {
+    this.state.lastWarmupGateAt = iso;
   }
 
   async save(): Promise<void> {

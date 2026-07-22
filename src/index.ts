@@ -11,6 +11,7 @@ import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
+import { WarmupGateService } from "./services/warmupGate.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -66,12 +67,14 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const warmupGate = new WarmupGateService(config, smartlead, slack, state);
 
   let scanInFlight: Promise<unknown> | null = null;
   let monitorInFlight: Promise<unknown> | null = null;
   let remediationInFlight: Promise<unknown> | null = null;
   let poolInFlight: Promise<unknown> | null = null;
   let reconnectInFlight: Promise<unknown> | null = null;
+  let warmupGateInFlight: Promise<unknown> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -120,6 +123,18 @@ async function main(): Promise<void> {
     return reconnectInFlight;
   };
 
+  const runWarmupGate = async () => {
+    assertRuntimeSecrets(config);
+    if (warmupGateInFlight) {
+      console.log("[warmup-gate] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    warmupGateInFlight = warmupGate.run().finally(() => {
+      warmupGateInFlight = null;
+    });
+    return warmupGateInFlight;
+  };
+
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -135,7 +150,15 @@ async function main(): Promise<void> {
       if (shouldRemediate) {
         remediationResult = await runRemediation();
       }
-      return { monitor: monitorResult, remediation: remediationResult };
+      let warmupGateResult: unknown = null;
+      if (config.enableWarmupGate) {
+        warmupGateResult = await runWarmupGate();
+      }
+      return {
+        monitor: monitorResult,
+        remediation: remediationResult,
+        warmupGate: warmupGateResult,
+      };
     })().finally(() => {
       monitorInFlight = null;
     });
@@ -213,6 +236,7 @@ async function main(): Promise<void> {
       lastMonitorAt: s.lastMonitorAt,
       lastRemediationAt: s.lastRemediationAt,
       lastReconnectAt: s.lastReconnectAt,
+      lastWarmupGateAt: s.lastWarmupGateAt,
       testedCampaignCount: Object.keys(s.testedCampaigns).length,
       cronScan: config.cronScan,
       cronMonitor: config.cronMonitor,
@@ -223,6 +247,8 @@ async function main(): Promise<void> {
       minSameEspSamples: config.minSameEspSamples,
       enableRecoveryPool: config.enableRecoveryPool,
       poolWarmupDays: config.poolWarmupDays,
+      enableWarmupGate: config.enableWarmupGate,
+      campaignMinWarmupDays: config.campaignMinWarmupDays,
       enablePoolProvisioner: config.enablePoolProvisioner,
       poolProvisionPhase: s.poolProvision?.phase ?? "idle",
       poolMailboxCount: Object.keys(s.poolMailboxes).length,
@@ -253,6 +279,8 @@ async function main(): Promise<void> {
         enableRecoveryPool: config.enableRecoveryPool,
         enablePoolProvisioner: config.enablePoolProvisioner,
         enableAccountReconnect: config.enableAccountReconnect,
+        enableWarmupGate: config.enableWarmupGate,
+        campaignMinWarmupDays: config.campaignMinWarmupDays,
         poolWarmupDays: config.poolWarmupDays,
         clientDomainBudgetUsd: config.clientDomainBudgetUsd,
         clientMailboxMonthlyCap: config.clientMailboxMonthlyCap,
@@ -310,6 +338,11 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "reconnect", result });
         return;
       }
+      if (mode === "warmup-gate" || mode === "warmup") {
+        const result = await runWarmupGate();
+        res.json({ ok: true, mode: "warmup-gate", result });
+        return;
+      }
       if (mode === "both" || mode === "all") {
         const scan = await runScan("manual");
         const monitorBundle = await runMonitor({ remediate: true });
@@ -325,6 +358,7 @@ async function main(): Promise<void> {
           scan,
           monitor: (monitorBundle as { monitor?: unknown })?.monitor ?? monitorBundle,
           remediation: (monitorBundle as { remediation?: unknown })?.remediation ?? null,
+          warmupGate: (monitorBundle as { warmupGate?: unknown })?.warmupGate ?? null,
           pool,
           reconnect,
         });
@@ -353,6 +387,9 @@ async function main(): Promise<void> {
     );
     console.log(
       `[boot] Account reconnect: ${config.enableAccountReconnect ? `ENABLED (${config.cronAccountReconnect} America/New_York)` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(`[boot] State file: ${config.stateFilePath}`);

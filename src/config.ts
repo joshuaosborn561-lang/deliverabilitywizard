@@ -48,6 +48,12 @@ const ConfigSchema = z.object({
   enableRecoveryPool: boolFromEnv(false),
   /** Days of Smartlead-only warmup before a generic is free for swaps. */
   poolWarmupDays: z.coerce.number().int().positive().default(14),
+  /**
+   * Pull mailboxes off ACTIVE campaigns until they have warmed this many days.
+   * Also strips active HOLD-UNTIL-* tagged accounts from ACTIVE campaigns.
+   */
+  enableWarmupGate: boolFromEnv(true),
+  campaignMinWarmupDays: z.coerce.number().int().positive().default(14),
   /** Porkbun domain spend cap per client per UTC month (USD). */
   clientDomainBudgetUsd: z.coerce.number().nonnegative().default(25),
   /** New mailboxes per client per UTC month (blacklist replace). */
@@ -124,6 +130,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "28",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
+    enableWarmupGate: env.ENABLE_WARMUP_GATE,
+    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "14",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
     clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",
     warmupTotalPerDay: env.WARMUP_TOTAL_PER_DAY ?? "20",

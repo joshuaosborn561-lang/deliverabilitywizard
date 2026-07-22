@@ -16,6 +16,8 @@ export interface SmartleadEmailAccount {
   /** Smartlead mailbox ESP type, e.g. GMAIL / OUTLOOK */
   type?: string;
   client_id?: number | null;
+  created_at?: string;
+  updated_at?: string;
   is_smtp_success?: boolean;
   is_imap_success?: boolean;
   message_per_day?: number;
@@ -27,6 +29,18 @@ export interface SmartleadEmailAccount {
     name?: string;
     tag_color?: string;
   }>;
+  warmup_details?: {
+    id?: number;
+    status?: string;
+    created_at?: string;
+    warmup_created_at?: string;
+    reply_rate?: number;
+    total_sent_count?: number;
+    total_spam_count?: number;
+    warmup_reputation?: number | string;
+    is_warmup_blocked?: boolean;
+    blocked_reason?: string | null;
+  } | null;
 }
 
 export interface SmartleadSequenceVariant {

@@ -291,6 +291,80 @@ export class SlackClient {
     );
   }
 
+  async notifyWarmupGate(summary: {
+    dryRun?: boolean;
+    campaignsScanned: number;
+    accountsChecked: number;
+    removed: number;
+    skipped: number;
+    pausedCampaigns: number[];
+    removals: Array<{
+      campaignId: number;
+      campaignName: string;
+      email: string;
+      reason: string;
+      daysWarmed: number | null;
+      holdUntil?: string;
+    }>;
+    errors: string[];
+  }): Promise<void> {
+    if (summary.removed === 0 && summary.errors.length === 0) return;
+
+    const mode = summary.dryRun ? "DRY RUN" : "LIVE";
+    const under = summary.removals.filter((r) => r.reason === "under_warmed");
+    const held = summary.removals.filter((r) => r.reason === "hold_until");
+
+    const byCampaign = new Map<string, typeof summary.removals>();
+    for (const row of summary.removals) {
+      const key = `${row.campaignName} (${row.campaignId})`;
+      const list = byCampaign.get(key) ?? [];
+      list.push(row);
+      byCampaign.set(key, list);
+    }
+
+    const campaignBlocks: string[] = [];
+    for (const [label, rows] of byCampaign) {
+      const lines = rows.slice(0, 12).map((r) => {
+        if (r.reason === "hold_until") {
+          return `• \`${r.email}\` — HOLD until *${r.holdUntil}*`;
+        }
+        const days =
+          r.daysWarmed == null ? "unknown" : `${r.daysWarmed.toFixed(1)}d`;
+        return `• \`${r.email}\` — warmed ${days} (need 14d)`;
+      });
+      const more =
+        rows.length > 12 ? `\n• … +${rows.length - 12} more` : "";
+      campaignBlocks.push(`*${label}* — removed ${rows.length}\n${lines.join("\n")}${more}`);
+    }
+
+    const errorBlock =
+      summary.errors.length > 0
+        ? `\n:warning: Errors:\n${summary.errors
+            .slice(0, 10)
+            .map((e) => `• ${e}`)
+            .join("\n")}`
+        : "";
+
+    await this.send(
+      [
+        `:hourglass_flowing_sand: *Warmup gate (${mode})*`,
+        `ACTIVE campaigns scanned: *${summary.campaignsScanned}*`,
+        `Mailboxes checked: *${summary.accountsChecked}*`,
+        `Removed: *${summary.removed}* (under-warmed *${under.length}*, HOLD *${held.length}*)`,
+        summary.pausedCampaigns.length
+          ? `Paused (would be empty): ${summary.pausedCampaigns
+              .map((id) => `\`${id}\``)
+              .join(", ")}`
+          : undefined,
+        "",
+        ...campaignBlocks,
+        errorBlock || undefined,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+
   async notifyRemediation(details: {
     dryRun: boolean;
     blacklistedDomains: string[];

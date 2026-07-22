@@ -160,6 +160,26 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * Re-authenticate / reconnect a disconnected Gmail or Outlook account.
+   * Smartlead: POST /email-accounts/{id}/reauth
+   */
+  reauthEmailAccount(emailAccountId: number): Promise<{
+    ok?: boolean;
+    reauthenticated?: boolean;
+    skipped?: boolean;
+    message?: string;
+    provider?: string;
+    emailAccountId?: number;
+  }> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `email-accounts/${emailAccountId}/reauth`,
+      { method: "POST", body: {} },
+    );
+  }
+
   listTags(): Promise<Array<{ id: number; name: string; color?: string }>> {
     return apiRequest(BASE_URL, this.apiKey, "email-accounts/tags");
   }

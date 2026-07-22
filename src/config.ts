@@ -25,6 +25,12 @@ const ConfigSchema = z.object({
   /** Self-advancing cron that polls NS → buy → export → warmup → ready */
   enablePoolProvisioner: boolFromEnv(true),
   cronPoolProvision: z.string().default("*/30 * * * *"),
+  /**
+   * Daily reconnect of disconnected Smartlead accounts (SMTP/IMAP fail).
+   * Cron runs in America/New_York so "3am EST" tracks EST/EDT.
+   */
+  enableAccountReconnect: boolFromEnv(true),
+  cronAccountReconnect: z.string().default("0 3 * * *"),
   /** InboxKit→Smartlead sequencer login (one-time; password not the API key) */
   smartleadLoginEmail: z.string().default(""),
   smartleadLoginPassword: z.string().default(""),
@@ -104,6 +110,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     porkbunSecretApiKey: env.PORKBUN_SECRET_API_KEY ?? "",
     enablePoolProvisioner: env.ENABLE_POOL_PROVISIONER,
     cronPoolProvision: env.CRON_POOL_PROVISION ?? "*/30 * * * *",
+    enableAccountReconnect: env.ENABLE_ACCOUNT_RECONNECT,
+    cronAccountReconnect: env.CRON_ACCOUNT_RECONNECT ?? "0 3 * * *",
     smartleadLoginEmail: env.SMARTLEAD_LOGIN_EMAIL ?? "",
     smartleadLoginPassword: env.SMARTLEAD_LOGIN_PASSWORD ?? "",
     totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",

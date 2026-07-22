@@ -238,6 +238,59 @@ export class SlackClient {
     );
   }
 
+  async notifyReconnect(summary: {
+    dryRun?: boolean;
+    scanned: number;
+    disconnected: number;
+    reconnected: number;
+    skippedAlreadyConnected: number;
+    failed: number;
+    inboxkitReexports: number;
+    errors: string[];
+    actions?: Array<{ email: string; message: string; reauthenticated: boolean }>;
+  }): Promise<void> {
+    if (
+      summary.disconnected === 0 &&
+      summary.inboxkitReexports === 0 &&
+      summary.errors.length === 0
+    ) {
+      return;
+    }
+
+    const mode = summary.dryRun ? "DRY RUN" : "LIVE";
+    const sample = (summary.actions ?? [])
+      .filter((a) => a.reauthenticated || a.message)
+      .slice(0, 12)
+      .map((a) => `• \`${a.email}\` — ${a.message || "ok"}`)
+      .join("\n");
+
+    const errorBlock =
+      summary.errors.length > 0
+        ? `\n:warning: Errors:\n${summary.errors
+            .slice(0, 10)
+            .map((e) => `• ${e}`)
+            .join("\n")}`
+        : "";
+
+    await this.send(
+      [
+        `:electric_plug: *Daily account reconnect (${mode})*`,
+        `Scanned *${summary.scanned}* Smartlead accounts`,
+        `Disconnected (SMTP/IMAP fail): *${summary.disconnected}*`,
+        `Re-authenticated: *${summary.reconnected}*`,
+        `Skipped (already ok): *${summary.skippedAlreadyConnected}*`,
+        `Failed: *${summary.failed}*`,
+        summary.inboxkitReexports > 0
+          ? `Re-queued failed InboxKit→Smartlead exports: *${summary.inboxkitReexports}*`
+          : undefined,
+        sample || undefined,
+        errorBlock || undefined,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+
   async notifyRemediation(details: {
     dryRun: boolean;
     blacklistedDomains: string[];

@@ -10,6 +10,7 @@ import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
+import { AccountReconnectService } from "./services/accountReconnect.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -58,11 +59,19 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const accountReconnect = new AccountReconnectService(
+    config,
+    smartlead,
+    inboxkit,
+    slack,
+    state,
+  );
 
   let scanInFlight: Promise<unknown> | null = null;
   let monitorInFlight: Promise<unknown> | null = null;
   let remediationInFlight: Promise<unknown> | null = null;
   let poolInFlight: Promise<unknown> | null = null;
+  let reconnectInFlight: Promise<unknown> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -99,6 +108,18 @@ async function main(): Promise<void> {
     return poolInFlight;
   };
 
+  const runReconnect = async () => {
+    assertRuntimeSecrets(config);
+    if (reconnectInFlight) {
+      console.log("[reconnect] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    reconnectInFlight = accountReconnect.run().finally(() => {
+      reconnectInFlight = null;
+    });
+    return reconnectInFlight;
+  };
+
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -132,6 +153,11 @@ async function main(): Promise<void> {
       `Invalid CRON_POOL_PROVISION expression: ${config.cronPoolProvision}`,
     );
   }
+  if (!cron.validate(config.cronAccountReconnect)) {
+    throw new Error(
+      `Invalid CRON_ACCOUNT_RECONNECT expression: ${config.cronAccountReconnect}`,
+    );
+  }
 
   cron.schedule(config.cronScan, () => {
     void runScan("cron").catch((error) => {
@@ -158,6 +184,20 @@ async function main(): Promise<void> {
       });
     }, 15_000);
   }
+
+  if (config.enableAccountReconnect) {
+    // 3am America/New_York = EST in winter, EDT in summer
+    cron.schedule(
+      config.cronAccountReconnect,
+      () => {
+        void runReconnect().catch((error) => {
+          console.error("[reconnect] Unhandled cron error", error);
+        });
+      },
+      { timezone: "America/New_York" },
+    );
+  }
+
   const app = express();
   app.use(express.json({ limit: "100kb" }));
 
@@ -172,6 +212,7 @@ async function main(): Promise<void> {
       lastScanAt: s.lastScanAt,
       lastMonitorAt: s.lastMonitorAt,
       lastRemediationAt: s.lastRemediationAt,
+      lastReconnectAt: s.lastReconnectAt,
       testedCampaignCount: Object.keys(s.testedCampaigns).length,
       cronScan: config.cronScan,
       cronMonitor: config.cronMonitor,
@@ -187,6 +228,9 @@ async function main(): Promise<void> {
       poolMailboxCount: Object.keys(s.poolMailboxes).length,
       activeSwapCount: Object.keys(s.activeSwaps).length,
       cronPoolProvision: config.cronPoolProvision,
+      enableAccountReconnect: config.enableAccountReconnect,
+      cronAccountReconnect: config.cronAccountReconnect,
+      cronAccountReconnectTz: "America/New_York",
     });
   });
 
@@ -198,6 +242,7 @@ async function main(): Promise<void> {
         cronScan: config.cronScan,
         cronMonitor: config.cronMonitor,
         cronPoolProvision: config.cronPoolProvision,
+        cronAccountReconnect: config.cronAccountReconnect,
         totalTestQuota: config.totalTestQuota,
         maxMailboxesPerTest: config.maxMailboxesPerTest,
         deliverabilityThreshold: config.deliverabilityThreshold,
@@ -207,6 +252,7 @@ async function main(): Promise<void> {
         enableRemediation: config.enableRemediation,
         enableRecoveryPool: config.enableRecoveryPool,
         enablePoolProvisioner: config.enablePoolProvisioner,
+        enableAccountReconnect: config.enableAccountReconnect,
         poolWarmupDays: config.poolWarmupDays,
         clientDomainBudgetUsd: config.clientDomainBudgetUsd,
         clientMailboxMonthlyCap: config.clientMailboxMonthlyCap,
@@ -259,11 +305,19 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "pool", result });
         return;
       }
+      if (mode === "reconnect") {
+        const result = await runReconnect();
+        res.json({ ok: true, mode: "reconnect", result });
+        return;
+      }
       if (mode === "both" || mode === "all") {
         const scan = await runScan("manual");
         const monitorBundle = await runMonitor({ remediate: true });
         const pool = config.enablePoolProvisioner
           ? await runPoolProvision()
+          : null;
+        const reconnect = config.enableAccountReconnect
+          ? await runReconnect()
           : null;
         res.json({
           ok: true,
@@ -272,6 +326,7 @@ async function main(): Promise<void> {
           monitor: (monitorBundle as { monitor?: unknown })?.monitor ?? monitorBundle,
           remediation: (monitorBundle as { remediation?: unknown })?.remediation ?? null,
           pool,
+          reconnect,
         });
         return;
       }
@@ -295,6 +350,9 @@ async function main(): Promise<void> {
     );
     console.log(
       `[boot] Pool provisioner: ${config.enablePoolProvisioner ? `ENABLED (${config.cronPoolProvision})` : "disabled"} phase=${state.get().poolProvision.phase}`,
+    );
+    console.log(
+      `[boot] Account reconnect: ${config.enableAccountReconnect ? `ENABLED (${config.cronAccountReconnect} America/New_York)` : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(`[boot] State file: ${config.stateFilePath}`);

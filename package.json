@@ -1,0 +1,39 @@
+{
+  "name": "deliverabilitywizard",
+  "version": "1.0.0",
+  "description": "Automated Smartlead SmartDelivery placement tests for new campaigns",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test src/**/*.test.ts",
+    "pool:status": "tsx scripts/provision-pool-mailboxes.ts --status",
+    "pool:wait": "tsx scripts/provision-pool-mailboxes.ts --wait 4",
+    "pool:buy": "tsx scripts/provision-pool-mailboxes.ts --buy"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "smartlead",
+    "smartdelivery",
+    "deliverability",
+    "railway"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.13.10",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

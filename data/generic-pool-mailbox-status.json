@@ -1,0 +1,13 @@
+{
+  "at": "2026-07-21T13:45:00Z",
+  "total": 75,
+  "status_counts": {
+    "active": 34,
+    "scheduled": 41
+  },
+  "platform_counts": {
+    "GOOGLE": 39,
+    "MICROSOFT": 36
+  },
+  "note": "75/75 ordered. 41 scheduled still processing (~6-8h). Cron pool provisioner will poll."
+}

@@ -957,10 +957,20 @@ export class RemediationService {
       (result.recoveryPool?.swaps.length ?? 0) > 0 ||
       (result.recoveryPool?.restores.length ?? 0) > 0;
 
-    if (acted || result.errors.length) {
-      await this.slack.notifyRemediation(result).catch((error) => {
+    // Rate-limit noise alone should not page Slack
+    const seriousErrors = result.errors.filter((e) => !/rate limit/i.test(e));
+
+    if (acted || seriousErrors.length) {
+      await this.slack.notifyRemediation({
+        ...result,
+        errors: seriousErrors,
+      }).catch((error) => {
         console.error("[remediation] Slack notify failed", error);
       });
+    } else if (result.errors.length) {
+      console.log(
+        `[remediation] Skipping Slack (no actions; ${result.errors.length} rate-limit/noise error(s))`,
+      );
     }
   }
 }

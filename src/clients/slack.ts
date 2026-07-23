@@ -82,19 +82,19 @@ export class SlackClient {
     const lines = details.campaigns
       .map(
         (c) =>
-          `• *${c.name}* (\`${c.id}\`) — would use ${c.testsNeeded} test${c.testsNeeded === 1 ? "" : "s"}`,
+          `• *${c.name}* — needs ${c.testsNeeded} test${c.testsNeeded === 1 ? "" : "s"}`,
       )
       .join("\n");
 
     await this.send(
       [
-        `:no_entry: *SmartDelivery quota would be exceeded — batch skipped*`,
-        `Channel: ${this.creds.channelLabel}`,
-        `Used: *${details.used}* / *${details.quota}*`,
-        `This batch needs *${details.needed}* more test(s).`,
-        `No placement tests were created. Decide whether to skip a campaign, prioritize, or wait for quota reset.`,
-        lines || "_No campaign details_",
-      ].join("\n"),
+        `*Couldn't create placement tests — monthly quota is full*`,
+        `Used ${details.used} of ${details.quota}. This batch needed ${details.needed} more.`,
+        `Nothing was created. Free quota or skip a campaign, then re-run.`,
+        lines || undefined,
+      ]
+        .filter(Boolean)
+        .join("\n"),
     );
   }
 
@@ -105,23 +105,39 @@ export class SlackClient {
     skipped: number;
     errors: string[];
   }): Promise<void> {
-    const errorBlock =
-      summary.errors.length > 0
-        ? `\n:warning: Errors:\n${summary.errors.map((e) => `• ${e}`).join("\n")}`
-        : "";
+    // Quiet when nothing happened
+    if (
+      summary.created === 0 &&
+      summary.eligible === 0 &&
+      summary.errors.length === 0
+    ) {
+      return;
+    }
 
-    await this.send(
-      [
-        `:white_check_mark: *Deliverability scan complete*`,
-        `Campaigns scanned: *${summary.scanned}*`,
-        `New / untested eligible: *${summary.eligible}*`,
-        `Placement tests created: *${summary.created}*`,
-        `Skipped: *${summary.skipped}*`,
-        errorBlock,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
+    const lines = [
+      `*Placement test scan*`,
+      `Looked at ${summary.scanned} campaigns.`,
+    ];
+    if (summary.created > 0) {
+      lines.push(
+        `Created ${summary.created} new placement test${summary.created === 1 ? "" : "s"} for campaigns that didn't have one yet.`,
+      );
+    } else if (summary.eligible > 0) {
+      lines.push(
+        `Found ${summary.eligible} campaign${summary.eligible === 1 ? "" : "s"} that need tests, but none were created.`,
+      );
+    }
+    if (summary.skipped > 0) {
+      lines.push(`Skipped ${summary.skipped}.`);
+    }
+    if (summary.errors.length) {
+      lines.push(
+        "",
+        `Problems:`,
+        ...summary.errors.slice(0, 8).map((e) => `• ${e}`),
+      );
+    }
+    await this.send(lines.join("\n"));
   }
 
   async notifyBlacklist(details: {
@@ -150,7 +166,6 @@ export class SlackClient {
 
   /**
    * Call out every blacklisted sending domain by name.
-   * Example Slack body leads with an explicit domain list.
    */
   async notifyBlacklistedDomains(details: {
     testId: string;
@@ -176,62 +191,98 @@ export class SlackClient {
       );
       const fromEmail =
         related.find((h) => h.fromEmail)?.fromEmail ?? undefined;
-      const ipBits = related
-        .filter((h) => h.ip)
-        .map((h) => {
-          const list = h.listName ? ` on ${h.listName}` : "";
-          return `\`${h.ip}\`${list}`;
-        });
-      const extras = [
-        fromEmail ? `sender \`${fromEmail}\`` : undefined,
-        ipBits.length ? `IP ${ipBits.join(", ")}` : undefined,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      return extras
-        ? `• *${domain}* — ${extras}`
+      return fromEmail
+        ? `• *${domain}* (sender \`${fromEmail}\`)`
         : `• *${domain}*`;
     });
 
     await this.send(
       [
-        `:rotating_light: *Blacklisted domain${domains.length === 1 ? "" : "s"} detected*`,
+        `*Sending domain${domains.length === 1 ? "" : "s"} on a blacklist*`,
         details.testName
-          ? `Test: *${details.testName}* (\`${details.testId}\`)`
-          : `Test: \`${details.testId}\``,
+          ? `From test: *${details.testName}*`
+          : `Test id: \`${details.testId}\``,
         "",
-        `*Blacklisted domain${domains.length === 1 ? "" : "s"}:*`,
         ...domainLines,
         "",
-        `*ACTION REQUIRED*`,
-        `You need to backfill *${domains.length}* domain${domains.length === 1 ? "" : "s"} (and their mailboxes) for the affected client.`,
-        `1. Confirm remediation deleted these from Smartlead + InboxKit`,
-        `2. Buy/provision replacement domain(s) + mailboxes for that client`,
-        `3. Connect new mailboxes in Smartlead and attach to the client's campaigns`,
-        `4. Do *not* reuse the blacklisted domain(s)`,
+        `I'll delete matching Smartlead accounts and purge the domain from InboxKit when remediation runs.`,
+        `You'll need replacement domain(s) + mailboxes for that client — don't reuse these.`,
       ].join("\n"),
     );
   }
 
+  /**
+   * Plain-English placement alert for a campaign test (one message per test).
+   */
   async notifyLowDeliverability(details: {
     label: string;
     score: number;
     threshold: number;
     context?: string;
   }): Promise<void> {
+    // Legacy single-row path — prefer notifyPlacementResult when possible.
+    await this.notifyPlacementResult({
+      testName: details.context?.replace(/^Test:\s*/i, "") || undefined,
+      testId: undefined,
+      threshold: details.threshold,
+      providers: [{ name: details.label, inboxPercent: details.score }],
+      autoRemediation: true,
+    });
+  }
+
+  async notifyPlacementResult(details: {
+    testName?: string;
+    testId?: string;
+    threshold: number;
+    providers: Array<{ name: string; inboxPercent: number }>;
+    /** When true, tell the user we're handling weak inboxes automatically */
+    autoRemediation?: boolean;
+  }): Promise<void> {
+    const weak = details.providers.filter(
+      (p) => p.inboxPercent < details.threshold,
+    );
+    if (!weak.length) return;
+
+    const outlook = weak.find((p) =>
+      /outlook|office\s*365|o365|microsoft/i.test(p.name),
+    );
+    const gmail = weak.find((p) => /g\s*suite|gmail|google/i.test(p.name));
+
+    let plainTake: string;
+    if (outlook && outlook.inboxPercent < 20 && (!gmail || gmail.inboxPercent >= 50)) {
+      plainTake =
+        `Outlook/Microsoft is burying this campaign (mostly spam). Gmail is doing better. That pattern usually means the *copy/offer* is getting filtered on Microsoft — not one broken mailbox.`;
+    } else if (
+      weak.length >= 2 &&
+      weak.every((p) => p.inboxPercent < 40)
+    ) {
+      plainTake =
+        `Inbox rates are weak across providers. Could be the copy/offer, the domains, or both — not a single-inbox fluke.`;
+    } else if (weak.length === 1) {
+      plainTake = `*${weak[0]!.name}* is below ${details.threshold}% inbox on this test.`;
+    } else {
+      plainTake = `A few providers came in under ${details.threshold}% inbox on this test.`;
+    }
+
+    const scoreLines = details.providers.map(
+      (p) =>
+        `• *${p.name}*: ${p.inboxPercent.toFixed(1)}% inbox${
+          p.inboxPercent < details.threshold ? " (below target)" : ""
+        }`,
+    );
+
     await this.send(
       [
-        `:warning: *Deliverability below ${details.threshold}%*`,
-        `Inbox / mailbox: *${details.label}*`,
-        `Placement: *${details.score.toFixed(1)}%*`,
-        details.context,
+        `*Placement look — ${details.testName || "campaign test"}*`,
+        details.testId ? `Test id: \`${details.testId}\`` : undefined,
         "",
-        `*ACTION REQUIRED*`,
-        `If remediation is enabled, low inboxes (<80%) are pulled for warmup automatically.`,
-        `1. Check the remediation Slack message for *how many inboxes per client* to backfill`,
-        `2. Order replacement mailboxes for that client`,
-        `3. Connect them in Smartlead and add to active campaigns`,
-        `4. Leave any \`HOLD-UNTIL-*\` tagged inboxes on warmup until the date on the tag`,
+        plainTake,
+        "",
+        ...scoreLines,
+        "",
+        details.autoRemediation
+          ? `If individual senders are under 80% same-ESP, remediation pulls them for warmup automatically. No need to buy replacements unless I ping you that domains were deleted.`
+          : undefined,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -257,34 +308,30 @@ export class SlackClient {
       return;
     }
 
-    const mode = summary.dryRun ? "DRY RUN" : "LIVE";
-    const sample = (summary.actions ?? [])
-      .filter((a) => a.reauthenticated || a.message)
+    const reconnected = (summary.actions ?? [])
+      .filter((a) => a.reauthenticated)
       .slice(0, 12)
-      .map((a) => `• \`${a.email}\` — ${a.message || "ok"}`)
-      .join("\n");
-
-    const errorBlock =
-      summary.errors.length > 0
-        ? `\n:warning: Errors:\n${summary.errors
-            .slice(0, 10)
-            .map((e) => `• ${e}`)
-            .join("\n")}`
-        : "";
+      .map((a) => `• \`${a.email}\``);
+    const failed = (summary.actions ?? [])
+      .filter((a) => !a.reauthenticated && !/already/i.test(a.message || ""))
+      .slice(0, 8)
+      .map((a) => `• \`${a.email}\` — ${a.message || "failed"}`);
 
     await this.send(
       [
-        `:electric_plug: *Daily account reconnect (${mode})*`,
-        `Scanned *${summary.scanned}* Smartlead accounts`,
-        `Disconnected (SMTP/IMAP fail): *${summary.disconnected}*`,
-        `Re-authenticated: *${summary.reconnected}*`,
-        `Skipped (already ok): *${summary.skippedAlreadyConnected}*`,
-        `Failed: *${summary.failed}*`,
-        summary.inboxkitReexports > 0
-          ? `Re-queued failed InboxKit→Smartlead exports: *${summary.inboxkitReexports}*`
+        `*Disconnected Smartlead accounts*`,
+        `Checked ${summary.scanned} accounts. ${summary.disconnected} were disconnected.`,
+        summary.reconnected > 0
+          ? `Reconnected ${summary.reconnected}:`
           : undefined,
-        sample || undefined,
-        errorBlock || undefined,
+        ...reconnected,
+        summary.failed > 0
+          ? `Couldn't reconnect ${summary.failed} (may need manual OAuth in Smartlead):`
+          : undefined,
+        ...failed,
+        summary.inboxkitReexports > 0
+          ? `Also re-queued ${summary.inboxkitReexports} failed InboxKit→Smartlead exports.`
+          : undefined,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -310,13 +357,12 @@ export class SlackClient {
   }): Promise<void> {
     if (summary.removed === 0 && summary.errors.length === 0) return;
 
-    const mode = summary.dryRun ? "DRY RUN" : "LIVE";
     const under = summary.removals.filter((r) => r.reason === "under_warmed");
     const held = summary.removals.filter((r) => r.reason === "hold_until");
 
     const byCampaign = new Map<string, typeof summary.removals>();
     for (const row of summary.removals) {
-      const key = `${row.campaignName} (${row.campaignId})`;
+      const key = row.campaignName;
       const list = byCampaign.get(key) ?? [];
       list.push(row);
       byCampaign.set(key, list);
@@ -324,41 +370,41 @@ export class SlackClient {
 
     const campaignBlocks: string[] = [];
     for (const [label, rows] of byCampaign) {
-      const lines = rows.slice(0, 12).map((r) => {
+      const lines = rows.slice(0, 10).map((r) => {
         if (r.reason === "hold_until") {
-          return `• \`${r.email}\` — HOLD until *${r.holdUntil}*`;
+          return `• \`${r.email}\` — still on recovery hold until ${r.holdUntil}`;
         }
         const days =
-          r.daysWarmed == null ? "unknown" : `${r.daysWarmed.toFixed(1)}d`;
-        return `• \`${r.email}\` — warmed ${days} (need 14d)`;
+          r.daysWarmed == null ? "?" : `${r.daysWarmed.toFixed(0)}`;
+        return `• \`${r.email}\` — only warmed ${days} days (need 14)`;
       });
       const more =
-        rows.length > 12 ? `\n• … +${rows.length - 12} more` : "";
-      campaignBlocks.push(`*${label}* — removed ${rows.length}\n${lines.join("\n")}${more}`);
+        rows.length > 10 ? `\n• …and ${rows.length - 10} more` : "";
+      campaignBlocks.push(
+        `*${label}* — took off ${rows.length}\n${lines.join("\n")}${more}`,
+      );
     }
-
-    const errorBlock =
-      summary.errors.length > 0
-        ? `\n:warning: Errors:\n${summary.errors
-            .slice(0, 10)
-            .map((e) => `• ${e}`)
-            .join("\n")}`
-        : "";
 
     await this.send(
       [
-        `:hourglass_flowing_sand: *Warmup gate (${mode})*`,
-        `ACTIVE campaigns scanned: *${summary.campaignsScanned}*`,
-        `Mailboxes checked: *${summary.accountsChecked}*`,
-        `Removed: *${summary.removed}* (under-warmed *${under.length}*, HOLD *${held.length}*)`,
+        `*Pulled not-ready mailboxes off live campaigns*`,
+        under.length
+          ? `${under.length} hadn't finished the 14-day warmup.`
+          : undefined,
+        held.length
+          ? `${held.length} still had a HOLD recovery tag.`
+          : undefined,
         summary.pausedCampaigns.length
-          ? `Paused (would be empty): ${summary.pausedCampaigns
-              .map((id) => `\`${id}\``)
-              .join(", ")}`
+          ? `Paused campaign(s) that would have been empty: ${summary.pausedCampaigns.join(", ")}`
           : undefined,
         "",
         ...campaignBlocks,
-        errorBlock || undefined,
+        summary.errors.length
+          ? `\nProblems:\n${summary.errors
+              .slice(0, 8)
+              .map((e) => `• ${e}`)
+              .join("\n")}`
+          : undefined,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -415,187 +461,116 @@ export class SlackClient {
     pausedCampaigns: number[];
     errors: string[];
   }): Promise<void> {
-    const mode = details.dryRun ? "DRY RUN (no changes applied)" : "LIVE";
     const actions = details.clientActions ?? [];
-
-    const headlineParts = actions.map((a) => {
-      const bits: string[] = [];
-      if (a.domainsToReplace.length) {
-        bits.push(
-          `*${a.domainsToReplace.length}* domain${a.domainsToReplace.length === 1 ? "" : "s"}`,
-        );
-      }
-      if (a.inboxesToReplace) {
-        bits.push(
-          `*${a.inboxesToReplace}* inbox${a.inboxesToReplace === 1 ? "" : "es"}`,
-        );
-      }
-      return `• *${a.clientName}* — backfill ${bits.join(" + ")}`;
-    });
-
-    const perClientBlocks = actions.map((a) => {
-      const domainLine = a.domainsToReplace.length
-        ? `• Replace *${a.domainsToReplace.length}* domain${a.domainsToReplace.length === 1 ? "" : "s"}: ${a.domainsToReplace
-            .map((d) => `\`${d}\``)
-            .join(", ")}`
-        : undefined;
-      const inboxLine = a.inboxesToReplace
-        ? `• Replace *${a.inboxesToReplace}* inbox${a.inboxesToReplace === 1 ? "" : "es"} pulled for warmup${
-            a.holdUntil ? ` (hold until *${a.holdUntil}*)` : ""
-          }`
-        : undefined;
-      const sample =
-        a.sampleEmails.length > 0
-          ? `  samples: ${a.sampleEmails.map((e) => `\`${e}\``).join(", ")}${
-              a.inboxesToReplace > a.sampleEmails.length ? ", …" : ""
-            }`
-          : undefined;
-      const campaigns =
-        a.affectedCampaignIds.length > 0
-          ? `• Affected campaigns: ${a.affectedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
-          : undefined;
-      const paused =
-        a.pausedCampaignIds.length > 0
-          ? `• Paused (would have been empty): ${a.pausedCampaignIds
-              .map((id) => `\`${id}\``)
-              .join(", ")}`
-          : undefined;
-
-      const orderLine = (() => {
-        const d = a.domainsToReplace.length;
-        const i = a.inboxesToReplace;
-        if (d && i) {
-          return `1. In InboxKit, order *${d}* domain${d === 1 ? "" : "s"} + *${i}* mailbox${i === 1 ? "" : "es"} for *${a.clientName}*`;
-        }
-        if (d) {
-          return `1. In InboxKit, order *${d}* replacement domain${d === 1 ? "" : "s"} (+ mailboxes) for *${a.clientName}*`;
-        }
-        return `1. In InboxKit, order *${i}* replacement mailbox${i === 1 ? "" : "es"} for *${a.clientName}*`;
-      })();
-
-      const steps = [
-        orderLine,
-        `2. Connect the new mailboxes in Smartlead under client *${a.clientName}*`,
-        a.affectedCampaignIds.length
-          ? `3. Attach them to campaigns: ${a.affectedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
-          : `3. Attach them to that client's active campaigns`,
-        a.pausedCampaignIds.length
-          ? `4. Restart paused campaigns once stocked: ${a.pausedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
-          : undefined,
-        a.holdUntil
-          ? `${a.pausedCampaignIds.length ? "5" : "4"}. Do *NOT* put \`HOLD-UNTIL-*\` inboxes back on campaigns until *${a.holdUntil}*`
-          : `${a.pausedCampaignIds.length ? "5" : "4"}. Leave pulled inboxes on warmup until their HOLD-UNTIL tag date`,
-      ].filter(Boolean);
-
-      return [
-        `*${a.clientName}*${a.clientId != null ? ` (\`${a.clientId}\`)` : ""}`,
-        domainLine,
-        inboxLine,
-        sample,
-        campaigns,
-        paused,
-        `*Do this next:*`,
-        ...steps,
-      ]
-        .filter(Boolean)
-        .join("\n");
-    });
-
-    const deletedLines = details.deletedSmartleadAccounts
-      .slice(0, 15)
-      .map((a) => {
-        const client = a.clientName ? ` · *${a.clientName}*` : "";
-        return `• \`${a.email}\` (\`${a.domain}\`)${client}`;
-      })
-      .join("\n");
-
-    const recoveredLines = details.recoveredInboxes
-      .slice(0, 15)
-      .map((a) => {
-        const client = a.clientName ? ` · *${a.clientName}*` : "";
-        const hold = a.holdUntil ? ` · hold *${a.holdUntil}*` : "";
-        const same = a.scoredSameEsp ? " same-ESP" : "";
-        const blended =
-          typeof a.inboxRateAll === "number" && a.scoredSameEsp
-            ? ` (all-ESP ${a.inboxRateAll.toFixed(1)}%)`
-            : "";
-        return `• \`${a.email}\` — ${a.inboxRate.toFixed(1)}%${same}${blended}${client}${hold}`;
-      })
-      .join("\n");
-
     const restored = details.sameEspAudit?.restored ?? [];
-    const restoredLines = restored
-      .slice(0, 20)
-      .map((a) => {
-        const client = a.clientName ? ` · *${a.clientName}*` : "";
-        const camps = a.reattachedCampaignIds.length
-          ? ` → campaigns ${a.reattachedCampaignIds.map((id) => `\`${id}\``).join(", ")}`
-          : " → no active/paused campaign to reattach (HOLD cleared)";
-        const blended =
-          typeof a.inboxRateAll === "number"
-            ? ` · was blended ${a.inboxRateAll.toFixed(1)}%`
-            : "";
-        return `• \`${a.email}\` — same-ESP *${a.inboxRate.toFixed(1)}%*${blended}${client}${camps}`;
-      })
-      .join("\n");
-
-    const errorBlock =
-      details.errors.length > 0
-        ? `\n:warning: Errors:\n${details.errors
-            .slice(0, 15)
-            .map((e) => `• ${e}`)
-            .join("\n")}`
-        : "";
-
-    const actionHeader =
-      actions.length > 0
-        ? [
-            `:rotating_light: *ACTION REQUIRED — backfill by client* (${mode})`,
-            `You need to backfill inventory for *${actions.length}* client${actions.length === 1 ? "" : "s"}:`,
-            ...headlineParts,
-            "",
-            ...perClientBlocks,
-          ].join("\n\n")
-        : `:hammer_and_wrench: *Deliverability remediation (${mode})* — no new domain/inbox replacements needed this run`;
-
-    await this.send(
-      [
-        actionHeader,
-        "",
-        `*Scoring:* same-ESP only (Gmail→G Suite / Outlook→Office365), matching campaign ESP matching`,
-        "",
-        `*Summary*`,
-        details.blacklistedDomains.length
-          ? `Blacklisted domains still needing action: ${details.blacklistedDomains
-              .map((d) => `\`${d}\``)
-              .join(", ")}`
-          : undefined,
-        details.purgedInboxKitDomains.length
-          ? `InboxKit purged: ${details.purgedInboxKitDomains
-              .map((d) => `\`${d}\``)
-              .join(", ")}`
-          : undefined,
-        `Smartlead accounts deleted: *${details.deletedSmartleadAccounts.length}*`,
-        deletedLines || undefined,
-        restored.length
-          ? `*Same-ESP audit restore:* put back *${restored.length}* inbox${restored.length === 1 ? "" : "es"} that were pulled on blended scores but are ≥threshold same-ESP`
-          : undefined,
-        restoredLines || undefined,
-        details.sameEspAudit
-          ? `Still held (same-ESP below threshold): *${details.sameEspAudit.stillHeldBelowThreshold}*`
-          : undefined,
-        `Inboxes pulled for warmup (same-ESP): *${details.recoveredInboxes.length}*`,
-        recoveredLines || undefined,
-        typeof details.holdTagged === "number" && details.holdTagged > 0
-          ? `HOLD-UNTIL tags applied/confirmed: *${details.holdTagged}*`
-          : undefined,
-        details.pausedCampaigns.length
-          ? `Campaigns paused: ${details.pausedCampaigns.join(", ")}`
-          : undefined,
-        errorBlock,
-      ]
-        .filter(Boolean)
-        .join("\n"),
+    const seriousErrors = details.errors.filter(
+      (e) => !/rate limit/i.test(e),
     );
+
+    const didSomething =
+      details.deletedSmartleadAccounts.length > 0 ||
+      details.purgedInboxKitDomains.length > 0 ||
+      details.recoveredInboxes.length > 0 ||
+      restored.length > 0 ||
+      actions.length > 0 ||
+      (typeof details.holdTagged === "number" && details.holdTagged > 0) ||
+      details.pausedCampaigns.length > 0;
+
+    // Don't ping for empty "all clear" or rate-limit noise
+    if (!didSomething && !seriousErrors.length) return;
+
+    const parts: string[] = [];
+
+    if (actions.length > 0) {
+      parts.push(
+        `*You need to order replacements* for ${actions.length} client${actions.length === 1 ? "" : "s"}:`,
+      );
+      for (const a of actions) {
+        const need: string[] = [];
+        if (a.domainsToReplace.length) {
+          need.push(
+            `${a.domainsToReplace.length} domain${a.domainsToReplace.length === 1 ? "" : "s"} (${a.domainsToReplace.map((d) => `\`${d}\``).join(", ")})`,
+          );
+        }
+        if (a.inboxesToReplace) {
+          need.push(
+            `${a.inboxesToReplace} mailbox${a.inboxesToReplace === 1 ? "" : "es"}`,
+          );
+        }
+        parts.push(`• *${a.clientName}* — ${need.join(" + ")}`);
+        if (a.sampleEmails.length) {
+          parts.push(
+            `  examples: ${a.sampleEmails
+              .slice(0, 5)
+              .map((e) => `\`${e}\``)
+              .join(", ")}`,
+          );
+        }
+        parts.push(
+          `  Connect new mailboxes in Smartlead for *${a.clientName}* and add them to the live campaigns. Don't reuse deleted domains.`,
+        );
+      }
+      parts.push("");
+    } else {
+      parts.push(`*Remediation update*`);
+    }
+
+    if (details.deletedSmartleadAccounts.length) {
+      parts.push(
+        `Deleted ${details.deletedSmartleadAccounts.length} blacklisted Smartlead account${details.deletedSmartleadAccounts.length === 1 ? "" : "s"}:`,
+      );
+      for (const a of details.deletedSmartleadAccounts.slice(0, 12)) {
+        parts.push(
+          `• \`${a.email}\`${a.clientName ? ` (${a.clientName})` : ""}`,
+        );
+      }
+    }
+
+    if (details.purgedInboxKitDomains.length) {
+      parts.push(
+        `Purged from InboxKit: ${details.purgedInboxKitDomains
+          .map((d) => `\`${d}\``)
+          .join(", ")}`,
+      );
+    }
+
+    if (details.recoveredInboxes.length) {
+      parts.push(
+        `Pulled ${details.recoveredInboxes.length} weak inbox${details.recoveredInboxes.length === 1 ? "" : "es"} off campaigns for warmup:`,
+      );
+      for (const a of details.recoveredInboxes.slice(0, 12)) {
+        const hold = a.holdUntil ? ` · hold until ${a.holdUntil}` : "";
+        parts.push(
+          `• \`${a.email}\` — ${a.inboxRate.toFixed(0)}%${hold}`,
+        );
+      }
+    }
+
+    if (restored.length) {
+      parts.push(
+        `Put ${restored.length} inbox${restored.length === 1 ? "" : "es"} back on campaigns (same-ESP looks healthy again):`,
+      );
+      for (const a of restored.slice(0, 12)) {
+        parts.push(
+          `• \`${a.email}\` — ${a.inboxRate.toFixed(0)}%`,
+        );
+      }
+    }
+
+    if (details.pausedCampaigns.length) {
+      parts.push(
+        `Paused empty campaign(s): ${details.pausedCampaigns.join(", ")}`,
+      );
+    }
+
+    if (seriousErrors.length) {
+      parts.push(
+        "",
+        `Problems:`,
+        ...seriousErrors.slice(0, 10).map((e) => `• ${e}`),
+      );
+    }
+
+    await this.send(parts.filter(Boolean).join("\n"));
   }
 }

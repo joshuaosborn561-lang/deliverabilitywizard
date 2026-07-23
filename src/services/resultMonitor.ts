@@ -144,34 +144,53 @@ export class ResultMonitor {
     testId: string,
     testName?: string,
   ): Promise<number> {
-    let alerts = 0;
     const report = await this.smartDelivery.getProviderwiseReport(testId);
     const rows = report.result ?? [];
+    const providers: Array<{ name: string; inboxPercent: number }> = [];
     for (const row of rows) {
       const score = providerInboxRate(row);
       if (score === undefined) continue;
-      if (score >= this.config.deliverabilityThreshold) continue;
-
       const label =
-        row.provider_name || row.provider || String(row.provider_id ?? "unknown provider");
-      const key = `low-inbox:v2:${testId}:${label}:${Math.floor(score)}`;
-      if (this.state.hasAlert(key)) continue;
-
-      await this.slack.notifyLowDeliverability({
-        label,
-        score,
-        threshold: this.config.deliverabilityThreshold,
-        context: testName
-          ? `Test: *${testName}* (\`${testId}\`)`
-          : `Test: \`${testId}\``,
-      });
-      this.state.markAlert(key);
-      alerts += 1;
+        row.provider_name ||
+        row.provider ||
+        String(row.provider_id ?? "unknown provider");
+      providers.push({ name: label, inboxPercent: score });
     }
-    return alerts;
+
+    const weak = providers.filter(
+      (p) => p.inboxPercent < this.config.deliverabilityThreshold,
+    );
+    if (!weak.length) return 0;
+
+    // One alert per test (not per provider) — keyed on rounded weak scores
+    const key = `low-inbox:v3:${testId}:${weak
+      .map((p) => `${p.name}:${Math.floor(p.inboxPercent)}`)
+      .sort()
+      .join("|")}`;
+    if (this.state.hasAlert(key)) return 0;
+
+    await this.slack.notifyPlacementResult({
+      testName,
+      testId,
+      threshold: this.config.deliverabilityThreshold,
+      providers,
+      autoRemediation: this.config.enableRemediation,
+    });
+    this.state.markAlert(key);
+    console.log(
+      `[monitor] Placement alert for test ${testId}: ${weak
+        .map((p) => `${p.name} ${p.inboxPercent.toFixed(1)}%`)
+        .join(", ")}`,
+    );
+    return 1;
   }
 
   private async checkMailboxSummary(): Promise<number> {
+    // Provider-level alerts already cover campaign placement in plain English.
+    // Skip the noisy per-mailbox summary channel unless remediation is off
+    // (then the human needs the heads-up).
+    if (this.config.enableRemediation) return 0;
+
     let alerts = 0;
     const rows: MailboxSummaryRow[] = await this.smartDelivery.getMailboxSummary();
     if (!Array.isArray(rows)) return 0;
@@ -193,8 +212,8 @@ export class ResultMonitor {
         score,
         threshold: this.config.deliverabilityThreshold,
         context: row.spam_test_id
-          ? `SmartDelivery mailbox summary (test \`${row.spam_test_id}\`)`
-          : "SmartDelivery mailbox summary",
+          ? `Mailbox summary (test \`${row.spam_test_id}\`)`
+          : "Mailbox summary",
       });
       this.state.markAlert(key);
       alerts += 1;

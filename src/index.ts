@@ -154,10 +154,16 @@ async function main(): Promise<void> {
       if (config.enableWarmupGate) {
         warmupGateResult = await runWarmupGate();
       }
+      // Stay on top of disconnects between the daily 3am ET pass
+      let reconnectResult: unknown = null;
+      if (config.enableAccountReconnect) {
+        reconnectResult = await runReconnect();
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
         warmupGate: warmupGateResult,
+        reconnect: reconnectResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -209,7 +215,7 @@ async function main(): Promise<void> {
   }
 
   if (config.enableAccountReconnect) {
-    // 3am America/New_York = EST in winter, EDT in summer
+    // Daily full pass at 3am America/New_York (EST/EDT)
     cron.schedule(
       config.cronAccountReconnect,
       () => {
@@ -219,6 +225,12 @@ async function main(): Promise<void> {
       },
       { timezone: "America/New_York" },
     );
+    // Also kick shortly after boot so disconnects don't wait until 3am
+    setTimeout(() => {
+      void runReconnect().catch((error) => {
+        console.error("[reconnect] Boot kick failed", error);
+      });
+    }, 20_000);
   }
 
   const app = express();

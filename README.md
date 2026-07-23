@@ -18,7 +18,7 @@ Internal automation service that finds new Smartlead campaigns and automatically
    - **Blacklisted sending domains** → delete matching Smartlead email accounts and purge the domain from InboxKit
    - **Inboxes under 80%** (not blacklisted) → remove from all ACTIVE campaigns and enable warmup to recover
 7. When `ENABLE_RECOVERY_POOL=true` (and pool inventory is in state), swaps a warmed **generic** mailbox (ESP-matched) into those campaigns with signature `First Last\\n{Client Brand}`; when the original recovers ≥80% same-ESP, swaps back and frees the generic.
-8. **Daily at 3:00am America/New_York** (`ENABLE_ACCOUNT_RECONNECT=true`), polls Smartlead for accounts with failed SMTP/IMAP and calls `/email-accounts/{id}/reauth` to reconnect them (then re-enables warmup). Also re-queues failed InboxKit→Smartlead exports for the generic pool workspace.
+8. **Daily at 3:00am America/New_York** (`ENABLE_ACCOUNT_RECONNECT=true`), plus **every monitor run (6h)** and on **boot**: polls Smartlead for accounts with failed SMTP/IMAP and calls `/email-accounts/{id}/reauth`. Also re-queues failed InboxKit→Smartlead exports for the generic pool workspace.
 9. **Warmup gate** (`ENABLE_WARMUP_GATE=true`, runs with the monitor cron): removes mailboxes from ACTIVE campaigns if they have warmed fewer than **14 days** (configurable) or still carry an active `HOLD-UNTIL-YYYY-MM-DD` tag from remediation.
 
 Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|pool|reconnect|warmup-gate|all`).
@@ -88,8 +88,8 @@ Common optional vars:
 | `INBOXKIT_WORKSPACE_ID` | _(auto)_ | Optional; resolved from InboxKit workspaces if empty |
 | `CRON_SCAN` | `0 9 * * 1,4` | Twice weekly scan |
 | `CRON_MONITOR` | `0 */6 * * *` | Results / blacklist / remediation polling |
-| `ENABLE_ACCOUNT_RECONNECT` | `true` | Daily reauth of disconnected Smartlead accounts |
-| `CRON_ACCOUNT_RECONNECT` | `0 3 * * *` | Runs in `America/New_York` (3am EST/EDT) |
+| `ENABLE_ACCOUNT_RECONNECT` | `true` | Reauth disconnected Smartlead accounts (3am ET + every monitor + boot) |
+| `CRON_ACCOUNT_RECONNECT` | `0 3 * * *` | Daily pass in `America/New_York` (also runs with monitor cron) |
 | `ENABLE_WARMUP_GATE` | `true` | Strip under-warmed / HOLD mailboxes from ACTIVE campaigns |
 | `MIN_CAMPAIGN_WARMUP_DAYS` | `14` | Min warmup days before an inbox may stay on ACTIVE campaigns |
 | `CAMPAIGN_STATUSES` | `ACTIVE,PAUSED` | Which campaigns are eligible |

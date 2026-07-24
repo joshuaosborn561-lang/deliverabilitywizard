@@ -18,6 +18,9 @@
  * Env: PORKBUN_API_KEY, PORKBUN_SECRET_API_KEY (Porkbun path), INBOXKIT_API_KEY,
  *      GENERIC_POOL_WORKSPACE_ID (optional; plan file has workspaceId),
  *      DOMAIN_CONTACT_* (optional overrides for InboxKit WHOIS contact)
+ *
+ * SPEND SAFETY: --buy-domains / --buy-domains-inboxkit / --buy-mailboxes / --all
+ * require --i-approve-spend after explicit user approval.
  */
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -159,6 +162,15 @@ async function main(): Promise<void> {
 
   if (flags.has("status") || flags.size === 0) {
     return;
+  }
+
+  const spendFlags = ["buy-domains", "buy-domains-inboxkit", "buy-mailboxes", "all"];
+  const wantsSpend = spendFlags.some((f) => flags.has(f));
+  if (wantsSpend && !flags.has("i-approve-spend")) {
+    console.error(
+      "[expand] Refusing to spend. Re-run with --i-approve-spend only after explicit user approval.",
+    );
+    process.exit(2);
   }
 
   const doDomainsPorkbun = flags.has("buy-domains");

@@ -311,7 +311,7 @@
     "topUpExistingFrom": 3,
     "topUpExistingTo": 5,
     "topUpOrderedAt": "2026-07-24T00:37:20.526Z",
-    "updatedAt": "2026-07-24T00:50:00Z",
+    "updatedAt": "2026-07-24T03:43:12Z",
     "replacedUnavailable": {
       "from": "nowmeetconnect.com",
       "to": "meetconnectgo.com",
@@ -333,6 +333,45 @@
       "getintroducedapp.com",
       "appquickconnectsales.com",
       "appgetintroduced.com"
-    ]
+    ],
+    "pendingAllInfoMigration": {
+      "reason": "Porkbun 50 creates/24h rate limit",
+      "comDomains": [
+        "meetconnectnow.com",
+        "meetconnectgo.com",
+        "nowoutreachdesk.com",
+        "outreachdesknow.com",
+        "appmeetconnect.com",
+        "appoutreachdesk.com",
+        "meetconnectapp.com",
+        "outreachdeskapp.com",
+        "hubmeetconnect.com",
+        "huboutreachdesk.com",
+        "meetconnecthub.com",
+        "getintroducednow.com",
+        "nowgetintroduced.com",
+        "nowquickconnectsales.com",
+        "quickconnectsalesnow.com"
+      ],
+      "infoTargets": [
+        "meetconnectnow.info",
+        "meetconnectgo.info",
+        "nowoutreachdesk.info",
+        "outreachdesknow.info",
+        "appmeetconnect.info",
+        "appoutreachdesk.info",
+        "meetconnectapp.info",
+        "outreachdeskapp.info",
+        "hubmeetconnect.info",
+        "huboutreachdesk.info",
+        "meetconnecthub.info",
+        "getintroducednow.info",
+        "nowgetintroduced.info",
+        "nowquickconnectsales.info",
+        "quickconnectsalesnow.info"
+      ],
+      "etaApprox": "2026-07-24T19:43:12Z",
+      "script": "scripts/migrate-pool-com-to-info.ts --wait"
+    }
   }
 }

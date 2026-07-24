@@ -93,11 +93,17 @@ export class PoolProvisioner {
     const workspaceId =
       this.config.genericPoolWorkspaceId || plan.workspaceId;
     const targetCount = plan.domains.length * (plan.mailboxesPerDomain || 3);
+    const planDomainSet = new Set(
+      plan.domains.map((d) => d.domain.toLowerCase()),
+    );
 
     if (previousPhase === "ready") {
-      // Re-open the pipeline when the plan grows (e.g. 75 → 240).
+      // Re-open the pipeline when the plan grows (e.g. 75 → 200).
       try {
-        const mailboxes = await this.listAllMailboxes(workspaceId);
+        const mailboxes = await this.listAllMailboxes(
+          workspaceId,
+          planDomainSet,
+        );
         const domains = await this.inboxkit.listDomains(workspaceId, {
           limit: 200,
         });
@@ -222,7 +228,10 @@ export class PoolProvisioner {
 
       // --- Buy ---
       if (phase === "buying") {
-        const mailboxes = await this.listAllMailboxes(workspaceId);
+        const mailboxes = await this.listAllMailboxes(
+          workspaceId,
+          planDomainSet,
+        );
         const byDomain = countByDomain(mailboxes);
         stats.mailboxCount = mailboxes.length;
         const perDomain = plan.mailboxesPerDomain || 3;
@@ -267,7 +276,10 @@ export class PoolProvisioner {
 
       // --- Wait mailboxes active ---
       if (phase === "awaiting_mailboxes") {
-        const mailboxes = await this.listAllMailboxes(workspaceId);
+        const mailboxes = await this.listAllMailboxes(
+          workspaceId,
+          planDomainSet,
+        );
         const active = mailboxes.filter((m) =>
           ["active", "ready"].includes(String(m.status ?? "").toLowerCase()),
         );
@@ -356,7 +368,10 @@ export class PoolProvisioner {
           phase = "awaiting_sequencer";
           return this.finish(phase, previousPhase, true, "sequencer lost", stats, errors);
         }
-        const mailboxes = await this.listAllMailboxes(workspaceId);
+        const mailboxes = await this.listAllMailboxes(
+          workspaceId,
+          planDomainSet,
+        );
         const uids = mailboxes
           .map((m) => m.uid || m.id)
           .filter((x): x is string => Boolean(x));
@@ -423,7 +438,10 @@ export class PoolProvisioner {
             this.state.getPoolProvision().sequencerUid ||
             plan.smartleadSequencerUid;
           if (seq) {
-            const ikMailboxes = await this.listAllMailboxes(workspaceId);
+            const ikMailboxes = await this.listAllMailboxes(
+              workspaceId,
+              planDomainSet,
+            );
             const inSmartlead = new Set(
               poolAccounts
                 .map((a) => accountEmail(a)?.toLowerCase())
@@ -656,8 +674,29 @@ export class PoolProvisioner {
 
   private async listAllMailboxes(
     workspaceId: string,
+    planDomains?: Set<string>,
   ): Promise<InboxKitMailbox[]> {
-    return this.inboxkit!.listAllMailboxes(workspaceId, 200);
+    const rows = await this.inboxkit!.listAllMailboxes(workspaceId, 200);
+    return rows.filter((m) => {
+      const st = String(m.status ?? "").toLowerCase();
+      if (
+        st.includes("cancel") ||
+        st === "deleted" ||
+        st === "failed" ||
+        st === "expired"
+      ) {
+        return false;
+      }
+      if (!planDomains || planDomains.size === 0) return true;
+      const email = (m.email || m.address || "").toLowerCase();
+      const domain = (
+        m.domain_name ||
+        m.domain ||
+        (email.includes("@") ? email.split("@")[1] : "") ||
+        ""
+      ).toLowerCase();
+      return planDomains.has(domain);
+    });
   }
 
   private async ensureSmartleadSequencer(

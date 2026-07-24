@@ -3,10 +3,10 @@
   "workspaceName": "DW Generic Pool",
   "mailboxesPerDomain": 5,
   "warmupDaysBeforeAvailable": 14,
-  "targetMailboxes": 240,
-  "googleShare": "\u224860%",
-  "microsoftShare": "\u224840%",
-  "note": "29 Google + 19 Microsoft domains \u00d7 5 = 240. Existing 25 stay .info; 23 new domains are .com (InboxKit registers .com/.net/.org/.shop only; Porkbun .info create limit hit).",
+  "targetMailboxes": 200,
+  "googleShare": "60%",
+  "microsoftShare": "40%",
+  "note": "24 Google + 16 Microsoft domains \u00d7 5 = 200. Existing .info kept; subset of new .com retained after cut from 240.",
   "domains": [
     {
       "domain": "getmeetconnect.info",
@@ -189,31 +189,6 @@
       "platform": "GOOGLE"
     },
     {
-      "domain": "outreachdeskhub.com",
-      "parent": "theoutreachdesk.com",
-      "platform": "GOOGLE"
-    },
-    {
-      "domain": "boxmeetconnect.com",
-      "parent": "meet-connect.com",
-      "platform": "GOOGLE"
-    },
-    {
-      "domain": "boxoutreachdesk.com",
-      "parent": "theoutreachdesk.com",
-      "platform": "GOOGLE"
-    },
-    {
-      "domain": "meetconnectbox.com",
-      "parent": "meet-connect.com",
-      "platform": "GOOGLE"
-    },
-    {
-      "domain": "outreachdeskbox.com",
-      "parent": "theoutreachdesk.com",
-      "platform": "GOOGLE"
-    },
-    {
       "domain": "getintroducednow.com",
       "parent": "getintroduced.io",
       "platform": "MICROSOFT"
@@ -231,21 +206,6 @@
     {
       "domain": "quickconnectsalesnow.com",
       "parent": "quickconnectsales.com",
-      "platform": "MICROSOFT"
-    },
-    {
-      "domain": "appgetintroduced.com",
-      "parent": "getintroduced.io",
-      "platform": "MICROSOFT"
-    },
-    {
-      "domain": "appquickconnectsales.com",
-      "parent": "quickconnectsales.com",
-      "platform": "MICROSOFT"
-    },
-    {
-      "domain": "getintroducedapp.com",
-      "parent": "getintroduced.io",
       "platform": "MICROSOFT"
     }
   ],
@@ -322,36 +282,6 @@
         "affix": "hub"
       },
       {
-        "domain": "outreachdeskhub.com",
-        "parent": "theoutreachdesk.com",
-        "platform": "GOOGLE",
-        "affix": "hub"
-      },
-      {
-        "domain": "boxmeetconnect.com",
-        "parent": "meet-connect.com",
-        "platform": "GOOGLE",
-        "affix": "box"
-      },
-      {
-        "domain": "boxoutreachdesk.com",
-        "parent": "theoutreachdesk.com",
-        "platform": "GOOGLE",
-        "affix": "box"
-      },
-      {
-        "domain": "meetconnectbox.com",
-        "parent": "meet-connect.com",
-        "platform": "GOOGLE",
-        "affix": "box"
-      },
-      {
-        "domain": "outreachdeskbox.com",
-        "parent": "theoutreachdesk.com",
-        "platform": "GOOGLE",
-        "affix": "box"
-      },
-      {
         "domain": "getintroducednow.com",
         "parent": "getintroduced.io",
         "platform": "MICROSOFT",
@@ -374,24 +304,6 @@
         "parent": "quickconnectsales.com",
         "platform": "MICROSOFT",
         "affix": "now"
-      },
-      {
-        "domain": "appgetintroduced.com",
-        "parent": "getintroduced.io",
-        "platform": "MICROSOFT",
-        "affix": "app"
-      },
-      {
-        "domain": "appquickconnectsales.com",
-        "parent": "quickconnectsales.com",
-        "platform": "MICROSOFT",
-        "affix": "app"
-      },
-      {
-        "domain": "getintroducedapp.com",
-        "parent": "getintroduced.io",
-        "platform": "MICROSOFT",
-        "affix": "app"
       }
     ],
     "newDomainTld": "com",
@@ -399,7 +311,7 @@
     "topUpExistingFrom": 3,
     "topUpExistingTo": 5,
     "topUpOrderedAt": "2026-07-24T00:37:20.526Z",
-    "updatedAt": "2026-07-24T00:46:44Z",
+    "updatedAt": "2026-07-24T00:50:00Z",
     "replacedUnavailable": {
       "from": "nowmeetconnect.com",
       "to": "meetconnectgo.com",
@@ -407,8 +319,20 @@
     },
     "domainsRegisteredAt": "2026-07-24T00:44:00Z",
     "mailboxesOrderedAt": "2026-07-24T00:46:31Z",
-    "targetMailboxes": 240,
-    "orderedMailboxes": 240,
-    "note": "23 new .com via InboxKit wallet (meetconnectgo.com replaced unavailable nowmeetconnect.com). Existing 25 .info topped to 5/domain. Provisioner will export+warmup once active."
+    "targetMailboxes": 200,
+    "orderedMailboxes": 200,
+    "note": "Retargeted from 240\u2192200 (dropped 5 Google + 3 Microsoft .com domains). 120G/80M.",
+    "cutFrom": 240,
+    "cutAt": "2026-07-24T00:50:32.283Z",
+    "droppedDomains": [
+      "outreachdeskbox.com",
+      "meetconnectbox.com",
+      "boxoutreachdesk.com",
+      "boxmeetconnect.com",
+      "outreachdeskhub.com",
+      "getintroducedapp.com",
+      "appquickconnectsales.com",
+      "appgetintroduced.com"
+    ]
   }
 }

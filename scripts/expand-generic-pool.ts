@@ -1,5 +1,5 @@
 /**
- * Expand DW Generic Pool to 240 mailboxes (5/domain, ~60% Google / 40% Microsoft).
+ * Expand DW Generic Pool to target mailboxes (default 200: 5/domain, ~60% Google / 40% Microsoft).
  *
  * Steps:
  *  1) Buy any missing .info domains on Porkbun
@@ -86,7 +86,15 @@ async function main(): Promise<void> {
     ikDomains.map((d) => [(d.name || d.domain || "").toLowerCase(), d]),
   );
 
-  const mailboxes = await ik.listAllMailboxes(workspaceId);
+  const mailboxes = (await ik.listAllMailboxes(workspaceId)).filter((m) => {
+    const st = String(m.status || "").toLowerCase();
+    return !(
+      st.includes("cancel") ||
+      st === "deleted" ||
+      st === "failed" ||
+      st === "expired"
+    );
+  });
   const mbByDomain = new Map<string, number>();
   const takenUsernames = new Set<string>();
   for (const m of mailboxes) {

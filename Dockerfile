@@ -7,6 +7,7 @@ RUN npm ci || npm install
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY data ./data
 RUN npm run build && npm prune --omit=dev
 
 ENV NODE_ENV=production

@@ -131,6 +131,58 @@ export class InboxKitClient {
   }
 
   /**
+   * Register domains through InboxKit (supports .com / .net / .org / .shop).
+   * Domains are attached to the workspace with Cloudflare DNS managed by InboxKit.
+   */
+  async registerDomains(
+    domains: Array<{ name: string; registration_years?: number }>,
+    contactDetails: {
+      first_name: string;
+      last_name: string;
+      email: string;
+      phone: string;
+      city: string;
+      state: string;
+      country: string;
+      organization?: string;
+      address_line1?: string;
+      address_line2?: string;
+      postal_code?: string;
+    },
+    workspaceId?: string,
+    opts: { useWalletBalance?: boolean } = {},
+  ): Promise<unknown> {
+    const ws = workspaceId || (await this.resolveWorkspaceId());
+    return this.request(
+      "POST",
+      "/v1/api/domains/register",
+      {
+        domains: domains.map((d) => ({
+          name: d.name.toLowerCase(),
+          registration_years: d.registration_years ?? 1,
+        })),
+        contact_details: contactDetails,
+        ...(opts.useWalletBalance !== false
+          ? { use_wallet_balance: true }
+          : {}),
+      },
+      ws,
+    );
+  }
+
+  /** Wallet credit balance / auto-topup settings. */
+  async getWalletDetails(): Promise<{
+    total_credits?: number;
+    credits_used?: number;
+    credits_remaining?: number;
+    auto_topup_enabled?: boolean;
+    auto_topup_trigger_drops_below?: number | null;
+    auto_topup_add_credits?: number | null;
+  }> {
+    return this.request("GET", "/v1/api/billing/wallet");
+  }
+
+  /**
    * Connect external domains and receive Cloudflare nameservers to set at registrar.
    */
   async connectNameservers(
@@ -301,10 +353,11 @@ export class InboxKitClient {
     keyword?: string;
     workspaceId?: string;
     limit?: number;
+    page?: number;
   } = {}): Promise<InboxKitMailbox[]> {
     const ws = opts.workspaceId || (await this.resolveWorkspaceId());
     const body: Record<string, unknown> = {
-      page: 1,
+      page: opts.page ?? 1,
       limit: opts.limit ?? 200,
     };
     if (opts.domain) body.domain = opts.domain;
@@ -322,6 +375,25 @@ export class InboxKitClient {
       "data",
       "items",
     ]);
+  }
+
+  /** Page through all mailboxes in a workspace. */
+  async listAllMailboxes(
+    workspaceId?: string,
+    pageSize = 200,
+  ): Promise<InboxKitMailbox[]> {
+    const ws = workspaceId || (await this.resolveWorkspaceId());
+    const out: InboxKitMailbox[] = [];
+    for (let page = 1; page <= 20; page++) {
+      const rows = await this.listMailboxes({
+        workspaceId: ws,
+        limit: pageSize,
+        page,
+      });
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+    }
+    return out;
   }
 
   async removeDomains(

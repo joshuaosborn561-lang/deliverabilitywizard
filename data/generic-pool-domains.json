@@ -1,9 +1,12 @@
 {
   "workspaceId": "81e7f800-4203-4892-a40d-18648b89b90c",
   "workspaceName": "DW Generic Pool",
-  "mailboxesPerDomain": 3,
+  "mailboxesPerDomain": 5,
   "warmupDaysBeforeAvailable": 14,
-  "note": "Cannot mix GOOGLE and MICROSOFT on the same domain. 13 Google + 12 Microsoft domains = 75 mailboxes.",
+  "targetMailboxes": 240,
+  "googleShare": "\u224860%",
+  "microsoftShare": "\u224840%",
+  "note": "29 Google + 19 Microsoft domains \u00d7 5 = 240. Existing 25 stay .info; 23 new domains are .com (InboxKit registers .com/.net/.org/.shop only; Porkbun .info create limit hit).",
   "domains": [
     {
       "domain": "getmeetconnect.info",
@@ -129,8 +132,283 @@
       "domain": "myquickconnectsales.info",
       "parent": "quickconnectsales.com",
       "platform": "MICROSOFT"
+    },
+    {
+      "domain": "meetconnectnow.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "meetconnectgo.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "nowoutreachdesk.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "outreachdesknow.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "appmeetconnect.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "appoutreachdesk.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "meetconnectapp.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "outreachdeskapp.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "hubmeetconnect.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "huboutreachdesk.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "meetconnecthub.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "outreachdeskhub.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "boxmeetconnect.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "boxoutreachdesk.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "meetconnectbox.com",
+      "parent": "meet-connect.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "outreachdeskbox.com",
+      "parent": "theoutreachdesk.com",
+      "platform": "GOOGLE"
+    },
+    {
+      "domain": "getintroducednow.com",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "nowgetintroduced.com",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "nowquickconnectsales.com",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "quickconnectsalesnow.com",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "appgetintroduced.com",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "appquickconnectsales.com",
+      "parent": "quickconnectsales.com",
+      "platform": "MICROSOFT"
+    },
+    {
+      "domain": "getintroducedapp.com",
+      "parent": "getintroduced.io",
+      "platform": "MICROSOFT"
     }
   ],
   "smartleadSequencerUid": "232f4cac-a2a7-4b44-ae86-6b0d98cafb5e",
-  "smartleadSequencerName": "SmartLead Account"
+  "smartleadSequencerName": "SmartLead Account",
+  "expansion": {
+    "requestedAt": "2026-07-24T00:37:20.526Z",
+    "readyByApprox": "2026-07-24T18:20:00Z",
+    "newDomains": [
+      {
+        "domain": "meetconnectnow.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "now"
+      },
+      {
+        "domain": "meetconnectgo.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "now"
+      },
+      {
+        "domain": "nowoutreachdesk.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "now"
+      },
+      {
+        "domain": "outreachdesknow.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "now"
+      },
+      {
+        "domain": "appmeetconnect.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "app"
+      },
+      {
+        "domain": "appoutreachdesk.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "app"
+      },
+      {
+        "domain": "meetconnectapp.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "app"
+      },
+      {
+        "domain": "outreachdeskapp.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "app"
+      },
+      {
+        "domain": "hubmeetconnect.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "hub"
+      },
+      {
+        "domain": "huboutreachdesk.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "hub"
+      },
+      {
+        "domain": "meetconnecthub.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "hub"
+      },
+      {
+        "domain": "outreachdeskhub.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "hub"
+      },
+      {
+        "domain": "boxmeetconnect.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "box"
+      },
+      {
+        "domain": "boxoutreachdesk.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "box"
+      },
+      {
+        "domain": "meetconnectbox.com",
+        "parent": "meet-connect.com",
+        "platform": "GOOGLE",
+        "affix": "box"
+      },
+      {
+        "domain": "outreachdeskbox.com",
+        "parent": "theoutreachdesk.com",
+        "platform": "GOOGLE",
+        "affix": "box"
+      },
+      {
+        "domain": "getintroducednow.com",
+        "parent": "getintroduced.io",
+        "platform": "MICROSOFT",
+        "affix": "now"
+      },
+      {
+        "domain": "nowgetintroduced.com",
+        "parent": "getintroduced.io",
+        "platform": "MICROSOFT",
+        "affix": "now"
+      },
+      {
+        "domain": "nowquickconnectsales.com",
+        "parent": "quickconnectsales.com",
+        "platform": "MICROSOFT",
+        "affix": "now"
+      },
+      {
+        "domain": "quickconnectsalesnow.com",
+        "parent": "quickconnectsales.com",
+        "platform": "MICROSOFT",
+        "affix": "now"
+      },
+      {
+        "domain": "appgetintroduced.com",
+        "parent": "getintroduced.io",
+        "platform": "MICROSOFT",
+        "affix": "app"
+      },
+      {
+        "domain": "appquickconnectsales.com",
+        "parent": "quickconnectsales.com",
+        "platform": "MICROSOFT",
+        "affix": "app"
+      },
+      {
+        "domain": "getintroducedapp.com",
+        "parent": "getintroduced.io",
+        "platform": "MICROSOFT",
+        "affix": "app"
+      }
+    ],
+    "newDomainTld": "com",
+    "reasonNewTld": "Porkbun API create rate limit (50/day) exhausted for ~19h; InboxKit domain register supports .com/.net/.org/.shop only",
+    "topUpExistingFrom": 3,
+    "topUpExistingTo": 5,
+    "topUpOrderedAt": "2026-07-24T00:37:20.526Z",
+    "updatedAt": "2026-07-24T00:46:44Z",
+    "replacedUnavailable": {
+      "from": "nowmeetconnect.com",
+      "to": "meetconnectgo.com",
+      "at": "2026-07-24T00:41:12.929Z"
+    },
+    "domainsRegisteredAt": "2026-07-24T00:44:00Z",
+    "mailboxesOrderedAt": "2026-07-24T00:46:31Z",
+    "targetMailboxes": 240,
+    "orderedMailboxes": 240,
+    "note": "23 new .com via InboxKit wallet (meetconnectgo.com replaced unavailable nowmeetconnect.com). Existing 25 .info topped to 5/domain. Provisioner will export+warmup once active."
+  }
 }

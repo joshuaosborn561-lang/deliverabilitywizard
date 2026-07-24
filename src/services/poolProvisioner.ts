@@ -14,6 +14,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
+import { pickUniquePersonNames } from "../lib/personNames.js";
 import type { StateStore, PoolProvisionPhase } from "../state/store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,51 +42,6 @@ export interface PoolProvisionResult {
   stats: Record<string, number | string | boolean>;
   errors: string[];
 }
-
-const FIRST_NAMES = [
-  "Marty",
-  "Jo",
-  "Alex",
-  "Sam",
-  "Riley",
-  "Casey",
-  "Jordan",
-  "Taylor",
-  "Morgan",
-  "Quinn",
-  "Avery",
-  "Reese",
-  "Parker",
-  "Drew",
-  "Blake",
-  "Cameron",
-  "Hayden",
-  "Rowan",
-  "Skyler",
-  "Emerson",
-];
-const LAST_NAMES = [
-  "Moen",
-  "Shmo",
-  "Hayes",
-  "Brooks",
-  "Coleman",
-  "Reed",
-  "Foster",
-  "Bennett",
-  "Griffin",
-  "Palmer",
-  "Walsh",
-  "Nash",
-  "Keller",
-  "Boone",
-  "Pratt",
-  "Sloan",
-  "Vance",
-  "Hale",
-  "Croft",
-  "Lang",
-];
 
 /**
  * Self-advancing generic-pool provisioner.
@@ -120,55 +76,6 @@ export class PoolProvisioner {
       };
     }
 
-    if (previousPhase === "ready") {
-      // Still refresh availability so swaps unlock after warmup days,
-      // and re-assert warmup so UI toggles / late imports stay covered.
-      const flipped = this.state.refreshPoolAvailability(
-        this.config.poolWarmupDays,
-      );
-      let forced = 0;
-      try {
-        const plan = JSON.parse(
-          await readFile(this.planPath, "utf8"),
-        ) as PoolDomainPlan;
-        const planDomains = new Set(
-          plan.domains.map((d) => d.domain.toLowerCase()),
-        );
-        const accounts = await this.smartlead.listAllEmailAccounts({
-          fetchCampaigns: false,
-        });
-        for (const account of accounts) {
-          const email = accountEmail(account)?.toLowerCase();
-          if (!email) continue;
-          const domain = email.split("@")[1] ?? "";
-          if (!planDomains.has(domain)) continue;
-          try {
-            await this.smartlead.configureWarmup(account.id, {
-              warmup_enabled: true,
-              total_warmup_per_day: this.config.warmupTotalPerDay,
-              daily_rampup: this.config.warmupDailyRampup,
-              reply_rate_percentage: this.config.warmupReplyRatePercentage,
-            });
-            forced += 1;
-            await sleep(120);
-          } catch {
-            // non-fatal on ready refresh
-          }
-        }
-      } catch (error) {
-        console.warn("[pool-provision] ready warmup refresh failed", error);
-      }
-      await this.state.save();
-      return {
-        phase: "ready",
-        previousPhase,
-        advanced: false,
-        message: `Pool ready (${flipped} newly available; warmup refreshed on ${forced})`,
-        stats: { flippedAvailable: flipped, warmupForced: forced },
-        errors,
-      };
-    }
-
     if (!this.inboxkit) {
       errors.push("INBOXKIT_API_KEY not configured");
       return this.finish(previousPhase, previousPhase, false, "missing InboxKit", {}, errors);
@@ -187,8 +94,88 @@ export class PoolProvisioner {
       this.config.genericPoolWorkspaceId || plan.workspaceId;
     const targetCount = plan.domains.length * (plan.mailboxesPerDomain || 3);
 
-    let phase: PoolProvisionPhase =
-      previousPhase === "idle" ? "awaiting_ns" : previousPhase;
+    if (previousPhase === "ready") {
+      // Re-open the pipeline when the plan grows (e.g. 75 → 240).
+      try {
+        const mailboxes = await this.listAllMailboxes(workspaceId);
+        const domains = await this.inboxkit.listDomains(workspaceId, {
+          limit: 200,
+        });
+        const byName = new Map(
+          domains.map((d) => [(d.name || d.domain || "").toLowerCase(), d]),
+        );
+        const missingNs = plan.domains.filter((row) => {
+          const d = byName.get(row.domain.toLowerCase());
+          return !d || !InboxKitClient.nameserversReady(d);
+        });
+        const short = mailboxes.length < Math.floor(targetCount * 0.95);
+        if (missingNs.length || short) {
+          const nextPhase: PoolProvisionPhase = missingNs.length
+            ? "awaiting_ns"
+            : "buying";
+          console.log(
+            `[pool-provision] Plan expanded — reopening ${previousPhase} → ${nextPhase} (mailboxes ${mailboxes.length}/${targetCount}, NS gaps ${missingNs.length})`,
+          );
+          this.state.setPoolProvision({
+            phase: nextPhase,
+            lastMessage: `Expanding pool toward ${targetCount} mailboxes`,
+            completedAt: undefined,
+          });
+          await this.state.save();
+          // Fall through with reopened phase
+        } else {
+          const flipped = this.state.refreshPoolAvailability(
+            this.config.poolWarmupDays,
+          );
+          let forced = 0;
+          const planDomains = new Set(
+            plan.domains.map((d) => d.domain.toLowerCase()),
+          );
+          const accounts = await this.smartlead.listAllEmailAccounts({
+            fetchCampaigns: false,
+          });
+          for (const account of accounts) {
+            const email = accountEmail(account)?.toLowerCase();
+            if (!email) continue;
+            const domain = email.split("@")[1] ?? "";
+            if (!planDomains.has(domain)) continue;
+            try {
+              await this.smartlead.configureWarmup(account.id, {
+                warmup_enabled: true,
+                total_warmup_per_day: this.config.warmupTotalPerDay,
+                daily_rampup: this.config.warmupDailyRampup,
+                reply_rate_percentage: this.config.warmupReplyRatePercentage,
+              });
+              forced += 1;
+              await sleep(120);
+            } catch {
+              // non-fatal on ready refresh
+            }
+          }
+          await this.state.save();
+          return {
+            phase: "ready",
+            previousPhase,
+            advanced: false,
+            message: `Pool ready (${flipped} newly available; warmup refreshed on ${forced})`,
+            stats: { flippedAvailable: flipped, warmupForced: forced },
+            errors,
+          };
+        }
+      } catch (error) {
+        console.warn("[pool-provision] ready expand check failed", error);
+      }
+    }
+
+    // idle → start NS wait; ready-reopen already wrote awaiting_ns/buying into state
+    let phase: PoolProvisionPhase = (() => {
+      if (previousPhase === "idle") return "awaiting_ns";
+      if (previousPhase === "ready") {
+        const reopened = this.state.getPoolProvision().phase;
+        if (reopened === "awaiting_ns" || reopened === "buying") return reopened;
+      }
+      return previousPhase;
+    })();
 
     const stats: Record<string, number | string | boolean> = {
       targetMailboxes: targetCount,
@@ -199,7 +186,7 @@ export class PoolProvisioner {
       // --- NS ---
       if (phase === "awaiting_ns" || phase === "buying") {
         const domains = await this.inboxkit.listDomains(workspaceId, {
-          limit: 100,
+          limit: 200,
         });
         const byName = new Map(
           domains.map((d) => [(d.name || d.domain || "").toLowerCase(), d]),
@@ -239,24 +226,30 @@ export class PoolProvisioner {
         const byDomain = countByDomain(mailboxes);
         stats.mailboxCount = mailboxes.length;
         const perDomain = plan.mailboxesPerDomain || 3;
-        let seed = mailboxes.length;
+        const taken = new Set<string>();
+        for (const m of mailboxes) {
+          const email = (m.email || m.address || "").toLowerCase();
+          const user = email.split("@")[0];
+          if (user) taken.add(user);
+          if (m.username) taken.add(String(m.username).toLowerCase());
+        }
+        let seed = mailboxes.length + Date.now() % 10_000;
         for (const row of plan.domains) {
           const have = byDomain.get(row.domain.toLowerCase()) ?? 0;
           const need = Math.max(0, perDomain - have);
           if (need <= 0) continue;
-          const batch = [];
-          for (let i = 0; i < need; i++) {
-            batch.push({
-              ...pickName(seed++),
-              platform: row.platform,
-              domain_name: row.domain,
-            });
-          }
+          const names = pickUniquePersonNames(need, seed, taken);
+          seed += need + 11;
+          const batch = names.map((n) => ({
+            ...n,
+            platform: row.platform,
+            domain_name: row.domain,
+          }));
           try {
             await this.inboxkit.buyMailboxes(batch, {
               workspaceId,
               useWalletBalance: true,
-              idempotencyKey: `pool-auto-${row.domain}-${row.platform}-n${need}-v3`,
+              idempotencyKey: `pool-auto-${row.domain}-${row.platform}-n${need}-v5`,
             });
             stats[`bought:${row.domain}`] = need;
             await sleep(1200);
@@ -664,11 +657,7 @@ export class PoolProvisioner {
   private async listAllMailboxes(
     workspaceId: string,
   ): Promise<InboxKitMailbox[]> {
-    const rows = await this.inboxkit!.listMailboxes({
-      workspaceId,
-      limit: 250,
-    });
-    return rows;
+    return this.inboxkit!.listAllMailboxes(workspaceId, 200);
   }
 
   private async ensureSmartleadSequencer(
@@ -750,18 +739,6 @@ export class PoolProvisioner {
     });
     return { phase, previousPhase, advanced, message, stats, errors };
   }
-}
-
-function pickName(seed: number): {
-  first_name: string;
-  last_name: string;
-  username: string;
-} {
-  const first = FIRST_NAMES[seed % FIRST_NAMES.length]!;
-  const last =
-    LAST_NAMES[Math.floor(seed / FIRST_NAMES.length) % LAST_NAMES.length]!;
-  const username = `${first}${last}`.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return { first_name: first, last_name: last, username };
 }
 
 function countByDomain(mailboxes: InboxKitMailbox[]): Map<string, number> {

@@ -196,6 +196,18 @@ export class StateStore {
     return Boolean(this.state.alertedKeys[key]);
   }
 
+  hasRecentAlert(
+    key: string,
+    cooldownMs: number,
+    now = new Date(),
+  ): boolean {
+    const markedAt = this.state.alertedKeys[key];
+    if (!markedAt) return false;
+    const timestamp = Date.parse(markedAt);
+    if (!Number.isFinite(timestamp)) return false;
+    return now.getTime() - timestamp < cooldownMs;
+  }
+
   markAlert(key: string): void {
     this.state.alertedKeys[key] = new Date().toISOString();
   }

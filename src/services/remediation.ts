@@ -18,6 +18,7 @@ import {
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
+import { isRateLimitNoise } from "../lib/alertNoise.js";
 import { ApiError, sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 import {
@@ -958,7 +959,7 @@ export class RemediationService {
       (result.recoveryPool?.restores.length ?? 0) > 0;
 
     // Rate-limit noise alone should not page Slack
-    const seriousErrors = result.errors.filter((e) => !/rate limit/i.test(e));
+    const seriousErrors = result.errors.filter((e) => !isRateLimitNoise(e));
 
     if (acted || seriousErrors.length) {
       await this.slack.notifyRemediation({

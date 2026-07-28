@@ -14,6 +14,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
+import type { SpendGateway } from "../lib/spendGateway.js";
 import type { StateStore, PoolProvisionPhase } from "../state/store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -101,6 +102,7 @@ export class PoolProvisioner {
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    private readonly spendGateway: SpendGateway,
     private readonly planPath: string = DEFAULT_PLAN_PATH,
   ) {}
 
@@ -235,41 +237,69 @@ export class PoolProvisioner {
 
       // --- Buy ---
       if (phase === "buying") {
-        const mailboxes = await this.listAllMailboxes(workspaceId);
-        const byDomain = countByDomain(mailboxes);
-        stats.mailboxCount = mailboxes.length;
-        const perDomain = plan.mailboxesPerDomain || 3;
-        let seed = mailboxes.length;
-        for (const row of plan.domains) {
-          const have = byDomain.get(row.domain.toLowerCase()) ?? 0;
-          const need = Math.max(0, perDomain - have);
-          if (need <= 0) continue;
-          const batch = [];
-          for (let i = 0; i < need; i++) {
-            batch.push({
-              ...pickName(seed++),
-              platform: row.platform,
-              domain_name: row.domain,
+        if (this.config.dryRun) {
+          stats.dryRun = true;
+          phase = "awaiting_mailboxes";
+        } else {
+          const mailboxes = await this.listAllMailboxes(workspaceId);
+          const byDomain = countByDomain(mailboxes);
+          stats.mailboxCount = mailboxes.length;
+          const perDomain = plan.mailboxesPerDomain || 3;
+          let seed = mailboxes.length;
+          let pendingApprovals = 0;
+          for (const row of plan.domains) {
+            const have = byDomain.get(row.domain.toLowerCase()) ?? 0;
+            const need = Math.max(0, perDomain - have);
+            if (need <= 0) continue;
+            const batch = [];
+            for (let i = 0; i < need; i++) {
+              batch.push({
+                ...pickName(seed++),
+                platform: row.platform,
+                domain_name: row.domain,
+              });
+            }
+            const spendKey = `pool-auto-${row.domain}-${row.platform}-n${need}-v3`;
+            const decision = await this.spendGateway.authorize({
+              key: spendKey,
+              kind: "inboxkit_mailbox_purchase",
+              description: `Buy ${need} ${row.platform} mailbox(es) on ${row.domain} using InboxKit wallet balance (generic recovery pool).`,
+              detail: { domain: row.domain, platform: row.platform, count: need, workspaceId },
             });
-          }
-          try {
-            await this.inboxkit.buyMailboxes(batch, {
-              workspaceId,
-              useWalletBalance: true,
-              idempotencyKey: `pool-auto-${row.domain}-${row.platform}-n${need}-v3`,
-            });
-            stats[`bought:${row.domain}`] = need;
-            await sleep(1200);
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            // Already ordered / processing is fine
-            if (!/already|duplicate|exist|limit/i.test(message)) {
-              errors.push(`buy ${row.domain}: ${message}`);
+            if (!decision.approved) {
+              pendingApprovals += 1;
+              continue;
+            }
+            try {
+              await this.inboxkit.buyMailboxes(batch, {
+                workspaceId,
+                useWalletBalance: true,
+                idempotencyKey: spendKey,
+              });
+              stats[`bought:${row.domain}`] = need;
+              await sleep(1200);
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              // Already ordered / processing is fine
+              if (!/already|duplicate|exist|limit/i.test(message)) {
+                errors.push(`buy ${row.domain}: ${message}`);
+              }
             }
           }
+          stats.pendingSpendApprovals = pendingApprovals;
+          if (pendingApprovals > 0) {
+            return this.finish(
+              "buying",
+              previousPhase,
+              previousPhase !== "buying",
+              `Waiting on spend approval for ${pendingApprovals} domain(s) — see GET /approvals`,
+              stats,
+              errors,
+            );
+          }
+          phase = "awaiting_mailboxes";
         }
-        phase = "awaiting_mailboxes";
       }
 
       // --- Wait mailboxes active ---

@@ -6,6 +6,7 @@ import { SmartDeliveryClient } from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
 import { SlackClient } from "./clients/slack.js";
 import { StateStore } from "./state/store.js";
+import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
@@ -53,12 +54,14 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const spendGateway = new SpendGateway(state, slack, config.requireSpendApproval);
   const poolProvisioner = new PoolProvisioner(
     config,
     inboxkit,
     smartlead,
     slack,
     state,
+    spendGateway,
   );
   const accountReconnect = new AccountReconnectService(
     config,
@@ -265,6 +268,10 @@ async function main(): Promise<void> {
       poolProvisionPhase: s.poolProvision?.phase ?? "idle",
       poolMailboxCount: Object.keys(s.poolMailboxes).length,
       activeSwapCount: Object.keys(s.activeSwaps).length,
+      requireSpendApproval: config.requireSpendApproval,
+      pendingSpendApprovals: Object.values(s.spendApprovals).filter(
+        (a) => a.status === "pending",
+      ).length,
       cronPoolProvision: config.cronPoolProvision,
       enableAccountReconnect: config.enableAccountReconnect,
       cronAccountReconnect: config.cronAccountReconnect,
@@ -299,18 +306,62 @@ async function main(): Promise<void> {
         inboxkitConfigured: Boolean(config.inboxkitApiKey),
         sequenceNumber: config.sequenceNumber,
         dryRun: config.dryRun,
+        requireSpendApproval: config.requireSpendApproval,
       },
     });
   });
 
-  app.post("/run", async (req, res) => {
+  const checkRunToken = (req: express.Request, res: express.Response): boolean => {
     if (config.runToken) {
       const token = req.header("x-run-token") || "";
       if (token !== config.runToken) {
         res.status(401).json({ error: "Unauthorized" });
-        return;
+        return false;
       }
     }
+    return true;
+  };
+
+  // Spend approval gateway: nothing that costs money/credits (currently
+  // InboxKit mailbox purchases from the pool provisioner) executes until a
+  // human approves the specific pending request here.
+  app.get("/approvals", (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    res.json({ approvals: state.listSpendApprovals() });
+  });
+
+  app.post("/approvals/:id/approve", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    const record = state.decideSpendApproval(
+      req.params.id,
+      "approved",
+      req.header("x-approved-by") || undefined,
+    );
+    if (!record) {
+      res.status(404).json({ error: "No such pending approval" });
+      return;
+    }
+    await state.save();
+    res.json({ ok: true, record });
+  });
+
+  app.post("/approvals/:id/deny", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    const record = state.decideSpendApproval(
+      req.params.id,
+      "denied",
+      req.header("x-approved-by") || undefined,
+    );
+    if (!record) {
+      res.status(404).json({ error: "No such pending approval" });
+      return;
+    }
+    await state.save();
+    res.json({ ok: true, record });
+  });
+
+  app.post("/run", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
 
     try {
       const mode = String(req.query.mode ?? req.body?.mode ?? "scan");
@@ -404,6 +455,9 @@ async function main(): Promise<void> {
       `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
+    console.log(
+      `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,
+    );
     console.log(`[boot] State file: ${config.stateFilePath}`);
   });
 }

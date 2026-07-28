@@ -26,6 +26,14 @@ const ConfigSchema = z.object({
   enablePoolProvisioner: boolFromEnv(true),
   cronPoolProvision: z.string().default("*/30 * * * *"),
   /**
+   * Approval gateway: when true (default), any real-money/wallet spend
+   * (currently InboxKit mailbox purchases) is held as "pending" and Slack-
+   * notified instead of executed, until a human approves it via
+   * POST /approvals/:id/approve. Do not disable unless fully unattended
+   * spend is acceptable.
+   */
+  requireSpendApproval: boolFromEnv(true),
+  /**
    * Daily reconnect of disconnected Smartlead accounts (SMTP/IMAP fail).
    * Cron runs in America/New_York so "3am EST" tracks EST/EDT.
    */
@@ -116,6 +124,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     porkbunSecretApiKey: env.PORKBUN_SECRET_API_KEY ?? "",
     enablePoolProvisioner: env.ENABLE_POOL_PROVISIONER,
     cronPoolProvision: env.CRON_POOL_PROVISION ?? "*/30 * * * *",
+    requireSpendApproval: env.REQUIRE_SPEND_APPROVAL,
     enableAccountReconnect: env.ENABLE_ACCOUNT_RECONNECT,
     cronAccountReconnect: env.CRON_ACCOUNT_RECONNECT ?? "0 3 * * *",
     smartleadLoginEmail: env.SMARTLEAD_LOGIN_EMAIL ?? "",

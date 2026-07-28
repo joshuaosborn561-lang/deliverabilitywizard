@@ -56,8 +56,26 @@ Docs:
 | `GET` | `/health` | Liveness + last run timestamps |
 | `GET` | `/status` | Full state + effective config |
 | `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|warmup-gate\|all`) |
+| `GET` | `/approvals` | List pending/decided spend approvals |
+| `POST` | `/approvals/:id/approve` | Approve a pending spend so the next pool-provision tick can execute it |
+| `POST` | `/approvals/:id/deny` | Deny a pending spend |
 
 If `RUN_TOKEN` is set, pass header `X-Run-Token: <token>`.
+
+## Spend approval gateway
+
+`REQUIRE_SPEND_APPROVAL` (default `true`) gates the only action in this app that spends real money/credits: the pool provisioner's InboxKit mailbox purchases (`use_wallet_balance: true`), which would otherwise run unattended off the `CRON_POOL_PROVISION` cron.
+
+With the gateway on:
+
+1. The pool provisioner computes what it needs to buy, but instead of buying, it records a **pending** spend request (one per domain/platform/count batch) and Slack-notifies with the exact request.
+2. Nothing is purchased until a human calls `POST /approvals/:id/approve` (the id is in the Slack message and in `GET /approvals`).
+3. Once approved, the next `pool` run (cron or `POST /run?mode=pool`) executes that exact purchase and no other.
+4. `POST /approvals/:id/deny` permanently blocks that batch (it will need to be re-approved under a new id if the underlying need changes).
+
+`DRY_RUN=true` skips the buying step entirely (no approval request is even created) — use it to see what the provisioner would otherwise ask permission for.
+
+Setting `REQUIRE_SPEND_APPROVAL=false` restores fully unattended spend — not recommended.
 
 ## Environment variables
 
@@ -95,8 +113,9 @@ Common optional vars:
 | `CAMPAIGN_STATUSES` | `ACTIVE,PAUSED` | Which campaigns are eligible |
 | `PROVIDER_IDS` | _(auto)_ | Comma-separated seed provider ints; empty = auto-fetch |
 | `STATE_FILE_PATH` | `/data/state.json` | Persist tested campaigns + alert dedupe |
-| `RUN_TOKEN` | _(empty)_ | Protects `/run` when set |
-| `DRY_RUN` | `false` | Plan remediation without applying writes |
+| `RUN_TOKEN` | _(empty)_ | Protects `/run` and `/approvals/*` when set |
+| `DRY_RUN` | `false` | Plan remediation without applying writes; also skips pool mailbox purchases |
+| `REQUIRE_SPEND_APPROVAL` | `true` | Hold pool mailbox purchases for human approval via `/approvals` instead of spending automatically |
 
 **Do not hardcode secrets.** Set them as Railway service variables.
 

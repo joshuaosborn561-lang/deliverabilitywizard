@@ -134,6 +134,10 @@ export class WarmupGateService {
         const underWarmed =
           daysWarmed == null || daysWarmed < this.config.campaignMinWarmupDays;
 
+        if (isWarmupGateExempt(tags)) {
+          continue;
+        }
+
         if (holdUntil) {
           toRemove.push({
             campaignId: campaign.id,
@@ -287,6 +291,13 @@ export function tagNames(account: SmartleadEmailAccount): string[] {
   return (account.tags ?? [])
     .map((t) => String(t.tag_name ?? t.name ?? "").trim())
     .filter(Boolean);
+}
+
+export const WARMUP_GATE_EXEMPT_TAG = "WARMUP-GATE-EXEMPT";
+
+/** Accounts carrying this tag skip both the under-warmed and hold-until checks. */
+export function isWarmupGateExempt(tags: string[]): boolean {
+  return tags.some((t) => t.trim().toUpperCase() === WARMUP_GATE_EXEMPT_TAG);
 }
 
 /** Return HOLD-UNTIL date if the hold has not expired yet (end of that UTC day). */

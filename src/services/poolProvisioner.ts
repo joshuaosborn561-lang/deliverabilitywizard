@@ -13,6 +13,7 @@ import {
   accountEmail,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
+import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { sleep } from "../lib/http.js";
 import {
   parsePersonName,
@@ -29,8 +30,12 @@ const DEFAULT_PLAN_PATH = path.resolve(
 
 export interface PoolDomainPlan {
   workspaceId: string;
+  workspaceName?: string;
   mailboxesPerDomain: number;
+  warmupDaysBeforeAvailable?: number;
+  note?: string;
   smartleadSequencerUid?: string;
+  smartleadSequencerName?: string;
   domains: Array<{
     domain: string;
     parent: string;
@@ -150,9 +155,7 @@ export class PoolProvisioner {
       );
       let forced = 0;
       try {
-        const plan = JSON.parse(
-          await readFile(this.planPath, "utf8"),
-        ) as PoolDomainPlan;
+        const plan = await this.loadPlan();
         const planDomains = new Set(
           plan.domains.map((d) => d.domain.toLowerCase()),
         );
@@ -196,14 +199,7 @@ export class PoolProvisioner {
       return this.finish(previousPhase, previousPhase, false, "missing InboxKit", {}, errors);
     }
 
-    let plan: PoolDomainPlan;
-    try {
-      plan = JSON.parse(await readFile(this.planPath, "utf8")) as PoolDomainPlan;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`plan load: ${message}`);
-      return this.finish(previousPhase, previousPhase, false, "plan load failed", {}, errors);
-    }
+    const plan = await this.loadPlan();
 
     const workspaceId =
       this.config.genericPoolWorkspaceId || plan.workspaceId;
@@ -709,6 +705,32 @@ export class PoolProvisioner {
       stats,
       errors,
     );
+  }
+
+  /**
+   * The plan ships compiled into dist/ so it is present under every builder.
+   * A readable file at planPath still wins, so the pool can be changed on disk
+   * without a rebuild; a missing file is normal, not an error.
+   */
+  private async loadPlan(): Promise<PoolDomainPlan> {
+    try {
+      const raw = await readFile(this.planPath, "utf8");
+      const parsed = JSON.parse(raw) as PoolDomainPlan;
+      if (Array.isArray(parsed?.domains) && parsed.domains.length) {
+        return parsed;
+      }
+      console.warn(
+        `[pool-provision] ${this.planPath} has no domains — using embedded plan`,
+      );
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        console.warn(
+          `[pool-provision] could not read ${this.planPath} (${error instanceof Error ? error.message : String(error)}) — using embedded plan`,
+        );
+      }
+    }
+    return GENERIC_POOL_PLAN;
   }
 
   /**

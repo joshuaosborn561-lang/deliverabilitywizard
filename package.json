@@ -12,7 +12,8 @@
     "test": "tsx --test src/**/*.test.ts",
     "pool:status": "tsx scripts/provision-pool-mailboxes.ts --status",
     "pool:wait": "tsx scripts/provision-pool-mailboxes.ts --wait 4",
-    "pool:buy": "tsx scripts/provision-pool-mailboxes.ts --buy"
+    "pool:buy": "tsx scripts/provision-pool-mailboxes.ts --buy",
+    "gen:pool-plan": "node scripts/gen-pool-plan.cjs"
   },
   "engines": {
     "node": ">=20"

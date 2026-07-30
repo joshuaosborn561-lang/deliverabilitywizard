@@ -13,6 +13,7 @@ import { RemediationService } from "./services/remediation.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
+import { TestReconciler } from "./services/testReconciler.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -71,6 +72,13 @@ async function main(): Promise<void> {
     state,
   );
   const warmupGate = new WarmupGateService(config, smartlead, slack, state);
+  const testReconciler = new TestReconciler(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
 
   let scanInFlight: Promise<unknown> | null = null;
   let monitorInFlight: Promise<unknown> | null = null;
@@ -78,6 +86,7 @@ async function main(): Promise<void> {
   let poolInFlight: Promise<unknown> | null = null;
   let reconnectInFlight: Promise<unknown> | null = null;
   let warmupGateInFlight: Promise<unknown> | null = null;
+  let reconcileInFlight: Promise<unknown> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -138,6 +147,18 @@ async function main(): Promise<void> {
     return warmupGateInFlight;
   };
 
+  const runTestReconcile = async () => {
+    assertRuntimeSecrets(config);
+    if (reconcileInFlight) {
+      console.log("[test-reconciler] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    reconcileInFlight = testReconciler.run().finally(() => {
+      reconcileInFlight = null;
+    });
+    return reconcileInFlight;
+  };
+
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -157,6 +178,11 @@ async function main(): Promise<void> {
       if (config.enableWarmupGate) {
         warmupGateResult = await runWarmupGate();
       }
+      // Stop recurring tests whose campaign stopped being active since the scan
+      let reconcileResult: unknown = null;
+      if (config.enableTestReconciler) {
+        reconcileResult = await runTestReconcile();
+      }
       // Stay on top of disconnects between the daily 3am ET pass
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
@@ -166,6 +192,7 @@ async function main(): Promise<void> {
         monitor: monitorResult,
         remediation: remediationResult,
         warmupGate: warmupGateResult,
+        testReconcile: reconcileResult,
         reconnect: reconnectResult,
       };
     })().finally(() => {
@@ -257,6 +284,10 @@ async function main(): Promise<void> {
       cronMonitor: config.cronMonitor,
       totalTestQuota: config.totalTestQuota,
       maxMailboxesPerTest: config.maxMailboxesPerTest,
+      autoPlacementTests: config.autoPlacementTests,
+      placementTestEveryDays: config.placementTestEveryDays,
+      autoTestActiveStatuses: config.autoTestActiveStatuses,
+      enableTestReconciler: config.enableTestReconciler,
       remediationInboxThreshold: config.remediationInboxThreshold,
       scoreSameEspOnly: config.scoreSameEspOnly,
       minSameEspSamples: config.minSameEspSamples,
@@ -290,6 +321,11 @@ async function main(): Promise<void> {
         cronAccountReconnect: config.cronAccountReconnect,
         totalTestQuota: config.totalTestQuota,
         maxMailboxesPerTest: config.maxMailboxesPerTest,
+        autoPlacementTests: config.autoPlacementTests,
+        placementTestEveryDays: config.placementTestEveryDays,
+        placementTestEndDays: config.placementTestEndDays,
+        autoTestActiveStatuses: config.autoTestActiveStatuses,
+        enableTestReconciler: config.enableTestReconciler,
         deliverabilityThreshold: config.deliverabilityThreshold,
         remediationInboxThreshold: config.remediationInboxThreshold,
         scoreSameEspOnly: config.scoreSameEspOnly,
@@ -406,6 +442,11 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "warmup-gate", result });
         return;
       }
+      if (mode === "reconcile" || mode === "test-reconcile") {
+        const result = await runTestReconcile();
+        res.json({ ok: true, mode: "reconcile", result });
+        return;
+      }
       if (mode === "both" || mode === "all") {
         const scan = await runScan("manual");
         const monitorBundle = await runMonitor({ remediate: true });
@@ -441,6 +482,9 @@ async function main(): Promise<void> {
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
+    console.log(
+      `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
+    );
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,

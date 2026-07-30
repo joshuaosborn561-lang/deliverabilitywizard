@@ -6,10 +6,13 @@ Internal automation service that finds new Smartlead campaigns and automatically
 
 1. **Twice a week** (Mon & Thu 09:00 UTC by default) scans Smartlead for campaigns that do not already have a placement test.
 2. For each eligible campaign, pulls **sender mailboxes** and **email sequence/copy**.
-3. Creates SmartDelivery **manual placement tests** with:
+3. Creates SmartDelivery **recurring (automated) placement tests** that keep re-testing every `PLACEMENT_TEST_EVERY_DAYS` (default 7) for as long as the campaign stays active — with:
    - `spam_filters: ["spam_assassin"]` explicitly set
    - `link_checker: true` explicitly set
    - mailboxes split into batches of **≤ 50** senders per test
+
+   Set `AUTO_PLACEMENT_TESTS=false` to go back to one-off manual tests.
+3b. **Stops** a recurring test as soon as its campaign is no longer active (runs with the monitor cron), so paused/stopped campaigns don't keep burning test runs.
 4. Before creating anything, checks **total test usage vs a 120-test quota**. If the full batch would exceed the quota, **nothing is created** and Slack is notified so you can prioritize or wait.
 5. On a separate schedule (every 6 hours by default), monitors results and Slack-alerts when:
    - a **domain/IP is blacklisted**, or
@@ -55,7 +58,7 @@ Docs:
 |--------|------|---------|
 | `GET` | `/health` | Liveness + last run timestamps |
 | `GET` | `/status` | Full state + effective config |
-| `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|warmup-gate\|all`) |
+| `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|warmup-gate\|reconcile\|all`) |
 | `GET` | `/approvals` | List pending/decided spend approvals |
 | `POST` | `/approvals/:id/approve` | Approve a pending spend so the next pool-provision tick can execute it |
 | `POST` | `/approvals/:id/deny` | Deny a pending spend |
@@ -93,6 +96,11 @@ Common optional vars:
 | `SMARTDELIVERY_API_KEY` | same as Smartlead key | Use if SmartDelivery uses a separate key |
 | `TOTAL_TEST_QUOTA` | `120` | Hard cap before refusing a batch |
 | `MAX_MAILBOXES_PER_TEST` | `50` | Split threshold |
+| `AUTO_PLACEMENT_TESTS` | `true` | Create recurring tests that keep testing while the campaign is live (`false` = one-off manual) |
+| `PLACEMENT_TEST_EVERY_DAYS` | `7` | Recurrence interval for recurring tests |
+| `PLACEMENT_TEST_END_DAYS` | `0` | Optional hard stop in days; `0` = open-ended |
+| `AUTO_TEST_ACTIVE_STATUSES` | `ACTIVE` | Campaign statuses that keep a recurring test alive |
+| `ENABLE_TEST_RECONCILER` | `true` | Stop recurring tests whose campaign went inactive |
 | `DELIVERABILITY_THRESHOLD` | `90` | Slack when inbox placement is below this % |
 | `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull non-blacklisted inboxes below this % for warmup |
 | `ENABLE_REMEDIATION` | `false` | When true, auto-delete blacklisted domains + recover low inboxes |

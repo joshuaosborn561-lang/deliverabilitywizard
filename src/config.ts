@@ -44,6 +44,33 @@ const ConfigSchema = z.object({
   smartleadLoginPassword: z.string().default(""),
   totalTestQuota: z.coerce.number().int().positive().default(120),
   maxMailboxesPerTest: z.coerce.number().int().positive().max(50).default(50),
+  /**
+   * Create recurring (automated) placement tests instead of one-off manual
+   * tests, so a campaign keeps being tested while it is live.
+   */
+  autoPlacementTests: boolFromEnv(true),
+  /** Recurrence interval for automated placement tests. */
+  placementTestEveryDays: z.coerce.number().int().positive().default(7),
+  /**
+   * Optional hard stop for a schedule, in days from creation. 0 = open-ended
+   * (the reconciler stops it when the campaign goes inactive).
+   */
+  placementTestEndDays: z.coerce.number().int().nonnegative().default(0),
+  /**
+   * Campaign statuses that keep an automated test running. A test whose
+   * campaign leaves this set is stopped by the reconciler.
+   */
+  autoTestActiveStatuses: z
+    .string()
+    .default("ACTIVE")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  /** Stop automated tests whose campaign is no longer active. */
+  enableTestReconciler: boolFromEnv(true),
   deliverabilityThreshold: z.coerce.number().min(0).max(100).default(90),
   remediationInboxThreshold: z.coerce.number().min(0).max(100).default(80),
   enableRemediation: boolFromEnv(false),
@@ -131,6 +158,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     smartleadLoginPassword: env.SMARTLEAD_LOGIN_PASSWORD ?? "",
     totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
+    autoPlacementTests: env.AUTO_PLACEMENT_TESTS,
+    placementTestEveryDays: env.PLACEMENT_TEST_EVERY_DAYS ?? "7",
+    placementTestEndDays: env.PLACEMENT_TEST_END_DAYS ?? "0",
+    autoTestActiveStatuses: env.AUTO_TEST_ACTIVE_STATUSES ?? "ACTIVE",
+    enableTestReconciler: env.ENABLE_TEST_RECONCILER,
     deliverabilityThreshold: env.DELIVERABILITY_THRESHOLD ?? "90",
     remediationInboxThreshold: env.REMEDIATION_INBOX_THRESHOLD ?? "80",
     enableRemediation: env.ENABLE_REMEDIATION,

@@ -411,6 +411,47 @@ export class SlackClient {
     );
   }
 
+  async notifyTestReconcile(summary: {
+    dryRun: boolean;
+    automatedTests: number;
+    stopped: Array<{
+      testId: string;
+      testName?: string;
+      campaignId: string;
+      campaignStatus: string;
+    }>;
+    orphaned: string[];
+    errors: string[];
+  }): Promise<void> {
+    if (!summary.stopped.length && !summary.errors.length) return;
+
+    await this.send(
+      [
+        `*Stopped recurring placement tests*`,
+        summary.stopped.length
+          ? `${summary.stopped.length} test${summary.stopped.length === 1 ? "" : "s"} stopped because the campaign is no longer active — this stops them from burning test runs.`
+          : undefined,
+        ...summary.stopped
+          .slice(0, 12)
+          .map(
+            (s) =>
+              `• ${s.testName ? `*${s.testName}*` : `test \`${s.testId}\``} — campaign ${s.campaignId} is ${s.campaignStatus}`,
+          ),
+        summary.orphaned.length
+          ? `\n${summary.orphaned.length} recurring test(s) have no matching campaign in Smartlead — left running, check manually: ${summary.orphaned.slice(0, 5).join(", ")}`
+          : undefined,
+        summary.errors.length
+          ? `\nProblems:\n${summary.errors
+              .slice(0, 8)
+              .map((e) => `• ${e}`)
+              .join("\n")}`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  }
+
   async notifyRemediation(details: {
     dryRun: boolean;
     blacklistedDomains: string[];

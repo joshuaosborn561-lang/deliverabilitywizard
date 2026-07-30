@@ -15,6 +15,7 @@ import {
 } from "../clients/smartlead.js";
 import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { sleep } from "../lib/http.js";
+import { MATCH_THRESHOLD, rankCandidates } from "../lib/nameMatch.js";
 import { pickUniquePersonNames } from "../lib/personNames.js";
 import {
   parsePersonName,
@@ -775,16 +776,55 @@ export class PoolProvisioner {
       return out;
     }
 
+    // Domain census — one line per distinct sending domain. The operator can
+    // only audit SPF/DMARC for domains they can see, and this is the only
+    // place the full live list exists.
+    const domainCounts = new Map<string, number>();
+    for (const account of accounts) {
+      const domain = accountEmail(account)?.toLowerCase().split("@")[1];
+      if (domain) domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
+    }
+    console.log(
+      `[census] ${domainCounts.size} sending domains across ${accounts.length} accounts:`,
+    );
+    for (const [domain, count] of [...domainCounts].sort((a, b) => b[1] - a[1])) {
+      console.log(`[census]   ${domain} ${count}`);
+    }
+
     for (const want of wanted) {
-      const match = accounts.find((account) => {
-        const email = accountEmail(account)?.toLowerCase() ?? "";
-        const fromName = String(account.from_name ?? "").trim().toLowerCase();
-        return email === want || fromName === want;
-      });
+      const ranked = rankCandidates(
+        want,
+        accounts.map((account) => ({
+          fromName: account.from_name ?? null,
+          email: accountEmail(account) ?? null,
+          account,
+        })),
+      );
+      const best = ranked[0];
+      const match =
+        best && best.score >= MATCH_THRESHOLD ? best.candidate.account : undefined;
 
       if (!match) {
         out.unmatched.push(want);
+        // Say what we nearly matched, so the real name is recoverable from
+        // logs instead of guessed at.
+        if (ranked.length) {
+          console.log(
+            `[pool-provision] "${want}" unmatched — closest:`,
+            ranked
+              .slice(0, 5)
+              .map((r) => `${r.candidate.email ?? "?"} (${r.candidate.fromName ?? "?"}) ${r.score} ${r.reason}`),
+          );
+        } else {
+          console.log(`[pool-provision] "${want}" unmatched — no similar account`);
+        }
         continue;
+      }
+
+      if (best!.score < 100 && best!.reason !== "exact name") {
+        console.log(
+          `[pool-provision] "${want}" matched ${best!.candidate.email} via ${best!.reason} (${best!.score})`,
+        );
       }
 
       const email = accountEmail(match)?.toLowerCase();

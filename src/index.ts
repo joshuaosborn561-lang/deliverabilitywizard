@@ -5,7 +5,7 @@ import { SmartleadClient } from "./clients/smartlead.js";
 import { SmartDeliveryClient } from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
 import { SlackClient } from "./clients/slack.js";
-import { StateStore } from "./state/store.js";
+import { StateStore, type PoolProvisionPhase } from "./state/store.js";
 import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
@@ -37,6 +37,7 @@ async function main(): Promise<void> {
         config.inboxkitWorkspaceId ||
           config.genericPoolWorkspaceId ||
           undefined,
+        config.genericPoolWorkspaceId || undefined,
       )
     : null;
   const slack = new SlackClient({
@@ -47,6 +48,7 @@ async function main(): Promise<void> {
   });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, slack, state);
+  const spendGateway = new SpendGateway(state, slack, config.requireSpendApproval);
   const remediation = new RemediationService(
     config,
     smartlead,
@@ -54,8 +56,8 @@ async function main(): Promise<void> {
     inboxkit,
     slack,
     state,
+    spendGateway,
   );
-  const spendGateway = new SpendGateway(state, slack, config.requireSpendApproval);
   const poolProvisioner = new PoolProvisioner(
     config,
     inboxkit,
@@ -428,8 +430,45 @@ async function main(): Promise<void> {
         return;
       }
       if (mode === "pool" || mode === "pool-provision") {
+        // Optional phase reset — needed to restart a pipeline stuck in a
+        // terminal-ish phase. This never spends: any purchase the restarted
+        // pipeline wants still has to clear the spend approval gateway.
+        const phase = String(req.query.phase ?? req.body?.phase ?? "").trim();
+        if (phase) {
+          const allowed: PoolProvisionPhase[] = [
+            "idle",
+            "awaiting_ns",
+            "buying",
+            "awaiting_mailboxes",
+            "awaiting_sequencer",
+            "exporting",
+            "awaiting_export",
+            "importing_state",
+            "warming",
+            "ready",
+          ];
+          if (!allowed.includes(phase as PoolProvisionPhase)) {
+            res.status(400).json({
+              ok: false,
+              error: `Invalid phase '${phase}'. Allowed: ${allowed.join(", ")}`,
+            });
+            return;
+          }
+          state.setPoolProvision({
+            phase: phase as PoolProvisionPhase,
+            lastError: undefined,
+            lastMessage: `Phase manually reset to ${phase}`,
+          });
+          await state.save();
+          console.log(`[pool-provision] Phase manually reset to ${phase}`);
+        }
         const result = await runPoolProvision();
-        res.json({ ok: true, mode: "pool", result });
+        res.json({
+          ok: true,
+          mode: "pool",
+          ...(phase ? { phaseResetTo: phase } : {}),
+          result,
+        });
         return;
       }
       if (mode === "reconnect") {

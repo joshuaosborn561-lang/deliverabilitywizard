@@ -38,6 +38,12 @@ export class InboxKitClient {
   constructor(
     private readonly apiKey: string,
     private readonly workspaceId?: string,
+    /**
+     * Workspace that must never be purged (the generic recovery pool).
+     * purgeDomain refuses to cancel anything inside it — those mailboxes are
+     * shared infrastructure, not client sending domains.
+     */
+    private readonly protectedWorkspaceId?: string,
   ) {}
 
   private async request<T>(
@@ -399,14 +405,37 @@ export class InboxKitClient {
     }
 
     const ws = found.workspaceId;
+
+    // Never tear down the generic recovery pool on a client-domain purge.
+    if (this.protectedWorkspaceId && ws === this.protectedWorkspaceId) {
+      throw new ApiError(
+        `Refusing to purge ${domain}: it resolved to the protected generic-pool workspace (${ws}). Purge only runs against client sending domains.`,
+        409,
+        null,
+      );
+    }
+
+    const target = domain.toLowerCase();
     const mailboxes = await this.listMailboxes({
-      domain: domain.toLowerCase(),
-      keyword: domain.toLowerCase(),
+      domain: target,
+      keyword: target,
       workspaceId: ws,
     });
+
+    // `keyword` is a fuzzy server-side filter — confirm each mailbox really
+    // belongs to this domain before cancelling it, so a loose match can never
+    // cancel unrelated paid mailboxes.
     const uids = mailboxes
+      .filter((m) => mailboxDomainOf(m) === target)
       .map((m) => m.uid || m.id)
       .filter((x): x is string => Boolean(x));
+
+    const skipped = mailboxes.length - uids.length;
+    if (skipped > 0) {
+      console.warn(
+        `[inboxkit] purgeDomain ${domain}: ignoring ${skipped} mailbox(es) that did not match the domain exactly`,
+      );
+    }
 
     if (uids.length) {
       await this.cancelMailboxes(uids, { workspaceId: ws });
@@ -431,6 +460,15 @@ export class InboxKitClient {
       removeResult,
     };
   }
+}
+
+/** Sending domain for a mailbox row, however InboxKit spelled it. */
+export function mailboxDomainOf(mailbox: InboxKitMailbox): string {
+  const email = (mailbox.email || mailbox.address || "").toLowerCase();
+  return (
+    (mailbox.domain_name || mailbox.domain || "").toLowerCase() ||
+    (email.includes("@") ? email.split("@")[1]! : "")
+  );
 }
 
 function normalizeList<T>(

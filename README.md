@@ -55,6 +55,8 @@ One-time requirement for Smartlead export: set `SMARTLEAD_LOGIN_EMAIL` + `SMARTL
 
 Manual kick: `POST /run?mode=pool`.
 
+Restart a stuck pipeline with `POST /run?mode=pool&phase=idle` (valid phases are listed in the error if you pass a bad one). This never spends — any purchase the restarted pipeline wants still has to clear the approval gateway.
+
 Per-client replace caps (after initial setup): **$25 domains / month** (Porkbun) and **25 mailboxes / month**.
 
 ## SmartDelivery access
@@ -82,7 +84,19 @@ If `RUN_TOKEN` is set, pass header `X-Run-Token: <token>`.
 
 ## Spend approval gateway
 
-`REQUIRE_SPEND_APPROVAL` (default `true`) gates the only action in this app that spends real money/credits: the pool provisioner's InboxKit mailbox purchases (`use_wallet_balance: true`), which would otherwise run unattended off the `CRON_POOL_PROVISION` cron.
+`REQUIRE_SPEND_APPROVAL` (default `true`) gates every action that spends real money/credits or destroys paid assets:
+
+| Action | Where | Approval key |
+|--------|-------|--------------|
+| Buy InboxKit mailboxes (`use_wallet_balance: true`) | pool provisioner cron | `pool-auto-{domain}-{platform}-n{n}-v3` |
+| Delete mailboxes on a blacklisted domain + purge it from InboxKit (forces re-buying replacements) | remediation | `teardown-domain:{domain}` |
+
+The manual CLI (`scripts/provision-pool-mailboxes.ts`) additionally refuses to buy unless passed `--yes-spend-money`; `--buy` alone only previews.
+
+Two hard safety rails sit underneath the gateway:
+
+- `purgeDomain` **refuses** to run against the generic-pool workspace, so a client-domain purge can never tear down the recovery pool.
+- Before cancelling, every mailbox returned by InboxKit's fuzzy `keyword` search is re-checked for an exact domain match, so searching `parlaytech.info` can't cancel `parlaytechnow.info`.
 
 With the gateway on:
 

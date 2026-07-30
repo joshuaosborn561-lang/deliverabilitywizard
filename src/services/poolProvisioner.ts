@@ -14,6 +14,10 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
+import {
+  parsePersonName,
+  poolEspFromSmartleadType,
+} from "../lib/poolSignature.js";
 import type { SpendGateway } from "../lib/spendGateway.js";
 import type { StateStore, PoolProvisionPhase } from "../state/store.js";
 
@@ -110,6 +114,22 @@ export class PoolProvisioner {
     const errors: string[] = [];
     const provision = this.state.getPoolProvision();
     const previousPhase = provision.phase;
+
+    // Independent of the .info pipeline — hand-bought generics should be
+    // swap-ready even when the plan file is missing or the pipeline is stalled.
+    try {
+      const extra = await this.registerExtraGenerics();
+      errors.push(...extra.errors);
+      if (extra.unmatched.length) {
+        errors.push(
+          `extra generics not found in Smartlead: ${extra.unmatched.join(", ")}`,
+        );
+      }
+    } catch (error) {
+      errors.push(
+        `extra generics: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     if (!this.config.enablePoolProvisioner) {
       return {
@@ -689,6 +709,93 @@ export class PoolProvisioner {
       stats,
       errors,
     );
+  }
+
+  /**
+   * Register generic mailboxes that live outside the .info pool plan (e.g.
+   * ones bought by hand). Matched against Smartlead by email or from_name so
+   * they become available for ESP-matched recovery swaps like any other generic.
+   */
+  async registerExtraGenerics(): Promise<{
+    registered: string[];
+    unmatched: string[];
+    errors: string[];
+  }> {
+    const out = { registered: [] as string[], unmatched: [] as string[], errors: [] as string[] };
+    const wanted = this.config.extraGenericMailboxes;
+    if (!wanted.length) return out;
+
+    let accounts: SmartleadAccountWithCampaigns[];
+    try {
+      accounts = await this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: false,
+      });
+    } catch (error) {
+      out.errors.push(
+        `list accounts: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return out;
+    }
+
+    for (const want of wanted) {
+      const match = accounts.find((account) => {
+        const email = accountEmail(account)?.toLowerCase() ?? "";
+        const fromName = String(account.from_name ?? "").trim().toLowerCase();
+        return email === want || fromName === want;
+      });
+
+      if (!match) {
+        out.unmatched.push(want);
+        continue;
+      }
+
+      const email = accountEmail(match)?.toLowerCase();
+      if (!email) {
+        out.unmatched.push(want);
+        continue;
+      }
+
+      const existing = this.state.getPoolMailbox(email);
+      if (existing) {
+        // Keep whatever status/assignment it already has; just refresh the id.
+        this.state.upsertPoolMailbox({
+          ...existing,
+          smartleadAccountId: match.id,
+        });
+        continue;
+      }
+
+      const platform = poolEspFromSmartleadType(match.type);
+      if (!platform) {
+        out.errors.push(
+          `${want}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
+        );
+        continue;
+      }
+
+      const { firstName, lastName } = parsePersonName(
+        match.from_name || email.split("@")[0],
+      );
+      this.state.upsertPoolMailbox({
+        email,
+        domain: email.split("@")[1] ?? "",
+        platform,
+        smartleadAccountId: match.id,
+        firstName,
+        lastName,
+        // Already-live mailboxes are warm; make them usable immediately.
+        status: "available",
+        warmedAt: new Date().toISOString(),
+        availableAt: new Date().toISOString(),
+      });
+      out.registered.push(email);
+    }
+
+    if (out.registered.length || out.unmatched.length) {
+      console.log("[pool-provision] extra generics", out);
+      await this.state.save();
+    }
+    return out;
   }
 
   private async listAllMailboxes(

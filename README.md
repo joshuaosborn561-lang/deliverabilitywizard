@@ -14,9 +14,24 @@ Internal automation service that finds new Smartlead campaigns and automatically
    Set `AUTO_PLACEMENT_TESTS=false` to go back to one-off manual tests.
 3b. **Stops** a recurring test as soon as its campaign is no longer active (runs with the monitor cron), so paused/stopped campaigns don't keep burning test runs.
 4. Before creating anything, checks **total test usage vs a 120-test quota**. If the full batch would exceed the quota, **nothing is created** and Slack is notified so you can prioritize or wait.
-5. On a separate schedule (every 6 hours by default), monitors results and Slack-alerts when:
-   - a **domain/IP is blacklisted**, or
-   - **inbox deliverability falls below 90%** (provider or sender-mailbox level)
+5. On a separate schedule (every 6 hours by default), monitors results and Slack-alerts with:
+   - overall **inbox / tab / spam** split and per-provider breakdown
+   - **per-sender placement**, worst first, and what will be done about each
+   - **SPF/DKIM failures** — flagged loudly, since failing auth sinks placement regardless of copy or warmup
+   - **blacklist diagnosis** that distinguishes a **burned domain** from a **shared InboxKit IP** (see below)
+
+### Blacklist diagnosis
+
+Not every blacklist hit means a domain is burned. The monitor separates them by checking whether one listed IP carries several of our sending domains:
+
+| Verdict | Signal | Action |
+|---------|--------|--------|
+| `domain_burned` | The sending domain itself is listed | Replace the domain — remediation handles it |
+| `shared_ip` | Domain is clean; its IP is listed **and** shared with our other domains | **Do not replace domains** — take the IP to InboxKit |
+| `domain_ip` | Domain clean, its IP listed, no other domain behind it | Confirm with InboxKit whether the IP is dedicated |
+| `unclear` | Report didn't say | Check manually before replacing |
+
+Only `domain_burned` is eligible for automatic replacement, so a bad shared IP can't trigger a round of pointless domain buying.
 6. When `ENABLE_REMEDIATION=true`, automatically remediates:
    - **Blacklisted sending domains** → delete matching Smartlead email accounts and purge the domain from InboxKit
    - **Inboxes under 80%** (not blacklisted) → remove from all ACTIVE campaigns and enable warmup to recover
@@ -103,6 +118,8 @@ Common optional vars:
 | `ENABLE_TEST_RECONCILER` | `true` | Stop recurring tests whose campaign went inactive |
 | `DELIVERABILITY_THRESHOLD` | `90` | Slack when inbox placement is below this % |
 | `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull non-blacklisted inboxes below this % for warmup |
+| `RECOVERY_HOLD_DAYS` | `14` | Warmup hold (2 weeks) before a pulled inbox may return to campaigns |
+| `EXTRA_GENERIC_MAILBOXES` | `harmony norris,breanna escobar` | Generics outside the `.info` plan, matched by email or `from_name` |
 | `ENABLE_REMEDIATION` | `false` | When true, auto-delete blacklisted domains + recover low inboxes |
 | `ENABLE_RECOVERY_POOL` | `false` | Swap warmed generics into campaigns while originals recover |
 | `POOL_WARMUP_DAYS` | `14` | Days before a pool generic is free for swaps |

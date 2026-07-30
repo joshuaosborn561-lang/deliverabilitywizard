@@ -78,7 +78,22 @@ const ConfigSchema = z.object({
   scoreSameEspOnly: boolFromEnv(true),
   /** Min same-ESP seed hits before trusting same-ESP % (else fall back to all-ESP). */
   minSameEspSamples: z.coerce.number().int().positive().default(3),
-  recoveryHoldDays: z.coerce.number().int().positive().default(28),
+  /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
+  recoveryHoldDays: z.coerce.number().int().positive().default(14),
+  /**
+   * Extra generic mailboxes that live outside the .info pool plan, matched
+   * against Smartlead by email address or by from_name (e.g. "Harmony Norris").
+   * Comma-separated.
+   */
+  extraGenericMailboxes: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   /** Sub in warmed generics while originals recover (requires pool inventory in state). */
   enableRecoveryPool: boolFromEnv(false),
   /** Days of Smartlead-only warmup before a generic is free for swaps. */
@@ -168,7 +183,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableRemediation: env.ENABLE_REMEDIATION,
     scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
-    recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "28",
+    recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
+    extraGenericMailboxes:
+      env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,

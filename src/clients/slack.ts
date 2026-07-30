@@ -212,6 +212,77 @@ export class SlackClient {
   }
 
   /**
+   * Blacklist alert that says *why* a domain is listed and whether the domain
+   * is burned or we're stuck behind a dirty shared InboxKit IP.
+   */
+  async notifyBlacklistDiagnosis(details: {
+    testId: string;
+    testName?: string;
+    diagnoses: Array<{
+      domain: string;
+      fromEmail?: string;
+      verdict: string;
+      reason: string;
+      recommendation: string;
+      listings: string[];
+      ips: string[];
+      sharedWithDomains: string[];
+    }>;
+  }): Promise<void> {
+    if (!details.diagnoses.length) return;
+
+    const burned = details.diagnoses.filter((d) => d.verdict === "domain_burned");
+    const sharedIp = details.diagnoses.filter((d) => d.verdict === "shared_ip");
+
+    const blocks: string[] = [
+      `*Blacklisted sending domain${details.diagnoses.length === 1 ? "" : "s"}*`,
+      details.testName
+        ? `From test: *${details.testName}*`
+        : `Test id: \`${details.testId}\``,
+      "",
+    ];
+
+    for (const d of details.diagnoses) {
+      const label =
+        d.verdict === "domain_burned"
+          ? ":skull: DOMAIN BURNED"
+          : d.verdict === "shared_ip"
+            ? ":warning: SHARED IP (InboxKit)"
+            : d.verdict === "domain_ip"
+              ? ":warning: IP LISTED"
+              : ":grey_question: UNCLEAR";
+
+      blocks.push(`${label} — *${d.domain}*`);
+      if (d.fromEmail) blocks.push(`  sender: \`${d.fromEmail}\``);
+      if (d.listings.length) {
+        blocks.push(`  listed on: ${d.listings.join(", ")}`);
+      }
+      if (d.ips.length) blocks.push(`  IP: ${d.ips.join(", ")}`);
+      if (d.sharedWithDomains.length) {
+        blocks.push(
+          `  same IP also serves: ${d.sharedWithDomains.slice(0, 6).join(", ")}`,
+        );
+      }
+      blocks.push(`  why: ${d.reason}`);
+      blocks.push(`  → ${d.recommendation}`);
+      blocks.push("");
+    }
+
+    if (sharedIp.length) {
+      blocks.push(
+        `:rotating_light: ${sharedIp.length} of these are *shared-IP* listings — buying replacement domains will NOT fix them. Take the IP to InboxKit.`,
+      );
+    }
+    if (burned.length) {
+      blocks.push(
+        `${burned.length} domain(s) are genuinely burned and will be replaced by remediation.`,
+      );
+    }
+
+    await this.send(blocks.filter((x) => x !== undefined).join("\n"));
+  }
+
+  /**
    * Plain-English placement alert for a campaign test (one message per test).
    */
   async notifyLowDeliverability(details: {
@@ -237,6 +308,23 @@ export class SlackClient {
     providers: Array<{ name: string; inboxPercent: number }>;
     /** When true, tell the user we're handling weak inboxes automatically */
     autoRemediation?: boolean;
+    /** Overall inbox/tab/spam split for the whole test. */
+    overall?: { inboxPercent: number; tabPercent: number; spamPercent: number };
+    /** Per-sender placement, worst first. */
+    senders?: Array<{
+      email: string;
+      inboxPercent: number;
+      scoredSameEsp?: boolean;
+      willRemediate?: boolean;
+    }>;
+    /** Senders whose SPF or DKIM is failing on every seed. */
+    authFailures?: Array<{
+      email: string;
+      spfFailing: boolean;
+      dkimFailing: boolean;
+    }>;
+    remediationThreshold?: number;
+    holdDays?: number;
   }): Promise<void> {
     const weak = details.providers.filter(
       (p) => p.inboxPercent < details.threshold,
@@ -271,20 +359,72 @@ export class SlackClient {
         }`,
     );
 
+    const overallLine = details.overall
+      ? `Overall: *${details.overall.inboxPercent.toFixed(1)}% inbox* · ${details.overall.tabPercent.toFixed(1)}% tab · *${details.overall.spamPercent.toFixed(1)}% spam*`
+      : undefined;
+
+    // SPF/DKIM failures explain bad placement better than any sender score
+    const authLines: string[] = [];
+    const auth = details.authFailures ?? [];
+    if (auth.length) {
+      const spfBroken = auth.filter((a) => a.spfFailing);
+      const dkimBroken = auth.filter((a) => a.dkimFailing);
+      authLines.push("");
+      if (spfBroken.length) {
+        authLines.push(
+          `:rotating_light: *SPF is FAILING on ${spfBroken.length} sender${spfBroken.length === 1 ? "" : "s"}* — this alone will push mail to spam regardless of copy or warmup. Fix the SPF record before replacing anything.`,
+          ...spfBroken.slice(0, 8).map((a) => `  • \`${a.email}\``),
+        );
+      }
+      if (dkimBroken.length) {
+        authLines.push(
+          `:rotating_light: *DKIM is FAILING on ${dkimBroken.length} sender${dkimBroken.length === 1 ? "" : "s"}*:`,
+          ...dkimBroken.slice(0, 8).map((a) => `  • \`${a.email}\``),
+        );
+      }
+    }
+
+    const senderLines: string[] = [];
+    const senders = details.senders ?? [];
+    if (senders.length) {
+      const weakSenders = senders
+        .filter((s) => s.inboxPercent < (details.remediationThreshold ?? 80))
+        .sort((a, b) => a.inboxPercent - b.inboxPercent);
+      if (weakSenders.length) {
+        senderLines.push(
+          "",
+          `*Weak senders (under ${details.remediationThreshold ?? 80}%):*`,
+          ...weakSenders.slice(0, 15).map((s) => {
+            const esp = s.scoredSameEsp ? "" : " _(blended ESP)_";
+            const action = s.willRemediate
+              ? ` → pulling off campaigns, ${details.holdDays ?? 14}d warmup, generic rotated in`
+              : "";
+            return `  • \`${s.email}\` — ${s.inboxPercent.toFixed(1)}%${esp}${action}`;
+          }),
+          ...(weakSenders.length > 15
+            ? [`  • …and ${weakSenders.length - 15} more`]
+            : []),
+        );
+      }
+    }
+
     await this.send(
       [
         `*Placement look — ${details.testName || "campaign test"}*`,
         details.testId ? `Test id: \`${details.testId}\`` : undefined,
+        overallLine,
         "",
         plainTake,
         "",
         ...scoreLines,
+        ...authLines,
+        ...senderLines,
         "",
         details.autoRemediation
-          ? `If individual senders are under 80% same-ESP, remediation pulls them for warmup automatically. No need to buy replacements unless I ping you that domains were deleted.`
-          : undefined,
+          ? `Senders under ${details.remediationThreshold ?? 80}% same-ESP are pulled off campaigns automatically, warmed for ${details.holdDays ?? 14} days, and covered by an ESP-matched generic with the client's signature. No action needed unless I flag a burned domain.`
+          : `Auto-remediation is OFF — these need manual handling.`,
       ]
-        .filter(Boolean)
+        .filter((x): x is string => Boolean(x))
         .join("\n"),
     );
   }

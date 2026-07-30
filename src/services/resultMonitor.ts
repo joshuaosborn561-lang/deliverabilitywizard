@@ -5,9 +5,16 @@ import {
   normalizeTestList,
   parseDomainBlacklistHits,
   parseIpBlacklistHits,
+  parseSenderInboxRates,
   testIdOf,
   uniqueBlacklistedDomains,
 } from "../clients/smartdelivery.js";
+import {
+  dkimFailing,
+  parseSenderAuthResults,
+  spfFailing,
+} from "../lib/authResults.js";
+import { diagnoseBlacklists } from "../lib/blacklistDiagnosis.js";
 import type { StateStore } from "../state/store.js";
 import type {
   BlacklistedDomainHit,
@@ -123,19 +130,21 @@ export class ResultMonitor {
 
     const domains = uniqueBlacklistedDomains(hits);
     // Deduped per test+domain set so Slack clearly names every blacklisted domain once.
-    const key = `blacklist-domains:v2:${testId}:${domains.map((d) => d.toLowerCase()).sort().join(",")}`;
+    const key = `blacklist-domains:v3:${testId}:${domains.map((d) => d.toLowerCase()).sort().join(",")}`;
     if (this.state.hasAlert(key)) return 0;
 
-    await this.slack.notifyBlacklistedDomains({
+    const diagnoses = diagnoseBlacklists(hits);
+
+    await this.slack.notifyBlacklistDiagnosis({
       testId,
       testName,
-      domains,
-      hits,
+      diagnoses,
     });
     this.state.markAlert(key);
 
     console.log(
-      `[monitor] Blacklisted domains on test ${testId}: ${domains.join(", ")}`,
+      `[monitor] Blacklisted domains on test ${testId}:`,
+      diagnoses.map((d) => `${d.domain}=${d.verdict}`).join(", "),
     );
     return 1;
   }
@@ -163,11 +172,49 @@ export class ResultMonitor {
     if (!weak.length) return 0;
 
     // One alert per test (not per provider) — keyed on rounded weak scores
-    const key = `low-inbox:v3:${testId}:${weak
+    const key = `low-inbox:v4:${testId}:${weak
       .map((p) => `${p.name}:${Math.floor(p.inboxPercent)}`)
       .sort()
       .join("|")}`;
     if (this.state.hasAlert(key)) return 0;
+
+    // Per-sender placement + SPF/DKIM, so the alert says which mailbox is bad
+    // and why — not just that a provider is weak.
+    let senders: Array<{
+      email: string;
+      inboxPercent: number;
+      scoredSameEsp?: boolean;
+      willRemediate?: boolean;
+    }> = [];
+    let authFailures: Array<{
+      email: string;
+      spfFailing: boolean;
+      dkimFailing: boolean;
+    }> = [];
+    try {
+      const senderRaw = await this.smartDelivery.getSenderAccountReport(testId);
+      senders = parseSenderInboxRates(senderRaw, testId, {
+        preferSameEsp: this.config.scoreSameEspOnly,
+        minSameEspSamples: this.config.minSameEspSamples,
+      }).map((row) => ({
+        email: row.email,
+        inboxPercent: row.inboxRate,
+        scoredSameEsp: row.scoredSameEsp,
+        willRemediate:
+          this.config.enableRemediation &&
+          row.inboxRate < this.config.remediationInboxThreshold,
+      }));
+      authFailures = parseSenderAuthResults(senderRaw)
+        .map((row) => ({
+          email: row.email,
+          spfFailing: spfFailing(row),
+          dkimFailing: dkimFailing(row),
+        }))
+        .filter((row) => row.spfFailing || row.dkimFailing);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[monitor] sender detail for ${testId} failed: ${message}`);
+    }
 
     await this.slack.notifyPlacementResult({
       testName,
@@ -175,6 +222,11 @@ export class ResultMonitor {
       threshold: this.config.deliverabilityThreshold,
       providers,
       autoRemediation: this.config.enableRemediation,
+      overall: overallSplit(rows),
+      senders,
+      authFailures,
+      remediationThreshold: this.config.remediationInboxThreshold,
+      holdDays: this.config.recoveryHoldDays,
     });
     this.state.markAlert(key);
     console.log(
@@ -220,6 +272,33 @@ export class ResultMonitor {
     }
     return alerts;
   }
+}
+
+/** Aggregate inbox/tab/spam across every provider row in a test. */
+export function overallSplit(
+  rows: Array<{
+    inbox_count?: number;
+    tab_count?: number;
+    spam_count?: number;
+  }>,
+):
+  | { inboxPercent: number; tabPercent: number; spamPercent: number }
+  | undefined {
+  let inbox = 0;
+  let tab = 0;
+  let spam = 0;
+  for (const row of rows) {
+    inbox += typeof row.inbox_count === "number" ? row.inbox_count : 0;
+    tab += typeof row.tab_count === "number" ? row.tab_count : 0;
+    spam += typeof row.spam_count === "number" ? row.spam_count : 0;
+  }
+  const total = inbox + tab + spam;
+  if (total <= 0) return undefined;
+  return {
+    inboxPercent: (inbox / total) * 100,
+    tabPercent: (tab / total) * 100,
+    spamPercent: (spam / total) * 100,
+  };
 }
 
 function computePlacementScore(row: MailboxSummaryRow): number | undefined {

@@ -10,6 +10,7 @@ import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
+import { DnsAuditService } from "./services/dnsAudit.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
@@ -161,6 +162,8 @@ async function main(): Promise<void> {
     return reconcileInFlight;
   };
 
+  const dnsAudit = new DnsAuditService(smartlead, slack);
+
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -190,12 +193,21 @@ async function main(): Promise<void> {
       if (config.enableAccountReconnect) {
         reconnectResult = await runReconnect();
       }
+      // Zone-level faults are invisible from inside Smartlead; resolve DNS
+      // directly so a domain sending without SPF cannot stay silent.
+      let dnsAuditResult: unknown = null;
+      try {
+        dnsAuditResult = await dnsAudit.run();
+      } catch (error) {
+        console.warn("[dns-audit] failed", error);
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
         reconnect: reconnectResult,
+        dnsAudit: dnsAuditResult,
       };
     })().finally(() => {
       monitorInFlight = null;

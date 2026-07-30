@@ -757,10 +757,15 @@ export class PoolProvisioner {
 
       const existing = this.state.getPoolMailbox(email);
       if (existing) {
-        // Keep whatever status/assignment it already has; just refresh the id.
         this.state.upsertPoolMailbox({
           ...existing,
           smartleadAccountId: match.id,
+          // Pre-warmed: never leave one parked in "warming" waiting out a
+          // warmup clock it already served.
+          status: existing.status === "warming" ? "available" : existing.status,
+          ...(existing.status === "warming"
+            ? { availableAt: new Date().toISOString() }
+            : {}),
         });
         continue;
       }

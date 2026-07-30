@@ -6,7 +6,7 @@ Internal automation service that finds new Smartlead campaigns and automatically
 
 1. **Twice a week** (Mon & Thu 09:00 UTC by default) scans Smartlead for campaigns that do not already have a placement test.
 2. For each eligible campaign, pulls **sender mailboxes** and **email sequence/copy**.
-3. Creates SmartDelivery **recurring (automated) placement tests** that keep re-testing every `PLACEMENT_TEST_EVERY_DAYS` (default 7) for as long as the campaign stays active — with:
+3. Creates SmartDelivery **recurring (automated) placement tests** that re-run **daily** (`PLACEMENT_TEST_EVERY_DAYS`, default 1) for as long as the campaign stays active, so inbox rate is trackable day over day — with:
    - `spam_filters: ["spam_assassin"]` explicitly set
    - `link_checker: true` explicitly set
    - mailboxes split into batches of **≤ 50** senders per test
@@ -37,7 +37,7 @@ Only `domain_burned` is eligible for automatic replacement, so a bad shared IP c
    - **Inboxes under 80%** (not blacklisted) → remove from all ACTIVE campaigns and enable warmup to recover
 7. When `ENABLE_RECOVERY_POOL=true` (and pool inventory is in state), swaps a warmed **generic** mailbox (ESP-matched) into those campaigns with signature `First Last\\n{Client Brand}`; when the original recovers ≥80% same-ESP, swaps back and frees the generic.
 8. **Daily at 3:00am America/New_York** (`ENABLE_ACCOUNT_RECONNECT=true`), plus **every monitor run (6h)** and on **boot**: polls Smartlead for accounts with failed SMTP/IMAP and calls `/email-accounts/{id}/reauth`. Also re-queues failed InboxKit→Smartlead exports for the generic pool workspace.
-9. **Warmup gate** (`ENABLE_WARMUP_GATE=true`, runs with the monitor cron): removes mailboxes from ACTIVE campaigns if they have warmed fewer than **14 days** (configurable) or still carry an active `HOLD-UNTIL-YYYY-MM-DD` tag from remediation.
+9. **Warmup gate** (`ENABLE_WARMUP_GATE=true`, runs with the monitor cron): removes mailboxes from ACTIVE campaigns if they have warmed fewer than **14 days** (configurable) or still carry an active `HOLD-UNTIL-YYYY-MM-DD` tag from remediation. Mailboxes listed in `EXTRA_GENERIC_MAILBOXES` are **exempt** from the under-warmed rule — they are already warm, so Smartlead's warmup start date must not pull them off live campaigns.
 
 Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|pool|reconnect|warmup-gate|all`).
 
@@ -126,14 +126,14 @@ Common optional vars:
 | `TOTAL_TEST_QUOTA` | `120` | Hard cap before refusing a batch |
 | `MAX_MAILBOXES_PER_TEST` | `50` | Split threshold |
 | `AUTO_PLACEMENT_TESTS` | `true` | Create recurring tests that keep testing while the campaign is live (`false` = one-off manual) |
-| `PLACEMENT_TEST_EVERY_DAYS` | `7` | Recurrence interval for recurring tests |
+| `PLACEMENT_TEST_EVERY_DAYS` | `1` | Recurrence interval — daily, so inbox rate is trackable day over day |
 | `PLACEMENT_TEST_END_DAYS` | `0` | Optional hard stop in days; `0` = open-ended |
 | `AUTO_TEST_ACTIVE_STATUSES` | `ACTIVE` | Campaign statuses that keep a recurring test alive |
 | `ENABLE_TEST_RECONCILER` | `true` | Stop recurring tests whose campaign went inactive |
 | `DELIVERABILITY_THRESHOLD` | `90` | Slack when inbox placement is below this % |
 | `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull non-blacklisted inboxes below this % for warmup |
 | `RECOVERY_HOLD_DAYS` | `14` | Warmup hold (2 weeks) before a pulled inbox may return to campaigns |
-| `EXTRA_GENERIC_MAILBOXES` | `harmony norris,breanna escobar` | Generics outside the `.info` plan, matched by email or `from_name` |
+| `EXTRA_GENERIC_MAILBOXES` | `harmony norris,breanna escobar` | Pre-warmed generics outside the `.info` plan (matched by email or `from_name`); registered swap-ready and exempt from the warmup gate |
 | `ENABLE_REMEDIATION` | `false` | When true, auto-delete blacklisted domains + recover low inboxes |
 | `ENABLE_RECOVERY_POOL` | `false` | Swap warmed generics into campaigns while originals recover |
 | `POOL_WARMUP_DAYS` | `14` | Days before a pool generic is free for swaps |

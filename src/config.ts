@@ -49,8 +49,8 @@ const ConfigSchema = z.object({
    * tests, so a campaign keeps being tested while it is live.
    */
   autoPlacementTests: boolFromEnv(true),
-  /** Recurrence interval for automated placement tests. */
-  placementTestEveryDays: z.coerce.number().int().positive().default(7),
+  /** Recurrence interval for automated placement tests (1 = daily). */
+  placementTestEveryDays: z.coerce.number().int().positive().default(1),
   /**
    * Optional hard stop for a schedule, in days from creation. 0 = open-ended
    * (the reconciler stops it when the campaign goes inactive).
@@ -81,8 +81,12 @@ const ConfigSchema = z.object({
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
   /**
-   * Extra generic mailboxes that live outside the .info pool plan, matched
+   * Pre-warmed generic mailboxes that live outside the .info pool plan, matched
    * against Smartlead by email address or by from_name (e.g. "Harmony Norris").
+   *
+   * These are registered as swap-ready pool generics AND exempted from the
+   * warmup gate's minimum-warmup rule — they are already warm, so Smartlead's
+   * warmup start date must not be used to pull them off live campaigns.
    * Comma-separated.
    */
   extraGenericMailboxes: z
@@ -174,7 +178,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
     autoPlacementTests: env.AUTO_PLACEMENT_TESTS,
-    placementTestEveryDays: env.PLACEMENT_TEST_EVERY_DAYS ?? "7",
+    placementTestEveryDays: env.PLACEMENT_TEST_EVERY_DAYS ?? "1",
     placementTestEndDays: env.PLACEMENT_TEST_END_DAYS ?? "0",
     autoTestActiveStatuses: env.AUTO_TEST_ACTIVE_STATUSES ?? "ACTIVE",
     enableTestReconciler: env.ENABLE_TEST_RECONCILER,

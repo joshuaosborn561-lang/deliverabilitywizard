@@ -6,6 +6,7 @@ import {
   type SmartleadClient,
 } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
+import { matchesMailboxIdentity } from "../lib/mailboxIdentity.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 
@@ -134,6 +135,10 @@ export class WarmupGateService {
         const underWarmed =
           daysWarmed == null || daysWarmed < this.config.campaignMinWarmupDays;
 
+        if (isWarmupGateExempt(tags)) {
+          continue;
+        }
+
         if (holdUntil) {
           toRemove.push({
             campaignId: campaign.id,
@@ -146,6 +151,22 @@ export class WarmupGateService {
             holdUntil,
             tags,
           });
+          continue;
+        }
+
+        // Pre-warmed generics are already warm; Smartlead's warmup start date
+        // reflects when warmup was last toggled, not their real age, so it must
+        // not be used to pull them off live campaigns.
+        const prewarmed = matchesMailboxIdentity(
+          { ...account, ...(email.includes("@") ? { from_email: email } : {}) },
+          this.config.extraGenericMailboxes,
+        );
+
+        if (underWarmed && prewarmed) {
+          result.skipped += 1;
+          console.log(
+            `[warmup-gate] Keeping pre-warmed generic \`${email}\` on campaign ${campaign.id} (${daysWarmed == null ? "unknown" : daysWarmed.toFixed(1)}d reported)`,
+          );
           continue;
         }
 
@@ -287,6 +308,13 @@ export function tagNames(account: SmartleadEmailAccount): string[] {
   return (account.tags ?? [])
     .map((t) => String(t.tag_name ?? t.name ?? "").trim())
     .filter(Boolean);
+}
+
+export const WARMUP_GATE_EXEMPT_TAG = "WARMUP-GATE-EXEMPT";
+
+/** Accounts carrying this tag skip both the under-warmed and hold-until checks. */
+export function isWarmupGateExempt(tags: string[]): boolean {
+  return tags.some((t) => t.trim().toUpperCase() === WARMUP_GATE_EXEMPT_TAG);
 }
 
 /** Return HOLD-UNTIL date if the hold has not expired yet (end of that UTC day). */

@@ -20,6 +20,7 @@ import {
 } from "../clients/smartlead.js";
 import { isRateLimitNoise } from "../lib/alertNoise.js";
 import { ApiError, sleep } from "../lib/http.js";
+import type { SpendGateway } from "../lib/spendGateway.js";
 import type { StateStore } from "../state/store.js";
 import {
   RecoveryPoolService,
@@ -101,6 +102,7 @@ export class RemediationService {
     private readonly inboxkit: InboxKitClient | null,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    private readonly spendGateway: SpendGateway,
   ) {
     this.recoveryPool = new RecoveryPoolService(
       config,
@@ -296,6 +298,29 @@ export class RemediationService {
       const domainAccounts = accounts.filter(
         (a) => accountDomain(a) === domain,
       );
+
+      // Deleting mailboxes and purging a domain destroys paid assets and forces
+      // re-buying replacements — hold it for explicit human approval.
+      if (!result.dryRun) {
+        const decision = await this.spendGateway.authorize({
+          key: `teardown-domain:${domain}`,
+          kind: "blacklisted_domain_teardown",
+          description: `Delete ${domainAccounts.length} Smartlead mailbox(es) on blacklisted domain ${domain} and purge the domain from InboxKit. Replacement domain + mailboxes will need to be bought.`,
+          detail: {
+            domain,
+            smartleadAccounts: domainAccounts.length,
+            sampleEmails: domainAccounts
+              .slice(0, 5)
+              .map((a) => accountEmail(a) || `id:${a.id}`),
+          },
+        });
+        if (!decision.approved) {
+          result.errors.push(
+            `${domain}: teardown awaiting approval (${decision.record.status}) — see GET /approvals`,
+          );
+          continue;
+        }
+      }
 
       if (!this.state.hasRemediation(slKey) && !this.state.hasRemediation(legacyKey)) {
         for (const account of domainAccounts) {

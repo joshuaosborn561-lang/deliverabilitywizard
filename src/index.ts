@@ -5,13 +5,15 @@ import { SmartleadClient } from "./clients/smartlead.js";
 import { SmartDeliveryClient } from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
 import { SlackClient } from "./clients/slack.js";
-import { StateStore } from "./state/store.js";
+import { StateStore, type PoolProvisionPhase } from "./state/store.js";
+import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
+import { TestReconciler } from "./services/testReconciler.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -35,6 +37,7 @@ async function main(): Promise<void> {
         config.inboxkitWorkspaceId ||
           config.genericPoolWorkspaceId ||
           undefined,
+        config.genericPoolWorkspaceId || undefined,
       )
     : null;
   const slack = new SlackClient({
@@ -45,6 +48,7 @@ async function main(): Promise<void> {
   });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, slack, state);
+  const spendGateway = new SpendGateway(state, slack, config.requireSpendApproval);
   const remediation = new RemediationService(
     config,
     smartlead,
@@ -52,6 +56,7 @@ async function main(): Promise<void> {
     inboxkit,
     slack,
     state,
+    spendGateway,
   );
   const poolProvisioner = new PoolProvisioner(
     config,
@@ -59,6 +64,7 @@ async function main(): Promise<void> {
     smartlead,
     slack,
     state,
+    spendGateway,
   );
   const accountReconnect = new AccountReconnectService(
     config,
@@ -68,6 +74,13 @@ async function main(): Promise<void> {
     state,
   );
   const warmupGate = new WarmupGateService(config, smartlead, slack, state);
+  const testReconciler = new TestReconciler(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
 
   let scanInFlight: Promise<unknown> | null = null;
   let monitorInFlight: Promise<unknown> | null = null;
@@ -75,6 +88,7 @@ async function main(): Promise<void> {
   let poolInFlight: Promise<unknown> | null = null;
   let reconnectInFlight: Promise<unknown> | null = null;
   let warmupGateInFlight: Promise<unknown> | null = null;
+  let reconcileInFlight: Promise<unknown> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -135,6 +149,18 @@ async function main(): Promise<void> {
     return warmupGateInFlight;
   };
 
+  const runTestReconcile = async () => {
+    assertRuntimeSecrets(config);
+    if (reconcileInFlight) {
+      console.log("[test-reconciler] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    reconcileInFlight = testReconciler.run().finally(() => {
+      reconcileInFlight = null;
+    });
+    return reconcileInFlight;
+  };
+
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -154,6 +180,11 @@ async function main(): Promise<void> {
       if (config.enableWarmupGate) {
         warmupGateResult = await runWarmupGate();
       }
+      // Stop recurring tests whose campaign stopped being active since the scan
+      let reconcileResult: unknown = null;
+      if (config.enableTestReconciler) {
+        reconcileResult = await runTestReconcile();
+      }
       // Stay on top of disconnects between the daily 3am ET pass
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
@@ -163,6 +194,7 @@ async function main(): Promise<void> {
         monitor: monitorResult,
         remediation: remediationResult,
         warmupGate: warmupGateResult,
+        testReconcile: reconcileResult,
         reconnect: reconnectResult,
       };
     })().finally(() => {
@@ -254,6 +286,10 @@ async function main(): Promise<void> {
       cronMonitor: config.cronMonitor,
       totalTestQuota: config.totalTestQuota,
       maxMailboxesPerTest: config.maxMailboxesPerTest,
+      autoPlacementTests: config.autoPlacementTests,
+      placementTestEveryDays: config.placementTestEveryDays,
+      autoTestActiveStatuses: config.autoTestActiveStatuses,
+      enableTestReconciler: config.enableTestReconciler,
       remediationInboxThreshold: config.remediationInboxThreshold,
       scoreSameEspOnly: config.scoreSameEspOnly,
       minSameEspSamples: config.minSameEspSamples,
@@ -265,6 +301,10 @@ async function main(): Promise<void> {
       poolProvisionPhase: s.poolProvision?.phase ?? "idle",
       poolMailboxCount: Object.keys(s.poolMailboxes).length,
       activeSwapCount: Object.keys(s.activeSwaps).length,
+      requireSpendApproval: config.requireSpendApproval,
+      pendingSpendApprovals: Object.values(s.spendApprovals).filter(
+        (a) => a.status === "pending",
+      ).length,
       cronPoolProvision: config.cronPoolProvision,
       enableAccountReconnect: config.enableAccountReconnect,
       cronAccountReconnect: config.cronAccountReconnect,
@@ -283,6 +323,11 @@ async function main(): Promise<void> {
         cronAccountReconnect: config.cronAccountReconnect,
         totalTestQuota: config.totalTestQuota,
         maxMailboxesPerTest: config.maxMailboxesPerTest,
+        autoPlacementTests: config.autoPlacementTests,
+        placementTestEveryDays: config.placementTestEveryDays,
+        placementTestEndDays: config.placementTestEndDays,
+        autoTestActiveStatuses: config.autoTestActiveStatuses,
+        enableTestReconciler: config.enableTestReconciler,
         deliverabilityThreshold: config.deliverabilityThreshold,
         remediationInboxThreshold: config.remediationInboxThreshold,
         scoreSameEspOnly: config.scoreSameEspOnly,
@@ -299,18 +344,62 @@ async function main(): Promise<void> {
         inboxkitConfigured: Boolean(config.inboxkitApiKey),
         sequenceNumber: config.sequenceNumber,
         dryRun: config.dryRun,
+        requireSpendApproval: config.requireSpendApproval,
       },
     });
   });
 
-  app.post("/run", async (req, res) => {
+  const checkRunToken = (req: express.Request, res: express.Response): boolean => {
     if (config.runToken) {
       const token = req.header("x-run-token") || "";
       if (token !== config.runToken) {
         res.status(401).json({ error: "Unauthorized" });
-        return;
+        return false;
       }
     }
+    return true;
+  };
+
+  // Spend approval gateway: nothing that costs money/credits (currently
+  // InboxKit mailbox purchases from the pool provisioner) executes until a
+  // human approves the specific pending request here.
+  app.get("/approvals", (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    res.json({ approvals: state.listSpendApprovals() });
+  });
+
+  app.post("/approvals/:id/approve", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    const record = state.decideSpendApproval(
+      req.params.id,
+      "approved",
+      req.header("x-approved-by") || undefined,
+    );
+    if (!record) {
+      res.status(404).json({ error: "No such pending approval" });
+      return;
+    }
+    await state.save();
+    res.json({ ok: true, record });
+  });
+
+  app.post("/approvals/:id/deny", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
+    const record = state.decideSpendApproval(
+      req.params.id,
+      "denied",
+      req.header("x-approved-by") || undefined,
+    );
+    if (!record) {
+      res.status(404).json({ error: "No such pending approval" });
+      return;
+    }
+    await state.save();
+    res.json({ ok: true, record });
+  });
+
+  app.post("/run", async (req, res) => {
+    if (!checkRunToken(req, res)) return;
 
     try {
       const mode = String(req.query.mode ?? req.body?.mode ?? "scan");
@@ -341,8 +430,45 @@ async function main(): Promise<void> {
         return;
       }
       if (mode === "pool" || mode === "pool-provision") {
+        // Optional phase reset — needed to restart a pipeline stuck in a
+        // terminal-ish phase. This never spends: any purchase the restarted
+        // pipeline wants still has to clear the spend approval gateway.
+        const phase = String(req.query.phase ?? req.body?.phase ?? "").trim();
+        if (phase) {
+          const allowed: PoolProvisionPhase[] = [
+            "idle",
+            "awaiting_ns",
+            "buying",
+            "awaiting_mailboxes",
+            "awaiting_sequencer",
+            "exporting",
+            "awaiting_export",
+            "importing_state",
+            "warming",
+            "ready",
+          ];
+          if (!allowed.includes(phase as PoolProvisionPhase)) {
+            res.status(400).json({
+              ok: false,
+              error: `Invalid phase '${phase}'. Allowed: ${allowed.join(", ")}`,
+            });
+            return;
+          }
+          state.setPoolProvision({
+            phase: phase as PoolProvisionPhase,
+            lastError: undefined,
+            lastMessage: `Phase manually reset to ${phase}`,
+          });
+          await state.save();
+          console.log(`[pool-provision] Phase manually reset to ${phase}`);
+        }
         const result = await runPoolProvision();
-        res.json({ ok: true, mode: "pool", result });
+        res.json({
+          ok: true,
+          mode: "pool",
+          ...(phase ? { phaseResetTo: phase } : {}),
+          result,
+        });
         return;
       }
       if (mode === "reconnect") {
@@ -353,6 +479,11 @@ async function main(): Promise<void> {
       if (mode === "warmup-gate" || mode === "warmup") {
         const result = await runWarmupGate();
         res.json({ ok: true, mode: "warmup-gate", result });
+        return;
+      }
+      if (mode === "reconcile" || mode === "test-reconcile") {
+        const result = await runTestReconcile();
+        res.json({ ok: true, mode: "reconcile", result });
         return;
       }
       if (mode === "both" || mode === "all") {
@@ -390,6 +521,9 @@ async function main(): Promise<void> {
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
+    console.log(
+      `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
+    );
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
@@ -404,6 +538,9 @@ async function main(): Promise<void> {
       `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
+    console.log(
+      `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,
+    );
     console.log(`[boot] State file: ${config.stateFilePath}`);
   });
 }

@@ -35,6 +35,21 @@ export interface CreateManualPlacementInput {
   is_warmup?: boolean;
 }
 
+/**
+ * Automated (recurring) placement test. Same shape as a manual test plus the
+ * recurrence window: SmartDelivery re-runs the parent test every `every_days`
+ * from `schedule_start_time` until `test_end_date` (or until stopped).
+ */
+export interface CreateAutomatedPlacementInput
+  extends CreateManualPlacementInput {
+  /** Recurrence interval in days, e.g. 7 for weekly. */
+  every_days: number;
+  /** ISO 8601 timestamp for the first run. */
+  schedule_start_time: string;
+  /** ISO 8601 timestamp; omit for an open-ended schedule. */
+  test_end_date?: string;
+}
+
 export class SmartDeliveryClient {
   constructor(private readonly apiKey: string) {}
 
@@ -98,6 +113,35 @@ export class SmartDeliveryClient {
       this.apiKey,
       "spam-test/manual",
       { method: "POST", body: input },
+    );
+  }
+
+  /**
+   * Create a recurring placement test.
+   * POST /spam-test/schedule
+   */
+  createAutomatedPlacement(
+    input: CreateAutomatedPlacementInput,
+  ): Promise<CreatedPlacementTest> {
+    return apiRequest<CreatedPlacementTest>(
+      BASE_URL,
+      this.apiKey,
+      "spam-test/schedule",
+      { method: "POST", body: input },
+    );
+  }
+
+  /**
+   * Stop an active automated test before its end date. Stops future runs of
+   * the parent test; already-completed runs keep their reports.
+   * PUT /spam-test/{id}/stop
+   */
+  stopAutomatedTest(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/${spamTestId}/stop`,
+      { method: "PUT", body: {} },
     );
   }
 
@@ -217,6 +261,28 @@ export function testIdOf(test: SpamTestSummary): string | undefined {
 export function campaignIdOf(test: SpamTestSummary): string | undefined {
   if (test.campaign_id === undefined || test.campaign_id === null) return undefined;
   return String(test.campaign_id);
+}
+
+/**
+ * True when a test recurs. SmartDelivery's exact `test_type` strings are not
+ * documented, so treat the presence of recurrence fields as authoritative and
+ * fall back to a name match.
+ */
+export function isAutomatedTest(test: SpamTestSummary): boolean {
+  if (typeof test.every_days === "number" && test.every_days > 0) return true;
+  if (test.schedule_start_time) return true;
+  return /auto|schedul|recur/i.test(String(test.test_type ?? ""));
+}
+
+/**
+ * True when an automated test still has future runs worth stopping. Unknown or
+ * missing statuses are treated as stoppable so we fail safe toward stopping a
+ * test whose campaign is no longer active.
+ */
+export function isTestStoppable(test: SpamTestSummary): boolean {
+  const status = String(test.status ?? "").toLowerCase();
+  if (!status) return true;
+  return !/stop|complet|cancel|expir|fail|delet|finish|end/i.test(status);
 }
 
 export function asBlacklistRows(

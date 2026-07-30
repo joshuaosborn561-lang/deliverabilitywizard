@@ -103,6 +103,19 @@ export interface AppState {
   clientMonthlyUsage: Record<string, MonthlyUsageBucket>;
   /** Self-advancing pool provisioning pipeline */
   poolProvision: PoolProvisionState;
+  /** Pending/decided real-money spend approvals (key = spend id) */
+  spendApprovals: Record<string, SpendApprovalRecord>;
+}
+
+export interface SpendApprovalRecord {
+  id: string;
+  kind: string;
+  description: string;
+  detail: Record<string, unknown>;
+  requestedAt: string;
+  status: "pending" | "approved" | "denied";
+  decidedAt?: string;
+  decidedBy?: string;
 }
 
 export interface HeldInboxRecord {
@@ -139,6 +152,7 @@ const EMPTY_STATE: AppState = {
   activeSwaps: {},
   clientMonthlyUsage: {},
   poolProvision: { ...EMPTY_POOL_PROVISION },
+  spendApprovals: {},
 };
 
 export class StateStore {
@@ -165,6 +179,7 @@ export class StateStore {
           ...EMPTY_POOL_PROVISION,
           ...(parsed.poolProvision ?? {}),
         },
+        spendApprovals: parsed.spendApprovals ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -239,6 +254,32 @@ export class StateStore {
       }
     }
     return cleared;
+  }
+
+  getSpendApproval(id: string): SpendApprovalRecord | undefined {
+    return this.state.spendApprovals[id];
+  }
+
+  upsertSpendApproval(record: SpendApprovalRecord): void {
+    this.state.spendApprovals[record.id] = record;
+  }
+
+  listSpendApprovals(): SpendApprovalRecord[] {
+    return Object.values(this.state.spendApprovals);
+  }
+
+  /** Returns the updated record, or undefined if no pending/known approval matches `id`. */
+  decideSpendApproval(
+    id: string,
+    status: "approved" | "denied",
+    decidedBy?: string,
+  ): SpendApprovalRecord | undefined {
+    const record = this.state.spendApprovals[id];
+    if (!record) return undefined;
+    record.status = status;
+    record.decidedAt = new Date().toISOString();
+    if (decidedBy) record.decidedBy = decidedBy;
+    return record;
   }
 
   getPoolProvision(): PoolProvisionState {

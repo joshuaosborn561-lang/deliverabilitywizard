@@ -9,6 +9,10 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
+# Runtime data (generic-pool domain plan). The pool provisioner reads this at
+# runtime from ../../data relative to dist/services, so it must ship in the image.
+COPY data ./data
+
 ENV NODE_ENV=production
 ENV STATE_FILE_PATH=/data/state.json
 ENV PORT=3000

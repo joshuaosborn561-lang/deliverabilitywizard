@@ -28,6 +28,13 @@ export interface ScanResult {
   createdTestIds: string[];
 }
 
+/** ISO 8601 timestamp N days from base. */
+export function addDaysIso(base: Date, days: number): string {
+  const d = new Date(base.getTime());
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString();
+}
+
 export class CampaignScanner {
   constructor(
     private readonly config: AppConfig,
@@ -97,8 +104,14 @@ export class CampaignScanner {
       ? Date.parse(this.state.get().lastScanAt!)
       : null;
 
+    // A recurring test bills on every run, so only start one for a campaign
+    // that is actually live — not merely eligible (e.g. PAUSED).
+    const creationStatusSet = this.config.autoPlacementTests
+      ? new Set(this.config.autoTestActiveStatuses)
+      : statusSet;
+
     const candidates = campaigns.filter((campaign) => {
-      if (!statusSet.has(String(campaign.status ?? "").toUpperCase())) {
+      if (!creationStatusSet.has(String(campaign.status ?? "").toUpperCase())) {
         return false;
       }
       if (testedCampaignIds.has(String(campaign.id))) {
@@ -191,6 +204,7 @@ export class CampaignScanner {
           const batch = plan.batches[i]!;
           const batchLabel =
             plan.batches.length > 1 ? ` (${i + 1}/${plan.batches.length})` : "";
+          const recurring = this.config.autoPlacementTests;
           const payload = {
             test_name: `Auto: ${plan.campaign.name || plan.campaign.id}${batchLabel}`.slice(
               0,
@@ -202,6 +216,9 @@ export class CampaignScanner {
               `Sequence #${plan.sequenceNumber} (mapping ${plan.sequenceMappingId})`,
               `Subject: ${plan.subjectPreview}`,
               `Senders in this test: ${batch.length}`,
+              recurring
+                ? `Recurring every ${this.config.placementTestEveryDays} day(s) while the campaign is active`
+                : `One-off manual test`,
             ].join("\n"),
             // Explicit every time — do not rely on defaults
             spam_filters: ["spam_assassin"],
@@ -217,19 +234,37 @@ export class CampaignScanner {
           };
 
           if (this.config.dryRun) {
-            console.log("[scan] DRY_RUN would create test:", payload.test_name, batch.length);
+            console.log(
+              `[scan] DRY_RUN would create ${recurring ? "recurring" : "manual"} test:`,
+              payload.test_name,
+              batch.length,
+            );
             createdIds.push(`dry-run-${plan.campaign.id}-${i + 1}`);
             result.created += 1;
             continue;
           }
 
-          const created = await this.smartDelivery.createManualPlacement(payload);
+          const created = recurring
+            ? await this.smartDelivery.createAutomatedPlacement({
+                ...payload,
+                every_days: this.config.placementTestEveryDays,
+                schedule_start_time: new Date().toISOString(),
+                ...(this.config.placementTestEndDays > 0
+                  ? {
+                      test_end_date: addDaysIso(
+                        new Date(),
+                        this.config.placementTestEndDays,
+                      ),
+                    }
+                  : {}),
+              })
+            : await this.smartDelivery.createManualPlacement(payload);
           const id = String(created.id);
           createdIds.push(id);
           result.created += 1;
           result.createdTestIds.push(id);
           console.log(
-            `[scan] Created test ${id} for campaign ${plan.campaign.id} (${batch.length} mailboxes)`,
+            `[scan] Created ${recurring ? `recurring (every ${this.config.placementTestEveryDays}d)` : "manual"} test ${id} for campaign ${plan.campaign.id} (${batch.length} mailboxes)`,
           );
           await sleep(500);
         }

@@ -10,8 +10,11 @@
  * Usage:
  *   npx tsx scripts/provision-pool-mailboxes.ts --status
  *   npx tsx scripts/provision-pool-mailboxes.ts --wait 4
- *   npx tsx scripts/provision-pool-mailboxes.ts --buy
- *   npx tsx scripts/provision-pool-mailboxes.ts --buy --force   # skip NS gate (not recommended)
+ *   npx tsx scripts/provision-pool-mailboxes.ts --buy --dry-run
+ *   npx tsx scripts/provision-pool-mailboxes.ts --buy --yes-spend-money
+ *   npx tsx scripts/provision-pool-mailboxes.ts --buy --yes-spend-money --force  # skip NS gate (not recommended)
+ *
+ * --buy alone will NOT spend: real wallet spend requires --yes-spend-money.
  *
  * Env: INBOXKIT_API_KEY, GENERIC_POOL_WORKSPACE_ID (or from data file)
  */
@@ -94,6 +97,7 @@ function parseArgs(argv: string[]) {
       flags.add("wait");
       opts.waitHours = argv[++i] || "4";
     } else if (a === "--dry-run") flags.add("dry-run");
+    else if (a === "--yes-spend-money") flags.add("yes-spend-money");
   }
   return { flags, opts };
 }
@@ -229,6 +233,26 @@ async function main(): Promise<void> {
   }
 
   const perDomain = plan.mailboxesPerDomain || 3;
+  const domainsToBuy = flags.has("force")
+    ? plan.domains
+    : plan.domains.filter((row) => status.readyDomains.includes(row.domain));
+
+  // Real wallet spend — require an explicit confirmation flag, not just --buy.
+  if (!flags.has("dry-run") && !flags.has("yes-spend-money")) {
+    console.error(
+      [
+        "",
+        "REFUSING TO SPEND WITHOUT CONFIRMATION",
+        `This would buy ${domainsToBuy.length * perDomain} mailbox(es) across ${domainsToBuy.length} domain(s)`,
+        "using InboxKit wallet balance.",
+        "",
+        "Re-run with --dry-run to preview, or --yes-spend-money to actually buy.",
+        "",
+      ].join("\n"),
+    );
+    process.exit(3);
+  }
+
   const orders: unknown[] = [];
   let seed = 0;
   for (const row of plan.domains) {

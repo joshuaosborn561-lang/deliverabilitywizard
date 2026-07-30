@@ -6,6 +6,7 @@ import {
   type SmartleadClient,
 } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
+import { matchesMailboxIdentity } from "../lib/mailboxIdentity.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 
@@ -150,6 +151,22 @@ export class WarmupGateService {
             holdUntil,
             tags,
           });
+          continue;
+        }
+
+        // Pre-warmed generics are already warm; Smartlead's warmup start date
+        // reflects when warmup was last toggled, not their real age, so it must
+        // not be used to pull them off live campaigns.
+        const prewarmed = matchesMailboxIdentity(
+          { ...account, ...(email.includes("@") ? { from_email: email } : {}) },
+          this.config.extraGenericMailboxes,
+        );
+
+        if (underWarmed && prewarmed) {
+          result.skipped += 1;
+          console.log(
+            `[warmup-gate] Keeping pre-warmed generic \`${email}\` on campaign ${campaign.id} (${daysWarmed == null ? "unknown" : daysWarmed.toFixed(1)}d reported)`,
+          );
           continue;
         }
 

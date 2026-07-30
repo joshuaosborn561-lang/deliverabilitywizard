@@ -13,7 +13,13 @@ import {
   accountEmail,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
+import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { sleep } from "../lib/http.js";
+import {
+  parsePersonName,
+  poolEspFromSmartleadType,
+} from "../lib/poolSignature.js";
+import type { SpendGateway } from "../lib/spendGateway.js";
 import type { StateStore, PoolProvisionPhase } from "../state/store.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,8 +30,12 @@ const DEFAULT_PLAN_PATH = path.resolve(
 
 export interface PoolDomainPlan {
   workspaceId: string;
+  workspaceName?: string;
   mailboxesPerDomain: number;
+  warmupDaysBeforeAvailable?: number;
+  note?: string;
   smartleadSequencerUid?: string;
+  smartleadSequencerName?: string;
   domains: Array<{
     domain: string;
     parent: string;
@@ -101,6 +111,7 @@ export class PoolProvisioner {
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    private readonly spendGateway: SpendGateway,
     private readonly planPath: string = DEFAULT_PLAN_PATH,
   ) {}
 
@@ -108,6 +119,22 @@ export class PoolProvisioner {
     const errors: string[] = [];
     const provision = this.state.getPoolProvision();
     const previousPhase = provision.phase;
+
+    // Independent of the .info pipeline — hand-bought generics should be
+    // swap-ready even when the plan file is missing or the pipeline is stalled.
+    try {
+      const extra = await this.registerExtraGenerics();
+      errors.push(...extra.errors);
+      if (extra.unmatched.length) {
+        errors.push(
+          `extra generics not found in Smartlead: ${extra.unmatched.join(", ")}`,
+        );
+      }
+    } catch (error) {
+      errors.push(
+        `extra generics: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     if (!this.config.enablePoolProvisioner) {
       return {
@@ -128,9 +155,7 @@ export class PoolProvisioner {
       );
       let forced = 0;
       try {
-        const plan = JSON.parse(
-          await readFile(this.planPath, "utf8"),
-        ) as PoolDomainPlan;
+        const plan = await this.loadPlan();
         const planDomains = new Set(
           plan.domains.map((d) => d.domain.toLowerCase()),
         );
@@ -174,14 +199,7 @@ export class PoolProvisioner {
       return this.finish(previousPhase, previousPhase, false, "missing InboxKit", {}, errors);
     }
 
-    let plan: PoolDomainPlan;
-    try {
-      plan = JSON.parse(await readFile(this.planPath, "utf8")) as PoolDomainPlan;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`plan load: ${message}`);
-      return this.finish(previousPhase, previousPhase, false, "plan load failed", {}, errors);
-    }
+    const plan = await this.loadPlan();
 
     const workspaceId =
       this.config.genericPoolWorkspaceId || plan.workspaceId;
@@ -235,41 +253,69 @@ export class PoolProvisioner {
 
       // --- Buy ---
       if (phase === "buying") {
-        const mailboxes = await this.listAllMailboxes(workspaceId);
-        const byDomain = countByDomain(mailboxes);
-        stats.mailboxCount = mailboxes.length;
-        const perDomain = plan.mailboxesPerDomain || 3;
-        let seed = mailboxes.length;
-        for (const row of plan.domains) {
-          const have = byDomain.get(row.domain.toLowerCase()) ?? 0;
-          const need = Math.max(0, perDomain - have);
-          if (need <= 0) continue;
-          const batch = [];
-          for (let i = 0; i < need; i++) {
-            batch.push({
-              ...pickName(seed++),
-              platform: row.platform,
-              domain_name: row.domain,
+        if (this.config.dryRun) {
+          stats.dryRun = true;
+          phase = "awaiting_mailboxes";
+        } else {
+          const mailboxes = await this.listAllMailboxes(workspaceId);
+          const byDomain = countByDomain(mailboxes);
+          stats.mailboxCount = mailboxes.length;
+          const perDomain = plan.mailboxesPerDomain || 3;
+          let seed = mailboxes.length;
+          let pendingApprovals = 0;
+          for (const row of plan.domains) {
+            const have = byDomain.get(row.domain.toLowerCase()) ?? 0;
+            const need = Math.max(0, perDomain - have);
+            if (need <= 0) continue;
+            const batch = [];
+            for (let i = 0; i < need; i++) {
+              batch.push({
+                ...pickName(seed++),
+                platform: row.platform,
+                domain_name: row.domain,
+              });
+            }
+            const spendKey = `pool-auto-${row.domain}-${row.platform}-n${need}-v3`;
+            const decision = await this.spendGateway.authorize({
+              key: spendKey,
+              kind: "inboxkit_mailbox_purchase",
+              description: `Buy ${need} ${row.platform} mailbox(es) on ${row.domain} using InboxKit wallet balance (generic recovery pool).`,
+              detail: { domain: row.domain, platform: row.platform, count: need, workspaceId },
             });
-          }
-          try {
-            await this.inboxkit.buyMailboxes(batch, {
-              workspaceId,
-              useWalletBalance: true,
-              idempotencyKey: `pool-auto-${row.domain}-${row.platform}-n${need}-v3`,
-            });
-            stats[`bought:${row.domain}`] = need;
-            await sleep(1200);
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            // Already ordered / processing is fine
-            if (!/already|duplicate|exist|limit/i.test(message)) {
-              errors.push(`buy ${row.domain}: ${message}`);
+            if (!decision.approved) {
+              pendingApprovals += 1;
+              continue;
+            }
+            try {
+              await this.inboxkit.buyMailboxes(batch, {
+                workspaceId,
+                useWalletBalance: true,
+                idempotencyKey: spendKey,
+              });
+              stats[`bought:${row.domain}`] = need;
+              await sleep(1200);
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              // Already ordered / processing is fine
+              if (!/already|duplicate|exist|limit/i.test(message)) {
+                errors.push(`buy ${row.domain}: ${message}`);
+              }
             }
           }
+          stats.pendingSpendApprovals = pendingApprovals;
+          if (pendingApprovals > 0) {
+            return this.finish(
+              "buying",
+              previousPhase,
+              previousPhase !== "buying",
+              `Waiting on spend approval for ${pendingApprovals} domain(s) — see GET /approvals`,
+              stats,
+              errors,
+            );
+          }
+          phase = "awaiting_mailboxes";
         }
-        phase = "awaiting_mailboxes";
       }
 
       // --- Wait mailboxes active ---
@@ -659,6 +705,124 @@ export class PoolProvisioner {
       stats,
       errors,
     );
+  }
+
+  /**
+   * The plan ships compiled into dist/ so it is present under every builder.
+   * A readable file at planPath still wins, so the pool can be changed on disk
+   * without a rebuild; a missing file is normal, not an error.
+   */
+  private async loadPlan(): Promise<PoolDomainPlan> {
+    try {
+      const raw = await readFile(this.planPath, "utf8");
+      const parsed = JSON.parse(raw) as PoolDomainPlan;
+      if (Array.isArray(parsed?.domains) && parsed.domains.length) {
+        return parsed;
+      }
+      console.warn(
+        `[pool-provision] ${this.planPath} has no domains — using embedded plan`,
+      );
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT") {
+        console.warn(
+          `[pool-provision] could not read ${this.planPath} (${error instanceof Error ? error.message : String(error)}) — using embedded plan`,
+        );
+      }
+    }
+    return GENERIC_POOL_PLAN;
+  }
+
+  /**
+   * Register generic mailboxes that live outside the .info pool plan (e.g.
+   * ones bought by hand). Matched against Smartlead by email or from_name so
+   * they become available for ESP-matched recovery swaps like any other generic.
+   */
+  async registerExtraGenerics(): Promise<{
+    registered: string[];
+    unmatched: string[];
+    errors: string[];
+  }> {
+    const out = { registered: [] as string[], unmatched: [] as string[], errors: [] as string[] };
+    const wanted = this.config.extraGenericMailboxes;
+    if (!wanted.length) return out;
+
+    let accounts: SmartleadAccountWithCampaigns[];
+    try {
+      accounts = await this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: false,
+      });
+    } catch (error) {
+      out.errors.push(
+        `list accounts: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return out;
+    }
+
+    for (const want of wanted) {
+      const match = accounts.find((account) => {
+        const email = accountEmail(account)?.toLowerCase() ?? "";
+        const fromName = String(account.from_name ?? "").trim().toLowerCase();
+        return email === want || fromName === want;
+      });
+
+      if (!match) {
+        out.unmatched.push(want);
+        continue;
+      }
+
+      const email = accountEmail(match)?.toLowerCase();
+      if (!email) {
+        out.unmatched.push(want);
+        continue;
+      }
+
+      const existing = this.state.getPoolMailbox(email);
+      if (existing) {
+        this.state.upsertPoolMailbox({
+          ...existing,
+          smartleadAccountId: match.id,
+          // Pre-warmed: never leave one parked in "warming" waiting out a
+          // warmup clock it already served.
+          status: existing.status === "warming" ? "available" : existing.status,
+          ...(existing.status === "warming"
+            ? { availableAt: new Date().toISOString() }
+            : {}),
+        });
+        continue;
+      }
+
+      const platform = poolEspFromSmartleadType(match.type);
+      if (!platform) {
+        out.errors.push(
+          `${want}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
+        );
+        continue;
+      }
+
+      const { firstName, lastName } = parsePersonName(
+        match.from_name || email.split("@")[0],
+      );
+      this.state.upsertPoolMailbox({
+        email,
+        domain: email.split("@")[1] ?? "",
+        platform,
+        smartleadAccountId: match.id,
+        firstName,
+        lastName,
+        // Already-live mailboxes are warm; make them usable immediately.
+        status: "available",
+        warmedAt: new Date().toISOString(),
+        availableAt: new Date().toISOString(),
+      });
+      out.registered.push(email);
+    }
+
+    if (out.registered.length || out.unmatched.length) {
+      console.log("[pool-provision] extra generics", out);
+      await this.state.save();
+    }
+    return out;
   }
 
   private async listAllMailboxes(

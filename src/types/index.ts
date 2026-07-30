@@ -69,6 +69,8 @@ export interface SpamTestSummary {
   current_test_run_no?: number;
   schedule_start_time?: string;
   test_end_date?: string | null;
+  /** Recurrence interval for automated (scheduled) tests. */
+  every_days?: number;
 }
 
 export interface CreatedPlacementTest {

@@ -29,6 +29,8 @@ export interface CampaignAuditRow {
   /** Senders still needed to reach the configured floor. */
   shortBy: number;
   hasTest: boolean;
+  /** Sending domains in use, commonest first — a campaign's brand identity. */
+  domains: Array<{ domain: string; count: number }>;
 }
 
 export interface SupplyForecast {
@@ -74,10 +76,26 @@ export class CampaignAuditService {
     ]);
 
     const senderCounts = new Map<number, number>();
+    const domainsByCampaign = new Map<number, Map<string, number>>();
+    // Mailboxes carrying no campaign at all are idle capacity we can place
+    // without taking a sender off another campaign.
+    const idleByDomain = new Map<string, number>();
+
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
-      if (!accountEmail(account)) continue;
-      for (const id of campaignIdsOf(account)) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (!email) continue;
+      const domain = email.split("@")[1] ?? "";
+      const ids = campaignIdsOf(account);
+      if (!ids.length) {
+        if (domain) idleByDomain.set(domain, (idleByDomain.get(domain) ?? 0) + 1);
+        continue;
+      }
+      for (const id of ids) {
         senderCounts.set(id, (senderCounts.get(id) ?? 0) + 1);
+        if (!domain) continue;
+        const byDomain = domainsByCampaign.get(id) ?? new Map<string, number>();
+        byDomain.set(domain, (byDomain.get(domain) ?? 0) + 1);
+        domainsByCampaign.set(id, byDomain);
       }
     }
 
@@ -107,6 +125,9 @@ export class CampaignAuditService {
           senders,
           shortBy: Math.max(0, minSenders - senders),
           hasTest: tested.has(String(c.id)),
+          domains: [...(domainsByCampaign.get(c.id) ?? new Map())]
+            .map(([domain, count]) => ({ domain, count }))
+            .sort((a, b) => b.count - a.count),
         };
       })
       .sort((a, b) => a.senders - b.senders);
@@ -144,9 +165,20 @@ export class CampaignAuditService {
       `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under ${minSenders} senders (short ${result.totalShortfall} total)`,
     );
     for (const r of rows) {
+      const brands = r.domains
+        .slice(0, 4)
+        .map((d) => `${d.domain}:${d.count}`)
+        .join(" ");
       console.log(
-        `[campaign-audit]   #${r.id} ${r.name} — ${r.senders} sender(s)${r.shortBy ? ` (short ${r.shortBy})` : ""}${r.hasTest ? "" : " NO-TEST"}`,
+        `[campaign-audit]   #${r.id} ${r.name} — ${r.senders} sender(s)${r.shortBy ? ` (short ${r.shortBy})` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
       );
+    }
+    const idle = [...idleByDomain.entries()].sort((a, b) => b[1] - a[1]);
+    console.log(
+      `[campaign-audit] idle mailboxes (no campaign): ${idle.reduce((n, [, c]) => n + c, 0)} across ${idle.length} domain(s)`,
+    );
+    for (const [domain, count] of idle.slice(0, 40)) {
+      console.log(`[campaign-audit]   idle ${domain} ${count}`);
     }
     console.log(
       `[campaign-audit] supply: ${supply.availableNow} available now`,

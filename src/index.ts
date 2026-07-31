@@ -570,9 +570,18 @@ async function main(): Promise<void> {
     // waiting up to six hours to learn a campaign is sending with no test is
     // too long when the shortfall is being worked on right now.
     if (secretsReady) {
-      void campaignAudit
-        .run(config.minCampaignSenders)
-        .catch((error) => console.warn("[campaign-audit] boot run failed", error));
+      void (async () => {
+        try {
+          await campaignAudit.run(config.minCampaignSenders);
+          // Fill thin campaigns at boot as well as on the monitor. A restart
+          // is the only lever that acts sooner than the six-hourly cron, and
+          // a campaign sending under its floor should not wait that long.
+          // Idempotent: once every campaign is at the floor this is a no-op.
+          await campaignTopUp.run();
+        } catch (error) {
+          console.warn("[boot] campaign audit/top-up failed", error);
+        }
+      })();
     }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,

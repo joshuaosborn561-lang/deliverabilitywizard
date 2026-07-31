@@ -81,6 +81,8 @@ const ConfigSchema = z.object({
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
   /** Pull a sender off campaigns above this bounce rate (percent). */
+  /** Every active campaign should carry at least this many senders. */
+  minCampaignSenders: z.coerce.number().int().min(0).default(30),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
@@ -193,6 +195,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
+    minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "30",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,

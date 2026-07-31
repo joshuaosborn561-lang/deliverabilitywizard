@@ -11,6 +11,7 @@ import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
+import { CampaignAuditService } from "./services/campaignAudit.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
@@ -163,6 +164,12 @@ async function main(): Promise<void> {
   };
 
   const dnsAudit = new DnsAuditService(smartlead, slack);
+  const campaignAudit = new CampaignAuditService(
+    config,
+    smartlead,
+    smartDelivery,
+    state,
+  );
 
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
@@ -201,6 +208,15 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[dns-audit] failed", error);
       }
+      // Campaign-level health: a campaign can bleed senders to recovery holds
+      // or never pick up a placement test, and neither shows in the
+      // mailbox-oriented remediation summary.
+      let campaignAuditResult: unknown = null;
+      try {
+        campaignAuditResult = await campaignAudit.run(config.minCampaignSenders);
+      } catch (error) {
+        console.warn("[campaign-audit] failed", error);
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
@@ -208,6 +224,7 @@ async function main(): Promise<void> {
         testReconcile: reconcileResult,
         reconnect: reconnectResult,
         dnsAudit: dnsAuditResult,
+        campaignAudit: campaignAuditResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -533,6 +550,14 @@ async function main(): Promise<void> {
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
+    // Campaign headcount and test cover, at boot as well as on the monitor —
+    // waiting up to six hours to learn a campaign is sending with no test is
+    // too long when the shortfall is being worked on right now.
+    if (secretsReady) {
+      void campaignAudit
+        .run(config.minCampaignSenders)
+        .catch((error) => console.warn("[campaign-audit] boot run failed", error));
+    }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
     );

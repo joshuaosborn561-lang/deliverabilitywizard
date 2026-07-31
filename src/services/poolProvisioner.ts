@@ -845,11 +845,13 @@ export class PoolProvisioner {
           account,
         })),
       );
+      // These are from-names carried by a whole fleet of generic mailboxes,
+      // not one person: "harmony norris" is the sender identity on 100
+      // mailboxes. Registering only the best match stranded the other 99.
+      const matches = ranked.filter((r) => r.score >= MATCH_THRESHOLD);
       const best = ranked[0];
-      const match =
-        best && best.score >= MATCH_THRESHOLD ? best.candidate.account : undefined;
 
-      if (!match) {
+      if (!matches.length) {
         out.unmatched.push(want);
         // Say what we nearly matched, so the real name is recoverable from
         // logs instead of guessed at.
@@ -866,57 +868,55 @@ export class PoolProvisioner {
         continue;
       }
 
-      if (best!.score < 100 && best!.reason !== "exact name") {
-        console.log(
-          `[pool-provision] "${want}" matched ${best!.candidate.email} via ${best!.reason} (${best!.score})`,
-        );
-      }
-
-      const email = accountEmail(match)?.toLowerCase();
-      if (!email) {
-        out.unmatched.push(want);
-        continue;
-      }
-
-      const existing = this.state.getPoolMailbox(email);
-      if (existing) {
-        this.state.upsertPoolMailbox({
-          ...existing,
-          smartleadAccountId: match.id,
-          // Pre-warmed: never leave one parked in "warming" waiting out a
-          // warmup clock it already served.
-          status: existing.status === "warming" ? "available" : existing.status,
-          ...(existing.status === "warming"
-            ? { availableAt: new Date().toISOString() }
-            : {}),
-        });
-        continue;
-      }
-
-      const platform = poolEspFromSmartleadType(match.type);
-      if (!platform) {
-        out.errors.push(
-          `${want}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
-        );
-        continue;
-      }
-
-      const { firstName, lastName } = parsePersonName(
-        match.from_name || email.split("@")[0],
+      console.log(
+        `[pool-provision] "${want}" matched ${matches.length} mailbox(es) (best: ${best!.candidate.email} via ${best!.reason} ${best!.score})`,
       );
-      this.state.upsertPoolMailbox({
-        email,
-        domain: email.split("@")[1] ?? "",
-        platform,
-        smartleadAccountId: match.id,
-        firstName,
-        lastName,
-        // Already-live mailboxes are warm; make them usable immediately.
-        status: "available",
-        warmedAt: new Date().toISOString(),
-        availableAt: new Date().toISOString(),
-      });
-      out.registered.push(email);
+
+      for (const { candidate } of matches) {
+        const match = candidate.account;
+        const email = accountEmail(match)?.toLowerCase();
+        if (!email) continue;
+
+        const existing = this.state.getPoolMailbox(email);
+        if (existing) {
+          this.state.upsertPoolMailbox({
+            ...existing,
+            smartleadAccountId: match.id,
+            // Pre-warmed: never leave one parked in "warming" waiting out a
+            // warmup clock it already served.
+            status: existing.status === "warming" ? "available" : existing.status,
+            ...(existing.status === "warming"
+              ? { availableAt: new Date().toISOString() }
+              : {}),
+          });
+          continue;
+        }
+
+        const platform = poolEspFromSmartleadType(match.type);
+        if (!platform) {
+          out.errors.push(
+            `${email}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
+          );
+          continue;
+        }
+
+        const { firstName, lastName } = parsePersonName(
+          match.from_name || email.split("@")[0],
+        );
+        this.state.upsertPoolMailbox({
+          email,
+          domain: email.split("@")[1] ?? "",
+          platform,
+          smartleadAccountId: match.id,
+          firstName,
+          lastName,
+          // Hand-bought generics arrive pre-warmed; they owe no warmup here.
+          status: "available",
+          warmedAt: new Date().toISOString(),
+          availableAt: new Date().toISOString(),
+        });
+        out.registered.push(email);
+      }
     }
 
     if (out.registered.length || out.unmatched.length) {

@@ -671,6 +671,18 @@ export class PoolProvisioner {
       }
 
       if (phase === "warming") {
+        // Rows registered before the warmup clock was sourced from Smartlead
+        // carry a warmedAt of "whenever state was written", which can be far
+        // later than the real warmup start and holds ready mailboxes back.
+        // Reconcile against Smartlead before deciding what is available.
+        try {
+          const corrected = await this.reconcileWarmupClocks();
+          if (corrected) stats.warmupClockCorrected = corrected;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          errors.push(`warmup clock reconcile: ${message}`);
+        }
+
         const flipped = this.state.refreshPoolAvailability(
           this.config.poolWarmupDays,
         );
@@ -765,6 +777,66 @@ export class PoolProvisioner {
    * ones bought by hand). Matched against Smartlead by email or from_name so
    * they become available for ESP-matched recovery swaps like any other generic.
    */
+  /**
+   * Repair warmedAt for pool rows still marked warming.
+   *
+   * Only Smartlead's warmup record is trusted here. account.created_at would
+   * also be older, but a mailbox created 30 days ago whose warmup started
+   * yesterday is not warm — using it would rotate under-warmed senders into
+   * live campaigns, which is the one thing the 14-day gate exists to prevent.
+   */
+  private async reconcileWarmupClocks(): Promise<number> {
+    const warming = this.state
+      .listPoolMailboxes()
+      .filter((m) => m.status === "warming");
+    if (!warming.length) return 0;
+
+    const accounts = await this.smartlead.listAllEmailAccounts({
+      fetchCampaigns: false,
+    });
+    const byEmail = new Map(
+      accounts.map((a) => [accountEmail(a)?.toLowerCase() ?? "", a]),
+    );
+
+    let corrected = 0;
+    let missingWarmupDetails = 0;
+
+    for (const row of warming) {
+      let account = byEmail.get(row.email.toLowerCase());
+      if (!account) continue;
+
+      // The list payload often omits warmup_details; fetch the account when
+      // the warmup record is what we actually need.
+      let started = warmupDetailsStart(account);
+      if (!started && account.id) {
+        try {
+          account = await this.smartlead.getEmailAccount(account.id);
+          started = warmupDetailsStart(account);
+          await sleep(80);
+        } catch {
+          // Leave the row alone rather than guess at its age.
+        }
+      }
+      if (!started) {
+        missingWarmupDetails += 1;
+        continue;
+      }
+
+      const next = earliestWarmupStart(row.warmedAt, started);
+      if (row.warmedAt && Date.parse(next) >= Date.parse(row.warmedAt)) continue;
+      this.state.upsertPoolMailbox({ ...row, warmedAt: next });
+      corrected += 1;
+    }
+
+    if (corrected || missingWarmupDetails) {
+      console.log(
+        `[pool-provision] warmup clock: ${corrected} corrected from Smartlead, ${missingWarmupDetails} without a warmup record (left as-is)`,
+      );
+      await this.state.save();
+    }
+    return corrected;
+  }
+
   async registerExtraGenerics(): Promise<{
     registered: string[];
     unmatched: string[];
@@ -1023,3 +1095,14 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 
 // silence unused type import in case of strip
 export type { InboxKitDomain };
+
+/**
+ * Warmup start from Smartlead's warmup record only — never the account
+ * creation date, which says nothing about when warmup actually began.
+ */
+function warmupDetailsStart(account: {
+  warmup_details?: { created_at?: string; warmup_created_at?: string } | null;
+}): string | null {
+  const wd = account.warmup_details;
+  return wd?.created_at || wd?.warmup_created_at || null;
+}

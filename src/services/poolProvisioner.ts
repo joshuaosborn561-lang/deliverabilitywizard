@@ -11,6 +11,7 @@ import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
+  campaignIdsOf,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
@@ -806,13 +807,17 @@ export class PoolProvisioner {
     errors: string[];
   }> {
     const out = { registered: [] as string[], unmatched: [] as string[], errors: [] as string[] };
+    let inService = 0;
     const wanted = this.config.extraGenericMailboxes;
     if (!wanted.length) return out;
 
     let accounts: SmartleadAccountWithCampaigns[];
     try {
+      // Campaign linkage is required: a generic already serving a campaign is
+      // not free inventory, and handing it to a second client would rewrite
+      // its signature out from under the first.
       accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: false,
+        fetchCampaigns: true,
       });
     } catch (error) {
       out.errors.push(
@@ -879,13 +884,20 @@ export class PoolProvisioner {
 
         const existing = this.state.getPoolMailbox(email);
         if (existing) {
+          const live = campaignIdsOf(match).length > 0;
+          if (live) inService += 1;
           this.state.upsertPoolMailbox({
             ...existing,
             smartleadAccountId: match.id,
-            // Pre-warmed: never leave one parked in "warming" waiting out a
-            // warmup clock it already served.
-            status: existing.status === "warming" ? "available" : existing.status,
-            ...(existing.status === "warming"
+            // On a campaign wins over anything stored: a row left "available"
+            // while the mailbox is in service is what let the top-up hand a
+            // live sender to a second client.
+            status: live
+              ? "assigned"
+              : existing.status === "warming"
+                ? "available"
+                : existing.status,
+            ...(!live && existing.status === "warming"
               ? { availableAt: new Date().toISOString() }
               : {}),
           });
@@ -903,6 +915,11 @@ export class PoolProvisioner {
         const { firstName, lastName } = parsePersonName(
           match.from_name || email.split("@")[0],
         );
+        // A generic already on a campaign is in service, not spare. Register
+        // it so the pool knows it exists, but never as available — assigning
+        // it elsewhere would rewrite the signature the first campaign sends
+        // under.
+        const onCampaign = campaignIdsOf(match).length > 0;
         this.state.upsertPoolMailbox({
           email,
           domain: email.split("@")[1] ?? "",
@@ -911,14 +928,20 @@ export class PoolProvisioner {
           firstName,
           lastName,
           // Hand-bought generics arrive pre-warmed; they owe no warmup here.
-          status: "available",
+          status: onCampaign ? "assigned" : "available",
           warmedAt: new Date().toISOString(),
-          availableAt: new Date().toISOString(),
+          ...(onCampaign ? {} : { availableAt: new Date().toISOString() }),
         });
+        if (onCampaign) inService += 1;
         out.registered.push(email);
       }
     }
 
+    if (inService) {
+      console.log(
+        `[pool-provision] ${inService} generic(s) already serving a campaign — held as assigned, not offered to top-up`,
+      );
+    }
     if (out.registered.length || out.unmatched.length) {
       console.log("[pool-provision] extra generics", out);
       await this.state.save();

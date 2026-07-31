@@ -83,6 +83,12 @@ const ConfigSchema = z.object({
   /** Pull a sender off campaigns above this bounce rate (percent). */
   /** Every active campaign should carry at least this many senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(30),
+  enableCampaignTopUp: boolFromEnv(true),
+  /** Campaign ids or name fragments never topped up automatically. */
+  topUpExcludeCampaigns: z
+    .string()
+    .default("")
+    .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
@@ -196,6 +202,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "30",
+    enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
+    topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,

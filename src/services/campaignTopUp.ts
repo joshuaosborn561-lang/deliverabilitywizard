@@ -1,0 +1,226 @@
+import type { AppConfig } from "../config.js";
+import type { SlackClient } from "../clients/slack.js";
+import type { SmartleadClient } from "../clients/smartlead.js";
+import {
+  accountEmail,
+  campaignIdsOf,
+  clientDisplayName,
+  type SmartleadAccountWithCampaigns,
+  type SmartleadClientRecord,
+} from "../clients/smartlead.js";
+import type { SmartleadCampaign } from "../types/index.js";
+import { sleep } from "../lib/http.js";
+import { buildPoolSignature } from "../lib/poolSignature.js";
+import type { StateStore } from "../state/store.js";
+
+/**
+ * Bring every active campaign up to a minimum sender headcount.
+ *
+ * The recovery pool only swaps one-for-one against a benched sender, so a
+ * campaign that simply launched thin — or lost senders faster than they were
+ * replaced — stays understaffed indefinitely with nothing to correct it.
+ *
+ * Fill comes from the generic pool only. Client-branded senders are never
+ * moved between campaigns: a mailbox on one client's domain sending another
+ * client's offer misrepresents both. A generic carries no brand of its own,
+ * so its signature and from-name are set to the receiving client on assign.
+ */
+
+export interface TopUpAssignment {
+  campaignId: number;
+  campaignName: string;
+  email: string;
+  clientName: string;
+}
+
+export interface TopUpResult {
+  dryRun: boolean;
+  assigned: TopUpAssignment[];
+  /** Campaigns still short after the pool ran dry, with the remaining gap. */
+  unfilled: Array<{ campaignId: number; name: string; shortBy: number }>;
+  skipped: string[];
+  errors: string[];
+}
+
+/** Campaign names/ids the operator has excluded from automatic top-up. */
+export function isExcluded(
+  campaign: { id: number; name?: string | null },
+  patterns: string[],
+): boolean {
+  if (!patterns.length) return false;
+  const name = String(campaign.name ?? "").toLowerCase();
+  const id = String(campaign.id);
+  return patterns.some((raw) => {
+    const p = raw.trim().toLowerCase();
+    if (!p) return false;
+    return p === id || name.includes(p);
+  });
+}
+
+export class CampaignTopUpService {
+  constructor(
+    private readonly config: AppConfig,
+    private readonly smartlead: SmartleadClient,
+    private readonly slack: SlackClient,
+    private readonly state: StateStore,
+  ) {}
+
+  async run(opts: { dryRun?: boolean } = {}): Promise<TopUpResult> {
+    const dryRun = opts.dryRun ?? this.config.dryRun;
+    const result: TopUpResult = {
+      dryRun,
+      assigned: [],
+      unfilled: [],
+      skipped: [],
+      errors: [],
+    };
+
+    if (!this.config.enableCampaignTopUp) {
+      console.log("[top-up] Disabled (ENABLE_CAMPAIGN_TOP_UP=false)");
+      return result;
+    }
+
+    const [campaigns, accounts, clients] = await Promise.all([
+      this.smartlead.listCampaigns(),
+      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
+      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
+    ]);
+
+    const clientsById = new Map(clients.map((c) => [c.id, c]));
+    const senderCounts = new Map<number, number>();
+    for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      if (!accountEmail(account)) continue;
+      for (const id of campaignIdsOf(account)) {
+        senderCounts.set(id, (senderCounts.get(id) ?? 0) + 1);
+      }
+    }
+
+    const floor = this.config.minCampaignSenders;
+    const excluded = this.config.topUpExcludeCampaigns;
+
+    const needy = (campaigns as SmartleadCampaign[])
+      .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+      .filter((c) => {
+        if (isExcluded(c, excluded)) {
+          result.skipped.push(`${c.id} ${c.name ?? ""} (excluded)`.trim());
+          return false;
+        }
+        return true;
+      })
+      .map((c) => ({
+        campaign: c,
+        senders: senderCounts.get(c.id) ?? 0,
+      }))
+      .filter((row) => row.senders < floor)
+      // Neediest first, so a shallow pool helps the worst campaign.
+      .sort((a, b) => a.senders - b.senders);
+
+    if (!needy.length) {
+      console.log(`[top-up] All active campaigns at or above ${floor} senders`);
+      return result;
+    }
+
+    for (const { campaign, senders } of needy) {
+      const clientId =
+        typeof campaign.client_id === "number" ? campaign.client_id : null;
+      const clientName = clientId
+        ? clientDisplayName(clientsById.get(clientId) ?? { id: clientId })
+        : "Unassigned / Agency";
+      const brand =
+        clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName;
+
+      let placed = 0;
+      const need = floor - senders;
+
+      for (let i = 0; i < need; i += 1) {
+        // Match the campaign's existing ESP mix where we can; a Google
+        // campaign sending through a Microsoft mailbox scores differently.
+        const pool =
+          this.state.findAvailablePoolMailbox("GOOGLE") ??
+          this.state.findAvailablePoolMailbox("MICROSOFT");
+        if (!pool || !pool.smartleadAccountId) break;
+
+        const firstName = pool.firstName || "Pool";
+        const lastName = pool.lastName || "User";
+
+        try {
+          if (!dryRun) {
+            await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
+              signature: buildPoolSignature({
+                firstName,
+                lastName,
+                clientBrand: brand,
+              }),
+              from_name: `${firstName} ${lastName}`,
+              ...(clientId != null ? { client_id: clientId } : {}),
+            });
+            await sleep(200);
+            await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
+              pool.smartleadAccountId,
+            ]);
+            await sleep(300);
+
+            // Claim it immediately so the next iteration cannot hand the same
+            // mailbox to another campaign.
+            this.state.upsertPoolMailbox({
+              ...pool,
+              status: "assigned",
+              assignedClientId: clientId ?? undefined,
+            });
+          }
+          placed += 1;
+          result.assigned.push({
+            campaignId: campaign.id,
+            campaignName: String(campaign.name ?? campaign.id),
+            email: pool.email,
+            clientName,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`${pool.email} → ${campaign.id}: ${message}`);
+          break;
+        }
+      }
+
+      if (placed < need) {
+        result.unfilled.push({
+          campaignId: campaign.id,
+          name: String(campaign.name ?? campaign.id),
+          shortBy: need - placed,
+        });
+      }
+      console.log(
+        `[top-up] #${campaign.id} ${campaign.name} — ${senders} → ${senders + placed} (needed ${need}, placed ${placed})`,
+      );
+    }
+
+    if (!dryRun) await this.state.save();
+
+    console.log(
+      `[top-up] ${result.assigned.length} generic(s) assigned; ${result.unfilled.length} campaign(s) still short; ${result.errors.length} error(s)`,
+    );
+
+    if (result.assigned.length || result.unfilled.length) {
+      const byCampaign = new Map<string, number>();
+      for (const a of result.assigned) {
+        const key = `#${a.campaignId} ${a.campaignName}`;
+        byCampaign.set(key, (byCampaign.get(key) ?? 0) + 1);
+      }
+      try {
+        await this.slack.send(
+          [
+            `${dryRun ? "[DRY RUN] " : ""}Campaign top-up to ${floor} senders:`,
+            ...[...byCampaign].map(([name, n]) => `- ${name}: +${n} generic(s)`),
+            ...result.unfilled.map(
+              (u) => `- #${u.campaignId} ${u.name}: still short ${u.shortBy} (pool exhausted)`,
+            ),
+          ].join("\n"),
+        );
+      } catch (error) {
+        console.warn("[top-up] Slack notify failed", error);
+      }
+    }
+
+    return result;
+  }
+}

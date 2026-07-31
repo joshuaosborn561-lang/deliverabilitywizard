@@ -12,6 +12,7 @@ import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
+import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
@@ -164,6 +165,12 @@ async function main(): Promise<void> {
   };
 
   const dnsAudit = new DnsAuditService(smartlead, slack);
+  const campaignTopUp = new CampaignTopUpService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,
@@ -208,6 +215,14 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[dns-audit] failed", error);
       }
+      // Refill thin campaigns from the generic pool. Runs after remediation
+      // so a sender benched this pass is replaced in the same cycle.
+      let topUpResult: unknown = null;
+      try {
+        topUpResult = await campaignTopUp.run();
+      } catch (error) {
+        console.warn("[top-up] failed", error);
+      }
       // Campaign-level health: a campaign can bleed senders to recovery holds
       // or never pick up a placement test, and neither shows in the
       // mailbox-oriented remediation summary.
@@ -225,6 +240,7 @@ async function main(): Promise<void> {
         reconnect: reconnectResult,
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
+        topUp: topUpResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -562,6 +578,9 @@ async function main(): Promise<void> {
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
     );
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
+    console.log(
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED (floor ${config.minCampaignSenders} senders${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+    );
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
     );

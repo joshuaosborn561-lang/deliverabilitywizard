@@ -427,6 +427,10 @@ export class RemediationService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`bounce stats: ${message}`);
+        // Surface the failure rather than burying it in an error count — this
+        // endpoint's response shape was inferred from docs, not observed, so
+        // the reason it failed is the thing worth reading.
+        console.warn(`[remediation] bounce stats unavailable: ${message}`);
       }
     }
 

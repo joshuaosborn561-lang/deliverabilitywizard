@@ -57,6 +57,9 @@ export function isExcluded(
   });
 }
 
+/** Consecutive write failures before a campaign is abandoned for this run. */
+const MAX_CONSECUTIVE_FAILURES = 3;
+
 export class CampaignTopUpService {
   constructor(
     private readonly config: AppConfig,
@@ -130,9 +133,12 @@ export class CampaignTopUpService {
         clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName;
 
       let placed = 0;
+      let consecutiveFailures = 0;
       const need = floor - senders;
 
-      for (let i = 0; i < need; i += 1) {
+      // Assigning is two writes per mailbox; a long run trips Smartlead's
+      // limiter, so the loop is allowed more attempts than mailboxes needed.
+      for (let attempt = 0; placed < need && attempt < need * 2; attempt += 1) {
         // Match the campaign's existing ESP mix where we can; a Google
         // campaign sending through a Microsoft mailbox scores differently.
         const pool =
@@ -178,8 +184,24 @@ export class CampaignTopUpService {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           result.errors.push(`${pool.email} → ${campaign.id}: ${message}`);
-          break;
+          console.warn(
+            `[top-up] ${pool.email} → #${campaign.id}: ${message}`,
+          );
+          consecutiveFailures += 1;
+          // One failure is usually a rate limit or a transient 5xx, and
+          // abandoning the campaign over it leaves it short until the next
+          // cron. Back off and keep going; give up only once the failures
+          // look systemic rather than incidental.
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            console.warn(
+              `[top-up] #${campaign.id}: ${consecutiveFailures} consecutive failures — stopping this campaign`,
+            );
+            break;
+          }
+          await sleep(2000 * consecutiveFailures);
+          continue;
         }
+        consecutiveFailures = 0;
       }
 
       if (placed < need) {
@@ -199,6 +221,10 @@ export class CampaignTopUpService {
     console.log(
       `[top-up] ${result.assigned.length} generic(s) assigned; ${result.unfilled.length} campaign(s) still short; ${result.errors.length} error(s)`,
     );
+    // The count alone is not diagnosable; a failing run has to say why.
+    for (const e of result.errors.slice(0, 10)) {
+      console.log(`[top-up]   error: ${e}`);
+    }
 
     if (result.assigned.length || result.unfilled.length) {
       const byCampaign = new Map<string, number>();

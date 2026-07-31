@@ -30,6 +30,17 @@ export class SmartleadClient {
     });
   }
 
+  /**
+   * Per-sender bounce statistics.
+   *
+   * Placement tests cannot see this: seed inboxes accept mail, so a mailbox
+   * bouncing hard against real leads still scores a clean inbox rate. Shape
+   * varies by account, so the caller parses defensively.
+   */
+  async getAnalyticsOverview(): Promise<unknown> {
+    return apiRequest<unknown>(BASE_URL, this.apiKey, "analytics/overview");
+  }
+
   listClients(): Promise<SmartleadClientRecord[]> {
     return apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/");
   }

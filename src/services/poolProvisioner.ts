@@ -16,6 +16,7 @@ import {
 import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { sleep } from "../lib/http.js";
 import { MATCH_THRESHOLD, rankCandidates } from "../lib/nameMatch.js";
+import { earliestWarmupStart } from "../lib/warmupClock.js";
 import { pickUniquePersonNames } from "../lib/personNames.js";
 import {
   parsePersonName,
@@ -23,6 +24,7 @@ import {
 } from "../lib/poolSignature.js";
 import type { SpendGateway } from "../lib/spendGateway.js";
 import type { StateStore, PoolProvisionPhase } from "../state/store.js";
+import { warmupStartedAt } from "./warmupGate.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PLAN_PATH = path.resolve(
@@ -600,7 +602,15 @@ export class PoolProvisioner {
             firstName: nameParts[0] || "Pool",
             lastName: nameParts.slice(1).join(" ") || "User",
             status: "warming",
-            warmedAt: existing?.warmedAt || warmedAt,
+            // Smartlead's own warmup start is authoritative. Registering a
+            // mailbox here is bookkeeping, not the start of its warmup — one
+            // that has been warming for weeks must not have its clock reset
+            // to now just because this state row was created late.
+            warmedAt: earliestWarmupStart(
+              existing?.warmedAt,
+              warmupStartedAt(account),
+              warmedAt,
+            ),
           });
         }
         stats.warmed = warmed;

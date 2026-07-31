@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      # Guards are part of the suite above, but run them alone so a failure
+      # here is unmistakable in the log: it means a decision was reversed,
+      # not that a feature broke. See DECISIONS.md.
+      - name: Guards (invariants + owner intent)
+        run: npx tsx --test src/guards/*.test.ts
+
+      # Catches breakage the tests miss — a module that fails to load is
+      # invisible to a suite that never imports it.
+      - name: Load every module
+        run: |
+          npm run build
+          node -e '
+            const { readdirSync, statSync } = require("node:fs");
+            const { join } = require("node:path");
+            const walk = (d) => readdirSync(d).flatMap((f) => {
+              const p = join(d, f);
+              return statSync(p).isDirectory() ? walk(p) : p;
+            });
+            const files = walk("dist").filter(
+              (f) => f.endsWith(".js") && !f.endsWith(".test.js"),
+            );
+            (async () => {
+              for (const f of files) {
+                await import("./" + f);
+              }
+              console.log(`loaded ${files.length} module(s)`);
+            })().catch((e) => {
+              console.error(e);
+              process.exit(1);
+            });
+          '

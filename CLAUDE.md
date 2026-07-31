@@ -9,9 +9,27 @@ this repo, read it before changing behaviour described below.
 
 ## Who works here
 
-Two people drive this repo with AI assistance. Work on your own branch and
-merge through a PR — never push to another person's branch. If a change would
-contradict a rule in this file, stop and ask rather than "fixing" it.
+Two people drive this repo with AI assistance: Josh owns the product
+decisions, Cayden contributes freely alongside him.
+
+**Add features, fix bugs and refactor freely while the tests pass.** That
+needs nobody's permission.
+
+**Reversing an entry in `DECISIONS.md` needs Josh.** The guards in
+`src/guards/owner-intent.test.ts` exist to catch that and tell you who to ask.
+If a guard blocks something that looks genuinely wrong, raise it — do not
+delete the guard to go green.
+
+**When Josh makes a new call in a session, append it to `DECISIONS.md` in that
+same session, with its guard.** Chat history is not durable; the repo is.
+
+Work on your own branch and merge through a PR — never push to another
+person's branch.
+
+**`cursor/generic-pool-expand-240-2606` is the deploying branch.** Railway
+watches it, so a push there is a production deploy. Each push restarts the
+app, which resets the cron cycle — avoid pushing in a tight sequence when you
+need a scheduled job to actually run.
 
 ## Warmup and the mailbox pool
 
@@ -100,6 +118,8 @@ Pick one deliberately. They have not been consolidated.
 ## Before changing behaviour
 
 - `npm run typecheck && npm test` must pass
+- `DECISIONS.md` is append-only — supersede by adding an entry, never by
+  editing or deleting one
 - Production truth comes from Railway logs, not assumption — the census,
   `[dns-audit]`, `[campaign-audit]` and `[top-up]` lines exist so state can be
   read rather than guessed

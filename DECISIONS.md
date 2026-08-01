@@ -350,3 +350,22 @@ give an employee the ability to spend or override safety policy.
 added to the allowlist. Accepted.
 
 **Guards.** `ops chat policy`, `OpsAuth`, and `ManualRotationService`.
+
+---
+
+## D19 — Pre-warmed fleets are identified by domain and persisted state
+
+**Decision.** Every mailbox on `crosslaunchco.com` and `crossscaleco.com` is
+pre-warmed. The warmup gate exempts those domains and any pool row marked
+`prewarmed`; fuzzy name matching is only an additional fallback.
+
+**Why.** Smartlead reported a recent warmup timestamp and variant identity
+`Brianna Escobar` for 12 `crossscaleco.com` mailboxes. Exact matching against
+`breanna escobar` failed, so the warmup gate incorrectly removed all 12 from
+TechEvo despite the fleet having been bought pre-warmed.
+
+**Tradeoff.** A future cold mailbox added to either explicit fleet domain would
+also be treated as pre-warmed. Accepted: those domains are dedicated,
+operator-managed pre-warmed inventory.
+
+**Guard.** `warmupGate helpers — explicit pre-warmed fleet domain`

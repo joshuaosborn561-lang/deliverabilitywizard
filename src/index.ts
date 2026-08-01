@@ -1,5 +1,7 @@
 import express from "express";
 import cron from "node-cron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { assertRuntimeSecrets, configIsReady, loadConfig } from "./config.js";
 import { SmartleadClient } from "./clients/smartlead.js";
 import { SmartDeliveryClient } from "./clients/smartdelivery.js";
@@ -18,6 +20,11 @@ import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
 import { TestReconciler } from "./services/testReconciler.js";
+import { OpsAuth } from "./ops/auth.js";
+import { createOpsRouter } from "./ops/router.js";
+import { ManualRotationService } from "./ops/manualRotation.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -93,6 +100,9 @@ async function main(): Promise<void> {
   let reconnectInFlight: Promise<unknown> | null = null;
   let warmupGateInFlight: Promise<unknown> | null = null;
   let reconcileInFlight: Promise<unknown> | null = null;
+  let topUpInFlight: Promise<unknown> | null = null;
+  let manualRotationInFlight: Promise<unknown> | null = null;
+  let opsCheckInFlight: Promise<unknown> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -108,6 +118,12 @@ async function main(): Promise<void> {
 
   const runRemediation = async () => {
     assertRuntimeSecrets(config);
+    if (manualRotationInFlight) {
+      console.log(
+        "[remediation] Manual rotation active — skipping overlapping trigger",
+      );
+      return { skipped: true as const, reason: "manual-rotation-active" };
+    }
     if (remediationInFlight) {
       console.log("[remediation] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
@@ -179,6 +195,74 @@ async function main(): Promise<void> {
     smartDelivery,
     state,
   );
+  const manualRotation = new ManualRotationService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
+  const opsAuth = new OpsAuth({
+    enabled: config.opsUiEnabled,
+    ownerUsername: config.opsOwnerUsername,
+    operatorUsername: config.opsOperatorUsername,
+    ownerToken: config.opsOwnerToken,
+    operatorToken: config.opsOperatorToken,
+    sessionSecret: config.opsSessionSecret,
+    sessionHours: config.opsSessionHours,
+  });
+
+  const runCampaignTopUp = async () => {
+    if (manualRotationInFlight) {
+      console.log("[top-up] Manual rotation active — skipping overlapping run");
+      return { skipped: true as const, reason: "manual-rotation-active" };
+    }
+    if (topUpInFlight) {
+      console.log("[top-up] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    topUpInFlight = campaignTopUp.run().finally(() => {
+      topUpInFlight = null;
+    });
+    return topUpInFlight;
+  };
+
+  const runManualRotation = async (email: string) => {
+    if (
+      manualRotationInFlight ||
+      topUpInFlight ||
+      remediationInFlight ||
+      monitorInFlight
+    ) {
+      throw new Error(
+        "A campaign mutation is already running. Wait and preview the rotation again.",
+      );
+    }
+    manualRotationInFlight = manualRotation.execute(email).finally(() => {
+      manualRotationInFlight = null;
+    });
+    return manualRotationInFlight;
+  };
+
+  const runOpsDeliverability = async () => {
+    if (opsCheckInFlight || monitorInFlight) {
+      throw new Error("A deliverability monitor is already running.");
+    }
+    opsCheckInFlight = (async () => {
+      const monitorResult = await monitor.run();
+      const dnsResult = await dnsAudit.run({ alert: false });
+      const campaignResult = await campaignAudit.run(
+        config.minCampaignSenders,
+      );
+      return {
+        monitor: monitorResult,
+        dns: dnsResult,
+        campaigns: campaignResult,
+      };
+    })().finally(() => {
+      opsCheckInFlight = null;
+    });
+    return opsCheckInFlight;
+  };
 
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
@@ -229,7 +313,7 @@ async function main(): Promise<void> {
       }
       let topUpResult: unknown = null;
       try {
-        topUpResult = await campaignTopUp.run();
+        topUpResult = await runCampaignTopUp();
       } catch (error) {
         console.warn("[top-up] failed", error);
       }
@@ -324,6 +408,41 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json({ limit: "100kb" }));
 
+  app.use("/ops", (_req, res, next) => {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    );
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
+  app.use(
+    "/ops/api",
+    createOpsRouter({
+      config,
+      auth: opsAuth,
+      state,
+      rotation: manualRotation,
+      executeRotation: runManualRotation,
+      runtime: {
+        deliverability: runOpsDeliverability,
+        dns: () => dnsAudit.run({ alert: false }),
+        campaigns: () => campaignAudit.run(config.minCampaignSenders),
+        reconnect: runReconnect,
+      },
+    }),
+  );
+  const opsPublicDir = path.resolve(__dirname, "../public/ops");
+  app.get("/ops", (_req, res) => res.redirect(302, "/ops/"));
+  app.use(
+    "/ops",
+    express.static(opsPublicDir, {
+      index: "index.html",
+      etag: true,
+      maxAge: "1h",
+    }),
+  );
+
   // Operational state contains mailbox addresses, client assignments and
   // spend decisions. Sensitive/read-write routes are disabled entirely when
   // RUN_TOKEN is missing rather than silently becoming public.
@@ -386,6 +505,8 @@ async function main(): Promise<void> {
       enableAccountReconnect: config.enableAccountReconnect,
       cronAccountReconnect: config.cronAccountReconnect,
       cronAccountReconnectTz: "America/New_York",
+      opsUiEnabled: config.opsUiEnabled,
+      opsUiConfigured: opsAuth.isConfigured(),
     });
   });
 
@@ -430,6 +551,8 @@ async function main(): Promise<void> {
         enableBounceRotation: config.enableBounceRotation,
         bounceRateThreshold: config.bounceRateThreshold,
         minBounceSample: config.minBounceSample,
+        opsUiEnabled: config.opsUiEnabled,
+        opsUiConfigured: opsAuth.isConfigured(),
       },
     });
   });
@@ -601,13 +724,14 @@ async function main(): Promise<void> {
     if (secretsReady) {
       void (async () => {
         try {
+          await manualRotation.recoverStaleReservations();
           await campaignAudit.run(config.minCampaignSenders);
           await mailboxSettings.run();
           // Fill thin campaigns at boot as well as on the monitor. A restart
           // is the only lever that acts sooner than the six-hourly cron, and
           // a campaign sending under its floor should not wait that long.
           // Idempotent: once every campaign is at the floor this is a no-op.
-          await campaignTopUp.run();
+          await runCampaignTopUp();
         } catch (error) {
           console.warn("[boot] campaign audit/top-up failed", error);
         }
@@ -636,6 +760,9 @@ async function main(): Promise<void> {
       `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
+    console.log(
+      `[boot] Ops UI: ${config.opsUiEnabled ? (opsAuth.isConfigured() ? "ENABLED at /ops" : `disabled until configured (${opsAuth.configurationError()})`) : "disabled"}`,
+    );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,
     );

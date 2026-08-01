@@ -7,6 +7,7 @@ RUN npm ci || npm install
 
 COPY tsconfig.json ./
 COPY src ./src
+COPY public ./public
 # Runtime data (generic-pool domain plan). The pool provisioner reads this at
 # runtime from ../../data relative to dist/services, so it must ship in the image.
 # The embedded plan in src/data/genericPoolPlan.ts is the fallback when it can't.

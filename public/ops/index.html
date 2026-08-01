@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Deliverability Wizard Ops</title>
+    <link rel="stylesheet" href="/ops/styles.css" />
+  </head>
+  <body>
+    <div class="noise"></div>
+
+    <section id="login-view" class="center-shell">
+      <div class="login-card">
+        <div class="brand-mark">DW</div>
+        <p class="eyebrow">Private operations console</p>
+        <h1>Deliverability Wizard</h1>
+        <p class="muted">
+          Check fleet health, talk through deliverability, and run allowlisted
+          mailbox operations.
+        </p>
+        <form id="login-form">
+          <label>
+            User
+            <select id="username" autocomplete="username">
+              <option value="cayden">Cayden</option>
+              <option value="josh">Josh</option>
+            </select>
+          </label>
+          <label>
+            Access key
+            <input
+              id="access-key"
+              type="password"
+              autocomplete="current-password"
+              placeholder="••••••••••••••••"
+              required
+            />
+          </label>
+          <button type="submit" class="primary">Sign in</button>
+          <p id="login-error" class="error" role="alert"></p>
+        </form>
+        <p class="fine-print">
+          Every command is allowlisted and written to the audit log. Spending,
+          deletion, policy overrides, code and deployment are not chat actions.
+        </p>
+      </div>
+    </section>
+
+    <div id="app-view" class="app hidden">
+      <aside class="sidebar">
+        <div>
+          <div class="logo-row">
+            <div class="brand-mark small">DW</div>
+            <div>
+              <strong>Deliverability</strong>
+              <span>Operations</span>
+            </div>
+          </div>
+          <nav>
+            <button class="nav-item active" data-panel="overview">Overview</button>
+            <button class="nav-item" data-panel="chat">Assistant</button>
+            <button class="nav-item owner-only" data-panel="approvals">
+              Approvals <span id="approval-badge" class="badge">0</span>
+            </button>
+            <button class="nav-item" data-panel="audit">Audit log</button>
+          </nav>
+        </div>
+        <div class="sidebar-footer">
+          <div class="user-chip">
+            <span id="user-initial">C</span>
+            <div>
+              <strong id="user-name">cayden</strong>
+              <small id="user-role">operator</small>
+            </div>
+          </div>
+          <button id="logout" class="ghost">Sign out</button>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Live fleet</p>
+            <h2 id="panel-title">Overview</h2>
+          </div>
+          <div class="health-pill"><span></span> Railway connected</div>
+        </header>
+
+        <section id="overview-panel" class="panel active">
+          <div id="kpis" class="kpi-grid"></div>
+          <div class="grid-two">
+            <article class="surface">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Guardrails</p>
+                  <h3>Operating policy</h3>
+                </div>
+              </div>
+              <div id="policy-grid" class="policy-grid"></div>
+            </article>
+            <article class="surface">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">Automation</p>
+                  <h3>Last successful runs</h3>
+                </div>
+                <button id="refresh-dashboard" class="ghost compact">
+                  Refresh
+                </button>
+              </div>
+              <div id="last-runs" class="run-list"></div>
+            </article>
+          </div>
+          <article class="surface quick-surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Common jobs</p>
+                <h3>Quick checks</h3>
+              </div>
+              <span class="muted">Safe, allowlisted operations</span>
+            </div>
+            <div class="quick-actions">
+              <button data-command="Check deliverability">Check deliverability</button>
+              <button data-command="Audit campaigns">Audit campaigns</button>
+              <button data-command="Check DNS">Check DNS</button>
+              <button data-command="Reconnect disconnected mailboxes">
+                Reconnect mailboxes
+              </button>
+            </div>
+          </article>
+        </section>
+
+        <section id="chat-panel" class="panel">
+          <article class="surface chat-shell">
+            <div id="messages" class="messages" aria-live="polite"></div>
+            <form id="chat-form" class="chat-form">
+              <textarea
+                id="chat-input"
+                rows="1"
+                maxlength="1000"
+                placeholder="Ask: Check deliverability, rotate name@example.com…"
+              ></textarea>
+              <button type="submit" class="send-button" aria-label="Send">
+                ↑
+              </button>
+            </form>
+          </article>
+        </section>
+
+        <section id="approvals-panel" class="panel owner-only">
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Owner only</p>
+                <h3>Spend approvals</h3>
+              </div>
+              <button id="refresh-approvals" class="ghost compact">Refresh</button>
+            </div>
+            <div id="approvals-list" class="stack-list"></div>
+          </article>
+        </section>
+
+        <section id="audit-panel" class="panel">
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Accountability</p>
+                <h3>Operations audit</h3>
+              </div>
+              <button id="refresh-audit" class="ghost compact">Refresh</button>
+            </div>
+            <div id="audit-list" class="stack-list"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+    <script src="/ops/app.js" defer></script>
+  </body>
+</html>

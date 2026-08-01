@@ -160,6 +160,21 @@ describe("SpendGateway", () => {
     assert.equal(decision.record.status, "denied");
     assert.equal(decision.record.decidedBy, "monthly-cap");
     assert.match(sent[0]!, /blocked by monthly cap/i);
+    const repeated = await gateway.authorize({
+      key: "client-buy",
+      scope: "client",
+      kind: "client_mailboxes",
+      description: "Buy two client mailboxes",
+      clientSpend: {
+        clientId: null,
+        clientName: "Client A",
+        mailboxesCreated: 2,
+        domainCapUsd: 25,
+        mailboxCap: 25,
+      },
+    });
+    assert.equal(repeated.record.id, decision.record.id);
+    assert.equal(sent.length, 1, "an unchanged cap block must not spam Slack");
   });
 
   it("refuses client spend without mandatory cap metadata", async () => {

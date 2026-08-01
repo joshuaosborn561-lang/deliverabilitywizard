@@ -48,6 +48,14 @@ export class SpendGateway {
   async authorize(req: SpendRequest): Promise<SpendDecision> {
     const capFailure = this.checkClientCaps(req);
     if (capFailure) {
+      const existingCap = this.state.getLatestSpendApprovalForRequest(req.key);
+      if (
+        existingCap?.status === "denied" &&
+        existingCap.decidedBy === "monthly-cap" &&
+        existingCap.description.endsWith(`BLOCKED: ${capFailure}`)
+      ) {
+        return { approved: false, record: existingCap };
+      }
       const record: SpendApprovalRecord = {
         id: `${req.key}:cap:${Date.now()}`,
         requestKey: req.key,

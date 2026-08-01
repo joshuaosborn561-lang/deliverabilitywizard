@@ -145,4 +145,36 @@ describe("FleetSummaryService", () => {
     assert.equal(accountCalls, 1);
     assert.deepEqual(first, second);
   });
+
+  it("falls back to the last persisted census when Smartlead is throttled", async () => {
+    const state = await stateFixture();
+    state.setFleetSummary({
+      generatedAt: "2026-08-01T12:00:00.000Z",
+      totalMailboxes: 1002,
+      sendingMailboxes: 420,
+      activeCampaigns: 9,
+      disconnectedMailboxes: 3,
+    });
+    state.markHeldInbox({
+      accountId: 2,
+      email: "held@example.com",
+      heldAt: new Date().toISOString(),
+      holdUntil: "2026-08-15",
+      tagName: "HOLD-UNTIL-2026-08-15",
+    });
+    const smartlead = {
+      listCampaigns: async () => {
+        throw new Error("HTTP 429");
+      },
+      listAllEmailAccounts: async () => {
+        throw new Error("HTTP 429");
+      },
+    } as unknown as SmartleadClient;
+    const service = new FleetSummaryService(smartlead, state);
+    const result = await service.get(true);
+    assert.equal(result.sendingMailboxes, 420);
+    assert.equal(result.mailboxesInRecovery, 1);
+    assert.equal(result.stale, true);
+    assert.match(result.error!, /429/);
+  });
 });

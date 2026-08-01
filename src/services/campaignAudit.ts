@@ -190,6 +190,30 @@ export class CampaignAuditService {
       console.log(`[campaign-audit]   ${h.count} held sender(s) release on ${h.date}`);
     }
 
+    const activeIds = new Set(rows.map((row) => row.id));
+    this.state.setFleetSummary({
+      generatedAt: new Date().toISOString(),
+      totalMailboxes: accounts.filter((account) =>
+        Boolean(accountEmail(account)),
+      ).length,
+      sendingMailboxes: new Set(
+        accounts
+          .filter(
+            (account) =>
+              Boolean(accountEmail(account)) &&
+              campaignIdsOf(account).some((id) => activeIds.has(id)),
+          )
+          .map((account) => account.id),
+      ).size,
+      activeCampaigns: rows.length,
+      disconnectedMailboxes: accounts.filter(
+        (account) =>
+          account.is_smtp_success === false ||
+          account.is_imap_success === false,
+      ).length,
+    });
+    await this.state.save();
+
     return result;
   }
 }

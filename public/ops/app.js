@@ -2,6 +2,8 @@ const state = {
   csrf: "",
   user: null,
   dashboard: null,
+  placementRows: [],
+  placementSort: { key: "createdAt", direction: "desc" },
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -48,6 +50,19 @@ function toast(message) {
   toast.timer = setTimeout(() => element.classList.add("hidden"), 3500);
 }
 
+async function withLoadingButton(button, loadingText, task) {
+  if (button.disabled) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = loadingText;
+  try {
+    await task();
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 function formatDate(value) {
   if (!value) return "Not yet";
   const date = new Date(value);
@@ -78,14 +93,17 @@ function make(tag, className, text) {
   return element;
 }
 
-async function loadDashboard() {
-  const data = await api("/dashboard");
+async function loadDashboard(force = false) {
+  const data = await api(`/dashboard${force ? "?force=1" : ""}`);
   state.dashboard = data;
+  const count = (value) => (value == null ? "—" : value);
   const cards = [
-    ["Pool mailboxes", data.pool.total, `${data.pool.byStatus.available || 0} available`],
-    ["Warming", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day requirement`],
-    ["Held inboxes", data.pool.heldInboxes, `${data.policy.recoveryHoldDays}-day recovery hold`],
-    ["Active swaps", data.pool.activeSwaps, `${data.pool.byStatus.assigned || 0} assigned generics`],
+    ["Sending mailboxes", count(data.fleet.sendingMailboxes), data.fleet.activeCampaigns == null ? "Live Smartlead count unavailable" : `Across ${data.fleet.activeCampaigns} active campaigns`],
+    ["In recovery", data.fleet.mailboxesInRecovery, `${data.policy.recoveryHoldDays}-day recovery hold`],
+    ["Total mailboxes", count(data.fleet.totalMailboxes), "All Smartlead accounts"],
+    ["Available generics", data.pool.byStatus.available || 0, `${data.pool.total} total pool records`],
+    ["Warming generics", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day requirement`],
+    ["Disconnected", count(data.fleet.disconnectedMailboxes), "SMTP or IMAP failed"],
   ];
   const kpis = $("#kpis");
   kpis.replaceChildren(
@@ -131,16 +149,108 @@ async function loadDashboard() {
   if (state.user.role === "owner") {
     $("#approval-badge").textContent = String(data.pendingApprovals || 0);
   }
+  if (data.fleetError) toast(`Live fleet count unavailable: ${data.fleetError}`);
   renderAudit(data.recentAudit || []);
 }
 
 function switchPanel(name) {
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.panel === name));
   $$(".panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${name}-panel`));
-  const title = { overview: "Overview", chat: "Assistant", approvals: "Approvals", audit: "Audit log" };
+  const title = { overview: "Overview", placement: "Placement results", chat: "Assistant", approvals: "Approvals", audit: "Audit log" };
   $("#panel-title").textContent = title[name] || name;
   if (name === "approvals") loadApprovals().catch((error) => toast(error.message));
   if (name === "audit") loadAudit().catch((error) => toast(error.message));
+  if (name === "placement" && !state.placementRows.length) {
+    loadPlacement().catch((error) => toast(error.message));
+  }
+}
+
+function percent(value) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${value.toFixed(1)}%`
+    : "—";
+}
+
+function scoreClass(value, inverse = false) {
+  if (typeof value !== "number") return "score-unknown";
+  if (inverse) {
+    if (value <= 10) return "score-good";
+    if (value <= 30) return "score-warn";
+    return "score-bad";
+  }
+  if (value >= 80) return "score-good";
+  if (value >= 50) return "score-warn";
+  return "score-bad";
+}
+
+function placementValue(row, key) {
+  const value = row[key];
+  if (value == null || value === "") return null;
+  if (key === "createdAt") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof value === "number") return value;
+  return String(value).toLowerCase();
+}
+
+function renderPlacement() {
+  const query = $("#placement-search").value.trim().toLowerCase();
+  const { key, direction } = state.placementSort;
+  const directionFactor = direction === "asc" ? 1 : -1;
+  const rows = state.placementRows
+    .filter((row) =>
+      `${row.name} ${row.campaignName || ""} ${row.campaignId || ""} ${row.status} ${row.id}`
+        .toLowerCase()
+        .includes(query),
+    )
+    .sort((a, b) => {
+      const left = placementValue(a, key);
+      const right = placementValue(b, key);
+      if (left === right) return 0;
+      if (left === null) return 1;
+      if (right === null) return -1;
+      return (left < right ? -1 : 1) * directionFactor;
+    });
+
+  const body = $("#placement-body");
+  body.replaceChildren(
+    ...rows.map((row) => {
+      const tr = document.createElement("tr");
+      const test = document.createElement("td");
+      test.append(make("strong", "", row.name));
+      test.append(make("small", "", `#${row.id}${row.runNumber != null ? ` · run ${row.runNumber}` : ""}`));
+      const campaign = document.createElement("td");
+      campaign.append(make("span", "", row.campaignName || (row.campaignId ? `Campaign #${row.campaignId}` : "—")));
+      const status = document.createElement("td");
+      status.append(make("span", `status ${String(row.status).toLowerCase() === "completed" ? "success" : "pending"}`, row.status));
+      const inbox = make("td", scoreClass(row.inboxPercent), percent(row.inboxPercent));
+      const google = make("td", scoreClass(row.googleInboxPercent), percent(row.googleInboxPercent));
+      const microsoft = make("td", scoreClass(row.microsoftInboxPercent), percent(row.microsoftInboxPercent));
+      const spam = make("td", scoreClass(row.spamPercent, true), percent(row.spamPercent));
+      const seeds = make("td", "", String(row.totalSeeds || "—"));
+      const date = make("td", "", formatDate(row.createdAt));
+      tr.append(test, campaign, status, inbox, google, microsoft, spam, seeds, date);
+      return tr;
+    }),
+  );
+  $("#placement-empty").classList.toggle("hidden", rows.length > 0);
+  $$("[data-sort]").forEach((button) => {
+    const active = button.dataset.sort === key;
+    button.classList.toggle("active", active);
+    button.dataset.direction = active ? direction : "";
+  });
+}
+
+async function loadPlacement(force = false) {
+  $("#placement-errors").textContent = "";
+  const data = await api(`/placements${force ? "?force=1" : ""}`);
+  state.placementRows = data.rows || [];
+  $("#placement-updated").textContent = `Updated ${formatDate(data.generatedAt)} · ${state.placementRows.length} tests`;
+  $("#placement-errors").textContent = data.errors?.length
+    ? `${data.errors.length} provider report(s) could not be loaded`
+    : "";
+  renderPlacement();
 }
 
 function addMessage(role, text, confirmation) {
@@ -347,7 +457,35 @@ $("#chat-input").addEventListener("keydown", (event) => {
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchPanel(button.dataset.panel)));
 $$("[data-command]").forEach((button) => button.addEventListener("click", () => sendChat(button.dataset.command)));
-$("#refresh-dashboard").addEventListener("click", () => loadDashboard().catch((error) => toast(error.message)));
+$("#refresh-dashboard").addEventListener("click", (event) =>
+  withLoadingButton(event.currentTarget, "Refreshing…", () =>
+    loadDashboard(true),
+  ).catch((error) => toast(error.message)),
+);
+$("#refresh-placement").addEventListener("click", (event) =>
+  withLoadingButton(event.currentTarget, "Refreshing…", () =>
+    loadPlacement(true),
+  ).catch((error) => toast(error.message)),
+);
+$("#placement-search").addEventListener("input", renderPlacement);
+$$("[data-sort]").forEach((button) =>
+  button.addEventListener("click", () => {
+    const key = button.dataset.sort;
+    state.placementSort =
+      state.placementSort.key === key
+        ? {
+            key,
+            direction:
+              state.placementSort.direction === "asc" ? "desc" : "asc",
+          }
+        : {
+            key,
+            direction:
+              ["name", "campaignName", "status"].includes(key) ? "asc" : "desc",
+          };
+    renderPlacement();
+  }),
+);
 $("#refresh-approvals").addEventListener("click", () => loadApprovals().catch((error) => toast(error.message)));
 $("#refresh-audit").addEventListener("click", () => loadAudit().catch((error) => toast(error.message)));
 

@@ -8,7 +8,7 @@ import { OpsAuth } from "./auth.js";
 import type { ManualRotationService } from "./manualRotation.js";
 import { createOpsRouter } from "./router.js";
 
-async function serverFixture() {
+async function serverFixture(opts: { fleetFails?: boolean } = {}) {
   const config = loadConfig({
     OPS_UI_ENABLED: "true",
     OPS_OWNER_TOKEN: "owner-token-that-is-long-enough",
@@ -75,6 +75,17 @@ async function serverFixture() {
         dns: async () => ({ checked: 1 }),
         campaigns: async () => ({ campaigns: [] }),
         reconnect: async () => ({ scanned: 1 }),
+        placements: async () => ({ generatedAt: new Date().toISOString(), rows: [], errors: [] }),
+        fleet: async () => {
+          if (opts.fleetFails) throw new Error("Smartlead unavailable");
+          return {
+            totalMailboxes: 3,
+            sendingMailboxes: 1,
+            mailboxesInRecovery: 1,
+            activeCampaigns: 1,
+            disconnectedMailboxes: 0,
+          };
+        },
       },
     }),
   );
@@ -131,6 +142,16 @@ describe("ops HTTP boundary", () => {
         headers: { cookie: session.cookie },
       });
       assert.equal(dashboard.status, 200);
+      const dashboardBody = (await dashboard.json()) as {
+        fleet: { sendingMailboxes: number; mailboxesInRecovery: number };
+      };
+      assert.equal(dashboardBody.fleet.sendingMailboxes, 1);
+      assert.equal(dashboardBody.fleet.mailboxesInRecovery, 1);
+
+      const placements = await fetch(`${fixture.base}/placements`, {
+        headers: { cookie: session.cookie },
+      });
+      assert.equal(placements.status, 200);
 
       const approvals = await fetch(`${fixture.base}/approvals`, {
         headers: { cookie: session.cookie },
@@ -209,6 +230,30 @@ describe("ops HTTP boundary", () => {
           .listOpsAudit()
           .some((record) => record.action === "spend-approve-confirmed"),
       );
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("keeps local dashboard usable when live Smartlead fleet count fails", async () => {
+    const fixture = await serverFixture({ fleetFails: true });
+    try {
+      const session = await login(
+        fixture.base,
+        "cayden",
+        "operator-token-that-is-long-enough",
+      );
+      const response = await fetch(`${fixture.base}/dashboard`, {
+        headers: { cookie: session.cookie },
+      });
+      const body = (await response.json()) as {
+        fleet: { sendingMailboxes: number | null; mailboxesInRecovery: number };
+        fleetError: string;
+      };
+      assert.equal(response.status, 200);
+      assert.equal(body.fleet.sendingMailboxes, null);
+      assert.equal(body.fleet.mailboxesInRecovery, 0);
+      assert.match(body.fleetError, /Smartlead unavailable/);
     } finally {
       await fixture.close();
     }

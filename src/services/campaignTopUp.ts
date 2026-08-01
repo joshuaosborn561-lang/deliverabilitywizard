@@ -41,6 +41,8 @@ export interface TopUpResult {
   /** Campaigns still short after the pool ran dry, with the remaining gap. */
   unfilled: Array<{ campaignId: number; name: string; shortBy: number }>;
   skipped: string[];
+  /** Senders removed from a campaign they were not branded for. */
+  released: Array<{ campaignId: number; email: string }>;
   errors: string[];
 }
 
@@ -77,6 +79,7 @@ export class CampaignTopUpService {
       assigned: [],
       unfilled: [],
       skipped: [],
+      released: [],
       errors: [],
     };
 
@@ -122,7 +125,7 @@ export class CampaignTopUpService {
       return from.every((id) => (projected.get(id) ?? 0) - 1 >= floor);
     };
 
-    const needy = (campaigns as SmartleadCampaign[])
+    const needy: Array<{ campaign: SmartleadCampaign; senders: number }> = (campaigns as SmartleadCampaign[])
       .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
       .filter((c) => {
         if (isExcluded(c, excluded)) {
@@ -138,6 +141,67 @@ export class CampaignTopUpService {
       .filter((row) => row.senders < floor)
       // Neediest first, so a shallow pool helps the worst campaign.
       .sort((a, b) => a.senders - b.senders);
+
+    // A generic on several campaigns carries only one client's signature, so
+    // every other campaign it sends for is using the wrong brand. Release it
+    // from those before filling anything — the releases may themselves drop a
+    // campaign below the floor, which this run then fills.
+    const activeIds = new Set(
+      (campaigns as SmartleadCampaign[])
+        .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+        .map((c) => c.id),
+    );
+    for (const row of this.state.listPoolMailboxes()) {
+      const on = (campaignsByEmail.get(row.email.toLowerCase()) ?? []).filter(
+        (id) => activeIds.has(id),
+      );
+      if (on.length < 2 || !row.smartleadAccountId) continue;
+
+      // Keep the campaign whose client the mailbox is currently branded for;
+      // if that is unknowable, keep the one it was most recently assigned to.
+      const keep =
+        on.find((id) => {
+          const c = (campaigns as SmartleadCampaign[]).find((x) => x.id === id);
+          return (
+            row.assignedClientId != null &&
+            typeof c?.client_id === "number" &&
+            c.client_id === row.assignedClientId
+          );
+        }) ?? on[on.length - 1]!;
+
+      for (const id of on) {
+        if (id === keep) continue;
+        try {
+          if (!dryRun) {
+            await this.smartlead.removeEmailAccountsFromCampaign(id, [
+              row.smartleadAccountId,
+            ]);
+            await sleep(250);
+          }
+          projected.set(id, (projected.get(id) ?? 1) - 1);
+          result.released.push({ campaignId: id, email: row.email });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`release ${row.email} from ${id}: ${message}`);
+        }
+      }
+      campaignsByEmail.set(row.email.toLowerCase(), [keep]);
+    }
+    if (result.released.length) {
+      console.log(
+        `[top-up] released ${result.released.length} duplicated sender(s) from campaigns they were not branded for`,
+      );
+    }
+
+    // Recompute shortfalls against the post-release counts.
+    const needyAfter = (campaigns as SmartleadCampaign[])
+      .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+      .filter((c) => !isExcluded(c, excluded))
+      .map((c) => ({ campaign: c, senders: projected.get(c.id) ?? 0 }))
+      .filter((row) => row.senders < floor)
+      .sort((a, b) => a.senders - b.senders);
+    needy.length = 0;
+    needy.push(...needyAfter);
 
     if (!needy.length) {
       console.log(`[top-up] All active campaigns at or above ${floor} senders`);

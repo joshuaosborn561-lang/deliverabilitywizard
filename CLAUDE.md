@@ -102,6 +102,17 @@ Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) from the pool.
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
 
+## Mailbox settings
+
+Every mailbox is converged each run to `MESSAGE_PER_DAY` (30) campaign sends
+per day with warmup enabled. This is the **campaign send cap**, a different
+Smartlead field from warmup volume (`WARMUP_TOTAL_PER_DAY`). Settings are per
+mailbox, so anything added by hand or re-imported arrives on a default and
+needs reconciling.
+
+A sender belongs to **one campaign at a time**. A generic found on several is
+released from all but the one it is branded for, before any top-up runs.
+
 ## Placement tests
 
 Tests are **recurring, not new-daily**: `POST /spam-test/schedule` with

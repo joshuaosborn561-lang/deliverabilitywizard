@@ -176,6 +176,27 @@ describe("owner intent", () => {
   });
 });
 
+describe("owner intent — mailbox settings", () => {
+  it("D11: mailbox send cap is 30 per day", () => {
+    assert.equal(
+      defaults.messagePerDay,
+      30,
+      stop(
+        "Every mailbox sends at most 30 campaign emails per day (D11).",
+        `The cap is now ${defaults.messagePerDay}/day, changing fleet-wide volume.`,
+      ),
+    );
+    assert.equal(
+      defaults.enforceMailboxSettings,
+      true,
+      stop(
+        "Mailbox send cap and warmup are converged on every run (D11).",
+        "Enforcement is now off, so mailboxes drift back to whatever default they were created with.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — sender supply", () => {
   it("D9: a generic is taken only while its donor keeps the floor", () => {
     const floor = 50;

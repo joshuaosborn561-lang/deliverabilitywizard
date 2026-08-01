@@ -84,6 +84,9 @@ const ConfigSchema = z.object({
   /** Every active campaign should carry at least this many senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(30),
   enableCampaignTopUp: boolFromEnv(true),
+  /** Daily campaign send cap held on every mailbox. */
+  messagePerDay: z.coerce.number().int().min(1).default(30),
+  enforceMailboxSettings: boolFromEnv(true),
   /** Campaign ids or name fragments never topped up automatically. */
   topUpExcludeCampaigns: z
     .string()
@@ -203,6 +206,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "30",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
+    messagePerDay: env.MESSAGE_PER_DAY ?? "30",
+    enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",

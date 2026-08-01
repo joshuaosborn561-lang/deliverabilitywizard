@@ -202,6 +202,43 @@ is reported rather than filled incorrectly.
 
 **Guard.** Covered by the top-up drawing solely from the pool (D3).
 
+---
+
+## D11 — Every mailbox holds 30 campaign sends per day, warmup on
+
+**Decision.** `MESSAGE_PER_DAY` is 30 and every mailbox is converged to it each
+run, with warmup enabled. This is the campaign send cap, not the warmup volume
+— they are separate Smartlead fields.
+
+**Why.** Josh: "make sure warmup is turned on In smartlead for all mailboxes
+and sending limit is 30 per day", confirmed as "30 per day is campaigns sending
+limit". Settings are per mailbox, so anything added by hand, re-imported, or
+provisioned by InboxKit arrived on whatever default it happened to get and
+nothing reconciled them.
+
+**Tradeoff.** A hard ceiling of roughly 30 × 1,241 sends/day across the fleet.
+Accepted knowingly — volume per mailbox is the lever that protects reputation.
+
+**Guard.** `mailbox send cap is 30 per day`
+
+---
+
+## D12 — A sender belongs to one campaign at a time
+
+**Decision.** A generic found on more than one active campaign is released from
+all but the one it is branded for, before any top-up runs.
+
+**Why.** The first top-up added to the receiving campaign without removing from
+the donor, so 66 generics sat on TechEvo *and* Parlay2/CultureFits while
+carrying only the receiving client's signature — TechEvo was sending under
+Parlay's brand. D9 fixed the forward path; this cleans up what the broken path
+left and stops it recurring.
+
+**Tradeoff.** Releasing duplicates can drop a campaign below the floor. That is
+intended: the same run then refills it from the pool, with correct branding.
+
+**Guard.** Covered by D9's move-not-copy rule.
+
 ## Open — not decided, do not guess
 
 These came up and have not been settled. Ask before acting on either.

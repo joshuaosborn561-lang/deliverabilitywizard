@@ -13,6 +13,7 @@ import { RemediationService } from "./services/remediation.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
+import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
@@ -165,6 +166,7 @@ async function main(): Promise<void> {
   };
 
   const dnsAudit = new DnsAuditService(smartlead, slack);
+  const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
   const campaignTopUp = new CampaignTopUpService(
     config,
     smartlead,
@@ -217,6 +219,14 @@ async function main(): Promise<void> {
       }
       // Refill thin campaigns from the generic pool. Runs after remediation
       // so a sender benched this pass is replaced in the same cycle.
+      // Converge every mailbox on the agreed send cap and warmup state first,
+      // so senders placed by the top-up below already carry it.
+      let mailboxSettingsResult: unknown = null;
+      try {
+        mailboxSettingsResult = await mailboxSettings.run();
+      } catch (error) {
+        console.warn("[mailbox-settings] failed", error);
+      }
       let topUpResult: unknown = null;
       try {
         topUpResult = await campaignTopUp.run();
@@ -241,6 +251,7 @@ async function main(): Promise<void> {
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
         topUp: topUpResult,
+        mailboxSettings: mailboxSettingsResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -573,6 +584,7 @@ async function main(): Promise<void> {
       void (async () => {
         try {
           await campaignAudit.run(config.minCampaignSenders);
+          await mailboxSettings.run();
           // Fill thin campaigns at boot as well as on the monitor. A restart
           // is the only lever that acts sooner than the six-hourly cron, and
           // a campaign sending under its floor should not wait that long.
@@ -587,6 +599,9 @@ async function main(): Promise<void> {
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
     );
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
+    console.log(
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} sends/day, warmup on)` : "not enforced"}`,
+    );
     console.log(
       `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED (floor ${config.minCampaignSenders} senders${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
     );

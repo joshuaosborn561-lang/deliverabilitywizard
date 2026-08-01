@@ -344,6 +344,30 @@ export class StateStore {
     );
   }
 
+  /**
+   * A pool mailbox the top-up may take.
+   *
+   * Includes generics already serving a campaign: they are legitimate supply
+   * as long as releasing one leaves the donor above its floor, which only the
+   * caller can judge. Warming mailboxes are never returned — a mailbox that
+   * has not served its warmup is not supply at any floor.
+   */
+  findReassignablePoolMailbox(
+    platforms: Array<"GOOGLE" | "MICROSOFT">,
+    canTake: (email: string) => boolean,
+  ): PoolMailboxRecord | undefined {
+    for (const platform of platforms) {
+      const match = Object.values(this.state.poolMailboxes).find(
+        (m) =>
+          m.platform === platform &&
+          (m.status === "available" || m.status === "assigned") &&
+          canTake(m.email),
+      );
+      if (match) return match;
+    }
+    return undefined;
+  }
+
   markSwap(record: ActiveSwapRecord): void {
     this.state.activeSwaps[record.originalEmail.toLowerCase()] = record;
     const pool = this.state.poolMailboxes[record.poolEmail.toLowerCase()];

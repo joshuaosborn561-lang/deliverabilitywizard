@@ -31,6 +31,8 @@ export interface TopUpAssignment {
   campaignName: string;
   email: string;
   clientName: string;
+  /** Campaigns the sender was released from, if it was reassigned. */
+  movedFrom: number[];
 }
 
 export interface TopUpResult {
@@ -101,6 +103,25 @@ export class CampaignTopUpService {
     const floor = this.config.minCampaignSenders;
     const excluded = this.config.topUpExcludeCampaigns;
 
+    // Live counts, decremented as senders are pulled, so a run cannot strip a
+    // donor campaign below the floor across several moves.
+    const projected = new Map(senderCounts);
+
+    // Where each generic currently sends. A generic with no campaign is free;
+    // one on a campaign is reassignable only while that campaign keeps a
+    // surplus above the floor.
+    const campaignsByEmail = new Map<string, number[]>();
+    for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (email) campaignsByEmail.set(email, campaignIdsOf(account));
+    }
+
+    /** Can this generic be taken without dropping a donor below the floor? */
+    const isReassignable = (email: string): boolean => {
+      const from = campaignsByEmail.get(email.toLowerCase()) ?? [];
+      return from.every((id) => (projected.get(id) ?? 0) - 1 >= floor);
+    };
+
     const needy = (campaigns as SmartleadCampaign[])
       .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
       .filter((c) => {
@@ -141,10 +162,15 @@ export class CampaignTopUpService {
       for (let attempt = 0; placed < need && attempt < need * 2; attempt += 1) {
         // Match the campaign's existing ESP mix where we can; a Google
         // campaign sending through a Microsoft mailbox scores differently.
-        const pool =
-          this.state.findAvailablePoolMailbox("GOOGLE") ??
-          this.state.findAvailablePoolMailbox("MICROSOFT");
+        const pool = this.state.findReassignablePoolMailbox(
+          ["GOOGLE", "MICROSOFT"],
+          (email) => email.toLowerCase() !== undefined && isReassignable(email),
+        );
         if (!pool || !pool.smartleadAccountId) break;
+
+        // Where it is coming from, so it can be released rather than shared.
+        const donors = (campaignsByEmail.get(pool.email.toLowerCase()) ?? [])
+          .filter((id) => id !== campaign.id);
 
         const firstName = pool.firstName || "Pool";
         const lastName = pool.lastName || "User";
@@ -161,9 +187,21 @@ export class CampaignTopUpService {
               ...(clientId != null ? { client_id: clientId } : {}),
             });
             await sleep(200);
+            // Release from the donor first. Adding without removing leaves the
+            // mailbox on both campaigns while carrying only the new client's
+            // signature, so the donor would send under the wrong brand.
+            for (const donorId of donors) {
+              await this.smartlead.removeEmailAccountsFromCampaign(donorId, [
+                pool.smartleadAccountId,
+              ]);
+              projected.set(donorId, (projected.get(donorId) ?? 1) - 1);
+              await sleep(250);
+            }
             await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
               pool.smartleadAccountId,
             ]);
+            projected.set(campaign.id, (projected.get(campaign.id) ?? 0) + 1);
+            campaignsByEmail.set(pool.email.toLowerCase(), [campaign.id]);
             await sleep(300);
 
             // Claim it immediately so the next iteration cannot hand the same
@@ -180,6 +218,7 @@ export class CampaignTopUpService {
             campaignName: String(campaign.name ?? campaign.id),
             email: pool.email,
             clientName,
+            movedFrom: donors,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);

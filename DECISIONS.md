@@ -156,6 +156,52 @@ under 120. They do not accumulate — SmartDelivery re-runs the parent test.
 
 ---
 
+---
+
+## D9 — A generic is supply while its campaign keeps the floor
+
+**Decision.** Generics already serving a campaign are legitimate supply for
+topping up a thin one. A generic may be taken whenever every campaign it
+currently sends for would still hold `MIN_CAMPAIGN_SENDERS` (50) after losing
+it. Taking it is a **move**, not a copy: it is removed from the donor,
+added to the receiver, and its signature and from-name rewritten to the
+receiving client.
+
+**Why.** TechEvo runs on 100 crosslaunchco.com generics — 50 more than its
+floor — while Parlay2 was sending on 7. A first attempt at this treated any
+generic on a campaign as untouchable, which strands surplus where it is not
+needed. Josh: "a generic should only be unavailable if pulling it would drop a
+campaign below 50."
+
+The move must be complete. The first implementation only called
+`addEmailAccountsToCampaign`, leaving the mailbox on both campaigns while
+carrying just the new client's signature — so the donor campaign was sending
+under the wrong brand. Removing from the donor is part of the same operation,
+not an optimisation.
+
+**Tradeoff.** A campaign above the floor can lose senders to a thinner one, so
+headcount moves around between runs. Accepted: the floor is what matters, and
+surplus sitting idle helps nobody. Donor counts are tracked as the run
+proceeds, so several moves in one pass cannot walk a donor below the floor.
+
+**Guard.** `D9: a generic is taken only while its donor keeps the floor`
+
+---
+
+## D10 — Client-branded senders are still never moved
+
+**Decision.** D9 applies to generics only. A sender on a client's own domain
+is never reassigned to another client's campaign, whatever the headcounts.
+
+**Why.** D3 already says this, and D9 could be misread as relaxing it. It does
+not: `parlaytech*.info` belongs to Parlay whether Parlay has 7 senders or 700.
+Only generics are brand-neutral enough to carry a different client's identity.
+
+**Tradeoff.** None — a thin campaign with no generics available stays thin and
+is reported rather than filled incorrectly.
+
+**Guard.** Covered by the top-up drawing solely from the pool (D3).
+
 ## Open — not decided, do not guess
 
 These came up and have not been settled. Ask before acting on either.

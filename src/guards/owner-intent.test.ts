@@ -175,3 +175,39 @@ describe("owner intent", () => {
     );
   });
 });
+
+describe("owner intent — sender supply", () => {
+  it("D9: a generic is taken only while its donor keeps the floor", () => {
+    const floor = 50;
+    const counts = new Map<number, number>([
+      [1, 100], // TechEvo: 50 to spare
+      [2, 50], // exactly at the floor — untouchable
+      [3, 51], // one to spare
+    ]);
+    const reassignable = (campaigns: number[]) =>
+      campaigns.every((id) => (counts.get(id) ?? 0) - 1 >= floor);
+
+    assert.equal(
+      reassignable([1]),
+      true,
+      stop(
+        "Surplus senders above the floor are available to move (D9).",
+        "A campaign with 100 senders is being treated as untouchable, so surplus cannot be redistributed.",
+      ),
+    );
+    assert.equal(
+      reassignable([2]),
+      false,
+      stop(
+        "A campaign is never pulled below the floor (D9).",
+        "A campaign sitting exactly at 50 senders would be stripped to 49.",
+      ),
+    );
+    assert.equal(reassignable([3]), true, "51 may give up one and hold 50");
+    assert.equal(
+      reassignable([1, 2]),
+      false,
+      "a sender on several campaigns is only movable if every donor holds",
+    );
+  });
+});

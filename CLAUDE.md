@@ -73,6 +73,16 @@ Fill thin campaigns from the **generic pool only**. Generics carry no brand of
 their own, so signature, from-name and client id are set to the receiving
 client on assign, and cleared on swap-back.
 
+**A generic is supply while its campaign keeps the floor.** One already
+serving a campaign may be taken whenever every campaign it sends for would
+still hold `MIN_CAMPAIGN_SENDERS` after losing it — TechEvo runs on 100
+generics against a floor of 50, so 50 are movable. Taking one is a **move**:
+removed from the donor, added to the receiver, signature rewritten. Adding
+without removing leaves the donor sending under another client's brand.
+
+This never extends to client-branded senders. `parlaytech*.info` belongs to
+Parlay whether Parlay has 7 senders or 700.
+
 ## Rotation thresholds
 
 A sender comes off active campaigns when either signal fails:

@@ -915,10 +915,9 @@ export class PoolProvisioner {
         const { firstName, lastName } = parsePersonName(
           match.from_name || email.split("@")[0],
         );
-        // A generic already on a campaign is in service, not spare. Register
-        // it so the pool knows it exists, but never as available — assigning
-        // it elsewhere would rewrite the signature the first campaign sends
-        // under.
+        // A generic on a campaign may still be reassignable — the top-up
+        // decides that, because it depends on whether the source campaign
+        // would drop below its floor. Register the linkage and let it judge.
         const onCampaign = campaignIdsOf(match).length > 0;
         this.state.upsertPoolMailbox({
           email,

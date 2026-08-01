@@ -90,6 +90,17 @@ describe("authVerdictOf", () => {
     assert.equal(authVerdictOf("spf=permerror", "spf"), "fail");
   });
 
+  it("treats temperror as unknown, not a failure", () => {
+    // Transient DNS condition — a resolver blip must not read as a broken
+    // SPF record, or the alert tells us to fix DNS that is already correct.
+    assert.equal(authVerdictOf("spf=temperror", "spf"), "unknown");
+    assert.equal(
+      authVerdictOf("spf=temperror (DNS timeout resolving example.com)", "spf"),
+      "unknown",
+    );
+    assert.equal(authVerdictOf("temperror", "spf"), "unknown");
+  });
+
   it("returns unknown for missing data", () => {
     assert.equal(authVerdictOf(undefined, "spf"), "unknown");
     assert.equal(authVerdictOf("", "spf"), "unknown");
@@ -113,6 +124,28 @@ describe("parseSenderAuthResults", () => {
     assert.equal(row!.dkimPass, 2);
     assert.equal(spfFailing(row!), true);
     assert.equal(dkimFailing(row!), false);
+  });
+
+  it("does not call SPF broken on a single failing seed", () => {
+    const raw = [{ email: "solo@y.info", details: [{ reply: { spf_result: "fail" } }] }];
+    const [row] = parseSenderAuthResults(raw);
+    assert.equal(row!.spfFail, 1);
+    assert.equal(spfFailing(row!), false, "one seed is not enough evidence");
+  });
+
+  it("ignores a transient temperror seed entirely", () => {
+    const raw = [
+      {
+        email: "temp@y.info",
+        details: [
+          { reply: { spf_result: "spf=temperror" } },
+          { reply: { spf_result: "spf=temperror" } },
+        ],
+      },
+    ];
+    const rows = parseSenderAuthResults(raw);
+    // No verdict on either seed, so the sender carries no auth data at all.
+    assert.equal(rows.length, 0);
   });
 
   it("does not call SPF broken when some seeds pass", () => {

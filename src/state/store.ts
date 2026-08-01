@@ -211,6 +211,18 @@ export class StateStore {
     return Boolean(this.state.alertedKeys[key]);
   }
 
+  hasRecentAlert(
+    key: string,
+    cooldownMs: number,
+    now = new Date(),
+  ): boolean {
+    const markedAt = this.state.alertedKeys[key];
+    if (!markedAt) return false;
+    const timestamp = Date.parse(markedAt);
+    if (!Number.isFinite(timestamp)) return false;
+    return now.getTime() - timestamp < cooldownMs;
+  }
+
   markAlert(key: string): void {
     this.state.alertedKeys[key] = new Date().toISOString();
   }
@@ -330,6 +342,30 @@ export class StateStore {
     return Object.values(this.state.poolMailboxes).find(
       (m) => m.status === "available" && m.platform === platform,
     );
+  }
+
+  /**
+   * A pool mailbox the top-up may take.
+   *
+   * Includes generics already serving a campaign: they are legitimate supply
+   * as long as releasing one leaves the donor above its floor, which only the
+   * caller can judge. Warming mailboxes are never returned — a mailbox that
+   * has not served its warmup is not supply at any floor.
+   */
+  findReassignablePoolMailbox(
+    platforms: Array<"GOOGLE" | "MICROSOFT">,
+    canTake: (email: string) => boolean,
+  ): PoolMailboxRecord | undefined {
+    for (const platform of platforms) {
+      const match = Object.values(this.state.poolMailboxes).find(
+        (m) =>
+          m.platform === platform &&
+          (m.status === "available" || m.status === "assigned") &&
+          canTake(m.email),
+      );
+      if (match) return match;
+    }
+    return undefined;
   }
 
   markSwap(record: ActiveSwapRecord): void {

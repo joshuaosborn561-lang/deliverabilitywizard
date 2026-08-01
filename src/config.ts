@@ -80,6 +80,22 @@ const ConfigSchema = z.object({
   minSameEspSamples: z.coerce.number().int().positive().default(3),
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
+  /** Pull a sender off campaigns above this bounce rate (percent). */
+  /** Every active campaign should carry at least this many senders. */
+  minCampaignSenders: z.coerce.number().int().min(0).default(30),
+  enableCampaignTopUp: boolFromEnv(true),
+  /** Daily campaign send cap held on every mailbox. */
+  messagePerDay: z.coerce.number().int().min(1).default(30),
+  enforceMailboxSettings: boolFromEnv(true),
+  /** Campaign ids or name fragments never topped up automatically. */
+  topUpExcludeCampaigns: z
+    .string()
+    .default("")
+    .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
+  bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
+  /** Minimum sends before a bounce rate is treated as evidence. */
+  minBounceSample: z.coerce.number().int().min(0).default(50),
+  enableBounceRotation: boolFromEnv(true),
   /**
    * Pre-warmed generic mailboxes that live outside the .info pool plan, matched
    * against Smartlead by email address or by from_name (e.g. "Harmony Norris").
@@ -188,6 +204,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
+    minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "30",
+    enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
+    messagePerDay: env.MESSAGE_PER_DAY ?? "30",
+    enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
+    topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
+    bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
+    minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
+    enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
     extraGenericMailboxes:
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,

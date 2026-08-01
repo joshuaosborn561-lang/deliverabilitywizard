@@ -18,6 +18,7 @@ import {
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
+import { isRateLimitNoise } from "../lib/alertNoise.js";
 import { ApiError, sleep } from "../lib/http.js";
 import type { SpendGateway } from "../lib/spendGateway.js";
 import type { StateStore } from "../state/store.js";
@@ -25,6 +26,10 @@ import {
   RecoveryPoolService,
   type RecoveryPoolResult,
 } from "./recoveryPool.js";
+import {
+  parseSenderBounceStats,
+  shouldRotateForBounces,
+} from "../lib/bounceRate.js";
 
 export interface ClientBackfillAction {
   clientId: number | null;
@@ -389,11 +394,53 @@ export class RemediationService {
       scoredSameEsp?: boolean;
     }> = [];
 
+    // A sender can hold a clean inbox rate while bouncing hard against real
+    // leads — seed inboxes accept mail, so a placement test never sees it.
+    // Bounce is an independent signal, routed through the same hold-and-swap
+    // path as poor placement so a warmed generic takes over either way.
+    const bounceRotations = new Map<string, number>();
+    if (this.config.enableBounceRotation) {
+      try {
+        const stats = parseSenderBounceStats(
+          await this.smartlead.getAnalyticsOverview(),
+        );
+        console.log(`[remediation] bounce stats parsed for ${stats.length} sender(s)`);
+        for (const stat of stats) {
+          if (
+            shouldRotateForBounces(
+              stat,
+              this.config.bounceRateThreshold,
+              this.config.minBounceSample,
+            )
+          ) {
+            bounceRotations.set(stat.email, stat.bounceRate);
+          }
+        }
+        if (bounceRotations.size) {
+          console.log(
+            `[remediation] ${bounceRotations.size} sender(s) over ${this.config.bounceRateThreshold}% bounce:`,
+            [...bounceRotations.entries()]
+              .slice(0, 20)
+              .map(([e, r]) => `${e} ${r.toFixed(1)}%`),
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`bounce stats: ${message}`);
+        // Surface the failure rather than burying it in an error count — this
+        // endpoint's response shape was inferred from docs, not observed, so
+        // the reason it failed is the thing worth reading.
+        console.warn(`[remediation] bounce stats unavailable: ${message}`);
+      }
+    }
+
     const recoverCandidates = accounts.filter((account) => {
       const email = accountEmail(account)?.toLowerCase();
       const domain = accountDomain(account);
       if (!email || !domain) return false;
       if (blacklistedSet.has(domain)) return false;
+      // High bounce is disqualifying on its own, regardless of placement.
+      if (bounceRotations.has(email)) return true;
       const rate = inboxRates.get(email);
       if (rate === undefined) return false;
       return rate < threshold;
@@ -983,7 +1030,7 @@ export class RemediationService {
       (result.recoveryPool?.restores.length ?? 0) > 0;
 
     // Rate-limit noise alone should not page Slack
-    const seriousErrors = result.errors.filter((e) => !/rate limit/i.test(e));
+    const seriousErrors = result.errors.filter((e) => !isRateLimitNoise(e));
 
     if (acted || seriousErrors.length) {
       await this.slack.notifyRemediation({

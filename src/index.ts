@@ -10,6 +10,10 @@ import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
+import { DnsAuditService } from "./services/dnsAudit.js";
+import { CampaignAuditService } from "./services/campaignAudit.js";
+import { CampaignTopUpService } from "./services/campaignTopUp.js";
+import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
@@ -161,6 +165,21 @@ async function main(): Promise<void> {
     return reconcileInFlight;
   };
 
+  const dnsAudit = new DnsAuditService(smartlead, slack);
+  const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
+  const campaignTopUp = new CampaignTopUpService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
+  const campaignAudit = new CampaignAuditService(
+    config,
+    smartlead,
+    smartDelivery,
+    state,
+  );
+
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -190,12 +209,49 @@ async function main(): Promise<void> {
       if (config.enableAccountReconnect) {
         reconnectResult = await runReconnect();
       }
+      // Zone-level faults are invisible from inside Smartlead; resolve DNS
+      // directly so a domain sending without SPF cannot stay silent.
+      let dnsAuditResult: unknown = null;
+      try {
+        dnsAuditResult = await dnsAudit.run();
+      } catch (error) {
+        console.warn("[dns-audit] failed", error);
+      }
+      // Refill thin campaigns from the generic pool. Runs after remediation
+      // so a sender benched this pass is replaced in the same cycle.
+      // Converge every mailbox on the agreed send cap and warmup state first,
+      // so senders placed by the top-up below already carry it.
+      let mailboxSettingsResult: unknown = null;
+      try {
+        mailboxSettingsResult = await mailboxSettings.run();
+      } catch (error) {
+        console.warn("[mailbox-settings] failed", error);
+      }
+      let topUpResult: unknown = null;
+      try {
+        topUpResult = await campaignTopUp.run();
+      } catch (error) {
+        console.warn("[top-up] failed", error);
+      }
+      // Campaign-level health: a campaign can bleed senders to recovery holds
+      // or never pick up a placement test, and neither shows in the
+      // mailbox-oriented remediation summary.
+      let campaignAuditResult: unknown = null;
+      try {
+        campaignAuditResult = await campaignAudit.run(config.minCampaignSenders);
+      } catch (error) {
+        console.warn("[campaign-audit] failed", error);
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
         reconnect: reconnectResult,
+        dnsAudit: dnsAuditResult,
+        campaignAudit: campaignAuditResult,
+        topUp: topUpResult,
+        mailboxSettings: mailboxSettingsResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -521,10 +577,34 @@ async function main(): Promise<void> {
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
+    // Campaign headcount and test cover, at boot as well as on the monitor —
+    // waiting up to six hours to learn a campaign is sending with no test is
+    // too long when the shortfall is being worked on right now.
+    if (secretsReady) {
+      void (async () => {
+        try {
+          await campaignAudit.run(config.minCampaignSenders);
+          await mailboxSettings.run();
+          // Fill thin campaigns at boot as well as on the monitor. A restart
+          // is the only lever that acts sooner than the six-hourly cron, and
+          // a campaign sending under its floor should not wait that long.
+          // Idempotent: once every campaign is at the floor this is a no-op.
+          await campaignTopUp.run();
+        } catch (error) {
+          console.warn("[boot] campaign audit/top-up failed", error);
+        }
+      })();
+    }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
     );
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
+    console.log(
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} sends/day, warmup on)` : "not enforced"}`,
+    );
+    console.log(
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED (floor ${config.minCampaignSenders} senders${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+    );
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
     );

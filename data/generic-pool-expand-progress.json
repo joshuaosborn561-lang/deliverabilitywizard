@@ -1,0 +1,1916 @@
+{
+  "at": "2026-07-24T00:46:30.778Z",
+  "mailboxBuys": [
+    {
+      "domain": "meetconnectnow.com",
+      "need": 5,
+      "names": [
+        "Karim Nguyen",
+        "Leila Tran",
+        "Amina Gonzalez",
+        "Tunde Perez",
+        "Zuri Hernandez"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "4686e5ae-3d82-4a2a-a20e-1030c476f1b2",
+            "domain_name": "meetconnectnow.com",
+            "first_name": "Karim",
+            "last_name": "Nguyen",
+            "username": "karimnguyen",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:48.301Z",
+            "updatedAt": "2026-07-24T00:45:48.301Z"
+          },
+          {
+            "uid": "8198e33c-ffd3-480f-b05c-5a97b4e8b6fb",
+            "domain_name": "meetconnectnow.com",
+            "first_name": "Leila",
+            "last_name": "Tran",
+            "username": "leilatran",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:48.301Z",
+            "updatedAt": "2026-07-24T00:45:48.301Z"
+          },
+          {
+            "uid": "93364fe5-e36f-4c50-96db-fe16f6a8c4eb",
+            "domain_name": "meetconnectnow.com",
+            "first_name": "Amina",
+            "last_name": "Gonzalez",
+            "username": "aminagonzalez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:48.301Z",
+            "updatedAt": "2026-07-24T00:45:48.301Z"
+          },
+          {
+            "uid": "0c169f35-9de0-4a63-9a60-890ead1d7cc6",
+            "domain_name": "meetconnectnow.com",
+            "first_name": "Tunde",
+            "last_name": "Perez",
+            "username": "tundeperez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:48.301Z",
+            "updatedAt": "2026-07-24T00:45:48.301Z"
+          },
+          {
+            "uid": "541b0725-d955-4047-a6f5-68e51b24d810",
+            "domain_name": "meetconnectnow.com",
+            "first_name": "Zuri",
+            "last_name": "Hernandez",
+            "username": "zurihernandez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:48.301Z",
+            "updatedAt": "2026-07-24T00:45:48.301Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "meetconnectgo.com",
+      "need": 5,
+      "names": [
+        "Brian Petrov",
+        "Stephanie Boateng",
+        "Raymond Abebe",
+        "Patricia Diallo",
+        "Keith Okoye"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "b7453a82-970f-4ec0-bcf4-3607f80c6fa8",
+            "domain_name": "meetconnectgo.com",
+            "first_name": "Brian",
+            "last_name": "Petrov",
+            "username": "brianpetrov",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:50.088Z",
+            "updatedAt": "2026-07-24T00:45:50.088Z"
+          },
+          {
+            "uid": "0dd88d3c-92c6-416c-9c78-4628c1bd61e8",
+            "domain_name": "meetconnectgo.com",
+            "first_name": "Stephanie",
+            "last_name": "Boateng",
+            "username": "stephanieboateng",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:50.088Z",
+            "updatedAt": "2026-07-24T00:45:50.088Z"
+          },
+          {
+            "uid": "5fcfef86-1418-44ba-a190-6a9c1facdaca",
+            "domain_name": "meetconnectgo.com",
+            "first_name": "Raymond",
+            "last_name": "Abebe",
+            "username": "raymondabebe",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:50.088Z",
+            "updatedAt": "2026-07-24T00:45:50.088Z"
+          },
+          {
+            "uid": "bbfa03e4-ab2d-411e-9002-a5f1387dabf1",
+            "domain_name": "meetconnectgo.com",
+            "first_name": "Patricia",
+            "last_name": "Diallo",
+            "username": "patriciadiallo",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:50.088Z",
+            "updatedAt": "2026-07-24T00:45:50.088Z"
+          },
+          {
+            "uid": "0196a4c4-feea-48d8-84ff-9df84e698b23",
+            "domain_name": "meetconnectgo.com",
+            "first_name": "Keith",
+            "last_name": "Okoye",
+            "username": "keithokoye",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:50.088Z",
+            "updatedAt": "2026-07-24T00:45:50.088Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "nowoutreachdesk.com",
+      "need": 5,
+      "names": [
+        "Miguel Ramirez",
+        "Camila Torres",
+        "Javier Perez",
+        "Valentina Hernandez",
+        "Andres Lopez"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "4b516b5a-483e-47f5-99ff-4cf572b07ad9",
+            "domain_name": "nowoutreachdesk.com",
+            "first_name": "Miguel",
+            "last_name": "Ramirez",
+            "username": "miguelramirez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:51.809Z",
+            "updatedAt": "2026-07-24T00:45:51.809Z"
+          },
+          {
+            "uid": "f93358ef-f0e7-4134-8837-5b3c42f884aa",
+            "domain_name": "nowoutreachdesk.com",
+            "first_name": "Camila",
+            "last_name": "Torres",
+            "username": "camilatorres",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:51.810Z",
+            "updatedAt": "2026-07-24T00:45:51.810Z"
+          },
+          {
+            "uid": "8f8d479e-005e-4930-847d-3fb4d6391720",
+            "domain_name": "nowoutreachdesk.com",
+            "first_name": "Javier",
+            "last_name": "Perez",
+            "username": "javierperez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:51.810Z",
+            "updatedAt": "2026-07-24T00:45:51.810Z"
+          },
+          {
+            "uid": "762e5c2e-b618-4cbb-9336-b11195570bc5",
+            "domain_name": "nowoutreachdesk.com",
+            "first_name": "Valentina",
+            "last_name": "Hernandez",
+            "username": "valentinahernandez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:51.810Z",
+            "updatedAt": "2026-07-24T00:45:51.810Z"
+          },
+          {
+            "uid": "24f18da4-f91b-4d72-a4ec-6b45818eeedd",
+            "domain_name": "nowoutreachdesk.com",
+            "first_name": "Andres",
+            "last_name": "Lopez",
+            "username": "andreslopez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:51.810Z",
+            "updatedAt": "2026-07-24T00:45:51.810Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "outreachdesknow.com",
+      "need": 5,
+      "names": [
+        "Arjun Novak",
+        "Isha Diallo",
+        "Omar Okoye",
+        "Layla Mensah",
+        "Yusuf Abbas"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "71debd83-028b-4513-8908-9d729339da3d",
+            "domain_name": "outreachdesknow.com",
+            "first_name": "Arjun",
+            "last_name": "Novak",
+            "username": "arjunnovak",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:53.693Z",
+            "updatedAt": "2026-07-24T00:45:53.693Z"
+          },
+          {
+            "uid": "8a0996d5-7824-4945-be39-57bbe52980a8",
+            "domain_name": "outreachdesknow.com",
+            "first_name": "Isha",
+            "last_name": "Diallo",
+            "username": "ishadiallo",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:53.693Z",
+            "updatedAt": "2026-07-24T00:45:53.693Z"
+          },
+          {
+            "uid": "5ff05c29-e8d9-44df-8904-9a553525c54e",
+            "domain_name": "outreachdesknow.com",
+            "first_name": "Omar",
+            "last_name": "Okoye",
+            "username": "omarokoye",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:53.693Z",
+            "updatedAt": "2026-07-24T00:45:53.693Z"
+          },
+          {
+            "uid": "e75aa5d3-4f38-496a-9857-42c4307fccb4",
+            "domain_name": "outreachdesknow.com",
+            "first_name": "Layla",
+            "last_name": "Mensah",
+            "username": "laylamensah",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:53.694Z",
+            "updatedAt": "2026-07-24T00:45:53.694Z"
+          },
+          {
+            "uid": "6dd65234-2e78-4180-babe-827b37ec45f4",
+            "domain_name": "outreachdesknow.com",
+            "first_name": "Yusuf",
+            "last_name": "Abbas",
+            "username": "yusufabbas",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:53.694Z",
+            "updatedAt": "2026-07-24T00:45:53.694Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "appmeetconnect.com",
+      "need": 5,
+      "names": [
+        "Ivan Perez",
+        "Nina Hernandez",
+        "Marcus Lopez",
+        "Jasmine Rodriguez",
+        "Derek Walsh"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "5980b7cd-c092-4554-83a3-1b99d6ced22b",
+            "domain_name": "appmeetconnect.com",
+            "first_name": "Ivan",
+            "last_name": "Perez",
+            "username": "ivanperez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:55.905Z",
+            "updatedAt": "2026-07-24T00:45:55.905Z"
+          },
+          {
+            "uid": "a5da3ec6-8c72-4c8b-a3da-ba74b2c98657",
+            "domain_name": "appmeetconnect.com",
+            "first_name": "Nina",
+            "last_name": "Hernandez",
+            "username": "ninahernandez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:55.905Z",
+            "updatedAt": "2026-07-24T00:45:55.905Z"
+          },
+          {
+            "uid": "1ef54588-27a7-43eb-8f72-4dcbee34f652",
+            "domain_name": "appmeetconnect.com",
+            "first_name": "Marcus",
+            "last_name": "Lopez",
+            "username": "marcuslopez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:55.905Z",
+            "updatedAt": "2026-07-24T00:45:55.905Z"
+          },
+          {
+            "uid": "ecebf3b7-270b-4fc3-87bd-0f85e980482b",
+            "domain_name": "appmeetconnect.com",
+            "first_name": "Jasmine",
+            "last_name": "Rodriguez",
+            "username": "jasminerodriguez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:55.905Z",
+            "updatedAt": "2026-07-24T00:45:55.905Z"
+          },
+          {
+            "uid": "9abcc7b8-4008-45e6-b055-9f9e811b6462",
+            "domain_name": "appmeetconnect.com",
+            "first_name": "Derek",
+            "last_name": "Walsh",
+            "username": "derekwalsh",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:55.905Z",
+            "updatedAt": "2026-07-24T00:45:55.905Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "appoutreachdesk.com",
+      "need": 5,
+      "names": [
+        "Nathan Okoye",
+        "Grace Mensah",
+        "Patrick Abbas",
+        "Helen Ali",
+        "Carlos Rahman"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "5e941ab7-ac27-4396-8eb6-34e79aa1cbdd",
+            "domain_name": "appoutreachdesk.com",
+            "first_name": "Nathan",
+            "last_name": "Okoye",
+            "username": "nathanokoye",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:57.619Z",
+            "updatedAt": "2026-07-24T00:45:57.619Z"
+          },
+          {
+            "uid": "7ebc3ef7-e900-4b5a-a628-c825993ae4d4",
+            "domain_name": "appoutreachdesk.com",
+            "first_name": "Grace",
+            "last_name": "Mensah",
+            "username": "gracemensah",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:57.620Z",
+            "updatedAt": "2026-07-24T00:45:57.620Z"
+          },
+          {
+            "uid": "2a5d8019-adb7-4888-bd90-1fe539d693f2",
+            "domain_name": "appoutreachdesk.com",
+            "first_name": "Patrick",
+            "last_name": "Abbas",
+            "username": "patrickabbas",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:57.620Z",
+            "updatedAt": "2026-07-24T00:45:57.620Z"
+          },
+          {
+            "uid": "50e2a6de-e762-4bd8-9a45-a85202a0e42f",
+            "domain_name": "appoutreachdesk.com",
+            "first_name": "Helen",
+            "last_name": "Ali",
+            "username": "helenali",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:57.620Z",
+            "updatedAt": "2026-07-24T00:45:57.620Z"
+          },
+          {
+            "uid": "de56cfc7-a4df-4d18-a3db-9dd347badcc8",
+            "domain_name": "appoutreachdesk.com",
+            "first_name": "Carlos",
+            "last_name": "Rahman",
+            "username": "carlosrahman",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:57.620Z",
+            "updatedAt": "2026-07-24T00:45:57.620Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "meetconnectapp.com",
+      "need": 5,
+      "names": [
+        "Jin Lopez",
+        "Hana Rodriguez",
+        "Aarav Martinez",
+        "Priya Keller",
+        "Rohan Bennett"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "5d41e581-d948-41f4-9b0c-00646985a172",
+            "domain_name": "meetconnectapp.com",
+            "first_name": "Jin",
+            "last_name": "Lopez",
+            "username": "jinlopez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:59.420Z",
+            "updatedAt": "2026-07-24T00:45:59.420Z"
+          },
+          {
+            "uid": "51c0cd27-540c-45d4-81dc-066155a7c3bb",
+            "domain_name": "meetconnectapp.com",
+            "first_name": "Hana",
+            "last_name": "Rodriguez",
+            "username": "hanarodriguez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:59.421Z",
+            "updatedAt": "2026-07-24T00:45:59.421Z"
+          },
+          {
+            "uid": "267459a4-4509-4d8f-8686-90b6ccb66d48",
+            "domain_name": "meetconnectapp.com",
+            "first_name": "Aarav",
+            "last_name": "Martinez",
+            "username": "aaravmartinez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:59.421Z",
+            "updatedAt": "2026-07-24T00:45:59.421Z"
+          },
+          {
+            "uid": "7315340b-d319-41f0-bb3d-dbe992d5b5e6",
+            "domain_name": "meetconnectapp.com",
+            "first_name": "Priya",
+            "last_name": "Keller",
+            "username": "priyakeller",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:59.421Z",
+            "updatedAt": "2026-07-24T00:45:59.421Z"
+          },
+          {
+            "uid": "78c2cefa-434e-4131-bd42-1844037398ce",
+            "domain_name": "meetconnectapp.com",
+            "first_name": "Rohan",
+            "last_name": "Bennett",
+            "username": "rohanbennett",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:45:59.421Z",
+            "updatedAt": "2026-07-24T00:45:59.421Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "outreachdeskapp.com",
+      "need": 5,
+      "names": [
+        "Malik Abbas",
+        "Imani Farouk",
+        "Kofi Rahman",
+        "Nia Mehta",
+        "Pavel Hassan"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "b0c8d2ea-ff25-46fc-9d32-747cb2927471",
+            "domain_name": "outreachdeskapp.com",
+            "first_name": "Malik",
+            "last_name": "Abbas",
+            "username": "malikabbas",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:01.588Z",
+            "updatedAt": "2026-07-24T00:46:01.588Z"
+          },
+          {
+            "uid": "296cd758-587b-4476-a145-c2bea50364f4",
+            "domain_name": "outreachdeskapp.com",
+            "first_name": "Imani",
+            "last_name": "Farouk",
+            "username": "imanifarouk",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:01.589Z",
+            "updatedAt": "2026-07-24T00:46:01.589Z"
+          },
+          {
+            "uid": "eeb26336-956d-47d4-b409-78167effd74d",
+            "domain_name": "outreachdeskapp.com",
+            "first_name": "Kofi",
+            "last_name": "Rahman",
+            "username": "kofirahman",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:01.589Z",
+            "updatedAt": "2026-07-24T00:46:01.589Z"
+          },
+          {
+            "uid": "49ccaa77-32f8-4f27-8128-34285ac81f13",
+            "domain_name": "outreachdeskapp.com",
+            "first_name": "Nia",
+            "last_name": "Mehta",
+            "username": "niamehta",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:01.619Z",
+            "updatedAt": "2026-07-24T00:46:01.619Z"
+          },
+          {
+            "uid": "8329df6c-ed33-4e8b-a1a8-e073d7524b2c",
+            "domain_name": "outreachdeskapp.com",
+            "first_name": "Pavel",
+            "last_name": "Hassan",
+            "username": "pavelhassan",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:01.620Z",
+            "updatedAt": "2026-07-24T00:46:01.620Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "hubmeetconnect.com",
+      "need": 5,
+      "names": [
+        "Troy Martinez",
+        "Monica Keller",
+        "Curtis Bennett",
+        "Diana Griffin",
+        "James Hayes"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "19b12284-7a62-4844-97a7-ecd83bed06f3",
+            "domain_name": "hubmeetconnect.com",
+            "first_name": "Troy",
+            "last_name": "Martinez",
+            "username": "troymartinez",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:03.523Z",
+            "updatedAt": "2026-07-24T00:46:03.523Z"
+          },
+          {
+            "uid": "5b553d0c-07f1-4ede-ac65-13faa353af30",
+            "domain_name": "hubmeetconnect.com",
+            "first_name": "Monica",
+            "last_name": "Keller",
+            "username": "monicakeller",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:03.523Z",
+            "updatedAt": "2026-07-24T00:46:03.523Z"
+          },
+          {
+            "uid": "9d25cebd-9116-4039-bc2a-b70940652090",
+            "domain_name": "hubmeetconnect.com",
+            "first_name": "Curtis",
+            "last_name": "Bennett",
+            "username": "curtisbennett",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:03.523Z",
+            "updatedAt": "2026-07-24T00:46:03.523Z"
+          },
+          {
+            "uid": "5d51bf39-0ea8-483c-a2bb-ade05f9f172c",
+            "domain_name": "hubmeetconnect.com",
+            "first_name": "Diana",
+            "last_name": "Griffin",
+            "username": "dianagriffin",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:03.524Z",
+            "updatedAt": "2026-07-24T00:46:03.524Z"
+          },
+          {
+            "uid": "510bcb44-abed-4c69-a91e-627ef04a8e1b",
+            "domain_name": "hubmeetconnect.com",
+            "first_name": "James",
+            "last_name": "Hayes",
+            "username": "jameshayes",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:03.524Z",
+            "updatedAt": "2026-07-24T00:46:03.524Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "huboutreachdesk.com",
+      "need": 5,
+      "names": [
+        "Wei Rahman",
+        "Mei Mehta",
+        "Hiro Hassan",
+        "Yuki Gupta",
+        "Kenji Singh"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "bb54fbbd-9e21-4ddb-9c6e-ac82d340147f",
+            "domain_name": "huboutreachdesk.com",
+            "first_name": "Wei",
+            "last_name": "Rahman",
+            "username": "weirahman",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:05.227Z",
+            "updatedAt": "2026-07-24T00:46:05.227Z"
+          },
+          {
+            "uid": "ffe19430-4923-45d6-83aa-4cc00634c6f9",
+            "domain_name": "huboutreachdesk.com",
+            "first_name": "Mei",
+            "last_name": "Mehta",
+            "username": "meimehta",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:05.227Z",
+            "updatedAt": "2026-07-24T00:46:05.227Z"
+          },
+          {
+            "uid": "6921328f-0f02-4422-a369-2297465e9703",
+            "domain_name": "huboutreachdesk.com",
+            "first_name": "Hiro",
+            "last_name": "Hassan",
+            "username": "hirohassan",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:05.227Z",
+            "updatedAt": "2026-07-24T00:46:05.227Z"
+          },
+          {
+            "uid": "c3202c17-f9c0-4612-9aa9-4efa07683576",
+            "domain_name": "huboutreachdesk.com",
+            "first_name": "Yuki",
+            "last_name": "Gupta",
+            "username": "yukigupta",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:05.227Z",
+            "updatedAt": "2026-07-24T00:46:05.227Z"
+          },
+          {
+            "uid": "ef14326e-7200-490b-9b39-a8e5b3489cab",
+            "domain_name": "huboutreachdesk.com",
+            "first_name": "Kenji",
+            "last_name": "Singh",
+            "username": "kenjisingh",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:05.227Z",
+            "updatedAt": "2026-07-24T00:46:05.227Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "meetconnecthub.com",
+      "need": 5,
+      "names": [
+        "Samir Bennett",
+        "Noor Griffin",
+        "Karim Hayes",
+        "Leila Foster",
+        "Kwame Brooks"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "a7d85957-932d-4a40-9384-27c941dc3048",
+            "domain_name": "meetconnecthub.com",
+            "first_name": "Samir",
+            "last_name": "Bennett",
+            "username": "samirbennett",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:07.004Z",
+            "updatedAt": "2026-07-24T00:46:07.004Z"
+          },
+          {
+            "uid": "04616a5c-7bb1-4eba-9722-9fd2d1e9a2a4",
+            "domain_name": "meetconnecthub.com",
+            "first_name": "Noor",
+            "last_name": "Griffin",
+            "username": "noorgriffin",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:07.004Z",
+            "updatedAt": "2026-07-24T00:46:07.004Z"
+          },
+          {
+            "uid": "1bc1df2e-0e70-436d-b057-0266234643d6",
+            "domain_name": "meetconnecthub.com",
+            "first_name": "Karim",
+            "last_name": "Hayes",
+            "username": "karimhayes",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:07.004Z",
+            "updatedAt": "2026-07-24T00:46:07.004Z"
+          },
+          {
+            "uid": "fec7e2ae-91ab-48f4-a753-8c5877fc2a21",
+            "domain_name": "meetconnecthub.com",
+            "first_name": "Leila",
+            "last_name": "Foster",
+            "username": "leilafoster",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:07.004Z",
+            "updatedAt": "2026-07-24T00:46:07.004Z"
+          },
+          {
+            "uid": "dd2bcabf-5802-471c-b208-51d171b2e6c8",
+            "domain_name": "meetconnecthub.com",
+            "first_name": "Kwame",
+            "last_name": "Brooks",
+            "username": "kwamebrooks",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:07.004Z",
+            "updatedAt": "2026-07-24T00:46:07.004Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "outreachdeskhub.com",
+      "need": 5,
+      "names": [
+        "Tony Hassan",
+        "Michelle Gupta",
+        "Brian Reddy",
+        "Stephanie Khan",
+        "Raymond Patel"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "e1c5ed1d-6e8b-45af-bb00-6868ae98982d",
+            "domain_name": "outreachdeskhub.com",
+            "first_name": "Tony",
+            "last_name": "Hassan",
+            "username": "tonyhassan",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:08.833Z",
+            "updatedAt": "2026-07-24T00:46:08.833Z"
+          },
+          {
+            "uid": "5bde6460-13e3-42e4-b9d6-0fc471b02c89",
+            "domain_name": "outreachdeskhub.com",
+            "first_name": "Michelle",
+            "last_name": "Gupta",
+            "username": "michellegupta",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:08.833Z",
+            "updatedAt": "2026-07-24T00:46:08.833Z"
+          },
+          {
+            "uid": "04f7ca3f-1a89-46fb-a95d-837ba5520aed",
+            "domain_name": "outreachdeskhub.com",
+            "first_name": "Brian",
+            "last_name": "Reddy",
+            "username": "brianreddy",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:08.834Z",
+            "updatedAt": "2026-07-24T00:46:08.834Z"
+          },
+          {
+            "uid": "efb2072d-f920-4183-a88f-163dd5cfabba",
+            "domain_name": "outreachdeskhub.com",
+            "first_name": "Stephanie",
+            "last_name": "Khan",
+            "username": "stephaniekhan",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:08.834Z",
+            "updatedAt": "2026-07-24T00:46:08.834Z"
+          },
+          {
+            "uid": "a378c98e-8b36-40af-90db-5955840e86e0",
+            "domain_name": "outreachdeskhub.com",
+            "first_name": "Raymond",
+            "last_name": "Patel",
+            "username": "raymondpatel",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:08.834Z",
+            "updatedAt": "2026-07-24T00:46:08.834Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "boxmeetconnect.com",
+      "need": 5,
+      "names": [
+        "Diego Hayes",
+        "Isabella Foster",
+        "Miguel Brooks",
+        "Camila Bryant",
+        "Javier Jenkins"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "0787f257-68ed-4487-a979-98e311705552",
+            "domain_name": "boxmeetconnect.com",
+            "first_name": "Diego",
+            "last_name": "Hayes",
+            "username": "diegohayes",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:10.846Z",
+            "updatedAt": "2026-07-24T00:46:10.846Z"
+          },
+          {
+            "uid": "ffa2d033-cd51-4dd6-8159-659b095ecf46",
+            "domain_name": "boxmeetconnect.com",
+            "first_name": "Isabella",
+            "last_name": "Foster",
+            "username": "isabellafoster",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:10.846Z",
+            "updatedAt": "2026-07-24T00:46:10.846Z"
+          },
+          {
+            "uid": "469ff146-0bf2-46e6-a698-35ceef1a6080",
+            "domain_name": "boxmeetconnect.com",
+            "first_name": "Miguel",
+            "last_name": "Brooks",
+            "username": "miguelbrooks",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:10.846Z",
+            "updatedAt": "2026-07-24T00:46:10.846Z"
+          },
+          {
+            "uid": "96fc73c0-88d5-4316-8cb3-acbfcf5c1cb9",
+            "domain_name": "boxmeetconnect.com",
+            "first_name": "Camila",
+            "last_name": "Bryant",
+            "username": "camilabryant",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:10.846Z",
+            "updatedAt": "2026-07-24T00:46:10.846Z"
+          },
+          {
+            "uid": "3c8bf197-35de-4ab1-b26e-fc2ef3e09d78",
+            "domain_name": "boxmeetconnect.com",
+            "first_name": "Javier",
+            "last_name": "Jenkins",
+            "username": "javierjenkins",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:10.846Z",
+            "updatedAt": "2026-07-24T00:46:10.846Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "boxoutreachdesk.com",
+      "need": 5,
+      "names": [
+        "Vikram Reddy",
+        "Neha Khan",
+        "Arjun Patel",
+        "Isha Shah",
+        "Omar Tanaka"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "bcf98ecd-b265-4322-8bf7-f707ac7f9220",
+            "domain_name": "boxoutreachdesk.com",
+            "first_name": "Vikram",
+            "last_name": "Reddy",
+            "username": "vikramreddy",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:12.607Z",
+            "updatedAt": "2026-07-24T00:46:12.607Z"
+          },
+          {
+            "uid": "6d25ac55-1a69-44b9-9748-cfe02410465f",
+            "domain_name": "boxoutreachdesk.com",
+            "first_name": "Neha",
+            "last_name": "Khan",
+            "username": "nehakhan",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:12.607Z",
+            "updatedAt": "2026-07-24T00:46:12.607Z"
+          },
+          {
+            "uid": "1c44c0a3-a7f4-49bd-869f-d90ddfca33c2",
+            "domain_name": "boxoutreachdesk.com",
+            "first_name": "Arjun",
+            "last_name": "Patel",
+            "username": "arjunpatel",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:12.607Z",
+            "updatedAt": "2026-07-24T00:46:12.607Z"
+          },
+          {
+            "uid": "d3b497d8-da1d-4146-b71f-6d65697722de",
+            "domain_name": "boxoutreachdesk.com",
+            "first_name": "Isha",
+            "last_name": "Shah",
+            "username": "ishashah",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:12.607Z",
+            "updatedAt": "2026-07-24T00:46:12.607Z"
+          },
+          {
+            "uid": "c13d5f85-7cf4-440c-82dd-004eb5598274",
+            "domain_name": "boxoutreachdesk.com",
+            "first_name": "Omar",
+            "last_name": "Tanaka",
+            "username": "omartanaka",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:12.607Z",
+            "updatedAt": "2026-07-24T00:46:12.607Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "meetconnectbox.com",
+      "need": 5,
+      "names": [
+        "Marek Brooks",
+        "Katya Bryant",
+        "Ivan Jenkins",
+        "Nina Reed",
+        "Marcus Morgan"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "353cfe29-6708-4b58-9e37-66d92ebbee69",
+            "domain_name": "meetconnectbox.com",
+            "first_name": "Marek",
+            "last_name": "Brooks",
+            "username": "marekbrooks",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:14.549Z",
+            "updatedAt": "2026-07-24T00:46:14.549Z"
+          },
+          {
+            "uid": "fa0f4fd9-3cf6-4c55-ad75-0eeec6c58cc7",
+            "domain_name": "meetconnectbox.com",
+            "first_name": "Katya",
+            "last_name": "Bryant",
+            "username": "katyabryant",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:14.549Z",
+            "updatedAt": "2026-07-24T00:46:14.549Z"
+          },
+          {
+            "uid": "1146762b-2231-416d-a4f5-55b3bde97000",
+            "domain_name": "meetconnectbox.com",
+            "first_name": "Ivan",
+            "last_name": "Jenkins",
+            "username": "ivanjenkins",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:14.549Z",
+            "updatedAt": "2026-07-24T00:46:14.549Z"
+          },
+          {
+            "uid": "aa082c94-40ce-4954-89ca-2311b887d786",
+            "domain_name": "meetconnectbox.com",
+            "first_name": "Nina",
+            "last_name": "Reed",
+            "username": "ninareed",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:14.549Z",
+            "updatedAt": "2026-07-24T00:46:14.549Z"
+          },
+          {
+            "uid": "d986e733-2975-44fb-bdcc-c1250f4ba3a9",
+            "domain_name": "meetconnectbox.com",
+            "first_name": "Marcus",
+            "last_name": "Morgan",
+            "username": "marcusmorgan",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:14.549Z",
+            "updatedAt": "2026-07-24T00:46:14.549Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "outreachdeskbox.com",
+      "need": 5,
+      "names": [
+        "Owen Patel",
+        "Claire Shah",
+        "Nathan Tanaka",
+        "Grace Suzuki",
+        "Patrick Liu"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "cff1b7cd-a5cc-466e-9b7c-3530c1fb2f1e",
+            "domain_name": "outreachdeskbox.com",
+            "first_name": "Owen",
+            "last_name": "Patel",
+            "username": "owenpatel",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:16.403Z",
+            "updatedAt": "2026-07-24T00:46:16.403Z"
+          },
+          {
+            "uid": "71d604b5-baac-4a7c-be3e-39ef61a6d24d",
+            "domain_name": "outreachdeskbox.com",
+            "first_name": "Claire",
+            "last_name": "Shah",
+            "username": "claireshah",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:16.404Z",
+            "updatedAt": "2026-07-24T00:46:16.404Z"
+          },
+          {
+            "uid": "cce0244f-b84a-43c8-bc7d-dcc000e5c5af",
+            "domain_name": "outreachdeskbox.com",
+            "first_name": "Nathan",
+            "last_name": "Tanaka",
+            "username": "nathantanaka",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:16.404Z",
+            "updatedAt": "2026-07-24T00:46:16.404Z"
+          },
+          {
+            "uid": "04eb3919-505b-4de5-b4c3-eade85158d27",
+            "domain_name": "outreachdeskbox.com",
+            "first_name": "Grace",
+            "last_name": "Suzuki",
+            "username": "gracesuzuki",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:16.407Z",
+            "updatedAt": "2026-07-24T00:46:16.407Z"
+          },
+          {
+            "uid": "f7cc2fa2-47d9-499a-950d-2f648e705bf5",
+            "domain_name": "outreachdeskbox.com",
+            "first_name": "Patrick",
+            "last_name": "Liu",
+            "username": "patrickliu",
+            "platform": "GOOGLE",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:16.407Z",
+            "updatedAt": "2026-07-24T00:46:16.407Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "getintroducednow.com",
+      "need": 5,
+      "names": [
+        "Minh Jenkins",
+        "Lan Reed",
+        "Jin Morgan",
+        "Hana Jefferson",
+        "Aarav Rossi"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "c69e6783-f34a-4e0d-a260-675560cb0596",
+            "domain_name": "getintroducednow.com",
+            "first_name": "Minh",
+            "last_name": "Jenkins",
+            "username": "minhjenkins",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:18.135Z",
+            "updatedAt": "2026-07-24T00:46:18.135Z"
+          },
+          {
+            "uid": "5115f570-5fef-480d-9688-8a73cacabdf5",
+            "domain_name": "getintroducednow.com",
+            "first_name": "Lan",
+            "last_name": "Reed",
+            "username": "lanreed",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:18.135Z",
+            "updatedAt": "2026-07-24T00:46:18.135Z"
+          },
+          {
+            "uid": "b3c686c5-2f44-4ab0-9d14-0160eb298155",
+            "domain_name": "getintroducednow.com",
+            "first_name": "Jin",
+            "last_name": "Morgan",
+            "username": "jinmorgan",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:18.135Z",
+            "updatedAt": "2026-07-24T00:46:18.135Z"
+          },
+          {
+            "uid": "8487aeb5-ac2f-419e-8347-258218cffde4",
+            "domain_name": "getintroducednow.com",
+            "first_name": "Hana",
+            "last_name": "Jefferson",
+            "username": "hanajefferson",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:18.135Z",
+            "updatedAt": "2026-07-24T00:46:18.135Z"
+          },
+          {
+            "uid": "6cd71552-d921-4480-a372-df61e2114b1f",
+            "domain_name": "getintroducednow.com",
+            "first_name": "Aarav",
+            "last_name": "Rossi",
+            "username": "aaravrossi",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:18.135Z",
+            "updatedAt": "2026-07-24T00:46:18.135Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "nowgetintroduced.com",
+      "need": 5,
+      "names": [
+        "Tunde Tanaka",
+        "Zuri Suzuki",
+        "Malik Liu",
+        "Imani Park",
+        "Kofi Chen"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "8b95a4c3-469f-46d4-9556-8eed77cd7d75",
+            "domain_name": "nowgetintroduced.com",
+            "first_name": "Tunde",
+            "last_name": "Tanaka",
+            "username": "tundetanaka",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:19.828Z",
+            "updatedAt": "2026-07-24T00:46:19.828Z"
+          },
+          {
+            "uid": "325bbb48-011d-4aee-9db9-667c2d6a1164",
+            "domain_name": "nowgetintroduced.com",
+            "first_name": "Zuri",
+            "last_name": "Suzuki",
+            "username": "zurisuzuki",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:19.828Z",
+            "updatedAt": "2026-07-24T00:46:19.828Z"
+          },
+          {
+            "uid": "06027e60-f5fb-442d-9bb6-98f00650fea4",
+            "domain_name": "nowgetintroduced.com",
+            "first_name": "Malik",
+            "last_name": "Liu",
+            "username": "malikliu",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:19.828Z",
+            "updatedAt": "2026-07-24T00:46:19.828Z"
+          },
+          {
+            "uid": "5ae1a7f1-2a91-4bca-9e48-3354edb94a5e",
+            "domain_name": "nowgetintroduced.com",
+            "first_name": "Imani",
+            "last_name": "Park",
+            "username": "imanipark",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:19.828Z",
+            "updatedAt": "2026-07-24T00:46:19.828Z"
+          },
+          {
+            "uid": "6789119c-6be1-4c3c-a056-6e565944ec69",
+            "domain_name": "nowgetintroduced.com",
+            "first_name": "Kofi",
+            "last_name": "Chen",
+            "username": "kofichen",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:19.828Z",
+            "updatedAt": "2026-07-24T00:46:19.828Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "nowquickconnectsales.com",
+      "need": 5,
+      "names": [
+        "Keith Morgan",
+        "Denise Jefferson",
+        "Troy Rossi",
+        "Monica Costa",
+        "Curtis Petrov"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "bc514ba6-0e32-434d-a39e-3337c094be47",
+            "domain_name": "nowquickconnectsales.com",
+            "first_name": "Keith",
+            "last_name": "Morgan",
+            "username": "keithmorgan",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:21.587Z",
+            "updatedAt": "2026-07-24T00:46:21.587Z"
+          },
+          {
+            "uid": "dd09fbeb-8301-4689-a582-94f8c45da986",
+            "domain_name": "nowquickconnectsales.com",
+            "first_name": "Denise",
+            "last_name": "Jefferson",
+            "username": "denisejefferson",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:21.587Z",
+            "updatedAt": "2026-07-24T00:46:21.587Z"
+          },
+          {
+            "uid": "9fec8078-8288-4ac2-900b-b858d8f5f9fe",
+            "domain_name": "nowquickconnectsales.com",
+            "first_name": "Troy",
+            "last_name": "Rossi",
+            "username": "troyrossi",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:21.588Z",
+            "updatedAt": "2026-07-24T00:46:21.588Z"
+          },
+          {
+            "uid": "be43b190-a8d4-4219-8eb6-a2dd9ce57388",
+            "domain_name": "nowquickconnectsales.com",
+            "first_name": "Monica",
+            "last_name": "Costa",
+            "username": "monicacosta",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:21.588Z",
+            "updatedAt": "2026-07-24T00:46:21.588Z"
+          },
+          {
+            "uid": "21879e41-8cde-4212-9086-6f397aaca39a",
+            "domain_name": "nowquickconnectsales.com",
+            "first_name": "Curtis",
+            "last_name": "Petrov",
+            "username": "curtispetrov",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:21.588Z",
+            "updatedAt": "2026-07-24T00:46:21.588Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "quickconnectsalesnow.com",
+      "need": 5,
+      "names": [
+        "Andres Liu",
+        "Lucia Park",
+        "Wei Chen",
+        "Mei Tran",
+        "Hiro Kim"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "f30ba959-bbc0-4fce-83c8-6d7dcebd2bc0",
+            "domain_name": "quickconnectsalesnow.com",
+            "first_name": "Andres",
+            "last_name": "Liu",
+            "username": "andresliu",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:23.481Z",
+            "updatedAt": "2026-07-24T00:46:23.481Z"
+          },
+          {
+            "uid": "fcb31959-e8b0-4209-b236-8f00bc1cfaa0",
+            "domain_name": "quickconnectsalesnow.com",
+            "first_name": "Lucia",
+            "last_name": "Park",
+            "username": "luciapark",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:23.482Z",
+            "updatedAt": "2026-07-24T00:46:23.482Z"
+          },
+          {
+            "uid": "54c45475-cb46-427a-a0c8-42cbfd7b63b2",
+            "domain_name": "quickconnectsalesnow.com",
+            "first_name": "Wei",
+            "last_name": "Chen",
+            "username": "weichen",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:23.482Z",
+            "updatedAt": "2026-07-24T00:46:23.482Z"
+          },
+          {
+            "uid": "98fba8b9-785c-4c7b-9111-7139b6dc8e5f",
+            "domain_name": "quickconnectsalesnow.com",
+            "first_name": "Mei",
+            "last_name": "Tran",
+            "username": "meitran",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:23.482Z",
+            "updatedAt": "2026-07-24T00:46:23.482Z"
+          },
+          {
+            "uid": "e2b623a6-55f1-42f2-b87f-e1271de1d67a",
+            "domain_name": "quickconnectsalesnow.com",
+            "first_name": "Hiro",
+            "last_name": "Kim",
+            "username": "hirokim",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:23.482Z",
+            "updatedAt": "2026-07-24T00:46:23.482Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "appgetintroduced.com",
+      "need": 5,
+      "names": [
+        "Yusuf Rossi",
+        "Amira Costa",
+        "Samir Petrov",
+        "Noor Horvat",
+        "Karim Novak"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "168eefaf-c7b5-4d25-8acb-9bd85c1bffd3",
+            "domain_name": "appgetintroduced.com",
+            "first_name": "Yusuf",
+            "last_name": "Rossi",
+            "username": "yusufrossi",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:25.196Z",
+            "updatedAt": "2026-07-24T00:46:25.196Z"
+          },
+          {
+            "uid": "08da23c6-f75b-422c-bce7-bb2b80569d0f",
+            "domain_name": "appgetintroduced.com",
+            "first_name": "Amira",
+            "last_name": "Costa",
+            "username": "amiracosta",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:25.196Z",
+            "updatedAt": "2026-07-24T00:46:25.196Z"
+          },
+          {
+            "uid": "0ad3eb4e-1480-49b7-b9a7-96d3cd85c160",
+            "domain_name": "appgetintroduced.com",
+            "first_name": "Samir",
+            "last_name": "Petrov",
+            "username": "samirpetrov",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:25.196Z",
+            "updatedAt": "2026-07-24T00:46:25.196Z"
+          },
+          {
+            "uid": "7231a116-7e98-4896-abce-200c5445e981",
+            "domain_name": "appgetintroduced.com",
+            "first_name": "Noor",
+            "last_name": "Horvat",
+            "username": "noorhorvat",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:25.196Z",
+            "updatedAt": "2026-07-24T00:46:25.196Z"
+          },
+          {
+            "uid": "f34d4f30-c7eb-4c00-b41a-065126972dde",
+            "domain_name": "appgetintroduced.com",
+            "first_name": "Karim",
+            "last_name": "Novak",
+            "username": "karimnovak",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:25.196Z",
+            "updatedAt": "2026-07-24T00:46:25.196Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "appquickconnectsales.com",
+      "need": 5,
+      "names": [
+        "Derek Chen",
+        "Angela Tran",
+        "Tony Kim",
+        "Michelle Torres",
+        "Brian Perez"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "88645893-d6f1-431f-9dd4-6cd6fa295814",
+            "domain_name": "appquickconnectsales.com",
+            "first_name": "Derek",
+            "last_name": "Chen",
+            "username": "derekchen",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:27.161Z",
+            "updatedAt": "2026-07-24T00:46:27.161Z"
+          },
+          {
+            "uid": "5c66d501-241e-415f-918b-e8905a042339",
+            "domain_name": "appquickconnectsales.com",
+            "first_name": "Angela",
+            "last_name": "Tran",
+            "username": "angelatran",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:27.161Z",
+            "updatedAt": "2026-07-24T00:46:27.161Z"
+          },
+          {
+            "uid": "709d3ae8-9ee3-42ea-943c-98a2e5cb8bbb",
+            "domain_name": "appquickconnectsales.com",
+            "first_name": "Tony",
+            "last_name": "Kim",
+            "username": "tonykim",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:27.161Z",
+            "updatedAt": "2026-07-24T00:46:27.161Z"
+          },
+          {
+            "uid": "8f64560e-43f7-4912-b611-e6f7662bba1d",
+            "domain_name": "appquickconnectsales.com",
+            "first_name": "Michelle",
+            "last_name": "Torres",
+            "username": "michelletorres",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:27.161Z",
+            "updatedAt": "2026-07-24T00:46:27.161Z"
+          },
+          {
+            "uid": "33a8ed60-75f0-4045-bc05-b79dee77cd0a",
+            "domain_name": "appquickconnectsales.com",
+            "first_name": "Brian",
+            "last_name": "Perez",
+            "username": "brianperez",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:27.161Z",
+            "updatedAt": "2026-07-24T00:46:27.161Z"
+          }
+        ]
+      }
+    },
+    {
+      "domain": "getintroducedapp.com",
+      "need": 5,
+      "names": [
+        "Carlos Petrov",
+        "Sofia Horvat",
+        "Diego Novak",
+        "Isabella Diallo",
+        "Miguel Okafor"
+      ],
+      "ok": true,
+      "resp": {
+        "error": false,
+        "message": "Mailbox scheduled to be assigned to domains successfully",
+        "mailboxes": [
+          {
+            "uid": "c976c836-5711-4858-b37f-d5a014916bd8",
+            "domain_name": "getintroducedapp.com",
+            "first_name": "Carlos",
+            "last_name": "Petrov",
+            "username": "carlospetrov",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:28.895Z",
+            "updatedAt": "2026-07-24T00:46:28.895Z"
+          },
+          {
+            "uid": "d84d8670-5fc9-4d5c-a1e8-655e19273f36",
+            "domain_name": "getintroducedapp.com",
+            "first_name": "Sofia",
+            "last_name": "Horvat",
+            "username": "sofiahorvat",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:28.895Z",
+            "updatedAt": "2026-07-24T00:46:28.895Z"
+          },
+          {
+            "uid": "5dc2b3b4-c317-4be1-ba7a-bc7247687921",
+            "domain_name": "getintroducedapp.com",
+            "first_name": "Diego",
+            "last_name": "Novak",
+            "username": "diegonovak",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:28.896Z",
+            "updatedAt": "2026-07-24T00:46:28.896Z"
+          },
+          {
+            "uid": "fa995f04-fd44-4d59-9b45-2275c671a396",
+            "domain_name": "getintroducedapp.com",
+            "first_name": "Isabella",
+            "last_name": "Diallo",
+            "username": "isabelladiallo",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:28.896Z",
+            "updatedAt": "2026-07-24T00:46:28.896Z"
+          },
+          {
+            "uid": "0f8c489c-14c5-40fe-9f92-4e4cec8ec20a",
+            "domain_name": "getintroducedapp.com",
+            "first_name": "Miguel",
+            "last_name": "Okafor",
+            "username": "miguelokafor",
+            "platform": "MICROSOFT",
+            "status": "scheduled",
+            "renewal_date": null,
+            "renewal_cycle": "monthly",
+            "createdAt": "2026-07-24T00:46:28.896Z",
+            "updatedAt": "2026-07-24T00:46:28.896Z"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [],
+  "nsReadyAtBuy": 48
+}

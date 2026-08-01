@@ -22,7 +22,10 @@ import { WarmupGateService } from "./services/warmupGate.js";
 import { TestReconciler } from "./services/testReconciler.js";
 import { OpsAuth } from "./ops/auth.js";
 import { createOpsRouter } from "./ops/router.js";
-import { ManualRotationService } from "./ops/manualRotation.js";
+import {
+  ManualRotationService,
+  type RotationResult,
+} from "./ops/manualRotation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -101,8 +104,12 @@ async function main(): Promise<void> {
   let warmupGateInFlight: Promise<unknown> | null = null;
   let reconcileInFlight: Promise<unknown> | null = null;
   let topUpInFlight: Promise<unknown> | null = null;
-  let manualRotationInFlight: Promise<unknown> | null = null;
-  let opsCheckInFlight: Promise<unknown> | null = null;
+  let manualRotationInFlight: Promise<RotationResult> | null = null;
+  let opsCheckInFlight: Promise<{
+    monitor: unknown;
+    dns: unknown;
+    campaigns: unknown;
+  }> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);

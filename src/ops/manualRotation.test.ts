@@ -19,7 +19,10 @@ async function fixture(opts: { poolStatus?: "available" | "warming" } = {}) {
     firstName: "Amina",
     lastName: "Patel",
     status: opts.poolStatus ?? "available",
-    warmedAt: new Date(Date.now() - 20 * 86_400_000).toISOString(),
+    warmedAt:
+      opts.poolStatus === "warming"
+        ? new Date().toISOString()
+        : new Date(Date.now() - 20 * 86_400_000).toISOString(),
   });
   const campaigns = [
     { id: 1, name: "Client Campaign", status: "ACTIVE", client_id: 7 },

@@ -98,7 +98,7 @@ export function classifyOpsMessage(
     return { type: "reconnect" };
   }
   if (/\b(dns|spf|dmarc|mx)\b/i.test(message)) return { type: "dns" };
-  if (/\b(campaign|sender count|headcount|coverage)\b/i.test(message)) {
+  if (/\b(campaigns?|sender count|headcount|coverage)\b/i.test(message)) {
     return { type: "campaigns" };
   }
   if (/\b(deliverability|placement|inbox|blacklist|check now)\b/i.test(message)) {

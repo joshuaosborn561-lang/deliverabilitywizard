@@ -11,6 +11,7 @@ export interface SmartleadEmailAccount {
   id: number;
   from_email?: string;
   from_name?: string;
+  signature?: string;
   username?: string;
   email?: string;
   /** Smartlead mailbox ESP type, e.g. GMAIL / OUTLOOK */
@@ -21,6 +22,7 @@ export interface SmartleadEmailAccount {
   is_smtp_success?: boolean;
   is_imap_success?: boolean;
   message_per_day?: number;
+  max_email_per_day?: number;
   daily_sent_count?: number;
   tags?: Array<{
     tag_id?: number;

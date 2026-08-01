@@ -11,10 +11,13 @@ import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
+  campaignIdsOf,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { sleep } from "../lib/http.js";
+import { MATCH_THRESHOLD, rankCandidates } from "../lib/nameMatch.js";
+import { pickUniquePersonNames } from "../lib/personNames.js";
 import {
   parsePersonName,
   poolEspFromSmartleadType,
@@ -33,6 +36,7 @@ export interface PoolDomainPlan {
   workspaceName?: string;
   mailboxesPerDomain: number;
   warmupDaysBeforeAvailable?: number;
+  targetMailboxes?: number;
   note?: string;
   smartleadSequencerUid?: string;
   smartleadSequencerName?: string;
@@ -41,6 +45,8 @@ export interface PoolDomainPlan {
     parent: string;
     platform: "GOOGLE" | "MICROSOFT";
   }>;
+  /** The plan file is hand-maintained; tolerate descriptive metadata keys. */
+  [key: string]: unknown;
 }
 
 export interface PoolProvisionResult {
@@ -51,51 +57,6 @@ export interface PoolProvisionResult {
   stats: Record<string, number | string | boolean>;
   errors: string[];
 }
-
-const FIRST_NAMES = [
-  "Marty",
-  "Jo",
-  "Alex",
-  "Sam",
-  "Riley",
-  "Casey",
-  "Jordan",
-  "Taylor",
-  "Morgan",
-  "Quinn",
-  "Avery",
-  "Reese",
-  "Parker",
-  "Drew",
-  "Blake",
-  "Cameron",
-  "Hayden",
-  "Rowan",
-  "Skyler",
-  "Emerson",
-];
-const LAST_NAMES = [
-  "Moen",
-  "Shmo",
-  "Hayes",
-  "Brooks",
-  "Coleman",
-  "Reed",
-  "Foster",
-  "Bennett",
-  "Griffin",
-  "Palmer",
-  "Walsh",
-  "Nash",
-  "Keller",
-  "Boone",
-  "Pratt",
-  "Sloan",
-  "Vance",
-  "Hale",
-  "Croft",
-  "Lang",
-];
 
 /**
  * Self-advancing generic-pool provisioner.
@@ -147,53 +108,6 @@ export class PoolProvisioner {
       };
     }
 
-    if (previousPhase === "ready") {
-      // Still refresh availability so swaps unlock after warmup days,
-      // and re-assert warmup so UI toggles / late imports stay covered.
-      const flipped = this.state.refreshPoolAvailability(
-        this.config.poolWarmupDays,
-      );
-      let forced = 0;
-      try {
-        const plan = await this.loadPlan();
-        const planDomains = new Set(
-          plan.domains.map((d) => d.domain.toLowerCase()),
-        );
-        const accounts = await this.smartlead.listAllEmailAccounts({
-          fetchCampaigns: false,
-        });
-        for (const account of accounts) {
-          const email = accountEmail(account)?.toLowerCase();
-          if (!email) continue;
-          const domain = email.split("@")[1] ?? "";
-          if (!planDomains.has(domain)) continue;
-          try {
-            await this.smartlead.configureWarmup(account.id, {
-              warmup_enabled: true,
-              total_warmup_per_day: this.config.warmupTotalPerDay,
-              daily_rampup: this.config.warmupDailyRampup,
-              reply_rate_percentage: this.config.warmupReplyRatePercentage,
-            });
-            forced += 1;
-            await sleep(120);
-          } catch {
-            // non-fatal on ready refresh
-          }
-        }
-      } catch (error) {
-        console.warn("[pool-provision] ready warmup refresh failed", error);
-      }
-      await this.state.save();
-      return {
-        phase: "ready",
-        previousPhase,
-        advanced: false,
-        message: `Pool ready (${flipped} newly available; warmup refreshed on ${forced})`,
-        stats: { flippedAvailable: flipped, warmupForced: forced },
-        errors,
-      };
-    }
-
     if (!this.inboxkit) {
       errors.push("INBOXKIT_API_KEY not configured");
       return this.finish(previousPhase, previousPhase, false, "missing InboxKit", {}, errors);
@@ -204,9 +118,95 @@ export class PoolProvisioner {
     const workspaceId =
       this.config.genericPoolWorkspaceId || plan.workspaceId;
     const targetCount = plan.domains.length * (plan.mailboxesPerDomain || 3);
+    const planDomainSet = new Set(
+      plan.domains.map((d) => d.domain.toLowerCase()),
+    );
 
-    let phase: PoolProvisionPhase =
-      previousPhase === "idle" ? "awaiting_ns" : previousPhase;
+    if (previousPhase === "ready") {
+      // Re-open the pipeline when the plan grows (e.g. 75 → 200).
+      try {
+        const mailboxes = await this.listAllMailboxes(
+          workspaceId,
+          planDomainSet,
+        );
+        const domains = await this.inboxkit.listDomains(workspaceId, {
+          limit: 200,
+        });
+        const byName = new Map(
+          domains.map((d) => [(d.name || d.domain || "").toLowerCase(), d]),
+        );
+        const missingNs = plan.domains.filter((row) => {
+          const d = byName.get(row.domain.toLowerCase());
+          return !d || !InboxKitClient.nameserversReady(d);
+        });
+        const short = mailboxes.length < Math.floor(targetCount * 0.95);
+        if (missingNs.length || short) {
+          const nextPhase: PoolProvisionPhase = missingNs.length
+            ? "awaiting_ns"
+            : "buying";
+          console.log(
+            `[pool-provision] Plan expanded — reopening ${previousPhase} → ${nextPhase} (mailboxes ${mailboxes.length}/${targetCount}, NS gaps ${missingNs.length})`,
+          );
+          this.state.setPoolProvision({
+            phase: nextPhase,
+            lastMessage: `Expanding pool toward ${targetCount} mailboxes`,
+            completedAt: undefined,
+          });
+          await this.state.save();
+          // Fall through with reopened phase
+        } else {
+          const flipped = this.state.refreshPoolAvailability(
+            this.config.poolWarmupDays,
+          );
+          let forced = 0;
+          const planDomains = new Set(
+            plan.domains.map((d) => d.domain.toLowerCase()),
+          );
+          const accounts = await this.smartlead.listAllEmailAccounts({
+            fetchCampaigns: false,
+          });
+          for (const account of accounts) {
+            const email = accountEmail(account)?.toLowerCase();
+            if (!email) continue;
+            const domain = email.split("@")[1] ?? "";
+            if (!planDomains.has(domain)) continue;
+            try {
+              await this.smartlead.configureWarmup(account.id, {
+                warmup_enabled: true,
+                total_warmup_per_day: this.config.warmupTotalPerDay,
+                daily_rampup: this.config.warmupDailyRampup,
+                reply_rate_percentage: this.config.warmupReplyRatePercentage,
+              });
+              forced += 1;
+              await sleep(120);
+            } catch {
+              // non-fatal on ready refresh
+            }
+          }
+          await this.state.save();
+          return {
+            phase: "ready",
+            previousPhase,
+            advanced: false,
+            message: `Pool ready (${flipped} newly available; warmup refreshed on ${forced})`,
+            stats: { flippedAvailable: flipped, warmupForced: forced },
+            errors,
+          };
+        }
+      } catch (error) {
+        console.warn("[pool-provision] ready expand check failed", error);
+      }
+    }
+
+    // idle → start NS wait; ready-reopen already wrote awaiting_ns/buying into state
+    let phase: PoolProvisionPhase = (() => {
+      if (previousPhase === "idle") return "awaiting_ns";
+      if (previousPhase === "ready") {
+        const reopened = this.state.getPoolProvision().phase;
+        if (reopened === "awaiting_ns" || reopened === "buying") return reopened;
+      }
+      return previousPhase;
+    })();
 
     const stats: Record<string, number | string | boolean> = {
       targetMailboxes: targetCount,
@@ -217,7 +217,7 @@ export class PoolProvisioner {
       // --- NS ---
       if (phase === "awaiting_ns" || phase === "buying") {
         const domains = await this.inboxkit.listDomains(workspaceId, {
-          limit: 100,
+          limit: 200,
         });
         const byName = new Map(
           domains.map((d) => [(d.name || d.domain || "").toLowerCase(), d]),
@@ -257,31 +257,42 @@ export class PoolProvisioner {
           stats.dryRun = true;
           phase = "awaiting_mailboxes";
         } else {
-          const mailboxes = await this.listAllMailboxes(workspaceId);
+          const mailboxes = await this.listAllMailboxes(
+            workspaceId,
+            planDomainSet,
+          );
           const byDomain = countByDomain(mailboxes);
           stats.mailboxCount = mailboxes.length;
           const perDomain = plan.mailboxesPerDomain || 3;
-          let seed = mailboxes.length;
+          const taken = new Set<string>();
+          for (const m of mailboxes) {
+            const email = (m.email || m.address || "").toLowerCase();
+            const user = email.split("@")[0];
+            if (user) taken.add(user);
+            if (m.username) taken.add(String(m.username).toLowerCase());
+          }
+          let seed = mailboxes.length + (Date.now() % 10_000);
           let pendingApprovals = 0;
           for (const row of plan.domains) {
             const have = byDomain.get(row.domain.toLowerCase()) ?? 0;
             const need = Math.max(0, perDomain - have);
             if (need <= 0) continue;
-            const batch = [];
-            for (let i = 0; i < need; i++) {
-              batch.push({
-                ...pickName(seed++),
-                platform: row.platform,
-                domain_name: row.domain,
-              });
-            }
-            const spendKey = `pool-auto-${row.domain}-${row.platform}-n${need}-v3`;
-            const decision = await this.spendGateway.authorize({
+            const names = pickUniquePersonNames(need, seed, taken);
+            seed += need + 11;
+            const batch = names.map((n) => ({
+              ...n,
+              platform: row.platform,
+              domain_name: row.domain,
+            }));
+            const spendKey = `pool-auto-${row.domain}-${row.platform}-n${need}-v5`;
+            const spendRequest = {
               key: spendKey,
+              scope: "generic_pool" as const,
               kind: "inboxkit_mailbox_purchase",
               description: `Buy ${need} ${row.platform} mailbox(es) on ${row.domain} using InboxKit wallet balance (generic recovery pool).`,
               detail: { domain: row.domain, platform: row.platform, count: need, workspaceId },
-            });
+            };
+            const decision = await this.spendGateway.authorize(spendRequest);
             if (!decision.approved) {
               pendingApprovals += 1;
               continue;
@@ -292,13 +303,28 @@ export class PoolProvisioner {
                 useWalletBalance: true,
                 idempotencyKey: spendKey,
               });
+              await this.spendGateway.consume(decision, spendRequest);
               stats[`bought:${row.domain}`] = need;
               await sleep(1200);
             } catch (error) {
               const message =
                 error instanceof Error ? error.message : String(error);
-              // Already ordered / processing is fine
-              if (!/already|duplicate|exist|limit/i.test(message)) {
+              // An idempotent duplicate means the approved purchase already
+              // executed; consume the approval so it cannot authorize a later
+              // batch with the same domain/platform/count.
+              if (/already|duplicate|exist/i.test(message)) {
+                try {
+                  await this.spendGateway.consume(decision, spendRequest);
+                } catch (consumeError) {
+                  errors.push(
+                    `consume approval ${spendKey}: ${
+                      consumeError instanceof Error
+                        ? consumeError.message
+                        : String(consumeError)
+                    }`,
+                  );
+                }
+              } else if (!/limit/i.test(message)) {
                 errors.push(`buy ${row.domain}: ${message}`);
               }
             }
@@ -320,7 +346,10 @@ export class PoolProvisioner {
 
       // --- Wait mailboxes active ---
       if (phase === "awaiting_mailboxes") {
-        const mailboxes = await this.listAllMailboxes(workspaceId);
+        const mailboxes = await this.listAllMailboxes(
+          workspaceId,
+          planDomainSet,
+        );
         const active = mailboxes.filter((m) =>
           ["active", "ready"].includes(String(m.status ?? "").toLowerCase()),
         );
@@ -409,7 +438,10 @@ export class PoolProvisioner {
           phase = "awaiting_sequencer";
           return this.finish(phase, previousPhase, true, "sequencer lost", stats, errors);
         }
-        const mailboxes = await this.listAllMailboxes(workspaceId);
+        const mailboxes = await this.listAllMailboxes(
+          workspaceId,
+          planDomainSet,
+        );
         const uids = mailboxes
           .map((m) => m.uid || m.id)
           .filter((x): x is string => Boolean(x));
@@ -476,7 +508,10 @@ export class PoolProvisioner {
             this.state.getPoolProvision().sequencerUid ||
             plan.smartleadSequencerUid;
           if (seq) {
-            const ikMailboxes = await this.listAllMailboxes(workspaceId);
+            const ikMailboxes = await this.listAllMailboxes(
+              workspaceId,
+              planDomainSet,
+            );
             const inSmartlead = new Set(
               poolAccounts
                 .map((a) => accountEmail(a)?.toLowerCase())
@@ -583,6 +618,10 @@ export class PoolProvisioner {
             firstName: nameParts[0] || "Pool",
             lastName: nameParts.slice(1).join(" ") || "User",
             status: "warming",
+            // Warmup starts when the mailbox is imported from InboxKit, not
+            // whenever Smartlead first recorded a warmup row. A freshly bought
+            // mailbox is cold on arrival and owes a full POOL_WARMUP_DAYS
+            // before it may be rotated into a live campaign.
             warmedAt: existing?.warmedAt || warmedAt,
           });
         }
@@ -644,6 +683,17 @@ export class PoolProvisioner {
       }
 
       if (phase === "warming") {
+        // Repair rows whose clock was previously pulled back to Smartlead's
+        // warmup record: warmup is owed from the InboxKit import, so a start
+        // earlier than the recorded import would release a cold mailbox early.
+        try {
+          const repaired = this.clampWarmupClocksToImport();
+          if (repaired) stats.warmupClockRepaired = repaired;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          errors.push(`warmup clock repair: ${message}`);
+        }
+
         const flipped = this.state.refreshPoolAvailability(
           this.config.poolWarmupDays,
         );
@@ -738,19 +788,53 @@ export class PoolProvisioner {
    * ones bought by hand). Matched against Smartlead by email or from_name so
    * they become available for ESP-matched recovery swaps like any other generic.
    */
+  /**
+   * Ensure no warming row claims a start earlier than the InboxKit import.
+   *
+   * An earlier pass sourced warmedAt from Smartlead's warmup record, which
+   * moved 74 clocks back. Warmup is owed from import: a mailbox bought today
+   * is cold today, whatever Smartlead's warmup row says, so anything earlier
+   * than the recorded import time is pulled forward to it.
+   */
+  private clampWarmupClocksToImport(): number {
+    const importedAt = this.state.getPoolProvision().warmupStartedAt;
+    if (!importedAt) return 0;
+    const floor = Date.parse(importedAt);
+    if (!Number.isFinite(floor)) return 0;
+
+    let repaired = 0;
+    for (const row of this.state.listPoolMailboxes()) {
+      if (row.status !== "warming") continue;
+      const current = row.warmedAt ? Date.parse(row.warmedAt) : NaN;
+      if (!Number.isFinite(current) || current >= floor) continue;
+      this.state.upsertPoolMailbox({ ...row, warmedAt: importedAt });
+      repaired += 1;
+    }
+    if (repaired) {
+      console.log(
+        `[pool-provision] warmup clock: reset ${repaired} row(s) to the InboxKit import time ${importedAt}`,
+      );
+    }
+    return repaired;
+  }
+
   async registerExtraGenerics(): Promise<{
     registered: string[];
     unmatched: string[];
     errors: string[];
   }> {
     const out = { registered: [] as string[], unmatched: [] as string[], errors: [] as string[] };
+    let inService = 0;
     const wanted = this.config.extraGenericMailboxes;
     if (!wanted.length) return out;
 
     let accounts: SmartleadAccountWithCampaigns[];
     try {
+      // Campaign linkage is required: a generic already serving a campaign is
+      // not free inventory, and handing it to a second client would rewrite
+      // its signature out from under the first.
       accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: false,
+        fetchCampaigns: true,
       });
     } catch (error) {
       out.errors.push(
@@ -759,65 +843,121 @@ export class PoolProvisioner {
       return out;
     }
 
-    for (const want of wanted) {
-      const match = accounts.find((account) => {
-        const email = accountEmail(account)?.toLowerCase() ?? "";
-        const fromName = String(account.from_name ?? "").trim().toLowerCase();
-        return email === want || fromName === want;
-      });
-
-      if (!match) {
-        out.unmatched.push(want);
-        continue;
-      }
-
-      const email = accountEmail(match)?.toLowerCase();
-      if (!email) {
-        out.unmatched.push(want);
-        continue;
-      }
-
-      const existing = this.state.getPoolMailbox(email);
-      if (existing) {
-        this.state.upsertPoolMailbox({
-          ...existing,
-          smartleadAccountId: match.id,
-          // Pre-warmed: never leave one parked in "warming" waiting out a
-          // warmup clock it already served.
-          status: existing.status === "warming" ? "available" : existing.status,
-          ...(existing.status === "warming"
-            ? { availableAt: new Date().toISOString() }
-            : {}),
-        });
-        continue;
-      }
-
-      const platform = poolEspFromSmartleadType(match.type);
-      if (!platform) {
-        out.errors.push(
-          `${want}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
-        );
-        continue;
-      }
-
-      const { firstName, lastName } = parsePersonName(
-        match.from_name || email.split("@")[0],
-      );
-      this.state.upsertPoolMailbox({
-        email,
-        domain: email.split("@")[1] ?? "",
-        platform,
-        smartleadAccountId: match.id,
-        firstName,
-        lastName,
-        // Already-live mailboxes are warm; make them usable immediately.
-        status: "available",
-        warmedAt: new Date().toISOString(),
-        availableAt: new Date().toISOString(),
-      });
-      out.registered.push(email);
+    // Domain census — one line per distinct sending domain. The operator can
+    // only audit SPF/DMARC for domains they can see, and this is the only
+    // place the full live list exists.
+    const domainCounts = new Map<string, number>();
+    for (const account of accounts) {
+      const domain = accountEmail(account)?.toLowerCase().split("@")[1];
+      if (domain) domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
+    }
+    console.log(
+      `[census] ${domainCounts.size} sending domains across ${accounts.length} accounts:`,
+    );
+    for (const [domain, count] of [...domainCounts].sort((a, b) => b[1] - a[1])) {
+      console.log(`[census]   ${domain} ${count}`);
     }
 
+    for (const want of wanted) {
+      const ranked = rankCandidates(
+        want,
+        accounts.map((account) => ({
+          fromName: account.from_name ?? null,
+          email: accountEmail(account) ?? null,
+          account,
+        })),
+      );
+      // These are from-names carried by a whole fleet of generic mailboxes,
+      // not one person: "harmony norris" is the sender identity on 100
+      // mailboxes. Registering only the best match stranded the other 99.
+      const matches = ranked.filter((r) => r.score >= MATCH_THRESHOLD);
+      const best = ranked[0];
+
+      if (!matches.length) {
+        out.unmatched.push(want);
+        // Say what we nearly matched, so the real name is recoverable from
+        // logs instead of guessed at.
+        if (ranked.length) {
+          console.log(
+            `[pool-provision] "${want}" unmatched — closest:`,
+            ranked
+              .slice(0, 5)
+              .map((r) => `${r.candidate.email ?? "?"} (${r.candidate.fromName ?? "?"}) ${r.score} ${r.reason}`),
+          );
+        } else {
+          console.log(`[pool-provision] "${want}" unmatched — no similar account`);
+        }
+        continue;
+      }
+
+      console.log(
+        `[pool-provision] "${want}" matched ${matches.length} mailbox(es) (best: ${best!.candidate.email} via ${best!.reason} ${best!.score})`,
+      );
+
+      for (const { candidate } of matches) {
+        const match = candidate.account;
+        const email = accountEmail(match)?.toLowerCase();
+        if (!email) continue;
+
+        const existing = this.state.getPoolMailbox(email);
+        if (existing) {
+          const live = campaignIdsOf(match).length > 0;
+          if (live) inService += 1;
+          this.state.upsertPoolMailbox({
+            ...existing,
+            smartleadAccountId: match.id,
+            // On a campaign wins over anything stored: a row left "available"
+            // while the mailbox is in service is what let the top-up hand a
+            // live sender to a second client.
+            status: live
+              ? "assigned"
+              : existing.status === "warming"
+                ? "available"
+                : existing.status,
+            ...(!live && existing.status === "warming"
+              ? { availableAt: new Date().toISOString() }
+              : {}),
+          });
+          continue;
+        }
+
+        const platform = poolEspFromSmartleadType(match.type);
+        if (!platform) {
+          out.errors.push(
+            `${email}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
+          );
+          continue;
+        }
+
+        const { firstName, lastName } = parsePersonName(
+          match.from_name || email.split("@")[0],
+        );
+        // A generic on a campaign may still be reassignable — the top-up
+        // decides that, because it depends on whether the source campaign
+        // would drop below its floor. Register the linkage and let it judge.
+        const onCampaign = campaignIdsOf(match).length > 0;
+        this.state.upsertPoolMailbox({
+          email,
+          domain: email.split("@")[1] ?? "",
+          platform,
+          smartleadAccountId: match.id,
+          firstName,
+          lastName,
+          // Hand-bought generics arrive pre-warmed; they owe no warmup here.
+          status: onCampaign ? "assigned" : "available",
+          warmedAt: new Date().toISOString(),
+          ...(onCampaign ? {} : { availableAt: new Date().toISOString() }),
+        });
+        if (onCampaign) inService += 1;
+        out.registered.push(email);
+      }
+    }
+
+    if (inService) {
+      console.log(
+        `[pool-provision] ${inService} generic(s) already serving a campaign — held as assigned, not offered to top-up`,
+      );
+    }
     if (out.registered.length || out.unmatched.length) {
       console.log("[pool-provision] extra generics", out);
       await this.state.save();
@@ -827,12 +967,29 @@ export class PoolProvisioner {
 
   private async listAllMailboxes(
     workspaceId: string,
+    planDomains?: Set<string>,
   ): Promise<InboxKitMailbox[]> {
-    const rows = await this.inboxkit!.listMailboxes({
-      workspaceId,
-      limit: 250,
+    const rows = await this.inboxkit!.listAllMailboxes(workspaceId, 200);
+    return rows.filter((m) => {
+      const st = String(m.status ?? "").toLowerCase();
+      if (
+        st.includes("cancel") ||
+        st === "deleted" ||
+        st === "failed" ||
+        st === "expired"
+      ) {
+        return false;
+      }
+      if (!planDomains || planDomains.size === 0) return true;
+      const email = (m.email || m.address || "").toLowerCase();
+      const domain = (
+        m.domain_name ||
+        m.domain ||
+        (email.includes("@") ? email.split("@")[1] : "") ||
+        ""
+      ).toLowerCase();
+      return planDomains.has(domain);
     });
-    return rows;
   }
 
   private async ensureSmartleadSequencer(
@@ -914,18 +1071,6 @@ export class PoolProvisioner {
     });
     return { phase, previousPhase, advanced, message, stats, errors };
   }
-}
-
-function pickName(seed: number): {
-  first_name: string;
-  last_name: string;
-  username: string;
-} {
-  const first = FIRST_NAMES[seed % FIRST_NAMES.length]!;
-  const last =
-    LAST_NAMES[Math.floor(seed / FIRST_NAMES.length) % LAST_NAMES.length]!;
-  const username = `${first}${last}`.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return { first_name: first, last_name: last, username };
 }
 
 function countByDomain(mailboxes: InboxKitMailbox[]): Map<string, number> {

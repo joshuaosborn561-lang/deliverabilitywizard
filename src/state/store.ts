@@ -81,6 +81,17 @@ export interface ActiveSwapRecord {
   poolPlatform: "GOOGLE" | "MICROSOFT";
 }
 
+export interface OpsAuditRecord {
+  id: string;
+  at: string;
+  actor: string;
+  role: "owner" | "operator";
+  action: string;
+  target?: string;
+  outcome: "success" | "denied" | "error";
+  detail?: string;
+}
+
 export interface AppState {
   version: 1;
   lastScanAt: string | null;
@@ -105,15 +116,19 @@ export interface AppState {
   poolProvision: PoolProvisionState;
   /** Pending/decided real-money spend approvals (key = spend id) */
   spendApprovals: Record<string, SpendApprovalRecord>;
+  /** Human operations performed through the authenticated /ops console. */
+  opsAudit: OpsAuditRecord[];
 }
 
 export interface SpendApprovalRecord {
   id: string;
+  /** Stable logical request key; cycles get unique ids after consumption. */
+  requestKey?: string;
   kind: string;
   description: string;
   detail: Record<string, unknown>;
   requestedAt: string;
-  status: "pending" | "approved" | "denied";
+  status: "pending" | "approved" | "denied" | "consumed";
   decidedAt?: string;
   decidedBy?: string;
 }
@@ -153,6 +168,7 @@ const EMPTY_STATE: AppState = {
   clientMonthlyUsage: {},
   poolProvision: { ...EMPTY_POOL_PROVISION },
   spendApprovals: {},
+  opsAudit: [],
 };
 
 export class StateStore {
@@ -180,6 +196,7 @@ export class StateStore {
           ...(parsed.poolProvision ?? {}),
         },
         spendApprovals: parsed.spendApprovals ?? {},
+        opsAudit: parsed.opsAudit ?? [],
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -211,6 +228,18 @@ export class StateStore {
     return Boolean(this.state.alertedKeys[key]);
   }
 
+  hasRecentAlert(
+    key: string,
+    cooldownMs: number,
+    now = new Date(),
+  ): boolean {
+    const markedAt = this.state.alertedKeys[key];
+    if (!markedAt) return false;
+    const timestamp = Date.parse(markedAt);
+    if (!Number.isFinite(timestamp)) return false;
+    return now.getTime() - timestamp < cooldownMs;
+  }
+
   markAlert(key: string): void {
     this.state.alertedKeys[key] = new Date().toISOString();
   }
@@ -222,6 +251,10 @@ export class StateStore {
   markRemediation(key: string): void {
     this.state.remediatedKeys[key] = new Date().toISOString();
     this.state.lastRemediationAt = new Date().toISOString();
+  }
+
+  clearRemediation(key: string): void {
+    delete this.state.remediatedKeys[key];
   }
 
   markHeldInbox(record: HeldInboxRecord): void {
@@ -260,6 +293,14 @@ export class StateStore {
     return this.state.spendApprovals[id];
   }
 
+  getLatestSpendApprovalForRequest(
+    requestKey: string,
+  ): SpendApprovalRecord | undefined {
+    return Object.values(this.state.spendApprovals)
+      .filter((record) => (record.requestKey ?? record.id) === requestKey)
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
+  }
+
   upsertSpendApproval(record: SpendApprovalRecord): void {
     this.state.spendApprovals[record.id] = record;
   }
@@ -275,11 +316,32 @@ export class StateStore {
     decidedBy?: string,
   ): SpendApprovalRecord | undefined {
     const record = this.state.spendApprovals[id];
-    if (!record) return undefined;
+    if (!record || record.status !== "pending") return undefined;
     record.status = status;
     record.decidedAt = new Date().toISOString();
     if (decidedBy) record.decidedBy = decidedBy;
     return record;
+  }
+
+  /** Mark an approved request as spent; consumed approvals are never reusable. */
+  consumeSpendApproval(id: string): SpendApprovalRecord | undefined {
+    const record = this.state.spendApprovals[id];
+    if (!record || record.status !== "approved") return undefined;
+    record.status = "consumed";
+    record.decidedAt = new Date().toISOString();
+    return record;
+  }
+
+  appendOpsAudit(record: OpsAuditRecord): void {
+    this.state.opsAudit.push(record);
+    // Keep state bounded while retaining enough history for daily operations.
+    if (this.state.opsAudit.length > 500) {
+      this.state.opsAudit.splice(0, this.state.opsAudit.length - 500);
+    }
+  }
+
+  listOpsAudit(limit = 100): OpsAuditRecord[] {
+    return this.state.opsAudit.slice(-Math.max(0, limit)).reverse();
   }
 
   getPoolProvision(): PoolProvisionState {
@@ -330,6 +392,30 @@ export class StateStore {
     return Object.values(this.state.poolMailboxes).find(
       (m) => m.status === "available" && m.platform === platform,
     );
+  }
+
+  /**
+   * A pool mailbox the top-up may take.
+   *
+   * Includes generics already serving a campaign: they are legitimate supply
+   * as long as releasing one leaves the donor above its floor, which only the
+   * caller can judge. Warming mailboxes are never returned — a mailbox that
+   * has not served its warmup is not supply at any floor.
+   */
+  findReassignablePoolMailbox(
+    platforms: Array<"GOOGLE" | "MICROSOFT">,
+    canTake: (email: string) => boolean,
+  ): PoolMailboxRecord | undefined {
+    for (const platform of platforms) {
+      const match = Object.values(this.state.poolMailboxes).find(
+        (m) =>
+          m.platform === platform &&
+          (m.status === "available" || m.status === "assigned") &&
+          canTake(m.email),
+      );
+      if (match) return match;
+    }
+    return undefined;
   }
 
   markSwap(record: ActiveSwapRecord): void {

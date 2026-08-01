@@ -1,3 +1,5 @@
+import { isRateLimitNoise } from "../lib/alertNoise.js";
+
 export interface SlackCredentials {
   webhookUrl?: string;
   botToken?: string;
@@ -472,6 +474,12 @@ export class SlackClient {
         summary.inboxkitReexports > 0
           ? `Also re-queued ${summary.inboxkitReexports} failed InboxKit→Smartlead exports.`
           : undefined,
+        summary.errors.length
+          ? `Problems:\n${summary.errors
+              .slice(0, 8)
+              .map((e) => `• ${e}`)
+              .join("\n")}`
+          : undefined,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -645,7 +653,7 @@ export class SlackClient {
     const actions = details.clientActions ?? [];
     const restored = details.sameEspAudit?.restored ?? [];
     const seriousErrors = details.errors.filter(
-      (e) => !/rate limit/i.test(e),
+      (e) => !isRateLimitNoise(e),
     );
 
     const didSomething =

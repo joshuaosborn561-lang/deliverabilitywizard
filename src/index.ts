@@ -1,5 +1,7 @@
 import express from "express";
 import cron from "node-cron";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { assertRuntimeSecrets, configIsReady, loadConfig } from "./config.js";
 import { SmartleadClient } from "./clients/smartlead.js";
 import { SmartDeliveryClient } from "./clients/smartdelivery.js";
@@ -10,10 +12,22 @@ import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
+import { DnsAuditService } from "./services/dnsAudit.js";
+import { CampaignAuditService } from "./services/campaignAudit.js";
+import { CampaignTopUpService } from "./services/campaignTopUp.js";
+import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
 import { TestReconciler } from "./services/testReconciler.js";
+import { OpsAuth } from "./ops/auth.js";
+import { createOpsRouter } from "./ops/router.js";
+import {
+  ManualRotationService,
+  type RotationResult,
+} from "./ops/manualRotation.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -89,6 +103,13 @@ async function main(): Promise<void> {
   let reconnectInFlight: Promise<unknown> | null = null;
   let warmupGateInFlight: Promise<unknown> | null = null;
   let reconcileInFlight: Promise<unknown> | null = null;
+  let topUpInFlight: Promise<unknown> | null = null;
+  let manualRotationInFlight: Promise<RotationResult> | null = null;
+  let opsCheckInFlight: Promise<{
+    monitor: unknown;
+    dns: unknown;
+    campaigns: unknown;
+  }> | null = null;
 
   const runScan = async (trigger: "cron" | "manual") => {
     assertRuntimeSecrets(config);
@@ -104,6 +125,12 @@ async function main(): Promise<void> {
 
   const runRemediation = async () => {
     assertRuntimeSecrets(config);
+    if (manualRotationInFlight) {
+      console.log(
+        "[remediation] Manual rotation active — skipping overlapping trigger",
+      );
+      return { skipped: true as const, reason: "manual-rotation-active" };
+    }
     if (remediationInFlight) {
       console.log("[remediation] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
@@ -161,6 +188,94 @@ async function main(): Promise<void> {
     return reconcileInFlight;
   };
 
+  const dnsAudit = new DnsAuditService(smartlead, slack, state);
+  const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
+  const campaignTopUp = new CampaignTopUpService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
+  const campaignAudit = new CampaignAuditService(
+    config,
+    smartlead,
+    smartDelivery,
+    state,
+  );
+  const manualRotation = new ManualRotationService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
+  const opsAuth = new OpsAuth({
+    enabled: config.opsUiEnabled,
+    ownerUsername: config.opsOwnerUsername,
+    operatorUsername: config.opsOperatorUsername,
+    ownerToken: config.opsOwnerToken,
+    operatorToken: config.opsOperatorToken,
+    sessionSecret: config.opsSessionSecret,
+    sessionHours: config.opsSessionHours,
+  });
+  if (config.opsUiEnabled && !opsAuth.isConfigured()) {
+    throw new Error(
+      `OPS_UI_ENABLED=true but the console is not securely configured: ${opsAuth.configurationError()}`,
+    );
+  }
+
+  const runCampaignTopUp = async () => {
+    if (manualRotationInFlight) {
+      console.log("[top-up] Manual rotation active — skipping overlapping run");
+      return { skipped: true as const, reason: "manual-rotation-active" };
+    }
+    if (topUpInFlight) {
+      console.log("[top-up] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    topUpInFlight = campaignTopUp.run().finally(() => {
+      topUpInFlight = null;
+    });
+    return topUpInFlight;
+  };
+
+  const runManualRotation = async (email: string) => {
+    if (
+      manualRotationInFlight ||
+      topUpInFlight ||
+      remediationInFlight ||
+      monitorInFlight
+    ) {
+      throw new Error(
+        "A campaign mutation is already running. Wait and preview the rotation again.",
+      );
+    }
+    manualRotationInFlight = manualRotation.execute(email).finally(() => {
+      manualRotationInFlight = null;
+    });
+    return manualRotationInFlight;
+  };
+
+  const runOpsDeliverability = async () => {
+    if (opsCheckInFlight || monitorInFlight) {
+      throw new Error("A deliverability monitor is already running.");
+    }
+    opsCheckInFlight = (async () => {
+      const monitorResult = await monitor.run();
+      const dnsResult = await dnsAudit.run({ alert: false });
+      const campaignResult = await campaignAudit.run(
+        config.minCampaignSenders,
+      );
+      return {
+        monitor: monitorResult,
+        dns: dnsResult,
+        campaigns: campaignResult,
+      };
+    })().finally(() => {
+      opsCheckInFlight = null;
+    });
+    return opsCheckInFlight;
+  };
+
   const runMonitor = async (opts: { remediate?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -190,12 +305,49 @@ async function main(): Promise<void> {
       if (config.enableAccountReconnect) {
         reconnectResult = await runReconnect();
       }
+      // Zone-level faults are invisible from inside Smartlead; resolve DNS
+      // directly so a domain sending without SPF cannot stay silent.
+      let dnsAuditResult: unknown = null;
+      try {
+        dnsAuditResult = await dnsAudit.run();
+      } catch (error) {
+        console.warn("[dns-audit] failed", error);
+      }
+      // Refill thin campaigns from the generic pool. Runs after remediation
+      // so a sender benched this pass is replaced in the same cycle.
+      // Converge every mailbox on the agreed send cap and warmup state first,
+      // so senders placed by the top-up below already carry it.
+      let mailboxSettingsResult: unknown = null;
+      try {
+        mailboxSettingsResult = await mailboxSettings.run();
+      } catch (error) {
+        console.warn("[mailbox-settings] failed", error);
+      }
+      let topUpResult: unknown = null;
+      try {
+        topUpResult = await runCampaignTopUp();
+      } catch (error) {
+        console.warn("[top-up] failed", error);
+      }
+      // Campaign-level health: a campaign can bleed senders to recovery holds
+      // or never pick up a placement test, and neither shows in the
+      // mailbox-oriented remediation summary.
+      let campaignAuditResult: unknown = null;
+      try {
+        campaignAuditResult = await campaignAudit.run(config.minCampaignSenders);
+      } catch (error) {
+        console.warn("[campaign-audit] failed", error);
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
         reconnect: reconnectResult,
+        dnsAudit: dnsAuditResult,
+        campaignAudit: campaignAuditResult,
+        topUp: topUpResult,
+        mailboxSettings: mailboxSettingsResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -266,7 +418,66 @@ async function main(): Promise<void> {
   }
 
   const app = express();
+  // Railway terminates TLS one proxy hop in front of the app. This makes
+  // req.ip useful for login throttling without trusting arbitrary forwarded
+  // chains.
+  app.set("trust proxy", 1);
   app.use(express.json({ limit: "100kb" }));
+
+  app.use("/ops", (_req, res, next) => {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    );
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
+  app.use(
+    "/ops/api",
+    createOpsRouter({
+      config,
+      auth: opsAuth,
+      state,
+      rotation: manualRotation,
+      executeRotation: runManualRotation,
+      runtime: {
+        deliverability: runOpsDeliverability,
+        dns: () => dnsAudit.run({ alert: false }),
+        campaigns: () => campaignAudit.run(config.minCampaignSenders),
+        reconnect: runReconnect,
+      },
+    }),
+  );
+  const opsPublicDir = path.resolve(__dirname, "../public/ops");
+  app.use(
+    "/ops",
+    express.static(opsPublicDir, {
+      index: "index.html",
+      etag: true,
+      maxAge: 0,
+    }),
+  );
+
+  // Operational state contains mailbox addresses, client assignments and
+  // spend decisions. Sensitive/read-write routes are disabled entirely when
+  // RUN_TOKEN is missing rather than silently becoming public.
+  const checkRunToken = (
+    req: express.Request,
+    res: express.Response,
+  ): boolean => {
+    if (!config.runToken) {
+      res.status(503).json({
+        error: "Protected route disabled: RUN_TOKEN is not configured",
+      });
+      return false;
+    }
+    const token = req.header("x-run-token") || "";
+    if (token !== config.runToken) {
+      res.status(401).json({ error: "Unauthorized" });
+      return false;
+    }
+    return true;
+  };
 
   app.get("/health", (_req, res) => {
     const s = state.get();
@@ -309,10 +520,13 @@ async function main(): Promise<void> {
       enableAccountReconnect: config.enableAccountReconnect,
       cronAccountReconnect: config.cronAccountReconnect,
       cronAccountReconnectTz: "America/New_York",
+      opsUiEnabled: config.opsUiEnabled,
+      opsUiConfigured: opsAuth.isConfigured(),
     });
   });
 
-  app.get("/status", (_req, res) => {
+  app.get("/status", (req, res) => {
+    if (!checkRunToken(req, res)) return;
     res.json({
       state: state.get(),
       config: {
@@ -345,57 +559,24 @@ async function main(): Promise<void> {
         sequenceNumber: config.sequenceNumber,
         dryRun: config.dryRun,
         requireSpendApproval: config.requireSpendApproval,
+        minCampaignSenders: config.minCampaignSenders,
+        messagePerDay: config.messagePerDay,
+        enableCampaignTopUp: config.enableCampaignTopUp,
+        enforceMailboxSettings: config.enforceMailboxSettings,
+        enableBounceRotation: config.enableBounceRotation,
+        bounceRateThreshold: config.bounceRateThreshold,
+        minBounceSample: config.minBounceSample,
+        opsUiEnabled: config.opsUiEnabled,
+        opsUiConfigured: opsAuth.isConfigured(),
       },
     });
   });
 
-  const checkRunToken = (req: express.Request, res: express.Response): boolean => {
-    if (config.runToken) {
-      const token = req.header("x-run-token") || "";
-      if (token !== config.runToken) {
-        res.status(401).json({ error: "Unauthorized" });
-        return false;
-      }
-    }
-    return true;
-  };
-
-  // Spend approval gateway: nothing that costs money/credits (currently
-  // InboxKit mailbox purchases from the pool provisioner) executes until a
-  // human approves the specific pending request here.
+  // Legacy token-authenticated approval listing for scripts/diagnostics.
+  // Decisions are intentionally owner-session + CSRF only under /ops.
   app.get("/approvals", (req, res) => {
     if (!checkRunToken(req, res)) return;
     res.json({ approvals: state.listSpendApprovals() });
-  });
-
-  app.post("/approvals/:id/approve", async (req, res) => {
-    if (!checkRunToken(req, res)) return;
-    const record = state.decideSpendApproval(
-      req.params.id,
-      "approved",
-      req.header("x-approved-by") || undefined,
-    );
-    if (!record) {
-      res.status(404).json({ error: "No such pending approval" });
-      return;
-    }
-    await state.save();
-    res.json({ ok: true, record });
-  });
-
-  app.post("/approvals/:id/deny", async (req, res) => {
-    if (!checkRunToken(req, res)) return;
-    const record = state.decideSpendApproval(
-      req.params.id,
-      "denied",
-      req.header("x-approved-by") || undefined,
-    );
-    if (!record) {
-      res.status(404).json({ error: "No such pending approval" });
-      return;
-    }
-    await state.save();
-    res.json({ ok: true, record });
   });
 
   app.post("/run", async (req, res) => {
@@ -521,10 +702,35 @@ async function main(): Promise<void> {
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
+    // Campaign headcount and test cover, at boot as well as on the monitor —
+    // waiting up to six hours to learn a campaign is sending with no test is
+    // too long when the shortfall is being worked on right now.
+    if (secretsReady) {
+      void (async () => {
+        try {
+          await manualRotation.recoverStaleReservations();
+          await campaignAudit.run(config.minCampaignSenders);
+          await mailboxSettings.run();
+          // Fill thin campaigns at boot as well as on the monitor. A restart
+          // is the only lever that acts sooner than the six-hourly cron, and
+          // a campaign sending under its floor should not wait that long.
+          // Idempotent: once every campaign is at the floor this is a no-op.
+          await runCampaignTopUp();
+        } catch (error) {
+          console.warn("[boot] campaign audit/top-up failed", error);
+        }
+      })();
+    }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
     );
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
+    console.log(
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} sends/day, warmup on)` : "not enforced"}`,
+    );
+    console.log(
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED (floor ${config.minCampaignSenders} senders${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+    );
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
     );
@@ -538,6 +744,9 @@ async function main(): Promise<void> {
       `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
+    console.log(
+      `[boot] Ops UI: ${config.opsUiEnabled ? (opsAuth.isConfigured() ? "ENABLED at /ops" : `disabled until configured (${opsAuth.configurationError()})`) : "disabled"}`,
+    );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,
     );

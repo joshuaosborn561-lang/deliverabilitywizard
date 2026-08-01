@@ -30,6 +30,17 @@ export class SmartleadClient {
     });
   }
 
+  /**
+   * Per-sender bounce statistics.
+   *
+   * Placement tests cannot see this: seed inboxes accept mail, so a mailbox
+   * bouncing hard against real leads still scores a clean inbox rate. Shape
+   * varies by account, so the caller parses defensively.
+   */
+  async getAnalyticsOverview(): Promise<unknown> {
+    return apiRequest<unknown>(BASE_URL, this.apiKey, "analytics/overview");
+  }
+
   listClients(): Promise<SmartleadClientRecord[]> {
     return apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/");
   }
@@ -136,6 +147,28 @@ export class SmartleadClient {
     });
   }
 
+  /**
+   * Daily sending ceiling for a mailbox.
+   *
+   * The field is max_email_per_day: message_per_day is rejected outright
+   * ("not allowed") and PATCH 404s, so it is POST on the account endpoint —
+   * the same route the signature update uses.
+   *
+   * Smartlead splits this ceiling between warmup and campaign sends, topping
+   * warmup back up when campaign volume falls.
+   */
+  setDailySendLimit(
+    emailAccountId: number,
+    maxEmailPerDay: number,
+  ): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `email-accounts/${emailAccountId}`,
+      { method: "POST", body: { max_email_per_day: maxEmailPerDay } },
+    );
+  }
+
   configureWarmup(
     emailAccountId: number,
     settings: {
@@ -163,7 +196,6 @@ export class SmartleadClient {
       signature?: string;
       from_name?: string;
       client_id?: number | null;
-      message_per_day?: number;
     },
   ): Promise<unknown> {
     return apiRequest(

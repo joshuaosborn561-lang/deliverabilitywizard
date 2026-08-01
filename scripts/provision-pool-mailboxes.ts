@@ -23,6 +23,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { InboxKitClient } from "../src/clients/inboxkit.js";
 import { sleep } from "../src/lib/http.js";
+import { pickUniquePersonNames } from "../src/lib/personNames.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -40,51 +41,6 @@ interface PoolPlan {
   }>;
 }
 
-const FIRST_NAMES = [
-  "Marty",
-  "Jo",
-  "Alex",
-  "Sam",
-  "Riley",
-  "Casey",
-  "Jordan",
-  "Taylor",
-  "Morgan",
-  "Quinn",
-  "Avery",
-  "Reese",
-  "Parker",
-  "Drew",
-  "Blake",
-  "Cameron",
-  "Hayden",
-  "Rowan",
-  "Skyler",
-  "Emerson",
-];
-const LAST_NAMES = [
-  "Moen",
-  "Shmo",
-  "Hayes",
-  "Brooks",
-  "Coleman",
-  "Reed",
-  "Foster",
-  "Bennett",
-  "Griffin",
-  "Palmer",
-  "Walsh",
-  "Nash",
-  "Keller",
-  "Boone",
-  "Pratt",
-  "Sloan",
-  "Vance",
-  "Hale",
-  "Croft",
-  "Lang",
-];
-
 function parseArgs(argv: string[]) {
   const flags = new Set<string>();
   const opts: Record<string, string> = {};
@@ -100,17 +56,6 @@ function parseArgs(argv: string[]) {
     else if (a === "--yes-spend-money") flags.add("yes-spend-money");
   }
   return { flags, opts };
-}
-
-function pickName(seed: number): {
-  first_name: string;
-  last_name: string;
-  username: string;
-} {
-  const first = FIRST_NAMES[seed % FIRST_NAMES.length]!;
-  const last = LAST_NAMES[Math.floor(seed / FIRST_NAMES.length) % LAST_NAMES.length]!;
-  const username = `${first}${last}`.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return { first_name: first, last_name: last, username };
 }
 
 async function loadPlan(): Promise<PoolPlan> {
@@ -255,20 +200,19 @@ async function main(): Promise<void> {
 
   const orders: unknown[] = [];
   let seed = 0;
+  const taken = new Set<string>();
   for (const row of plan.domains) {
     if (!flags.has("force") && !status.readyDomains.includes(row.domain)) {
       console.warn(`[provision] skip ${row.domain} (NS not ready)`);
       continue;
     }
-    const mailboxes = [];
-    for (let i = 0; i < perDomain; i++) {
-      const person = pickName(seed++);
-      mailboxes.push({
-        ...person,
-        platform: row.platform,
-        domain_name: row.domain,
-      });
-    }
+    const people = pickUniquePersonNames(perDomain, seed, taken);
+    seed += perDomain + 11;
+    const mailboxes = people.map((person) => ({
+      ...person,
+      platform: row.platform,
+      domain_name: row.domain,
+    }));
 
     if (flags.has("dry-run")) {
       console.log("[dry-run] would buy", mailboxes);

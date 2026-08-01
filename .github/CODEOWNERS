@@ -1,0 +1,8 @@
+# Default reviewers: either maintainer can review normal changes.
+* @joshuaosborn561-lang @cayden-design
+
+# Repository governance and owner decisions require Josh.
+/.github/ @joshuaosborn561-lang
+/CLAUDE.md @joshuaosborn561-lang
+/DECISIONS.md @joshuaosborn561-lang
+/DEPLOYMENT.md @joshuaosborn561-lang

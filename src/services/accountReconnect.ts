@@ -6,8 +6,16 @@ import {
   accountEmail,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
+import {
+  isRateLimitNoise,
+  reconnectFailureCategory,
+} from "../lib/alertNoise.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
+
+const RECONNECT_ALERT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const REEXPORT_ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const RECONNECT_DEDUPE_INITIALIZED_KEY = "reconnect-alert:dedupe-v1";
 
 export interface ReconnectAction {
   accountId: number;
@@ -232,16 +240,85 @@ export class AccountReconnectService {
       errors: result.errors.length,
     });
 
-    if (
+    const alertKeys: string[] = [];
+    const actions = result.actions.filter((action) => {
+      if (action.skipped || /already connected/i.test(action.message)) {
+        return false;
+      }
+
+      if (isRateLimitNoise(action.message)) return false;
+
+      const email = action.email.toLowerCase();
+      const key = action.reauthenticated
+        ? `reconnect-alert:success:${email}`
+        : `reconnect-alert:failure:${email}:${reconnectFailureCategory(action.message)}`;
+      if (this.state.hasRecentAlert(key, RECONNECT_ALERT_COOLDOWN_MS)) {
+        return false;
+      }
+      alertKeys.push(key);
+      return true;
+    });
+
+    // Reauth failures are represented by actions above. Keep only other,
+    // non-throttling errors, and dedupe each error category for seven days.
+    const errors = result.errors.filter((message) => {
+      if (isRateLimitNoise(message) || /^reauth\s/i.test(message)) return false;
+      const key = `reconnect-alert:error:${reconnectFailureCategory(message)}`;
+      if (this.state.hasRecentAlert(key, RECONNECT_ALERT_COOLDOWN_MS)) {
+        return false;
+      }
+      alertKeys.push(key);
+      return true;
+    });
+
+    let inboxkitReexports = 0;
+    if (result.inboxkitReexports > 0) {
+      const key = "reconnect-alert:inboxkit-reexport";
+      if (!this.state.hasRecentAlert(key, REEXPORT_ALERT_COOLDOWN_MS)) {
+        inboxkitReexports = result.inboxkitReexports;
+        alertKeys.push(key);
+      }
+    }
+
+    const notification: ReconnectResult = {
+      ...result,
+      disconnected: actions.length,
+      reconnected: actions.filter((a) => a.reauthenticated).length,
+      failed: actions.filter((a) => !a.reauthenticated).length,
+      actions,
+      inboxkitReexports,
+      errors,
+    };
+
+    // State predates reconnect dedupe. Seed the current recurring problems on
+    // the first run after this release so the deployment itself doesn't emit
+    // one last copy of the already-seen alert.
+    if (!this.state.hasAlert(RECONNECT_DEDUPE_INITIALIZED_KEY)) {
+      this.state.markAlert(RECONNECT_DEDUPE_INITIALIZED_KEY);
+      for (const key of alertKeys) this.state.markAlert(key);
+      await this.state.save();
+      console.log(
+        `[reconnect] Initialized alert dedupe with ${alertKeys.length} current condition(s); Slack suppressed`,
+      );
+      return;
+    }
+
+    if (actions.length || inboxkitReexports || errors.length) {
+      try {
+        await this.slack.notifyReconnect(notification);
+        for (const key of alertKeys) this.state.markAlert(key);
+        await this.state.save();
+      } catch (error) {
+        console.error("[reconnect] Slack notify failed", error);
+      }
+    } else if (
       result.disconnected > 0 ||
-      result.reconnected > 0 ||
-      result.failed > 0 ||
       result.inboxkitReexports > 0 ||
       result.errors.length
     ) {
-      await this.slack.notifyReconnect(result).catch((error) => {
-        console.error("[reconnect] Slack notify failed", error);
-      });
+      console.log(
+        `[reconnect] Skipping Slack (${result.disconnected} repeated disconnect(s), ${result.errors.filter(isRateLimitNoise).length} rate-limit error(s))`,
+      );
     }
   }
 }

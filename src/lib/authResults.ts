@@ -12,13 +12,29 @@ export interface SenderAuthSummary {
   samples: number;
 }
 
-/** True when SPF failed on every scored seed for this sender. */
-export function spfFailing(row: SenderAuthSummary): boolean {
-  return row.spfFail > 0 && row.spfPass === 0;
+/**
+ * Corroborating seeds required before we call auth broken.
+ *
+ * A single failing seed is not evidence: seed inboxes drop, rate-limit, and
+ * occasionally report auth on a bounced reply. The inbox-rate path already
+ * guards itself with MIN_SAME_ESP_SAMPLES; this is the equivalent floor for
+ * SPF/DKIM, so one bad seed can't raise "SPF is FAILING" on a healthy domain.
+ */
+export const MIN_AUTH_SAMPLES = 2;
+
+/** True when SPF failed on every scored seed, across enough seeds to trust it. */
+export function spfFailing(
+  row: SenderAuthSummary,
+  minSamples: number = MIN_AUTH_SAMPLES,
+): boolean {
+  return row.spfFail >= minSamples && row.spfPass === 0;
 }
 
-export function dkimFailing(row: SenderAuthSummary): boolean {
-  return row.dkimFail > 0 && row.dkimPass === 0;
+export function dkimFailing(
+  row: SenderAuthSummary,
+  minSamples: number = MIN_AUTH_SAMPLES,
+): boolean {
+  return row.dkimFail >= minSamples && row.dkimPass === 0;
 }
 
 /**
@@ -33,18 +49,27 @@ export function authVerdictOf(value: unknown, kind: "spf" | "dkim" | "dmarc"): A
   const tagged = new RegExp(`\\b${kind}\\s*=\\s*(\\w+)`).exec(text);
   if (tagged) return normalizeVerdict(tagged[1]!);
 
+  // temperror is a transient DNS/lookup condition (RFC 7208), not a verdict —
+  // treating it as failure turns a momentary resolver blip into a "fix your
+  // SPF record" alarm on a domain whose SPF is correct. Check it before the
+  // generic /fail/ match, since "temperror" would otherwise fall through.
+  if (TRANSIENT.test(text)) return "unknown";
   if (/\b(pass|passed|ok|valid|success)\b/.test(text)) return "pass";
-  if (/\b(fail|failed|softfail|permerror|temperror|none|invalid|missing)\b/.test(text)) {
+  if (/\b(fail|failed|softfail|permerror|none|invalid|missing)\b/.test(text)) {
     return "fail";
   }
   return "unknown";
 }
 
+/** Transient lookup conditions that carry no verdict either way. */
+const TRANSIENT = /\b(temperror|temperr|dns_?timeout|timeout)\b/;
+
 function normalizeVerdict(token: string): AuthVerdict {
   const t = token.toLowerCase();
+  if (TRANSIENT.test(t)) return "unknown";
   if (["pass", "passed", "ok", "valid", "success"].includes(t)) return "pass";
   if (
-    ["fail", "failed", "softfail", "permerror", "temperror", "none", "invalid", "missing"].includes(
+    ["fail", "failed", "softfail", "permerror", "none", "invalid", "missing"].includes(
       t,
     )
   ) {

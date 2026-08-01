@@ -43,7 +43,10 @@ Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|pool|
 
 ## Generic recovery pool (setup)
 
-25 `.info` domains live in InboxKit workspace **DW Generic Pool** (`data/generic-pool-domains.json`).
+The managed plan contains 40 domains × 5 mailboxes = 200 (24 Google / 16
+Microsoft). The current plan still contains 25 `.info` and 15 `.com` domains.
+Two pre-warmed generic fleets (`EXTRA_GENERIC_MAILBOXES`) add roughly 200 more
+mailboxes to runtime pool state.
 
 **You do not need to babysit.** With `ENABLE_POOL_PROVISIONER=true` (default), a cron (`CRON_POOL_PROVISION`, every 30m) self-advances:
 
@@ -57,7 +60,10 @@ Manual kick: `POST /run?mode=pool`.
 
 Restart a stuck pipeline with `POST /run?mode=pool&phase=idle` (valid phases are listed in the error if you pass a bad one). This never spends — any purchase the restarted pipeline wants still has to clear the approval gateway.
 
-Per-client replace caps (after initial setup): **$25 domains / month** (Porkbun) and **25 mailboxes / month**.
+Client-scoped spend is hard-capped at **$25 domains / month** and **25
+mailboxes / month**. A client spend request without cap metadata is rejected.
+Generic-pool replenishment is not client spend and remains separately
+single-use approval-gated.
 
 ## SmartDelivery access
 
@@ -74,13 +80,60 @@ Docs:
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/health` | Liveness + last run timestamps |
-| `GET` | `/status` | Full state + effective config |
+| `GET` | `/status` | Full state + effective config (requires `X-Run-Token`) |
 | `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|warmup-gate\|reconcile\|all`) |
-| `GET` | `/approvals` | List pending/decided spend approvals |
-| `POST` | `/approvals/:id/approve` | Approve a pending spend so the next pool-provision tick can execute it |
-| `POST` | `/approvals/:id/deny` | Deny a pending spend |
+| `GET` | `/approvals` | Token-authenticated read-only approval listing |
+| `GET` | `/ops` | Employee console; owner approval decisions live here |
 
-If `RUN_TOKEN` is set, pass header `X-Run-Token: <token>`.
+Set `RUN_TOKEN` and pass header `X-Run-Token: <token>` for `/status`, `/run`
+and `/approvals/*`. Those routes return 503 when no token is configured;
+`/health` remains public.
+
+## Employee operations UI
+
+The Railway service hosts a private console at **`/ops`**. It gives Josh
+(`owner`) and Cayden (`operator`) separate signed sessions and a chat-style
+interface over an explicit operation allowlist.
+
+Allowlisted for Cayden:
+
+- Check placement/deliverability
+- Audit campaign sender counts and placement-test coverage
+- Audit SPF/DMARC/MX without changing DNS
+- Reconnect disconnected Smartlead mailboxes
+- Preview and confirm one-mailbox rotations
+
+A manual rotation revalidates immediately before writing: the original must be
+on an active, non-excluded campaign; the replacement must be idle, fully warmed
+and ESP-matched; active recovery swaps and client-branded cross-client moves
+are forbidden. The operation reserves the generic and compensates completed
+Smartlead writes if a later step fails.
+
+Chat refuses purchases, deletion/purge, spend decisions, policy/threshold
+changes, warmup bypasses, bulk remediation, code changes and deployment. Josh
+gets a separate owner-only approval panel. Every console action is persisted
+in the bounded audit log.
+
+Required Railway variables:
+
+```text
+OPS_UI_ENABLED=true
+OPS_OWNER_USERNAME=josh
+OPS_OPERATOR_USERNAME=cayden
+OPS_OWNER_TOKEN=<independent 32+ character secret>
+OPS_OPERATOR_TOKEN=<independent 32+ character secret>
+OPS_SESSION_SECRET=<independent 32+ character secret>
+OPS_SESSION_HOURS=12
+```
+
+Do not reuse `RUN_TOKEN` for either user's login.
+
+Rotation additionally requires `ENABLE_RECOVERY_POOL=true` and warmed,
+`available` pool inventory. Otherwise preview fails safely and explains why.
+
+The console and cron mutation locks are process-local. `railway.toml` pins the
+US West service to **one replica**; do not scale it without adding a shared
+Redis/database lock.
 
 ## Spend approval gateway
 
@@ -101,9 +154,11 @@ Two hard safety rails sit underneath the gateway:
 With the gateway on:
 
 1. The pool provisioner computes what it needs to buy, but instead of buying, it records a **pending** spend request (one per domain/platform/count batch) and Slack-notifies with the exact request.
-2. Nothing is purchased until a human calls `POST /approvals/:id/approve` (the id is in the Slack message and in `GET /approvals`).
-3. Once approved, the next `pool` run (cron or `POST /run?mode=pool`) executes that exact purchase and no other.
-4. `POST /approvals/:id/deny` permanently blocks that batch (it will need to be re-approved under a new id if the underlying need changes).
+2. Nothing is purchased until Josh approves it from `/ops` → **Approvals**.
+3. Once approved, the next `pool` run executes that exact purchase and
+   consumes the approval. The same approval can never spend twice.
+4. Denying from the owner panel permanently blocks that batch (a changed
+   underlying need creates a new request).
 
 `DRY_RUN=true` skips the buying step entirely (no approval request is even created) — use it to see what the provisioner would otherwise ask permission for.
 
@@ -139,7 +194,7 @@ Common optional vars:
 | `POOL_WARMUP_DAYS` | `14` | Days before a pool generic is free for swaps |
 | `CLIENT_DOMAIN_BUDGET_USD` | `25` | Porkbun domain $ cap per client / UTC month |
 | `CLIENT_MAILBOX_MONTHLY_CAP` | `25` | New mailboxes per client / UTC month |
-| `GENERIC_POOL_WORKSPACE_ID` | _(empty)_ | InboxKit workspace for the 75 generics |
+| `GENERIC_POOL_WORKSPACE_ID` | _(empty)_ | InboxKit workspace for the managed and pre-warmed generics |
 | `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY` | _(empty)_ | Domain purchase for replaces |
 | `INBOXKIT_API_KEY` | _(empty)_ | Required for InboxKit domain purge |
 | `INBOXKIT_WORKSPACE_ID` | _(auto)_ | Optional; resolved from InboxKit workspaces if empty |
@@ -149,16 +204,25 @@ Common optional vars:
 | `CRON_ACCOUNT_RECONNECT` | `0 3 * * *` | Daily pass in `America/New_York` (also runs with monitor cron) |
 | `ENABLE_WARMUP_GATE` | `true` | Strip under-warmed / HOLD mailboxes from ACTIVE campaigns |
 | `MIN_CAMPAIGN_WARMUP_DAYS` | `14` | Min warmup days before an inbox may stay on ACTIVE campaigns |
+| `ENABLE_CAMPAIGN_TOP_UP` | `true` | Rebalance warmed generics to keep ACTIVE campaigns at their floor |
+| `MIN_CAMPAIGN_SENDERS` | `50` | Sender floor for ACTIVE campaigns |
+| `ENFORCE_MAILBOX_SETTINGS` | `true` | Converge every mailbox to warmup on + daily send cap |
+| `MESSAGE_PER_DAY` | `30` | Smartlead `max_email_per_day` fleet cap |
 | `CAMPAIGN_STATUSES` | `ACTIVE,PAUSED` | Which campaigns are eligible |
 | `PROVIDER_IDS` | _(auto)_ | Comma-separated seed provider ints; empty = auto-fetch |
 | `STATE_FILE_PATH` | `/data/state.json` | Persist tested campaigns + alert dedupe |
-| `RUN_TOKEN` | _(empty)_ | Protects `/run` and `/approvals/*` when set |
+| `RUN_TOKEN` | _(empty)_ | Required to enable `/status`, `/run` and `/approvals/*` |
 | `DRY_RUN` | `false` | Plan remediation without applying writes; also skips pool mailbox purchases |
 | `REQUIRE_SPEND_APPROVAL` | `true` | Hold pool mailbox purchases for human approval via `/approvals` instead of spending automatically |
 
 **Do not hardcode secrets.** Set them as Railway service variables.
 
 ## Local development
+
+Two-person workflow: read [CONTRIBUTING.md](CONTRIBUTING.md) before starting.
+Every task branches from current `main`, is claimed in Slack, and merges through
+a reviewed PR. Production deployment ownership is documented in
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 ```bash
 cp .env.example .env

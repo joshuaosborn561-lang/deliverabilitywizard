@@ -54,12 +54,22 @@ export class PorkbunClient {
     return parsed as T;
   }
 
-  getBalance(): Promise<{ balance: string | number; status: string }> {
-    return this.request("/account/getBalance");
+  getBalance(): Promise<{ balance?: string | number; status: string }> {
+    // Endpoint varies by account age; ping is the reliable auth check.
+    return this.request("/ping");
+  }
+
+  listDomains(): Promise<{
+    status: string;
+    count?: number;
+    domains?: Array<{ domain: string; status?: string; tld?: string }>;
+  }> {
+    return this.request("/domain/listAll", { start: 0 });
   }
 
   /**
    * Availability check — Porkbun rate-limits to ~1 check / 10s.
+   * Response shape: { status, response: { avail, price, ... } }
    */
   async checkDomain(domain: string): Promise<{
     available: boolean;
@@ -69,21 +79,42 @@ export class PorkbunClient {
     const raw = await this.request<Record<string, unknown>>(
       `/domain/checkDomain/${domain.toLowerCase()}`,
     );
-    const avail = String(raw.avail ?? raw.available ?? "").toLowerCase();
+    const nested =
+      typeof raw.response === "object" && raw.response !== null
+        ? (raw.response as Record<string, unknown>)
+        : raw;
+    const avail = String(nested.avail ?? nested.available ?? "").toLowerCase();
     const available = avail === "yes" || avail === "true" || avail === "1";
     const price =
-      typeof raw.price === "string"
-        ? raw.price
-        : typeof raw.price === "number"
-          ? String(raw.price)
+      typeof nested.price === "string"
+        ? nested.price
+        : typeof nested.price === "number"
+          ? String(nested.price)
           : undefined;
     return { available, price, raw };
   }
 
-  async createDomain(domain: string, opts: { years?: number } = {}): Promise<unknown> {
+  /**
+   * Register a domain. `costCents` must match checkDomain price in pennies
+   * (e.g. $3.60 → 360). Requires agreeToTerms.
+   */
+  async createDomain(
+    domain: string,
+    opts: { years?: number; costCents: number },
+  ): Promise<unknown> {
     return this.request(`/domain/create/${domain.toLowerCase()}`, {
       years: opts.years ?? 1,
+      cost: opts.costCents,
+      agreeToTerms: "yes",
     });
+  }
+
+  /** Convert checkDomain dollar price string (e.g. "3.60") to pennies. */
+  static priceToCents(price: string | number | undefined): number | null {
+    if (price === undefined || price === null || price === "") return null;
+    const n = typeof price === "number" ? price : Number(price);
+    if (!Number.isFinite(n)) return null;
+    return Math.round(n * 100);
   }
 
   async updateAutoRenew(

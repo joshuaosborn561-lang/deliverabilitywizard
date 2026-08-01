@@ -129,6 +129,9 @@ OPS_SESSION_HOURS=12
 
 Do not reuse `RUN_TOKEN` for either user's login.
 
+The console and cron mutation locks are process-local. Keep the Railway service
+at **one replica** unless a shared Redis/database lock is added.
+
 ## Spend approval gateway
 
 `REQUIRE_SPEND_APPROVAL` (default `true`) gates every action that spends real money/credits or destroys paid assets:

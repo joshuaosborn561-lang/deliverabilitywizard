@@ -160,7 +160,7 @@ const ConfigSchema = z.object({
   host: z.string().default("0.0.0.0"),
   runToken: z.string().optional().default(""),
   /** Authenticated human operations console at /ops. */
-  opsUiEnabled: boolFromEnv(true),
+  opsUiEnabled: boolFromEnv(false),
   opsOwnerUsername: z.string().min(1).default("josh"),
   opsOperatorUsername: z.string().min(1).default("cayden"),
   opsOwnerToken: z.string().default(""),

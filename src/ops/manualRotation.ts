@@ -273,13 +273,19 @@ export class ManualRotationService {
       assignedToEmail: preview.email,
       assignedAt: new Date().toISOString(),
     });
-    await this.state.save();
+    try {
+      await this.state.save();
+    } catch (error) {
+      this.state.upsertPoolMailbox(poolSnapshot);
+      throw error;
+    }
 
     const addedPool: number[] = [];
     const removedOriginal: number[] = [];
     let holdTag: { id: number; name: string } | null = null;
     let holdAssigned = false;
     let warmupAttempted = false;
+    let remediationKey: string | null = null;
     try {
       holdTag = await this.smartlead.ensureHoldUntilTag(preview.holdUntil);
       await this.smartlead.setDailySendLimit(
@@ -339,9 +345,8 @@ export class ManualRotationService {
         tagName: holdTag.name,
         removedFromCampaigns: preview.campaigns.map((campaign) => campaign.id),
       });
-      this.state.markRemediation(
-        `manual-rotate:${preview.email}:${swappedAt.slice(0, 10)}`,
-      );
+      remediationKey = `manual-rotate:${preview.email}:${swappedAt.slice(0, 10)}`;
+      this.state.markRemediation(remediationKey);
       this.state.markSwap({
         originalEmail: preview.email,
         originalAccountId: preview.originalAccountId,
@@ -451,6 +456,9 @@ export class ManualRotationService {
           }`,
         );
       }
+      this.state.clearSwap(preview.email);
+      this.state.clearHeldInbox(preview.email);
+      if (remediationKey) this.state.clearRemediation(remediationKey);
       this.state.upsertPoolMailbox(poolSnapshot);
       await this.state.save();
       result.rolledBack = rollbackErrors.length === 0;

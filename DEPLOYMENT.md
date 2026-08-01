@@ -15,6 +15,7 @@ code differ from the repository's source of truth.
 After a merge, verify:
 
 - Railway deployment succeeded for the `main` commit.
+- Service replica count is **1** (operations locks are process-local).
 - `GET /health` returns `ok: true`.
 - Boot logs show the expected feature flags and cron schedules.
 - Any required database/state migration completed.

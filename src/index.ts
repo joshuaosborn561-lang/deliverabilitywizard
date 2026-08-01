@@ -217,6 +217,11 @@ async function main(): Promise<void> {
     sessionSecret: config.opsSessionSecret,
     sessionHours: config.opsSessionHours,
   });
+  if (config.opsUiEnabled && !opsAuth.isConfigured()) {
+    throw new Error(
+      `OPS_UI_ENABLED=true but the console is not securely configured: ${opsAuth.configurationError()}`,
+    );
+  }
 
   const runCampaignTopUp = async () => {
     if (manualRotationInFlight) {
@@ -413,6 +418,10 @@ async function main(): Promise<void> {
   }
 
   const app = express();
+  // Railway terminates TLS one proxy hop in front of the app. This makes
+  // req.ip useful for login throttling without trusting arbitrary forwarded
+  // chains.
+  app.set("trust proxy", 1);
   app.use(express.json({ limit: "100kb" }));
 
   app.use("/ops", (_req, res, next) => {
@@ -445,7 +454,7 @@ async function main(): Promise<void> {
     express.static(opsPublicDir, {
       index: "index.html",
       etag: true,
-      maxAge: "1h",
+      maxAge: 0,
     }),
   );
 

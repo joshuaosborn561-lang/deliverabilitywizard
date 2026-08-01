@@ -253,6 +253,10 @@ export class StateStore {
     this.state.lastRemediationAt = new Date().toISOString();
   }
 
+  clearRemediation(key: string): void {
+    delete this.state.remediatedKeys[key];
+  }
+
   markHeldInbox(record: HeldInboxRecord): void {
     this.state.heldInboxes[record.email.toLowerCase()] = record;
   }

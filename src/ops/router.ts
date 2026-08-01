@@ -53,6 +53,7 @@ export function createOpsRouter(opts: {
     outcome: "success" | "denied" | "error",
     target?: string,
     detail?: string,
+    required = false,
   ) => {
     try {
       opts.state.appendOpsAudit({
@@ -68,6 +69,11 @@ export function createOpsRouter(opts: {
       await opts.state.save();
     } catch (error) {
       console.error("[ops] Failed to persist audit record", error);
+      if (required) {
+        throw new Error(
+          "Operation blocked because the audit log is not writable",
+        );
+      }
     }
   };
 
@@ -243,6 +249,19 @@ export function createOpsRouter(opts: {
         res.status(400).json({ error: "Explicit confirmation is required" });
         return;
       }
+      try {
+        await audit(
+          req.opsSession!,
+          `spend-${decision}-confirmed`,
+          "success",
+          req.params.id,
+          "Owner confirmed spend decision",
+          true,
+        );
+      } catch (error) {
+        res.status(503).json({ error: safeMessage(error) });
+        return;
+      }
       const status = decision === "approve" ? "approved" : "denied";
       const record = opts.state.decideSpendApproval(
         req.params.id,
@@ -253,15 +272,22 @@ export function createOpsRouter(opts: {
         res.status(409).json({ error: "Approval is not pending" });
         return;
       }
-      await opts.state.save();
-      await audit(
-        req.opsSession!,
-        `spend-${decision}`,
-        "success",
-        record.id,
-        record.description,
-      );
-      res.json({ ok: true, record });
+      try {
+        await opts.state.save();
+        await audit(
+          req.opsSession!,
+          `spend-${decision}`,
+          "success",
+          record.id,
+          record.description,
+        );
+        res.json({ ok: true, record });
+      } catch (error) {
+        record.status = "pending";
+        record.decidedAt = undefined;
+        record.decidedBy = undefined;
+        res.status(503).json({ error: safeMessage(error) });
+      }
     },
   );
 
@@ -388,6 +414,19 @@ export function createOpsRouter(opts: {
     const email = String(req.body?.email ?? "").trim().toLowerCase();
     if (req.body?.confirm !== "ROTATE") {
       res.status(400).json({ error: "Type ROTATE to confirm" });
+      return;
+    }
+    try {
+      await audit(
+        session,
+        "rotation-confirmed",
+        "success",
+        email,
+        "Operator confirmed rotation after preview",
+        true,
+      );
+    } catch (error) {
+      res.status(503).json({ error: safeMessage(error) });
       return;
     }
     const lock = `rotate:${email}`;

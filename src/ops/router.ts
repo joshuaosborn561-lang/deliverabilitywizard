@@ -196,9 +196,25 @@ export function createOpsRouter(opts: {
       const pendingApprovals = Object.values(state.spendApprovals).filter(
         (approval) => approval.status === "pending",
       ).length;
-      const fleet = await opts.runtime.fleet(
-        String(req.query.force ?? "") === "1",
-      );
+      let fleet: unknown;
+      let fleetError: string | undefined;
+      try {
+        fleet = await opts.runtime.fleet(
+          String(req.query.force ?? "") === "1",
+        );
+      } catch (error) {
+        fleetError = safeMessage(error);
+        // Local state remains useful during a transient Smartlead outage.
+        fleet = {
+          generatedAt: new Date().toISOString(),
+          totalMailboxes: null,
+          sendingMailboxes: null,
+          mailboxesInRecovery: Object.keys(state.heldInboxes).length,
+          activeCampaigns: null,
+          disconnectedMailboxes: null,
+          stale: true,
+        };
+      }
       res.json({
         user: {
           username: req.opsSession!.username,
@@ -212,6 +228,7 @@ export function createOpsRouter(opts: {
           warmupGate: state.lastWarmupGateAt,
         },
         fleet,
+        fleetError,
         pool: {
           total: pool.length,
           byStatus: poolByStatus,

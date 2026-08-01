@@ -9,6 +9,7 @@ import {
   campaignIdsOf,
 } from "../clients/smartlead.js";
 import type { StateStore } from "../state/store.js";
+import { sleep } from "../lib/http.js";
 import type {
   ProviderwiseRow,
   SpamTestSummary,
@@ -62,6 +63,9 @@ function providerInboxPercent(row: ProviderwiseRow): number | undefined {
     (typeof row.total_email_count === "number" && row.total_email_count > 0
       ? row.total_email_count
       : undefined) ??
+    (typeof row.mailbox_count === "number" && row.mailbox_count > 0
+      ? row.mailbox_count
+      : undefined) ??
     [row.inbox_count, row.tab_count, row.spam_count]
       .filter((count): count is number => typeof count === "number")
       .reduce((sum, count) => sum + count, 0);
@@ -96,6 +100,7 @@ export class PlacementResultsService {
     | { expiresAt: number; value: PlacementResults }
     | undefined;
   private inFlight: Promise<PlacementResults> | null = null;
+  private readonly forceRefreshFloorMs = 30 * 1000;
 
   constructor(
     private readonly smartDelivery: SmartDeliveryClient,
@@ -104,10 +109,17 @@ export class PlacementResultsService {
   ) {}
 
   async get(force = false): Promise<PlacementResults> {
-    if (!force && this.cache && this.cache.expiresAt > Date.now()) {
+    if (this.inFlight) return this.inFlight;
+    if (
+      this.cache &&
+      ((!force && this.cache.expiresAt > Date.now()) ||
+        (force &&
+          Date.now() -
+            Date.parse(this.cache.value.generatedAt) <
+            this.forceRefreshFloorMs))
+    ) {
       return this.cache.value;
     }
-    if (this.inFlight) return this.inFlight;
     this.inFlight = this.load().finally(() => {
       this.inFlight = null;
     });
@@ -121,7 +133,8 @@ export class PlacementResultsService {
       .sort((a, b) =>
         String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
       )
-      .slice(0, 50);
+      // Match the production monitor's rate-limit ceiling.
+      .slice(0, 40);
 
     const campaignByTest = new Map<
       string,
@@ -192,11 +205,12 @@ export class PlacementResultsService {
           );
         }
         rows[index] = row;
+        await sleep(100);
       }
     };
-    await Promise.all(
-      Array.from({ length: Math.min(3, tests.length) }, () => worker()),
-    );
+    // SmartDelivery rate limits provider reports aggressively; sequential
+    // reads keep the employee refresh from competing with the monitor cron.
+    await worker();
     const value = {
       generatedAt: new Date().toISOString(),
       rows: rows.filter(Boolean),
@@ -209,6 +223,8 @@ export class PlacementResultsService {
 
 export class FleetSummaryService {
   private cache: { expiresAt: number; value: FleetSummary } | undefined;
+  private inFlight: Promise<FleetSummary> | null = null;
+  private readonly forceRefreshFloorMs = 15 * 1000;
 
   constructor(
     private readonly smartlead: SmartleadClient,
@@ -217,9 +233,24 @@ export class FleetSummaryService {
   ) {}
 
   async get(force = false): Promise<FleetSummary> {
-    if (!force && this.cache && this.cache.expiresAt > Date.now()) {
+    if (this.inFlight) return this.inFlight;
+    if (
+      this.cache &&
+      ((!force && this.cache.expiresAt > Date.now()) ||
+        (force &&
+          Date.now() -
+            Date.parse(this.cache.value.generatedAt) <
+            this.forceRefreshFloorMs))
+    ) {
       return this.cache.value;
     }
+    this.inFlight = this.load().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
+
+  private async load(): Promise<FleetSummary> {
     const [campaigns, accounts] = await Promise.all([
       this.smartlead.listCampaigns(),
       this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),

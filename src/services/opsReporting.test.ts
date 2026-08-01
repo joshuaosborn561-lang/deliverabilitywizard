@@ -121,4 +121,28 @@ describe("FleetSummaryService", () => {
     assert.equal(result.activeCampaigns, 1);
     assert.equal(result.disconnectedMailboxes, 1);
   });
+
+  it("deduplicates concurrent forced fleet refreshes", async () => {
+    const state = await stateFixture();
+    let accountCalls = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Active", status: "ACTIVE" },
+      ],
+      listAllEmailAccounts: async () => {
+        accountCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return [
+          { id: 1, from_email: "sending@example.com", campaign_ids: [1] },
+        ];
+      },
+    } as unknown as SmartleadClient;
+    const service = new FleetSummaryService(smartlead, state);
+    const [first, second] = await Promise.all([
+      service.get(true),
+      service.get(true),
+    ]);
+    assert.equal(accountCalls, 1);
+    assert.deepEqual(first, second);
+  });
 });

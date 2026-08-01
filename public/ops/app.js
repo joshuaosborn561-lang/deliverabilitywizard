@@ -50,6 +50,19 @@ function toast(message) {
   toast.timer = setTimeout(() => element.classList.add("hidden"), 3500);
 }
 
+async function withLoadingButton(button, loadingText, task) {
+  if (button.disabled) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = loadingText;
+  try {
+    await task();
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 function formatDate(value) {
   if (!value) return "Not yet";
   const date = new Date(value);
@@ -83,13 +96,14 @@ function make(tag, className, text) {
 async function loadDashboard(force = false) {
   const data = await api(`/dashboard${force ? "?force=1" : ""}`);
   state.dashboard = data;
+  const count = (value) => (value == null ? "—" : value);
   const cards = [
-    ["Sending mailboxes", data.fleet.sendingMailboxes, `Across ${data.fleet.activeCampaigns} active campaigns`],
+    ["Sending mailboxes", count(data.fleet.sendingMailboxes), data.fleet.activeCampaigns == null ? "Live Smartlead count unavailable" : `Across ${data.fleet.activeCampaigns} active campaigns`],
     ["In recovery", data.fleet.mailboxesInRecovery, `${data.policy.recoveryHoldDays}-day recovery hold`],
-    ["Total mailboxes", data.fleet.totalMailboxes, "All Smartlead accounts"],
+    ["Total mailboxes", count(data.fleet.totalMailboxes), "All Smartlead accounts"],
     ["Available generics", data.pool.byStatus.available || 0, `${data.pool.total} total pool records`],
     ["Warming generics", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day requirement`],
-    ["Disconnected", data.fleet.disconnectedMailboxes, "SMTP or IMAP failed"],
+    ["Disconnected", count(data.fleet.disconnectedMailboxes), "SMTP or IMAP failed"],
   ];
   const kpis = $("#kpis");
   kpis.replaceChildren(
@@ -135,6 +149,7 @@ async function loadDashboard(force = false) {
   if (state.user.role === "owner") {
     $("#approval-badge").textContent = String(data.pendingApprovals || 0);
   }
+  if (data.fleetError) toast(`Live fleet count unavailable: ${data.fleetError}`);
   renderAudit(data.recentAudit || []);
 }
 
@@ -170,9 +185,13 @@ function scoreClass(value, inverse = false) {
 
 function placementValue(row, key) {
   const value = row[key];
-  if (key === "createdAt") return value ? Date.parse(value) || 0 : 0;
+  if (value == null || value === "") return null;
+  if (key === "createdAt") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
   if (typeof value === "number") return value;
-  return String(value ?? "").toLowerCase();
+  return String(value).toLowerCase();
 }
 
 function renderPlacement() {
@@ -181,7 +200,7 @@ function renderPlacement() {
   const directionFactor = direction === "asc" ? 1 : -1;
   const rows = state.placementRows
     .filter((row) =>
-      `${row.name} ${row.campaignName || ""} ${row.status} ${row.id}`
+      `${row.name} ${row.campaignName || ""} ${row.campaignId || ""} ${row.status} ${row.id}`
         .toLowerCase()
         .includes(query),
     )
@@ -189,8 +208,8 @@ function renderPlacement() {
       const left = placementValue(a, key);
       const right = placementValue(b, key);
       if (left === right) return 0;
-      if (left === "" || left === 0) return 1;
-      if (right === "" || right === 0) return -1;
+      if (left === null) return 1;
+      if (right === null) return -1;
       return (left < right ? -1 : 1) * directionFactor;
     });
 
@@ -438,8 +457,16 @@ $("#chat-input").addEventListener("keydown", (event) => {
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchPanel(button.dataset.panel)));
 $$("[data-command]").forEach((button) => button.addEventListener("click", () => sendChat(button.dataset.command)));
-$("#refresh-dashboard").addEventListener("click", () => loadDashboard(true).catch((error) => toast(error.message)));
-$("#refresh-placement").addEventListener("click", () => loadPlacement(true).catch((error) => toast(error.message)));
+$("#refresh-dashboard").addEventListener("click", (event) =>
+  withLoadingButton(event.currentTarget, "Refreshing…", () =>
+    loadDashboard(true),
+  ).catch((error) => toast(error.message)),
+);
+$("#refresh-placement").addEventListener("click", (event) =>
+  withLoadingButton(event.currentTarget, "Refreshing…", () =>
+    loadPlacement(true),
+  ).catch((error) => toast(error.message)),
+);
 $("#placement-search").addEventListener("input", renderPlacement);
 $$("[data-sort]").forEach((button) =>
   button.addEventListener("click", () => {

@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Owner and safety guards
+        shell: bash
+        run: |
+          if compgen -G "src/guards/*.test.ts" > /dev/null; then
+            npx tsx --test src/guards/*.test.ts
+          else
+            echo "No dedicated guard tests on this revision"
+          fi
+
+      # Import every library module, but not the server entrypoint: importing
+      # dist/index.js starts Express + cron and makes CI wait forever.
+      - name: Load every library module
+        run: |
+          npm run build
+          node -e '
+            const { readdirSync, statSync } = require("node:fs");
+            const { join } = require("node:path");
+            const walk = (d) => readdirSync(d).flatMap((f) => {
+              const p = join(d, f);
+              return statSync(p).isDirectory() ? walk(p) : p;
+            });
+            const files = walk("dist").filter(
+              (f) =>
+                f.endsWith(".js") &&
+                !f.endsWith(".test.js") &&
+                f !== "dist/index.js",
+            );
+            (async () => {
+              for (const f of files) await import("./" + f);
+              console.log(`loaded ${files.length} module(s)`);
+              process.exit(0);
+            })().catch((error) => {
+              console.error(error);
+              process.exit(1);
+            });
+          '

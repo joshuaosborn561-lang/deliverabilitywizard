@@ -75,6 +75,14 @@ async function serverFixture() {
         dns: async () => ({ checked: 1 }),
         campaigns: async () => ({ campaigns: [] }),
         reconnect: async () => ({ scanned: 1 }),
+        placements: async () => ({ generatedAt: new Date().toISOString(), rows: [], errors: [] }),
+        fleet: async () => ({
+          totalMailboxes: 3,
+          sendingMailboxes: 1,
+          mailboxesInRecovery: 1,
+          activeCampaigns: 1,
+          disconnectedMailboxes: 0,
+        }),
       },
     }),
   );
@@ -131,6 +139,16 @@ describe("ops HTTP boundary", () => {
         headers: { cookie: session.cookie },
       });
       assert.equal(dashboard.status, 200);
+      const dashboardBody = (await dashboard.json()) as {
+        fleet: { sendingMailboxes: number; mailboxesInRecovery: number };
+      };
+      assert.equal(dashboardBody.fleet.sendingMailboxes, 1);
+      assert.equal(dashboardBody.fleet.mailboxesInRecovery, 1);
+
+      const placements = await fetch(`${fixture.base}/placements`, {
+        headers: { cookie: session.cookie },
+      });
+      assert.equal(placements.status, 200);
 
       const approvals = await fetch(`${fixture.base}/approvals`, {
         headers: { cookie: session.cookie },

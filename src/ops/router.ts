@@ -18,6 +18,8 @@ export interface OpsRuntime {
   dns: () => Promise<unknown>;
   campaigns: () => Promise<unknown>;
   reconnect: () => Promise<unknown>;
+  placements: (force?: boolean) => Promise<unknown>;
+  fleet: (force?: boolean) => Promise<unknown>;
 }
 
 interface AuthenticatedRequest extends express.Request {
@@ -183,49 +185,66 @@ export function createOpsRouter(opts: {
     res.json({ ok: true });
   });
 
-  router.get("/dashboard", (req: AuthenticatedRequest, res) => {
-    const state = opts.state.get();
-    const pool = Object.values(state.poolMailboxes);
-    const poolByStatus = pool.reduce<Record<string, number>>((acc, row) => {
-      acc[row.status] = (acc[row.status] ?? 0) + 1;
-      return acc;
-    }, {});
-    const pendingApprovals = Object.values(state.spendApprovals).filter(
-      (approval) => approval.status === "pending",
-    ).length;
-    res.json({
-      user: {
-        username: req.opsSession!.username,
-        role: req.opsSession!.role,
-      },
-      lastRuns: {
-        scan: state.lastScanAt,
-        monitor: state.lastMonitorAt,
-        remediation: state.lastRemediationAt,
-        reconnect: state.lastReconnectAt,
-        warmupGate: state.lastWarmupGateAt,
-      },
-      pool: {
-        total: pool.length,
-        byStatus: poolByStatus,
-        activeSwaps: Object.keys(state.activeSwaps).length,
-        heldInboxes: Object.keys(state.heldInboxes).length,
-        phase: state.poolProvision.phase,
-        message: state.poolProvision.lastMessage,
-      },
-      policy: {
-        campaignSenderFloor: opts.config.minCampaignSenders,
-        mailboxDailyCap: opts.config.messagePerDay,
-        warmupDays: opts.config.poolWarmupDays,
-        recoveryHoldDays: opts.config.recoveryHoldDays,
-        inboxThreshold: opts.config.remediationInboxThreshold,
-        bounceThreshold: opts.config.bounceRateThreshold,
-        bounceMinSample: opts.config.minBounceSample,
-      },
-      pendingApprovals:
-        req.opsSession!.role === "owner" ? pendingApprovals : undefined,
-      recentAudit: opts.state.listOpsAudit(30),
-    });
+  router.get("/dashboard", async (req: AuthenticatedRequest, res) => {
+    try {
+      const state = opts.state.get();
+      const pool = Object.values(state.poolMailboxes);
+      const poolByStatus = pool.reduce<Record<string, number>>((acc, row) => {
+        acc[row.status] = (acc[row.status] ?? 0) + 1;
+        return acc;
+      }, {});
+      const pendingApprovals = Object.values(state.spendApprovals).filter(
+        (approval) => approval.status === "pending",
+      ).length;
+      const fleet = await opts.runtime.fleet(
+        String(req.query.force ?? "") === "1",
+      );
+      res.json({
+        user: {
+          username: req.opsSession!.username,
+          role: req.opsSession!.role,
+        },
+        lastRuns: {
+          scan: state.lastScanAt,
+          monitor: state.lastMonitorAt,
+          remediation: state.lastRemediationAt,
+          reconnect: state.lastReconnectAt,
+          warmupGate: state.lastWarmupGateAt,
+        },
+        fleet,
+        pool: {
+          total: pool.length,
+          byStatus: poolByStatus,
+          activeSwaps: Object.keys(state.activeSwaps).length,
+          heldInboxes: Object.keys(state.heldInboxes).length,
+          phase: state.poolProvision.phase,
+          message: state.poolProvision.lastMessage,
+        },
+        policy: {
+          campaignSenderFloor: opts.config.minCampaignSenders,
+          mailboxDailyCap: opts.config.messagePerDay,
+          warmupDays: opts.config.poolWarmupDays,
+          recoveryHoldDays: opts.config.recoveryHoldDays,
+          inboxThreshold: opts.config.remediationInboxThreshold,
+          bounceThreshold: opts.config.bounceRateThreshold,
+          bounceMinSample: opts.config.minBounceSample,
+        },
+        pendingApprovals:
+          req.opsSession!.role === "owner" ? pendingApprovals : undefined,
+        recentAudit: opts.state.listOpsAudit(30),
+      });
+    } catch (error) {
+      res.status(503).json({ error: safeMessage(error) });
+    }
+  });
+
+  router.get("/placements", async (req: AuthenticatedRequest, res) => {
+    try {
+      const force = String(req.query.force ?? "") === "1";
+      res.json(await opts.runtime.placements(force));
+    } catch (error) {
+      res.status(503).json({ error: safeMessage(error) });
+    }
   });
 
   router.get(

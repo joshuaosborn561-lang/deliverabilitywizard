@@ -71,6 +71,11 @@ export interface SpamTestSummary {
   current_test_run_no?: number;
   schedule_start_time?: string;
   test_end_date?: string | null;
+  created_at?: string;
+  inbox_count?: number;
+  tab_count?: number;
+  spam_count?: number;
+  adjusted_total_email_count?: number;
   /** Recurrence interval for automated (scheduled) tests. */
   every_days?: number;
 }

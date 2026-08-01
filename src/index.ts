@@ -20,6 +20,10 @@ import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
 import { TestReconciler } from "./services/testReconciler.js";
+import {
+  FleetSummaryService,
+  PlacementResultsService,
+} from "./services/opsReporting.js";
 import { OpsAuth } from "./ops/auth.js";
 import { createOpsRouter } from "./ops/router.js";
 import {
@@ -228,6 +232,11 @@ async function main(): Promise<void> {
       `OPS_UI_ENABLED=true but the console is not securely configured: ${opsAuth.configurationError()}`,
     );
   }
+  const placementResults = new PlacementResultsService(
+    smartDelivery,
+    state,
+  );
+  const fleetSummary = new FleetSummaryService(smartlead, state);
 
   const runCampaignTopUp = async () => {
     if (manualRotationInFlight) {
@@ -452,6 +461,8 @@ async function main(): Promise<void> {
         dns: () => dnsAudit.run({ alert: false }),
         campaigns: () => campaignAudit.run(config.minCampaignSenders),
         reconnect: runReconnect,
+        placements: (force) => placementResults.get(force),
+        fleet: (force) => fleetSummary.get(force),
       },
     }),
   );

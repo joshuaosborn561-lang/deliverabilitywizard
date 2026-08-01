@@ -201,9 +201,8 @@ export class SpendGateway {
         [
           `*Spend approval needed* (${record.kind})`,
           record.description,
-          `Approve: \`POST /approvals/${encodeURIComponent(record.id)}/approve\``,
-          `Deny: \`POST /approvals/${encodeURIComponent(record.id)}/deny\``,
-          `(Send \`X-Run-Token\` header if RUN_TOKEN is set. No spend happens until approved.)`,
+          `Josh: open \`/ops\` → *Approvals* to approve or deny this request.`,
+          `Cayden cannot decide spend. No spend happens until an owner session approves it.`,
         ].join("\n"),
       );
     } catch (error) {

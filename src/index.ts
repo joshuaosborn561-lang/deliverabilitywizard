@@ -572,42 +572,11 @@ async function main(): Promise<void> {
     });
   });
 
-  // Spend approval gateway: nothing that costs money/credits (currently
-  // InboxKit mailbox purchases from the pool provisioner) executes until a
-  // human approves the specific pending request here.
+  // Legacy token-authenticated approval listing for scripts/diagnostics.
+  // Decisions are intentionally owner-session + CSRF only under /ops.
   app.get("/approvals", (req, res) => {
     if (!checkRunToken(req, res)) return;
     res.json({ approvals: state.listSpendApprovals() });
-  });
-
-  app.post("/approvals/:id/approve", async (req, res) => {
-    if (!checkRunToken(req, res)) return;
-    const record = state.decideSpendApproval(
-      req.params.id,
-      "approved",
-      req.header("x-approved-by") || undefined,
-    );
-    if (!record) {
-      res.status(404).json({ error: "No such pending approval" });
-      return;
-    }
-    await state.save();
-    res.json({ ok: true, record });
-  });
-
-  app.post("/approvals/:id/deny", async (req, res) => {
-    if (!checkRunToken(req, res)) return;
-    const record = state.decideSpendApproval(
-      req.params.id,
-      "denied",
-      req.header("x-approved-by") || undefined,
-    );
-    if (!record) {
-      res.status(404).json({ error: "No such pending approval" });
-      return;
-    }
-    await state.save();
-    res.json({ ok: true, record });
   });
 
   app.post("/run", async (req, res) => {

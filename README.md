@@ -82,9 +82,8 @@ Docs:
 | `GET` | `/health` | Liveness + last run timestamps |
 | `GET` | `/status` | Full state + effective config (requires `X-Run-Token`) |
 | `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|warmup-gate\|reconcile\|all`) |
-| `GET` | `/approvals` | List pending/decided spend approvals |
-| `POST` | `/approvals/:id/approve` | Approve a pending spend so the next pool-provision tick can execute it |
-| `POST` | `/approvals/:id/deny` | Deny a pending spend |
+| `GET` | `/approvals` | Token-authenticated read-only approval listing |
+| `GET` | `/ops` | Employee console; owner approval decisions live here |
 
 Set `RUN_TOKEN` and pass header `X-Run-Token: <token>` for `/status`, `/run`
 and `/approvals/*`. Those routes return 503 when no token is configured;
@@ -129,8 +128,12 @@ OPS_SESSION_HOURS=12
 
 Do not reuse `RUN_TOKEN` for either user's login.
 
-The console and cron mutation locks are process-local. Keep the Railway service
-at **one replica** unless a shared Redis/database lock is added.
+Rotation additionally requires `ENABLE_RECOVERY_POOL=true` and warmed,
+`available` pool inventory. Otherwise preview fails safely and explains why.
+
+The console and cron mutation locks are process-local. `railway.toml` pins the
+US West service to **one replica**; do not scale it without adding a shared
+Redis/database lock.
 
 ## Spend approval gateway
 
@@ -151,10 +154,11 @@ Two hard safety rails sit underneath the gateway:
 With the gateway on:
 
 1. The pool provisioner computes what it needs to buy, but instead of buying, it records a **pending** spend request (one per domain/platform/count batch) and Slack-notifies with the exact request.
-2. Nothing is purchased until a human calls `POST /approvals/:id/approve` (the id is in the Slack message and in `GET /approvals`).
+2. Nothing is purchased until Josh approves it from `/ops` → **Approvals**.
 3. Once approved, the next `pool` run executes that exact purchase and
    consumes the approval. The same approval can never spend twice.
-4. `POST /approvals/:id/deny` permanently blocks that batch (it will need to be re-approved under a new id if the underlying need changes).
+4. Denying from the owner panel permanently blocks that batch (a changed
+   underlying need creates a new request).
 
 `DRY_RUN=true` skips the buying step entirely (no approval request is even created) — use it to see what the provisioner would otherwise ask permission for.
 

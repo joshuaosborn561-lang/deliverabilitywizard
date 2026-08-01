@@ -129,6 +129,23 @@ campaign goes inactive, freeing the slot.
 `REQUIRE_SPEND_APPROVAL` stays **on**. Real-money spend is held for human
 approval via `/approvals`. Do not disable it to make an automation smoother.
 
+Approvals are **single-use**: only a pending record may be approved or denied,
+and a successful external purchase consumes it. Client-scoped spend must carry
+the $25 domain / 25 mailbox monthly-cap metadata; omitting it is a hard block.
+
+## Operational API
+
+`/status`, `/run`, and `/approvals/*` contain or mutate sensitive production
+state. They require `RUN_TOKEN`; when no token is configured they stay disabled,
+not public. `/health` is the only unauthenticated operational endpoint.
+
+## Campaign move safety
+
+A pool mailbox named in `activeSwaps` is reserved for that recovery and is not
+campaign top-up supply. A generic move must be compensating: if any Smartlead
+write fails, undo the receiver add, restore removed donors and restore identity
+before retrying.
+
 ## DNS
 
 Sending-domain DNS is audited every monitor pass against public resolvers, not
@@ -139,6 +156,9 @@ are reported without paging.
 The audit is **advisory and does not write DNS**. Pool zones live in InboxKit's
 Cloudflare account; the only lever that rebuilds one changes nameservers on
 domains that are actively sending.
+
+An unchanged critical domain/issue combination alerts at most once every seven
+days. A different issue remains immediately alertable.
 
 ## Two exemption mechanisms exist
 

@@ -109,11 +109,13 @@ export interface AppState {
 
 export interface SpendApprovalRecord {
   id: string;
+  /** Stable logical request key; cycles get unique ids after consumption. */
+  requestKey?: string;
   kind: string;
   description: string;
   detail: Record<string, unknown>;
   requestedAt: string;
-  status: "pending" | "approved" | "denied";
+  status: "pending" | "approved" | "denied" | "consumed";
   decidedAt?: string;
   decidedBy?: string;
 }
@@ -272,6 +274,14 @@ export class StateStore {
     return this.state.spendApprovals[id];
   }
 
+  getLatestSpendApprovalForRequest(
+    requestKey: string,
+  ): SpendApprovalRecord | undefined {
+    return Object.values(this.state.spendApprovals)
+      .filter((record) => (record.requestKey ?? record.id) === requestKey)
+      .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
+  }
+
   upsertSpendApproval(record: SpendApprovalRecord): void {
     this.state.spendApprovals[record.id] = record;
   }
@@ -287,10 +297,19 @@ export class StateStore {
     decidedBy?: string,
   ): SpendApprovalRecord | undefined {
     const record = this.state.spendApprovals[id];
-    if (!record) return undefined;
+    if (!record || record.status !== "pending") return undefined;
     record.status = status;
     record.decidedAt = new Date().toISOString();
     if (decidedBy) record.decidedBy = decidedBy;
+    return record;
+  }
+
+  /** Mark an approved request as spent; consumed approvals are never reusable. */
+  consumeSpendApproval(id: string): SpendApprovalRecord | undefined {
+    const record = this.state.spendApprovals[id];
+    if (!record || record.status !== "approved") return undefined;
+    record.status = "consumed";
+    record.decidedAt = new Date().toISOString();
     return record;
   }
 

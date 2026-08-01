@@ -57,6 +57,8 @@ export interface PoolMailboxRecord {
   smartleadAccountId?: number;
   firstName: string;
   lastName: string;
+  /** Hand-bought fleet that completed warmup before this app managed it. */
+  prewarmed?: boolean;
   status: PoolMailboxRecordStatus;
   warmedAt?: string;
   availableAt?: string;

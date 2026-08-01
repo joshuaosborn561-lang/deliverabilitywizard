@@ -114,6 +114,16 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
+  /** Explicit domains whose whole fleet was purchased pre-warmed. */
+  extraGenericDomains: z
+    .string()
+    .default("crosslaunchco.com,crossscaleco.com")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   /** Sub in warmed generics while originals recover (requires pool inventory in state). */
   enableRecoveryPool: boolFromEnv(false),
   /** Days of Smartlead-only warmup before a generic is free for swaps. */
@@ -222,6 +232,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
     extraGenericMailboxes:
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
+    extraGenericDomains:
+      env.EXTRA_GENERIC_DOMAINS ?? "crosslaunchco.com,crossscaleco.com",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,

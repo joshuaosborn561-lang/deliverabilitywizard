@@ -4,6 +4,7 @@ import {
   activeHoldUntilDate,
   daysSince,
   isActiveCampaignStatus,
+  isPrewarmedGeneric,
   warmupStartedAt,
 } from "../services/warmupGate.js";
 
@@ -45,5 +46,64 @@ describe("warmupGate helpers", () => {
       Date.parse("2026-07-22T12:00:00.000Z"),
     );
     assert.equal(days, 14);
+  });
+
+  it("exempts every mailbox on an explicit pre-warmed fleet domain", () => {
+    const result = isPrewarmedGeneric(
+      { id: 1, from_name: "Brianna Escobar" },
+      "escobar.br@crossscaleco.com",
+      {
+        extraGenericMailboxes: ["breanna escobar"],
+        extraGenericDomains: ["crossscaleco.com", "crosslaunchco.com"],
+      },
+      { getPoolMailbox: () => undefined },
+    );
+    assert.equal(result, true);
+  });
+
+  it("honors persisted pre-warmed state and fuzzy fleet names", () => {
+    const config = {
+      extraGenericMailboxes: ["breanna escobar"],
+      extraGenericDomains: [],
+    };
+    assert.equal(
+      isPrewarmedGeneric(
+        { id: 1, from_name: "Brianna Escobar" },
+        "alias@other.com",
+        config,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
+    assert.equal(
+      isPrewarmedGeneric(
+        { id: 2, from_name: "Different Person" },
+        "known@other.com",
+        { extraGenericMailboxes: [], extraGenericDomains: [] },
+        {
+          getPoolMailbox: () =>
+            ({
+              email: "known@other.com",
+              prewarmed: true,
+            }) as never,
+        },
+      ),
+      true,
+    );
+  });
+
+  it("does not exempt unrelated client mailboxes", () => {
+    assert.equal(
+      isPrewarmedGeneric(
+        { id: 1, from_name: "Marcus Escobar" },
+        "marcus@client.info",
+        {
+          extraGenericMailboxes: ["breanna escobar"],
+          extraGenericDomains: ["crossscaleco.com"],
+        },
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+    );
   });
 });

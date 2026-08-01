@@ -94,7 +94,11 @@ export class SpendGateway {
       return this.createPending(req, req.key);
     }
 
-    if (existing.status === "consumed") {
+    if (
+      existing.status === "consumed" ||
+      (existing.status === "denied" &&
+        existing.decidedBy === "monthly-cap")
+    ) {
       return this.createPending(req, `${req.key}:cycle:${Date.now()}`);
     }
 
@@ -109,6 +113,10 @@ export class SpendGateway {
     decision: SpendDecision,
     req: SpendRequest,
   ): Promise<void> {
+    const capFailure = this.checkClientCaps(req);
+    if (capFailure) {
+      throw new Error(`Spend blocked at execution time: ${capFailure}`);
+    }
     if (this.enabled) {
       const consumed = this.state.consumeSpendApproval(decision.record.id);
       if (!consumed) {

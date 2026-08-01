@@ -5,7 +5,6 @@ import { accountEmail } from "../clients/smartlead.js";
 import type { StateStore } from "../state/store.js";
 
 const DNS_ALERT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
-const DNS_DEDUPE_INITIALIZED_KEY = "dns-alert:dedupe-v1";
 
 /**
  * Standing DNS audit over every domain Smartlead actually sends from.
@@ -174,33 +173,22 @@ export class DnsAuditService {
     }
 
     if (opts.alert !== false && critical.length) {
-      if (!this.state.hasAlert(DNS_DEDUPE_INITIALIZED_KEY)) {
-        this.state.markAlert(DNS_DEDUPE_INITIALIZED_KEY);
-        for (const audit of critical) {
+      const alertable = critical.filter(
+        (audit) =>
+          !this.state.hasRecentAlert(
+            dnsAlertKey(audit),
+            DNS_ALERT_COOLDOWN_MS,
+          ),
+      );
+      if (alertable.length && (await this.alert(alertable))) {
+        for (const audit of alertable) {
           this.state.markAlert(dnsAlertKey(audit));
         }
         await this.state.save();
+      } else if (critical.length && !alertable.length) {
         console.log(
-          `[dns-audit] initialized alert dedupe with ${critical.length} current critical condition(s); Slack suppressed`,
+          `[dns-audit] suppressed ${critical.length} repeated critical alert(s) within 7-day cooldown`,
         );
-      } else {
-        const alertable = critical.filter(
-          (audit) =>
-            !this.state.hasRecentAlert(
-              dnsAlertKey(audit),
-              DNS_ALERT_COOLDOWN_MS,
-            ),
-        );
-        if (alertable.length && (await this.alert(alertable))) {
-          for (const audit of alertable) {
-            this.state.markAlert(dnsAlertKey(audit));
-          }
-          await this.state.save();
-        } else if (critical.length && !alertable.length) {
-          console.log(
-            `[dns-audit] suppressed ${critical.length} repeated critical alert(s) within 7-day cooldown`,
-          );
-        }
       }
     }
     return result;

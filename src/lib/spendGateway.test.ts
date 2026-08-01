@@ -175,6 +175,24 @@ describe("SpendGateway", () => {
     });
     assert.equal(repeated.record.id, decision.record.id);
     assert.equal(sent.length, 1, "an unchanged cap block must not spam Slack");
+
+    // A monthly-cap denial is not permanent across a new usage window.
+    state.getClientMonthlyUsage(null, "Client A").mailboxesCreated = 0;
+    const afterReset = await gateway.authorize({
+      key: "client-buy",
+      scope: "client",
+      kind: "client_mailboxes",
+      description: "Buy two client mailboxes",
+      clientSpend: {
+        clientId: null,
+        clientName: "Client A",
+        mailboxesCreated: 2,
+        domainCapUsd: 25,
+        mailboxCap: 25,
+      },
+    });
+    assert.equal(afterReset.record.status, "pending");
+    assert.notEqual(afterReset.record.id, decision.record.id);
   });
 
   it("refuses client spend without mandatory cap metadata", async () => {
@@ -219,6 +237,38 @@ describe("SpendGateway", () => {
     const usage = state.getClientMonthlyUsage(1, "Client A");
     assert.equal(usage.domainSpendUsd, 3.6);
     assert.equal(usage.mailboxesCreated, 5);
+  });
+
+  it("rechecks caps atomically when consuming an approved spend", async () => {
+    const state = fakeState();
+    const { client } = fakeSlack();
+    const gateway = new SpendGateway(state, client, true);
+    const request = {
+      key: "client-race",
+      scope: "client" as const,
+      kind: "client_mailboxes",
+      description: "Buy client mailboxes",
+      clientSpend: {
+        clientId: 1,
+        clientName: "Client A",
+        mailboxesCreated: 2,
+        domainCapUsd: 25,
+        mailboxCap: 25,
+      },
+    };
+    const pending = await gateway.authorize(request);
+    state.decideSpendApproval(pending.record.id, "approved");
+    const approved = await gateway.authorize(request);
+    state.recordMailboxCreates(1, "Client A", 24);
+
+    await assert.rejects(
+      () => gateway.consume(approved, request),
+      /blocked at execution time/i,
+    );
+    assert.equal(
+      state.getSpendApproval(approved.record.id)?.status,
+      "approved",
+    );
   });
 
   it("keeps a denied spend blocked", async () => {

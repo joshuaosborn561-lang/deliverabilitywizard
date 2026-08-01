@@ -415,6 +415,12 @@ export class CampaignTopUpService {
           console.warn(
             `[top-up] ${pool.email} → #${campaign.id}: ${message}`,
           );
+          // If compensation itself failed, Smartlead's live membership is
+          // uncertain. Quarantine this mailbox for the remainder of the run
+          // instead of repeatedly mutating the same partial state.
+          if (/rollback incomplete/i.test(message)) {
+            selectedThisRun.add(pool.email.toLowerCase());
+          }
           consecutiveFailures += 1;
           // One failure is usually a rate limit or a transient 5xx, and
           // abandoning the campaign over it leaves it short until the next

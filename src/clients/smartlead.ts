@@ -147,6 +147,26 @@ export class SmartleadClient {
     });
   }
 
+  /**
+   * Daily sending ceiling for a mailbox.
+   *
+   * PATCH, and the field is max_email_per_day — the account POST endpoint
+   * rejects a limit field outright ("message_per_day is not allowed").
+   * Smartlead splits this ceiling between warmup and campaign sends, topping
+   * warmup back up when campaign volume falls.
+   */
+  setDailySendLimit(
+    emailAccountId: number,
+    maxEmailPerDay: number,
+  ): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `email-accounts/${emailAccountId}`,
+      { method: "PATCH", body: { max_email_per_day: maxEmailPerDay } },
+    );
+  }
+
   configureWarmup(
     emailAccountId: number,
     settings: {
@@ -174,7 +194,6 @@ export class SmartleadClient {
       signature?: string;
       from_name?: string;
       client_id?: number | null;
-      message_per_day?: number;
     },
   ): Promise<unknown> {
     return apiRequest(

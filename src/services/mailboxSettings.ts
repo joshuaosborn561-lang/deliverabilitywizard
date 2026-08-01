@@ -69,7 +69,8 @@ export class MailboxSettingsService {
 
       // Only write when the value differs — 1,241 needless writes per run
       // would trip the limiter and buy nothing.
-      const current = (account as { message_per_day?: number }).message_per_day;
+      const current = (account as { max_email_per_day?: number })
+        .max_email_per_day;
       const needsLimit = current !== target;
       const warmup = (account as { warmup_details?: { status?: string } | null })
         .warmup_details;
@@ -80,9 +81,7 @@ export class MailboxSettingsService {
 
       try {
         if (!dryRun && needsLimit) {
-          await this.smartlead.updateEmailAccount(account.id, {
-            message_per_day: target,
-          });
+          await this.smartlead.setDailySendLimit(account.id, target);
           await sleep(150);
         }
         if (needsLimit) result.sendLimitSet += 1;

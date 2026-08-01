@@ -54,17 +54,21 @@ export function createOpsRouter(opts: {
     target?: string,
     detail?: string,
   ) => {
-    opts.state.appendOpsAudit({
-      id: randomUUID(),
-      at: new Date().toISOString(),
-      actor: session.username,
-      role: session.role,
-      action,
-      target,
-      outcome,
-      detail: detail?.slice(0, 500),
-    });
-    await opts.state.save();
+    try {
+      opts.state.appendOpsAudit({
+        id: randomUUID(),
+        at: new Date().toISOString(),
+        actor: session.username,
+        role: session.role,
+        action,
+        target,
+        outcome,
+        detail: detail?.slice(0, 500),
+      });
+      await opts.state.save();
+    } catch (error) {
+      console.error("[ops] Failed to persist audit record", error);
+    }
   };
 
   const requireSession = (

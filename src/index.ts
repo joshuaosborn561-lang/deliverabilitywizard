@@ -440,7 +440,6 @@ async function main(): Promise<void> {
     }),
   );
   const opsPublicDir = path.resolve(__dirname, "../public/ops");
-  app.get("/ops", (_req, res) => res.redirect(302, "/ops/"));
   app.use(
     "/ops",
     express.static(opsPublicDir, {

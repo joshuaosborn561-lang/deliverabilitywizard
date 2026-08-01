@@ -1,6 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isExcluded } from "./campaignTopUp.js";
+import { loadConfig } from "../config.js";
+import type { SlackClient } from "../clients/slack.js";
+import type { SmartleadClient } from "../clients/smartlead.js";
+import type {
+  PoolMailboxRecord,
+  StateStore,
+} from "../state/store.js";
+import { CampaignTopUpService, isExcluded } from "./campaignTopUp.js";
 
 describe("isExcluded", () => {
   const msrs = { id: 3628940, name: "MSRS2 Ticket Offer Property Manager" };
@@ -33,5 +40,174 @@ describe("isExcluded", () => {
   it("handles a missing campaign name", () => {
     assert.equal(isExcluded({ id: 1, name: null }, ["msrs"]), false);
     assert.equal(isExcluded({ id: 1, name: null }, ["1"]), true);
+  });
+});
+
+function fakeSlack(): SlackClient {
+  return { send: async () => undefined } as unknown as SlackClient;
+}
+
+function fakeState(
+  pool: PoolMailboxRecord,
+  activeSwapPoolEmails: string[] = [],
+): { state: StateStore; current: () => PoolMailboxRecord } {
+  let current = { ...pool };
+  const state = {
+    listPoolMailboxes: () => [current],
+    listActiveSwaps: () =>
+      activeSwapPoolEmails.map((poolEmail, index) => ({
+        originalEmail: `original-${index}@client.info`,
+        originalAccountId: 1000 + index,
+        poolEmail,
+        poolAccountId: current.smartleadAccountId!,
+        clientId: 1,
+        clientName: "Client",
+        campaignIds: [1],
+        swappedAt: new Date().toISOString(),
+        poolPlatform: current.platform,
+      })),
+    findReassignablePoolMailbox: (
+      platforms: Array<"GOOGLE" | "MICROSOFT">,
+      canTake: (email: string) => boolean,
+    ) =>
+      platforms.includes(current.platform) &&
+      ["available", "assigned"].includes(current.status) &&
+      canTake(current.email)
+        ? current
+        : undefined,
+    upsertPoolMailbox: (record: PoolMailboxRecord) => {
+      current = { ...record };
+    },
+    save: async () => undefined,
+  } as unknown as StateStore;
+  return { state, current: () => current };
+}
+
+describe("CampaignTopUpService safety", () => {
+  it("never selects a generic dedicated to an active recovery swap", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "swap@pool.info",
+      domain: "pool.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Swap",
+      lastName: "Sender",
+      status: "assigned",
+    };
+    const { state } = fakeState(pool, [pool.email]);
+    let addCalls = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Thin", status: "ACTIVE", client_id: 2 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          from_name: "Swap Sender",
+          type: "GMAIL",
+          campaign_ids: [],
+        },
+      ],
+      listClients: async () => [{ id: 2, name: "Client B" }],
+      addEmailAccountsToCampaign: async () => {
+        addCalls += 1;
+      },
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(addCalls, 0);
+    assert.equal(result.assigned.length, 0);
+    assert.equal(result.unfilled[0]?.shortBy, 50);
+  });
+
+  it("rolls back donor and target membership before retrying a failed move", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "move@pool.info",
+      domain: "pool.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Move",
+      lastName: "Sender",
+      status: "assigned",
+      assignedClientId: 1,
+    };
+    const { state, current } = fakeState(pool);
+    const donorAccounts = Array.from({ length: 50 }, (_, index) => ({
+      id: 100 + index,
+      from_email: `donor-${index}@client-a.info`,
+      type: "GMAIL",
+      campaign_ids: [1],
+    }));
+    const events: string[] = [];
+    let brandingAttempts = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Donor", status: "ACTIVE", client_id: 1 },
+        { id: 2, name: "Receiver", status: "ACTIVE", client_id: 2 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          from_name: "Old Sender",
+          signature: "Old signature",
+          client_id: 1,
+          type: "GMAIL",
+          campaign_ids: [1],
+        },
+        ...donorAccounts,
+      ],
+      listClients: async () => [
+        { id: 1, name: "Client A" },
+        { id: 2, name: "Client B" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number) => {
+        events.push(`add:${campaignId}`);
+      },
+      removeEmailAccountsFromCampaign: async (campaignId: number) => {
+        events.push(`remove:${campaignId}`);
+      },
+      updateEmailAccount: async (
+        _accountId: number,
+        fields: { signature?: string },
+      ) => {
+        events.push(`identity:${fields.signature}`);
+        if (fields.signature !== "Old signature" && brandingAttempts++ === 0) {
+          throw new Error("transient branding failure");
+        }
+      },
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.deepEqual(events.slice(0, 6), [
+      "add:2",
+      "remove:1",
+      "identity:Move Sender\nClient B",
+      "remove:2",
+      "add:1",
+      "identity:Old signature",
+    ]);
+    assert.equal(
+      events.filter((event) => event === "add:2").length,
+      2,
+      "move should retry only after the first attempt was compensated",
+    );
+    assert.equal(result.assigned.length, 1);
+    assert.equal(result.assigned[0]?.movedFrom[0], 1);
+    assert.equal(current().assignedClientId, 2);
+    assert.equal(current().status, "assigned");
   });
 });

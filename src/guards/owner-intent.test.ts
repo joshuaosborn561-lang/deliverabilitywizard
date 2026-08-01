@@ -102,7 +102,7 @@ describe("owner intent", () => {
     );
   });
 
-  it("D7: campaign top-up is on with a sender floor", () => {
+  it("D7: campaign top-up is on with a 50-sender floor", () => {
     assert.equal(
       defaults.enableCampaignTopUp,
       true,
@@ -111,11 +111,12 @@ describe("owner intent", () => {
         "Top-up now defaults off, so a campaign that launches thin stays thin.",
       ),
     );
-    assert.ok(
-      defaults.minCampaignSenders > 0,
+    assert.equal(
+      defaults.minCampaignSenders,
+      50,
       stop(
-        "Active campaigns are held at a minimum sender count (D7).",
-        "The floor is now zero, which disables top-up in practice.",
+        "Active campaigns are held at 50 senders (D7).",
+        `The floor is now ${defaults.minCampaignSenders}, changing live campaign staffing.`,
       ),
     );
   });

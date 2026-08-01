@@ -82,7 +82,7 @@ const ConfigSchema = z.object({
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
   /** Pull a sender off campaigns above this bounce rate (percent). */
   /** Every active campaign should carry at least this many senders. */
-  minCampaignSenders: z.coerce.number().int().min(0).default(30),
+  minCampaignSenders: z.coerce.number().int().min(0).default(50),
   enableCampaignTopUp: boolFromEnv(true),
   /** Daily campaign send cap held on every mailbox. */
   messagePerDay: z.coerce.number().int().min(1).default(30),
@@ -204,7 +204,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
-    minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "30",
+    minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,

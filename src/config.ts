@@ -159,6 +159,14 @@ const ConfigSchema = z.object({
   port: z.coerce.number().int().positive().default(3000),
   host: z.string().default("0.0.0.0"),
   runToken: z.string().optional().default(""),
+  /** Authenticated human operations console at /ops. */
+  opsUiEnabled: boolFromEnv(true),
+  opsOwnerUsername: z.string().min(1).default("josh"),
+  opsOperatorUsername: z.string().min(1).default("cayden"),
+  opsOwnerToken: z.string().default(""),
+  opsOperatorToken: z.string().default(""),
+  opsSessionSecret: z.string().default(""),
+  opsSessionHours: z.coerce.number().int().positive().max(168).default(12),
   dryRun: boolFromEnv(false),
 });
 
@@ -232,6 +240,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: env.PORT ?? "3000",
     host: env.HOST ?? "0.0.0.0",
     runToken: env.RUN_TOKEN ?? "",
+    opsUiEnabled: env.OPS_UI_ENABLED,
+    opsOwnerUsername: env.OPS_OWNER_USERNAME ?? "josh",
+    opsOperatorUsername: env.OPS_OPERATOR_USERNAME ?? "cayden",
+    opsOwnerToken: env.OPS_OWNER_TOKEN ?? "",
+    opsOperatorToken: env.OPS_OPERATOR_TOKEN ?? "",
+    opsSessionSecret: env.OPS_SESSION_SECRET ?? "",
+    opsSessionHours: env.OPS_SESSION_HOURS ?? "12",
     dryRun: env.DRY_RUN,
   });
 

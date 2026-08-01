@@ -49,3 +49,25 @@ describe("spend approval state", () => {
     );
   });
 });
+
+describe("ops audit state", () => {
+  it("keeps a bounded newest-first operations history", async () => {
+    const state = new StateStore(
+      `/tmp/dw-ops-audit-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    for (let index = 0; index < 505; index += 1) {
+      state.appendOpsAudit({
+        id: String(index),
+        at: new Date(2026, 0, 1, 0, 0, index).toISOString(),
+        actor: "cayden",
+        role: "operator",
+        action: "status",
+        outcome: "success",
+      });
+    }
+    assert.equal(state.get().opsAudit.length, 500);
+    assert.equal(state.listOpsAudit(1)[0]?.id, "504");
+    assert.equal(state.get().opsAudit[0]?.id, "5");
+  });
+});

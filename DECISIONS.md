@@ -324,3 +324,29 @@ still said 30 senders. Josh reconfirmed both values during the safety review.
 
 **Guard.** `D7: campaign top-up is on with a 50-sender floor` and
 `D11: mailbox send cap is 30 per day`
+
+---
+
+## D18 — Employee chat is an allowlisted operations console, not a shell
+
+**Decision.** Cayden may use `/ops` daily to check deliverability, campaign
+coverage, DNS, reconnect mailboxes, and preview/confirm a single safe mailbox
+rotation. The console explains and refuses anything outside that allowlist.
+
+Owner-only or unavailable in chat:
+
+- Spending and approval decisions
+- Domain/mailbox deletion or purge
+- Warmup/hold bypasses
+- Fleet threshold, 50-sender floor or 30/day changes
+- Bulk remediation
+- Code, Git, shell and deployment
+
+**Why.** Cayden needs daily operational access without production credentials
+or code access. A free-form agent with Railway/Porkbun/InboxKit secrets would
+give an employee the ability to spend or override safety policy.
+
+**Tradeoff.** Unrecognized requests require a code-reviewed operation to be
+added to the allowlist. Accepted.
+
+**Guards.** `ops chat policy`, `OpsAuth`, and `ManualRotationService`.

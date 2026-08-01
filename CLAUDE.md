@@ -139,6 +139,17 @@ the $25 domain / 25 mailbox monthly-cap metadata; omitting it is a hard block.
 state. They require `RUN_TOKEN`; when no token is configured they stay disabled,
 not public. `/health` is the only unauthenticated operational endpoint.
 
+`/ops` is the employee surface. It uses independent owner/operator login keys,
+signed HttpOnly sessions, CSRF protection, role checks and a persisted audit
+log. Cayden's chat is an operation allowlist—not an LLM with shell, code,
+deployment or raw production-secret access. Add a new chat action only with
+explicit validation and a focused test.
+
+Cayden may check placement/campaigns/DNS, reconnect mailboxes and perform a
+confirmed one-mailbox rotation when every runtime precondition passes. Spending,
+approval decisions, destructive teardown, safety-policy changes, bulk
+remediation and deployment remain unavailable to the operator.
+
 ## Campaign move safety
 
 A pool mailbox named in `activeSwaps` is reserved for that recovery and is not

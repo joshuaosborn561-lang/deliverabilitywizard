@@ -81,6 +81,17 @@ export interface ActiveSwapRecord {
   poolPlatform: "GOOGLE" | "MICROSOFT";
 }
 
+export interface OpsAuditRecord {
+  id: string;
+  at: string;
+  actor: string;
+  role: "owner" | "operator";
+  action: string;
+  target?: string;
+  outcome: "success" | "denied" | "error";
+  detail?: string;
+}
+
 export interface AppState {
   version: 1;
   lastScanAt: string | null;
@@ -105,6 +116,8 @@ export interface AppState {
   poolProvision: PoolProvisionState;
   /** Pending/decided real-money spend approvals (key = spend id) */
   spendApprovals: Record<string, SpendApprovalRecord>;
+  /** Human operations performed through the authenticated /ops console. */
+  opsAudit: OpsAuditRecord[];
 }
 
 export interface SpendApprovalRecord {
@@ -155,6 +168,7 @@ const EMPTY_STATE: AppState = {
   clientMonthlyUsage: {},
   poolProvision: { ...EMPTY_POOL_PROVISION },
   spendApprovals: {},
+  opsAudit: [],
 };
 
 export class StateStore {
@@ -182,6 +196,7 @@ export class StateStore {
           ...(parsed.poolProvision ?? {}),
         },
         spendApprovals: parsed.spendApprovals ?? {},
+        opsAudit: parsed.opsAudit ?? [],
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -311,6 +326,18 @@ export class StateStore {
     record.status = "consumed";
     record.decidedAt = new Date().toISOString();
     return record;
+  }
+
+  appendOpsAudit(record: OpsAuditRecord): void {
+    this.state.opsAudit.push(record);
+    // Keep state bounded while retaining enough history for daily operations.
+    if (this.state.opsAudit.length > 500) {
+      this.state.opsAudit.splice(0, this.state.opsAudit.length - 500);
+    }
+  }
+
+  listOpsAudit(limit = 100): OpsAuditRecord[] {
+    return this.state.opsAudit.slice(-Math.max(0, limit)).reverse();
   }
 
   getPoolProvision(): PoolProvisionState {

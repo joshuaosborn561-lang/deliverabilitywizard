@@ -90,6 +90,45 @@ Set `RUN_TOKEN` and pass header `X-Run-Token: <token>` for `/status`, `/run`
 and `/approvals/*`. Those routes return 503 when no token is configured;
 `/health` remains public.
 
+## Employee operations UI
+
+The Railway service hosts a private console at **`/ops`**. It gives Josh
+(`owner`) and Cayden (`operator`) separate signed sessions and a chat-style
+interface over an explicit operation allowlist.
+
+Allowlisted for Cayden:
+
+- Check placement/deliverability
+- Audit campaign sender counts and placement-test coverage
+- Audit SPF/DMARC/MX without changing DNS
+- Reconnect disconnected Smartlead mailboxes
+- Preview and confirm one-mailbox rotations
+
+A manual rotation revalidates immediately before writing: the original must be
+on an active, non-excluded campaign; the replacement must be idle, fully warmed
+and ESP-matched; active recovery swaps and client-branded cross-client moves
+are forbidden. The operation reserves the generic and compensates completed
+Smartlead writes if a later step fails.
+
+Chat refuses purchases, deletion/purge, spend decisions, policy/threshold
+changes, warmup bypasses, bulk remediation, code changes and deployment. Josh
+gets a separate owner-only approval panel. Every console action is persisted
+in the bounded audit log.
+
+Required Railway variables:
+
+```text
+OPS_UI_ENABLED=true
+OPS_OWNER_USERNAME=josh
+OPS_OPERATOR_USERNAME=cayden
+OPS_OWNER_TOKEN=<independent 32+ character secret>
+OPS_OPERATOR_TOKEN=<independent 32+ character secret>
+OPS_SESSION_SECRET=<independent 32+ character secret>
+OPS_SESSION_HOURS=12
+```
+
+Do not reuse `RUN_TOKEN` for either user's login.
+
 ## Spend approval gateway
 
 `REQUIRE_SPEND_APPROVAL` (default `true`) gates every action that spends real money/credits or destroys paid assets:

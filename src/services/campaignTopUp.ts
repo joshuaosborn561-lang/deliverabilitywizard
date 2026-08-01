@@ -10,7 +10,10 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { sleep } from "../lib/http.js";
-import { buildPoolSignature } from "../lib/poolSignature.js";
+import {
+  buildPoolSignature,
+  poolEspFromSmartleadType,
+} from "../lib/poolSignature.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -95,6 +98,22 @@ export class CampaignTopUpService {
     ]);
 
     const clientsById = new Map(clients.map((c) => [c.id, c]));
+    const campaignById = new Map(
+      (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
+    );
+    const accountByEmail = new Map(
+      (accounts as SmartleadAccountWithCampaigns[])
+        .map((account) => [accountEmail(account)?.toLowerCase(), account] as const)
+        .filter(
+          (row): row is [string, SmartleadAccountWithCampaigns] =>
+            Boolean(row[0]),
+        ),
+    );
+    const activeSwapPoolEmails = new Set(
+      this.state
+        .listActiveSwaps()
+        .map((swap) => swap.poolEmail.toLowerCase()),
+    );
     const senderCounts = new Map<number, number>();
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       if (!accountEmail(account)) continue;
@@ -105,6 +124,11 @@ export class CampaignTopUpService {
 
     const floor = this.config.minCampaignSenders;
     const excluded = this.config.topUpExcludeCampaigns;
+    const excludedCampaignIds = new Set(
+      (campaigns as SmartleadCampaign[])
+        .filter((campaign) => isExcluded(campaign, excluded))
+        .map((campaign) => campaign.id),
+    );
 
     // Live counts, decremented as senders are pulled, so a run cannot strip a
     // donor campaign below the floor across several moves.
@@ -152,16 +176,26 @@ export class CampaignTopUpService {
         .map((c) => c.id),
     );
     for (const row of this.state.listPoolMailboxes()) {
+      // A recovery swap is a dedicated one-for-one assignment until the
+      // original recovers. Campaign balancing must never steal it.
+      if (activeSwapPoolEmails.has(row.email.toLowerCase())) continue;
       const on = (campaignsByEmail.get(row.email.toLowerCase()) ?? []).filter(
         (id) => activeIds.has(id),
       );
       if (on.length < 2 || !row.smartleadAccountId) continue;
+      // Exclusions mean "do not mutate this campaign", including cleanup.
+      if (on.some((id) => excludedCampaignIds.has(id))) {
+        result.skipped.push(
+          `${row.email} duplicate cleanup (serves excluded campaign)`,
+        );
+        continue;
+      }
 
       // Keep the campaign whose client the mailbox is currently branded for;
       // if that is unknowable, keep the one it was most recently assigned to.
       const keep =
         on.find((id) => {
-          const c = (campaigns as SmartleadCampaign[]).find((x) => x.id === id);
+          const c = campaignById.get(id);
           return (
             row.assignedClientId != null &&
             typeof c?.client_id === "number" &&
@@ -169,6 +203,7 @@ export class CampaignTopUpService {
           );
         }) ?? on[on.length - 1]!;
 
+      const remaining = new Set(on);
       for (const id of on) {
         if (id === keep) continue;
         try {
@@ -179,13 +214,14 @@ export class CampaignTopUpService {
             await sleep(250);
           }
           projected.set(id, (projected.get(id) ?? 1) - 1);
+          remaining.delete(id);
           result.released.push({ campaignId: id, email: row.email });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           result.errors.push(`release ${row.email} from ${id}: ${message}`);
         }
       }
-      campaignsByEmail.set(row.email.toLowerCase(), [keep]);
+      campaignsByEmail.set(row.email.toLowerCase(), [...remaining]);
     }
     if (result.released.length) {
       console.log(
@@ -208,6 +244,7 @@ export class CampaignTopUpService {
       return result;
     }
 
+    const selectedThisRun = new Set<string>();
     for (const { campaign, senders } of needy) {
       const clientId =
         typeof campaign.client_id === "number" ? campaign.client_id : null;
@@ -216,6 +253,16 @@ export class CampaignTopUpService {
         : "Unassigned / Agency";
       const brand =
         clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName;
+      const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
+      for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+        if (!campaignIdsOf(account).includes(campaign.id)) continue;
+        const platform = poolEspFromSmartleadType(account.type);
+        if (platform) espCounts[platform] += 1;
+      }
+      const platformOrder: Array<"GOOGLE" | "MICROSOFT"> =
+        espCounts.MICROSOFT > espCounts.GOOGLE
+          ? ["MICROSOFT", "GOOGLE"]
+          : ["GOOGLE", "MICROSOFT"];
 
       let placed = 0;
       let consecutiveFailures = 0;
@@ -227,8 +274,16 @@ export class CampaignTopUpService {
         // Match the campaign's existing ESP mix where we can; a Google
         // campaign sending through a Microsoft mailbox scores differently.
         const pool = this.state.findReassignablePoolMailbox(
-          ["GOOGLE", "MICROSOFT"],
-          (email) => email.toLowerCase() !== undefined && isReassignable(email),
+          platformOrder,
+          (email) => {
+            const key = email.toLowerCase();
+            return (
+              !activeSwapPoolEmails.has(key) &&
+              !selectedThisRun.has(key) &&
+              !(campaignsByEmail.get(key) ?? []).includes(campaign.id) &&
+              isReassignable(key)
+            );
+          },
         );
         if (!pool || !pool.smartleadAccountId) break;
 
@@ -240,40 +295,110 @@ export class CampaignTopUpService {
         const lastName = pool.lastName || "User";
 
         try {
+          const original = accountByEmail.get(pool.email.toLowerCase());
+          if (!original) {
+            throw new Error(
+              `${pool.email} is in pool state but missing from Smartlead inventory`,
+            );
+          }
+          const removedDonors: number[] = [];
+          let targetAdded = false;
+          let identityAttempted = false;
           if (!dryRun) {
-            await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
-              signature: buildPoolSignature({
-                firstName,
-                lastName,
-                clientBrand: brand,
-              }),
-              from_name: `${firstName} ${lastName}`,
-              ...(clientId != null ? { client_id: clientId } : {}),
-            });
-            await sleep(200);
-            // Release from the donor first. Adding without removing leaves the
-            // mailbox on both campaigns while carrying only the new client's
-            // signature, so the donor would send under the wrong brand.
-            for (const donorId of donors) {
-              await this.smartlead.removeEmailAccountsFromCampaign(donorId, [
+            try {
+              // Add first. If this fails, the donor is untouched. Subsequent
+              // failures are compensated below so the mailbox cannot be
+              // stranded between campaigns.
+              await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
                 pool.smartleadAccountId,
               ]);
-              projected.set(donorId, (projected.get(donorId) ?? 1) - 1);
+              targetAdded = true;
               await sleep(250);
-            }
-            await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
-              pool.smartleadAccountId,
-            ]);
-            projected.set(campaign.id, (projected.get(campaign.id) ?? 0) + 1);
-            campaignsByEmail.set(pool.email.toLowerCase(), [campaign.id]);
-            await sleep(300);
 
-            // Claim it immediately so the next iteration cannot hand the same
-            // mailbox to another campaign.
+              for (const donorId of donors) {
+                await this.smartlead.removeEmailAccountsFromCampaign(donorId, [
+                  pool.smartleadAccountId,
+                ]);
+                removedDonors.push(donorId);
+                await sleep(250);
+              }
+
+              identityAttempted = true;
+              await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
+                signature: buildPoolSignature({
+                  firstName,
+                  lastName,
+                  clientBrand: brand,
+                }),
+                from_name: `${firstName} ${lastName}`,
+                client_id: clientId,
+              });
+              await sleep(200);
+            } catch (moveError) {
+              const rollbackErrors: string[] = [];
+              if (targetAdded) {
+                try {
+                  await this.smartlead.removeEmailAccountsFromCampaign(
+                    campaign.id,
+                    [pool.smartleadAccountId],
+                  );
+                } catch (error) {
+                  rollbackErrors.push(
+                    `remove target: ${error instanceof Error ? error.message : String(error)}`,
+                  );
+                }
+              }
+              for (const donorId of removedDonors) {
+                try {
+                  await this.smartlead.addEmailAccountsToCampaign(donorId, [
+                    pool.smartleadAccountId,
+                  ]);
+                } catch (error) {
+                  rollbackErrors.push(
+                    `restore donor ${donorId}: ${error instanceof Error ? error.message : String(error)}`,
+                  );
+                }
+              }
+              if (identityAttempted && original) {
+                try {
+                  await this.smartlead.updateEmailAccount(
+                    pool.smartleadAccountId,
+                    {
+                      signature: original.signature ?? "",
+                      from_name:
+                        original.from_name ?? `${firstName} ${lastName}`,
+                      client_id: original.client_id ?? null,
+                    },
+                  );
+                } catch (error) {
+                  rollbackErrors.push(
+                    `restore identity: ${error instanceof Error ? error.message : String(error)}`,
+                  );
+                }
+              }
+              if (rollbackErrors.length) {
+                throw new Error(
+                  `${moveError instanceof Error ? moveError.message : String(moveError)}; rollback incomplete: ${rollbackErrors.join("; ")}`,
+                );
+              }
+              throw moveError;
+            }
+          }
+
+          for (const donorId of donors) {
+            projected.set(donorId, (projected.get(donorId) ?? 1) - 1);
+          }
+          projected.set(campaign.id, (projected.get(campaign.id) ?? 0) + 1);
+          campaignsByEmail.set(pool.email.toLowerCase(), [campaign.id]);
+          selectedThisRun.add(pool.email.toLowerCase());
+
+          if (!dryRun) {
             this.state.upsertPoolMailbox({
               ...pool,
               status: "assigned",
-              assignedClientId: clientId ?? undefined,
+              assignedClientId: clientId,
+              assignedClientName: clientName,
+              assignedAt: new Date().toISOString(),
             });
           }
           placed += 1;
@@ -290,6 +415,12 @@ export class CampaignTopUpService {
           console.warn(
             `[top-up] ${pool.email} → #${campaign.id}: ${message}`,
           );
+          // If compensation itself failed, Smartlead's live membership is
+          // uncertain. Quarantine this mailbox for the remainder of the run
+          // instead of repeatedly mutating the same partial state.
+          if (/rollback incomplete/i.test(message)) {
+            selectedThisRun.add(pool.email.toLowerCase());
+          }
           consecutiveFailures += 1;
           // One failure is usually a rate limit or a transient 5xx, and
           // abandoning the campaign over it leaves it short until the next

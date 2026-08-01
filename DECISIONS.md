@@ -257,3 +257,70 @@ These came up and have not been settled. Ask before acting on either.
   InboxKit's Cloudflare account. This is a property of what the code does not
   do, and a test asserting the absence of a capability would pass trivially
   forever. Stated here instead of pretended to be covered.
+
+---
+
+## D13 — Operational state and writes always require RUN_TOKEN
+
+**Decision.** `/status`, `/run`, and `/approvals/*` are disabled when
+`RUN_TOKEN` is absent and require the token when configured. `/health` remains
+public and contains no mailbox-level records.
+
+**Why.** Production `/status` exposed the full pool, held inboxes, client
+assignments and spend decisions without authentication.
+
+**Tradeoff.** Operators must carry the token for diagnostics. Accepted.
+
+---
+
+## D14 — Recovery swaps are reserved; campaign moves compensate failures
+
+**Decision.** A generic covering an active recovery swap cannot be taken by
+campaign top-up. Other generic moves add the receiver first and compensate
+every completed write if a later step fails.
+
+**Why.** Top-up previously selected any `assigned` generic and moved donors
+before proving the receiver write would succeed, which could break a recovery
+swap or strand a sender between campaigns.
+
+**Guard.** `CampaignTopUpService safety`
+
+---
+
+## D15 — Spend approvals are pending-only, single-use, and capped
+
+**Decision.** A denied approval cannot be reversed. An approved request is
+consumed only after the external action succeeds and can never authorize a
+later purchase. Client-scoped spend must include monthly-cap metadata and is
+hard-blocked above $25 domains / 25 mailboxes.
+
+**Why.** Approval records previously stayed approved forever and the documented
+monthly caps were not connected to the gateway.
+
+**Tradeoff.** A later recurrence of the same need requires a fresh approval.
+Accepted.
+
+**Guard.** `spend approval state` and `SpendGateway`
+
+---
+
+## D16 — Persistent DNS failures alert at most weekly
+
+**Decision.** A domain/issue combination alerts once, then has a seven-day
+cooldown. A changed issue is a new alert.
+
+**Why.** DNS runs every six hours; an unchanged SPF fault otherwise repeats
+four times a day.
+
+---
+
+## D17 — The campaign floor is 50; mailbox cap is 30/day
+
+**Decision.** The shipped fallback is 50 senders per active campaign and
+`max_email_per_day` remains 30.
+
+**Why.** D7 and D11 already recorded these values, but the config fallback
+still said 30 senders. Josh reconfirmed both values during the safety review.
+
+**Guard.** `D7: campaign top-up is on with a 50-sender floor` and
+`D11: mailbox send cap is 30 per day`

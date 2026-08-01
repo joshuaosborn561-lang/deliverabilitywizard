@@ -20,7 +20,11 @@ import {
 } from "../clients/smartlead.js";
 import { isRateLimitNoise } from "../lib/alertNoise.js";
 import { ApiError, sleep } from "../lib/http.js";
-import type { SpendGateway } from "../lib/spendGateway.js";
+import type {
+  SpendDecision,
+  SpendGateway,
+  SpendRequest,
+} from "../lib/spendGateway.js";
 import type { StateStore } from "../state/store.js";
 import {
   RecoveryPoolService,
@@ -302,12 +306,17 @@ export class RemediationService {
       const domainAccounts = accounts.filter(
         (a) => accountDomain(a) === domain,
       );
+      let teardownSpend:
+        | { decision: SpendDecision; request: SpendRequest }
+        | undefined;
+      let teardownFailed = false;
 
       // Deleting mailboxes and purging a domain destroys paid assets and forces
       // re-buying replacements — hold it for explicit human approval.
       if (!result.dryRun) {
-        const decision = await this.spendGateway.authorize({
+        const request: SpendRequest = {
           key: `teardown-domain:${domain}`,
+          scope: "destructive",
           kind: "blacklisted_domain_teardown",
           description: `Delete ${domainAccounts.length} Smartlead mailbox(es) on blacklisted domain ${domain} and purge the domain from InboxKit. Replacement domain + mailboxes will need to be bought.`,
           detail: {
@@ -317,13 +326,15 @@ export class RemediationService {
               .slice(0, 5)
               .map((a) => accountEmail(a) || `id:${a.id}`),
           },
-        });
+        };
+        const decision = await this.spendGateway.authorize(request);
         if (!decision.approved) {
           result.errors.push(
             `${domain}: teardown awaiting approval (${decision.record.status}) — see GET /approvals`,
           );
           continue;
         }
+        teardownSpend = { decision, request };
       }
 
       if (!this.state.hasRemediation(slKey) && !this.state.hasRemediation(legacyKey)) {
@@ -342,6 +353,7 @@ export class RemediationService {
             });
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            teardownFailed = true;
             result.errors.push(`delete SL account ${email}: ${message}`);
           }
         }
@@ -358,6 +370,7 @@ export class RemediationService {
             this.state.markRemediation(ikKey);
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            teardownFailed = true;
             // Domain may live outside InboxKit (Google Workspace, etc.)
             if (/not found|404/i.test(message)) {
               result.errors.push(
@@ -369,6 +382,7 @@ export class RemediationService {
             }
           }
         } else {
+          teardownFailed = true;
           result.errors.push(
             `InboxKit not configured — skipped purge for ${domain}`,
           );
@@ -377,6 +391,12 @@ export class RemediationService {
 
       // Keep legacy key so older monitors don't re-delete Smartlead accounts
       this.state.markRemediation(legacyKey);
+      if (teardownSpend && !teardownFailed) {
+        await this.spendGateway.consume(
+          teardownSpend.decision,
+          teardownSpend.request,
+        );
+      }
     }
 
     // 5) Recover low-inbox (non-blacklisted) senders: remove from ACTIVE campaigns + warmup + HOLD tag

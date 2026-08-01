@@ -285,12 +285,14 @@ export class PoolProvisioner {
               domain_name: row.domain,
             }));
             const spendKey = `pool-auto-${row.domain}-${row.platform}-n${need}-v5`;
-            const decision = await this.spendGateway.authorize({
+            const spendRequest = {
               key: spendKey,
+              scope: "generic_pool" as const,
               kind: "inboxkit_mailbox_purchase",
               description: `Buy ${need} ${row.platform} mailbox(es) on ${row.domain} using InboxKit wallet balance (generic recovery pool).`,
               detail: { domain: row.domain, platform: row.platform, count: need, workspaceId },
-            });
+            };
+            const decision = await this.spendGateway.authorize(spendRequest);
             if (!decision.approved) {
               pendingApprovals += 1;
               continue;
@@ -301,13 +303,28 @@ export class PoolProvisioner {
                 useWalletBalance: true,
                 idempotencyKey: spendKey,
               });
+              await this.spendGateway.consume(decision, spendRequest);
               stats[`bought:${row.domain}`] = need;
               await sleep(1200);
             } catch (error) {
               const message =
                 error instanceof Error ? error.message : String(error);
-              // Already ordered / processing is fine
-              if (!/already|duplicate|exist|limit/i.test(message)) {
+              // An idempotent duplicate means the approved purchase already
+              // executed; consume the approval so it cannot authorize a later
+              // batch with the same domain/platform/count.
+              if (/already|duplicate|exist/i.test(message)) {
+                try {
+                  await this.spendGateway.consume(decision, spendRequest);
+                } catch (consumeError) {
+                  errors.push(
+                    `consume approval ${spendKey}: ${
+                      consumeError instanceof Error
+                        ? consumeError.message
+                        : String(consumeError)
+                    }`,
+                  );
+                }
+              } else if (!/limit/i.test(message)) {
                 errors.push(`buy ${row.domain}: ${message}`);
               }
             }

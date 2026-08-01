@@ -94,6 +94,14 @@ export interface OpsAuditRecord {
   detail?: string;
 }
 
+export interface FleetSummarySnapshot {
+  generatedAt: string;
+  totalMailboxes: number;
+  sendingMailboxes: number;
+  activeCampaigns: number;
+  disconnectedMailboxes: number;
+}
+
 export interface AppState {
   version: 1;
   lastScanAt: string | null;
@@ -120,6 +128,8 @@ export interface AppState {
   spendApprovals: Record<string, SpendApprovalRecord>;
   /** Human operations performed through the authenticated /ops console. */
   opsAudit: OpsAuditRecord[];
+  /** Last successful Smartlead fleet census, used when live reads are throttled. */
+  fleetSummary: FleetSummarySnapshot | null;
 }
 
 export interface SpendApprovalRecord {
@@ -171,6 +181,7 @@ const EMPTY_STATE: AppState = {
   poolProvision: { ...EMPTY_POOL_PROVISION },
   spendApprovals: {},
   opsAudit: [],
+  fleetSummary: null,
 };
 
 export class StateStore {
@@ -199,6 +210,7 @@ export class StateStore {
         },
         spendApprovals: parsed.spendApprovals ?? {},
         opsAudit: parsed.opsAudit ?? [],
+        fleetSummary: parsed.fleetSummary ?? null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -344,6 +356,14 @@ export class StateStore {
 
   listOpsAudit(limit = 100): OpsAuditRecord[] {
     return this.state.opsAudit.slice(-Math.max(0, limit)).reverse();
+  }
+
+  setFleetSummary(summary: FleetSummarySnapshot): void {
+    this.state.fleetSummary = summary;
+  }
+
+  getFleetSummary(): FleetSummarySnapshot | null {
+    return this.state.fleetSummary;
   }
 
   getPoolProvision(): PoolProvisionState {

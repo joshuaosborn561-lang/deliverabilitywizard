@@ -45,6 +45,8 @@ export interface FleetSummary {
   mailboxesInRecovery: number;
   activeCampaigns: number;
   disconnectedMailboxes: number;
+  stale?: boolean;
+  error?: string;
 }
 
 function pct(value: number, total: number): number | undefined {
@@ -244,10 +246,33 @@ export class FleetSummaryService {
     ) {
       return this.cache.value;
     }
-    this.inFlight = this.load().finally(() => {
-      this.inFlight = null;
-    });
+    const persisted = this.fromPersisted();
+    if (!force && persisted) {
+      this.cache = { expiresAt: Date.now() + this.cacheMs, value: persisted };
+      return persisted;
+    }
+    this.inFlight = this.load()
+      .catch((error) => {
+        if (!persisted) throw error;
+        return {
+          ...persisted,
+          stale: true,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      })
+      .finally(() => {
+        this.inFlight = null;
+      });
     return this.inFlight;
+  }
+
+  private fromPersisted(): FleetSummary | null {
+    const snapshot = this.state.getFleetSummary();
+    if (!snapshot) return null;
+    return {
+      ...snapshot,
+      mailboxesInRecovery: this.state.listHeldInboxes().length,
+    };
   }
 
   private async load(): Promise<FleetSummary> {
@@ -283,6 +308,14 @@ export class FleetSummaryService {
           account.is_imap_success === false,
       ).length,
     };
+    this.state.setFleetSummary({
+      generatedAt: value.generatedAt,
+      totalMailboxes: value.totalMailboxes,
+      sendingMailboxes: value.sendingMailboxes,
+      activeCampaigns: value.activeCampaigns,
+      disconnectedMailboxes: value.disconnectedMailboxes,
+    });
+    await this.state.save();
     this.cache = { expiresAt: Date.now() + this.cacheMs, value };
     return value;
   }

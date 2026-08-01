@@ -202,6 +202,13 @@ export function createOpsRouter(opts: {
         fleet = await opts.runtime.fleet(
           String(req.query.force ?? "") === "1",
         );
+        if (
+          fleet &&
+          typeof fleet === "object" &&
+          typeof (fleet as { error?: unknown }).error === "string"
+        ) {
+          fleetError = (fleet as { error: string }).error;
+        }
       } catch (error) {
         fleetError = safeMessage(error);
         // Local state remains useful during a transient Smartlead outage.

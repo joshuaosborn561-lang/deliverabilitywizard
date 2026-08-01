@@ -150,8 +150,10 @@ export class SmartleadClient {
   /**
    * Daily sending ceiling for a mailbox.
    *
-   * PATCH, and the field is max_email_per_day — the account POST endpoint
-   * rejects a limit field outright ("message_per_day is not allowed").
+   * The field is max_email_per_day: message_per_day is rejected outright
+   * ("not allowed") and PATCH 404s, so it is POST on the account endpoint —
+   * the same route the signature update uses.
+   *
    * Smartlead splits this ceiling between warmup and campaign sends, topping
    * warmup back up when campaign volume falls.
    */
@@ -163,7 +165,7 @@ export class SmartleadClient {
       BASE_URL,
       this.apiKey,
       `email-accounts/${emailAccountId}`,
-      { method: "PATCH", body: { max_email_per_day: maxEmailPerDay } },
+      { method: "POST", body: { max_email_per_day: maxEmailPerDay } },
     );
   }
 

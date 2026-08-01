@@ -59,6 +59,7 @@
           </div>
           <nav>
             <button class="nav-item active" data-panel="overview">Overview</button>
+            <button class="nav-item" data-panel="placement">Placement</button>
             <button class="nav-item" data-panel="chat">Assistant</button>
             <button class="nav-item owner-only" data-panel="approvals">
               Approvals <span id="approval-badge" class="badge">0</span>
@@ -128,6 +129,51 @@
                 Reconnect mailboxes
               </button>
             </div>
+          </article>
+        </section>
+
+        <section id="placement-panel" class="panel">
+          <article class="surface">
+            <div class="section-heading placement-heading">
+              <div>
+                <p class="eyebrow">SmartDelivery</p>
+                <h3>Placement test results</h3>
+                <span id="placement-updated" class="muted"></span>
+              </div>
+              <div class="placement-controls">
+                <input
+                  id="placement-search"
+                  type="search"
+                  placeholder="Filter tests or campaigns"
+                  aria-label="Filter placement tests"
+                />
+                <button id="refresh-placement" class="ghost compact">
+                  Refresh live
+                </button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="placement-table">
+                <thead>
+                  <tr>
+                    <th><button data-sort="name">Test</button></th>
+                    <th><button data-sort="campaignName">Campaign</button></th>
+                    <th><button data-sort="status">Status</button></th>
+                    <th><button data-sort="inboxPercent">Inbox</button></th>
+                    <th><button data-sort="googleInboxPercent">Google</button></th>
+                    <th><button data-sort="microsoftInboxPercent">Microsoft</button></th>
+                    <th><button data-sort="spamPercent">Spam</button></th>
+                    <th><button data-sort="totalSeeds">Seeds</button></th>
+                    <th><button data-sort="createdAt">Date</button></th>
+                  </tr>
+                </thead>
+                <tbody id="placement-body"></tbody>
+              </table>
+              <p id="placement-empty" class="muted table-empty hidden">
+                No placement tests match this filter.
+              </p>
+            </div>
+            <p id="placement-errors" class="error"></p>
           </article>
         </section>
 

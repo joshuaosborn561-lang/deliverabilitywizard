@@ -173,6 +173,11 @@ Common optional vars:
 
 ## Local development
 
+Two-person workflow: read [CONTRIBUTING.md](CONTRIBUTING.md) before starting.
+Every task branches from current `main`, is claimed in Slack, and merges through
+a reviewed PR. Production deployment ownership is documented in
+[DEPLOYMENT.md](DEPLOYMENT.md).
+
 ```bash
 cp .env.example .env
 # fill in SMARTLEAD_API_KEY + SLACK_WEBHOOK_URL

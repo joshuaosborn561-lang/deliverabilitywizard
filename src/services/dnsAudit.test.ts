@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { classifyDomain, isCritical } from "./dnsAudit.js";
+import { classifyDomain, dnsAlertKey, isCritical } from "./dnsAudit.js";
 
 const ok = {
   txt: ["v=spf1 include:spf.protection.outlook.com -all"],
@@ -71,5 +71,16 @@ describe("classifyDomain", () => {
       txt: ["google-site-verification=abc", "v=spf1 include:_spf.google.com ~all"],
     });
     assert.deepEqual(a.issues, []);
+  });
+
+  it("uses a stable alert key independent of issue order", () => {
+    const a = classifyDomain("DUPE.info", 3, {
+      txt: [],
+      dmarc: [],
+      mx: [],
+    });
+    const reversed = { ...a, issues: [...a.issues].reverse() };
+    assert.equal(dnsAlertKey(a), dnsAlertKey(reversed));
+    assert.match(dnsAlertKey(a), /^dns-alert:dupe\.info:/);
   });
 });

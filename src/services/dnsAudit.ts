@@ -2,6 +2,10 @@ import { Resolver } from "node:dns/promises";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { accountEmail } from "../clients/smartlead.js";
+import type { StateStore } from "../state/store.js";
+
+const DNS_ALERT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+const DNS_DEDUPE_INITIALIZED_KEY = "dns-alert:dedupe-v1";
 
 /**
  * Standing DNS audit over every domain Smartlead actually sends from.
@@ -79,12 +83,19 @@ export function isCritical(audit: DomainAudit): boolean {
   return audit.issues.some((i) => CRITICAL.has(i));
 }
 
+export function dnsAlertKey(audit: DomainAudit): string {
+  return `dns-alert:${audit.domain.toLowerCase()}:${[...audit.issues]
+    .sort()
+    .join(",")}`;
+}
+
 export class DnsAuditService {
   private readonly resolver: Resolver;
 
   constructor(
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
+    private readonly state: StateStore,
     /** Public resolvers, so we see what receivers see - not a local cache. */
     nameservers: string[] = ["8.8.8.8", "1.1.1.1"],
     private readonly concurrency = 8,
@@ -163,12 +174,39 @@ export class DnsAuditService {
     }
 
     if (opts.alert !== false && critical.length) {
-      await this.alert(critical);
+      if (!this.state.hasAlert(DNS_DEDUPE_INITIALIZED_KEY)) {
+        this.state.markAlert(DNS_DEDUPE_INITIALIZED_KEY);
+        for (const audit of critical) {
+          this.state.markAlert(dnsAlertKey(audit));
+        }
+        await this.state.save();
+        console.log(
+          `[dns-audit] initialized alert dedupe with ${critical.length} current critical condition(s); Slack suppressed`,
+        );
+      } else {
+        const alertable = critical.filter(
+          (audit) =>
+            !this.state.hasRecentAlert(
+              dnsAlertKey(audit),
+              DNS_ALERT_COOLDOWN_MS,
+            ),
+        );
+        if (alertable.length && (await this.alert(alertable))) {
+          for (const audit of alertable) {
+            this.state.markAlert(dnsAlertKey(audit));
+          }
+          await this.state.save();
+        } else if (critical.length && !alertable.length) {
+          console.log(
+            `[dns-audit] suppressed ${critical.length} repeated critical alert(s) within 7-day cooldown`,
+          );
+        }
+      }
     }
     return result;
   }
 
-  private async alert(critical: DomainAudit[]): Promise<void> {
+  private async alert(critical: DomainAudit[]): Promise<boolean> {
     const lines = critical
       .slice(0, 20)
       .map((a) => `- ${a.domain} (${a.mailboxes} mailboxes): ${a.issues.join(", ")}`);
@@ -188,8 +226,10 @@ export class DnsAuditService {
           .filter(Boolean)
           .join("\n"),
       );
+      return true;
     } catch (error) {
       console.warn("[dns-audit] Slack alert failed", error);
+      return false;
     }
   }
 }

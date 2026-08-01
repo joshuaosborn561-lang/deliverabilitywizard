@@ -165,7 +165,7 @@ async function main(): Promise<void> {
     return reconcileInFlight;
   };
 
-  const dnsAudit = new DnsAuditService(smartlead, slack);
+  const dnsAudit = new DnsAuditService(smartlead, slack, state);
   const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
   const campaignTopUp = new CampaignTopUpService(
     config,
@@ -324,6 +324,27 @@ async function main(): Promise<void> {
   const app = express();
   app.use(express.json({ limit: "100kb" }));
 
+  // Operational state contains mailbox addresses, client assignments and
+  // spend decisions. Sensitive/read-write routes are disabled entirely when
+  // RUN_TOKEN is missing rather than silently becoming public.
+  const checkRunToken = (
+    req: express.Request,
+    res: express.Response,
+  ): boolean => {
+    if (!config.runToken) {
+      res.status(503).json({
+        error: "Protected route disabled: RUN_TOKEN is not configured",
+      });
+      return false;
+    }
+    const token = req.header("x-run-token") || "";
+    if (token !== config.runToken) {
+      res.status(401).json({ error: "Unauthorized" });
+      return false;
+    }
+    return true;
+  };
+
   app.get("/health", (_req, res) => {
     const s = state.get();
     res.json({
@@ -368,7 +389,8 @@ async function main(): Promise<void> {
     });
   });
 
-  app.get("/status", (_req, res) => {
+  app.get("/status", (req, res) => {
+    if (!checkRunToken(req, res)) return;
     res.json({
       state: state.get(),
       config: {
@@ -401,20 +423,16 @@ async function main(): Promise<void> {
         sequenceNumber: config.sequenceNumber,
         dryRun: config.dryRun,
         requireSpendApproval: config.requireSpendApproval,
+        minCampaignSenders: config.minCampaignSenders,
+        messagePerDay: config.messagePerDay,
+        enableCampaignTopUp: config.enableCampaignTopUp,
+        enforceMailboxSettings: config.enforceMailboxSettings,
+        enableBounceRotation: config.enableBounceRotation,
+        bounceRateThreshold: config.bounceRateThreshold,
+        minBounceSample: config.minBounceSample,
       },
     });
   });
-
-  const checkRunToken = (req: express.Request, res: express.Response): boolean => {
-    if (config.runToken) {
-      const token = req.header("x-run-token") || "";
-      if (token !== config.runToken) {
-        res.status(401).json({ error: "Unauthorized" });
-        return false;
-      }
-    }
-    return true;
-  };
 
   // Spend approval gateway: nothing that costs money/credits (currently
   // InboxKit mailbox purchases from the pool provisioner) executes until a

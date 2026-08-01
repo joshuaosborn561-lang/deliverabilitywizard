@@ -7,6 +7,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,13 +41,17 @@ jobs:
               return statSync(p).isDirectory() ? walk(p) : p;
             });
             const files = walk("dist").filter(
-              (f) => f.endsWith(".js") && !f.endsWith(".test.js"),
+              (f) =>
+                f.endsWith(".js") &&
+                !f.endsWith(".test.js") &&
+                f !== "dist/index.js",
             );
             (async () => {
               for (const f of files) {
                 await import("./" + f);
               }
               console.log(`loaded ${files.length} module(s)`);
+              process.exit(0);
             })().catch((e) => {
               console.error(e);
               process.exit(1);

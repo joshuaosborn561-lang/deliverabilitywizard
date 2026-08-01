@@ -6,7 +6,7 @@ import {
   type SmartleadClient,
 } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
-import { matchesMailboxIdentity } from "../lib/mailboxIdentity.js";
+import { MATCH_THRESHOLD, scoreNameMatch } from "../lib/nameMatch.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 
@@ -32,6 +32,25 @@ export interface WarmupGateResult {
   pausedCampaigns: number[];
   removals: WarmupGateRemoval[];
   errors: string[];
+}
+
+export function isPrewarmedGeneric(
+  account: SmartleadEmailAccount,
+  email: string,
+  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
+  state: Pick<StateStore, "getPoolMailbox">,
+): boolean {
+  const normalizedEmail = email.toLowerCase();
+  const domain = normalizedEmail.split("@")[1] ?? "";
+  if (config.extraGenericDomains.includes(domain)) return true;
+  if (state.getPoolMailbox(normalizedEmail)?.prewarmed === true) return true;
+  return config.extraGenericMailboxes.some(
+    (identifier) =>
+      scoreNameMatch(identifier, {
+        fromName: account.from_name,
+        email: normalizedEmail,
+      }).score >= MATCH_THRESHOLD,
+  );
 }
 
 /**
@@ -157,9 +176,11 @@ export class WarmupGateService {
         // Pre-warmed generics are already warm; Smartlead's warmup start date
         // reflects when warmup was last toggled, not their real age, so it must
         // not be used to pull them off live campaigns.
-        const prewarmed = matchesMailboxIdentity(
-          { ...account, ...(email.includes("@") ? { from_email: email } : {}) },
-          this.config.extraGenericMailboxes,
+        const prewarmed = isPrewarmedGeneric(
+          account,
+          email,
+          this.config,
+          this.state,
         );
 
         if (underWarmed && prewarmed) {

@@ -189,6 +189,7 @@ Common optional vars:
 | `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull non-blacklisted inboxes below this % for warmup |
 | `RECOVERY_HOLD_DAYS` | `14` | Warmup hold (2 weeks) before a pulled inbox may return to campaigns |
 | `EXTRA_GENERIC_MAILBOXES` | `harmony norris,breanna escobar` | Pre-warmed generics outside the `.info` plan (matched by email or `from_name`); registered swap-ready and exempt from the warmup gate |
+| `EXTRA_GENERIC_DOMAINS` | `crosslaunchco.com,crossscaleco.com` | Explicit whole-domain pre-warmed fleets; authoritative over unreliable Smartlead warmup dates/name variants |
 | `ENABLE_REMEDIATION` | `false` | When true, auto-delete blacklisted domains + recover low inboxes |
 | `ENABLE_RECOVERY_POOL` | `false` | Swap warmed generics into campaigns while originals recover |
 | `POOL_WARMUP_DAYS` | `14` | Days before a pool generic is free for swaps |

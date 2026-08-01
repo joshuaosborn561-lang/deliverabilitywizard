@@ -142,6 +142,12 @@ async function main(): Promise<void> {
   };
 
   const runPoolProvision = async () => {
+    if (manualRotationInFlight) {
+      console.log(
+        "[pool-provision] Manual rotation active — skipping overlapping trigger",
+      );
+      return { skipped: true as const, reason: "manual-rotation-active" };
+    }
     if (poolInFlight) {
       console.log("[pool-provision] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
@@ -242,6 +248,7 @@ async function main(): Promise<void> {
     if (
       manualRotationInFlight ||
       topUpInFlight ||
+      poolInFlight ||
       remediationInFlight ||
       monitorInFlight
     ) {

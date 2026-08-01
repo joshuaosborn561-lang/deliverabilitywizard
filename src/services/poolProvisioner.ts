@@ -826,7 +826,8 @@ export class PoolProvisioner {
     const out = { registered: [] as string[], unmatched: [] as string[], errors: [] as string[] };
     let inService = 0;
     const wanted = this.config.extraGenericMailboxes;
-    if (!wanted.length) return out;
+    const wantedDomains = new Set(this.config.extraGenericDomains);
+    if (!wanted.length && !wantedDomains.size) return out;
 
     let accounts: SmartleadAccountWithCampaigns[];
     try {
@@ -856,6 +857,17 @@ export class PoolProvisioner {
     );
     for (const [domain, count] of [...domainCounts].sort((a, b) => b[1] - a[1])) {
       console.log(`[census]   ${domain} ${count}`);
+    }
+
+    const matchedAccounts = new Map<number, SmartleadAccountWithCampaigns>();
+    for (const account of accounts) {
+      const domain = accountEmail(account)?.toLowerCase().split("@")[1] ?? "";
+      if (wantedDomains.has(domain)) matchedAccounts.set(account.id, account);
+    }
+    if (wantedDomains.size) {
+      console.log(
+        `[pool-provision] explicit pre-warmed domains matched ${matchedAccounts.size} mailbox(es): ${[...wantedDomains].join(", ")}`,
+      );
     }
 
     for (const want of wanted) {
@@ -893,64 +905,82 @@ export class PoolProvisioner {
       console.log(
         `[pool-provision] "${want}" matched ${matches.length} mailbox(es) (best: ${best!.candidate.email} via ${best!.reason} ${best!.score})`,
       );
-
       for (const { candidate } of matches) {
-        const match = candidate.account;
-        const email = accountEmail(match)?.toLowerCase();
-        if (!email) continue;
+        matchedAccounts.set(candidate.account.id, candidate.account);
+      }
+    }
 
-        const existing = this.state.getPoolMailbox(email);
-        if (existing) {
-          const live = campaignIdsOf(match).length > 0;
-          if (live) inService += 1;
+    let changed = false;
+    for (const match of matchedAccounts.values()) {
+      const email = accountEmail(match)?.toLowerCase();
+      if (!email) continue;
+
+      const existing = this.state.getPoolMailbox(email);
+      if (existing) {
+        const live = campaignIdsOf(match).length > 0;
+        if (live) inService += 1;
+        const reserved = existing.status === "provisioning";
+        const nextStatus = reserved
+          ? "provisioning"
+          : live
+            ? "assigned"
+            : "available";
+        const needsUpdate =
+          existing.prewarmed !== true ||
+          existing.smartleadAccountId !== match.id ||
+          existing.status !== nextStatus;
+        if (needsUpdate) {
           this.state.upsertPoolMailbox({
             ...existing,
+            prewarmed: true,
             smartleadAccountId: match.id,
-            // On a campaign wins over anything stored: a row left "available"
-            // while the mailbox is in service is what let the top-up hand a
-            // live sender to a second client.
-            status: live
-              ? "assigned"
-              : existing.status === "warming"
-                ? "available"
-                : existing.status,
-            ...(!live && existing.status === "warming"
-              ? { availableAt: new Date().toISOString() }
+            // An in-flight /ops reservation wins. Otherwise campaign linkage is
+            // authoritative and an idle pre-warmed fleet mailbox is available.
+            status: nextStatus,
+            ...(!reserved && !live
+              ? {
+                  availableAt:
+                    existing.availableAt ?? new Date().toISOString(),
+                }
               : {}),
           });
-          continue;
+          out.registered.push(email);
+          changed = true;
         }
-
-        const platform = poolEspFromSmartleadType(match.type);
-        if (!platform) {
-          out.errors.push(
-            `${email}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
-          );
-          continue;
-        }
-
-        const { firstName, lastName } = parsePersonName(
-          match.from_name || email.split("@")[0],
-        );
-        // A generic on a campaign may still be reassignable — the top-up
-        // decides that, because it depends on whether the source campaign
-        // would drop below its floor. Register the linkage and let it judge.
-        const onCampaign = campaignIdsOf(match).length > 0;
-        this.state.upsertPoolMailbox({
-          email,
-          domain: email.split("@")[1] ?? "",
-          platform,
-          smartleadAccountId: match.id,
-          firstName,
-          lastName,
-          // Hand-bought generics arrive pre-warmed; they owe no warmup here.
-          status: onCampaign ? "assigned" : "available",
-          warmedAt: new Date().toISOString(),
-          ...(onCampaign ? {} : { availableAt: new Date().toISOString() }),
-        });
-        if (onCampaign) inService += 1;
-        out.registered.push(email);
+        continue;
       }
+
+      const platform = poolEspFromSmartleadType(match.type);
+      if (!platform) {
+        out.errors.push(
+          `${email}: unknown ESP type (${match.type ?? "n/a"}) — cannot ESP-match swaps`,
+        );
+        continue;
+      }
+
+      const { firstName, lastName } = parsePersonName(
+        match.from_name || email.split("@")[0],
+      );
+      // A generic on a campaign may still be reassignable — the top-up
+      // decides that, because it depends on whether the source campaign
+      // would drop below its floor. Register the linkage and let it judge.
+      const onCampaign = campaignIdsOf(match).length > 0;
+      this.state.upsertPoolMailbox({
+        email,
+        domain: email.split("@")[1] ?? "",
+        platform,
+        smartleadAccountId: match.id,
+        firstName,
+        lastName,
+        prewarmed: true,
+        // Hand-bought generics arrive pre-warmed; they owe no warmup here.
+        status: onCampaign ? "assigned" : "available",
+        warmedAt: new Date().toISOString(),
+        ...(onCampaign ? {} : { availableAt: new Date().toISOString() }),
+      });
+      if (onCampaign) inService += 1;
+      out.registered.push(email);
+      changed = true;
     }
 
     if (inService) {
@@ -958,7 +988,7 @@ export class PoolProvisioner {
         `[pool-provision] ${inService} generic(s) already serving a campaign — held as assigned, not offered to top-up`,
       );
     }
-    if (out.registered.length || out.unmatched.length) {
+    if (changed || out.unmatched.length) {
       console.log("[pool-provision] extra generics", out);
       await this.state.save();
     }

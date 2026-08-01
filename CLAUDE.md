@@ -62,6 +62,11 @@ account matching at or above the match threshold is registered — matching only
 the best one stranded 198 pre-warmed generics. These arrive pre-warmed and are
 registered `available` immediately; they owe no warmup.
 
+`EXTRA_GENERIC_DOMAINS` is authoritative for those fleets: every mailbox on
+`crosslaunchco.com` and `crossscaleco.com` is pre-warmed. Do not rely on exact
+from-name spelling or Smartlead's reported warmup start; both have already
+caused live pre-warmed senders to be pulled.
+
 ## Sender identity
 
 **Never move a client-branded sender between campaigns.** Senders carry brand
@@ -171,13 +176,15 @@ domains that are actively sending.
 An unchanged critical domain/issue combination alerts at most once every seven
 days. A different issue remains immediately alertable.
 
-## Two exemption mechanisms exist
+## Warmup exemption mechanisms
 
-Both skip the warmup gate, and they are not equivalent:
+They are not equivalent:
 
 - `WARMUP-GATE-EXEMPT` tag (Smartlead, per mailbox) — skips **both** the
   under-warmed and `HOLD-UNTIL` checks
 - `EXTRA_GENERIC_MAILBOXES` (env, by name) — skips the pre-warmed check only
+- `EXTRA_GENERIC_DOMAINS` (env, whole dedicated fleet) — skips the pre-warmed
+  check only and is authoritative for known pre-warmed fleet domains
 
 Pick one deliberately. They have not been consolidated.
 

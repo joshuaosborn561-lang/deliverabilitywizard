@@ -253,9 +253,28 @@ async function loadPlacement(force = false) {
   renderPlacement();
 }
 
+function linkify(text) {
+  const fragment = document.createDocumentFragment();
+  const parts = String(text || "").split(/(https:\/\/cursor\.com\/agents\/[^\s)]+)/g);
+  for (const part of parts) {
+    if (/^https:\/\/cursor\.com\/agents\//.test(part)) {
+      const a = document.createElement("a");
+      a.href = part;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = part;
+      fragment.append(a);
+    } else if (part) {
+      fragment.append(document.createTextNode(part));
+    }
+  }
+  return fragment;
+}
+
 function addMessage(role, text, confirmation) {
   const messages = $("#messages");
-  const bubble = make("div", `message ${role}`, text);
+  const bubble = make("div", `message ${role}`);
+  bubble.append(linkify(text));
   bubble.append(make("small", "", role === "assistant" ? "Deliverability Ops" : state.user.username));
   messages.append(bubble);
   if (confirmation?.type === "rotate") {
@@ -268,6 +287,45 @@ function addMessage(role, text, confirmation) {
     messages.append(card);
   }
   messages.scrollTop = messages.scrollHeight;
+  return bubble;
+}
+
+function setBubbleText(bubble, text) {
+  const small = bubble.querySelector("small");
+  bubble.textContent = "";
+  bubble.append(linkify(text));
+  if (small) bubble.append(small);
+  else bubble.append(make("small", "", "Deliverability Ops"));
+  $("#messages").scrollTop = $("#messages").scrollHeight;
+}
+
+async function pollCursorRun(agentId, runId, bubble) {
+  const started = Date.now();
+  const maxMs = 10 * 60 * 1000;
+  while (Date.now() - started < maxMs) {
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    try {
+      const response = await api(`/cursor-run/${encodeURIComponent(agentId)}/${encodeURIComponent(runId)}`);
+      if (response.data?.pending) {
+        setBubbleText(
+          bubble,
+          `Still working in Cursor Grok 4.5 High Fast…\n${response.data.agentUrl || ""}`,
+        );
+        continue;
+      }
+      setBubbleText(bubble, response.message || "Done.");
+      return;
+    } catch (error) {
+      setBubbleText(
+        bubble,
+        `Couldn't read the Cursor answer yet (${error.message}). Keep this tab open — retrying…`,
+      );
+    }
+  }
+  setBubbleText(
+    bubble,
+    "Cursor is still running. Open the agent link above (or refresh later) — the answer may take a few more minutes.",
+  );
 }
 
 async function sendChat(message) {
@@ -277,43 +335,47 @@ async function sendChat(message) {
     !/^(help|commands|status|check |audit |reconnect|rotate |approvals)/i.test(
       message.trim(),
     );
-  addMessage(
+  const loading = addMessage(
     "assistant",
     looksFreeform
-      ? "Asking Cursor Grok 4.5 High Fast… this can take a minute."
+      ? "Starting Cursor Grok 4.5 High Fast…"
       : "Working…",
   );
-  const loading = $("#messages").lastElementChild;
   try {
     const response = await api("/chat", {
       method: "POST",
       body: JSON.stringify({ message }),
     });
-    loading.remove();
-    addMessage("assistant", response.message, response.confirmation);
-    if (response.data?.agentUrl) {
-      addMessage(
-        "assistant",
-        `Agent thread: ${response.data.agentUrl}${
-          response.data.model ? ` (${response.data.model})` : ""
-        }`,
-      );
+    if (response.confirmation) {
+      loading.remove();
+      addMessage("assistant", response.message, response.confirmation);
+      return;
     }
+    if (response.data?.pending && response.data.agentId && response.data.runId) {
+      setBubbleText(
+        loading,
+        [response.message || "Cursor is working…", "", "Waiting for the answer…"].join(
+          "\n",
+        ),
+      );
+      await pollCursorRun(response.data.agentId, response.data.runId, loading);
+      return;
+    }
+    setBubbleText(loading, response.message || "Done.");
     if (response.data?.refreshDashboard) await loadDashboard();
     if (response.data?.refreshApprovals) await loadApprovals();
     if (
       response.data &&
-      !response.confirmation &&
       !response.data.refreshDashboard &&
       !response.data.refreshApprovals &&
+      !response.data.pending &&
       !response.data.agentUrl
     ) {
       const summary = summarizeData(response.data);
       if (summary) addMessage("assistant", summary);
     }
   } catch (error) {
-    loading.remove();
-    addMessage("assistant", `Operation failed safely: ${error.message}`);
+    setBubbleText(loading, `Operation failed safely: ${error.message}`);
   }
 }
 

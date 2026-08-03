@@ -3,14 +3,26 @@ import type { CursorModelSelection } from "../clients/cursorCloud.js";
 import type { StateStore } from "../state/store.js";
 import type { OpsRole } from "./auth.js";
 
+export interface CursorAssistantStart {
+  agentId: string;
+  agentUrl: string;
+  runId: string;
+  status: string;
+  model: string;
+}
+
 export interface CursorAssistantResult {
   message: string;
   agentId: string;
-  agentUrl?: string;
+  agentUrl: string;
   runId: string;
   status: string;
   prUrls?: string[];
+  pending?: boolean;
+  model: string;
 }
+
+const MODEL_LABEL = "Cursor Grok 4.5 High Fast";
 
 function policyPreamble(actor: string, role: OpsRole): string {
   return [
@@ -38,6 +50,10 @@ function policyPreamble(actor: string, role: OpsRole): string {
   ].join("\n");
 }
 
+function agentUrlFor(id: string, url?: string): string {
+  return url || `https://cursor.com/agents/${id}`;
+}
+
 export class CursorAssistantService {
   constructor(
     private readonly client: CursorCloudClient,
@@ -50,33 +66,34 @@ export class CursorAssistantService {
     },
   ) {}
 
-  async ask(input: {
+  /**
+   * Start a Cursor run and return immediately so the Ops UI can poll.
+   * Holding the HTTP request open until the agent finishes often dies on
+   * Railway/browser timeouts — that looked like "never answered."
+   */
+  async start(input: {
     actor: string;
     role: OpsRole;
     message: string;
-  }): Promise<CursorAssistantResult> {
+  }): Promise<CursorAssistantStart> {
     const existingId = this.state.getOpsCursorAgentId(input.actor);
     const promptBody = input.message.trim();
 
     if (existingId) {
       try {
-        await this.client.getAgent(existingId);
+        const agent = await this.client.getAgent(existingId);
         const created = await this.client.createRun(existingId, {
           prompt: promptBody,
           mode: "agent",
         });
-        const run = await this.client.waitForRun(
-          existingId,
-          created.run.id,
-          { timeoutMs: this.options.timeoutMs },
-        );
-        const agent = await this.client.getAgent(existingId).catch(() => ({
-          id: existingId,
-          url: `https://cursor.com/agents/${existingId}`,
-        }));
-        return this.toResult(agent, run);
+        return {
+          agentId: existingId,
+          agentUrl: agentUrlFor(existingId, agent.url),
+          runId: created.run.id,
+          status: created.run.status,
+          model: MODEL_LABEL,
+        };
       } catch (error) {
-        // Stale/archived agent — start a fresh conversation.
         console.warn(
           `[ops-cursor] resume failed for ${existingId}; creating new agent`,
           error instanceof Error ? error.message : error,
@@ -98,12 +115,41 @@ export class CursorAssistantService {
     this.state.setOpsCursorAgentId(input.actor, created.agent.id);
     await this.state.save();
 
-    const run = await this.client.waitForRun(
-      created.agent.id,
-      created.run.id,
-      { timeoutMs: this.options.timeoutMs },
-    );
-    return this.toResult(created.agent, run);
+    return {
+      agentId: created.agent.id,
+      agentUrl: agentUrlFor(created.agent.id, created.agent.url),
+      runId: created.run.id,
+      status: created.run.status,
+      model: MODEL_LABEL,
+    };
+  }
+
+  async poll(
+    agentId: string,
+    runId: string,
+  ): Promise<CursorAssistantResult> {
+    const run = await this.client.getRun(agentId, runId);
+    const status = String(run.status || "").toUpperCase();
+    const agentUrl = agentUrlFor(agentId);
+    const terminal =
+      status === "FINISHED" ||
+      status === "ERROR" ||
+      status === "CANCELLED" ||
+      status === "EXPIRED";
+
+    if (!terminal) {
+      return {
+        pending: true,
+        message: `Still working in Cursor…\n${agentUrl}`,
+        agentId,
+        agentUrl,
+        runId,
+        status: run.status,
+        model: MODEL_LABEL,
+      };
+    }
+
+    return this.toResult({ id: agentId, url: agentUrl }, run);
   }
 
   private toResult(
@@ -115,8 +161,7 @@ export class CursorAssistantService {
       git?: { branches?: Array<{ prUrl?: string }> };
     },
   ): CursorAssistantResult {
-    const agentUrl =
-      agent.url || `https://cursor.com/agents/${agent.id}`;
+    const agentUrl = agentUrlFor(agent.id, agent.url);
     const status = String(run.status || "").toUpperCase();
     const prUrls = (run.git?.branches ?? [])
       .map((b) => b.prUrl)
@@ -125,15 +170,14 @@ export class CursorAssistantService {
     let message =
       (run.result && run.result.trim()) ||
       (status === "FINISHED"
-        ? "Done — see the Cursor agent for details."
+        ? "Done — open the Cursor agent for details."
         : `Cursor agent ended with status ${run.status}.`);
 
     const footer = [
       "",
-      `— Cursor Grok 4.5 High Fast · [open agent](${agentUrl})`,
-      prUrls.length
-        ? `PR: ${prUrls.slice(0, 3).join(", ")}`
-        : undefined,
+      `— ${MODEL_LABEL}`,
+      agentUrl,
+      prUrls.length ? `PR: ${prUrls.slice(0, 3).join(", ")}` : undefined,
     ]
       .filter(Boolean)
       .join("\n");
@@ -143,12 +187,14 @@ export class CursorAssistantService {
     }
 
     return {
+      pending: false,
       message,
       agentId: agent.id,
       agentUrl,
       runId: run.id,
       status: run.status,
       prUrls: prUrls.length ? prUrls : undefined,
+      model: MODEL_LABEL,
     };
   }
 }

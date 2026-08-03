@@ -35,6 +35,18 @@ export function addDaysIso(base: Date, days: number): string {
   return d.toISOString();
 }
 
+/**
+ * SmartDelivery requires `schedule_start_time` to be at/after its own clock
+ * at validation time. A timestamp equal to the moment this process generates
+ * it is already in the past by the time the request reaches their server, so
+ * every recurring test creation was rejected with "Schedule start time must
+ * be greater than or equal to the current date and time." Padding a few
+ * minutes forward absorbs network latency and clock skew between hosts.
+ */
+export function scheduleStartTime(bufferMinutes = 2, now = new Date()): string {
+  return new Date(now.getTime() + bufferMinutes * 60_000).toISOString();
+}
+
 export class CampaignScanner {
   constructor(
     private readonly config: AppConfig,
@@ -248,7 +260,7 @@ export class CampaignScanner {
             ? await this.smartDelivery.createAutomatedPlacement({
                 ...payload,
                 every_days: this.config.placementTestEveryDays,
-                schedule_start_time: new Date().toISOString(),
+                schedule_start_time: scheduleStartTime(),
                 ...(this.config.placementTestEndDays > 0
                   ? {
                       test_end_date: addDaysIso(

@@ -177,6 +177,49 @@ const ConfigSchema = z.object({
   opsOperatorToken: z.string().default(""),
   opsSessionSecret: z.string().default(""),
   opsSessionHours: z.coerce.number().int().positive().max(168).default(12),
+  /**
+   * Cursor Cloud Agents API key for freeform /ops chat (Grok 4.5 High Fast).
+   * When empty, unrecognized chat stays on the local allowlist help text.
+   */
+  cursorApiKey: z.string().default(""),
+  /** GitHub HTTPS URL the Ops Cursor agent works in. */
+  cursorAgentRepositoryUrl: z
+    .string()
+    .default("https://github.com/joshuaosborn561-lang/deliverabilitywizard"),
+  cursorAgentStartingRef: z.string().default("main"),
+  /** Model id from GET https://api.cursor.com/v1/models */
+  cursorAgentModelId: z.string().default("grok-4.5"),
+  /**
+   * Comma-separated model params as id=value (e.g. effort=high,fast=true).
+   * Default is Cursor Grok 4.5 High Fast.
+   */
+  cursorAgentModelParams: z
+    .string()
+    .default("effort=high,fast=true")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .map((part) => {
+          const eq = part.indexOf("=");
+          if (eq <= 0) return null;
+          return {
+            id: part.slice(0, eq).trim(),
+            value: part.slice(eq + 1).trim(),
+          };
+        })
+        .filter(
+          (p): p is { id: string; value: string } =>
+            Boolean(p && p.id && p.value),
+        ),
+    ),
+  /** Max wait for one Cursor agent turn before telling the UI to open the agent URL. */
+  cursorAgentTimeoutMs: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(480_000),
   dryRun: boolFromEnv(false),
 });
 
@@ -259,6 +302,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     opsOperatorToken: env.OPS_OPERATOR_TOKEN ?? "",
     opsSessionSecret: env.OPS_SESSION_SECRET ?? "",
     opsSessionHours: env.OPS_SESSION_HOURS ?? "12",
+    cursorApiKey: env.CURSOR_API_KEY ?? "",
+    cursorAgentRepositoryUrl:
+      env.CURSOR_AGENT_REPOSITORY_URL ??
+      "https://github.com/joshuaosborn561-lang/deliverabilitywizard",
+    cursorAgentStartingRef: env.CURSOR_AGENT_STARTING_REF ?? "main",
+    cursorAgentModelId: env.CURSOR_AGENT_MODEL_ID ?? "grok-4.5",
+    cursorAgentModelParams:
+      env.CURSOR_AGENT_MODEL_PARAMS ?? "effort=high,fast=true",
+    cursorAgentTimeoutMs: env.CURSOR_AGENT_TIMEOUT_MS ?? "480000",
     dryRun: env.DRY_RUN,
   });
 

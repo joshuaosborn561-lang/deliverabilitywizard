@@ -35,11 +35,11 @@ describe("ops chat policy", () => {
     );
   });
 
-  it("blocks policy bypasses and code/deploy commands for every role", () => {
+  it("blocks policy bypasses, bulk remediation, and direct production deploys", () => {
     for (const message of [
       "disable warmup safety",
       "change campaign sender limit to 10",
-      "deploy this code",
+      "deploy to production",
       "run remediation all",
     ]) {
       assert.equal(
@@ -48,5 +48,22 @@ describe("ops chat policy", () => {
         message,
       );
     }
+  });
+
+  it("routes freeform questions to the Cursor agent", () => {
+    assert.deepEqual(
+      classifyOpsMessage("why did scott get no google cover?", "operator"),
+      {
+        type: "ask_cursor",
+        message: "why did scott get no google cover?",
+      },
+    );
+    assert.deepEqual(
+      classifyOpsMessage("ask cursor: explain bounce rotation", "owner"),
+      {
+        type: "ask_cursor",
+        message: "explain bounce rotation",
+      },
+    );
   });
 });

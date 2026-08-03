@@ -146,9 +146,10 @@ not public. `/health` is the only unauthenticated operational endpoint.
 
 `/ops` is the employee surface. It uses independent owner/operator login keys,
 signed HttpOnly sessions, CSRF protection, role checks and a persisted audit
-log. Cayden's chat is an operation allowlist—not an LLM with shell, code,
-deployment or raw production-secret access. Add a new chat action only with
-explicit validation and a focused test.
+log. Fast chat commands stay allowlisted. Freeform chat (when `CURSOR_API_KEY`
+is set) goes to a Cursor Cloud Agent on **Grok 4.5 High Fast** — same style as
+Josh's agent — and may open PRs, but still cannot spend, purge, bypass safety
+gates, or deploy production directly (D18/D20).
 
 Cayden may check placement/campaigns/DNS, reconnect mailboxes and perform a
 confirmed one-mailbox rotation when every runtime precondition passes. Spending,

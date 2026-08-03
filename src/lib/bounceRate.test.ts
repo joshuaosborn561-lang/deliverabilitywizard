@@ -77,6 +77,28 @@ describe("parseSenderBounceStats", () => {
     assert.equal(stats.length, 1);
     assert.equal(stats[0]!.bounceRate, 11);
   });
+
+  it("parses Smartlead name-wise mailbox health metrics", () => {
+    // Documented shape from analytics/mailbox/name-wise-health-metrics.
+    const stats = parseSenderBounceStats({
+      ok: true,
+      data: {
+        email_health_metrics: [
+          {
+            email_account: "user@example.com",
+            sent: 500,
+            opened: 250,
+            replied: 30,
+            bounced: 5,
+          },
+        ],
+      },
+    });
+    assert.equal(stats.length, 1);
+    assert.equal(stats[0]!.email, "user@example.com");
+    assert.equal(stats[0]!.sent, 500);
+    assert.ok(Math.abs(stats[0]!.bounceRate - 1) < 1e-9);
+  });
 });
 
 describe("shouldRotateForBounces", () => {

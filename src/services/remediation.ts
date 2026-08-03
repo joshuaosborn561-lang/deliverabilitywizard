@@ -422,7 +422,7 @@ export class RemediationService {
     if (this.config.enableBounceRotation) {
       try {
         const stats = parseSenderBounceStats(
-          await this.smartlead.getAnalyticsOverview(),
+          await this.smartlead.getMailboxHealthMetrics(),
         );
         console.log(`[remediation] bounce stats parsed for ${stats.length} sender(s)`);
         for (const stat of stats) {
@@ -447,9 +447,6 @@ export class RemediationService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`bounce stats: ${message}`);
-        // Surface the failure rather than burying it in an error count — this
-        // endpoint's response shape was inferred from docs, not observed, so
-        // the reason it failed is the thing worth reading.
         console.warn(`[remediation] bounce stats unavailable: ${message}`);
       }
     }

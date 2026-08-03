@@ -31,14 +31,44 @@ export class SmartleadClient {
   }
 
   /**
-   * Per-sender bounce statistics.
+   * Per-sender bounce / health metrics (sent, opened, replied, bounced).
    *
-   * Placement tests cannot see this: seed inboxes accept mail, so a mailbox
-   * bouncing hard against real leads still scores a clean inbox rate. Shape
-   * varies by account, so the caller parses defensively.
+   * Placement tests cannot see bounce against real leads — seed inboxes
+   * accept mail — so remediation uses this independent signal. The official
+   * path is `analytics/mailbox/name-wise-health-metrics`; the older
+   * `analytics/overview` alias 404s on current Smartlead API versions.
+   *
+   * Defaults to an inclusive trailing 30-day window (Smartlead's typical
+   * analytics max span) and `full_data=true` so we get every mailbox, not a
+   * truncated page. Caller parses the envelope defensively.
    */
-  async getAnalyticsOverview(): Promise<unknown> {
-    return apiRequest<unknown>(BASE_URL, this.apiKey, "analytics/overview");
+  async getMailboxHealthMetrics(
+    options: {
+      startDate?: string;
+      endDate?: string;
+      fullData?: boolean;
+    } = {},
+  ): Promise<unknown> {
+    const endDate =
+      options.endDate ?? new Date().toISOString().slice(0, 10);
+    let startDate = options.startDate;
+    if (!startDate) {
+      const start = new Date(`${endDate}T00:00:00.000Z`);
+      start.setUTCDate(start.getUTCDate() - 29);
+      startDate = start.toISOString().slice(0, 10);
+    }
+    return apiRequest<unknown>(
+      BASE_URL,
+      this.apiKey,
+      "analytics/mailbox/name-wise-health-metrics",
+      {
+        query: {
+          start_date: startDate,
+          end_date: endDate,
+          ...(options.fullData === false ? {} : { full_data: "true" }),
+        },
+      },
+    );
   }
 
   listClients(): Promise<SmartleadClientRecord[]> {

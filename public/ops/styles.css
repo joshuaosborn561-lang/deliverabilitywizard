@@ -502,6 +502,12 @@ main {
   white-space: pre-wrap;
 }
 
+.message a {
+  color: inherit;
+  text-decoration: underline;
+  word-break: break-all;
+}
+
 .message.assistant {
   align-self: flex-start;
   background: #141e28;

@@ -8,19 +8,17 @@ import { StateStore } from "../state/store.js";
 import { CursorAssistantService } from "./cursorAssistant.js";
 
 describe("CursorAssistantService", () => {
-  it("creates a Grok agent on first ask and resumes on the next", async () => {
+  it("starts a run immediately and polls until finished", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "ops-cursor-"));
     const state = new StateStore(path.join(dir, "state.json"));
     await state.load();
 
-    const calls: string[] = [];
+    let polls = 0;
     const client = {
       async getAgent(id: string) {
-        calls.push(`getAgent:${id}`);
         return { id, url: `https://cursor.com/agents/${id}` };
       },
       async createAgent() {
-        calls.push("createAgent");
         return {
           agent: {
             id: "bc-test-1",
@@ -30,13 +28,15 @@ describe("CursorAssistantService", () => {
         };
       },
       async createRun(agentId: string) {
-        calls.push(`createRun:${agentId}`);
         return {
           run: { id: "run-2", agentId, status: "CREATING" },
         };
       },
-      async waitForRun(agentId: string, runId: string) {
-        calls.push(`wait:${agentId}:${runId}`);
+      async getRun(agentId: string, runId: string) {
+        polls += 1;
+        if (polls < 2) {
+          return { id: runId, agentId, status: "RUNNING" };
+        }
         return {
           id: runId,
           agentId,
@@ -59,23 +59,29 @@ describe("CursorAssistantService", () => {
       timeoutMs: 5_000,
     });
 
-    const first = await assistant.ask({
+    const started = await assistant.start({
       actor: "cayden",
       role: "operator",
       message: "Why did bounce stats 404?",
     });
-    assert.equal(first.agentId, "bc-test-1");
-    assert.match(first.message, /Bounce stats use name-wise/);
+    assert.equal(started.agentId, "bc-test-1");
+    assert.equal(started.runId, "run-1");
     assert.equal(state.getOpsCursorAgentId("cayden"), "bc-test-1");
-    assert.ok(calls.includes("createAgent"));
 
-    const second = await assistant.ask({
+    const pending = await assistant.poll(started.agentId, started.runId);
+    assert.equal(pending.pending, true);
+
+    const done = await assistant.poll(started.agentId, started.runId);
+    assert.equal(done.pending, false);
+    assert.match(done.message, /Bounce stats use name-wise/);
+    assert.match(done.message, /cursor\.com\/agents\/bc-test-1/);
+
+    const second = await assistant.start({
       actor: "cayden",
       role: "operator",
-      message: "And what about Scott?",
+      message: "And Scott?",
     });
-    assert.equal(second.agentId, "bc-test-1");
-    assert.ok(calls.some((c) => c.startsWith("createRun:bc-test-1")));
+    assert.equal(second.runId, "run-2");
 
     await rm(dir, { recursive: true, force: true });
   });

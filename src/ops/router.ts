@@ -340,6 +340,51 @@ export function createOpsRouter(opts: {
     res.json({ audit: opts.state.listOpsAudit(100) });
   });
 
+  router.get(
+    "/cursor-run/:agentId/:runId",
+    async (req: AuthenticatedRequest, res) => {
+      const session = req.opsSession!;
+      if (!opts.cursorAssistant) {
+        res.status(503).json({ error: "Cursor assistant is not configured" });
+        return;
+      }
+      const agentId = String(req.params.agentId || "");
+      const runId = String(req.params.runId || "");
+      if (!agentId.startsWith("bc-") || !runId.startsWith("run-")) {
+        res.status(400).json({ error: "Invalid agent or run id" });
+        return;
+      }
+      try {
+        const result = await opts.cursorAssistant.poll(agentId, runId);
+        if (!result.pending) {
+          await audit(
+            session,
+            "cursor-agent",
+            String(result.status).toUpperCase() === "FINISHED"
+              ? "success"
+              : "error",
+            result.agentId,
+            result.runId,
+          );
+        }
+        res.json({
+          message: result.message,
+          data: {
+            pending: Boolean(result.pending),
+            agentId: result.agentId,
+            agentUrl: result.agentUrl,
+            runId: result.runId,
+            status: result.status,
+            prUrls: result.prUrls,
+            model: result.model,
+          },
+        });
+      } catch (error) {
+        res.status(502).json({ error: safeMessage(error) });
+      }
+    },
+  );
+
   router.post("/chat", async (req: AuthenticatedRequest, res) => {
     const session = req.opsSession!;
     const message = String(req.body?.message ?? "").trim().slice(0, 4_000);
@@ -382,27 +427,37 @@ export function createOpsRouter(opts: {
           }
           const question =
             intent.type === "ask_cursor" ? intent.message : message;
-          const result = await opts.cursorAssistant.ask({
+          // Start only — do not wait here. Long waits die on Railway/browser
+          // timeouts and the UI looks like it never answered.
+          const started = await opts.cursorAssistant.start({
             actor: session.username,
             role: session.role,
             message: question,
           });
           await audit(
             session,
-            "cursor-agent",
-            result.status.toUpperCase() === "FINISHED" ? "success" : "error",
-            result.agentId,
-            result.runId,
+            "cursor-agent-start",
+            "success",
+            started.agentId,
+            started.runId,
             true,
           );
-          respond(result.message, {
-            agentId: result.agentId,
-            agentUrl: result.agentUrl,
-            runId: result.runId,
-            status: result.status,
-            prUrls: result.prUrls,
-            model: "Cursor Grok 4.5 High Fast",
-          });
+          respond(
+            [
+              `Got it — Cursor Grok 4.5 High Fast is working on this.`,
+              `I'll post the answer here when it's ready.`,
+              "",
+              `Follow along: ${started.agentUrl}`,
+            ].join("\n"),
+            {
+              pending: true,
+              agentId: started.agentId,
+              agentUrl: started.agentUrl,
+              runId: started.runId,
+              status: started.status,
+              model: started.model,
+            },
+          );
           return;
         }
         case "status":

@@ -24,7 +24,9 @@ import {
   FleetSummaryService,
   PlacementResultsService,
 } from "./services/opsReporting.js";
+import { CursorCloudClient } from "./clients/cursorCloud.js";
 import { OpsAuth } from "./ops/auth.js";
+import { CursorAssistantService } from "./ops/cursorAssistant.js";
 import { createOpsRouter } from "./ops/router.js";
 import {
   ManualRotationService,
@@ -237,6 +239,21 @@ async function main(): Promise<void> {
     state,
   );
   const fleetSummary = new FleetSummaryService(smartlead, state);
+  const cursorAssistant = config.cursorApiKey
+    ? new CursorAssistantService(
+        new CursorCloudClient(config.cursorApiKey),
+        state,
+        {
+          repositoryUrl: config.cursorAgentRepositoryUrl,
+          startingRef: config.cursorAgentStartingRef,
+          model: {
+            id: config.cursorAgentModelId,
+            params: config.cursorAgentModelParams,
+          },
+          timeoutMs: config.cursorAgentTimeoutMs,
+        },
+      )
+    : null;
 
   const runCampaignTopUp = async () => {
     if (manualRotationInFlight) {
@@ -456,6 +473,7 @@ async function main(): Promise<void> {
       state,
       rotation: manualRotation,
       executeRotation: runManualRotation,
+      cursorAssistant,
       runtime: {
         deliverability: runOpsDeliverability,
         dns: () => dnsAudit.run({ alert: false }),
@@ -764,6 +782,9 @@ async function main(): Promise<void> {
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(
       `[boot] Ops UI: ${config.opsUiEnabled ? (opsAuth.isConfigured() ? "ENABLED at /ops" : `disabled until configured (${opsAuth.configurationError()})`) : "disabled"}`,
+    );
+    console.log(
+      `[boot] Ops Cursor assistant: ${cursorAssistant ? `ENABLED (${config.cursorAgentModelId} ${config.cursorAgentModelParams.map((p) => `${p.id}=${p.value}`).join(",")})` : "disabled (set CURSOR_API_KEY)"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

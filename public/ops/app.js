@@ -273,7 +273,16 @@ function addMessage(role, text, confirmation) {
 async function sendChat(message) {
   switchPanel("chat");
   addMessage("user", message);
-  addMessage("assistant", "Working…");
+  const looksFreeform =
+    !/^(help|commands|status|check |audit |reconnect|rotate |approvals)/i.test(
+      message.trim(),
+    );
+  addMessage(
+    "assistant",
+    looksFreeform
+      ? "Asking Cursor Grok 4.5 High Fast… this can take a minute."
+      : "Working…",
+  );
   const loading = $("#messages").lastElementChild;
   try {
     const response = await api("/chat", {
@@ -282,9 +291,23 @@ async function sendChat(message) {
     });
     loading.remove();
     addMessage("assistant", response.message, response.confirmation);
+    if (response.data?.agentUrl) {
+      addMessage(
+        "assistant",
+        `Agent thread: ${response.data.agentUrl}${
+          response.data.model ? ` (${response.data.model})` : ""
+        }`,
+      );
+    }
     if (response.data?.refreshDashboard) await loadDashboard();
     if (response.data?.refreshApprovals) await loadApprovals();
-    if (response.data && !response.confirmation && !response.data.refreshDashboard && !response.data.refreshApprovals) {
+    if (
+      response.data &&
+      !response.confirmation &&
+      !response.data.refreshDashboard &&
+      !response.data.refreshApprovals &&
+      !response.data.agentUrl
+    ) {
       const summary = summarizeData(response.data);
       if (summary) addMessage("assistant", summary);
     }

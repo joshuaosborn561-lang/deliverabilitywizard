@@ -4,6 +4,7 @@ import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { OpsAuth, OpsRole, OpsSession } from "./auth.js";
 import { classifyOpsMessage, opsHelp } from "./policy.js";
+import type { CursorAssistantService } from "./cursorAssistant.js";
 import type {
   ManualRotationService,
   RotationResult,
@@ -37,6 +38,7 @@ export function createOpsRouter(opts: {
   rotation: ManualRotationService;
   executeRotation: (email: string) => Promise<RotationResult>;
   runtime: OpsRuntime;
+  cursorAssistant?: CursorAssistantService | null;
 }): express.Router {
   const router = express.Router();
   const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -340,7 +342,7 @@ export function createOpsRouter(opts: {
 
   router.post("/chat", async (req: AuthenticatedRequest, res) => {
     const session = req.opsSession!;
-    const message = String(req.body?.message ?? "").trim().slice(0, 1_000);
+    const message = String(req.body?.message ?? "").trim().slice(0, 4_000);
     const intent = classifyOpsMessage(message, session.role);
     const respond = (
       text: string,
@@ -358,10 +360,51 @@ export function createOpsRouter(opts: {
           await audit(session, "chat-command", "denied", undefined, intent.reason);
           respond(`I can't do that.\n\n${intent.reason}`);
           return;
-        case "unknown":
-          await audit(session, "chat-command", "denied", undefined, message);
-          respond(`I didn't recognize that as an allowlisted operation.\n\n${opsHelp(session.role)}`);
+        case "ask_cursor":
+        case "unknown": {
+          if (!opts.cursorAssistant) {
+            await audit(
+              session,
+              "chat-command",
+              "denied",
+              undefined,
+              "cursor assistant not configured",
+            );
+            respond(
+              [
+                "Freeform chat needs Cursor wired up.",
+                "Josh: set `CURSOR_API_KEY` on Railway (from cursor.com/dashboard/api), redeploy, then ask again.",
+                "",
+                opsHelp(session.role),
+              ].join("\n"),
+            );
+            return;
+          }
+          const question =
+            intent.type === "ask_cursor" ? intent.message : message;
+          const result = await opts.cursorAssistant.ask({
+            actor: session.username,
+            role: session.role,
+            message: question,
+          });
+          await audit(
+            session,
+            "cursor-agent",
+            result.status.toUpperCase() === "FINISHED" ? "success" : "error",
+            result.agentId,
+            result.runId,
+            true,
+          );
+          respond(result.message, {
+            agentId: result.agentId,
+            agentUrl: result.agentUrl,
+            runId: result.runId,
+            status: result.status,
+            prUrls: result.prUrls,
+            model: "Cursor Grok 4.5 High Fast",
+          });
           return;
+        }
         case "status":
           await audit(session, "status", "success");
           respond(

@@ -130,6 +130,11 @@ export interface AppState {
   opsAudit: OpsAuditRecord[];
   /** Last successful Smartlead fleet census, used when live reads are throttled. */
   fleetSummary: FleetSummarySnapshot | null;
+  /**
+   * Durable Cursor Cloud Agent id per Ops username so freeform chat can
+   * continue the same Grok conversation across messages.
+   */
+  opsCursorAgents: Record<string, string>;
 }
 
 export interface SpendApprovalRecord {
@@ -182,6 +187,7 @@ const EMPTY_STATE: AppState = {
   spendApprovals: {},
   opsAudit: [],
   fleetSummary: null,
+  opsCursorAgents: {},
 };
 
 export class StateStore {
@@ -211,6 +217,7 @@ export class StateStore {
         spendApprovals: parsed.spendApprovals ?? {},
         opsAudit: parsed.opsAudit ?? [],
         fleetSummary: parsed.fleetSummary ?? null,
+        opsCursorAgents: parsed.opsCursorAgents ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -356,6 +363,22 @@ export class StateStore {
 
   listOpsAudit(limit = 100): OpsAuditRecord[] {
     return this.state.opsAudit.slice(-Math.max(0, limit)).reverse();
+  }
+
+  getOpsCursorAgentId(username: string): string | undefined {
+    const key = username.trim().toLowerCase();
+    const id = this.state.opsCursorAgents[key];
+    return id || undefined;
+  }
+
+  setOpsCursorAgentId(username: string, agentId: string): void {
+    const key = username.trim().toLowerCase();
+    this.state.opsCursorAgents[key] = agentId;
+  }
+
+  clearOpsCursorAgentId(username: string): void {
+    const key = username.trim().toLowerCase();
+    delete this.state.opsCursorAgents[key];
   }
 
   setFleetSummary(summary: FleetSummarySnapshot): void {

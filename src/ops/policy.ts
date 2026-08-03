@@ -9,6 +9,7 @@ export type OpsIntent =
   | { type: "reconnect" }
   | { type: "rotate"; email: string }
   | { type: "approvals" }
+  | { type: "ask_cursor"; message: string }
   | { type: "denied"; reason: string }
   | { type: "unknown" };
 
@@ -75,11 +76,15 @@ export function classifyOpsMessage(
     };
   }
 
-  if (/\b(deploy|merge|commit|push|edit code|shell|terminal)\b/i.test(message)) {
+  if (
+    /\b(deploy to production|ship to production|railway up|force push)\b/i.test(
+      message,
+    )
+  ) {
     return {
       type: "denied",
       reason:
-        "Code and deployment are not operations-console capabilities. Use a task branch and reviewed pull request; production deploys from main.",
+        "Production deploys only happen from reviewed merges to main. Ask the Cursor agent to open a PR instead of pushing live.",
     };
   }
 
@@ -107,12 +112,20 @@ export function classifyOpsMessage(
   if (/\b(status|summary|dashboard|how are things)\b/i.test(message)) {
     return { type: "status" };
   }
-  return { type: "unknown" };
+
+  // Explicit "ask cursor/agent …" or any unrecognized freeform → Cursor Grok.
+  const askMatch = message.match(
+    /^(?:ask\s+(?:cursor|agent|grok)\s*[:\-]?\s*)([\s\S]+)$/i,
+  );
+  if (askMatch?.[1]?.trim()) {
+    return { type: "ask_cursor", message: askMatch[1].trim() };
+  }
+  return { type: "ask_cursor", message };
 }
 
 export function opsHelp(role: OpsRole): string {
   const lines = [
-    "I can run allowlisted deliverability operations:",
+    "Fast allowlisted ops (run locally, no Cursor charge):",
     "• “Check deliverability” — placement results plus campaign and DNS audits",
     "• “Check DNS” — SPF/DMARC/MX audit without changing DNS",
     "• “Audit campaigns” — sender floor and placement-test coverage",
@@ -125,7 +138,11 @@ export function opsHelp(role: OpsRole): string {
   }
   lines.push(
     "",
-    "I will refuse purchases, deletion/purge, policy changes, warmup bypasses, bulk remediation, code changes and deployments, and explain the governing rule.",
+    "Anything else goes to Cursor Grok 4.5 High Fast (same agent style Josh uses):",
+    "• Ask questions, diagnose issues, or request a fix via PR",
+    "• Or prefix with “ask cursor …”",
+    "",
+    "I still refuse purchases, deletion/purge, warmup/hold bypasses, fleet policy edits, bulk remediation, and direct production deploys.",
   );
   return lines.join("\n");
 }

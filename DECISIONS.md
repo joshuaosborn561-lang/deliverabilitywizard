@@ -331,25 +331,47 @@ still said 30 senders. Josh reconfirmed both values during the safety review.
 
 **Decision.** Cayden may use `/ops` daily to check deliverability, campaign
 coverage, DNS, reconnect mailboxes, and preview/confirm a single safe mailbox
-rotation. The console explains and refuses anything outside that allowlist.
+rotation. Fast paths stay allowlisted. Freeform questions are handled by D20.
 
-Owner-only or unavailable in chat:
+Still refused in chat (local hard deny):
 
 - Spending and approval decisions
 - Domain/mailbox deletion or purge
 - Warmup/hold bypasses
 - Fleet threshold, 50-sender floor or 30/day changes
 - Bulk remediation
-- Code, Git, shell and deployment
+- Direct production deploy / force-push
 
 **Why.** Cayden needs daily operational access without production credentials
-or code access. A free-form agent with Railway/Porkbun/InboxKit secrets would
-give an employee the ability to spend or override safety policy.
+or unreviewed spend. A free-form agent with Railway/Porkbun/InboxKit wallet
+secrets would let an employee spend or override safety policy.
 
-**Tradeoff.** Unrecognized requests require a code-reviewed operation to be
-added to the allowlist. Accepted.
+**Tradeoff.** Instant ops stay allowlisted; investigation/fixes go through
+Cursor (D20) as PRs, not live production writes.
 
 **Guards.** `ops chat policy`, `OpsAuth`, and `ManualRotationService`.
+
+---
+
+## D20 — Freeform Ops chat is Cursor Grok 4.5 High Fast
+
+**Decision.** When `CURSOR_API_KEY` is set, unrecognized `/ops` chat (and
+explicit “ask cursor …”) launches or continues a Cursor Cloud Agent on this
+repo with model `grok-4.5` and params `effort=high,fast=true`. One durable
+agent id is stored per Ops username. Allowlisted commands still run locally
+without calling Cursor.
+
+**Why.** Josh’s original ask was for Cayden to chat with the same assistant.
+The local allowlist is great for safe instant ops; freeform diagnosis and
+PR-based fixes need the real Cursor agent loop.
+
+**Tradeoff.** Cloud Agents bill at Cursor API rates and can open PRs. They do
+not receive Railway spend secrets via this app. Spend/delete/bypass remains
+locally denied before the agent is invoked. Josh must keep Cursor dashboard
+secrets tight.
+
+**Guards.** `CursorAssistantService`, `CURSOR_API_KEY`, D18 hard denies, audit
+log action `cursor-agent`.
 
 ---
 

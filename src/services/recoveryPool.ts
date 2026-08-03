@@ -184,7 +184,8 @@ export class RecoveryPoolService {
 
       const pool = this.state.findAvailablePoolMailbox(platform);
       if (!pool || !pool.smartleadAccountId) {
-        result.skippedNoPool.push(email);
+        // Include ESP so Slack can say "no free Google generic" plainly.
+        result.skippedNoPool.push(`${email} (${platform})`);
         continue;
       }
 
@@ -303,7 +304,10 @@ export class RecoveryPoolService {
           `  – \`${r.originalEmail}\` back (pool \`${r.poolEmail}\` freed) @ ${r.inboxRate.toFixed(1)}%`,
       ),
       result.skippedNoPool.length
-        ? `• No free pool mailbox for: ${result.skippedNoPool.slice(0, 5).join(", ")}`
+        ? `• Couldn't cover these — no free warmed generic of the right type (Gmail/Microsoft) is available yet:\n${result.skippedNoPool
+            .slice(0, 5)
+            .map((e) => `  – \`${e}\``)
+            .join("\n")}`
         : null,
     ].filter(Boolean);
     if (lines.length <= 1) return;

@@ -1,4 +1,7 @@
-import { isRateLimitNoise } from "../lib/alertNoise.js";
+import {
+  humanizeAlertError,
+  isRateLimitNoise,
+} from "../lib/alertNoise.js";
 
 export interface SlackCredentials {
   webhookUrl?: string;
@@ -132,11 +135,14 @@ export class SlackClient {
     if (summary.skipped > 0) {
       lines.push(`Skipped ${summary.skipped}.`);
     }
-    if (summary.errors.length) {
+    const seriousErrors = summary.errors
+      .filter((e) => !isRateLimitNoise(e))
+      .map(humanizeAlertError);
+    if (seriousErrors.length) {
       lines.push(
         "",
-        `Problems:`,
-        ...summary.errors.slice(0, 8).map((e) => `• ${e}`),
+        `What went wrong:`,
+        ...seriousErrors.slice(0, 8).map((e) => `• ${e}`),
       );
     }
     await this.send(lines.join("\n"));
@@ -474,12 +480,17 @@ export class SlackClient {
         summary.inboxkitReexports > 0
           ? `Also re-queued ${summary.inboxkitReexports} failed InboxKit→Smartlead exports.`
           : undefined,
-        summary.errors.length
-          ? `Problems:\n${summary.errors
-              .slice(0, 8)
-              .map((e) => `• ${e}`)
-              .join("\n")}`
-          : undefined,
+        (() => {
+          const serious = summary.errors
+            .filter((e) => !isRateLimitNoise(e))
+            .map(humanizeAlertError);
+          return serious.length
+            ? `What went wrong:\n${serious
+                .slice(0, 8)
+                .map((e) => `• ${e}`)
+                .join("\n")}`
+            : undefined;
+        })(),
       ]
         .filter(Boolean)
         .join("\n"),
@@ -503,7 +514,12 @@ export class SlackClient {
     }>;
     errors: string[];
   }): Promise<void> {
-    if (summary.removed === 0 && summary.errors.length === 0) return;
+    const seriousErrors = summary.errors
+      .filter((e) => !isRateLimitNoise(e))
+      .map(humanizeAlertError);
+
+    // Rate-limit-only failures with no removals are noise — log locally, don't page.
+    if (summary.removed === 0 && seriousErrors.length === 0) return;
 
     const under = summary.removals.filter((r) => r.reason === "under_warmed");
     const held = summary.removals.filter((r) => r.reason === "hold_until");
@@ -533,6 +549,20 @@ export class SlackClient {
       );
     }
 
+    // Don't claim we pulled mailboxes when the check itself failed.
+    if (summary.removed === 0) {
+      await this.send(
+        [
+          `*Couldn't finish checking campaign warmup*`,
+          `We hit a problem loading mailbox data from Smartlead, so we didn't take anyone off campaigns.`,
+          "",
+          `What went wrong:`,
+          ...seriousErrors.slice(0, 8).map((e) => `• ${e}`),
+        ].join("\n"),
+      );
+      return;
+    }
+
     await this.send(
       [
         `*Pulled not-ready mailboxes off live campaigns*`,
@@ -547,8 +577,8 @@ export class SlackClient {
           : undefined,
         "",
         ...campaignBlocks,
-        summary.errors.length
-          ? `\nProblems:\n${summary.errors
+        seriousErrors.length
+          ? `\nWhat went wrong:\n${seriousErrors
               .slice(0, 8)
               .map((e) => `• ${e}`)
               .join("\n")}`
@@ -588,12 +618,17 @@ export class SlackClient {
         summary.orphaned.length
           ? `\n${summary.orphaned.length} recurring test(s) have no matching campaign in Smartlead — left running, check manually: ${summary.orphaned.slice(0, 5).join(", ")}`
           : undefined,
-        summary.errors.length
-          ? `\nProblems:\n${summary.errors
-              .slice(0, 8)
-              .map((e) => `• ${e}`)
-              .join("\n")}`
-          : undefined,
+        (() => {
+          const serious = summary.errors
+            .filter((e) => !isRateLimitNoise(e))
+            .map(humanizeAlertError);
+          return serious.length
+            ? `\nWhat went wrong:\n${serious
+                .slice(0, 8)
+                .map((e) => `• ${e}`)
+                .join("\n")}`
+            : undefined;
+        })(),
       ]
         .filter(Boolean)
         .join("\n"),
@@ -652,9 +687,9 @@ export class SlackClient {
   }): Promise<void> {
     const actions = details.clientActions ?? [];
     const restored = details.sameEspAudit?.restored ?? [];
-    const seriousErrors = details.errors.filter(
-      (e) => !isRateLimitNoise(e),
-    );
+    const seriousErrors = details.errors
+      .filter((e) => !isRateLimitNoise(e))
+      .map(humanizeAlertError);
 
     const didSomething =
       details.deletedSmartleadAccounts.length > 0 ||
@@ -755,7 +790,7 @@ export class SlackClient {
     if (seriousErrors.length) {
       parts.push(
         "",
-        `Problems:`,
+        `What went wrong:`,
         ...seriousErrors.slice(0, 10).map((e) => `• ${e}`),
       );
     }

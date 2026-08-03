@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  humanizeAlertError,
   isRateLimitNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
@@ -31,5 +32,31 @@ describe("alert noise", () => {
       "manual-oauth",
     );
     assert.equal(reconnectFailureCategory("HTTP 429"), "rate-limit");
+  });
+
+  it("explains warmup-gate rate limits in plain English", () => {
+    assert.match(
+      humanizeAlertError("list accounts: HTTP 429"),
+      /rate-limited us while loading the mailbox list/i,
+    );
+    assert.match(
+      humanizeAlertError("list accounts: HTTP 429"),
+      /Nothing was changed/i,
+    );
+  });
+
+  it("keeps mailbox identifiers when humanizing remove/swap failures", () => {
+    assert.match(
+      humanizeAlertError(
+        "remove josh@example.com from campaign 123: HTTP 429",
+      ),
+      /josh@example\.com/,
+    );
+    assert.match(
+      humanizeAlertError(
+        "swap-in weak@example.com ← pool@example.com: HTTP 429",
+      ),
+      /weak@example\.com/,
+    );
   });
 });

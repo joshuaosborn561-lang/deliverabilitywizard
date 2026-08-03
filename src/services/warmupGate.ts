@@ -312,6 +312,8 @@ export class WarmupGateService {
       errors: result.errors.length,
     });
 
+    // notifyWarmupGate drops rate-limit-only noise when nothing was pulled, so
+    // a Smartlead 429 no longer pages Slack as a fake "pulled" alert.
     if (result.removed > 0 || result.errors.length > 0) {
       await this.slack.notifyWarmupGate(result).catch((error) => {
         console.error("[warmup-gate] Slack notify failed", error);

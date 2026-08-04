@@ -47,6 +47,16 @@ export function scheduleStartTime(bufferMinutes = 2, now = new Date()): string {
   return new Date(now.getTime() + bufferMinutes * 60_000).toISOString();
 }
 
+/**
+ * SmartDelivery requires `test_end_date` on every /spam-test/schedule call —
+ * there is no way to omit it for a truly open-ended recurring test. D8 in
+ * DECISIONS.md still holds: the test itself runs indefinitely in practice,
+ * because the reconciler (not this date) stops it once the campaign leaves
+ * its active statuses. This far-future date only exists to satisfy the
+ * required field without ever being the thing that actually ends the test.
+ */
+export const OPEN_ENDED_TEST_DAYS = 365 * 5;
+
 export class CampaignScanner {
   constructor(
     private readonly config: AppConfig,
@@ -198,6 +208,33 @@ export class CampaignScanner {
       return result;
     }
 
+    // Re-check status right before creating: a campaign can leave its active
+    // statuses (paused, completed, deleted) in the time between the initial
+    // list fetch above and reaching its turn in the creation loop below —
+    // this run processes plans one at a time with a pause between each.
+    let freshStatusById: Map<number, string>;
+    try {
+      const freshCampaigns = await this.smartlead.listCampaigns();
+      freshStatusById = new Map(
+        freshCampaigns.map((c) => [c.id, String(c.status ?? "").toUpperCase()]),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`Pre-creation status re-check failed: ${message}`);
+      freshStatusById = new Map();
+    }
+
+    const eligiblePlans = plans.filter((plan) => {
+      const freshStatus = freshStatusById.get(plan.campaign.id);
+      if (freshStatus === undefined) return true; // re-check failed or unknown — don't block on it
+      if (creationStatusSet.has(freshStatus)) return true;
+      console.log(
+        `[scan] Skipping campaign ${plan.campaign.id} — status changed to ${freshStatus} since candidate selection`,
+      );
+      result.skipped += 1;
+      return false;
+    });
+
     let providerIds: number[] = [];
     try {
       providerIds = await this.smartDelivery.resolveProviderIds(this.config.providerIds);
@@ -209,7 +246,7 @@ export class CampaignScanner {
       }
     }
 
-    for (const plan of plans) {
+    for (const plan of eligiblePlans) {
       const createdIds: string[] = [];
       try {
         for (let i = 0; i < plan.batches.length; i += 1) {
@@ -261,14 +298,12 @@ export class CampaignScanner {
                 ...payload,
                 every_days: this.config.placementTestEveryDays,
                 schedule_start_time: scheduleStartTime(),
-                ...(this.config.placementTestEndDays > 0
-                  ? {
-                      test_end_date: addDaysIso(
-                        new Date(),
-                        this.config.placementTestEndDays,
-                      ),
-                    }
-                  : {}),
+                test_end_date: addDaysIso(
+                  new Date(),
+                  this.config.placementTestEndDays > 0
+                    ? this.config.placementTestEndDays
+                    : OPEN_ENDED_TEST_DAYS,
+                ),
               })
             : await this.smartDelivery.createManualPlacement(payload);
           const id = String(created.id);

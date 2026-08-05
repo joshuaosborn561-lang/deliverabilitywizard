@@ -20,6 +20,9 @@ export const DEFAULT_MIN_SAME_ESP_SAMPLES = 3;
 
 const BASE_URL = "https://smartdelivery.smartlead.ai/api/v1/";
 
+/** SmartDelivery returns ~10 rows when `limit` is omitted; page in this size. */
+export const DEFAULT_TEST_LIST_LIMIT = 100;
+
 export interface CreateManualPlacementInput {
   test_name: string;
   description?: string;
@@ -111,13 +114,75 @@ export class SmartDeliveryClient {
     }
   }
 
-  listTests(body: Record<string, unknown> = {}): Promise<SpamTestSummary[]> {
-    return apiRequest<SpamTestSummary[]>(
-      BASE_URL,
-      this.apiKey,
-      "spam-test/report",
-      { method: "POST", body },
-    );
+  /**
+   * List placement tests. SmartDelivery's report endpoint defaults to a short
+   * page (~10) when `limit` is omitted — after the 2026-08-05 backfill that
+   * silently hid most ACTIVE autos from the scanner/reconciler. When the
+   * caller does not pass `limit`/`offset`, this paginates with
+   * {@link DEFAULT_TEST_LIST_LIMIT} until a short page.
+   */
+  async listTests(
+    body: Record<string, unknown> = {},
+  ): Promise<SpamTestSummary[]> {
+    if (body.limit !== undefined || body.offset !== undefined) {
+      return apiRequest<SpamTestSummary[]>(
+        BASE_URL,
+        this.apiKey,
+        "spam-test/report",
+        { method: "POST", body },
+      );
+    }
+
+    const all: SpamTestSummary[] = [];
+    let offset = 0;
+    const limit = DEFAULT_TEST_LIST_LIMIT;
+    for (let page = 0; page < 50; page += 1) {
+      const raw = await apiRequest<unknown>(
+        BASE_URL,
+        this.apiKey,
+        "spam-test/report",
+        { method: "POST", body: { ...body, limit, offset } },
+      );
+      const rows = normalizeTestList(raw);
+      all.push(...rows);
+      if (rows.length < limit) break;
+      offset += rows.length;
+    }
+    return all;
+  }
+
+  /**
+   * The report list omits `campaign_id`. Fetch details for tests that still
+   * need linkage (active/automated first) so scanner skip + reconciler stop
+   * can key off the real campaign.
+   */
+  async enrichCampaignIds(
+    tests: SpamTestSummary[],
+  ): Promise<SpamTestSummary[]> {
+    const out: SpamTestSummary[] = [];
+    for (const test of tests) {
+      if (campaignIdOf(test)) {
+        out.push(test);
+        continue;
+      }
+      const id = testIdOf(test);
+      if (!id || !isAutomatedTest(test) || !isTestStoppable(test)) {
+        out.push(test);
+        continue;
+      }
+      try {
+        const details = await this.getTestDetails(id);
+        const cid = details.campaign_id;
+        out.push(
+          cid === undefined || cid === null
+            ? test
+            : { ...test, campaign_id: cid as string | number },
+        );
+      } catch {
+        out.push(test);
+      }
+    }
+    return out;
   }
 
   getTestDetails(spamTestId: string | number): Promise<Record<string, unknown>> {

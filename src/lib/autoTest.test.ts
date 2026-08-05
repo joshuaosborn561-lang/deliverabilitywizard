@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  DEFAULT_TEST_LIST_LIMIT,
   isAutomatedTest,
   isTestStoppable,
+  normalizeTestList,
 } from "../clients/smartdelivery.js";
 import { addDaysIso } from "../services/campaignScanner.js";
 
@@ -55,5 +57,17 @@ describe("addDaysIso", () => {
     const base = new Date("2026-07-30T12:00:00.000Z");
     addDaysIso(base, 5);
     assert.equal(base.toISOString(), "2026-07-30T12:00:00.000Z");
+  });
+});
+
+describe("DEFAULT_TEST_LIST_LIMIT", () => {
+  it("pages larger than SmartDelivery's implicit ~10-row default", () => {
+    assert.ok(DEFAULT_TEST_LIST_LIMIT >= 50);
+  });
+});
+
+describe("normalizeTestList", () => {
+  it("accepts a bare array", () => {
+    assert.equal(normalizeTestList([{ spam_test_id: 1 }]).length, 1);
   });
 });

@@ -101,9 +101,8 @@ export class CampaignAuditService {
 
     const tested = new Set<string>();
     try {
-      for (const test of normalizeTestList(
-        await this.smartDelivery.listTests({}),
-      )) {
+      const listed = normalizeTestList(await this.smartDelivery.listTests({}));
+      for (const test of await this.smartDelivery.enrichCampaignIds(listed)) {
         const cid = campaignIdOf(test);
         if (cid) tested.add(String(cid));
       }

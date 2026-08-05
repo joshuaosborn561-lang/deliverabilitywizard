@@ -129,6 +129,7 @@ describe("CampaignScanner — status re-check before creation", () => {
     const smartDelivery = {
       assertAccessActive: async () => "ok",
       listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
       resolveProviderIds: async () => [],
       createAutomatedPlacement: async (input: unknown) => {
         created.push(input);
@@ -174,6 +175,7 @@ describe("CampaignScanner — status re-check before creation", () => {
     const smartDelivery = {
       assertAccessActive: async () => "ok",
       listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
       resolveProviderIds: async () => [],
       createAutomatedPlacement: async (input: Record<string, unknown>) => {
         created.push(input);

@@ -7,7 +7,7 @@ import {
   sequenceMappingIdOf,
   sequenceSubjectPreview,
 } from "../clients/smartlead.js";
-import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
+import type { SchedulerCronValue, SmartDeliveryClient } from "../clients/smartdelivery.js";
 import {
   campaignIdOf,
   normalizeTestList,
@@ -43,8 +43,39 @@ export function addDaysIso(base: Date, days: number): string {
  * be greater than or equal to the current date and time." Padding a few
  * minutes forward absorbs network latency and clock skew between hosts.
  */
+export function paddedScheduleDate(bufferMinutes = 2, now = new Date()): Date {
+  return new Date(now.getTime() + bufferMinutes * 60_000);
+}
+
 export function scheduleStartTime(bufferMinutes = 2, now = new Date()): string {
-  return new Date(now.getTime() + bufferMinutes * 60_000).toISOString();
+  return paddedScheduleDate(bufferMinutes, now).toISOString();
+}
+
+/**
+ * SmartDelivery also requires `scheduler_cron_value` alongside `every_days` —
+ * an object describing the allowed send window, not a cron string. (An
+ * earlier version of this fix sent a cron string based on a misread of
+ * SmartDelivery's response examples; confirmed wrong via a live validation
+ * probe — POST'ing with a string got `"scheduler_cron_value" must be of type
+ * object`, an object got past it entirely.) Their request schema for this
+ * field still isn't publicly documented (their own API reference only shows
+ * an empty `{}` request example), so this deliberately picks the least
+ * restrictive value that satisfies the schema — a full day, every day, in
+ * UTC — and leaves the actual recurrence timing to `every_days` and
+ * `schedule_start_time`, which are already correct. A narrower window here
+ * would just be a second, harder-to-notice way for this to silently stop
+ * firing.
+ */
+export function schedulerCronValue(
+  everyDays: number,
+  at: Date,
+): SchedulerCronValue {
+  return {
+    tz: "UTC",
+    days: everyDays === 7 ? [at.getUTCDay()] : [0, 1, 2, 3, 4, 5, 6],
+    startHour: "00:00",
+    endHour: "23:59",
+  };
 }
 
 /**
@@ -293,17 +324,27 @@ export class CampaignScanner {
             continue;
           }
 
+          const scheduledAt = paddedScheduleDate();
           const created = recurring
             ? await this.smartDelivery.createAutomatedPlacement({
                 ...payload,
                 every_days: this.config.placementTestEveryDays,
-                schedule_start_time: scheduleStartTime(),
+                schedule_start_time: scheduledAt.toISOString(),
+                scheduler_cron_value: schedulerCronValue(
+                  this.config.placementTestEveryDays,
+                  scheduledAt,
+                ),
                 test_end_date: addDaysIso(
                   new Date(),
                   this.config.placementTestEndDays > 0
                     ? this.config.placementTestEndDays
                     : OPEN_ENDED_TEST_DAYS,
                 ),
+                // Confirmed required on this endpoint via a live validation
+                // probe (2026-08-05) — unlike the manual endpoint, this one
+                // rejects the request outright if omitted, so it can't be
+                // left conditional on providerIds ever resolving non-empty.
+                provider_ids: providerIds,
               })
             : await this.smartDelivery.createManualPlacement(payload);
           const id = String(created.id);

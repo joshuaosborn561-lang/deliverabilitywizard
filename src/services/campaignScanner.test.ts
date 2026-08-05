@@ -10,6 +10,7 @@ import {
   addDaysIso,
   CampaignScanner,
   OPEN_ENDED_TEST_DAYS,
+  schedulerCronValue,
   scheduleStartTime,
 } from "./campaignScanner.js";
 
@@ -44,6 +45,37 @@ describe("addDaysIso", () => {
   it("adds whole UTC days", () => {
     const result = addDaysIso(new Date("2026-08-03T09:00:00.000Z"), 3);
     assert.equal(result, "2026-08-06T09:00:00.000Z");
+  });
+});
+
+describe("schedulerCronValue", () => {
+  // SmartDelivery requires this as an object, not a cron string — confirmed
+  // via a live validation probe on 2026-08-05 after a string got
+  // `"scheduler_cron_value" must be of type object`.
+  it("covers every day, all day, in UTC for the default 1-day interval", () => {
+    const at = new Date("2026-08-05T09:02:00.000Z");
+    assert.deepEqual(schedulerCronValue(1, at), {
+      tz: "UTC",
+      days: [0, 1, 2, 3, 4, 5, 6],
+      startHour: "00:00",
+      endHour: "23:59",
+    });
+  });
+
+  it("pins to the single day-of-week for a 7-day interval", () => {
+    // 2026-08-05 is a Wednesday (day 3).
+    const at = new Date("2026-08-05T09:02:00.000Z");
+    assert.deepEqual(schedulerCronValue(7, at), {
+      tz: "UTC",
+      days: [3],
+      startHour: "00:00",
+      endHour: "23:59",
+    });
+  });
+
+  it("falls back to every day for an interval it can't express exactly", () => {
+    const at = new Date("2026-08-05T09:02:00.000Z");
+    assert.deepEqual(schedulerCronValue(3, at).days, [0, 1, 2, 3, 4, 5, 6]);
   });
 });
 
@@ -167,6 +199,18 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.ok(
       daysOut > OPEN_ENDED_TEST_DAYS - 1 && daysOut < OPEN_ENDED_TEST_DAYS + 1,
       `expected ~${OPEN_ENDED_TEST_DAYS} days out, got ${daysOut}`,
+    );
+    const cronValue = created[0]!.scheduler_cron_value as Record<string, unknown>;
+    assert.ok(cronValue, "scheduler_cron_value must always be present — SmartDelivery requires it");
+    assert.equal(typeof cronValue, "object", "scheduler_cron_value must be an object, not a string");
+    assert.ok(Array.isArray(cronValue.days));
+    assert.equal(typeof cronValue.tz, "string");
+    assert.equal(typeof cronValue.startHour, "string");
+    assert.equal(typeof cronValue.endHour, "string");
+
+    assert.ok(
+      "provider_ids" in created[0]!,
+      "provider_ids must always be present on the automated endpoint, even when resolution came back empty",
     );
   });
 });

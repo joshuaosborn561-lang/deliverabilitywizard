@@ -43,8 +43,34 @@ export function addDaysIso(base: Date, days: number): string {
  * be greater than or equal to the current date and time." Padding a few
  * minutes forward absorbs network latency and clock skew between hosts.
  */
+export function paddedScheduleDate(bufferMinutes = 2, now = new Date()): Date {
+  return new Date(now.getTime() + bufferMinutes * 60_000);
+}
+
 export function scheduleStartTime(bufferMinutes = 2, now = new Date()): string {
-  return new Date(now.getTime() + bufferMinutes * 60_000).toISOString();
+  return paddedScheduleDate(bufferMinutes, now).toISOString();
+}
+
+/**
+ * SmartDelivery also requires `scheduler_cron_value` alongside `every_days`
+ * — a cron expression for when the recurring test fires. Their request
+ * schema for this field isn't publicly documented (their own API reference
+ * only shows an empty `{}` request example); this is inferred from the
+ * `scheduler_cron_value` shape shown in their response examples, e.g.
+ * `"0 10 * * 0"` for a weekly Sunday-10am test. Standard 5-field cron can't
+ * express an arbitrary "every N days" interval, so this only encodes daily
+ * and weekly cleanly at the same UTC hour/minute as `schedule_start_time`;
+ * `every_days` remains the source of truth for any other interval and this
+ * falls back to a daily cron at that time. Confirm against Smartlead if a
+ * non-daily/weekly interval is ever configured.
+ */
+export function schedulerCronValue(everyDays: number, at: Date): string {
+  const minute = at.getUTCMinutes();
+  const hour = at.getUTCHours();
+  if (everyDays === 7) {
+    return `${minute} ${hour} * * ${at.getUTCDay()}`;
+  }
+  return `${minute} ${hour} * * *`;
 }
 
 /**
@@ -293,11 +319,16 @@ export class CampaignScanner {
             continue;
           }
 
+          const scheduledAt = paddedScheduleDate();
           const created = recurring
             ? await this.smartDelivery.createAutomatedPlacement({
                 ...payload,
                 every_days: this.config.placementTestEveryDays,
-                schedule_start_time: scheduleStartTime(),
+                schedule_start_time: scheduledAt.toISOString(),
+                scheduler_cron_value: schedulerCronValue(
+                  this.config.placementTestEveryDays,
+                  scheduledAt,
+                ),
                 test_end_date: addDaysIso(
                   new Date(),
                   this.config.placementTestEndDays > 0

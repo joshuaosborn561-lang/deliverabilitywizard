@@ -10,6 +10,7 @@ import {
   addDaysIso,
   CampaignScanner,
   OPEN_ENDED_TEST_DAYS,
+  schedulerCronValue,
   scheduleStartTime,
 } from "./campaignScanner.js";
 
@@ -44,6 +45,24 @@ describe("addDaysIso", () => {
   it("adds whole UTC days", () => {
     const result = addDaysIso(new Date("2026-08-03T09:00:00.000Z"), 3);
     assert.equal(result, "2026-08-06T09:00:00.000Z");
+  });
+});
+
+describe("schedulerCronValue", () => {
+  it("builds a daily cron at the given UTC hour/minute for the default 1-day interval", () => {
+    const at = new Date("2026-08-05T09:02:00.000Z");
+    assert.equal(schedulerCronValue(1, at), "2 9 * * *");
+  });
+
+  it("builds a weekly cron pinned to the day-of-week for a 7-day interval", () => {
+    // 2026-08-05 is a Wednesday (day 3).
+    const at = new Date("2026-08-05T09:02:00.000Z");
+    assert.equal(schedulerCronValue(7, at), "2 9 * * 3");
+  });
+
+  it("falls back to a daily cron for an interval it can't express exactly", () => {
+    const at = new Date("2026-08-05T09:02:00.000Z");
+    assert.equal(schedulerCronValue(3, at), "2 9 * * *");
   });
 });
 
@@ -168,5 +187,8 @@ describe("CampaignScanner — status re-check before creation", () => {
       daysOut > OPEN_ENDED_TEST_DAYS - 1 && daysOut < OPEN_ENDED_TEST_DAYS + 1,
       `expected ~${OPEN_ENDED_TEST_DAYS} days out, got ${daysOut}`,
     );
+    const cronValue = created[0]!.scheduler_cron_value as string;
+    assert.ok(cronValue, "scheduler_cron_value must always be present — SmartDelivery requires it");
+    assert.match(cronValue, /^\d{1,2} \d{1,2} \* \* \*$/);
   });
 });

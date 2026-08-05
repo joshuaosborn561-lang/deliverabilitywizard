@@ -46,8 +46,19 @@ export interface CreateAutomatedPlacementInput
   every_days: number;
   /** ISO 8601 timestamp for the first run. */
   schedule_start_time: string;
-  /** ISO 8601 timestamp; omit for an open-ended schedule. */
-  test_end_date?: string;
+  /**
+   * Cron expression for when the recurring test fires (e.g. "0 9 * * *").
+   * SmartDelivery requires this on every call alongside `every_days` — their
+   * request schema for it isn't publicly documented; see
+   * schedulerCronValue() in campaignScanner.ts.
+   */
+  scheduler_cron_value: string;
+  /**
+   * ISO 8601 timestamp. SmartDelivery requires this on every call — there is
+   * no way to omit it for an open-ended schedule. See OPEN_ENDED_TEST_DAYS
+   * in campaignScanner.ts for how an "open-ended" test still gets a value.
+   */
+  test_end_date: string;
 }
 
 export class SmartDeliveryClient {

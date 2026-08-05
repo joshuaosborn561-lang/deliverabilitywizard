@@ -231,6 +231,25 @@ describe("owner intent — mailbox settings", () => {
       ),
     );
   });
+
+  it("D24: Smartlead ceiling is campaign + warmup so 30 excludes warmup", () => {
+    assert.equal(
+      defaults.warmupTotalPerDay,
+      20,
+      stop(
+        "Warmup allotment is 20/day (D24).",
+        `Warmup is now ${defaults.warmupTotalPerDay}/day.`,
+      ),
+    );
+    assert.equal(
+      defaults.messagePerDay + defaults.warmupTotalPerDay,
+      50,
+      stop(
+        "Smartlead max_email_per_day must be 30 campaign + 20 warmup (D24).",
+        `Ceiling math is now ${defaults.messagePerDay}+${defaults.warmupTotalPerDay}.`,
+      ),
+    );
+  });
 });
 
 describe("owner intent — auto bug remediator", () => {

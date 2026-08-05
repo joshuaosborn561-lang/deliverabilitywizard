@@ -223,6 +223,25 @@ Accepted knowingly — volume per mailbox is the lever that protects reputation.
 
 ---
 
+## D24 — Smartlead daily ceiling is campaign + warmup (30 excludes warmup)
+
+**Decision.** `MESSAGE_PER_DAY` remains the **campaign** target (30). Because
+Smartlead's `max_email_per_day` is a shared pool that warmup draws from first,
+the value we write is `MESSAGE_PER_DAY + WARMUP_TOTAL_PER_DAY` (30+20=50 by
+default). Warmup stays `WARMUP_TOTAL_PER_DAY` on its own field.
+
+**Why.** D11 said 30 is the campaign cap and assumed separate fields. In
+practice Smartlead subtracts warmup from `max_email_per_day`, so a ceiling of
+30 left only ~10 campaign sends — campaigns could not reach 10×30=300 (or any
+sender×30 target). Josh: "30 day should exclude warmups".
+
+**Tradeoff.** Absolute Smartlead sends/day per mailbox rises to 50. Accepted:
+that is 30 campaign + 20 warmup, which was always the intent.
+
+**Guard.** `D11/D24: Smartlead ceiling is campaign + warmup`
+
+---
+
 ## D12 — A sender belongs to one campaign at a time
 
 **Decision.** A generic found on more than one active campaign is released from

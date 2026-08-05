@@ -17,6 +17,7 @@ import {
 import { isBcpCampaignName } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
 import { parseSenderBounceStats } from "../lib/bounceRate.js";
+import { totalDailySendCeiling } from "../lib/sendCeiling.js";
 import { isPrewarmedGeneric } from "./warmupGate.js";
 import type { StateStore } from "../state/store.js";
 
@@ -59,13 +60,41 @@ export interface SendAuditRow {
 
 export interface SendAuditResult {
   date: string;
-  cap: number;
+  /** Campaign send target (D11) — warmup is separate. */
+  campaignCap: number;
+  warmupPerDay: number;
+  /** Smartlead max_email_per_day that should be set (campaign + warmup). */
+  totalCeiling: number;
   sendingMailboxes: number;
+  /** Hit the Smartlead total ceiling (campaign+warmup). */
+  hitTotalCeiling: number;
+  /** Estimated campaign sends ≥ campaignCap (sent − warmup floor). */
+  hitCampaignCap: number;
+  underCampaignCap: number;
+  unknown: number;
+  /** @deprecated use campaignCap — kept for older callers */
+  cap: number;
   hitCap: number;
   underCap: number;
-  unknown: number;
   underCapSample: SendAuditRow[];
+  campaigns: CampaignSendAuditRow[];
   errors: string[];
+}
+
+export interface CampaignSendAuditRow {
+  id: number;
+  name: string;
+  senders: number;
+  disconnected: number;
+  /** Sum of Smartlead daily_sent_count (warmup + campaign). */
+  totalSentToday: number;
+  /** max(0, totalSent − senders×warmup) estimate of campaign volume. */
+  estimatedCampaignSent: number;
+  /** senders × campaignCap (e.g. 10×30 = 300). */
+  expectedCampaignSent: number;
+  shortfall: number;
+  /** Why this campaign is short of expected campaign volume. */
+  reasons: string[];
 }
 
 export interface BcpGenericHit {
@@ -379,14 +408,24 @@ export class PlacementAuditService {
   }
 
   async runSends(date = new Date().toISOString().slice(0, 10)): Promise<SendAuditResult> {
+    const campaignCap = this.config.messagePerDay;
+    const warmupPerDay = this.config.warmupTotalPerDay;
+    const totalCeiling = totalDailySendCeiling(this.config);
     const result: SendAuditResult = {
       date,
-      cap: this.config.messagePerDay,
+      campaignCap,
+      warmupPerDay,
+      totalCeiling,
+      cap: campaignCap,
       sendingMailboxes: 0,
+      hitTotalCeiling: 0,
+      hitCampaignCap: 0,
+      underCampaignCap: 0,
       hitCap: 0,
       underCap: 0,
       unknown: 0,
       underCapSample: [],
+      campaigns: [],
       errors: [],
     };
 
@@ -403,10 +442,12 @@ export class PlacementAuditService {
     }
 
     const campaigns = await this.smartlead.listCampaigns().catch(() => []);
-    const activeIds = new Set(
-      campaigns
-        .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
-        .map((c) => c.id),
+    const activeCampaigns = campaigns.filter(
+      (c) => String(c.status ?? "").toUpperCase() === "ACTIVE",
+    );
+    const activeIds = new Set(activeCampaigns.map((c) => c.id));
+    const nameById = new Map(
+      activeCampaigns.map((c) => [c.id, String(c.name ?? `campaign ${c.id}`)]),
     );
 
     const sending = accounts.filter((account) => {
@@ -433,13 +474,36 @@ export class PlacementAuditService {
       );
     }
 
+    type AccAgg = {
+      senders: number;
+      disconnected: number;
+      totalSent: number;
+      estimatedCampaign: number;
+      lowCeiling: number;
+      unknownSent: number;
+    };
+    const byCampaign = new Map<number, AccAgg>();
+    for (const id of activeIds) {
+      byCampaign.set(id, {
+        senders: 0,
+        disconnected: 0,
+        totalSent: 0,
+        estimatedCampaign: 0,
+        lowCeiling: 0,
+        unknownSent: 0,
+      });
+    }
+
     for (const account of sending) {
       const email = accountEmail(account)!.toLowerCase();
-      const cap =
+      const configuredCeiling =
         typeof account.max_email_per_day === "number" &&
         account.max_email_per_day > 0
           ? account.max_email_per_day
-          : this.config.messagePerDay;
+          : campaignCap;
+      const cids = campaignIdsOf(account).filter((id) => activeIds.has(id));
+      const disconnected =
+        account.is_smtp_success === false || account.is_imap_success === false;
 
       let sent: number | null = null;
       let source: SendAuditRow["source"] = "unknown";
@@ -454,34 +518,90 @@ export class PlacementAuditService {
         source = "health_metrics";
       }
 
+      // Campaign estimate: total daily sent minus the warmup allotment.
+      const estimatedCampaign =
+        sent === null ? null : Math.max(0, sent - warmupPerDay);
+
+      for (const cid of cids) {
+        const agg = byCampaign.get(cid)!;
+        agg.senders += 1;
+        if (disconnected) agg.disconnected += 1;
+        if (configuredCeiling < totalCeiling) agg.lowCeiling += 1;
+        if (sent === null) agg.unknownSent += 1;
+        else {
+          agg.totalSent += sent;
+          agg.estimatedCampaign += estimatedCampaign ?? 0;
+        }
+      }
+
       if (sent === null) {
         result.unknown += 1;
         continue;
       }
 
-      const row: SendAuditRow = {
-        email,
-        campaignIds: campaignIdsOf(account).filter((id) => activeIds.has(id)),
-        sent,
-        cap,
-        hitCap: sent >= cap,
-        source,
-      };
-      if (row.hitCap) result.hitCap += 1;
-      else {
+      const hitTotal = sent >= configuredCeiling;
+      const hitCampaign = (estimatedCampaign ?? 0) >= campaignCap;
+      if (hitTotal) result.hitTotalCeiling += 1;
+      if (hitCampaign) {
+        result.hitCampaignCap += 1;
+        result.hitCap += 1;
+      } else {
+        result.underCampaignCap += 1;
         result.underCap += 1;
-        if (result.underCapSample.length < 40) result.underCapSample.push(row);
+        if (result.underCapSample.length < 40) {
+          result.underCapSample.push({
+            email,
+            campaignIds: cids,
+            sent,
+            cap: campaignCap,
+            hitCap: false,
+            source,
+          });
+        }
       }
     }
 
+    for (const [id, agg] of byCampaign) {
+      const expected = agg.senders * campaignCap;
+      const shortfall = Math.max(0, expected - agg.estimatedCampaign);
+      const reasons: string[] = [];
+      if (agg.senders === 0) reasons.push("no_senders");
+      if (agg.lowCeiling > 0) {
+        reasons.push(
+          `smartlead_ceiling_includes_warmup (${agg.lowCeiling}/${agg.senders} mailboxes at max_email_per_day < ${totalCeiling}; campaign only gets leftover after ${warmupPerDay} warmup)`,
+        );
+      }
+      if (agg.disconnected > 0) {
+        reasons.push(`${agg.disconnected} disconnected smtp/imap`);
+      }
+      if (shortfall > 0 && agg.lowCeiling === 0 && agg.disconnected === 0) {
+        reasons.push("under_daily_pace");
+      }
+      if (agg.unknownSent > 0) reasons.push("missing_daily_sent_count");
+      result.campaigns.push({
+        id,
+        name: nameById.get(id) ?? `campaign ${id}`,
+        senders: agg.senders,
+        disconnected: agg.disconnected,
+        totalSentToday: agg.totalSent,
+        estimatedCampaignSent: agg.estimatedCampaign,
+        expectedCampaignSent: expected,
+        shortfall,
+        reasons,
+      });
+    }
+
+    result.campaigns.sort((a, b) => b.shortfall - a.shortfall);
     result.underCapSample.sort((a, b) => a.sent - b.sent);
 
     console.log("[send-audit] Done", {
       date: result.date,
       sending: result.sendingMailboxes,
-      hitCap: result.hitCap,
-      underCap: result.underCap,
+      hitCampaignCap: result.hitCampaignCap,
+      underCampaignCap: result.underCampaignCap,
+      hitTotalCeiling: result.hitTotalCeiling,
       unknown: result.unknown,
+      campaignsShort: result.campaigns.filter((c) => c.shortfall > 0).length,
     });
 
     return result;

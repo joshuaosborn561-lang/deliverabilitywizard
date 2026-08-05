@@ -6,6 +6,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
+import { totalDailySendCeiling } from "../lib/sendCeiling.js";
 
 /**
  * Hold every mailbox at the agreed sending settings.
@@ -51,14 +52,17 @@ export class MailboxSettingsService {
       return result;
     }
 
-    const target = this.config.messagePerDay;
+    // Smartlead shares max_email_per_day across warmup + campaign. D11 wants
+    // 30 *campaign* sends, so the Smartlead ceiling is campaign + warmup.
+    const campaignTarget = this.config.messagePerDay;
+    const target = totalDailySendCeiling(this.config);
     const accounts = (await this.smartlead.listAllEmailAccounts({
       fetchCampaigns: false,
     })) as SmartleadAccountWithCampaigns[];
     result.scanned = accounts.length;
 
     console.log(
-      `[mailbox-settings] Converging ${accounts.length} mailbox(es) to ${target}/day with warmup on`,
+      `[mailbox-settings] Converging ${accounts.length} mailbox(es) to ${target}/day Smartlead ceiling (${campaignTarget} campaign + ${this.config.warmupTotalPerDay} warmup)`,
     );
 
     let consecutiveFailures = 0;
@@ -114,7 +118,7 @@ export class MailboxSettingsService {
     }
 
     console.log(
-      `[mailbox-settings] Done — ${result.sendLimitSet} send limit(s) set to ${target}, ${result.warmupEnabled} warmup(s) enabled, ${result.errors.length} error(s)`,
+      `[mailbox-settings] Done — ${result.sendLimitSet} send limit(s) set to ${target} (campaign ${campaignTarget} + warmup ${this.config.warmupTotalPerDay}), ${result.warmupEnabled} warmup(s) enabled, ${result.errors.length} error(s)`,
     );
     for (const e of result.errors.slice(0, 10)) {
       console.log(`[mailbox-settings]   error: ${e}`);
@@ -123,7 +127,7 @@ export class MailboxSettingsService {
     if (!dryRun && (result.sendLimitSet || result.warmupEnabled)) {
       try {
         await this.slack.send(
-          `Mailbox settings: ${result.sendLimitSet} mailbox(es) set to ${target} sends/day, ${result.warmupEnabled} warmup(s) enabled (of ${result.scanned} scanned).`,
+          `Mailbox settings: ${result.sendLimitSet} mailbox(es) set to ${target}/day total (${campaignTarget} campaign + ${this.config.warmupTotalPerDay} warmup), ${result.warmupEnabled} warmup(s) enabled (of ${result.scanned} scanned).`,
         );
       } catch (error) {
         console.warn("[mailbox-settings] Slack notify failed", error);

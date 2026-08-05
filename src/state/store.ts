@@ -135,6 +135,28 @@ export interface AppState {
    * continue the same Grok conversation across messages.
    */
   opsCursorAgents: Record<string, string>;
+  /**
+   * Fingerprints of recurring runtime failures the auto bug remediator is
+   * watching or has already handed to a Cursor agent (D21).
+   */
+  bugRemediations: Record<string, BugRemediationRecord>;
+}
+
+export interface BugRemediationRecord {
+  fingerprint: string;
+  failureClass: string;
+  summary: string;
+  source: string;
+  count: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  lastError?: string;
+  lastTriggeredAt?: string;
+  agentId?: string;
+  agentUrl?: string;
+  runId?: string;
+  prUrl?: string;
+  status: "watching" | "triggered" | "pr_open" | "resolved" | "ignored";
 }
 
 export interface SpendApprovalRecord {
@@ -188,6 +210,7 @@ const EMPTY_STATE: AppState = {
   opsAudit: [],
   fleetSummary: null,
   opsCursorAgents: {},
+  bugRemediations: {},
 };
 
 export class StateStore {
@@ -218,6 +241,7 @@ export class StateStore {
         opsAudit: parsed.opsAudit ?? [],
         fleetSummary: parsed.fleetSummary ?? null,
         opsCursorAgents: parsed.opsCursorAgents ?? {},
+        bugRemediations: parsed.bugRemediations ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -374,6 +398,54 @@ export class StateStore {
   setOpsCursorAgentId(username: string, agentId: string): void {
     const key = username.trim().toLowerCase();
     this.state.opsCursorAgents[key] = agentId;
+  }
+
+  getBugRemediation(fingerprint: string): BugRemediationRecord | undefined {
+    return this.state.bugRemediations[fingerprint];
+  }
+
+  bumpBugRemediation(input: {
+    fingerprint: string;
+    failureClass: string;
+    summary: string;
+    source: string;
+    lastError?: string;
+    at: string;
+  }): BugRemediationRecord {
+    const existing = this.state.bugRemediations[input.fingerprint];
+    if (!existing) {
+      const created: BugRemediationRecord = {
+        fingerprint: input.fingerprint,
+        failureClass: input.failureClass,
+        summary: input.summary,
+        source: input.source,
+        count: 1,
+        firstSeenAt: input.at,
+        lastSeenAt: input.at,
+        lastError: input.lastError,
+        status: "watching",
+      };
+      this.state.bugRemediations[input.fingerprint] = created;
+      return created;
+    }
+    existing.count += 1;
+    existing.lastSeenAt = input.at;
+    existing.summary = input.summary;
+    existing.source = input.source;
+    existing.failureClass = input.failureClass;
+    if (input.lastError) existing.lastError = input.lastError;
+    if (existing.status === "resolved") existing.status = "watching";
+    return existing;
+  }
+
+  markBugRemediation(
+    fingerprint: string,
+    patch: Partial<BugRemediationRecord>,
+  ): BugRemediationRecord | undefined {
+    const existing = this.state.bugRemediations[fingerprint];
+    if (!existing) return undefined;
+    Object.assign(existing, patch);
+    return existing;
   }
 
   clearOpsCursorAgentId(username: string): void {

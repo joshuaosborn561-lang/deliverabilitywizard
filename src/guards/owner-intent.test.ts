@@ -198,6 +198,43 @@ describe("owner intent — mailbox settings", () => {
   });
 });
 
+describe("owner intent — auto bug remediator", () => {
+  it("D21: remediator defaults on with auto-merge after threshold", () => {
+    assert.equal(
+      defaults.enableBugRemediator,
+      true,
+      stop(
+        "Repeated code failures launch a Cursor fix PR (D21).",
+        "Auto bug remediator now defaults off, so production errors wait on a human again.",
+      ),
+    );
+    assert.equal(
+      defaults.bugRemediatorMinHits,
+      2,
+      stop(
+        "Two hits of the same fingerprint launch remediation (D21).",
+        `Min hits is now ${defaults.bugRemediatorMinHits}.`,
+      ),
+    );
+    assert.equal(
+      defaults.bugRemediatorCooldownHours,
+      24,
+      stop(
+        "Same fingerprint waits 24h before re-launch (D21).",
+        `Cooldown is now ${defaults.bugRemediatorCooldownHours}h.`,
+      ),
+    );
+    assert.equal(
+      defaults.bugRemediatorAutoMerge,
+      true,
+      stop(
+        "Remediator merges green PRs so Josh does not babysit (D21).",
+        "Auto-merge now defaults off.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — sender supply", () => {
   it("D9: a generic is taken only while its donor keeps the floor", () => {
     const floor = 50;

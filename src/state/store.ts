@@ -102,6 +102,14 @@ export interface FleetSummarySnapshot {
   disconnectedMailboxes: number;
 }
 
+export interface PendingResumeRecord {
+  campaignId: number;
+  campaignName?: string;
+  pausedAt: string;
+  /** Why the protective pause happened (warmup gate, remediation, …). */
+  reason: string;
+}
+
 export interface AppState {
   version: 1;
   lastScanAt: string | null;
@@ -109,6 +117,7 @@ export interface AppState {
   lastRemediationAt: string | null;
   lastReconnectAt: string | null;
   lastWarmupGateAt: string | null;
+  lastHealthAt: string | null;
   testedCampaigns: Record<string, TestedCampaignRecord>;
   /** Dedupe keys for Slack alerts already sent */
   alertedKeys: Record<string, string>;
@@ -140,6 +149,11 @@ export interface AppState {
    * watching or has already handed to a Cursor agent (D21).
    */
   bugRemediations: Record<string, BugRemediationRecord>;
+  /**
+   * Campaigns paused protectively (last-account remove, etc.) that should be
+   * auto-resumed once staffed again (D25).
+   */
+  pendingResumes: Record<string, PendingResumeRecord>;
 }
 
 export interface BugRemediationRecord {
@@ -198,6 +212,7 @@ const EMPTY_STATE: AppState = {
   lastRemediationAt: null,
   lastReconnectAt: null,
   lastWarmupGateAt: null,
+  lastHealthAt: null,
   testedCampaigns: {},
   alertedKeys: {},
   remediatedKeys: {},
@@ -211,6 +226,7 @@ const EMPTY_STATE: AppState = {
   fleetSummary: null,
   opsCursorAgents: {},
   bugRemediations: {},
+  pendingResumes: {},
 };
 
 export class StateStore {
@@ -242,6 +258,8 @@ export class StateStore {
         fleetSummary: parsed.fleetSummary ?? null,
         opsCursorAgents: parsed.opsCursorAgents ?? {},
         bugRemediations: parsed.bugRemediations ?? {},
+        pendingResumes: parsed.pendingResumes ?? {},
+        lastHealthAt: parsed.lastHealthAt ?? null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -630,6 +648,30 @@ export class StateStore {
 
   setLastWarmupGateAt(iso: string): void {
     this.state.lastWarmupGateAt = iso;
+  }
+
+  setLastHealthAt(iso: string): void {
+    this.state.lastHealthAt = iso;
+  }
+
+  markPendingResume(record: PendingResumeRecord): void {
+    this.state.pendingResumes[String(record.campaignId)] = record;
+  }
+
+  hasPendingResume(campaignId: number): boolean {
+    return Boolean(this.state.pendingResumes[String(campaignId)]);
+  }
+
+  getPendingResume(campaignId: number): PendingResumeRecord | undefined {
+    return this.state.pendingResumes[String(campaignId)];
+  }
+
+  listPendingResumes(): PendingResumeRecord[] {
+    return Object.values(this.state.pendingResumes);
+  }
+
+  clearPendingResume(campaignId: number): void {
+    delete this.state.pendingResumes[String(campaignId)];
   }
 
   async save(): Promise<void> {

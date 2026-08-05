@@ -15,10 +15,12 @@ import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
+import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 
 /**
- * Bring every active campaign up to a minimum sender headcount.
+ * Bring every active (and pending-resume) campaign up to a minimum *staffable*
+ * sender headcount — connected + not held / known-spammy (D25).
  *
  * The recovery pool only swaps one-for-one against a benched sender, so a
  * campaign that simply launched thin — or lost senders faster than they were
@@ -115,11 +117,24 @@ export class CampaignTopUpService {
         .listActiveSwaps()
         .map((swap) => swap.poolEmail.toLowerCase()),
     );
-    const senderCounts = new Map<number, number>();
+    const inboxThreshold = this.config.remediationInboxThreshold;
+    const staffableCounts = new Map<number, number>();
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
-      if (!accountEmail(account)) continue;
+      const email = accountEmail(account);
+      if (!email) continue;
+      const held = Boolean(this.state.getHeldInbox(email));
+      const heldRate = this.state.getHeldInbox(email)?.inboxRate;
+      if (
+        !isStaffableSender(account, {
+          held,
+          inboxRate: heldRate,
+          inboxThreshold,
+        })
+      ) {
+        continue;
+      }
       for (const id of campaignIdsOf(account)) {
-        senderCounts.set(id, (senderCounts.get(id) ?? 0) + 1);
+        staffableCounts.set(id, (staffableCounts.get(id) ?? 0) + 1);
       }
     }
 
@@ -131,9 +146,17 @@ export class CampaignTopUpService {
         .map((campaign) => campaign.id),
     );
 
-    // Live counts, decremented as senders are pulled, so a run cannot strip a
-    // donor campaign below the floor across several moves.
-    const projected = new Map(senderCounts);
+    const isManagedCampaign = (c: SmartleadCampaign): boolean => {
+      const status = String(c.status ?? "").toUpperCase();
+      if (status === "ACTIVE") return true;
+      // Protective pauses (last-account remove) stay refillable so health can
+      // START them again once the floor is met.
+      return status === "PAUSED" && this.state.hasPendingResume(c.id);
+    };
+
+    // Live staffable counts, decremented as senders are pulled, so a run cannot
+    // strip a donor campaign below the floor across several moves.
+    const projected = new Map(staffableCounts);
 
     // Where each generic currently sends. A generic with no campaign is free;
     // one on a campaign is reassignable only while that campaign keeps a
@@ -151,7 +174,7 @@ export class CampaignTopUpService {
     };
 
     const needy: Array<{ campaign: SmartleadCampaign; senders: number }> = (campaigns as SmartleadCampaign[])
-      .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+      .filter((c) => isManagedCampaign(c))
       .filter((c) => {
         if (isExcluded(c, excluded) || isBcpCampaignName(String(c.name ?? ""))) {
           result.skipped.push(
@@ -163,7 +186,7 @@ export class CampaignTopUpService {
       })
       .map((c) => ({
         campaign: c,
-        senders: senderCounts.get(c.id) ?? 0,
+        senders: staffableCounts.get(c.id) ?? 0,
       }))
       .filter((row) => row.senders < floor)
       // Neediest first, so a shallow pool helps the worst campaign.
@@ -175,7 +198,7 @@ export class CampaignTopUpService {
     // campaign below the floor, which this run then fills.
     const activeIds = new Set(
       (campaigns as SmartleadCampaign[])
-        .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+        .filter((c) => isManagedCampaign(c))
         .map((c) => c.id),
     );
     for (const row of this.state.listPoolMailboxes()) {
@@ -234,8 +257,8 @@ export class CampaignTopUpService {
 
     // Recompute shortfalls against the post-release counts.
     const needyAfter = (campaigns as SmartleadCampaign[])
-      .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
-      .filter((c) => !isExcluded(c, excluded))
+      .filter((c) => isManagedCampaign(c))
+      .filter((c) => !isExcluded(c, excluded) && !isBcpCampaignName(String(c.name ?? "")))
       .map((c) => ({ campaign: c, senders: projected.get(c.id) ?? 0 }))
       .filter((row) => row.senders < floor)
       .sort((a, b) => a.senders - b.senders);
@@ -243,7 +266,9 @@ export class CampaignTopUpService {
     needy.push(...needyAfter);
 
     if (!needy.length) {
-      console.log(`[top-up] All active campaigns at or above ${floor} senders`);
+      console.log(
+        `[top-up] All managed campaigns at or above ${floor} staffable senders`,
+      );
       return result;
     }
 
@@ -463,26 +488,8 @@ export class CampaignTopUpService {
       console.log(`[top-up]   error: ${e}`);
     }
 
-    if (result.assigned.length || result.unfilled.length) {
-      const byCampaign = new Map<string, number>();
-      for (const a of result.assigned) {
-        const key = `#${a.campaignId} ${a.campaignName}`;
-        byCampaign.set(key, (byCampaign.get(key) ?? 0) + 1);
-      }
-      try {
-        await this.slack.send(
-          [
-            `${dryRun ? "[DRY RUN] " : ""}Campaign top-up to ${floor} senders:`,
-            ...[...byCampaign].map(([name, n]) => `- ${name}: +${n} generic(s)`),
-            ...result.unfilled.map(
-              (u) => `- #${u.campaignId} ${u.name}: still short ${u.shortBy} (pool exhausted)`,
-            ),
-          ].join("\n"),
-        );
-      } catch (error) {
-        console.warn("[top-up] Slack notify failed", error);
-      }
-    }
+    // Slack is owned by CampaignHealthService so shortfalls / resumes share
+    // one staffing alert. Top-up still logs locally for Railway diagnostics.
 
     return result;
   }

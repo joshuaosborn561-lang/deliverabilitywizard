@@ -15,7 +15,10 @@ import {
   parseSenderAuthResults,
   spfFailing,
 } from "../lib/authResults.js";
-import { diagnoseBlacklists } from "../lib/blacklistDiagnosis.js";
+import {
+  diagnoseBlacklists,
+  filterTeardownBlacklistHits,
+} from "../lib/blacklistDiagnosis.js";
 import type { StateStore } from "../state/store.js";
 import type {
   BlacklistedDomainHit,
@@ -124,15 +127,24 @@ export class ResultMonitor {
       ...parseDomainBlacklistHits(domainRaw),
       ...parseIpBlacklistHits(ipRaw),
     ];
+    // SURBL / unnamed domain-blacklist noise — do not page Slack for teardown.
+    const actionableHits = filterTeardownBlacklistHits(hits);
 
-    if (!hits.length) return 0;
+    if (!actionableHits.length) {
+      if (hits.length) {
+        console.log(
+          `[monitor] Ignoring ${hits.length} SURBL/unnamed domain-blacklist hit(s) on test ${testId}`,
+        );
+      }
+      return 0;
+    }
 
-    const domains = uniqueBlacklistedDomains(hits);
+    const domains = uniqueBlacklistedDomains(actionableHits);
     // Deduped per test+domain set so Slack clearly names every blacklisted domain once.
-    const key = `blacklist-domains:v3:${testId}:${domains.map((d) => d.toLowerCase()).sort().join(",")}`;
+    const key = `blacklist-domains:v4:${testId}:${domains.map((d) => d.toLowerCase()).sort().join(",")}`;
     if (this.state.hasAlert(key)) return 0;
 
-    const diagnoses = diagnoseBlacklists(hits);
+    const diagnoses = diagnoseBlacklists(actionableHits);
 
     await this.slack.notifyBlacklistDiagnosis({
       testId,

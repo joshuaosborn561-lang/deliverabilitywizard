@@ -59,9 +59,15 @@ describe("diagnoseBlacklists", () => {
     assert.deepEqual(d!.sharedWithDomains, []);
   });
 
-  it("only auto-replaces genuinely burned domains", () => {
+  it("only auto-replaces genuinely burned domains with a named non-SURBL list", () => {
     const hits: BlacklistedDomainHit[] = [
-      { domain: "burned.info", source: "domain-blacklist" },
+      // Unnamed SmartDelivery domain-blacklist boolean — treat as SURBL noise.
+      { domain: "unnamed.info", source: "domain-blacklist" },
+      {
+        domain: "burned.info",
+        source: "domain-blacklist",
+        listName: "Spamhaus DBL",
+      },
       { domain: "a.info", source: "ip-blacklist", ip: "1.1.1.1" },
       { domain: "b.info", source: "ip-blacklist", ip: "1.1.1.1" },
     ];

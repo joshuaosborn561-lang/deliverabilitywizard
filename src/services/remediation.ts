@@ -10,6 +10,7 @@ import {
   uniqueBlacklistedDomains,
   type SenderInboxRate,
 } from "../clients/smartdelivery.js";
+import { filterTeardownBlacklistHits } from "../lib/blacklistDiagnosis.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
@@ -205,7 +206,21 @@ export class RemediationService {
         result.errors.push(`blacklist fetch ${testId}: ${message}`);
       }
     }
-    const blacklistedDomains = uniqueBlacklistedDomains(blacklistHits).map((d) =>
+    // SURBL / unnamed SmartDelivery domain-blacklist flags are noise for
+    // teardown — keep them out of the delete path (Josh: omit SURBL domains).
+    const teardownHits = filterTeardownBlacklistHits(blacklistHits);
+    const ignoredForTeardown = uniqueBlacklistedDomains(blacklistHits).filter(
+      (domain) =>
+        !uniqueBlacklistedDomains(teardownHits)
+          .map((d) => d.toLowerCase())
+          .includes(domain.toLowerCase()),
+    );
+    if (ignoredForTeardown.length) {
+      console.log(
+        `[remediation] Ignoring SURBL/unnamed domain-blacklist hit(s) for teardown: ${ignoredForTeardown.join(", ")}`,
+      );
+    }
+    const blacklistedDomains = uniqueBlacklistedDomains(teardownHits).map((d) =>
       d.toLowerCase(),
     );
     // Historical SmartDelivery tests keep reporting purged domains forever.
@@ -221,7 +236,10 @@ export class RemediationService {
       return stillHasAccounts || !alreadyDone;
     });
     result.blacklistedDomains = actionableBlacklistedDomains;
-    const blacklistedSet = new Set(blacklistedDomains);
+    // Skip low-inbox recovery only for domains headed to teardown — SURBL /
+    // unnamed hits are ignored for delete, so those senders can still be
+    // benched + swapped on inbox rate (D5).
+    const blacklistedSet = new Set(actionableBlacklistedDomains);
     if (blacklistedDomains.length && !actionableBlacklistedDomains.length) {
       console.log(
         `[remediation] Ignoring ${blacklistedDomains.length} historical blacklist hit(s) already remediated with no remaining accounts: ${blacklistedDomains.join(", ")}`,

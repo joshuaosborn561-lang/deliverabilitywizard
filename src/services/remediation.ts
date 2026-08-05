@@ -10,6 +10,7 @@ import {
   uniqueBlacklistedDomains,
   type SenderInboxRate,
 } from "../clients/smartdelivery.js";
+import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { filterTeardownBlacklistHits } from "../lib/blacklistDiagnosis.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
@@ -311,6 +312,7 @@ export class RemediationService {
 
     // Index campaigns for status + client ownership
     let campaignStatus = new Map<number, string>();
+    let campaignNameById = new Map<number, string>();
     let campaignClientById = new Map<number, number | null | undefined>();
     let clientsById = new Map<number, SmartleadClientRecord>();
     try {
@@ -320,6 +322,9 @@ export class RemediationService {
       ]);
       campaignStatus = new Map(
         campaigns.map((c) => [c.id, String(c.status || "").toUpperCase()]),
+      );
+      campaignNameById = new Map(
+        campaigns.map((c) => [c.id, String(c.name ?? "")]),
       );
       campaignClientById = new Map(
         campaigns.map((c) => [c.id, c.client_id ?? null]),
@@ -493,6 +498,15 @@ export class RemediationService {
       const domain = accountDomain(account);
       if (!email || !domain) return false;
       if (blacklistedSet.has(domain)) return false;
+      // BCP is client-domain only while ramping — do not bench/swap generics in.
+      if (isBcpOwnedDomain(domain)) return false;
+      const onBcpOnly = campaignIdsOf(account)
+        .filter((id) => {
+          const status = campaignStatus.get(id);
+          return !status || status === "ACTIVE";
+        })
+        .every((id) => isBcpCampaignName(campaignNameById.get(id) ?? ""));
+      if (onBcpOnly && campaignIdsOf(account).length > 0) return false;
       // High bounce is disqualifying on its own, regardless of placement.
       if (bounceRotations.has(email)) return true;
       const rate = inboxRates.get(email);

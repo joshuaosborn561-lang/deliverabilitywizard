@@ -15,6 +15,10 @@ import {
 } from "../lib/poolSignature.js";
 import type { StateStore } from "../state/store.js";
 
+function isBcpClientName(name: string): boolean {
+  return /bolder\s*cyber/i.test(name) || /\bbcp\b/i.test(name);
+}
+
 export interface PoolSwapAction {
   originalEmail: string;
   originalAccountId: number;
@@ -173,6 +177,18 @@ export class RecoveryPoolService {
       if (!held.removedFromCampaigns.length) continue;
 
       const account = byEmail.get(email);
+      const clientProbe =
+        held.clientName ||
+        (account
+          ? resolveAccountClient(
+              account,
+              opts.campaignClientById,
+              opts.clientsById,
+            ).clientName
+          : "");
+      // BCP is client-domain only — never inject crossscale generics.
+      if (isBcpClientName(clientProbe)) continue;
+
       const platform =
         poolEspFromSmartleadType(held.type ?? account?.type) ?? null;
       if (!platform) {

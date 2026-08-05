@@ -14,6 +14,7 @@ import {
   normalizeTestList,
   testIdOf,
 } from "../clients/smartdelivery.js";
+import { isBcpCampaignName } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
 import { parseSenderBounceStats } from "../lib/bounceRate.js";
 import { isPrewarmedGeneric } from "./warmupGate.js";
@@ -125,10 +126,6 @@ function espBucket(email: string, type: string): "gmail" | "outlook" | "other" {
   if (/^(gmail|googlemail)\.com$/i.test(domain)) return "gmail";
   if (/^(outlook|hotmail|live|msn)\./i.test(domain)) return "outlook";
   return "other";
-}
-
-function isBcpCampaignName(name: string): boolean {
-  return /\bbcp\b/i.test(name) || /bolder\s*cyper/i.test(name);
 }
 
 /**
@@ -593,4 +590,4 @@ export class PlacementAuditService {
   }
 }
 
-export { isBcpCampaignName };
+export { isBcpCampaignName } from "../lib/bcp.js";

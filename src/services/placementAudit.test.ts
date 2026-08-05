@@ -5,10 +5,8 @@ import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import type { StateStore } from "../state/store.js";
-import {
-  isBcpCampaignName,
-  PlacementAuditService,
-} from "./placementAudit.js";
+import { isBcpCampaignName } from "../lib/bcp.js";
+import { PlacementAuditService } from "./placementAudit.js";
 
 describe("isBcpCampaignName", () => {
   it("matches BCP campaign titles", () => {

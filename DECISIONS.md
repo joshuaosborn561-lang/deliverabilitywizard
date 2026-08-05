@@ -420,6 +420,39 @@ Turn off with `ENABLE_BUG_REMEDIATOR=false` or unset `CURSOR_API_KEY`. Set
 
 ---
 
+## D25 — Campaign health is the staffing brain (connected+inboxing floor)
+
+**Decision.** `CampaignHealthService` is the sole mutator for campaign
+staffing. The floor (`MIN_CAMPAIGN_SENDERS`, 50) counts only **staffable**
+senders: connected SMTP/IMAP, not on a recovery hold, and not known-bad on
+placement/warmup reputation. Mere campaign membership (disconnected or
+spammy) does not pad the count. Protective pauses (last-account remove from
+warmup gate / remediation) are recorded as `pendingResumes` and auto-`START`
+once staffed. A fast `CRON_HEALTH` (default every 15m) runs reconnect →
+mailbox settings → refill/unpause. The slower `CRON_MONITOR` keeps Measure
+work (placement, remediation, DNS, warmup gate). Smartlead writes go through
+a serial `MutationQueue`. Slack fires when a shortfall cannot be closed.
+
+**Why.** Outreach dies when campaigns look "full" on membership but have dead
+or spammy mailboxes, or stay PAUSED after a protective last-account strip.
+Staffing was buried inside the six-hour monitor next to Measure work, so thin
+campaigns waited too long and rate limits collided with long remediation
+runs. Josh's north star: keep every ACTIVE campaign staffed with connected,
+inboxing senders without babysitting; Slack only when the system cannot fix
+it. Measure is not optional theatre — it feeds the inboxing signal health
+uses — but it must not block the refill loop.
+
+**Tradeoff.** Unknown connectivity is treated as connected (partial Smartlead
+payloads must not mass-understaff). Unknown placement is optimistic until
+Measure/remediation marks a sender bad. Health reconnect every 15m can add
+API load; mitigated by the mutation queue and reconnect's own in-flight
+guard.
+
+**Guards.** `staffableSender`, `CampaignHealthService`, owner-intent D25,
+`CRON_HEALTH` boot log.
+
+---
+
 ## D19 — Pre-warmed fleets are identified by domain and persisted state
 
 **Decision.** Every mailbox on `crosslaunchco.com` and `crossscaleco.com` is

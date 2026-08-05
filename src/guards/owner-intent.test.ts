@@ -156,6 +156,25 @@ describe("owner intent", () => {
     );
   });
 
+  it("D25: campaign health loop defaults on with a fast cron", () => {
+    assert.equal(
+      defaults.enableCampaignHealth,
+      true,
+      stop(
+        "Campaign health staffing loop stays on (D25).",
+        "Health now defaults off, so thin/paused campaigns wait on the slow monitor.",
+      ),
+    );
+    assert.equal(
+      defaults.cronHealth,
+      "*/15 * * * *",
+      stop(
+        "Health cron runs every 15 minutes (D25).",
+        `Health cron is now ${defaults.cronHealth}.`,
+      ),
+    );
+  });
+
   it("D7: exclusions match a campaign id exactly, never by substring", () => {
     const msrs = { id: 3628940, name: "MSRS2 Ticket Offer" };
     assert.equal(

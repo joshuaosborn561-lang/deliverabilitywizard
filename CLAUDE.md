@@ -102,7 +102,11 @@ Both route through the same path: removed from active campaigns, warmup
 re-enabled, `HOLD-UNTIL` tag, held `RECOVERY_HOLD_DAYS` (14), and a warmed
 generic swapped in.
 
-Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) from the pool.
+Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
+from the pool — connected SMTP/IMAP and not held/known-spammy. Disconnected
+membership does not count (D25). `CampaignHealthService` owns refill and
+auto-resume after protective pauses on `CRON_HEALTH` (every 15m). Measure
+work stays on the slower monitor cron.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.

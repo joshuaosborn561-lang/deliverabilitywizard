@@ -221,6 +221,12 @@ export class WarmupGateService {
               if (!result.pausedCampaigns.includes(campaign.id)) {
                 result.pausedCampaigns.push(campaign.id);
               }
+              this.state.markPendingResume({
+                campaignId: campaign.id,
+                campaignName: String(campaign.name ?? campaign.id),
+                pausedAt: new Date().toISOString(),
+                reason: "warmup_gate_last_account",
+              });
             } catch (pauseError) {
               const message =
                 pauseError instanceof Error
@@ -267,6 +273,12 @@ export class WarmupGateService {
               if (!result.pausedCampaigns.includes(campaign.id)) {
                 result.pausedCampaigns.push(campaign.id);
               }
+              this.state.markPendingResume({
+                campaignId: campaign.id,
+                campaignName: String(campaign.name ?? campaign.id),
+                pausedAt: new Date().toISOString(),
+                reason: "warmup_gate_last_account",
+              });
               await this.smartlead.removeEmailAccountsFromCampaign(
                 campaign.id,
                 [removal.accountId],

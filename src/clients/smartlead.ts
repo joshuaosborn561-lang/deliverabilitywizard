@@ -1,4 +1,5 @@
 import { apiRequest, sleep } from "../lib/http.js";
+import type { MutationQueue } from "../lib/mutationQueue.js";
 import type {
   SmartleadCampaign,
   SmartleadEmailAccount,
@@ -22,7 +23,21 @@ export interface SmartleadClientRecord {
 }
 
 export class SmartleadClient {
+  private mutationQueue: MutationQueue | null = null;
+
   constructor(private readonly apiKey: string) {}
+
+  /**
+   * Optional serialiser for mutating calls. When set, writes share one queue
+   * so overlapping health/monitor/top-up work cannot stampede Smartlead.
+   */
+  setMutationQueue(queue: MutationQueue | null): void {
+    this.mutationQueue = queue;
+  }
+
+  private mutate<T>(fn: () => Promise<T>): Promise<T> {
+    return this.mutationQueue ? this.mutationQueue.enqueue(fn) : fn();
+  }
 
   listCampaigns(clientId?: number): Promise<SmartleadCampaign[]> {
     return apiRequest<SmartleadCampaign[]>(BASE_URL, this.apiKey, "campaigns/", {
@@ -145,36 +160,44 @@ export class SmartleadClient {
     campaignId: number,
     emailAccountIds: number[],
   ): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
-      method: "DELETE",
-      body: { email_account_ids: emailAccountIds },
-    });
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
+        method: "DELETE",
+        body: { email_account_ids: emailAccountIds },
+      }),
+    );
   }
 
   addEmailAccountsToCampaign(
     campaignId: number,
     emailAccountIds: number[],
   ): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
-      method: "POST",
-      body: { email_account_ids: emailAccountIds },
-    });
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
+        method: "POST",
+        body: { email_account_ids: emailAccountIds },
+      }),
+    );
   }
 
   deleteEmailAccount(emailAccountId: number): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `email-accounts/${emailAccountId}`, {
-      method: "DELETE",
-    });
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `email-accounts/${emailAccountId}`, {
+        method: "DELETE",
+      }),
+    );
   }
 
   updateCampaignStatus(
     campaignId: number,
     status: "START" | "PAUSED" | "STOPPED",
   ): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/status`, {
-      method: "PATCH",
-      body: { status },
-    });
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/status`, {
+        method: "PATCH",
+        body: { status },
+      }),
+    );
   }
 
   /**
@@ -191,11 +214,13 @@ export class SmartleadClient {
     emailAccountId: number,
     maxEmailPerDay: number,
   ): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `email-accounts/${emailAccountId}`,
-      { method: "POST", body: { max_email_per_day: maxEmailPerDay } },
+    return this.mutate(() =>
+      apiRequest(
+        BASE_URL,
+        this.apiKey,
+        `email-accounts/${emailAccountId}`,
+        { method: "POST", body: { max_email_per_day: maxEmailPerDay } },
+      ),
     );
   }
 
@@ -208,11 +233,13 @@ export class SmartleadClient {
       reply_rate_percentage: number;
     },
   ): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `email-accounts/${emailAccountId}/warmup`,
-      { method: "POST", body: settings },
+    return this.mutate(() =>
+      apiRequest(
+        BASE_URL,
+        this.apiKey,
+        `email-accounts/${emailAccountId}/warmup`,
+        { method: "POST", body: settings },
+      ),
     );
   }
 
@@ -228,11 +255,13 @@ export class SmartleadClient {
       client_id?: number | null;
     },
   ): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `email-accounts/${emailAccountId}`,
-      { method: "POST", body: fields },
+    return this.mutate(() =>
+      apiRequest(
+        BASE_URL,
+        this.apiKey,
+        `email-accounts/${emailAccountId}`,
+        { method: "POST", body: fields },
+      ),
     );
   }
 
@@ -248,11 +277,13 @@ export class SmartleadClient {
     provider?: string;
     emailAccountId?: number;
   }> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `email-accounts/${emailAccountId}/reauth`,
-      { method: "POST", body: {} },
+    return this.mutate(() =>
+      apiRequest(
+        BASE_URL,
+        this.apiKey,
+        `email-accounts/${emailAccountId}/reauth`,
+        { method: "POST", body: {} },
+      ),
     );
   }
 

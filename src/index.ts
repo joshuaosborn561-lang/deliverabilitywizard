@@ -22,6 +22,7 @@ import { RemediationService } from "./services/remediation.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
+import { CampaignHealthService } from "./services/campaignHealth.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -42,6 +43,7 @@ import {
   type RotationResult,
 } from "./ops/manualRotation.js";
 import { BugRemediator } from "./services/bugRemediator.js";
+import { MutationQueue } from "./lib/mutationQueue.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,6 +60,9 @@ async function main(): Promise<void> {
   }
 
   const smartlead = new SmartleadClient(config.smartleadApiKey || "missing");
+  // Serialise Smartlead writes across health / remediation / settings so
+  // overlapping crons do not stampede into 429s (D25).
+  smartlead.setMutationQueue(new MutationQueue(250));
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
   );
@@ -134,6 +139,7 @@ async function main(): Promise<void> {
   let warmupGateInFlight: Promise<unknown> | null = null;
   let reconcileInFlight: Promise<unknown> | null = null;
   let topUpInFlight: Promise<unknown> | null = null;
+  let healthInFlight: Promise<unknown> | null = null;
   let manualRotationInFlight: Promise<RotationResult> | null = null;
   let opsCheckInFlight: Promise<{
     monitor: unknown;
@@ -239,6 +245,13 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const campaignHealth = new CampaignHealthService(
+    config,
+    smartlead,
+    slack,
+    state,
+    campaignTopUp,
+  );
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,
@@ -311,7 +324,7 @@ async function main(): Promise<void> {
       console.log("[top-up] Manual rotation active — skipping overlapping run");
       return { skipped: true as const, reason: "manual-rotation-active" };
     }
-    if (topUpInFlight) {
+    if (topUpInFlight || healthInFlight) {
       console.log("[top-up] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
@@ -321,10 +334,58 @@ async function main(): Promise<void> {
     return topUpInFlight;
   };
 
+  /**
+   * Fast staffing loop (D25): reconnect → converge mailbox settings →
+   * refill/unpause. Placement/remediation/DNS stay on the slower monitor.
+   */
+  const runHealth = async () => {
+    assertRuntimeSecrets(config);
+    if (manualRotationInFlight) {
+      console.log("[health] Manual rotation active — skipping");
+      return { skipped: true as const, reason: "manual-rotation-active" };
+    }
+    if (healthInFlight) {
+      console.log("[health] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    healthInFlight = (async () => {
+      let reconnectResult: unknown = null;
+      if (config.enableAccountReconnect) {
+        try {
+          reconnectResult = await runReconnect();
+        } catch (error) {
+          console.warn("[health] reconnect failed", error);
+        }
+      }
+      let mailboxSettingsResult: unknown = null;
+      try {
+        mailboxSettingsResult = await mailboxSettings.run();
+      } catch (error) {
+        console.warn("[health] mailbox-settings failed", error);
+      }
+      let healthResult: unknown = null;
+      try {
+        healthResult = await campaignHealth.run();
+      } catch (error) {
+        console.warn("[health] campaign health failed", error);
+        throw error;
+      }
+      return {
+        reconnect: reconnectResult,
+        mailboxSettings: mailboxSettingsResult,
+        health: healthResult,
+      };
+    })().finally(() => {
+      healthInFlight = null;
+    });
+    return healthInFlight;
+  };
+
   const runManualRotation = async (email: string) => {
     if (
       manualRotationInFlight ||
       topUpInFlight ||
+      healthInFlight ||
       poolInFlight ||
       remediationInFlight ||
       monitorInFlight
@@ -392,11 +453,6 @@ async function main(): Promise<void> {
       if (config.enableTestReconciler) {
         reconcileResult = await runTestReconcile();
       }
-      // Stay on top of disconnects between the daily 3am ET pass
-      let reconnectResult: unknown = null;
-      if (config.enableAccountReconnect) {
-        reconnectResult = await runReconnect();
-      }
       // Zone-level faults are invisible from inside Smartlead; resolve DNS
       // directly so a domain sending without SPF cannot stay silent.
       let dnsAuditResult: unknown = null;
@@ -405,25 +461,8 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[dns-audit] failed", error);
       }
-      // Refill thin campaigns from the generic pool. Runs after remediation
-      // so a sender benched this pass is replaced in the same cycle.
-      // Converge every mailbox on the agreed send cap and warmup state first,
-      // so senders placed by the top-up below already carry it.
-      let mailboxSettingsResult: unknown = null;
-      try {
-        mailboxSettingsResult = await mailboxSettings.run();
-      } catch (error) {
-        console.warn("[mailbox-settings] failed", error);
-      }
-      let topUpResult: unknown = null;
-      try {
-        topUpResult = await runCampaignTopUp();
-      } catch (error) {
-        console.warn("[top-up] failed", error);
-      }
-      // Campaign-level health: a campaign can bleed senders to recovery holds
-      // or never pick up a placement test, and neither shows in the
-      // mailbox-oriented remediation summary.
+      // Campaign-level audit (read-only). Staffing mutations live on the
+      // faster CRON_HEALTH loop so thin campaigns do not wait six hours.
       let campaignAuditResult: unknown = null;
       try {
         campaignAuditResult = await campaignAudit.run(config.minCampaignSenders);
@@ -435,11 +474,8 @@ async function main(): Promise<void> {
         remediation: remediationResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
-        reconnect: reconnectResult,
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
-        topUp: topUpResult,
-        mailboxSettings: mailboxSettingsResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -452,6 +488,9 @@ async function main(): Promise<void> {
   }
   if (!cron.validate(config.cronMonitor)) {
     throw new Error(`Invalid CRON_MONITOR expression: ${config.cronMonitor}`);
+  }
+  if (!cron.validate(config.cronHealth)) {
+    throw new Error(`Invalid CRON_HEALTH expression: ${config.cronHealth}`);
   }
   if (!cron.validate(config.cronPoolProvision)) {
     throw new Error(
@@ -477,6 +516,21 @@ async function main(): Promise<void> {
       feedBugRemediator("monitor-cron", error);
     });
   });
+
+  if (config.enableCampaignHealth) {
+    cron.schedule(config.cronHealth, () => {
+      void runHealth().catch((error) => {
+        console.error("[health] Unhandled cron error", error);
+        feedBugRemediator("health-cron", error);
+      });
+    });
+    // Kick shortly after boot so thin/paused campaigns do not wait 15m.
+    setTimeout(() => {
+      void runHealth().catch((error) => {
+        console.error("[health] Boot kick failed", error);
+      });
+    }, 45_000);
+  }
 
   if (config.enablePoolProvisioner) {
     cron.schedule(config.cronPoolProvision, () => {
@@ -592,6 +646,10 @@ async function main(): Promise<void> {
       testedCampaignCount: Object.keys(s.testedCampaigns).length,
       cronScan: config.cronScan,
       cronMonitor: config.cronMonitor,
+      enableCampaignHealth: config.enableCampaignHealth,
+      cronHealth: config.cronHealth,
+      pendingResumes: Object.keys(s.pendingResumes ?? {}).length,
+      lastHealthAt: s.lastHealthAt,
       totalTestQuota: config.totalTestQuota,
       maxMailboxesPerTest: config.maxMailboxesPerTest,
       autoPlacementTests: config.autoPlacementTests,
@@ -630,6 +688,8 @@ async function main(): Promise<void> {
         campaignStatuses: config.campaignStatuses,
         cronScan: config.cronScan,
         cronMonitor: config.cronMonitor,
+        cronHealth: config.cronHealth,
+        enableCampaignHealth: config.enableCampaignHealth,
         cronPoolProvision: config.cronPoolProvision,
         cronAccountReconnect: config.cronAccountReconnect,
         totalTestQuota: config.totalTestQuota,
@@ -684,6 +744,16 @@ async function main(): Promise<void> {
       if (mode === "monitor") {
         const result = await runMonitor({ remediate: false });
         res.json({ ok: true, mode: "monitor", result });
+        return;
+      }
+      if (mode === "health" || mode === "campaign-health") {
+        const result = await runHealth();
+        res.json({ ok: true, mode: "health", result });
+        return;
+      }
+      if (mode === "top-up" || mode === "topup") {
+        const result = await runCampaignTopUp();
+        res.json({ ok: true, mode: "top-up", result });
         return;
       }
       if (mode === "remediate") {
@@ -955,34 +1025,30 @@ async function main(): Promise<void> {
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
-    // Campaign headcount and test cover, at boot as well as on the monitor —
-    // waiting up to six hours to learn a campaign is sending with no test is
-    // too long when the shortfall is being worked on right now.
+    // Read-only campaign audit at boot; staffing mutations are owned by the
+    // health cron (boot kick + CRON_HEALTH) so we do not double-write.
     if (secretsReady) {
       void (async () => {
         try {
           await manualRotation.recoverStaleReservations();
           await campaignAudit.run(config.minCampaignSenders);
-          await mailboxSettings.run();
-          // Fill thin campaigns at boot as well as on the monitor. A restart
-          // is the only lever that acts sooner than the six-hourly cron, and
-          // a campaign sending under its floor should not wait that long.
-          // Idempotent: once every campaign is at the floor this is a no-op.
-          await runCampaignTopUp();
         } catch (error) {
-          console.warn("[boot] campaign audit/top-up failed", error);
+          console.warn("[boot] campaign audit failed", error);
         }
       })();
     }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
     );
-    console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
+    console.log(`[boot] Monitor cron: ${config.cronMonitor} (measure/remediate/DNS)`);
     console.log(
-      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} campaign + ${config.warmupTotalPerDay} warmup = ${config.messagePerDay + config.warmupTotalPerDay}/day Smartlead ceiling)` : "not enforced"}`,
+      `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; floor ${config.minCampaignSenders} connected+inboxing; auto-resume protective pauses)` : "disabled"}`,
     );
     console.log(
-      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED (floor ${config.minCampaignSenders} senders${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} campaign + ${config.warmupTotalPerDay} warmup = ${config.messagePerDay + config.warmupTotalPerDay}/day Smartlead ceiling; runs with health)` : "not enforced"}`,
+    );
+    console.log(
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (floor ${config.minCampaignSenders} staffable${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
     );
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,

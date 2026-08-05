@@ -78,6 +78,9 @@ function fakeState(
     upsertPoolMailbox: (record: PoolMailboxRecord) => {
       current = { ...record };
     },
+    getHeldInbox: () => undefined,
+    hasPendingResume: () => false,
+    listPendingResumes: () => [],
     save: async () => undefined,
   } as unknown as StateStore;
   return { state, current: () => current };
@@ -106,6 +109,8 @@ describe("CampaignTopUpService safety", () => {
           from_email: pool.email,
           from_name: "Swap Sender",
           type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
           campaign_ids: [],
         },
       ],
@@ -125,6 +130,61 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(addCalls, 0);
     assert.equal(result.assigned.length, 0);
     assert.equal(result.unfilled[0]?.shortBy, 50);
+  });
+
+  it("ignores disconnected membership when measuring the floor", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "free@pool.info",
+      domain: "pool.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Free",
+      lastName: "Sender",
+      status: "available",
+    };
+    const { state } = fakeState(pool);
+    let addCalls = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Thin", status: "ACTIVE", client_id: 2 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
+        },
+        ...Array.from({ length: 49 }, (_, index) => ({
+          id: 200 + index,
+          from_email: `dead-${index}@x.com`,
+          type: "GMAIL",
+          is_smtp_success: false,
+          is_imap_success: false,
+          campaign_ids: [2],
+        })),
+      ],
+      listClients: async () => [{ id: 2, name: "Client B" }],
+      addEmailAccountsToCampaign: async () => {
+        addCalls += 1;
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(addCalls, 1);
+    assert.equal(result.assigned.length, 1);
+    // 49 disconnected + 1 placed still leaves shortfall of 49 staffable.
+    assert.equal(result.unfilled[0]?.shortBy, 49);
   });
 
   it("rolls back donor and target membership before retrying a failed move", async () => {

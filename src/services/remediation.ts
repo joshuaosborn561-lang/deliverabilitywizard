@@ -548,6 +548,11 @@ export class RemediationService {
                 await this.smartlead.updateCampaignStatus(campaignId, "PAUSED");
                 this.state.markRemediation(pauseKey);
                 result.pausedCampaigns.push(campaignId);
+                this.state.markPendingResume({
+                  campaignId,
+                  pausedAt: new Date().toISOString(),
+                  reason: "remediation_last_account",
+                });
               }
             }
             await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
@@ -568,6 +573,11 @@ export class RemediationService {
             try {
               await this.smartlead.updateCampaignStatus(campaignId, "PAUSED");
               result.pausedCampaigns.push(campaignId);
+              this.state.markPendingResume({
+                campaignId,
+                pausedAt: new Date().toISOString(),
+                reason: "remediation_last_account",
+              });
               await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
                 account.id,
               ]);

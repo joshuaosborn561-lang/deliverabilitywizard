@@ -81,9 +81,15 @@ const ConfigSchema = z.object({
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
   /** Pull a sender off campaigns above this bounce rate (percent). */
-  /** Every active campaign should carry at least this many senders. */
+  /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
   enableCampaignTopUp: boolFromEnv(true),
+  /**
+   * Fast staffing loop: reconnect → mailbox settings → refill/unpause.
+   * Measure (placement/remediation/DNS) stays on the slower monitor cron.
+   */
+  enableCampaignHealth: boolFromEnv(true),
+  cronHealth: z.string().default("*/15 * * * *"),
   /** Daily campaign send cap held on every mailbox. */
   messagePerDay: z.coerce.number().int().min(1).default(30),
   enforceMailboxSettings: boolFromEnv(true),
@@ -281,6 +287,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
+    enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
+    cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",

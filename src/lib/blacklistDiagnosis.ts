@@ -1,4 +1,5 @@
 import type { BlacklistedDomainHit } from "../types/index.js";
+import { isTeardownIgnoredBlacklistHit } from "./blacklistIgnore.js";
 
 export type BlacklistVerdict =
   /** The sending domain itself is listed — the domain is burned. */
@@ -130,11 +131,26 @@ function describeListings(listings: string[]): string {
 /**
  * Domains safe to auto-replace. Shared-IP listings are excluded on purpose:
  * burning and rebuying domains behind a dirty IP costs money and fixes nothing.
+ * SURBL / unnamed SmartDelivery domain-blacklist flags are also excluded —
+ * see {@link isTeardownIgnoredBlacklistHit}.
  */
 export function domainsSafeToReplace(
   diagnoses: BlacklistDiagnosis[],
 ): string[] {
   return diagnoses
     .filter((d) => d.verdict === "domain_burned")
+    .filter((d) => {
+      // Unnamed domain-blacklist (SmartDelivery boolean) or SURBL-only → skip.
+      if (!d.listings.length) return false;
+      if (d.listings.every((name) => /surbl|uribl/i.test(name))) return false;
+      return true;
+    })
     .map((d) => d.domain);
+}
+
+/** Drop SURBL / unnamed domain-blacklist noise before teardown decisions. */
+export function filterTeardownBlacklistHits(
+  hits: BlacklistedDomainHit[],
+): BlacklistedDomainHit[] {
+  return hits.filter((hit) => !isTeardownIgnoredBlacklistHit(hit));
 }

@@ -759,6 +759,16 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "warmup-gate", result });
         return;
       }
+      if (
+        mode === "mailbox-settings" ||
+        mode === "mailbox-settings-enforce" ||
+        mode === "settings"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await mailboxSettings.run();
+        res.json({ ok: true, mode: "mailbox-settings", result });
+        return;
+      }
       if (mode === "reconcile" || mode === "test-reconcile") {
         const result = await runTestReconcile();
         res.json({ ok: true, mode: "reconcile", result });

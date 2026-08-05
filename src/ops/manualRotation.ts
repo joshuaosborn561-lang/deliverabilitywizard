@@ -290,7 +290,7 @@ export class ManualRotationService {
       holdTag = await this.smartlead.ensureHoldUntilTag(preview.holdUntil);
       await this.smartlead.setDailySendLimit(
         preview.replacement.accountId,
-        this.config.messagePerDay,
+        this.config.messagePerDay + this.config.warmupTotalPerDay,
       );
 
       const brand =

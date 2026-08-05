@@ -969,7 +969,7 @@ async function main(): Promise<void> {
     );
     console.log(`[boot] Monitor cron: ${config.cronMonitor}`);
     console.log(
-      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} sends/day, warmup on)` : "not enforced"}`,
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} campaign + ${config.warmupTotalPerDay} warmup = ${config.messagePerDay + config.warmupTotalPerDay}/day Smartlead ceiling)` : "not enforced"}`,
     );
     console.log(
       `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED (floor ${config.minCampaignSenders} senders${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,

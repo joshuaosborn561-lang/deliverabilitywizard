@@ -102,6 +102,41 @@ describe("owner intent", () => {
     );
   });
 
+  it("D8: recurring daily autos stay on with ≤50 senders and reconciler", () => {
+    assert.equal(
+      defaults.autoPlacementTests,
+      true,
+      stop(
+        "Placement tests are recurring automated schedules (D8).",
+        "AUTO_PLACEMENT_TESTS now defaults off, so campaigns lose day-over-day inbox tracking.",
+      ),
+    );
+    assert.equal(
+      defaults.placementTestEveryDays,
+      1,
+      stop(
+        "Recurring placement tests re-run daily (D8).",
+        `every_days is now ${defaults.placementTestEveryDays}.`,
+      ),
+    );
+    assert.equal(
+      defaults.maxMailboxesPerTest,
+      50,
+      stop(
+        "Each placement test is capped at 50 senders (D8 / SmartDelivery).",
+        `Max mailboxes per test is now ${defaults.maxMailboxesPerTest}.`,
+      ),
+    );
+    assert.equal(
+      defaults.enableTestReconciler,
+      true,
+      stop(
+        "Recurring tests stop when the campaign is no longer active (D8).",
+        "Test reconciler now defaults off, so paused campaigns keep burning test runs.",
+      ),
+    );
+  });
+
   it("D7: campaign top-up is on with a 50-sender floor", () => {
     assert.equal(
       defaults.enableCampaignTopUp,

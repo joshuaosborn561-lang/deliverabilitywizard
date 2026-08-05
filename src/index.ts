@@ -27,6 +27,7 @@ import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
 import { TestReconciler } from "./services/testReconciler.js";
+import { PlacementAuditService } from "./services/placementAudit.js";
 import {
   FleetSummaryService,
   PlacementResultsService,
@@ -103,6 +104,13 @@ async function main(): Promise<void> {
   );
   const warmupGate = new WarmupGateService(config, smartlead, slack, state);
   const testReconciler = new TestReconciler(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const placementAudit = new PlacementAuditService(
     config,
     smartlead,
     smartDelivery,
@@ -746,6 +754,38 @@ async function main(): Promise<void> {
       if (mode === "reconcile" || mode === "test-reconcile") {
         const result = await runTestReconcile();
         res.json({ ok: true, mode: "reconcile", result });
+        return;
+      }
+      if (
+        mode === "audit-placements" ||
+        mode === "audit-placement" ||
+        mode === "placement-audit"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await placementAudit.runPlacements();
+        res.json({ ok: true, mode: "audit-placements", result });
+        return;
+      }
+      if (mode === "audit-sends" || mode === "send-audit") {
+        assertRuntimeSecrets(config);
+        const date =
+          typeof req.body?.date === "string" && req.body.date
+            ? String(req.body.date).slice(0, 10)
+            : new Date().toISOString().slice(0, 10);
+        const result = await placementAudit.runSends(date);
+        res.json({ ok: true, mode: "audit-sends", result });
+        return;
+      }
+      if (mode === "audit-bcp" || mode === "bcp-audit") {
+        assertRuntimeSecrets(config);
+        const result = await placementAudit.runBcpGenerics();
+        res.json({ ok: true, mode: "audit-bcp", result });
+        return;
+      }
+      if (mode === "audit-day" || mode === "day-audit") {
+        assertRuntimeSecrets(config);
+        const result = await placementAudit.runDay();
+        res.json({ ok: true, mode: "audit-day", result });
         return;
       }
       if (mode === "bug-remediate" || mode === "bug-remediator") {

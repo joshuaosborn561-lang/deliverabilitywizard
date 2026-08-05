@@ -1,15 +1,13 @@
 import type { AppConfig } from "../config.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
-import {
-  campaignIdOf,
-  normalizeTestList,
-} from "../clients/smartdelivery.js";
+import { normalizeTestList } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
   campaignIdsOf,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
+import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -99,18 +97,16 @@ export class CampaignAuditService {
       }
     }
 
-    const tested = new Set<string>();
+    let tested = new Set<string>();
     try {
       const listed = normalizeTestList(await this.smartDelivery.listTests({}));
-      for (const test of await this.smartDelivery.enrichCampaignIds(listed)) {
-        const cid = campaignIdOf(test);
-        if (cid) tested.add(String(cid));
-      }
+      const enriched = await this.smartDelivery.enrichCampaignIds(listed);
+      tested = testedCampaignCoverage(
+        enriched,
+        this.state.get().testedCampaigns,
+      );
     } catch (error) {
       console.warn("[campaign-audit] could not list tests", error);
-    }
-    for (const id of Object.keys(this.state.get().testedCampaigns)) {
-      tested.add(id);
     }
 
     const rows: CampaignAuditRow[] = campaigns

@@ -2,7 +2,7 @@ import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
-  extractSenderEmails,
+  accountEmail,
   pickSequence,
   sequenceMappingIdOf,
   sequenceSubjectPreview,
@@ -13,9 +13,14 @@ import {
   normalizeTestList,
   testIdOf,
 } from "../clients/smartdelivery.js";
-import { chunkArray, sleep, uniqueStrings } from "../lib/http.js";
+import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
+import { chunkArray, sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
-import type { CampaignTestPlan, SmartleadCampaign } from "../types/index.js";
+import type {
+  CampaignTestPlan,
+  SmartleadCampaign,
+  SmartleadEmailAccount,
+} from "../types/index.js";
 
 export interface ScanResult {
   scanned: number;
@@ -26,6 +31,57 @@ export interface ScanResult {
   quotaBlocked: boolean;
   plans: CampaignTestPlan[];
   createdTestIds: string[];
+}
+
+/**
+ * Interleave a campaign's senders by ESP (Gmail / Outlook / other) round-robin
+ * before chunking into placement-test batches, so each batch is as balanced
+ * as the campaign's actual account mix allows — instead of whichever type the
+ * API happened to list first dominating a whole batch. (BCP Generic's first
+ * test batch on 2026-08-05 came back 47 Outlook / 3 Gmail purely from list
+ * order, even though the campaign itself runs closer to 62/38 Outlook/Gmail
+ * and had 28 Gmail senders available.) When one ESP has fewer accounts than
+ * the other, balance is front-loaded into the earlier batches — the earliest
+ * batch this produces is the most-balanced one possible, with any surplus of
+ * the larger ESP spilling into later batches.
+ */
+export function interleaveSendersByEsp(
+  accounts: Array<SmartleadEmailAccount | Record<string, unknown>>,
+): string[] {
+  const buckets = new Map<EspFamily, string[]>();
+  const seen = new Set<string>();
+  for (const account of accounts) {
+    const nested =
+      (account as { email_account?: SmartleadEmailAccount }).email_account ??
+      account;
+    const row = nested as SmartleadEmailAccount;
+    const email = accountEmail(row);
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const esp = normalizeSenderEspFamily(row.type);
+    const bucket = buckets.get(esp) ?? [];
+    bucket.push(email);
+    buckets.set(esp, bucket);
+  }
+
+  const order: EspFamily[] = ["google", "microsoft", "other"];
+  const cursors = new Map<EspFamily, number>(order.map((esp) => [esp, 0]));
+  const total = [...buckets.values()].reduce((n, list) => n + list.length, 0);
+  const result: string[] = [];
+  while (result.length < total) {
+    for (const esp of order) {
+      const bucket = buckets.get(esp);
+      if (!bucket) continue;
+      const i = cursors.get(esp)!;
+      if (i < bucket.length) {
+        result.push(bucket[i]!);
+        cursors.set(esp, i + 1);
+      }
+    }
+  }
+  return result;
 }
 
 /** ISO 8601 timestamp N days from base. */
@@ -394,7 +450,7 @@ export class CampaignScanner {
       this.smartlead.getCampaignSequences(campaign.id),
     ]);
 
-    const senderEmails = uniqueStrings(extractSenderEmails(accounts ?? []));
+    const senderEmails = interleaveSendersByEsp(accounts ?? []);
     if (!senderEmails.length) {
       console.log(`[scan] Skipping campaign ${campaign.id} — no sender mailboxes`);
       return null;

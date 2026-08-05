@@ -28,7 +28,7 @@ export interface MailboxSettingsResult {
 }
 
 /** Consecutive failures before the pass gives up for this run. */
-const MAX_CONSECUTIVE_FAILURES = 5;
+const MAX_CONSECUTIVE_FAILURES = 15;
 
 export class MailboxSettingsService {
   constructor(

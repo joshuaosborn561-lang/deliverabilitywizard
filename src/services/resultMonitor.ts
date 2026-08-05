@@ -9,6 +9,7 @@ import {
   testIdOf,
   uniqueBlacklistedDomains,
 } from "../clients/smartdelivery.js";
+import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import {
   dkimFailing,
   parseSenderAuthResults,
@@ -60,38 +61,36 @@ export class ResultMonitor {
     }
 
     // Prefer tests we created; also check recent completed tests so nothing is missed.
-    const trackedIds = new Set(
-      Object.values(this.state.get().testedCampaigns).flatMap((c) => c.testIds),
+    const trackedIds = [
+      ...new Set(
+        Object.values(this.state.get().testedCampaigns).flatMap((c) => c.testIds),
+      ),
+    ];
+    const listedIds = tests
+      .map((test) => testIdOf(test))
+      .filter((id): id is string => Boolean(id));
+    const prioritizedIds = prioritizeTestIdsForReports({
+      trackedIds: [...trackedIds, ...listedIds],
+      listedTests: tests,
+    });
+    const testById = new Map(
+      tests
+        .map((test) => [testIdOf(test), test] as const)
+        .filter((row): row is [string, (typeof tests)[number]] => Boolean(row[0])),
     );
 
-    const interesting = tests.filter((test) => {
-      const id = testIdOf(test);
-      if (!id) return false;
-      const status = String(test.status ?? "").toLowerCase();
-      const completed =
-        status.includes("complete") ||
-        status.includes("done") ||
-        status.includes("finished") ||
-        status === "active" ||
-        status === "";
-      return trackedIds.has(id) || completed;
-    });
+    result.testsChecked = prioritizedIds.length;
 
-    // Cap work per run to stay within rate limits
-    const toCheck = interesting.slice(0, 40);
-    result.testsChecked = toCheck.length;
-
-    for (const test of toCheck) {
-      const testId = testIdOf(test);
-      if (!testId) continue;
+    for (const testId of prioritizedIds) {
+      const test = testById.get(testId);
       try {
         result.blacklistAlerts += await this.checkBlacklists(
           testId,
-          test.test_name,
+          test?.test_name,
         );
         result.lowDeliverabilityAlerts += await this.checkProviderDeliverability(
           testId,
-          test.test_name,
+          test?.test_name,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

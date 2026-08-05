@@ -3,12 +3,14 @@ import type { InboxKitClient } from "../clients/inboxkit.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import {
+  normalizeTestList,
   parseDomainBlacklistHits,
   parseIpBlacklistHits,
   parseSenderInboxRates,
   uniqueBlacklistedDomains,
   type SenderInboxRate,
 } from "../clients/smartdelivery.js";
+import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountDomain,
@@ -144,11 +146,28 @@ export class RemediationService {
       `[remediation] Starting (${result.dryRun ? "DRY RUN" : "LIVE"}; same-ESP=${this.config.scoreSameEspOnly})`,
     );
 
-    const testIds = [
+    const trackedIds = [
       ...new Set(
         Object.values(this.state.get().testedCampaigns).flatMap((c) => c.testIds),
       ),
     ];
+    // Prefer ACTIVE automated tests over old COMPLETED manuals — a hard
+    // insertion-order slice(0,40) previously dropped entire live campaigns.
+    const listedTests = await this.smartDelivery
+      .listTests({})
+      .then((raw) => normalizeTestList(raw))
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`list tests for report priority: ${message}`);
+        return [];
+      });
+    const testIds = prioritizeTestIdsForReports({
+      trackedIds,
+      listedTests,
+    });
+    console.log(
+      `[remediation] Using ${testIds.length}/${trackedIds.length} tracked test id(s) for reports (ACTIVE autos first)`,
+    );
 
     // 1) Load Smartlead accounts (needed for ESP type → same-ESP scoring)
     let accounts: SmartleadAccountWithCampaigns[] = [];
@@ -171,7 +190,7 @@ export class RemediationService {
 
     // 2) Collect blacklisted sending domains from SmartDelivery reports
     const blacklistHits = [];
-    for (const testId of testIds.slice(0, 40)) {
+    for (const testId of testIds) {
       try {
         const [domainRaw, ipRaw] = await Promise.all([
           this.smartDelivery.getDomainBlacklist(testId).catch(() => []),
@@ -211,7 +230,7 @@ export class RemediationService {
 
     // 3) Collect per-sender inbox rates (same-ESP when ESP matching is on)
     const inboxRateRows = new Map<string, SenderInboxRate>();
-    for (const testId of testIds.slice(0, 40)) {
+    for (const testId of testIds) {
       try {
         const raw = await this.smartDelivery.getSenderAccountReport(testId);
         for (const row of parseSenderInboxRates(raw, testId, {

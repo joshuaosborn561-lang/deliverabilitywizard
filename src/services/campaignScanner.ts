@@ -9,12 +9,12 @@ import {
 } from "../clients/smartlead.js";
 import type { SchedulerCronValue, SmartDeliveryClient } from "../clients/smartdelivery.js";
 import {
-  campaignIdOf,
   normalizeTestList,
   testIdOf,
 } from "../clients/smartdelivery.js";
 import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
 import { chunkArray, sleep } from "../lib/http.js";
+import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import type { StateStore } from "../state/store.js";
 import type {
   CampaignTestPlan,
@@ -209,14 +209,13 @@ export class CampaignScanner {
         result.errors.push(`Failed to enrich test campaign ids: ${message}`);
         return listedTests;
       });
-    const testedCampaignIds = new Set<string>();
-    for (const test of existingTests) {
-      const cid = campaignIdOf(test);
-      if (cid) testedCampaignIds.add(cid);
-    }
-    for (const id of Object.keys(this.state.get().testedCampaigns)) {
-      testedCampaignIds.add(id);
-    }
+    // Only stoppable automated tests count as coverage. A completed manual
+    // (or a stale state mark pointing at one) must not block a real recurring
+    // test from being created.
+    const testedCampaignIds = testedCampaignCoverage(
+      existingTests,
+      this.state.get().testedCampaigns,
+    );
 
     const lastScanAt = this.state.get().lastScanAt
       ? Date.parse(this.state.get().lastScanAt!)

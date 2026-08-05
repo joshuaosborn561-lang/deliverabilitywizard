@@ -293,4 +293,111 @@ describe("CampaignScanner — status re-check before creation", () => {
       "provider_ids must always be present on the automated endpoint, even when resolution came back empty",
     );
   });
+
+  it("create payload always carries the placement-test contract", async () => {
+    const config = loadConfig({});
+    const created: Array<Record<string, unknown>> = [];
+
+    const smartlead = {
+      listCampaigns: async () => [campaign(1, "ACTIVE")],
+      getCampaignEmailAccounts: async () =>
+        Array.from({ length: 12 }, (_, i) => ({
+          id: i + 1,
+          from_email: `s${i}@example.com`,
+          type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+        })),
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [11, 22],
+      createAutomatedPlacement: async (input: Record<string, unknown>) => {
+        created.push(input);
+        return { id: "contract-test" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(created.length, 1);
+    const payload = created[0]!;
+    assert.deepEqual(payload.spam_filters, ["spam_assassin"]);
+    assert.equal(payload.link_checker, true);
+    assert.equal(payload.every_days, config.placementTestEveryDays);
+    assert.ok(Array.isArray(payload.sender_accounts));
+    assert.ok(
+      (payload.sender_accounts as unknown[]).length <=
+        config.maxMailboxesPerTest,
+    );
+    assert.deepEqual(payload.provider_ids, [11, 22]);
+    assert.ok(payload.schedule_start_time);
+    assert.ok(payload.test_end_date);
+    assert.equal(typeof payload.scheduler_cron_value, "object");
+  });
+
+  it("does not skip a campaign whose only prior test is a completed manual", async () => {
+    const config = loadConfig({});
+    const created: unknown[] = [];
+
+    const smartlead = {
+      listCampaigns: async () => [campaign(7, "ACTIVE")],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [
+        {
+          spam_test_id: "old",
+          campaign_id: 7,
+          test_type: "manual",
+          status: "COMPLETED",
+        },
+      ],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: unknown) => {
+        created.push(input);
+        return { id: "new-auto" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const state = fakeState();
+    state.markCampaignTested({
+      campaignId: 7,
+      campaignName: "stale",
+      testedAt: "2026-01-01T00:00:00.000Z",
+      testIds: ["old"],
+      mailboxCount: 1,
+      testsCreated: 1,
+    } as never);
+
+    await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      state,
+    ).run({ trigger: "manual" });
+
+    assert.equal(created.length, 1, "completed manual must not block a new auto");
+  });
 });

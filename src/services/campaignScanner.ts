@@ -143,7 +143,16 @@ export class CampaignScanner {
       result.errors.push(`Failed to list existing tests: ${message}`);
       return [] as unknown;
     });
-    const existingTests = normalizeTestList(existingTestsRaw);
+    const listedTests = normalizeTestList(existingTestsRaw);
+    // Report rows omit campaign_id — enrich active/auto tests so we do not
+    // create a second recurring schedule for a campaign that already has one.
+    const existingTests = await this.smartDelivery
+      .enrichCampaignIds(listedTests)
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`Failed to enrich test campaign ids: ${message}`);
+        return listedTests;
+      });
     const testedCampaignIds = new Set<string>();
     for (const test of existingTests) {
       const cid = campaignIdOf(test);

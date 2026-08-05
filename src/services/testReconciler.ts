@@ -65,7 +65,10 @@ export class TestReconciler {
 
     let tests;
     try {
-      tests = normalizeTestList(await this.smartDelivery.listTests({}));
+      const listed = normalizeTestList(await this.smartDelivery.listTests({}));
+      // List payload omits campaign_id; without enrichment every auto test is
+      // treated as orphaned and never stopped when its campaign goes inactive.
+      tests = await this.smartDelivery.enrichCampaignIds(listed);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`list tests: ${message}`);

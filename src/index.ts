@@ -4,7 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRuntimeSecrets, configIsReady, loadConfig } from "./config.js";
 import { SmartleadClient } from "./clients/smartlead.js";
-import { SmartDeliveryClient } from "./clients/smartdelivery.js";
+import {
+  SmartDeliveryClient,
+  campaignIdOf,
+  isAutomatedTest,
+  isTestStoppable,
+  normalizeTestList,
+  testIdOf,
+} from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
 import { SlackClient } from "./clients/slack.js";
 import { StateStore, type PoolProvisionPhase } from "./state/store.js";
@@ -701,6 +708,72 @@ async function main(): Promise<void> {
       if (mode === "reconcile" || mode === "test-reconcile") {
         const result = await runTestReconcile();
         res.json({ ok: true, mode: "reconcile", result });
+        return;
+      }
+      if (
+        mode === "sync-placement-state" ||
+        mode === "sync-tested" ||
+        mode === "sync-placements"
+      ) {
+        // Mark campaigns that already have an ACTIVE automated SmartDelivery
+        // test so a later scan does not create duplicates. Used after manual
+        // / API backfills when state.testedCampaigns is behind reality.
+        assertRuntimeSecrets(config);
+        const listed = normalizeTestList(await smartDelivery.listTests({}));
+        const enriched = await smartDelivery.enrichCampaignIds(listed);
+        const byCampaign = new Map<
+          string,
+          { name: string; testIds: string[] }
+        >();
+        for (const test of enriched) {
+          if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
+          const cid = campaignIdOf(test);
+          const tid = testIdOf(test);
+          if (!cid || !tid) continue;
+          const row = byCampaign.get(cid) ?? {
+            name: String(test.test_name ?? `Campaign ${cid}`),
+            testIds: [],
+          };
+          row.testIds.push(tid);
+          byCampaign.set(cid, row);
+        }
+        let campaigns = [] as Array<{ id: number; name?: string | null }>;
+        try {
+          campaigns = await smartlead.listCampaigns();
+        } catch (error) {
+          console.warn("[sync-placement-state] listCampaigns failed", error);
+        }
+        const nameById = new Map(
+          campaigns.map((c) => [String(c.id), String(c.name ?? "")]),
+        );
+        let marked = 0;
+        for (const [cid, row] of byCampaign) {
+          const campaignName =
+            nameById.get(cid) ||
+            row.name.replace(/^Auto:\s*/i, "").replace(/\s*\(\d+\/\d+\)\s*$/, "") ||
+            `Campaign ${cid}`;
+          const existing = state.get().testedCampaigns[cid];
+          const mergedIds = [
+            ...new Set([...(existing?.testIds ?? []), ...row.testIds]),
+          ];
+          state.markCampaignTested({
+            campaignId: Number(cid),
+            campaignName,
+            testedAt: existing?.testedAt ?? new Date().toISOString(),
+            testIds: mergedIds,
+            mailboxCount: existing?.mailboxCount ?? 0,
+            testsCreated: mergedIds.length,
+          });
+          marked += 1;
+        }
+        await state.save();
+        res.json({
+          ok: true,
+          mode: "sync-placement-state",
+          activeAutoCampaigns: byCampaign.size,
+          marked,
+          campaignIds: [...byCampaign.keys()].map(Number).sort((a, b) => a - b),
+        });
         return;
       }
       if (mode === "both" || mode === "all") {

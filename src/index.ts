@@ -28,6 +28,7 @@ import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
 import { TestReconciler } from "./services/testReconciler.js";
 import { PlacementAuditService } from "./services/placementAudit.js";
+import { BcpClientRestoreService } from "./services/bcpClientRestore.js";
 import {
   FleetSummaryService,
   PlacementResultsService,
@@ -111,6 +112,13 @@ async function main(): Promise<void> {
     state,
   );
   const placementAudit = new PlacementAuditService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const bcpClientRestore = new BcpClientRestoreService(
     config,
     smartlead,
     smartDelivery,
@@ -780,6 +788,28 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await placementAudit.runBcpGenerics();
         res.json({ ok: true, mode: "audit-bcp", result });
+        return;
+      }
+      if (
+        mode === "bcp-restore" ||
+        mode === "restore-bcp" ||
+        mode === "bcp-client-restore"
+      ) {
+        assertRuntimeSecrets(config);
+        const confirm = String(req.body?.confirm ?? "");
+        const dryRun =
+          req.body?.dryRun === true ||
+          req.body?.dryRun === "true" ||
+          confirm !== "RESTORE";
+        if (!dryRun && confirm !== "RESTORE") {
+          res.status(400).json({
+            ok: false,
+            error: 'Pass { "confirm": "RESTORE" } for a live run (or dryRun: true)',
+          });
+          return;
+        }
+        const result = await bcpClientRestore.run({ dryRun });
+        res.json({ ok: true, mode: "bcp-restore", dryRun, result });
         return;
       }
       if (mode === "audit-day" || mode === "day-audit") {

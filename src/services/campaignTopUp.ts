@@ -9,6 +9,7 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import { isBcpCampaignName } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
@@ -152,8 +153,10 @@ export class CampaignTopUpService {
     const needy: Array<{ campaign: SmartleadCampaign; senders: number }> = (campaigns as SmartleadCampaign[])
       .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
       .filter((c) => {
-        if (isExcluded(c, excluded)) {
-          result.skipped.push(`${c.id} ${c.name ?? ""} (excluded)`.trim());
+        if (isExcluded(c, excluded) || isBcpCampaignName(String(c.name ?? ""))) {
+          result.skipped.push(
+            `${c.id} ${c.name ?? ""} (${isBcpCampaignName(String(c.name ?? "")) ? "BCP client-domain only" : "excluded"})`.trim(),
+          );
           return false;
         }
         return true;

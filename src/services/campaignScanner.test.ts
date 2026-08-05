@@ -9,6 +9,7 @@ import type { SmartleadCampaign } from "../types/index.js";
 import {
   addDaysIso,
   CampaignScanner,
+  interleaveSendersByEsp,
   OPEN_ENDED_TEST_DAYS,
   schedulerCronValue,
   scheduleStartTime,
@@ -76,6 +77,83 @@ describe("schedulerCronValue", () => {
   it("falls back to every day for an interval it can't express exactly", () => {
     const at = new Date("2026-08-05T09:02:00.000Z");
     assert.deepEqual(schedulerCronValue(3, at).days, [0, 1, 2, 3, 4, 5, 6]);
+  });
+});
+
+function gmail(email: string) {
+  return { from_email: email, type: "GMAIL" };
+}
+function outlook(email: string) {
+  return { from_email: email, type: "OUTLOOK" };
+}
+
+describe("interleaveSendersByEsp", () => {
+  it("alternates evenly when both ESPs have the same count", () => {
+    const result = interleaveSendersByEsp([
+      gmail("g1@x.com"),
+      gmail("g2@x.com"),
+      gmail("g3@x.com"),
+      outlook("o1@x.com"),
+      outlook("o2@x.com"),
+      outlook("o3@x.com"),
+    ]);
+    assert.deepEqual(result, [
+      "g1@x.com",
+      "o1@x.com",
+      "g2@x.com",
+      "o2@x.com",
+      "g3@x.com",
+      "o3@x.com",
+    ]);
+  });
+
+  it("front-loads balance into the earliest slots when one ESP has fewer accounts", () => {
+    // Mirrors BCP Generic (No Team): 28 Gmail, 45 Outlook. A batch of 50
+    // sliced off the front should come out exactly 25/25.
+    const accounts = [
+      ...Array.from({ length: 28 }, (_, i) => gmail(`g${i}@x.com`)),
+      ...Array.from({ length: 45 }, (_, i) => outlook(`o${i}@x.com`)),
+    ];
+    const result = interleaveSendersByEsp(accounts);
+    assert.equal(result.length, 73);
+
+    const firstBatch = result.slice(0, 50);
+    const gmailCount = firstBatch.filter((e) => e.startsWith("g")).length;
+    const outlookCount = firstBatch.filter((e) => e.startsWith("o")).length;
+    assert.equal(gmailCount, 25);
+    assert.equal(outlookCount, 25);
+
+    // The remaining 23 absorb whatever Gmail supply is left (3) plus the
+    // rest of the Outlook surplus - nothing is dropped.
+    const secondBatch = result.slice(50);
+    assert.equal(secondBatch.length, 23);
+    assert.equal(secondBatch.filter((e) => e.startsWith("g")).length, 3);
+    assert.equal(secondBatch.filter((e) => e.startsWith("o")).length, 20);
+  });
+
+  it("dedupes by email case-insensitively, keeping the first occurrence", () => {
+    const result = interleaveSendersByEsp([
+      gmail("Same@X.com"),
+      outlook("same@x.com"),
+    ]);
+    assert.deepEqual(result, ["Same@X.com"]);
+  });
+
+  it("drops accounts with no resolvable email", () => {
+    const result = interleaveSendersByEsp([
+      gmail("g1@x.com"),
+      { type: "GMAIL" },
+    ]);
+    assert.deepEqual(result, ["g1@x.com"]);
+  });
+
+  it("places SMTP/unrecognized types in a third bucket, still interleaved", () => {
+    const result = interleaveSendersByEsp([
+      gmail("g1@x.com"),
+      outlook("o1@x.com"),
+      { from_email: "s1@x.com", type: "SMTP" },
+    ]);
+    assert.deepEqual(result, ["g1@x.com", "o1@x.com", "s1@x.com"]);
   });
 });
 

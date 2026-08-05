@@ -211,3 +211,155 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(current().status, "assigned");
   });
 });
+
+function fakeStateMultiPool(mailboxes: PoolMailboxRecord[]): {
+  state: StateStore;
+  assignedPlatforms: () => Array<"GOOGLE" | "MICROSOFT">;
+} {
+  const byEmail = new Map(mailboxes.map((m) => [m.email.toLowerCase(), { ...m }]));
+  const assignedPlatforms: Array<"GOOGLE" | "MICROSOFT"> = [];
+  const state = {
+    listPoolMailboxes: () => [...byEmail.values()],
+    listActiveSwaps: () => [],
+    findReassignablePoolMailbox: (
+      platforms: Array<"GOOGLE" | "MICROSOFT">,
+      canTake: (email: string) => boolean,
+    ) => {
+      for (const platform of platforms) {
+        for (const m of byEmail.values()) {
+          if (
+            m.platform === platform &&
+            ["available", "assigned"].includes(m.status) &&
+            canTake(m.email)
+          ) {
+            return m;
+          }
+        }
+      }
+      return undefined;
+    },
+    upsertPoolMailbox: (record: PoolMailboxRecord) => {
+      byEmail.set(record.email.toLowerCase(), { ...record });
+      assignedPlatforms.push(record.platform);
+    },
+    save: async () => undefined,
+  } as unknown as StateStore;
+  return { state, assignedPlatforms: () => assignedPlatforms };
+}
+
+describe("CampaignTopUpService — D22 Gmail/Outlook ratio targeting", () => {
+  it("fills a thin campaign toward the configured Gmail ratio, not whatever the pool happens to list first", async () => {
+    // Deliberately list Outlook first and in far greater supply, matching
+    // the real pool's actual composition (785 Outlook vs 310 Gmail) - if
+    // targeting were broken, the campaign would come out Outlook-heavy.
+    const mailboxes: PoolMailboxRecord[] = [
+      ...Array.from({ length: 20 }, (_, i) => ({
+        email: `outlook-${i}@pool.info`,
+        domain: "pool.info",
+        platform: "MICROSOFT" as const,
+        smartleadAccountId: 100 + i,
+        firstName: "Pool",
+        lastName: `Outlook${i}`,
+        status: "available" as const,
+      })),
+      ...Array.from({ length: 20 }, (_, i) => ({
+        email: `gmail-${i}@pool.info`,
+        domain: "pool.info",
+        platform: "GOOGLE" as const,
+        smartleadAccountId: 200 + i,
+        firstName: "Pool",
+        lastName: `Gmail${i}`,
+        status: "available" as const,
+      })),
+    ];
+    const { state, assignedPlatforms } = fakeStateMultiPool(mailboxes);
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Thin", status: "ACTIVE", client_id: 1 },
+      ],
+      listAllEmailAccounts: async () =>
+        mailboxes.map((m) => ({
+          id: m.smartleadAccountId,
+          from_email: m.email,
+          type: m.platform === "GOOGLE" ? "GMAIL" : "OUTLOOK",
+          campaign_ids: [],
+        })),
+      listClients: async () => [{ id: 1, name: "Client A" }],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "10", TARGET_GMAIL_RATIO: "0.6" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(result.assigned.length, 10);
+    const placed = assignedPlatforms();
+    const googleCount = placed.filter((p) => p === "GOOGLE").length;
+    const microsoftCount = placed.filter((p) => p === "MICROSOFT").length;
+    assert.equal(googleCount, 6, `expected 6 Gmail (60% of 10), got ${googleCount}`);
+    assert.equal(microsoftCount, 4, `expected 4 Outlook (40% of 10), got ${microsoftCount}`);
+  });
+
+  it("keeps filling from whichever platform still has supply once the other runs out", async () => {
+    // Only 2 Gmail available against a need of 10 at a 60% target (needs 6).
+    // The shortfall should not block Outlook fill for the rest.
+    const mailboxes: PoolMailboxRecord[] = [
+      ...Array.from({ length: 2 }, (_, i) => ({
+        email: `gmail-${i}@pool.info`,
+        domain: "pool.info",
+        platform: "GOOGLE" as const,
+        smartleadAccountId: 200 + i,
+        firstName: "Pool",
+        lastName: `Gmail${i}`,
+        status: "available" as const,
+      })),
+      ...Array.from({ length: 20 }, (_, i) => ({
+        email: `outlook-${i}@pool.info`,
+        domain: "pool.info",
+        platform: "MICROSOFT" as const,
+        smartleadAccountId: 100 + i,
+        firstName: "Pool",
+        lastName: `Outlook${i}`,
+        status: "available" as const,
+      })),
+    ];
+    const { state, assignedPlatforms } = fakeStateMultiPool(mailboxes);
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Thin", status: "ACTIVE", client_id: 1 },
+      ],
+      listAllEmailAccounts: async () =>
+        mailboxes.map((m) => ({
+          id: m.smartleadAccountId,
+          from_email: m.email,
+          type: m.platform === "GOOGLE" ? "GMAIL" : "OUTLOOK",
+          campaign_ids: [],
+        })),
+      listClients: async () => [{ id: 1, name: "Client A" }],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "10", TARGET_GMAIL_RATIO: "0.6" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(result.assigned.length, 10, "still fills to the floor despite Gmail shortage");
+    const placed = assignedPlatforms();
+    assert.equal(placed.filter((p) => p === "GOOGLE").length, 2, "used all available Gmail");
+    assert.equal(placed.filter((p) => p === "MICROSOFT").length, 8, "backfilled the rest with Outlook");
+  });
+});

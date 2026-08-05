@@ -253,16 +253,17 @@ export class CampaignTopUpService {
         : "Unassigned / Agency";
       const brand =
         clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName;
+      // D22: steer generic-pool assignments toward targetGmailRatio (default
+      // 60% Gmail), rather than reinforcing whatever mix the campaign already
+      // has. Recomputed after every placement within this loop so it
+      // self-corrects as mailboxes are added, even when one platform's
+      // supply runs out mid-run.
       const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
       for (const account of accounts as SmartleadAccountWithCampaigns[]) {
         if (!campaignIdsOf(account).includes(campaign.id)) continue;
         const platform = poolEspFromSmartleadType(account.type);
         if (platform) espCounts[platform] += 1;
       }
-      const platformOrder: Array<"GOOGLE" | "MICROSOFT"> =
-        espCounts.MICROSOFT > espCounts.GOOGLE
-          ? ["MICROSOFT", "GOOGLE"]
-          : ["GOOGLE", "MICROSOFT"];
 
       let placed = 0;
       let consecutiveFailures = 0;
@@ -271,8 +272,13 @@ export class CampaignTopUpService {
       // Assigning is two writes per mailbox; a long run trips Smartlead's
       // limiter, so the loop is allowed more attempts than mailboxes needed.
       for (let attempt = 0; placed < need && attempt < need * 2; attempt += 1) {
-        // Match the campaign's existing ESP mix where we can; a Google
-        // campaign sending through a Microsoft mailbox scores differently.
+        const knownTotal = espCounts.GOOGLE + espCounts.MICROSOFT;
+        const googleShare = knownTotal > 0 ? espCounts.GOOGLE / knownTotal : 0;
+        const platformOrder: Array<"GOOGLE" | "MICROSOFT"> =
+          googleShare < this.config.targetGmailRatio
+            ? ["GOOGLE", "MICROSOFT"]
+            : ["MICROSOFT", "GOOGLE"];
+
         const pool = this.state.findReassignablePoolMailbox(
           platformOrder,
           (email) => {
@@ -402,6 +408,7 @@ export class CampaignTopUpService {
             });
           }
           placed += 1;
+          espCounts[pool.platform] += 1;
           result.assigned.push({
             campaignId: campaign.id,
             campaignName: String(campaign.name ?? campaign.id),

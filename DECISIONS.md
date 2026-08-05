@@ -417,3 +417,37 @@ also be treated as pre-warmed. Accepted: those domains are dedicated,
 operator-managed pre-warmed inventory.
 
 **Guard.** `warmupGate helpers — explicit pre-warmed fleet domain`
+
+---
+
+## D22 — Generic-pool top-up targets 60% Gmail / 40% Outlook
+
+**Decision.** When `campaignTopUp` fills a below-floor campaign from the
+shared generic pool, it steers assignments toward `TARGET_GMAIL_RATIO`
+(default 0.6) Gmail, recomputed after every placement within a run so it
+self-corrects even when one platform's supply runs short mid-run. This only
+governs which generic gets picked from the pool — it never touches
+client-branded (own-domain) senders, which D3/D10 continue to protect
+absolutely.
+
+**Why.** Cayden asked for a 60/40 Gmail/Outlook split after BCP Generic's
+first placement test batch came back with only 3 of 50 sampled senders on
+Gmail, even though the campaign's real ratio is closer to 62/38
+Outlook-heavy. The previous logic (`platformOrder` keyed to whichever
+platform already had more senders on the campaign) reinforced existing skew
+instead of correcting it — a Gmail-starved campaign would keep getting more
+Outlook.
+
+**Tradeoff.** Campaigns built primarily on a client's own dedicated domain
+fleet (e.g. BCP's `boldercyperpartner*.info` accounts, ~70% Outlook / 30%
+Gmail fleet-wide) cannot be rebalanced toward 60/40 by this mechanism at
+all — those senders are never touched, so a client-branded-heavy campaign
+stays whatever ratio that client's own fleet happens to be. Reaching 60/40
+there would mean buying that client more Gmail mailboxes (a spend decision,
+gated behind `/approvals` per D4) or relaxing D3/D10, neither of which this
+decision does. Pool supply is also finite day-to-day (Cayden confirmed: rebalance
+where there's already enough available inventory, otherwise it waits on the
+next warming batch) — this only changes which platform is preferred, not how
+much total supply exists.
+
+**Guard.** `CampaignTopUpService — D22 Gmail/Outlook ratio targeting`

@@ -84,6 +84,12 @@ const ConfigSchema = z.object({
   /** Every active campaign should carry at least this many senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
   enableCampaignTopUp: boolFromEnv(true),
+  /**
+   * Target share of Gmail (vs Outlook) generics when the pool tops up a
+   * campaign from the shared pool — D22. Only steers generic-pool
+   * assignments; never touches client-branded senders (D3/D10).
+   */
+  targetGmailRatio: z.coerce.number().min(0).max(1).default(0.6),
   /** Daily campaign send cap held on every mailbox. */
   messagePerDay: z.coerce.number().int().min(1).default(30),
   enforceMailboxSettings: boolFromEnv(true),
@@ -281,6 +287,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
+    targetGmailRatio: env.TARGET_GMAIL_RATIO ?? "0.6",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",

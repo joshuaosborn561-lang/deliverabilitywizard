@@ -39,6 +39,7 @@ import {
   ManualRotationService,
   type RotationResult,
 } from "./ops/manualRotation.js";
+import { BugRemediator } from "./services/bugRemediator.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -130,7 +131,14 @@ async function main(): Promise<void> {
       console.log("[scan] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
-    scanInFlight = scanner.run({ trigger }).finally(() => {
+    scanInFlight = (async () => {
+      const result = await scanner.run({ trigger });
+      feedBugRemediator(
+        "scan",
+        (result as { errors?: string[] })?.errors ?? [],
+      );
+      return result;
+    })().finally(() => {
       scanInFlight = null;
     });
     return scanInFlight;
@@ -246,21 +254,41 @@ async function main(): Promise<void> {
     state,
   );
   const fleetSummary = new FleetSummaryService(smartlead, state);
-  const cursorAssistant = config.cursorApiKey
-    ? new CursorAssistantService(
-        new CursorCloudClient(config.cursorApiKey),
-        state,
-        {
-          repositoryUrl: config.cursorAgentRepositoryUrl,
-          startingRef: config.cursorAgentStartingRef,
-          model: {
-            id: config.cursorAgentModelId,
-            params: config.cursorAgentModelParams,
-          },
-          timeoutMs: config.cursorAgentTimeoutMs,
-        },
-      )
+  const cursorCloud = config.cursorApiKey
+    ? new CursorCloudClient(config.cursorApiKey)
     : null;
+  const cursorAssistant = cursorCloud
+    ? new CursorAssistantService(cursorCloud, state, {
+        repositoryUrl: config.cursorAgentRepositoryUrl,
+        startingRef: config.cursorAgentStartingRef,
+        model: {
+          id: config.cursorAgentModelId,
+          params: config.cursorAgentModelParams,
+        },
+        timeoutMs: config.cursorAgentTimeoutMs,
+      })
+    : null;
+  const bugRemediator = new BugRemediator(
+    config,
+    cursorCloud,
+    slack,
+    state,
+  );
+
+  const feedBugRemediator = (
+    source: string,
+    errors: unknown,
+  ): void => {
+    const list = Array.isArray(errors)
+      ? errors.map((e) => (typeof e === "string" ? e : String(e)))
+      : errors
+        ? [errors instanceof Error ? errors.message : String(errors)]
+        : [];
+    if (!list.length || !bugRemediator.enabled()) return;
+    void bugRemediator.observeMany(source, list).catch((error) => {
+      console.warn("[bug-remediator] observe failed", error);
+    });
+  };
 
   const runCampaignTopUp = async () => {
     if (manualRotationInFlight) {
@@ -324,12 +352,20 @@ async function main(): Promise<void> {
     }
     monitorInFlight = (async () => {
       const monitorResult = await monitor.run();
+      feedBugRemediator(
+        "monitor",
+        (monitorResult as { errors?: string[] })?.errors ?? [],
+      );
       const shouldRemediate =
         opts.remediate !== false &&
         (config.enableRemediation || config.dryRun);
       let remediationResult: unknown = null;
       if (shouldRemediate) {
         remediationResult = await runRemediation();
+        feedBugRemediator(
+          "remediation",
+          (remediationResult as { errors?: string[] })?.errors ?? [],
+        );
       }
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
@@ -415,12 +451,14 @@ async function main(): Promise<void> {
   cron.schedule(config.cronScan, () => {
     void runScan("cron").catch((error) => {
       console.error("[scan] Unhandled cron error", error);
+      feedBugRemediator("scan-cron", error);
     });
   });
 
   cron.schedule(config.cronMonitor, () => {
     void runMonitor({ remediate: true }).catch((error) => {
       console.error("[monitor] Unhandled cron error", error);
+      feedBugRemediator("monitor-cron", error);
     });
   });
 
@@ -710,6 +748,32 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "reconcile", result });
         return;
       }
+      if (mode === "bug-remediate" || mode === "bug-remediator") {
+        const errors = Array.isArray(req.body?.errors)
+          ? req.body.errors.map(String)
+          : req.body?.error
+            ? [String(req.body.error)]
+            : [];
+        if (!errors.length) {
+          res.status(400).json({
+            ok: false,
+            error:
+              "Pass { errors: string[] } or { error: string } — or rely on cron to feed failures automatically",
+          });
+          return;
+        }
+        const result = await bugRemediator.observeMany(
+          String(req.body?.source ?? "manual"),
+          errors,
+        );
+        res.json({
+          ok: true,
+          mode: "bug-remediate",
+          enabled: bugRemediator.enabled(),
+          result,
+        });
+        return;
+      }
       if (
         mode === "sync-placement-state" ||
         mode === "sync-tested" ||
@@ -858,6 +922,9 @@ async function main(): Promise<void> {
     );
     console.log(
       `[boot] Ops Cursor assistant: ${cursorAssistant ? `ENABLED (${config.cursorAgentModelId} ${config.cursorAgentModelParams.map((p) => `${p.id}=${p.value}`).join(",")})` : "disabled (set CURSOR_API_KEY)"}`,
+    );
+    console.log(
+      `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

@@ -220,6 +220,20 @@ const ConfigSchema = z.object({
     .int()
     .positive()
     .default(480_000),
+  /**
+   * When true (default) and CURSOR_API_KEY is set, repeated code-class failures
+   * launch a Cursor Cloud Agent that opens a fix PR (D21). Never spends/deletes.
+   */
+  enableBugRemediator: boolFromEnv(true),
+  /** Hits of the same fingerprint before launching a Cursor agent. */
+  bugRemediatorMinHits: z.coerce.number().int().positive().default(2),
+  /** Hours to wait before re-launching for the same fingerprint. */
+  bugRemediatorCooldownHours: z.coerce.number().int().positive().default(24),
+  /**
+   * When true, the Cursor remediator is told to merge the PR after CI is green
+   * so Josh does not have to. Default on — still cannot spend/delete/bypass.
+   */
+  bugRemediatorAutoMerge: boolFromEnv(true),
   dryRun: boolFromEnv(false),
 });
 
@@ -311,6 +325,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cursorAgentModelParams:
       env.CURSOR_AGENT_MODEL_PARAMS ?? "effort=high,fast=true",
     cursorAgentTimeoutMs: env.CURSOR_AGENT_TIMEOUT_MS ?? "480000",
+    enableBugRemediator: env.ENABLE_BUG_REMEDIATOR,
+    bugRemediatorMinHits: env.BUG_REMEDIATOR_MIN_HITS ?? "2",
+    bugRemediatorCooldownHours: env.BUG_REMEDIATOR_COOLDOWN_HOURS ?? "24",
+    bugRemediatorAutoMerge: env.BUG_REMEDIATOR_AUTO_MERGE,
     dryRun: env.DRY_RUN,
   });
 

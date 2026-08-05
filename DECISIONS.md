@@ -375,6 +375,32 @@ log action `cursor-agent`.
 
 ---
 
+## D21 — Repeated code failures launch an auto bug remediator
+
+**Decision.** When `ENABLE_BUG_REMEDIATOR` is on (default) and `CURSOR_API_KEY`
+is set, scan/monitor/remediation errors are classified. After the same
+fingerprint hits a threshold (default 2) and is off cooldown (default 24h), a
+Cursor Cloud Agent opens a fix PR. With `BUG_REMEDIATOR_AUTO_MERGE=true`
+(default), the agent is instructed to merge after CI is green so Josh does not
+have to babysit. Transient noise (429s, SURBL) and auth/access problems never
+launch an agent.
+
+**Why.** Placement-test and SmartDelivery validation bugs kept needing a human
+to notice, classify, and ship a PR. The remediator turns “same error twice”
+into an unattended draft/merge loop under the same spend/delete/hold guards as
+Ops chat (D18/D20).
+
+**Tradeoff.** Cloud Agents bill at Cursor rates and may open noisy PRs for
+`unknown` failures. Mitigated by fingerprint cooldown, noise filters, and hard
+prompt rules (no spend, no delete, no hold bypass, no reversing DECISIONS).
+Turn off with `ENABLE_BUG_REMEDIATOR=false` or unset `CURSOR_API_KEY`. Set
+`BUG_REMEDIATOR_AUTO_MERGE=false` if merges must stay manual.
+
+**Guards.** `failureClassifier`, `BugRemediator`, owner-intent D21, manual
+`POST /run?mode=bug-remediate`.
+
+---
+
 ## D19 — Pre-warmed fleets are identified by domain and persisted state
 
 **Decision.** Every mailbox on `crosslaunchco.com` and `crossscaleco.com` is

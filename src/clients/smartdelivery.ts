@@ -40,25 +40,37 @@ export interface CreateManualPlacementInput {
  * recurrence window: SmartDelivery re-runs the parent test every `every_days`
  * from `schedule_start_time` until `test_end_date` (or until stopped).
  */
+/**
+ * Allowed send window for a recurring test. SmartDelivery requires this
+ * object on every /spam-test/schedule call; their request schema for it
+ * isn't publicly documented (confirmed the shape via a live validation
+ * probe — see schedulerCronValue() in campaignScanner.ts).
+ */
+export interface SchedulerCronValue {
+  tz: string;
+  /** Day-of-week numbers, 0 (Sunday) - 6 (Saturday). */
+  days: number[];
+  /** "HH:MM", 24-hour. */
+  startHour: string;
+  /** "HH:MM", 24-hour. */
+  endHour: string;
+}
+
 export interface CreateAutomatedPlacementInput
   extends CreateManualPlacementInput {
   /** Recurrence interval in days, e.g. 7 for weekly. */
   every_days: number;
   /** ISO 8601 timestamp for the first run. */
   schedule_start_time: string;
-  /**
-   * Cron expression for when the recurring test fires (e.g. "0 9 * * *").
-   * SmartDelivery requires this on every call alongside `every_days` — their
-   * request schema for it isn't publicly documented; see
-   * schedulerCronValue() in campaignScanner.ts.
-   */
-  scheduler_cron_value: string;
+  scheduler_cron_value: SchedulerCronValue;
   /**
    * ISO 8601 timestamp. SmartDelivery requires this on every call — there is
    * no way to omit it for an open-ended schedule. See OPEN_ENDED_TEST_DAYS
    * in campaignScanner.ts for how an "open-ended" test still gets a value.
    */
   test_end_date: string;
+  /** SmartDelivery requires this on every call — see CreateManualPlacementInput. */
+  provider_ids: number[];
 }
 
 export class SmartDeliveryClient {

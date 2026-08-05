@@ -49,20 +49,33 @@ describe("addDaysIso", () => {
 });
 
 describe("schedulerCronValue", () => {
-  it("builds a daily cron at the given UTC hour/minute for the default 1-day interval", () => {
+  // SmartDelivery requires this as an object, not a cron string — confirmed
+  // via a live validation probe on 2026-08-05 after a string got
+  // `"scheduler_cron_value" must be of type object`.
+  it("covers every day, all day, in UTC for the default 1-day interval", () => {
     const at = new Date("2026-08-05T09:02:00.000Z");
-    assert.equal(schedulerCronValue(1, at), "2 9 * * *");
+    assert.deepEqual(schedulerCronValue(1, at), {
+      tz: "UTC",
+      days: [0, 1, 2, 3, 4, 5, 6],
+      startHour: "00:00",
+      endHour: "23:59",
+    });
   });
 
-  it("builds a weekly cron pinned to the day-of-week for a 7-day interval", () => {
+  it("pins to the single day-of-week for a 7-day interval", () => {
     // 2026-08-05 is a Wednesday (day 3).
     const at = new Date("2026-08-05T09:02:00.000Z");
-    assert.equal(schedulerCronValue(7, at), "2 9 * * 3");
+    assert.deepEqual(schedulerCronValue(7, at), {
+      tz: "UTC",
+      days: [3],
+      startHour: "00:00",
+      endHour: "23:59",
+    });
   });
 
-  it("falls back to a daily cron for an interval it can't express exactly", () => {
+  it("falls back to every day for an interval it can't express exactly", () => {
     const at = new Date("2026-08-05T09:02:00.000Z");
-    assert.equal(schedulerCronValue(3, at), "2 9 * * *");
+    assert.deepEqual(schedulerCronValue(3, at).days, [0, 1, 2, 3, 4, 5, 6]);
   });
 });
 
@@ -187,8 +200,17 @@ describe("CampaignScanner — status re-check before creation", () => {
       daysOut > OPEN_ENDED_TEST_DAYS - 1 && daysOut < OPEN_ENDED_TEST_DAYS + 1,
       `expected ~${OPEN_ENDED_TEST_DAYS} days out, got ${daysOut}`,
     );
-    const cronValue = created[0]!.scheduler_cron_value as string;
+    const cronValue = created[0]!.scheduler_cron_value as Record<string, unknown>;
     assert.ok(cronValue, "scheduler_cron_value must always be present — SmartDelivery requires it");
-    assert.match(cronValue, /^\d{1,2} \d{1,2} \* \* \*$/);
+    assert.equal(typeof cronValue, "object", "scheduler_cron_value must be an object, not a string");
+    assert.ok(Array.isArray(cronValue.days));
+    assert.equal(typeof cronValue.tz, "string");
+    assert.equal(typeof cronValue.startHour, "string");
+    assert.equal(typeof cronValue.endHour, "string");
+
+    assert.ok(
+      "provider_ids" in created[0]!,
+      "provider_ids must always be present on the automated endpoint, even when resolution came back empty",
+    );
   });
 });

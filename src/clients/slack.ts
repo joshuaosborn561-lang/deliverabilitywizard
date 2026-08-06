@@ -653,6 +653,9 @@ export class SlackClient {
       inboxRate: number;
       inboxRateAll?: number;
       scoredSameEsp?: boolean;
+      reason?: "bounce" | "placement" | "bounce_and_placement";
+      bounceRate?: number;
+      bounceSent?: number;
       removedFromCampaigns: number[];
       holdUntil?: string;
       tagName?: string;
@@ -760,13 +763,40 @@ export class SlackClient {
     }
 
     if (details.recoveredInboxes.length) {
-      parts.push(
-        `Pulled ${details.recoveredInboxes.length} weak inbox${details.recoveredInboxes.length === 1 ? "" : "es"} off campaigns for warmup:`,
+      const bounceOnly = details.recoveredInboxes.filter(
+        (a) => a.reason === "bounce",
       );
-      for (const a of details.recoveredInboxes.slice(0, 12)) {
+      const placementOnly = details.recoveredInboxes.filter(
+        (a) => a.reason === "placement" || !a.reason,
+      );
+      const both = details.recoveredInboxes.filter(
+        (a) => a.reason === "bounce_and_placement",
+      );
+      parts.push(
+        `Pulled ${details.recoveredInboxes.length} sender${details.recoveredInboxes.length === 1 ? "" : "s"} off campaigns for warmup` +
+          ` (${bounceOnly.length} bounce, ${placementOnly.length} placement/spam, ${both.length} both):`,
+      );
+      for (const a of details.recoveredInboxes.slice(0, 15)) {
         const hold = a.holdUntil ? ` · hold until ${a.holdUntil}` : "";
+        const camps = a.removedFromCampaigns?.length
+          ? ` · off ${a.removedFromCampaigns.length} campaign(s)`
+          : "";
+        const client = a.clientName ? ` · ${a.clientName}` : "";
+        const why =
+          a.reason === "bounce"
+            ? `bounce ${a.bounceRate?.toFixed(1) ?? "?"}%` +
+              (a.bounceSent != null ? ` of ${a.bounceSent} sent` : "") +
+              ` (placement inbox ${a.inboxRate.toFixed(0)}% — seeds can look fine while real leads bounce)`
+            : a.reason === "bounce_and_placement"
+              ? `bounce ${a.bounceRate?.toFixed(1) ?? "?"}%` +
+                (a.bounceSent != null ? ` of ${a.bounceSent} sent` : "") +
+                ` + placement inbox ${a.inboxRate.toFixed(0)}%`
+              : `placement inbox ${a.inboxRate.toFixed(0)}% (under 80% seed inbox — not the same as bounce)`;
+        parts.push(`• \`${a.email}\` — ${why}${hold}${camps}${client}`);
+      }
+      if (details.recoveredInboxes.length > 15) {
         parts.push(
-          `• \`${a.email}\` — ${a.inboxRate.toFixed(0)}%${hold}`,
+          `• …and ${details.recoveredInboxes.length - 15} more`,
         );
       }
     }

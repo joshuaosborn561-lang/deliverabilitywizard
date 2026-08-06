@@ -37,8 +37,16 @@ export interface BounceInvestigateFinding {
   campaignName: string;
   aggregateBouncePercent: number;
   sampleSent: number;
+  memberCount: number;
   copyDefer: boolean;
+  copyKind: string;
   copyReason?: string;
+  providers: ProviderInboxSplit[];
+  worstSenders: Array<{
+    email: string;
+    bounceRate: number;
+    sent: number;
+  }>;
   rotated: string[];
   resumed: boolean;
   errors: string[];
@@ -46,8 +54,16 @@ export interface BounceInvestigateFinding {
 
 export interface BounceInvestigateResult {
   dryRun: boolean;
+  reportOnly: boolean;
   scannedPaused: number;
   findings: BounceInvestigateFinding[];
+  /** Paused campaigns under the investigate threshold (for report mode). */
+  underThreshold: Array<{
+    campaignId: number;
+    campaignName: string;
+    aggregateBouncePercent: number;
+    sampleSent: number;
+  }>;
   errors: string[];
 }
 
@@ -91,6 +107,13 @@ async function providerSplitsForCampaign(
   }
 }
 
+function formatProviderLine(providers: ProviderInboxSplit[]): string {
+  if (!providers.length) return "no placement provider split on file";
+  return providers
+    .map((p) => `${p.name} ${p.inboxPercent.toFixed(0)}% inbox`)
+    .join(", ");
+}
+
 export class CampaignBounceInvestigateService {
   constructor(
     private readonly config: AppConfig,
@@ -100,12 +123,17 @@ export class CampaignBounceInvestigateService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<BounceInvestigateResult> {
+  async run(
+    opts: { dryRun?: boolean; reportOnly?: boolean } = {},
+  ): Promise<BounceInvestigateResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
+    const reportOnly = opts.reportOnly ?? false;
     const result: BounceInvestigateResult = {
       dryRun,
+      reportOnly,
       scannedPaused: 0,
       findings: [],
+      underThreshold: [],
       errors: [],
     };
     const threshold = this.config.campaignBounceInvestigateThreshold;
@@ -138,7 +166,7 @@ export class CampaignBounceInvestigateService {
     for (const campaign of paused) {
       // Our own last-account protective pauses are resumed by health staffing.
       const pending = this.state.getPendingResume(campaign.id);
-      if (pending?.reason?.includes("last_account")) continue;
+      if (pending?.reason?.includes("last_account") && !reportOnly) continue;
 
       const members = (accounts as SmartleadAccountWithCampaigns[]).filter(
         (a) => campaignIdsOf(a).includes(campaign.id),
@@ -179,9 +207,28 @@ export class CampaignBounceInvestigateService {
         }
       }
 
-      if (sentTotal < this.config.minBounceSample) continue;
+      if (sentTotal < this.config.minBounceSample) {
+        if (reportOnly) {
+          result.underThreshold.push({
+            campaignId: campaign.id,
+            campaignName: String(campaign.name ?? campaign.id),
+            aggregateBouncePercent:
+              sentTotal > 0 ? (bounceWeighted / sentTotal) * 100 : 0,
+            sampleSent: sentTotal,
+          });
+        }
+        continue;
+      }
       const aggregate = (bounceWeighted / sentTotal) * 100;
-      if (aggregate < threshold) continue;
+      if (aggregate < threshold) {
+        result.underThreshold.push({
+          campaignId: campaign.id,
+          campaignName: String(campaign.name ?? campaign.id),
+          aggregateBouncePercent: aggregate,
+          sampleSent: sentTotal,
+        });
+        continue;
+      }
 
       const providers = await providerSplitsForCampaign(
         this.smartDelivery,
@@ -193,24 +240,32 @@ export class CampaignBounceInvestigateService {
       );
       const copyDefer = shouldDeferSenderRotationForCopy(copy);
 
+      badSenders.sort((a, b) => b.rate - a.rate);
       const finding: BounceInvestigateFinding = {
         campaignId: campaign.id,
         campaignName: String(campaign.name ?? campaign.id),
         aggregateBouncePercent: aggregate,
         sampleSent: sentTotal,
+        memberCount: members.length,
         copyDefer,
+        copyKind: copy.kind,
         copyReason: copy.kind !== "none" ? copy.reason : undefined,
+        providers,
+        worstSenders: badSenders.slice(0, 10).map((b) => ({
+          email: b.email,
+          bounceRate: b.rate,
+          sent: b.sent,
+        })),
         rotated: [],
         resumed: false,
         errors: [],
       };
 
-      if (copyDefer) {
+      if (copyDefer || reportOnly) {
         result.findings.push(finding);
         continue;
       }
 
-      badSenders.sort((a, b) => b.rate - a.rate);
       for (const bad of badSenders.slice(0, 25)) {
         try {
           if (!dryRun) {
@@ -225,7 +280,9 @@ export class CampaignBounceInvestigateService {
             });
             await sleep(250);
           }
-          finding.rotated.push(`${bad.email} (${bad.rate.toFixed(1)}%)`);
+          finding.rotated.push(
+            `${bad.email} (${bad.rate.toFixed(1)}% of ${bad.sent} sent)`,
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           finding.errors.push(`rotate ${bad.email}: ${message}`);
@@ -248,21 +305,8 @@ export class CampaignBounceInvestigateService {
       result.findings.push(finding);
     }
 
-    if (result.findings.length) {
-      const lines = [
-        `${dryRun ? "[DRY RUN] " : ""}Paused-campaign bounce investigation (>${threshold}%):`,
-      ];
-      for (const f of result.findings) {
-        if (f.copyDefer) {
-          lines.push(
-            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — copy/offer likely, not rotating senders. ${f.copyReason ?? "Test/fix the sequence copy."}`,
-          );
-        } else {
-          lines.push(
-            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — rotated ${f.rotated.length} sender(s)${f.resumed ? ", resumed" : ""}.`,
-          );
-        }
-      }
+    if (result.findings.length && !reportOnly) {
+      const lines = this.formatSlack(result.findings, threshold, dryRun);
       try {
         await this.slack.send(lines.join("\n"));
       } catch (error) {
@@ -270,9 +314,62 @@ export class CampaignBounceInvestigateService {
       }
     }
 
+    for (const f of result.findings) {
+      console.log(
+        `[bounce-investigate] #${f.campaignId} ${f.campaignName}: agg=${f.aggregateBouncePercent.toFixed(1)}% sent=${f.sampleSent} copy=${f.copyKind} rotated=${f.rotated.length} resumed=${f.resumed}`,
+      );
+      if (f.worstSenders.length) {
+        console.log(
+          `[bounce-investigate]   worst: ${f.worstSenders
+            .slice(0, 5)
+            .map((s) => `${s.email} ${s.bounceRate.toFixed(1)}%/${s.sent}`)
+            .join("; ")}`,
+        );
+      }
+    }
+
     console.log(
-      `[bounce-investigate] paused=${result.scannedPaused} findings=${result.findings.length}`,
+      `[bounce-investigate] paused=${result.scannedPaused} findings=${result.findings.length} reportOnly=${reportOnly}`,
     );
     return result;
+  }
+
+  private formatSlack(
+    findings: BounceInvestigateFinding[],
+    threshold: number,
+    dryRun: boolean,
+  ): string[] {
+    const lines = [
+      `${dryRun ? "[DRY RUN] " : ""}Paused-campaign bounce investigation (>${threshold}% aggregate sender bounce):`,
+      "",
+      "This is *real-lead bounce*, not placement spam-folder. Placement seeds accept mail; bounce means leads rejected the address/domain (or the list is dirty).",
+    ];
+    for (const f of findings) {
+      lines.push("");
+      lines.push(
+        `*#${f.campaignId} ${f.campaignName}* — ${f.aggregateBouncePercent.toFixed(1)}% bounce across ${f.sampleSent} sends (${f.memberCount} members on campaign)`,
+      );
+      lines.push(`Placement check (is it the copy?): *${f.copyKind}* — ${f.copyReason ?? "no copy-only pattern"}`);
+      lines.push(`Providers: ${formatProviderLine(f.providers)}`);
+      if (f.copyDefer) {
+        lines.push(
+          "Action: *not rotating senders* — looks like campaign copy/offer. Test/fix the sequence.",
+        );
+      } else {
+        lines.push(
+          `Action: rotated ${f.rotated.length} worst bouncing sender(s)${f.resumed ? ", resumed campaign" : ", left paused (no senders left or resume failed)"}.`,
+        );
+        for (const s of f.worstSenders.slice(0, 8)) {
+          const did = f.rotated.some((r) => r.startsWith(s.email));
+          lines.push(
+            `• \`${s.email}\` — ${s.bounceRate.toFixed(1)}% bounce of ${s.sent} sent${did ? " → pulled + warmup on" : ""}`,
+          );
+        }
+      }
+      if (f.errors.length) {
+        lines.push(`Errors: ${f.errors.slice(0, 3).join("; ")}`);
+      }
+    }
+    return lines;
   }
 }

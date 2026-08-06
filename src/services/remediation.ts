@@ -110,6 +110,9 @@ export interface RemediationResult {
     inboxRate: number;
     inboxRateAll?: number;
     scoredSameEsp?: boolean;
+    reason: "bounce" | "placement" | "bounce_and_placement";
+    bounceRate?: number;
+    bounceSent?: number;
     removedFromCampaigns: number[];
     holdUntil?: string;
     tagName?: string;
@@ -493,13 +496,19 @@ export class RemediationService {
       removedFromCampaigns?: number[];
       inboxRateAll?: number;
       scoredSameEsp?: boolean;
+      reason: "bounce" | "placement" | "bounce_and_placement";
+      bounceRate?: number;
+      bounceSent?: number;
     }> = [];
 
     // A sender can hold a clean inbox rate while bouncing hard against real
     // leads — seed inboxes accept mail, so a placement test never sees it.
     // Bounce is an independent signal, routed through the same hold-and-swap
     // path as poor placement so a warmed generic takes over either way.
-    const bounceRotations = new Map<string, number>();
+    const bounceRotations = new Map<
+      string,
+      { bounceRate: number; sent: number }
+    >();
     if (this.config.enableBounceRotation) {
       try {
         const stats = parseSenderBounceStats(
@@ -514,7 +523,10 @@ export class RemediationService {
               this.config.minBounceSample,
             )
           ) {
-            bounceRotations.set(stat.email, stat.bounceRate);
+            bounceRotations.set(stat.email, {
+              bounceRate: stat.bounceRate,
+              sent: stat.sent,
+            });
           }
         }
         if (bounceRotations.size) {
@@ -522,7 +534,7 @@ export class RemediationService {
             `[remediation] ${bounceRotations.size} sender(s) over ${this.config.bounceRateThreshold}% bounce:`,
             [...bounceRotations.entries()]
               .slice(0, 20)
-              .map(([e, r]) => `${e} ${r.toFixed(1)}%`),
+              .map(([e, r]) => `${e} ${r.bounceRate.toFixed(1)}% (${r.sent} sent)`),
           );
         }
       } catch (error) {
@@ -593,13 +605,25 @@ export class RemediationService {
     for (const account of recoverCandidates) {
       const email = accountEmail(account)!;
       const rateRow = inboxRateRows.get(email.toLowerCase());
-      const rate = inboxRates.get(email.toLowerCase())!;
+      const rate = inboxRates.get(email.toLowerCase());
+      const bounceStat = bounceRotations.get(email.toLowerCase());
+      const bounceDriven = bounceStat !== undefined;
+      const placementDriven =
+        typeof rate === "number" && rate < threshold;
+      if (!bounceDriven && !placementDriven) continue;
+
+      const reason: "bounce" | "placement" | "bounce_and_placement" =
+        bounceDriven && placementDriven
+          ? "bounce_and_placement"
+          : bounceDriven
+            ? "bounce"
+            : "placement";
+
       const key = `remediate-inbox:${email.toLowerCase()}`;
       if (this.state.hasRemediation(key)) continue;
       if (this.state.getHeldInbox(email)) continue;
 
       // Bounce still rotates. Low inbox alone defers when copy looks guilty.
-      const bounceDriven = bounceRotations.has(email.toLowerCase());
       if (!bounceDriven) {
         const onCampaigns = campaignIdsOf(account).filter((id) => {
           const status = campaignStatus.get(id);
@@ -612,6 +636,9 @@ export class RemediationService {
           continue;
         }
       }
+
+      // Placement score for state/Slack; bounce-only senders may have no seed score.
+      const inboxRateForRecord = typeof rate === "number" ? rate : 100;
 
       const campaignIds = campaignIdsOf(account).filter((id) => {
         const status = campaignStatus.get(id);
@@ -723,11 +750,14 @@ export class RemediationService {
             pendingHold.push({
               accountId: account.id,
               email,
-              rate,
+              rate: inboxRateForRecord,
               heldAt: new Date().toISOString(),
               removedFromCampaigns: [],
               inboxRateAll: rateRow?.inboxRateAll,
               scoredSameEsp: rateRow?.scoredSameEsp,
+              reason,
+              bounceRate: bounceStat?.bounceRate,
+              bounceSent: bounceStat?.sent,
             });
             tagName = holdTag.name;
           } else {
@@ -742,9 +772,12 @@ export class RemediationService {
       result.recoveredInboxes.push({
         id: account.id,
         email,
-        inboxRate: rate,
+        inboxRate: inboxRateForRecord,
         inboxRateAll: rateRow?.inboxRateAll,
         scoredSameEsp: rateRow?.scoredSameEsp,
+        reason,
+        bounceRate: bounceStat?.bounceRate,
+        bounceSent: bounceStat?.sent,
         removedFromCampaigns: removedFrom,
         holdUntil: holdUntilDate,
         tagName,
@@ -790,6 +823,9 @@ export class RemediationService {
               heldAt: row.heldAt,
               holdUntil: holdUntilDate,
               tagName: holdTag.name,
+              reason: row.reason,
+              bounceRate: row.bounceRate,
+              bounceSent: row.bounceSent,
               inboxRate: row.rate,
               inboxRateAll: row.inboxRateAll,
               scoredSameEsp: row.scoredSameEsp,

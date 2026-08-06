@@ -75,7 +75,7 @@ describe("classifyFailure", () => {
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",
-      "crossscaleco.com: teardown awaiting approval (denied) — see GET /approvals",
+      "boldercyperpartnersys.info: teardown awaiting approval (denied) — see GET /approvals",
     );
     assert.equal(denied.class, "noise");
     assert.equal(denied.autoRemediate, false);
@@ -88,6 +88,13 @@ describe("classifyFailure", () => {
     assert.equal(pending.class, "noise");
     assert.equal(pending.autoRemediate, false);
     assert.equal(pending.fingerprint, denied.fingerprint);
+
+    const pool = classifyFailure(
+      "pool",
+      "Waiting on spend approval for 2 domain(s) — see GET /approvals",
+    );
+    assert.equal(pool.autoRemediate, false);
+    assert.equal(pool.fingerprint, denied.fingerprint);
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

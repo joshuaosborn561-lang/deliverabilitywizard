@@ -24,6 +24,23 @@ export function isRateLimitNoise(message: string): boolean {
 }
 
 /**
+ * Pending/denied spend or destructive approvals already notify via the
+ * spend gateway; repeating them on every remediation cron is not actionable.
+ */
+export function isApprovalGateNoise(message: string): boolean {
+  return (
+    /awaiting approval/i.test(message) ||
+    /waiting on spend approval/i.test(message) ||
+    /see\s+GET\s+\/approvals/i.test(message)
+  );
+}
+
+/** Rate limits/timeouts + human approval gates — skip Slack paging. */
+export function isBenignOpsNoise(message: string): boolean {
+  return isRateLimitNoise(message) || isApprovalGateNoise(message);
+}
+
+/**
  * Turn a technical ops error into a short plain-English Slack line.
  * Keeps mailbox / campaign identifiers when present; drops raw HTTP jargon.
  */

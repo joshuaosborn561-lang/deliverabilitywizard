@@ -22,7 +22,7 @@ import {
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
-import { isRateLimitNoise } from "../lib/alertNoise.js";
+import { isBenignOpsNoise } from "../lib/alertNoise.js";
 import { ApiError, sleep } from "../lib/http.js";
 import type {
   SpendDecision,
@@ -1124,8 +1124,8 @@ export class RemediationService {
       (result.recoveryPool?.swaps.length ?? 0) > 0 ||
       (result.recoveryPool?.restores.length ?? 0) > 0;
 
-    // Rate-limit noise alone should not page Slack
-    const seriousErrors = result.errors.filter((e) => !isRateLimitNoise(e));
+    // Rate-limit / approval-gate noise alone should not page Slack
+    const seriousErrors = result.errors.filter((e) => !isBenignOpsNoise(e));
 
     if (acted || seriousErrors.length) {
       await this.slack.notifyRemediation({
@@ -1136,7 +1136,7 @@ export class RemediationService {
       });
     } else if (result.errors.length) {
       console.log(
-        `[remediation] Skipping Slack (no actions; ${result.errors.length} rate-limit/noise error(s))`,
+        `[remediation] Skipping Slack (no actions; ${result.errors.length} rate-limit/approval-gate noise error(s))`,
       );
     }
   }

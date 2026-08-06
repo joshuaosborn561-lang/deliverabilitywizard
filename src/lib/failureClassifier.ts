@@ -66,7 +66,7 @@ export function classifyFailure(
   // Spend/destructive gates working as designed — human must approve or has
   // already denied. Not a code failure (D4/D15/D21).
   if (
-    /awaiting approval|see get \/approvals|spend approval needed|spend blocked by monthly cap/i.test(
+    /awaiting approval|waiting on spend approval|see get \/approvals|spend approval needed|spend blocked by monthly cap/i.test(
       lower,
     )
   ) {

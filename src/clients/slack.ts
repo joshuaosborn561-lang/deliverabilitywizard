@@ -1,5 +1,6 @@
 import {
   humanizeAlertError,
+  isBenignOpsNoise,
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
 
@@ -688,7 +689,7 @@ export class SlackClient {
     const actions = details.clientActions ?? [];
     const restored = details.sameEspAudit?.restored ?? [];
     const seriousErrors = details.errors
-      .filter((e) => !isRateLimitNoise(e))
+      .filter((e) => !isBenignOpsNoise(e))
       .map(humanizeAlertError);
 
     const didSomething =
@@ -700,7 +701,7 @@ export class SlackClient {
       (typeof details.holdTagged === "number" && details.holdTagged > 0) ||
       details.pausedCampaigns.length > 0;
 
-    // Don't ping for empty "all clear" or rate-limit noise
+    // Don't ping for empty "all clear" or rate-limit / approval-gate noise
     if (!didSomething && !seriousErrors.length) return;
 
     const parts: string[] = [];

@@ -42,9 +42,11 @@ export interface StaffableOptions {
 }
 
 /**
- * Connected + not held + not known-bad on placement/warmup reputation.
- * Unknown placement is optimistic — Measure/remediation will pull bad
- * senders; until then membership that is connected still staffs outreach.
+ * Connected + not held + not warmup-blocked + not known-bad on placement.
+ * Warmup reputation is intentionally ignored here — it is not an inboxing
+ * signal, and using it under-counted live generics (TechEvo showed 29/87
+ * "staffable" while SMTP/IMAP were fine). Measure/remediation owns spammy
+ * removal; until a placement rate is known, connected membership staffs.
  */
 export function isStaffableSender(
   account: Pick<
@@ -65,11 +67,6 @@ export function isStaffableSender(
   ) {
     return false;
   }
-
-  const reputation = parseWarmupReputation(account);
-  // Smartlead reputation is typically 0–100. Treat critically low scores as
-  // non-inboxing so they do not pad the floor while Measure catches up.
-  if (reputation != null && reputation < threshold) return false;
 
   return true;
 }

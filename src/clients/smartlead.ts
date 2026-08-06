@@ -199,7 +199,7 @@ export class SmartleadClient {
   ): Promise<unknown> {
     return this.mutate(() =>
       apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/status`, {
-        method: "PATCH",
+        method: "POST",
         body: { status },
       }),
     );

@@ -69,24 +69,19 @@ caused live pre-warmed senders to be pulled.
 
 ## Sender identity
 
-**Never move a client-branded sender between campaigns.** Senders carry brand
-through their domain — Parlay campaigns send from `parlaytech*.info`,
-CultureFits from `culturefits*.info`. One client's domain sending another
-client's offer misrepresents both.
+**One client per sender — not one campaign.** A mailbox (client domain or
+generic) may sit on **every ACTIVE campaign for that same client**. BCP
+mailboxes go on all BCP campaigns; Parlay on all Parlay; etc. (`ClientFanOutService`,
+D26). Cross-client membership is still forbidden.
 
-Fill thin campaigns from the **generic pool only**. Generics carry no brand of
-their own, so signature, from-name and client id are set to the receiving
-client on assign, and cleared on swap-back.
+Generics may staff **any** client including BCP (D27). On assign, signature /
+from-name / client id are set to the receiving client.
 
-**A generic is supply while its campaign keeps the floor.** One already
-serving a campaign may be taken whenever every campaign it sends for would
-still hold `MIN_CAMPAIGN_SENDERS` after losing it — TechEvo runs on 100
-generics against a floor of 50, so 50 are movable. Taking one is a **move**:
-removed from the donor, added to the receiver, signature rewritten. Adding
-without removing leaves the donor sending under another client's brand.
+**Cross-client top-up is still a move** (remove from the other client, add to
+the receiver). **Same-client** top-up/fan-out is additive — keep the mailbox
+on the other campaigns for that client.
 
-This never extends to client-branded senders. `parlaytech*.info` belongs to
-Parlay whether Parlay has 7 senders or 700.
+Warmup stays **on for every mailbox** (mailbox-settings converge).
 
 ## Rotation thresholds
 
@@ -100,13 +95,18 @@ A sender comes off active campaigns when either signal fails:
 
 Both route through the same path: removed from active campaigns, warmup
 re-enabled, `HOLD-UNTIL` tag, held `RECOVERY_HOLD_DAYS` (14), and a warmed
-generic swapped in.
+generic swapped in — **unless** placement says the weakness is copy/offer
+driven (Outlook buried, Gmail fine): then Slack to test the copy and do not
+bench those senders (D28).
+
+If a campaign is **PAUSED** with aggregate sender bounce over **7%**,
+investigate: copy_likely → Slack only; otherwise rotate worst bouncers and
+try to resume (D29).
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
-from the pool — connected SMTP/IMAP and not held/known-spammy. Disconnected
-membership does not count (D25). `CampaignHealthService` owns refill and
-auto-resume after protective pauses on `CRON_HEALTH` (every 15m). Measure
-work stays on the slower monitor cron.
+from the pool — connected SMTP/IMAP and not held. Disconnected membership
+does not count (D25). Health also runs same-client fan-out. `CRON_HEALTH`
+every 15m; Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
@@ -118,9 +118,6 @@ per day with warmup enabled. This is the **campaign send cap**, a different
 Smartlead field from warmup volume (`WARMUP_TOTAL_PER_DAY`). Settings are per
 mailbox, so anything added by hand or re-imported arrives on a default and
 needs reconciling.
-
-A sender belongs to **one campaign at a time**. A generic found on several is
-released from all but the one it is branded for, before any top-up runs.
 
 ## Placement tests
 

@@ -9,7 +9,6 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { isBcpCampaignName } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
@@ -167,19 +166,35 @@ export class CampaignTopUpService {
       if (email) campaignsByEmail.set(email, campaignIdsOf(account));
     }
 
-    /** Can this generic be taken without dropping a donor below the floor? */
-    const isReassignable = (email: string): boolean => {
+    const sameClient = (
+      a: SmartleadCampaign | undefined,
+      b: SmartleadCampaign | undefined,
+    ): boolean =>
+      typeof a?.client_id === "number" &&
+      typeof b?.client_id === "number" &&
+      a.client_id === b.client_id;
+
+    /**
+     * Can this generic cover the target? Same-client donors keep the mailbox
+     * (D26 fan-out). Cross-client donors must stay at/above the floor after a
+     * real move.
+     */
+    const isReassignable = (
+      email: string,
+      target: SmartleadCampaign,
+    ): boolean => {
       const from = campaignsByEmail.get(email.toLowerCase()) ?? [];
-      return from.every((id) => (projected.get(id) ?? 0) - 1 >= floor);
+      return from.every((id) => {
+        if (sameClient(campaignById.get(id), target)) return true;
+        return (projected.get(id) ?? 0) - 1 >= floor;
+      });
     };
 
     const needy: Array<{ campaign: SmartleadCampaign; senders: number }> = (campaigns as SmartleadCampaign[])
       .filter((c) => isManagedCampaign(c))
       .filter((c) => {
-        if (isExcluded(c, excluded) || isBcpCampaignName(String(c.name ?? ""))) {
-          result.skipped.push(
-            `${c.id} ${c.name ?? ""} (${isBcpCampaignName(String(c.name ?? "")) ? "BCP client-domain only" : "excluded"})`.trim(),
-          );
+        if (isExcluded(c, excluded)) {
+          result.skipped.push(`${c.id} ${c.name ?? ""} (excluded)`.trim());
           return false;
         }
         return true;
@@ -192,10 +207,9 @@ export class CampaignTopUpService {
       // Neediest first, so a shallow pool helps the worst campaign.
       .sort((a, b) => a.senders - b.senders);
 
-    // A generic on several campaigns carries only one client's signature, so
-    // every other campaign it sends for is using the wrong brand. Release it
-    // from those before filling anything — the releases may themselves drop a
-    // campaign below the floor, which this run then fills.
+    // D26: same-client multi-campaign membership is allowed. Only release a
+    // generic from a campaign when that campaign belongs to a *different*
+    // client than the one the mailbox is branded for.
     const activeIds = new Set(
       (campaigns as SmartleadCampaign[])
         .filter((c) => isManagedCampaign(c))
@@ -217,8 +231,6 @@ export class CampaignTopUpService {
         continue;
       }
 
-      // Keep the campaign whose client the mailbox is currently branded for;
-      // if that is unknowable, keep the one it was most recently assigned to.
       const keep =
         on.find((id) => {
           const c = campaignById.get(id);
@@ -228,10 +240,12 @@ export class CampaignTopUpService {
             c.client_id === row.assignedClientId
           );
         }) ?? on[on.length - 1]!;
+      const keepCampaign = campaignById.get(keep);
 
       const remaining = new Set(on);
       for (const id of on) {
         if (id === keep) continue;
+        if (sameClient(campaignById.get(id), keepCampaign)) continue;
         try {
           if (!dryRun) {
             await this.smartlead.removeEmailAccountsFromCampaign(id, [
@@ -251,14 +265,14 @@ export class CampaignTopUpService {
     }
     if (result.released.length) {
       console.log(
-        `[top-up] released ${result.released.length} duplicated sender(s) from campaigns they were not branded for`,
+        `[top-up] released ${result.released.length} sender(s) from other-client campaigns`,
       );
     }
 
     // Recompute shortfalls against the post-release counts.
     const needyAfter = (campaigns as SmartleadCampaign[])
       .filter((c) => isManagedCampaign(c))
-      .filter((c) => !isExcluded(c, excluded) && !isBcpCampaignName(String(c.name ?? "")))
+      .filter((c) => !isExcluded(c, excluded))
       .map((c) => ({ campaign: c, senders: projected.get(c.id) ?? 0 }))
       .filter((row) => row.senders < floor)
       .sort((a, b) => a.senders - b.senders);
@@ -309,15 +323,19 @@ export class CampaignTopUpService {
               !activeSwapPoolEmails.has(key) &&
               !selectedThisRun.has(key) &&
               !(campaignsByEmail.get(key) ?? []).includes(campaign.id) &&
-              isReassignable(key)
+              isReassignable(key, campaign)
             );
           },
         );
         if (!pool || !pool.smartleadAccountId) break;
 
-        // Where it is coming from, so it can be released rather than shared.
+        // Cross-client donors are moved off; same-client donors keep the
+        // mailbox (D26 — one client, many campaigns).
         const donors = (campaignsByEmail.get(pool.email.toLowerCase()) ?? [])
           .filter((id) => id !== campaign.id);
+        const crossClientDonors = donors.filter(
+          (id) => !sameClient(campaignById.get(id), campaign),
+        );
 
         const firstName = pool.firstName || "Pool";
         const lastName = pool.lastName || "User";
@@ -343,7 +361,7 @@ export class CampaignTopUpService {
               targetAdded = true;
               await sleep(250);
 
-              for (const donorId of donors) {
+              for (const donorId of crossClientDonors) {
                 await this.smartlead.removeEmailAccountsFromCampaign(donorId, [
                   pool.smartleadAccountId,
                 ]);
@@ -413,11 +431,16 @@ export class CampaignTopUpService {
             }
           }
 
-          for (const donorId of donors) {
+          for (const donorId of crossClientDonors) {
             projected.set(donorId, (projected.get(donorId) ?? 1) - 1);
           }
           projected.set(campaign.id, (projected.get(campaign.id) ?? 0) + 1);
-          campaignsByEmail.set(pool.email.toLowerCase(), [campaign.id]);
+          const kept = donors.filter((id) =>
+            sameClient(campaignById.get(id), campaign),
+          );
+          campaignsByEmail.set(pool.email.toLowerCase(), [
+            ...new Set([campaign.id, ...kept]),
+          ]);
           selectedThisRun.add(pool.email.toLowerCase());
 
           if (!dryRun) {
@@ -435,7 +458,7 @@ export class CampaignTopUpService {
             campaignName: String(campaign.name ?? campaign.id),
             email: pool.email,
             clientName,
-            movedFrom: donors,
+            movedFrom: crossClientDonors,
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);

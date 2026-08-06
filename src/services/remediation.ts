@@ -8,9 +8,10 @@ import {
   parseIpBlacklistHits,
   parseSenderInboxRates,
   uniqueBlacklistedDomains,
+  campaignIdOf,
+  testIdOf,
   type SenderInboxRate,
 } from "../clients/smartdelivery.js";
-import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { filterTeardownBlacklistHits } from "../lib/blacklistDiagnosis.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
@@ -24,11 +25,17 @@ import {
 } from "../clients/smartlead.js";
 import { isBenignOpsNoise } from "../lib/alertNoise.js";
 import { ApiError, sleep } from "../lib/http.js";
+import {
+  classifyCopySignal,
+  shouldDeferSenderRotationForCopy,
+  type ProviderInboxSplit,
+} from "../lib/copySignal.js";
 import type {
   SpendDecision,
   SpendGateway,
   SpendRequest,
 } from "../lib/spendGateway.js";
+import type { ProviderwiseRow } from "../types/index.js";
 import type { StateStore } from "../state/store.js";
 import {
   RecoveryPoolService,
@@ -38,6 +45,21 @@ import {
   parseSenderBounceStats,
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
+
+function inboxPercentFromProvider(row: ProviderwiseRow): number | null {
+  if (typeof row.inbox_rate === "number" && Number.isFinite(row.inbox_rate)) {
+    return row.inbox_rate <= 1 ? row.inbox_rate * 100 : row.inbox_rate;
+  }
+  const inbox = row.inbox_count ?? 0;
+  const tab = row.tab_count ?? 0;
+  const spam = row.spam_count ?? 0;
+  const total =
+    row.adjusted_total_email_count ??
+    row.total_email_count ??
+    inbox + tab + spam;
+  if (!total) return null;
+  return (inbox / total) * 100;
+}
 
 export interface ClientBackfillAction {
   clientId: number | null;
@@ -510,20 +532,57 @@ export class RemediationService {
       }
     }
 
+    // D28: campaign → copy signal (from placement provider split). When
+    // Outlook is spam-burying while Gmail is fine, defer sender rotation and
+    // tell ops to test/fix the copy instead.
+    const copyDeferByCampaign = new Map<number, string>();
+    const listedForCopy = normalizeTestList(
+      await this.smartDelivery.listTests({}).catch(() => []),
+    );
+    const enrichedForCopy = await this.smartDelivery
+      .enrichCampaignIds(listedForCopy)
+      .catch(() => listedForCopy);
+    for (const test of enrichedForCopy) {
+      const cid = Number(campaignIdOf(test));
+      const tid = testIdOf(test);
+      if (!cid || !tid || copyDeferByCampaign.has(cid)) continue;
+      try {
+        const report = await this.smartDelivery.getProviderwiseReport(tid);
+        const providers: ProviderInboxSplit[] = [];
+        for (const row of report.result ?? []) {
+          const name = String(row.provider_name ?? row.provider ?? "");
+          const inbox = inboxPercentFromProvider(row);
+          if (!name || inbox == null) continue;
+          providers.push({ name, inboxPercent: inbox });
+        }
+        const signal = classifyCopySignal(providers, threshold);
+        if (shouldDeferSenderRotationForCopy(signal)) {
+          copyDeferByCampaign.set(cid, signal.reason);
+        }
+      } catch {
+        // Placement copy signal is best-effort; bounce path still runs.
+      }
+    }
+    if (copyDeferByCampaign.size) {
+      const lines = [
+        "Low inbox looks like *copy/offer* filtering (not a single mailbox). Holding sender rotation — test/fix the campaign copy:",
+        ...[...copyDeferByCampaign.entries()].map(
+          ([id, reason]) =>
+            `• #${id} ${campaignNameById.get(id) ?? id}: ${reason}`,
+        ),
+      ];
+      try {
+        await this.slack.send(lines.join("\n"));
+      } catch (error) {
+        console.warn("[remediation] copy-signal Slack failed", error);
+      }
+    }
+
     const recoverCandidates = accounts.filter((account) => {
       const email = accountEmail(account)?.toLowerCase();
       const domain = accountDomain(account);
       if (!email || !domain) return false;
       if (blacklistedSet.has(domain)) return false;
-      // BCP is client-domain only while ramping — do not bench/swap generics in.
-      if (isBcpOwnedDomain(domain)) return false;
-      const onBcpOnly = campaignIdsOf(account)
-        .filter((id) => {
-          const status = campaignStatus.get(id);
-          return !status || status === "ACTIVE";
-        })
-        .every((id) => isBcpCampaignName(campaignNameById.get(id) ?? ""));
-      if (onBcpOnly && campaignIdsOf(account).length > 0) return false;
       // High bounce is disqualifying on its own, regardless of placement.
       if (bounceRotations.has(email)) return true;
       const rate = inboxRates.get(email);
@@ -538,6 +597,21 @@ export class RemediationService {
       const key = `remediate-inbox:${email.toLowerCase()}`;
       if (this.state.hasRemediation(key)) continue;
       if (this.state.getHeldInbox(email)) continue;
+
+      // Bounce still rotates. Low inbox alone defers when copy looks guilty.
+      const bounceDriven = bounceRotations.has(email.toLowerCase());
+      if (!bounceDriven) {
+        const onCampaigns = campaignIdsOf(account).filter((id) => {
+          const status = campaignStatus.get(id);
+          return !status || status === "ACTIVE";
+        });
+        if (
+          onCampaigns.length &&
+          onCampaigns.every((id) => copyDeferByCampaign.has(id))
+        ) {
+          continue;
+        }
+      }
 
       const campaignIds = campaignIdsOf(account).filter((id) => {
         const status = campaignStatus.get(id);

@@ -7,7 +7,6 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { isBcpCampaignName } from "../lib/bcp.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 import {
@@ -15,6 +14,7 @@ import {
   isExcluded,
   type TopUpResult,
 } from "./campaignTopUp.js";
+import type { ClientFanOutService } from "./clientFanOut.js";
 
 /**
  * Sole mutator brain for campaign staffing (D25).
@@ -41,6 +41,7 @@ export interface CampaignHealthResult {
   floor: number;
   snapshots: CampaignHealthSnapshot[];
   topUp: TopUpResult | null;
+  fanOutAttached: number;
   resumed: Array<{ campaignId: number; name: string; staffable: number }>;
   stillShort: Array<{
     campaignId: number;
@@ -59,6 +60,7 @@ export class CampaignHealthService {
     private readonly slack: SlackClient,
     private readonly state: StateStore,
     private readonly topUp: CampaignTopUpService,
+    private readonly fanOut?: ClientFanOutService,
   ) {}
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignHealthResult> {
@@ -69,6 +71,7 @@ export class CampaignHealthService {
       floor,
       snapshots: [],
       topUp: null,
+      fanOutAttached: 0,
       resumed: [],
       stillShort: [],
       errors: [],
@@ -102,7 +105,19 @@ export class CampaignHealthService {
       result.errors.push(`top-up: ${message}`);
     }
 
-    // Re-read membership after top-up so resume decisions use live Smartlead.
+    // D26: every mailbox for a client onto every ACTIVE campaign for that client.
+    if (this.fanOut) {
+      try {
+        const fan = await this.fanOut.run({ dryRun });
+        result.fanOutAttached = fan.attached.length;
+        result.errors.push(...fan.errors.slice(0, 20));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`fan-out: ${message}`);
+      }
+    }
+
+    // Re-read membership after top-up/fan-out so resume decisions use live Smartlead.
     try {
       accounts = await this.smartlead.listAllEmailAccounts({
         fetchCampaigns: true,
@@ -123,8 +138,7 @@ export class CampaignHealthService {
         !isExcluded(
           { id: s.campaignId, name: s.campaignName },
           this.config.topUpExcludeCampaigns,
-        ) &&
-        !isBcpCampaignName(s.campaignName),
+        ),
     );
     result.stillShort = shortAfter.map((s) => ({
       campaignId: s.campaignId,

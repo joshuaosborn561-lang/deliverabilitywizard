@@ -23,6 +23,8 @@ import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
+import { ClientFanOutService } from "./services/clientFanOut.js";
+import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -245,12 +247,26 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const clientFanOut = new ClientFanOutService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
     slack,
     state,
     campaignTopUp,
+    clientFanOut,
+  );
+  const bounceInvestigate = new CampaignBounceInvestigateService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
   );
   const campaignAudit = new CampaignAuditService(
     config,
@@ -491,6 +507,14 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[campaign-audit] failed", error);
       }
+      // D29: PAUSED campaigns with high aggregate sender bounce → investigate
+      // (skip sender rotation when placement says the copy is the cause).
+      let bounceInvestigateResult: unknown = null;
+      try {
+        bounceInvestigateResult = await bounceInvestigate.run();
+      } catch (error) {
+        console.warn("[bounce-investigate] failed", error);
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
@@ -498,6 +522,7 @@ async function main(): Promise<void> {
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
+        bounceInvestigate: bounceInvestigateResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -782,6 +807,21 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await campaignAudit.run(config.minCampaignSenders);
         res.json({ ok: true, mode: "campaign-audit", result });
+        return;
+      }
+      if (mode === "fan-out" || mode === "client-fanout") {
+        assertRuntimeSecrets(config);
+        const result = await clientFanOut.run();
+        res.json({ ok: true, mode: "fan-out", result });
+        return;
+      }
+      if (
+        mode === "bounce-investigate" ||
+        mode === "campaign-bounce-investigate"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await bounceInvestigate.run();
+        res.json({ ok: true, mode: "bounce-investigate", result });
         return;
       }
       if (mode === "remediate") {

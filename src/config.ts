@@ -90,8 +90,13 @@ const ConfigSchema = z.object({
    */
   enableCampaignHealth: boolFromEnv(true),
   cronHealth: z.string().default("*/15 * * * *"),
-  /** Daily campaign send cap held on every mailbox. */
+  /** Daily campaign send cap held on every mailbox (warmups not included). */
   messagePerDay: z.coerce.number().int().min(1).default(30),
+  /**
+   * Minimum minutes between sends on every mailbox (Smartlead
+   * `time_to_wait_in_mins` / UI "Minimum time gap"). D30.
+   */
+  mailboxMinTimeGapMins: z.coerce.number().int().min(0).default(10),
   enforceMailboxSettings: boolFromEnv(true),
   /** Campaign ids or name fragments never topped up automatically. */
   topUpExcludeCampaigns: z
@@ -299,6 +304,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
+    mailboxMinTimeGapMins: env.MAILBOX_MIN_TIME_GAP_MINS ?? "10",
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",

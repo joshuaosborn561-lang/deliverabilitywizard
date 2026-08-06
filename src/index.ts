@@ -1113,7 +1113,7 @@ async function main(): Promise<void> {
       `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; floor ${config.minCampaignSenders} connected+inboxing; auto-resume protective pauses)` : "disabled"}`,
     );
     console.log(
-      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay} campaign + ${config.warmupTotalPerDay} warmup = ${config.messagePerDay + config.warmupTotalPerDay}/day Smartlead ceiling; runs with health)` : "not enforced"}`,
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap, two-line signatures; runs with health)` : "not enforced"}`,
     );
     console.log(
       `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (floor ${config.minCampaignSenders} staffable${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,

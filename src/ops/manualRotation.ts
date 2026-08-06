@@ -290,8 +290,11 @@ export class ManualRotationService {
       holdTag = await this.smartlead.ensureHoldUntilTag(preview.holdUntil);
       await this.smartlead.setDailySendLimit(
         preview.replacement.accountId,
-        this.config.messagePerDay + this.config.warmupTotalPerDay,
+        this.config.messagePerDay,
       );
+      await this.smartlead.updateEmailAccount(preview.replacement.accountId, {
+        time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
+      });
 
       const brand =
         (preview.clientName ?? "Unassigned / Agency")

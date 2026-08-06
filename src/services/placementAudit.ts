@@ -63,7 +63,7 @@ export interface SendAuditResult {
   /** Campaign send target (D11) — warmup is separate. */
   campaignCap: number;
   warmupPerDay: number;
-  /** Smartlead max_email_per_day that should be set (campaign + warmup). */
+  /** Smartlead message_per_day that should be set (warmups not included). */
   totalCeiling: number;
   sendingMailboxes: number;
   /** Hit the Smartlead total ceiling (campaign+warmup). */
@@ -496,10 +496,12 @@ export class PlacementAuditService {
 
     for (const account of sending) {
       const email = accountEmail(account)!.toLowerCase();
+      const configuredRaw =
+        (account as { message_per_day?: number }).message_per_day ??
+        account.max_email_per_day;
       const configuredCeiling =
-        typeof account.max_email_per_day === "number" &&
-        account.max_email_per_day > 0
-          ? account.max_email_per_day
+        typeof configuredRaw === "number" && configuredRaw > 0
+          ? configuredRaw
           : campaignCap;
       const cids = campaignIdsOf(account).filter((id) => activeIds.has(id));
       const disconnected =
@@ -568,7 +570,7 @@ export class PlacementAuditService {
       if (agg.senders === 0) reasons.push("no_senders");
       if (agg.lowCeiling > 0) {
         reasons.push(
-          `smartlead_ceiling_includes_warmup (${agg.lowCeiling}/${agg.senders} mailboxes at max_email_per_day < ${totalCeiling}; campaign only gets leftover after ${warmupPerDay} warmup)`,
+          `smartlead_message_per_day_low (${agg.lowCeiling}/${agg.senders} mailboxes at message_per_day < ${totalCeiling}; target ${campaignCap}/day warmups-not-included, warmup separate ${warmupPerDay}/day)`,
         );
       }
       if (agg.disconnected > 0) {

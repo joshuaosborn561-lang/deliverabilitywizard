@@ -223,22 +223,21 @@ Accepted knowingly — volume per mailbox is the lever that protects reputation.
 
 ---
 
-## D24 — Smartlead daily ceiling is campaign + warmup (30 excludes warmup)
+## D24 — Message Per Day is 30; warmups are not included in that field
 
-**Decision.** `MESSAGE_PER_DAY` remains the **campaign** target (30). Because
-Smartlead's `max_email_per_day` is a shared pool that warmup draws from first,
-the value we write is `MESSAGE_PER_DAY + WARMUP_TOTAL_PER_DAY` (30+20=50 by
-default). Warmup stays `WARMUP_TOTAL_PER_DAY` on its own field.
+**Decision.** Write Smartlead `max_email_per_day` = `MESSAGE_PER_DAY` (30).
+That field is the UI **"Message Per Day (Warmups not included)"**. Warmup
+volume stays on its own field (`WARMUP_TOTAL_PER_DAY` / `warmup_max_count`).
+Do **not** add warmup into the daily message cap.
 
-**Why.** D11 said 30 is the campaign cap and assumed separate fields. In
-practice Smartlead subtracts warmup from `max_email_per_day`, so a ceiling of
-30 left only ~10 campaign sends — campaigns could not reach 10×30=300 (or any
-sender×30 target). Josh: "30 day should exclude warmups".
+**Why.** An earlier reading treated `max_email_per_day` as a shared
+campaign+warmup pool and wrote 50. Josh showed the Smartlead UI label:
+warmups are not included. Writing 50 overstated campaign volume.
 
-**Tradeoff.** Absolute Smartlead sends/day per mailbox rises to 50. Accepted:
-that is 30 campaign + 20 warmup, which was always the intent.
+**Tradeoff.** Campaign sends per mailbox are hard-capped at 30 again. Correct
+per owner.
 
-**Guard.** `D11/D24: Smartlead ceiling is campaign + warmup`
+**Guard.** `D24: Message Per Day is 30 and warmups are not included`
 
 ---
 
@@ -529,6 +528,44 @@ crossing 5% if the weighted aggregate is high.
 
 **Guard.** `CampaignBounceInvestigateService`, config default 7, owner-intent
 D29.
+
+---
+
+## D30 — Every mailbox holds a 10-minute minimum send gap
+
+**Decision.** Every mailbox is converged to `MAILBOX_MIN_TIME_GAP_MINS` (10)
+via Smartlead `time_to_wait_in_mins` (UI **"Minimum time gap (min)"**). Empty/0
+is not allowed.
+
+**Why.** Josh: gap was blank/0 and that caused throttling — campaigns burst
+sends across mailboxes with no per-mailbox spacing. Set 10 on every mailbox
+and keep it as a standing rule.
+
+**Tradeoff.** Theoretical max pace per mailbox is 6 campaign sends/hour. Accepted
+to stop burst throttling.
+
+**Guard.** `D30: every mailbox holds a 10-minute minimum send gap`
+
+---
+
+## D31 — Mailbox signatures are plain two-line Name / Brand
+
+**Decision.** Every mailbox with a resolvable brand is converged to a plain
+text signature:
+
+```
+First Last
+{Client Brand}
+```
+
+HTML `<div>` pairs are rewritten to newlines. Existing second-line brand text
+is preserved when present; otherwise the Smartlead client logo/brand is used.
+Unassigned pool inventory with no brand is left alone.
+
+**Why.** Josh: signatures must be two lines (name, then company), not a single
+line or HTML blob.
+
+**Guard.** Covered by mailbox-settings converge + `desiredMailboxSignature`.
 
 ---
 

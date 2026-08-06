@@ -3,10 +3,10 @@ import { describe, it } from "node:test";
 import { totalDailySendCeiling } from "./sendCeiling.js";
 
 describe("totalDailySendCeiling", () => {
-  it("adds campaign cap and warmup so 30 campaign excludes warmup", () => {
+  it("is the campaign Message Per Day field (warmups not included)", () => {
     assert.equal(
       totalDailySendCeiling({ messagePerDay: 30, warmupTotalPerDay: 20 }),
-      50,
+      30,
     );
   });
 });

@@ -1,12 +1,13 @@
 import type { AppConfig } from "../config.js";
 
 /**
- * Smartlead's `max_email_per_day` is a shared ceiling: warmup draws from it
- * first, and campaign sends get whatever is left. D11's `MESSAGE_PER_DAY` is
- * the *campaign* target, so the Smartlead field must be campaign + warmup.
+ * Smartlead's account `message_per_day` (written as `max_email_per_day`) is
+ * the UI field labeled "Message Per Day (Warmups not included)". Warmup has
+ * its own `warmup_max_count`. D11/D24: write `MESSAGE_PER_DAY` (30) directly.
  */
 export function totalDailySendCeiling(
   config: Pick<AppConfig, "messagePerDay" | "warmupTotalPerDay">,
 ): number {
-  return config.messagePerDay + config.warmupTotalPerDay;
+  void config.warmupTotalPerDay;
+  return config.messagePerDay;
 }

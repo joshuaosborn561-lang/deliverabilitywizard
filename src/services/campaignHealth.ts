@@ -137,9 +137,23 @@ export class CampaignHealthService {
     this.state.setLastHealthAt(new Date().toISOString());
     if (!dryRun) await this.state.save();
 
+    const activeSnaps = result.snapshots.filter((s) => s.status === "ACTIVE");
+    const atFloor = activeSnaps.filter((s) => s.needed === 0).length;
     console.log(
-      `[health] resumed=${result.resumed.length} stillShort=${result.stillShort.length} topUpAssigned=${result.topUp?.assigned.length ?? 0} errors=${result.errors.length}`,
+      `[health] ACTIVE ${activeSnaps.length} campaign(s): ${atFloor} at floor, ${result.stillShort.length} short; resumed=${result.resumed.length} topUpAssigned=${result.topUp?.assigned.length ?? 0} errors=${result.errors.length}`,
     );
+    for (const s of [...activeSnaps].sort((a, b) => b.needed - a.needed)) {
+      console.log(
+        `[health]   #${s.campaignId} ${s.campaignName} — staffable ${s.staffable}/${floor} (membership ${s.membership})${s.needed ? ` short ${s.needed}` : ""}${s.pendingResume ? " pending-resume" : ""}`,
+      );
+    }
+    for (const s of result.snapshots.filter(
+      (row) => row.pendingResume && row.status !== "ACTIVE",
+    )) {
+      console.log(
+        `[health]   #${s.campaignId} ${s.campaignName} — PAUSED pending-resume staffable ${s.staffable}/${floor}`,
+      );
+    }
 
     await this.notify(result);
     return result;

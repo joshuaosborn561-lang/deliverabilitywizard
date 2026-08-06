@@ -334,9 +334,13 @@ async function main(): Promise<void> {
     return topUpInFlight;
   };
 
+  /** How often the health cron may run a full mailbox-settings converge. */
+  const MAILBOX_SETTINGS_EVERY_MS = 6 * 60 * 60 * 1000;
+
   /**
-   * Fast staffing loop (D25): reconnect → converge mailbox settings →
-   * refill/unpause. Placement/remediation/DNS stay on the slower monitor.
+   * Fast staffing loop (D25): refill/unpause first, then reconnect.
+   * Mailbox-settings converge is throttled (every 6h) so a full-fleet rewrite
+   * cannot starve the 15-minute staffing pass. Measure stays on CRON_MONITOR.
    */
   const runHealth = async () => {
     assertRuntimeSecrets(config);
@@ -349,6 +353,14 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     healthInFlight = (async () => {
+      let healthResult: unknown = null;
+      try {
+        healthResult = await campaignHealth.run();
+      } catch (error) {
+        console.warn("[health] campaign health failed", error);
+        throw error;
+      }
+
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
         try {
@@ -357,23 +369,33 @@ async function main(): Promise<void> {
           console.warn("[health] reconnect failed", error);
         }
       }
+
       let mailboxSettingsResult: unknown = null;
-      try {
-        mailboxSettingsResult = await mailboxSettings.run();
-      } catch (error) {
-        console.warn("[health] mailbox-settings failed", error);
+      const lastSettingsAt = state.get().lastMailboxSettingsAt;
+      const settingsAgeMs = lastSettingsAt
+        ? Date.now() - Date.parse(lastSettingsAt)
+        : Number.POSITIVE_INFINITY;
+      if (
+        config.enforceMailboxSettings &&
+        settingsAgeMs >= MAILBOX_SETTINGS_EVERY_MS
+      ) {
+        try {
+          mailboxSettingsResult = await mailboxSettings.run();
+          state.setLastMailboxSettingsAt(new Date().toISOString());
+          await state.save();
+        } catch (error) {
+          console.warn("[health] mailbox-settings failed", error);
+        }
+      } else {
+        console.log(
+          `[health] Skipping mailbox-settings (last ${lastSettingsAt ?? "never"}; due every 6h)`,
+        );
       }
-      let healthResult: unknown = null;
-      try {
-        healthResult = await campaignHealth.run();
-      } catch (error) {
-        console.warn("[health] campaign health failed", error);
-        throw error;
-      }
+
       return {
+        health: healthResult,
         reconnect: reconnectResult,
         mailboxSettings: mailboxSettingsResult,
-        health: healthResult,
       };
     })().finally(() => {
       healthInFlight = null;
@@ -754,6 +776,12 @@ async function main(): Promise<void> {
       if (mode === "top-up" || mode === "topup") {
         const result = await runCampaignTopUp();
         res.json({ ok: true, mode: "top-up", result });
+        return;
+      }
+      if (mode === "campaign-audit" || mode === "audit-campaigns") {
+        assertRuntimeSecrets(config);
+        const result = await campaignAudit.run(config.minCampaignSenders);
+        res.json({ ok: true, mode: "campaign-audit", result });
         return;
       }
       if (mode === "remediate") {

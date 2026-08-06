@@ -118,6 +118,7 @@ export interface AppState {
   lastReconnectAt: string | null;
   lastWarmupGateAt: string | null;
   lastHealthAt: string | null;
+  lastMailboxSettingsAt: string | null;
   testedCampaigns: Record<string, TestedCampaignRecord>;
   /** Dedupe keys for Slack alerts already sent */
   alertedKeys: Record<string, string>;
@@ -213,6 +214,7 @@ const EMPTY_STATE: AppState = {
   lastReconnectAt: null,
   lastWarmupGateAt: null,
   lastHealthAt: null,
+  lastMailboxSettingsAt: null,
   testedCampaigns: {},
   alertedKeys: {},
   remediatedKeys: {},
@@ -260,6 +262,7 @@ export class StateStore {
         bugRemediations: parsed.bugRemediations ?? {},
         pendingResumes: parsed.pendingResumes ?? {},
         lastHealthAt: parsed.lastHealthAt ?? null,
+        lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -652,6 +655,10 @@ export class StateStore {
 
   setLastHealthAt(iso: string): void {
     this.state.lastHealthAt = iso;
+  }
+
+  setLastMailboxSettingsAt(iso: string): void {
+    this.state.lastMailboxSettingsAt = iso;
   }
 
   markPendingResume(record: PendingResumeRecord): void {

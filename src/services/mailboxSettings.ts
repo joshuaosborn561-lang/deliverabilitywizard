@@ -72,10 +72,18 @@ export class MailboxSettingsService {
       if (!email || !account.id) continue;
 
       // Only write when the value differs — 1,241 needless writes per run
-      // would trip the limiter and buy nothing.
-      const current = (account as { max_email_per_day?: number })
+      // would trip the limiter and buy nothing. Coerce: Smartlead often
+      // returns max_email_per_day as a string, and `"50" !== 50` was forcing
+      // a full-fleet rewrite every health pass (starving staffing).
+      const currentRaw = (account as { max_email_per_day?: number | string })
         .max_email_per_day;
-      const needsLimit = current !== target;
+      const current =
+        typeof currentRaw === "number"
+          ? currentRaw
+          : typeof currentRaw === "string" && currentRaw.trim() !== ""
+            ? Number(currentRaw)
+            : NaN;
+      const needsLimit = !(Number.isFinite(current) && current === target);
       const warmup = (account as { warmup_details?: { status?: string } | null })
         .warmup_details;
       const needsWarmup =

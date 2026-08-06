@@ -59,6 +59,24 @@ describe("classifyFailure", () => {
     assert.equal(c.autoRemediate, false);
   });
 
+  it("does not auto-remediate denied or pending teardown approvals", () => {
+    const denied = classifyFailure(
+      "remediation",
+      "crossscaleco.com: teardown awaiting approval (denied) — see GET /approvals",
+    );
+    assert.equal(denied.class, "noise");
+    assert.equal(denied.autoRemediate, false);
+    assert.equal(denied.fingerprint, "noise:awaiting-approval");
+
+    const pending = classifyFailure(
+      "remediation",
+      "example.com: teardown awaiting approval (pending) — see GET /approvals",
+    );
+    assert.equal(pending.class, "noise");
+    assert.equal(pending.autoRemediate, false);
+    assert.equal(pending.fingerprint, denied.fingerprint);
+  });
+
   it("fingerprints unknown failures stably across numeric ids", () => {
     const a = classifyFailure("scan", "weird boom campaign 501701");
     const b = classifyFailure("scan", "weird boom campaign 999999");

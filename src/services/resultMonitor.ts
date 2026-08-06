@@ -1,6 +1,8 @@
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
+import type { SmartleadClient } from "../clients/smartlead.js";
+import { accountEmail } from "../clients/smartlead.js";
 import {
   normalizeTestList,
   parseDomainBlacklistHits,
@@ -34,14 +36,49 @@ export interface MonitorResult {
 }
 
 export class ResultMonitor {
+  /**
+   * Smartlead account types (email → GMAIL/OUTLOOK/…), needed so alerts score
+   * the same way remediation does. Fetched at most once per run, and only when
+   * an alert actually needs it — a clean run never pays for it.
+   */
+  private senderTypes: Map<string, string | undefined> | null = null;
+
   constructor(
     private readonly config: AppConfig,
     private readonly smartDelivery: SmartDeliveryClient,
+    private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
   ) {}
 
+  /**
+   * Without this map `parseSenderInboxRates` sees every sender as ESP "other",
+   * which forces blended scoring — so the alert would quote a different number
+   * than the one remediation acts on. Failure is non-fatal: we fall back to
+   * blended and the alert still goes out, just labelled as blended.
+   */
+  private async getSenderTypes(): Promise<Map<string, string | undefined>> {
+    if (this.senderTypes) return this.senderTypes;
+    const map = new Map<string, string | undefined>();
+    try {
+      const accounts = await this.smartlead.listAllEmailAccounts();
+      for (const account of accounts) {
+        const email = accountEmail(account)?.toLowerCase();
+        if (email) map.set(email, account.type);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[monitor] Could not load Smartlead account types (${message}) — alerts fall back to blended ESP scoring`,
+      );
+    }
+    this.senderTypes = map;
+    return map;
+  }
+
   async run(): Promise<MonitorResult> {
+    // Types can change between runs (new mailboxes, reconnects) — refetch.
+    this.senderTypes = null;
     const result: MonitorResult = {
       testsChecked: 0,
       blacklistAlerts: 0,
@@ -205,6 +242,7 @@ export class ResultMonitor {
     try {
       const senderRaw = await this.smartDelivery.getSenderAccountReport(testId);
       senders = parseSenderInboxRates(senderRaw, testId, {
+        senderTypeByEmail: await this.getSenderTypes(),
         preferSameEsp: this.config.scoreSameEspOnly,
         minSameEspSamples: this.config.minSameEspSamples,
       }).map((row) => ({

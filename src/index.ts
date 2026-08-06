@@ -824,6 +824,15 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "bounce-investigate", result });
         return;
       }
+      if (mode === "bounce-report" || mode === "bounce-audit") {
+        assertRuntimeSecrets(config);
+        const result = await bounceInvestigate.run({
+          dryRun: true,
+          reportOnly: true,
+        });
+        res.json({ ok: true, mode: "bounce-report", result });
+        return;
+      }
       if (mode === "remediate") {
         const reset =
           String(req.query.reset ?? req.body?.reset ?? "") === "1" ||

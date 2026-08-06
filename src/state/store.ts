@@ -193,6 +193,10 @@ export interface HeldInboxRecord {
   heldAt: string;
   holdUntil: string;
   tagName: string;
+  /** Why we pulled this sender: bounce, placement, or both. */
+  reason?: "bounce" | "placement" | "bounce_and_placement";
+  bounceRate?: number;
+  bounceSent?: number;
   inboxRate?: number;
   inboxRateAll?: number;
   inboxRateSameEsp?: number;

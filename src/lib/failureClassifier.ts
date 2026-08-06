@@ -59,6 +59,22 @@ export function classifyFailure(
     };
   }
 
+  // Pending/denied spend or destructive approvals are human gates (D4/D15),
+  // not code defects — never launch a Cursor remediator for them.
+  if (
+    /awaiting approval|waiting on spend approval|see get \/approvals/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "spend-approval-gate"),
+      autoRemediate: false,
+      summary: "Spend/destructive approval gate (human decision)",
+      raw: text,
+    };
+  }
+
   if (
     /is required|must be of type|must be greater than|invalid parameters|validation/i.test(
       lower,

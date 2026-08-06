@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   humanizeAlertError,
+  isApprovalGateNoise,
+  isBenignOpsNoise,
   isRateLimitNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
@@ -18,6 +20,18 @@ describe("alert noise", () => {
     }
     assert.equal(
       isRateLimitNoise("Failed to reconnect email account"),
+      false,
+    );
+  });
+
+  it("treats pending/denied approval waits as benign ops noise", () => {
+    const denied =
+      "boldercyperpartnersys.info: teardown awaiting approval (denied) — see GET /approvals";
+    assert.equal(isApprovalGateNoise(denied), true);
+    assert.equal(isBenignOpsNoise(denied), true);
+    assert.equal(isRateLimitNoise(denied), false);
+    assert.equal(
+      isApprovalGateNoise("delete SL account x@y.com: connection reset"),
       false,
     );
   });

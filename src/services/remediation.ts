@@ -371,9 +371,15 @@ export class RemediationService {
         };
         const decision = await this.spendGateway.authorize(request);
         if (!decision.approved) {
-          result.errors.push(
-            `${domain}: teardown awaiting approval (${decision.record.status}) — see GET /approvals`,
-          );
+          // Denied is a final human decision (D15) — log once per run, do not
+          // treat as an error that pages Slack or launches the bug remediator.
+          // Pending still surfaces so status/Slack can show the wait.
+          const msg = `${domain}: teardown awaiting approval (${decision.record.status}) — see GET /approvals`;
+          if (decision.record.status === "denied") {
+            console.log(`[remediation] ${msg}`);
+          } else {
+            result.errors.push(msg);
+          }
           continue;
         }
         teardownSpend = { decision, request };

@@ -9,6 +9,19 @@ describe("classifyFailure", () => {
     assert.equal(c.autoRemediate, false);
   });
 
+  it("treats bounce-stats request aborts / timeouts as noise", () => {
+    for (const message of [
+      "bounce stats: This operation was aborted",
+      "bounce stats: request timed out after 60000ms",
+      new DOMException("This operation was aborted", "AbortError"),
+    ]) {
+      const c = classifyFailure("remediation", message);
+      assert.equal(c.class, "noise", String(message));
+      assert.equal(c.autoRemediate, false, String(message));
+      assert.equal(c.fingerprint, "noise:remediation");
+    }
+  });
+
   it("treats SURBL / unnamed blacklist as noise", () => {
     const c = classifyFailure(
       "domain-scan",

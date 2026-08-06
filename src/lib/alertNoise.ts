@@ -1,11 +1,26 @@
-/** Errors that are transient API throttling and should not page Slack. */
-export function isRateLimitNoise(message: string): boolean {
+const TIMEOUT_NOISE =
+  /timed?\s*out|timeout|operation was aborted|\bAbortError\b|\bTimeoutError\b/i;
+
+function isTimeoutNoise(message: string): boolean {
+  return TIMEOUT_NOISE.test(message);
+}
+
+function isHttpRateLimitNoise(message: string): boolean {
   return (
     /\bHTTP\s*429\b/i.test(message) ||
     /\b429\b/.test(message) ||
     /rate[\s_-]*limit(?:ed|ing)?/i.test(message) ||
     /too many requests/i.test(message)
   );
+}
+
+/**
+ * Errors that are transient API throttling / timeouts and should not page
+ * Slack. Request aborts from our HTTP timeout budget count here too — the
+ * next cron pass retries them.
+ */
+export function isRateLimitNoise(message: string): boolean {
+  return isHttpRateLimitNoise(message) || isTimeoutNoise(message);
 }
 
 /**
@@ -16,7 +31,8 @@ export function humanizeAlertError(message: string): string {
   const raw = String(message || "").trim();
   if (!raw) return "Something went wrong.";
 
-  const rateLimited = isRateLimitNoise(raw);
+  const rateLimited = isHttpRateLimitNoise(raw);
+  const timedOut = isTimeoutNoise(raw);
   const listAccounts = /list\s+accounts/i.test(raw);
   const listCampaigns = /list\s+campaigns/i.test(raw);
   const bounceStats = /bounce\s+stats/i.test(raw);
@@ -26,6 +42,16 @@ export function humanizeAlertError(message: string): string {
   const swapMatch = raw.match(/swap-in\s+(\S+)\s+←\s+(\S+)/i);
   const getAccount = raw.match(/get\s+account\s+(\d+)/i);
   const campaignAccounts = raw.match(/campaign\s+(\d+)\s+accounts/i);
+
+  if (bounceStats && /\b404\b/i.test(raw)) {
+    return "Couldn't load bounce stats from Smartlead (the stats endpoint was unavailable).";
+  }
+  if (bounceStats && timedOut) {
+    return "Couldn't load bounce stats from Smartlead in time (the mailbox health metrics call timed out). We'll retry next run.";
+  }
+  if (timedOut) {
+    return "A Smartlead request timed out. We'll retry automatically.";
+  }
 
   if (rateLimited && listAccounts) {
     return "Smartlead rate-limited us while loading the mailbox list. Nothing was changed; we'll try again next run.";
@@ -49,9 +75,6 @@ export function humanizeAlertError(message: string): string {
     return "Smartlead is rate-limiting us right now. We'll retry automatically.";
   }
 
-  if (bounceStats && /\b404\b/i.test(raw)) {
-    return "Couldn't load bounce stats from Smartlead (the stats endpoint was unavailable).";
-  }
   if (/\bHTTP\s*404\b/i.test(raw) || /\b404\b/.test(raw)) {
     return raw
       .replace(/\bHTTP\s*404\b/gi, "not found")

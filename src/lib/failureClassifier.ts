@@ -37,16 +37,20 @@ export function classifyFailure(
   if (
     /http 429|rate.?limit|too many requests|econnreset|etimedout|socket hang up/i.test(
       lower,
-    ) &&
-    !/required|must be|validation|404|not found/i.test(lower)
+    ) ||
+    /timed?\s*out|timeout|operation was aborted|\baborterror\b|\btimeouterror\b/i.test(
+      lower,
+    )
   ) {
-    return {
-      class: "noise",
-      fingerprint: fingerprintOf("noise", source),
-      autoRemediate: false,
-      summary: "Transient rate-limit / network noise",
-      raw: text,
-    };
+    if (!/required|must be|validation|404|not found/i.test(lower)) {
+      return {
+        class: "noise",
+        fingerprint: fingerprintOf("noise", source),
+        autoRemediate: false,
+        summary: "Transient rate-limit / network noise",
+        raw: text,
+      };
+    }
   }
 
   if (/surbl|uribl|unnamed domain-blacklist/i.test(lower)) {

@@ -22,6 +22,20 @@ describe("alert noise", () => {
     );
   });
 
+  it("treats request aborts / timeouts as non-paging noise", () => {
+    for (const message of [
+      "bounce stats: This operation was aborted",
+      "bounce stats: request timed out after 60000ms",
+      "health metrics: TimeoutError: request timed out after 180000ms",
+    ]) {
+      assert.equal(isRateLimitNoise(message), true, message);
+    }
+    assert.match(
+      humanizeAlertError("bounce stats: This operation was aborted"),
+      /timed out/i,
+    );
+  });
+
   it("groups manual OAuth errors into one stable category", () => {
     assert.equal(
       reconnectFailureCategory("AADSTS50076: MFA required"),

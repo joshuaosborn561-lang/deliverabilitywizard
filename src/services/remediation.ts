@@ -227,7 +227,18 @@ export class RemediationService {
     // Historical SmartDelivery tests keep reporting purged domains forever.
     // Only treat a blacklist as actionable if accounts still exist or we have
     // not finished remediation yet — otherwise Slack would spam every cron.
+    // A human-denied teardown (D15) is final: leave the domain in place and
+    // do not keep it on the "headed to teardown" path every monitor pass.
+    const deniedTeardownDomains = blacklistedDomains.filter((domain) =>
+      isHumanDeniedTeardown(this.state, domain),
+    );
+    if (deniedTeardownDomains.length) {
+      console.log(
+        `[remediation] Honoring denied teardown approval(s); leaving domain(s) in place: ${deniedTeardownDomains.join(", ")}`,
+      );
+    }
     const actionableBlacklistedDomains = blacklistedDomains.filter((domain) => {
+      if (deniedTeardownDomains.includes(domain)) return false;
       const stillHasAccounts = accounts.some(
         (a) => accountDomain(a) === domain,
       );
@@ -1129,6 +1140,22 @@ export class RemediationService {
       );
     }
   }
+}
+
+/**
+ * True when a human denied blacklisted-domain teardown for this domain.
+ * Monthly-cap denials are excluded — those can cycle next month via SpendGateway.
+ */
+export function isHumanDeniedTeardown(
+  state: Pick<StateStore, "getLatestSpendApprovalForRequest">,
+  domain: string,
+): boolean {
+  const record = state.getLatestSpendApprovalForRequest(
+    `teardown-domain:${domain.toLowerCase()}`,
+  );
+  return (
+    record?.status === "denied" && record.decidedBy !== "monthly-cap"
+  );
 }
 
 /** YYYY-MM-DD in UTC, N days from base. */

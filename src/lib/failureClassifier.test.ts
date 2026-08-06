@@ -75,7 +75,7 @@ describe("classifyFailure", () => {
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",
-      "salesgliderbox.info: teardown awaiting approval (denied) — see GET /approvals",
+      "crossscaleco.com: teardown awaiting approval (denied) — see GET /approvals",
     );
     assert.equal(denied.class, "noise");
     assert.equal(denied.autoRemediate, false);

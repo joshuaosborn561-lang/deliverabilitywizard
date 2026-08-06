@@ -72,6 +72,9 @@ export class SmartleadClient {
       start.setUTCDate(start.getUTCDate() - 29);
       startDate = start.toISOString().slice(0, 10);
     }
+    // full_data across a large fleet regularly exceeds the default 60s HTTP
+    // budget and used to surface as opaque "This operation was aborted".
+    // Give the analytics scrape three minutes and one retry.
     return apiRequest<unknown>(
       BASE_URL,
       this.apiKey,
@@ -82,6 +85,8 @@ export class SmartleadClient {
           end_date: endDate,
           ...(options.fullData === false ? {} : { full_data: "true" }),
         },
+        timeoutMs: 180_000,
+        retries: 1,
       },
     );
   }

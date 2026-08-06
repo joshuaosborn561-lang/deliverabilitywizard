@@ -1,0 +1,48 @@
+import assert from "node:assert/strict";
+import { afterEach, describe, it } from "node:test";
+import { apiRequest } from "./http.js";
+
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+describe("apiRequest timeouts", () => {
+  it("rewrites AbortError into a clear TimeoutError after the budget", async () => {
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const signal = init?.signal;
+      return await new Promise<Response>((_resolve, reject) => {
+        if (!signal) {
+          reject(new Error("missing abort signal"));
+          return;
+        }
+        if (signal.aborted) {
+          reject(new DOMException("This operation was aborted", "AbortError"));
+          return;
+        }
+        signal.addEventListener(
+          "abort",
+          () => {
+            reject(new DOMException("This operation was aborted", "AbortError"));
+          },
+          { once: true },
+        );
+      });
+    }) as typeof fetch;
+
+    await assert.rejects(
+      () =>
+        apiRequest("https://example.test/", "key", "slow", {
+          timeoutMs: 40,
+          retries: 0,
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.name, "TimeoutError");
+        assert.match(error.message, /request timed out after 40ms/i);
+        return true;
+      },
+    );
+  });
+});

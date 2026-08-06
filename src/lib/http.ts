@@ -101,14 +101,23 @@ export async function apiRequest<T>(
 
       return parsed as T;
     } catch (error) {
-      lastError = error;
-      if (error instanceof ApiError) throw error;
+      // Our AbortController fired — rewrite the opaque DOMException
+      // ("This operation was aborted") into a clear timeout so callers and
+      // the failure classifier can treat it as transient network noise.
+      if (controller.signal.aborted && isAbortError(error)) {
+        lastError = timeoutError(timeoutMs);
+      } else {
+        lastError = error;
+      }
+      if (lastError instanceof ApiError) throw lastError;
       if (attempt < retries) {
         const backoff = Math.min(30_000, 500 * 2 ** attempt);
         await sleep(backoff);
         continue;
       }
-      throw error;
+      throw lastError instanceof Error
+        ? lastError
+        : new Error(String(lastError ?? "request failed"));
     } finally {
       clearTimeout(timer);
     }
@@ -120,6 +129,23 @@ export async function apiRequest<T>(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = "name" in error ? String((error as { name?: unknown }).name) : "";
+  const message =
+    "message" in error ? String((error as { message?: unknown }).message) : "";
+  return (
+    name === "AbortError" ||
+    /operation was aborted|aborted|The operation was aborted/i.test(message)
+  );
+}
+
+function timeoutError(timeoutMs: number): Error {
+  const error = new Error(`request timed out after ${timeoutMs}ms`);
+  error.name = "TimeoutError";
+  return error;
 }
 
 export function chunkArray<T>(items: T[], size: number): T[][] {

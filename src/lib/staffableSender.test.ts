@@ -45,11 +45,12 @@ describe("staffableSender", () => {
       isStaffableSender({}, { inboxRate: 40, inboxThreshold: 80 }),
       false,
     );
+    // Warmup reputation alone must not under-count live senders.
     assert.equal(
       isStaffableSender({
         warmup_details: { warmup_reputation: 50 },
       }),
-      false,
+      true,
     );
     assert.equal(
       isStaffableSender(

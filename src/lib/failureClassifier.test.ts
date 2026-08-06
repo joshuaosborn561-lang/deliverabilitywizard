@@ -18,30 +18,6 @@ describe("classifyFailure", () => {
     assert.equal(c.autoRemediate, false);
   });
 
-  it("does not auto-remediate pending or denied approval gates", () => {
-    const denied = classifyFailure(
-      "remediation",
-      "boldercyperpartnersys.info: teardown awaiting approval (denied) — see GET /approvals",
-    );
-    assert.equal(denied.class, "noise");
-    assert.equal(denied.autoRemediate, false);
-    assert.equal(denied.fingerprint, "noise:spend-approval-gate");
-
-    const pending = classifyFailure(
-      "remediation",
-      "example.info: teardown awaiting approval (pending) — see GET /approvals",
-    );
-    assert.equal(pending.autoRemediate, false);
-    assert.equal(pending.fingerprint, denied.fingerprint);
-
-    const pool = classifyFailure(
-      "pool",
-      "Waiting on spend approval for 2 domain(s) — see GET /approvals",
-    );
-    assert.equal(pool.autoRemediate, false);
-    assert.equal(pool.fingerprint, denied.fingerprint);
-  });
-
   it("flags SmartDelivery validation errors for auto-remediation", () => {
     const c = classifyFailure(
       "scan",
@@ -81,6 +57,31 @@ describe("classifyFailure", () => {
     );
     assert.equal(c.class, "auth_access");
     assert.equal(c.autoRemediate, false);
+  });
+
+  it("treats denied/pending teardown approval as non-remediable noise", () => {
+    const denied = classifyFailure(
+      "remediation",
+      "boldercyperpartnersys.info: teardown awaiting approval (denied) — see GET /approvals",
+    );
+    assert.equal(denied.class, "noise");
+    assert.equal(denied.autoRemediate, false);
+    assert.equal(denied.fingerprint, "noise:approval-gate");
+
+    const pending = classifyFailure(
+      "remediation",
+      "otherdomain.info: teardown awaiting approval (pending) — see GET /approvals",
+    );
+    assert.equal(pending.class, "noise");
+    assert.equal(pending.autoRemediate, false);
+    assert.equal(pending.fingerprint, denied.fingerprint);
+
+    const pool = classifyFailure(
+      "pool",
+      "Waiting on spend approval for 2 domain(s) — see GET /approvals",
+    );
+    assert.equal(pool.autoRemediate, false);
+    assert.equal(pool.fingerprint, denied.fingerprint);
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

@@ -569,6 +569,33 @@ line or HTML blob.
 
 ---
 
+## D32 — Never rotate on a blended (all-ESP) placement score
+
+**Decision.** Placement-based rotation uses **same-ESP inbox % only**
+(Gmail→G Suite / Outlook→O365) with at least `MIN_SAME_ESP_SAMPLES` seeds.
+The blended / all-ESP score is display-only. If same-ESP samples are thin,
+**do not** fall back to blended and pull the mailbox. Bounce rotation (D5) is
+unchanged and does not need placement.
+
+**Audit — 2026-08-06 remediation waves.** Last rounds still had blended-eligible
+paths: thin same-ESP samples fell back to all-ESP `inboxRate`, and a worse
+blended row from another test could overwrite a healthy same-ESP row. Holds
+marked `scoredSameEsp=false` (e.g. `escob_breanna@crossscaleco.com` at 18:12Z)
+are the fingerprint. Josh: ignore the blended score; stop pulling because of it.
+
+**Why.** Josh has repeated this rule many times. Blended scores mix provider
+filters and create false benches while the matched ESP is fine (or invent a
+placement pull when we simply lack same-ESP evidence).
+
+**Tradeoff.** Some weak senders wait until the next test has enough same-ESP
+seeds. Accepted over burning inventory on blended noise.
+
+**Guards.** `D32: never rotate on blended placement`,
+`shouldRotateForPlacement`, `preferSenderInboxRate`, `SCORE_SAME_ESP_ONLY`
+defaults on.
+
+---
+
 ## D19 — Pre-warmed fleets are identified by domain and persisted state
 
 **Decision.** Every mailbox on `crosslaunchco.com` and `crossscaleco.com` is

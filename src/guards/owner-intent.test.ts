@@ -79,6 +79,32 @@ describe("owner intent", () => {
     );
   });
 
+  it("D32: never rotate on blended placement — same-ESP scoring stays on", async () => {
+    assert.equal(
+      defaults.scoreSameEspOnly,
+      true,
+      stop(
+        "Placement rotation uses same-ESP scores only (D32).",
+        "SCORE_SAME_ESP_ONLY is off, so blended all-ESP scores can bench mailboxes again.",
+      ),
+    );
+    const { shouldRotateForPlacement } = await import(
+      "../lib/placementRotation.js"
+    );
+    assert.equal(
+      shouldRotateForPlacement(
+        { inboxRate: 10, scoredSameEsp: false },
+        defaults.remediationInboxThreshold,
+        { scoreSameEspOnly: true },
+      ),
+      false,
+      stop(
+        "Blended (non-same-ESP) scores must not rotate senders (D32).",
+        "shouldRotateForPlacement now returns true for scoredSameEsp=false.",
+      ),
+    );
+  });
+
   it("D5: a bounce rate is only evidence above the sample floor", () => {
     // One bounce in three is 33% and means nothing.
     assert.equal(

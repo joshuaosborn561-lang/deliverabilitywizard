@@ -45,6 +45,10 @@ import {
   parseSenderBounceStats,
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
+import {
+  preferSenderInboxRate,
+  shouldRotateForPlacement,
+} from "../lib/placementRotation.js";
 
 function inboxPercentFromProvider(row: ProviderwiseRow): number | null {
   if (typeof row.inbox_rate === "number" && Number.isFinite(row.inbox_rate)) {
@@ -292,10 +296,14 @@ export class RemediationService {
         })) {
           const key = row.email.toLowerCase();
           const prev = inboxRateRows.get(key);
-          // Keep the worst (lowest) observed decision rate
-          if (prev === undefined || row.inboxRate < prev.inboxRate) {
-            inboxRateRows.set(key, row);
-          }
+          // D32: never let a blended row replace a same-ESP row; among equals
+          // keep the worse inbox %.
+          inboxRateRows.set(
+            key,
+            preferSenderInboxRate(prev, row, {
+              scoreSameEspOnly: this.config.scoreSameEspOnly,
+            }),
+          );
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -492,6 +500,7 @@ export class RemediationService {
       heldAt: string;
       removedFromCampaigns?: number[];
       inboxRateAll?: number;
+      inboxRateSameEsp?: number;
       scoredSameEsp?: boolean;
     }> = [];
 
@@ -585,21 +594,26 @@ export class RemediationService {
       if (blacklistedSet.has(domain)) return false;
       // High bounce is disqualifying on its own, regardless of placement.
       if (bounceRotations.has(email)) return true;
-      const rate = inboxRates.get(email);
-      if (rate === undefined) return false;
-      return rate < threshold;
+      // D32: placement rotation requires a same-ESP score — never blended.
+      return shouldRotateForPlacement(inboxRateRows.get(email), threshold, {
+        scoreSameEspOnly: this.config.scoreSameEspOnly,
+      });
     });
 
     for (const account of recoverCandidates) {
       const email = accountEmail(account)!;
       const rateRow = inboxRateRows.get(email.toLowerCase());
-      const rate = inboxRates.get(email.toLowerCase())!;
+      const bounceDriven = bounceRotations.has(email.toLowerCase());
+      // Bounce-only pulls may lack a same-ESP placement row; don't require one.
+      const rate =
+        inboxRates.get(email.toLowerCase()) ??
+        (bounceDriven ? bounceRotations.get(email.toLowerCase())! : undefined);
+      if (typeof rate !== "number") continue;
       const key = `remediate-inbox:${email.toLowerCase()}`;
       if (this.state.hasRemediation(key)) continue;
       if (this.state.getHeldInbox(email)) continue;
 
       // Bounce still rotates. Low inbox alone defers when copy looks guilty.
-      const bounceDriven = bounceRotations.has(email.toLowerCase());
       if (!bounceDriven) {
         const onCampaigns = campaignIdsOf(account).filter((id) => {
           const status = campaignStatus.get(id);
@@ -727,7 +741,10 @@ export class RemediationService {
               heldAt: new Date().toISOString(),
               removedFromCampaigns: [],
               inboxRateAll: rateRow?.inboxRateAll,
-              scoredSameEsp: rateRow?.scoredSameEsp,
+              inboxRateSameEsp: rateRow?.inboxRateSameEsp,
+              scoredSameEsp: bounceDriven
+                ? rateRow?.scoredSameEsp
+                : rateRow?.scoredSameEsp === true,
             });
             tagName = holdTag.name;
           } else {
@@ -792,6 +809,7 @@ export class RemediationService {
               tagName: holdTag.name,
               inboxRate: row.rate,
               inboxRateAll: row.inboxRateAll,
+              inboxRateSameEsp: row.inboxRateSameEsp,
               scoredSameEsp: row.scoredSameEsp,
               removedFromCampaigns: row.removedFromCampaigns,
             });
@@ -955,8 +973,9 @@ export class RemediationService {
 
       if (typeof sameRate !== "number" || sameSamples < minSame) {
         out.skippedLowSamples += 1;
-        // Fall back: if decision rate (possibly blended) is still bad, count as held-bad
-        if (row.inboxRate < threshold) out.stillHeldBelowThreshold += 1;
+        // D32: thin same-ESP samples — do NOT treat blended decision rates as
+        // confirmation the hold is still justified. Leave for a later audit
+        // once same-ESP seeds exist; bounce-driven holds are separate.
         continue;
       }
 

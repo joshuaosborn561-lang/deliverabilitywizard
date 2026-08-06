@@ -20,6 +20,8 @@ import type { StateStore } from "../state/store.js";
  * same-client campaigns.
  */
 
+const ADD_BATCH_SIZE = 40;
+
 export interface FanOutAttachment {
   email: string;
   accountId: number;
@@ -104,6 +106,12 @@ export class ClientFanOutService {
         groupCampaigns.map((c) => [c.id, String(c.name ?? c.id)]),
       );
 
+      // campaignId → pending account attachments (batched Smartlead writes)
+      const pendingByCampaign = new Map<
+        number,
+        Array<{ accountId: number; email: string }>
+      >();
+
       for (const account of accounts as SmartleadAccountWithCampaigns[]) {
         const email = accountEmail(account);
         if (!email || !account.id) continue;
@@ -128,27 +136,64 @@ export class ClientFanOutService {
 
         for (const campaign of groupCampaigns) {
           if (on.has(campaign.id)) continue;
+          const list = pendingByCampaign.get(campaign.id) ?? [];
+          list.push({ accountId: account.id, email });
+          pendingByCampaign.set(campaign.id, list);
+        }
+      }
+
+      for (const [campaignId, pending] of pendingByCampaign) {
+        const name = campaignName.get(campaignId) ?? String(campaignId);
+        for (let i = 0; i < pending.length; i += ADD_BATCH_SIZE) {
+          const chunk = pending.slice(i, i + ADD_BATCH_SIZE);
+          const ids = chunk.map((p) => p.accountId);
           try {
             if (!dryRun) {
-              await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
-                account.id,
-              ]);
+              await this.smartlead.addEmailAccountsToCampaign(campaignId, ids);
               await sleep(200);
             }
-            on.add(campaign.id);
-            result.attached.push({
-              email,
-              accountId: account.id,
-              campaignId: campaign.id,
-              campaignName: campaignName.get(campaign.id) ?? String(campaign.id),
-              clientKey: groupKey,
-            });
+            for (const row of chunk) {
+              result.attached.push({
+                email: row.email,
+                accountId: row.accountId,
+                campaignId,
+                campaignName: name,
+                clientKey: groupKey,
+              });
+            }
+            console.log(
+              `[fan-out] ${groupKey} → #${campaignId} ${name}: +${chunk.length} (batch ${Math.floor(i / ADD_BATCH_SIZE) + 1})`,
+            );
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
-            result.errors.push(
-              `${email} → #${campaign.id}: ${message}`,
-            );
+            // Fall back to one-by-one so a single bad id doesn't block the batch.
+            for (const row of chunk) {
+              try {
+                if (!dryRun) {
+                  await this.smartlead.addEmailAccountsToCampaign(campaignId, [
+                    row.accountId,
+                  ]);
+                  await sleep(150);
+                }
+                result.attached.push({
+                  email: row.email,
+                  accountId: row.accountId,
+                  campaignId,
+                  campaignName: name,
+                  clientKey: groupKey,
+                });
+              } catch (inner) {
+                const innerMsg =
+                  inner instanceof Error ? inner.message : String(inner);
+                result.errors.push(
+                  `${row.email} → #${campaignId}: ${innerMsg}`,
+                );
+              }
+            }
+            if (!result.errors.some((e) => e.includes(`#${campaignId}`))) {
+              result.errors.push(`#${campaignId} batch: ${message}`);
+            }
           }
         }
       }

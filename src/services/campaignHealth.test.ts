@@ -80,6 +80,7 @@ describe("CampaignHealthService", () => {
     assert.equal(result.resumed[0]?.campaignId, 9);
     assert.equal(pending.size, 0);
     assert.equal(result.stillShort.length, 0);
+    assert.equal(result.fanOutAttached, 0);
   });
 
   it("does not count disconnected membership toward the floor", async () => {

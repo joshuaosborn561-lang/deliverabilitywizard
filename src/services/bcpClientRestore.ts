@@ -56,9 +56,10 @@ export interface BcpRestoreResult {
 }
 
 /**
- * Owner override for day-one BCP: pull crossscale generics off BCP campaigns,
- * restore held BCP-domain originals that are not domain-burned, clear holds /
- * swaps, and top up any shortfall from idle non-blacklisted BCP domains only.
+ * BCP domain restore helper (manual). Under D26/D27 generics are allowed on
+ * BCP and same-client fan-out owns membership — this path no longer strips
+ * generics. It still restores held non-burned BCP-domain originals and
+ * attaches idle BCP domains onto thin BCP campaigns.
  */
 export class BcpClientRestoreService {
   constructor(
@@ -112,140 +113,14 @@ export class BcpClientRestoreService {
       if (email) byEmail.set(email, account);
     }
 
-    // 1) Reverse every active swap that put a generic onto BCP campaigns.
-    const bcpSwaps = this.state
-      .listActiveSwaps()
-      .filter((swap) => swap.campaignIds.some((id) => bcpIds.has(id)));
+    // D27: generics are allowed on BCP — do not reverse swaps or sweep pool
+    // mailboxes off BCP campaigns. Only restore held BCP-domain originals.
 
-    for (const swap of bcpSwaps) {
-      const bcpCampaignIds = swap.campaignIds.filter((id) => bcpIds.has(id));
-      const originalDomain = swap.originalEmail.split("@")[1]?.toLowerCase() ?? "";
-      const burnedOriginal = burned.has(originalDomain);
-
-      try {
-        if (!dryRun) {
-          for (const campaignId of bcpCampaignIds) {
-            try {
-              await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
-                swap.poolAccountId,
-              ]);
-              await sleep(250);
-            } catch (error) {
-              result.errors.push(
-                `remove ${swap.poolEmail} from ${campaignId}: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              );
-            }
-          }
-        }
-        result.genericsRemoved.push({
-          email: swap.poolEmail,
-          accountId: swap.poolAccountId,
-          campaignIds: bcpCampaignIds,
-        });
-
-        if (burnedOriginal) {
-          result.originalsSkippedBurned.push({
-            email: swap.originalEmail,
-            domain: originalDomain,
-          });
-        } else if (isBcpOwnedDomain(originalDomain)) {
-          if (!dryRun) {
-            for (const campaignId of bcpCampaignIds) {
-              try {
-                await this.smartlead.addEmailAccountsToCampaign(campaignId, [
-                  swap.originalAccountId,
-                ]);
-                await sleep(250);
-              } catch (error) {
-                result.errors.push(
-                  `reattach ${swap.originalEmail} → ${campaignId}: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`,
-                );
-              }
-            }
-            await this.clearHoldTags(swap.originalAccountId, result);
-          }
-          result.originalsRestored.push({
-            email: swap.originalEmail,
-            accountId: swap.originalAccountId,
-            campaignIds: bcpCampaignIds,
-            domain: originalDomain,
-          });
-        }
-
-        if (!dryRun) {
-          await this.clearPoolBrand(swap.poolAccountId, swap.poolEmail, byEmail);
-          this.state.clearSwap(swap.originalEmail);
-          this.state.clearHeldInbox(swap.originalEmail);
-          this.state.clearInboxRemediation(swap.originalEmail);
-          result.swapsCleared += 1;
-          result.holdsCleared += 1;
-        } else {
-          result.swapsCleared += 1;
-          result.holdsCleared += 1;
-        }
-      } catch (error) {
-        result.errors.push(
-          `swap ${swap.originalEmail}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    }
-
-    // 2) Sweep any leftover EXTRA_GENERIC / pool mailboxes still on BCP.
-    for (const account of accounts) {
-      const email = accountEmail(account)?.toLowerCase();
-      if (!email || !account.id) continue;
-      const onBcp = campaignIdsOf(account).filter((id) => bcpIds.has(id));
-      if (!onBcp.length) continue;
-      if (!isPrewarmedGeneric(account, email, this.config, this.state)) continue;
-      // Already counted via swap path?
-      if (result.genericsRemoved.some((g) => g.email === email)) continue;
-
-      if (!dryRun) {
-        for (const campaignId of onBcp) {
-          try {
-            await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
-              account.id,
-            ]);
-            await sleep(250);
-          } catch (error) {
-            result.errors.push(
-              `sweep ${email} from ${campaignId}: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            );
-          }
-        }
-        const pool = this.state.getPoolMailbox(email);
-        if (pool) {
-          this.state.upsertPoolMailbox({
-            ...pool,
-            status: "available",
-            assignedToEmail: undefined,
-            assignedClientId: undefined,
-            assignedClientName: undefined,
-            assignedAt: undefined,
-          });
-        }
-        await this.clearPoolBrand(account.id, email, byEmail);
-      }
-      result.genericsRemoved.push({
-        email,
-        accountId: account.id,
-        campaignIds: onBcp,
-      });
-    }
-
-    // 3) Restore other held BCP-domain originals (no swap row) if not burned.
+    // 3) Restore held BCP-domain originals if not burned. Leave any generic
+    // already covering the campaign in place (D27).
     for (const held of this.state.listHeldInboxes()) {
       const domain = held.email.split("@")[1]?.toLowerCase() ?? "";
       if (!isBcpOwnedDomain(domain)) continue;
-      if (this.state.getSwap(held.email)) continue; // handled above
       const targets = (held.removedFromCampaigns ?? []).filter((id) =>
         bcpIds.has(id),
       );
@@ -275,9 +150,14 @@ export class BcpClientRestoreService {
         await this.clearHoldTags(held.accountId, result);
         this.state.clearHeldInbox(held.email);
         this.state.clearInboxRemediation(held.email);
+        if (this.state.getSwap(held.email)) {
+          this.state.clearSwap(held.email);
+          result.swapsCleared += 1;
+        }
         result.holdsCleared += 1;
       } else {
         result.holdsCleared += 1;
+        if (this.state.getSwap(held.email)) result.swapsCleared += 1;
       }
       result.originalsRestored.push({
         email: held.email,
@@ -312,7 +192,7 @@ export class BcpClientRestoreService {
       .send(
         [
           `*BCP client-domain restore* (${dryRun ? "DRY RUN" : "LIVE"})`,
-          `Pulled ${result.genericsRemoved.length} generic placement(s); restored ${result.originalsRestored.length} BCP-domain mailbox(es).`,
+          `Restored ${result.originalsRestored.length} BCP-domain mailbox(es) (generics left on campaigns per D27).`,
           result.originalsSkippedBurned.length
             ? `Skipped burned domain(s): ${[
                 ...new Set(result.originalsSkippedBurned.map((s) => s.domain)),

@@ -175,6 +175,34 @@ describe("owner intent", () => {
     );
   });
 
+  it("D29: paused-campaign bounce investigate threshold is 7%", () => {
+    assert.equal(
+      defaults.campaignBounceInvestigateThreshold,
+      7,
+      stop(
+        "Paused campaigns with >7% aggregate sender bounce are investigated (D29).",
+        `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
+      ),
+    );
+  });
+
+  it("D28: copySignal defers Outlook-buried / Gmail-ok as copy", async () => {
+    const { classifyCopySignal, shouldDeferSenderRotationForCopy } =
+      await import("../lib/copySignal.js");
+    const signal = classifyCopySignal([
+      { name: "Outlook", inboxPercent: 10 },
+      { name: "Gmail", inboxPercent: 70 },
+    ]);
+    assert.equal(
+      shouldDeferSenderRotationForCopy(signal),
+      true,
+      stop(
+        "Copy-likely placement must defer sender rotation (D28).",
+        "Outlook-buried + Gmail-ok no longer defers rotation.",
+      ),
+    );
+  });
+
   it("D7: exclusions match a campaign id exactly, never by substring", () => {
     const msrs = { id: 3628940, name: "MSRS2 Ticket Offer" };
     assert.equal(

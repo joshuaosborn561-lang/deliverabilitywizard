@@ -453,6 +453,85 @@ guard.
 
 ---
 
+## D26 — One client per sender; many campaigns for that client (supersedes D12)
+
+**Decision.** A sender belongs to **one client**, not one campaign. Client
+inboxes and generics branded to that client may sit on **every ACTIVE
+campaign for that client** at once (all BCP mailboxes on all BCP campaigns,
+all Parlay mailboxes on all Parlay campaigns, etc.). Cross-client membership
+is still forbidden and cleaned up. `ClientFanOutService` adds missing
+same-client attachments each health pass. Top-up **adds** onto same-client
+campaigns without removing from other same-client donors; it still **moves**
+off other clients.
+
+**Why.** Josh (2026-08-06): delete the old “generics only / BCP client-domain
+only / one campaign per sender” staffing rules. “All client inboxes or a
+generic can be for multiple client campaigns. So all bcp mailboxes should be
+on all bcp campaigns.”
+
+**Tradeoff.** Smartlead membership multiplies (one mailbox × N campaigns).
+Accepted for reach. Excluded campaigns (MSRS etc.) still stay untouched.
+
+**Guards.** `ClientFanOutService`, top-up same-client keep path, owner-intent
+D26.
+
+---
+
+## D27 — Generics may staff any client including BCP
+
+**Decision.** The generic pool may top up and recover-swap onto BCP and every
+other client. The prior “BCP client-domain only / no generics on BCP” code
+path is removed. BCP-owned domains still fan out across BCP campaigns (D26).
+
+**Why.** Josh deleted the BCP-only and “generics aren’t for BCP” rules.
+
+**Tradeoff.** Brand purity on BCP is weaker if generics are mixed in. Accepted
+by owner.
+
+**Guard.** Top-up no longer skips `isBcpCampaignName`; recovery pool no longer
+skips BCP clients.
+
+---
+
+## D28 — Under 80% placement: check if the copy is the spam cause
+
+**Decision.** Before benching senders for low placement, classify the
+campaign’s provider split (`copySignal`). Outlook buried + Gmail healthy ⇒
+**copy_likely** — do **not** rotate those senders; Slack to test/fix the
+sequence copy. Single-provider weakness still rotates as mailbox/ESP local.
+Bounce-driven rotation is unchanged.
+
+**Why.** Josh: when a mailbox is under 80%, ensure it isn’t spam from the
+copy — test the copy.
+
+**Tradeoff.** Copy-likely campaigns may stay weak until someone edits the
+sequence. Better than burning inventory for a content problem.
+
+**Guard.** `copySignal`, remediation copy defer, owner-intent D28.
+
+---
+
+## D29 — PAUSED campaign with >7% sender bounce: investigate (unless copy)
+
+**Decision.** On the monitor pass, any PAUSED campaign (except our own
+last-account protective pauses) whose senders’ aggregate bounce exceeds
+`CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD` (7%) is investigated. If placement
+says copy_likely (D28), Slack only. Otherwise rotate the worst bouncing
+senders off that campaign, re-enable warmup, and attempt `START` if senders
+remain.
+
+**Why.** Josh: if a campaign is paused because sender bounce is over 7%,
+investigate and remediate unless it’s the campaign copy.
+
+**Tradeoff.** 7% investigate threshold is separate from the 5% per-sender
+rotation threshold (D5). A campaign can be investigated without every sender
+crossing 5% if the weighted aggregate is high.
+
+**Guard.** `CampaignBounceInvestigateService`, config default 7, owner-intent
+D29.
+
+---
+
 ## D19 — Pre-warmed fleets are identified by domain and persisted state
 
 **Decision.** Every mailbox on `crosslaunchco.com` and `crossscaleco.com` is

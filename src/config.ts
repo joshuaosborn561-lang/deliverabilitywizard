@@ -99,6 +99,15 @@ const ConfigSchema = z.object({
     .default("")
     .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
+  /**
+   * Aggregate sender bounce on a PAUSED campaign that triggers investigation
+   * (D29). Separate from per-sender rotation (bounceRateThreshold).
+   */
+  campaignBounceInvestigateThreshold: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(7),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
   enableBounceRotation: boolFromEnv(true),
@@ -293,6 +302,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
+    campaignBounceInvestigateThreshold:
+      env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
     extraGenericMailboxes:

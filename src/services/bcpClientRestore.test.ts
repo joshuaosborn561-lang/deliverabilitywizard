@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 describe("BcpClientRestoreService", () => {
-  it("dry-run reverses BCP swaps and skips burned domains", async () => {
+  it("dry-run restores held BCP domains without stripping generics (D27)", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "bcp-restore-"));
     const state = new StateStore(path.join(dir, "state.json"));
     await state.load();
@@ -96,12 +96,19 @@ describe("BcpClientRestoreService", () => {
 
     const result = await service.run({ dryRun: true });
     assert.equal(result.dryRun, true);
-    assert.equal(result.genericsRemoved.length, 1);
+    assert.equal(
+      result.genericsRemoved.length,
+      0,
+      "D27: generics stay on BCP",
+    );
     assert.equal(result.originalsRestored.length, 1);
-    assert.equal(result.originalsRestored[0]?.email, "alex@boldercyperpartnerhub.info");
+    assert.equal(
+      result.originalsRestored[0]?.email,
+      "alex@boldercyperpartnerhub.info",
+    );
     assert.equal(removed.length, 0, "dry-run must not write Smartlead");
     assert.equal(added.length, 0);
-    assert.ok(state.getSwap("alex@boldercyperpartnerhub.info"), "dry-run keeps state");
+    assert.equal(result.swapsCleared, 1);
 
     await rm(dir, { recursive: true, force: true });
   });

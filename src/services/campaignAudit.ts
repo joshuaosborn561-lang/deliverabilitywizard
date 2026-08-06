@@ -8,6 +8,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
+import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -23,8 +24,11 @@ export interface CampaignAuditRow {
   id: number;
   name: string;
   status: string;
+  /** All campaign memberships (includes disconnected / held). */
   senders: number;
-  /** Senders still needed to reach the configured floor. */
+  /** Connected + inboxing senders that count toward the D25 floor. */
+  staffable: number;
+  /** Staffable senders still needed to reach the configured floor. */
   shortBy: number;
   hasTest: boolean;
   /** Sending domains in use, commonest first — a campaign's brand identity. */
@@ -74,10 +78,12 @@ export class CampaignAuditService {
     ]);
 
     const senderCounts = new Map<number, number>();
+    const staffableCounts = new Map<number, number>();
     const domainsByCampaign = new Map<number, Map<string, number>>();
     // Mailboxes carrying no campaign at all are idle capacity we can place
     // without taking a sender off another campaign.
     const idleByDomain = new Map<string, number>();
+    const inboxThreshold = this.config.remediationInboxThreshold;
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account)?.toLowerCase();
@@ -88,8 +94,17 @@ export class CampaignAuditService {
         if (domain) idleByDomain.set(domain, (idleByDomain.get(domain) ?? 0) + 1);
         continue;
       }
+      const held = this.state.getHeldInbox(email);
+      const staffable = isStaffableSender(account, {
+        held: Boolean(held),
+        inboxRate: held?.inboxRate,
+        inboxThreshold,
+      });
       for (const id of ids) {
         senderCounts.set(id, (senderCounts.get(id) ?? 0) + 1);
+        if (staffable) {
+          staffableCounts.set(id, (staffableCounts.get(id) ?? 0) + 1);
+        }
         if (!domain) continue;
         const byDomain = domainsByCampaign.get(id) ?? new Map<string, number>();
         byDomain.set(domain, (byDomain.get(domain) ?? 0) + 1);
@@ -113,19 +128,21 @@ export class CampaignAuditService {
       .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
       .map((c) => {
         const senders = senderCounts.get(c.id) ?? 0;
+        const staffable = staffableCounts.get(c.id) ?? 0;
         return {
           id: c.id,
           name: String(c.name ?? `campaign ${c.id}`),
           status: String(c.status ?? ""),
           senders,
-          shortBy: Math.max(0, minSenders - senders),
+          staffable,
+          shortBy: Math.max(0, minSenders - staffable),
           hasTest: tested.has(String(c.id)),
           domains: [...(domainsByCampaign.get(c.id) ?? new Map())]
             .map(([domain, count]) => ({ domain, count }))
             .sort((a, b) => b.count - a.count),
         };
       })
-      .sort((a, b) => a.senders - b.senders);
+      .sort((a, b) => a.staffable - b.staffable);
 
     const pool = this.state.listPoolMailboxes();
     const warmupMs = this.config.poolWarmupDays * 86_400_000;
@@ -157,7 +174,7 @@ export class CampaignAuditService {
     };
 
     console.log(
-      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under ${minSenders} senders (short ${result.totalShortfall} total)`,
+      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under ${minSenders} staffable (short ${result.totalShortfall} total)`,
     );
     for (const r of rows) {
       const brands = r.domains
@@ -165,7 +182,7 @@ export class CampaignAuditService {
         .map((d) => `${d.domain}:${d.count}`)
         .join(" ");
       console.log(
-        `[campaign-audit]   #${r.id} ${r.name} — ${r.senders} sender(s)${r.shortBy ? ` (short ${r.shortBy})` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
+        `[campaign-audit]   #${r.id} ${r.name} — staffable ${r.staffable}/${minSenders} (membership ${r.senders})${r.shortBy ? ` short ${r.shortBy}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
       );
     }
     const idle = [...idleByDomain.entries()].sort((a, b) => b[1] - a[1]);

@@ -532,15 +532,20 @@ export function uniqueBlacklistedDomains(hits: BlacklistedDomainHit[]): string[]
 
 export interface SenderInboxRate {
   email: string;
-  /** Decision rate: same-ESP when available, otherwise all-ESP. */
+  /**
+   * Decision rate for display / ranking.
+   * When `scoredSameEsp` is true this is same-ESP %. When false it may be the
+   * blended all-ESP % — D32 forbids using that blended value to rotate.
+   */
   inboxRate: number;
-  /** All seed ESPs blended (G Suite + Office365). */
+  /** All seed ESPs blended (G Suite + Office365). Never a rotation signal (D32). */
   inboxRateAll?: number;
   /** Same-ESP only (Gmail→G Suite / Outlook→O365). */
   inboxRateSameEsp?: number;
   sameEspSamples?: number;
   allEspSamples?: number;
   senderEsp?: EspFamily;
+  /** True only when inboxRate was computed from enough same-ESP seeds. */
   scoredSameEsp?: boolean;
   testId?: string;
 }
@@ -599,6 +604,9 @@ export function parseSenderInboxRates(
       typeof parsed.same === "number" &&
       (parsed.sameSamples ?? 0) >= minSame;
 
+    // Prefer same-ESP for the decision field when eligible. When preferSameEsp
+    // is on but samples are thin, still expose the blended % for display —
+    // remediation must ignore it (D32 / scoredSameEsp=false).
     const inboxRate = useSame
       ? parsed.same!
       : (parsed.all ?? parsed.same);

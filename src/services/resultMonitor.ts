@@ -211,8 +211,10 @@ export class ResultMonitor {
         email: row.email,
         inboxPercent: row.inboxRate,
         scoredSameEsp: row.scoredSameEsp,
+        // D32: Slack "will remediate" must match rotation — same-ESP only.
         willRemediate:
           this.config.enableRemediation &&
+          row.scoredSameEsp === true &&
           row.inboxRate < this.config.remediationInboxThreshold,
       }));
       authFailures = parseSenderAuthResults(senderRaw)

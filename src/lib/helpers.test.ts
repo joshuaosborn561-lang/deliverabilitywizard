@@ -257,8 +257,9 @@ describe("sender inbox rate parsing", () => {
     assert.equal(rows[0]?.sameEspSamples, 3);
   });
 
-  it("falls back to all-ESP when same-ESP samples are below minimum", async () => {
+  it("marks thin same-ESP samples as not placement-eligible (blended is display-only)", async () => {
     const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
+    const { shouldRotateForPlacement } = await import("./placementRotation.js");
     const googleAuth = {
       dkim_result: { dkim: "mx.google.com; dkim=pass" },
     };
@@ -286,7 +287,13 @@ describe("sender inbox rate parsing", () => {
     );
     assert.equal(rows[0]?.sameEspSamples, 1);
     assert.equal(rows[0]?.scoredSameEsp, false);
+    // Blended % may still be exposed for display…
     assert.equal(rows[0]?.inboxRate, 75);
+    // …but D32 forbids rotating on it.
+    assert.equal(
+      shouldRotateForPlacement(rows[0], 80, { scoreSameEspOnly: true }),
+      false,
+    );
   });
 
   it("computes inbox rate from inbox_count when avg is missing", async () => {

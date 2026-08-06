@@ -87,7 +87,9 @@ Warmup stays **on for every mailbox** (mailbox-settings converge).
 
 A sender comes off active campaigns when either signal fails:
 
-- **Placement** below `REMEDIATION_INBOX_THRESHOLD` (80%)
+- **Placement** below `REMEDIATION_INBOX_THRESHOLD` (80%) on the **same-ESP**
+  score only (D32). Never use the blended / all-ESP SmartDelivery score to
+  pull a mailbox. Thin same-ESP samples ⇒ skip placement rotation that run.
 - **Bounce** above `BOUNCE_RATE_THRESHOLD` (5%), once it has sent at least
   `MIN_BOUNCE_SAMPLE` (50). These are independent — seed inboxes accept mail,
   so a mailbox can hold a clean inbox rate while bouncing hard against real

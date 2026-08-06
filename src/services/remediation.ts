@@ -382,12 +382,15 @@ export class RemediationService {
         };
         const decision = await this.spendGateway.authorize(request);
         if (!decision.approved) {
-          // SpendGateway already Slack-notifies on first pending create.
-          // Denied is a standing human no (D15). Neither is a code failure —
-          // do not push into result.errors (that fed the bug remediator).
-          console.log(
-            `[remediation] ${domain}: teardown not approved (${decision.record.status}) — see GET /approvals`,
-          );
+          // Denied is a final human decision (D15) — log once per run, do not
+          // treat as an error that pages Slack or launches the bug remediator.
+          // Pending still surfaces so status/Slack can show the wait.
+          const msg = `${domain}: teardown awaiting approval (${decision.record.status}) — see GET /approvals`;
+          if (decision.record.status === "denied") {
+            console.log(`[remediation] ${msg}`);
+          } else {
+            result.errors.push(msg);
+          }
           continue;
         }
         teardownSpend = { decision, request };

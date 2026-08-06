@@ -88,6 +88,7 @@ describe("denied blacklist teardown approvals", () => {
     );
     assert.equal(classified.autoRemediate, false);
     assert.equal(classified.class, "noise");
+    assert.equal(classified.fingerprint, "noise:approval-gate");
     assert.notEqual(
       classified.fingerprint,
       "unknown:remediation:remediation-crossscaleco-com-teardown-awaiting-a",

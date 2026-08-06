@@ -59,16 +59,18 @@ export function classifyFailure(
     };
   }
 
-  // Spend/destructive approval gates are human decisions (D15/D21) — pending
-  // or denied is not a code bug. Never launch a Cursor agent for these.
+  // Spend/destructive gates working as designed — human must approve or has
+  // already denied. Not a code failure (D4/D15/D21).
   if (
-    /awaiting approval|see get \/approvals|teardown not approved/i.test(lower)
+    /awaiting approval|see get \/approvals|spend approval needed|spend blocked by monthly cap/i.test(
+      lower,
+    )
   ) {
     return {
       class: "noise",
-      fingerprint: fingerprintOf("noise", "awaiting-approval"),
+      fingerprint: fingerprintOf("noise", "approval-gate"),
       autoRemediate: false,
-      summary: "Spend/destructive approval gate (pending or denied)",
+      summary: "Spend/destructive approval gate (human decision, not a bug)",
       raw: text,
     };
   }

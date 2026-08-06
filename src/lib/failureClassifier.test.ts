@@ -59,18 +59,18 @@ describe("classifyFailure", () => {
     assert.equal(c.autoRemediate, false);
   });
 
-  it("does not auto-remediate denied or pending teardown approvals", () => {
+  it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",
       "crossscaleco.com: teardown awaiting approval (denied) — see GET /approvals",
     );
     assert.equal(denied.class, "noise");
     assert.equal(denied.autoRemediate, false);
-    assert.equal(denied.fingerprint, "noise:awaiting-approval");
+    assert.equal(denied.fingerprint, "noise:approval-gate");
 
     const pending = classifyFailure(
       "remediation",
-      "example.com: teardown awaiting approval (pending) — see GET /approvals",
+      "otherdomain.info: teardown awaiting approval (pending) — see GET /approvals",
     );
     assert.equal(pending.class, "noise");
     assert.equal(pending.autoRemediate, false);

@@ -279,21 +279,32 @@ describe("owner intent — mailbox settings", () => {
     );
   });
 
-  it("D24: Smartlead ceiling is campaign + warmup so 30 excludes warmup", () => {
+  it("D24: Message Per Day is 30 and warmups are not included in that field", () => {
+    assert.equal(
+      defaults.messagePerDay,
+      30,
+      stop(
+        "Smartlead Message Per Day (warmups not included) is 30 (D24).",
+        `Message Per Day is now ${defaults.messagePerDay}.`,
+      ),
+    );
     assert.equal(
       defaults.warmupTotalPerDay,
       20,
       stop(
-        "Warmup allotment is 20/day (D24).",
+        "Warmup allotment stays on its own field at 20/day (D24).",
         `Warmup is now ${defaults.warmupTotalPerDay}/day.`,
       ),
     );
+  });
+
+  it("D30: every mailbox holds a 10-minute minimum send gap", () => {
     assert.equal(
-      defaults.messagePerDay + defaults.warmupTotalPerDay,
-      50,
+      defaults.mailboxMinTimeGapMins,
+      10,
       stop(
-        "Smartlead max_email_per_day must be 30 campaign + 20 warmup (D24).",
-        `Ceiling math is now ${defaults.messagePerDay}+${defaults.warmupTotalPerDay}.`,
+        "Minimum time gap is 10 minutes on every mailbox (D30).",
+        `Min gap is now ${defaults.mailboxMinTimeGapMins}m.`,
       ),
     );
   });

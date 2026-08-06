@@ -208,12 +208,10 @@ export class SmartleadClient {
   /**
    * Daily sending ceiling for a mailbox.
    *
-   * The field is max_email_per_day: message_per_day is rejected outright
-   * ("not allowed") and PATCH 404s, so it is POST on the account endpoint —
-   * the same route the signature update uses.
-   *
-   * Smartlead splits this ceiling between warmup and campaign sends, topping
-   * warmup back up when campaign volume falls.
+   * Written as `max_email_per_day` (POST); Smartlead rejects `message_per_day`
+   * on write but returns the value as `message_per_day` on read. This is the
+   * UI field "Message Per Day (Warmups not included)" — warmup volume is a
+   * separate field (`warmup_max_count`).
    */
   setDailySendLimit(
     emailAccountId: number,
@@ -249,8 +247,9 @@ export class SmartleadClient {
   }
 
   /**
-   * Update email account fields (signature, from_name, etc.).
-   * Used by recovery-pool swaps to set `First Last\\n{Client Brand}`.
+   * Update email account fields (signature, from_name, send gap, etc.).
+   * Used by recovery-pool swaps and mailbox settings converge.
+   * Write `time_to_wait_in_mins`; list responses expose `minTimeToWaitInMins`.
    */
   updateEmailAccount(
     emailAccountId: number,
@@ -258,6 +257,8 @@ export class SmartleadClient {
       signature?: string;
       from_name?: string;
       client_id?: number | null;
+      max_email_per_day?: number;
+      time_to_wait_in_mins?: number;
     },
   ): Promise<unknown> {
     return this.mutate(() =>

@@ -113,11 +113,14 @@ future campaign with a similar name is not skipped by accident.
 
 ## Mailbox settings
 
-Every mailbox is converged each run to `MESSAGE_PER_DAY` (30) campaign sends
-per day with warmup enabled. This is the **campaign send cap**, a different
-Smartlead field from warmup volume (`WARMUP_TOTAL_PER_DAY`). Settings are per
-mailbox, so anything added by hand or re-imported arrives on a default and
-needs reconciling.
+Every mailbox is converged each run to:
+- `MESSAGE_PER_DAY` (30) — Smartlead **"Message Per Day (Warmups not included)"**
+- `MAILBOX_MIN_TIME_GAP_MINS` (10) — **"Minimum time gap"**
+- Warmup enabled (`WARMUP_TOTAL_PER_DAY` on its own field)
+- Plain two-line signature `Name\\n{Brand}` when a brand is known
+
+Settings are per mailbox, so anything added by hand or re-imported arrives on
+a default and needs reconciling.
 
 ## Placement tests
 

@@ -208,7 +208,8 @@ Common optional vars:
 | `ENABLE_CAMPAIGN_TOP_UP` | `true` | Rebalance warmed generics to keep ACTIVE campaigns at their floor |
 | `MIN_CAMPAIGN_SENDERS` | `50` | Sender floor for ACTIVE campaigns |
 | `ENFORCE_MAILBOX_SETTINGS` | `true` | Converge every mailbox to warmup on + daily send cap |
-| `MESSAGE_PER_DAY` | `30` | Smartlead `max_email_per_day` fleet cap |
+| `MESSAGE_PER_DAY` | `30` | Smartlead Message Per Day (warmups not included) |
+| `MAILBOX_MIN_TIME_GAP_MINS` | `10` | Smartlead minimum time gap between sends |
 | `CAMPAIGN_STATUSES` | `ACTIVE,PAUSED` | Which campaigns are eligible |
 | `PROVIDER_IDS` | _(auto)_ | Comma-separated seed provider ints; empty = auto-fetch |
 | `STATE_FILE_PATH` | `/data/state.json` | Persist tested campaigns + alert dedupe |

@@ -21,8 +21,14 @@ export interface SmartleadEmailAccount {
   updated_at?: string;
   is_smtp_success?: boolean;
   is_imap_success?: boolean;
+  /** Read form of the UI "Message Per Day (Warmups not included)" field. */
   message_per_day?: number;
+  /** Write form of message_per_day (POST body). */
   max_email_per_day?: number;
+  /** Read form of minimum send gap (minutes). */
+  minTimeToWaitInMins?: number | null;
+  /** Write form of minimum send gap (minutes). */
+  time_to_wait_in_mins?: number | null;
   daily_sent_count?: number;
   tags?: Array<{
     tag_id?: number;

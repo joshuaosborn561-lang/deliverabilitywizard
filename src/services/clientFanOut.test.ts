@@ -7,8 +7,8 @@ import type { StateStore } from "../state/store.js";
 import { ClientFanOutService } from "./clientFanOut.js";
 
 describe("ClientFanOutService", () => {
-  it("adds a BCP mailbox onto every ACTIVE BCP campaign it is missing", async () => {
-    const adds: Array<[number, number]> = [];
+  it("batches BCP mailbox adds onto every ACTIVE BCP campaign missing them", async () => {
+    const adds: Array<[number, number[]]> = [];
     const smartlead = {
       listCampaigns: async () => [
         { id: 1, name: "BCP PE", status: "ACTIVE", client_id: 9 },
@@ -22,13 +22,19 @@ describe("ClientFanOutService", () => {
           campaign_ids: [1],
           client_id: 9,
         },
+        {
+          id: 101,
+          from_email: "b@boldercyperpartnerbiz.info",
+          campaign_ids: [1],
+          client_id: 9,
+        },
       ],
       listClients: async () => [{ id: 9, name: "BCP" }],
       addEmailAccountsToCampaign: async (
         campaignId: number,
         ids: number[],
       ) => {
-        adds.push([campaignId, ids[0]!]);
+        adds.push([campaignId, [...ids]]);
       },
     } as unknown as SmartleadClient;
 
@@ -44,8 +50,8 @@ describe("ClientFanOutService", () => {
     );
 
     const result = await service.run({ dryRun: false });
-    assert.equal(result.attached.length, 1);
-    assert.deepEqual(adds, [[2, 100]]);
-    assert.equal(result.attached[0]?.campaignId, 2);
+    assert.equal(result.attached.length, 2);
+    assert.deepEqual(adds, [[2, [100, 101]]]);
+    assert.ok(result.attached.every((a) => a.campaignId === 2));
   });
 });

@@ -22,6 +22,19 @@ describe("classifyFailure", () => {
     }
   });
 
+  it("treats bounce-stats HTTP 524 / upstream 5xx as noise", () => {
+    for (const message of [
+      "bounce stats: HTTP 524",
+      "bounce stats: HTTP 502",
+      "health metrics: HTTP 503",
+    ]) {
+      const c = classifyFailure("remediation", message);
+      assert.equal(c.class, "noise", message);
+      assert.equal(c.autoRemediate, false, message);
+      assert.equal(c.fingerprint, "noise:remediation");
+    }
+  });
+
   it("treats SURBL / unnamed blacklist as noise", () => {
     const c = classifyFailure(
       "domain-scan",

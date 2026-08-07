@@ -1,8 +1,15 @@
 const TIMEOUT_NOISE =
   /timed?\s*out|timeout|operation was aborted|\bAbortError\b|\bTimeoutError\b/i;
 
+/** Cloudflare/origin gateway timeouts and other upstream 5xx. */
+const UPSTREAM_5XX_NOISE = /\bHTTP\s*5\d\d\b/i;
+
 function isTimeoutNoise(message: string): boolean {
   return TIMEOUT_NOISE.test(message);
+}
+
+function isUpstream5xxNoise(message: string): boolean {
+  return UPSTREAM_5XX_NOISE.test(message);
 }
 
 function isHttpRateLimitNoise(message: string): boolean {
@@ -15,12 +22,16 @@ function isHttpRateLimitNoise(message: string): boolean {
 }
 
 /**
- * Errors that are transient API throttling / timeouts and should not page
- * Slack. Request aborts from our HTTP timeout budget count here too — the
- * next cron pass retries them.
+ * Errors that are transient API throttling / timeouts / upstream 5xx and
+ * should not page Slack. Request aborts and Cloudflare 524s count here —
+ * the next cron pass retries them.
  */
 export function isRateLimitNoise(message: string): boolean {
-  return isHttpRateLimitNoise(message) || isTimeoutNoise(message);
+  return (
+    isHttpRateLimitNoise(message) ||
+    isTimeoutNoise(message) ||
+    isUpstream5xxNoise(message)
+  );
 }
 
 /**
@@ -65,6 +76,9 @@ export function humanizeAlertError(message: string): string {
   }
   if (bounceStats && timedOut) {
     return "Couldn't load bounce stats from Smartlead in time (the mailbox health metrics call timed out). We'll retry next run.";
+  }
+  if (bounceStats && isUpstream5xxNoise(raw)) {
+    return "Couldn't load bounce stats from Smartlead (temporary gateway/server error). We'll retry next run.";
   }
   if (timedOut) {
     return "A Smartlead request timed out. We'll retry automatically.";

@@ -38,6 +38,21 @@ describe("alert noise", () => {
     );
   });
 
+  it("treats HTTP 524 / upstream 5xx as non-paging noise", () => {
+    for (const message of [
+      "bounce stats: HTTP 524",
+      "list accounts: HTTP 502",
+      "health metrics: HTTP 503",
+    ]) {
+      assert.equal(isRateLimitNoise(message), true, message);
+      assert.equal(isBenignOpsNoise(message), true, message);
+    }
+    assert.match(
+      humanizeAlertError("bounce stats: HTTP 524"),
+      /temporary gateway\/server error/i,
+    );
+  });
+
   it("treats pending/denied approval waits as benign ops noise", () => {
     const denied =
       "boldercyperpartnersys.info: teardown awaiting approval (denied) — see GET /approvals";

@@ -40,7 +40,10 @@ export function classifyFailure(
     ) ||
     /timed?\s*out|timeout|operation was aborted|\baborterror\b|\btimeouterror\b/i.test(
       lower,
-    )
+    ) ||
+    // Upstream 5xx / Cloudflare gateway timeouts (502–504, 520–524, …).
+    // Already retried by apiRequest; not a code bug the remediator can fix.
+    /\bhttp\s*5\d\d\b/i.test(lower)
   ) {
     if (!/required|must be|validation|404|not found/i.test(lower)) {
       return {

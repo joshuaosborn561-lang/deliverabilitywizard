@@ -127,6 +127,23 @@ export function classifyFailure(
     };
   }
 
+  // SmartDelivery billing/quota — a human must top up. Never launch a
+  // remediator (it cannot and must not spend); do not treat as a code bug.
+  if (
+    /insufficient sequence credits|insufficient credits|out of (sequence )?credits|not enough (sequence )?credits/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "auth_access",
+      fingerprint: fingerprintOf("auth_access", "sequence-credits"),
+      autoRemediate: false,
+      summary:
+        "SmartDelivery sequence credits exhausted (human top-up required)",
+      raw: text,
+    };
+  }
+
   if (
     /smartdelivery access|api access is not active|invalid api key|unauthorized/i.test(
       lower,

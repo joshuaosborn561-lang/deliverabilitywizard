@@ -71,6 +71,10 @@ export function humanizeAlertError(message: string): string {
   const getAccount = raw.match(/get\s+account\s+(\d+)/i);
   const campaignAccounts = raw.match(/campaign\s+(\d+)\s+accounts/i);
 
+  if (/insufficient sequence credits|insufficient credits/i.test(raw)) {
+    return "SmartDelivery is out of sequence credits — top up the SmartDelivery wallet to create more placement tests.";
+  }
+
   if (bounceStats && /\b404\b/i.test(raw)) {
     return "Couldn't load bounce stats from Smartlead (the stats endpoint was unavailable).";
   }

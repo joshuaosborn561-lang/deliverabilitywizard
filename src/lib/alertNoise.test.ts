@@ -38,6 +38,22 @@ describe("alert noise", () => {
     );
   });
 
+  it("explains SmartDelivery sequence-credit exhaustion in plain English", () => {
+    assert.match(
+      humanizeAlertError(
+        "Failed creating tests for campaign 3763798: Insufficient sequence credits",
+      ),
+      /out of sequence credits/i,
+    );
+    // Still pages Slack — human must top up — but not remediator noise.
+    assert.equal(
+      isRateLimitNoise(
+        "Failed creating tests for campaign 3763798: Insufficient sequence credits",
+      ),
+      false,
+    );
+  });
+
   it("treats HTTP 524 / upstream 5xx as non-paging noise", () => {
     for (const message of [
       "bounce stats: HTTP 524",

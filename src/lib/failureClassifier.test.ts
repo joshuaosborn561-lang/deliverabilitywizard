@@ -85,6 +85,17 @@ describe("classifyFailure", () => {
     assert.equal(c.autoRemediate, false);
   });
 
+  it("does not auto-remediate SmartDelivery sequence-credit exhaustion", () => {
+    const c = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 3763798: Insufficient sequence credits",
+    );
+    assert.equal(c.class, "auth_access");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "auth-access:sequence-credits");
+    assert.match(c.summary, /sequence credits exhausted/i);
+  });
+
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",

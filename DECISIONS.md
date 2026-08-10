@@ -598,16 +598,18 @@ defaults on.
 
 ## D19 — Pre-warmed fleets are identified by domain and persisted state
 
-**Decision.** Every mailbox on `crosslaunchco.com` and `crossscaleco.com` is
-pre-warmed. The warmup gate exempts those domains and any pool row marked
-`prewarmed`; fuzzy name matching is only an additional fallback.
+**Decision.** Every mailbox on `crosslaunchco.com`, `crossscaleco.com`, and
+`cleartechco.com` is pre-warmed. The warmup gate exempts those domains and any
+pool row marked `prewarmed`; fuzzy name matching is only an additional fallback.
 
 **Why.** Smartlead reported a recent warmup timestamp and variant identity
 `Brianna Escobar` for 12 `crossscaleco.com` mailboxes. Exact matching against
 `breanna escobar` failed, so the warmup gate incorrectly removed all 12 from
-TechEvo despite the fleet having been bought pre-warmed.
+TechEvo despite the fleet having been bought pre-warmed. Josh: Clear Tech Co
+(`cleartechco.com`) is likewise pre-warmed — put pulled inboxes back and ignore
+them from the under-warmed rule.
 
-**Tradeoff.** A future cold mailbox added to either explicit fleet domain would
+**Tradeoff.** A future cold mailbox added to an explicit fleet domain would
 also be treated as pre-warmed. Accepted: those domains are dedicated,
 operator-managed pre-warmed inventory.
 

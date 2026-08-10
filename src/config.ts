@@ -137,7 +137,7 @@ const ConfigSchema = z.object({
   /** Explicit domains whose whole fleet was purchased pre-warmed. */
   extraGenericDomains: z
     .string()
-    .default("crosslaunchco.com,crossscaleco.com")
+    .default("crosslaunchco.com,crossscaleco.com,cleartechco.com")
     .transform((s) =>
       s
         .split(",")
@@ -315,7 +315,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     extraGenericMailboxes:
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     extraGenericDomains:
-      env.EXTRA_GENERIC_DOMAINS ?? "crosslaunchco.com,crossscaleco.com",
+      env.EXTRA_GENERIC_DOMAINS ??
+      "crosslaunchco.com,crossscaleco.com,cleartechco.com",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,

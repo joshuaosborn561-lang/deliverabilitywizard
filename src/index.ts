@@ -84,7 +84,7 @@ async function main(): Promise<void> {
     channelLabel: config.slackChannel,
   });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
-  const monitor = new ResultMonitor(config, smartDelivery, slack, state);
+  const monitor = new ResultMonitor(config, smartDelivery, smartlead, slack, state);
   const spendGateway = new SpendGateway(state, slack, config.requireSpendApproval);
   const remediation = new RemediationService(
     config,

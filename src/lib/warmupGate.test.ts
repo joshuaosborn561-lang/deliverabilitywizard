@@ -54,11 +54,31 @@ describe("warmupGate helpers", () => {
       "escobar.br@crossscaleco.com",
       {
         extraGenericMailboxes: ["breanna escobar"],
-        extraGenericDomains: ["crossscaleco.com", "crosslaunchco.com"],
+        extraGenericDomains: [
+          "crossscaleco.com",
+          "crosslaunchco.com",
+          "cleartechco.com",
+        ],
       },
       { getPoolMailbox: () => undefined },
     );
     assert.equal(result, true);
+    assert.equal(
+      isPrewarmedGeneric(
+        { id: 2, from_name: "Daisy Wagner" },
+        "wagner.d@cleartechco.com",
+        {
+          extraGenericMailboxes: [],
+          extraGenericDomains: [
+            "crossscaleco.com",
+            "crosslaunchco.com",
+            "cleartechco.com",
+          ],
+        },
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
   });
 
   it("honors persisted pre-warmed state and fuzzy fleet names", () => {

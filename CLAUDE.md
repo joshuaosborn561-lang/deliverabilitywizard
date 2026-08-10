@@ -63,9 +63,9 @@ the best one stranded 198 pre-warmed generics. These arrive pre-warmed and are
 registered `available` immediately; they owe no warmup.
 
 `EXTRA_GENERIC_DOMAINS` is authoritative for those fleets: every mailbox on
-`crosslaunchco.com` and `crossscaleco.com` is pre-warmed. Do not rely on exact
-from-name spelling or Smartlead's reported warmup start; both have already
-caused live pre-warmed senders to be pulled.
+`crosslaunchco.com`, `crossscaleco.com`, and `cleartechco.com` is pre-warmed.
+Do not rely on exact from-name spelling or Smartlead's reported warmup start;
+those have already caused live pre-warmed senders to be pulled.
 
 ## Sender identity
 

@@ -249,6 +249,16 @@ describe("owner intent", () => {
     );
   });
 
+  it("D19: cleartechco.com is an explicit pre-warmed fleet domain", () => {
+    assert.ok(
+      defaults.extraGenericDomains.includes("cleartechco.com"),
+      stop(
+        "cleartechco.com is pre-warmed and exempt from the under-warmed pull (D19).",
+        `EXTRA_GENERIC_DOMAINS is now ${defaults.extraGenericDomains.join(",")}.`,
+      ),
+    );
+  });
+
   it("D2: a generic from-name matches the whole fleet, not one mailbox", () => {
     // Same from-name across many domains must all clear the threshold.
     for (const email of [

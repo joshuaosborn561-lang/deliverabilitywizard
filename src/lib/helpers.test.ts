@@ -149,20 +149,38 @@ describe("domain blacklist callouts", () => {
 });
 
 describe("quota gate math", () => {
-  it("blocks when needed tests exceed remaining quota", () => {
-    const used = 110;
+  it("ignores STOPPED rows so dead history cannot permanently quota-block", async () => {
+    const { countTestsAgainstQuota } = await import("./placementCoverage.js");
+    const listed = [
+      ...Array.from({ length: 118 }, (_, i) => ({
+        spam_test_id: i + 1,
+        status: "STOPPED",
+        every_days: 1,
+      })),
+      ...Array.from({ length: 2 }, (_, i) => ({
+        spam_test_id: 200 + i,
+        status: "ACTIVE",
+        every_days: 1,
+      })),
+    ];
+    const used = countTestsAgainstQuota(listed);
     const quota = 120;
-    const mailboxCounts = [45, 60];
-    const needed = mailboxCounts
+    const needed = [45, 60]
       .map((n) => Math.ceil(n / 50))
       .reduce((a, b) => a + b, 0);
     const remaining = Math.max(0, quota - used);
+    assert.equal(used, 2);
     assert.equal(needed, 3);
-    assert.equal(remaining, 10);
+    assert.equal(remaining, 118);
     assert.equal(needed > remaining, false);
 
-    const tightUsed = 118;
-    assert.equal(needed > Math.max(0, quota - tightUsed), true);
+    // Old bug: counting every listed row (including STOPPED) as used.
+    const naiveUsed = listed.length;
+    assert.equal(naiveUsed, 120);
+    assert.equal(needed > Math.max(0, quota - naiveUsed), true);
+
+    const tightLiving = 118;
+    assert.equal(needed > Math.max(0, quota - tightLiving), true);
   });
 });
 

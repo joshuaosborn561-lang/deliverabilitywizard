@@ -14,7 +14,10 @@ import {
 } from "../clients/smartdelivery.js";
 import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
 import { chunkArray, sleep } from "../lib/http.js";
-import { testedCampaignCoverage } from "../lib/placementCoverage.js";
+import {
+  countTestsAgainstQuota,
+  testedCampaignCoverage,
+} from "../lib/placementCoverage.js";
 import type { StateStore } from "../state/store.js";
 import type {
   CampaignTestPlan,
@@ -279,7 +282,10 @@ export class CampaignScanner {
     }
 
     const testsNeeded = plans.reduce((sum, plan) => sum + plan.batches.length, 0);
-    const used = existingTests.length;
+    // Only living (stoppable) tests consume concurrent quota. Dead STOPPED /
+    // COMPLETED rows still appear in listTests and used to permanently block
+    // daily recreation once the list approached TOTAL_TEST_QUOTA.
+    const used = countTestsAgainstQuota(existingTests);
     const remaining = Math.max(0, this.config.totalTestQuota - used);
 
     console.log(

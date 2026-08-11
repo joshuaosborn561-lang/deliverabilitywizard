@@ -614,3 +614,25 @@ also be treated as pre-warmed. Accepted: those domains are dedicated,
 operator-managed pre-warmed inventory.
 
 **Guard.** `warmupGate helpers — explicit pre-warmed fleet domain`
+
+---
+
+## D33 — Concurrent placement quota counts living tests only
+
+**Decision.** `TOTAL_TEST_QUOTA` (120) is concurrent capacity. The scanner
+counts only stoppable/living SmartDelivery tests against it. STOPPED,
+COMPLETED, cancelled, expired, and failed tests do not consume quota and must
+not block daily recreation of coverage.
+
+**Why.** Coverage already requires a living auto (`testedCampaignCoverage`).
+When autos die to STOPPED, campaigns correctly re-enter the eligible set — but
+the scanner still used `existingTests.length`, so a list full of dead rows
+left remaining &lt; needed forever (`quotaBlocked`) even with 0 living autos.
+Josh: placement is supposed to run daily; a permanent backlog from dead tests
+is a bug, not intended throttling.
+
+**Tradeoff.** SmartDelivery **sequence credits** are a separate billing gate.
+Fixing quota math does not create tests when credits are exhausted — that still
+needs a top-up.
+
+**Guard.** `countTestsAgainstQuota`, `placementCoverage — living quota`

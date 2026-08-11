@@ -128,6 +128,24 @@ describe("owner intent", () => {
     );
   });
 
+  it("D33: concurrent quota ignores STOPPED / COMPLETED tests", async () => {
+    const { countTestsAgainstQuota } = await import(
+      "../lib/placementCoverage.js"
+    );
+    assert.equal(
+      countTestsAgainstQuota([
+        { spam_test_id: 1, status: "STOPPED", every_days: 1 },
+        { spam_test_id: 2, status: "COMPLETED", every_days: 1 },
+        { spam_test_id: 3, status: "ACTIVE", every_days: 1 },
+      ]),
+      1,
+      stop(
+        "Dead SmartDelivery tests must not consume the 120 concurrent quota (D33).",
+        "countTestsAgainstQuota is counting STOPPED/COMPLETED rows again, which permanently backlog-blocks daily scans.",
+      ),
+    );
+  });
+
   it("D8: recurring daily autos stay on with ≤50 senders and reconciler", () => {
     assert.equal(
       defaults.autoPlacementTests,

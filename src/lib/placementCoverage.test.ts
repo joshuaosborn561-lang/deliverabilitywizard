@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   campaignsWithActiveAutos,
+  countTestsAgainstQuota,
   testedCampaignCoverage,
 } from "./placementCoverage.js";
 
@@ -74,5 +75,18 @@ describe("placementCoverage", () => {
       },
     );
     assert.deepEqual([...covered].sort(), ["20"]);
+  });
+
+  it("counts only living tests against the concurrent quota", () => {
+    assert.equal(
+      countTestsAgainstQuota([
+        { spam_test_id: 1, status: "ACTIVE", every_days: 1 },
+        { spam_test_id: 2, status: "SCHEDULED", every_days: 1 },
+        { spam_test_id: 3, status: "STOPPED", every_days: 1 },
+        { spam_test_id: 4, status: "COMPLETED", test_type: "manual" },
+        { spam_test_id: 5, status: "IN_PROGRESS" },
+      ]),
+      3,
+    );
   });
 });

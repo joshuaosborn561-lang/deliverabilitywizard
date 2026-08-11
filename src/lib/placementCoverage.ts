@@ -36,6 +36,19 @@ export function stoppableAutoTestIds(tests: SpamTestSummary[]): Set<string> {
 }
 
 /**
+ * Concurrent SmartDelivery slots in use. STOPPED / COMPLETED / cancelled
+ * tests must not consume the 120 quota — otherwise a daily scan that needs
+ * to recreate coverage after tests die can permanently quota-block.
+ */
+export function countTestsAgainstQuota(tests: SpamTestSummary[]): number {
+  let used = 0;
+  for (const test of tests) {
+    if (isTestStoppable(test)) used += 1;
+  }
+  return used;
+}
+
+/**
  * Merge live ACTIVE-auto coverage with state marks that still point at a
  * living stoppable auto test id. Stale state (completed manuals) is ignored.
  */

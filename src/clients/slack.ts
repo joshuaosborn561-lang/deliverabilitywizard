@@ -94,9 +94,9 @@ export class SlackClient {
 
     await this.send(
       [
-        `*Couldn't create placement tests — monthly quota is full*`,
-        `Used ${details.used} of ${details.quota}. This batch needed ${details.needed} more.`,
-        `Nothing was created. Free quota or skip a campaign, then re-run.`,
+        `*Couldn't create placement tests — concurrent quota is full*`,
+        `Used ${details.used} of ${details.quota} living tests. This batch needed ${details.needed} more.`,
+        `Nothing was created. Stop unused tests or skip a campaign, then re-run.`,
         lines || undefined,
       ]
         .filter(Boolean)

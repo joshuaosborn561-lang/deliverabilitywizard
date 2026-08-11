@@ -11,6 +11,7 @@ import {
   testIdOf,
   uniqueBlacklistedDomains,
 } from "../clients/smartdelivery.js";
+import { isMissingSpamTestNoise } from "../lib/alertNoise.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import {
   dkimFailing,
@@ -134,6 +135,14 @@ export class ResultMonitor {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        // Tracked ids can outlive the SmartDelivery record (stopped/purged).
+        // Skip quietly — not an actionable failure and not a stale endpoint.
+        if (isMissingSpamTestNoise(message)) {
+          console.warn(
+            `[monitor] Test ${testId} no longer exists in SmartDelivery — skipping`,
+          );
+          continue;
+        }
         result.errors.push(`test ${testId}: ${message}`);
       }
     }

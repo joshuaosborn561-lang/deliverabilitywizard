@@ -4,7 +4,6 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import {
   campaignIdOf,
-  isAutomatedTest,
   isTestStoppable,
   normalizeTestList,
   testIdOf,
@@ -19,19 +18,28 @@ export interface StoppedTest {
   campaignStatus: string;
 }
 
+export interface DeletedTest {
+  testId: string;
+  testName?: string;
+  campaignId?: string;
+  campaignStatus: string;
+  reason: "inactive_campaign" | "missing_campaign";
+}
+
 export interface TestReconcileResult {
   dryRun: boolean;
-  automatedTests: number;
+  listedTests: number;
   stopped: StoppedTest[];
+  deleted: DeletedTest[];
   keptActive: number;
-  orphaned: string[];
   errors: string[];
 }
 
 /**
- * Keeps recurring placement tests aligned with campaign state: an automated
- * test should only keep running while its campaign is active. Runs with the
- * monitor cron so a campaign paused between scans stops billing test runs.
+ * Keeps placement tests aligned with campaign state: any test whose campaign
+ * is not ACTIVE (or cannot be linked) is stopped if still living, then
+ * deleted. Runs with the monitor cron so dead campaigns do not leave junk
+ * tests in SmartDelivery.
  */
 export class TestReconciler {
   constructor(
@@ -45,10 +53,10 @@ export class TestReconciler {
   async run(): Promise<TestReconcileResult> {
     const result: TestReconcileResult = {
       dryRun: this.config.dryRun,
-      automatedTests: 0,
+      listedTests: 0,
       stopped: [],
+      deleted: [],
       keptActive: 0,
-      orphaned: [],
       errors: [],
     };
 
@@ -66,9 +74,10 @@ export class TestReconciler {
     let tests;
     try {
       const listed = normalizeTestList(await this.smartDelivery.listTests({}));
-      // List payload omits campaign_id; without enrichment every auto test is
-      // treated as orphaned and never stopped when its campaign goes inactive.
+      // List payload omits campaign_id; enrich every row so inactive-campaign
+      // deletes cannot be skipped as "orphans".
       tests = await this.smartDelivery.enrichCampaignIds(listed);
+      result.listedTests = tests.length;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`list tests: ${message}`);
@@ -87,32 +96,39 @@ export class TestReconciler {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      // Without campaign statuses we cannot safely decide what to stop.
+      // Without campaign statuses we cannot safely decide what to delete.
       result.errors.push(`list campaigns: ${message}`);
       await this.finish(result);
       return result;
     }
 
     const activeStatuses = new Set(this.config.autoTestActiveStatuses);
+    const toDelete: DeletedTest[] = [];
 
     for (const test of tests) {
-      if (!isAutomatedTest(test)) continue;
-      result.automatedTests += 1;
-
       const testId = testIdOf(test);
-      const campaignId = campaignIdOf(test);
       if (!testId) continue;
 
+      const campaignId = campaignIdOf(test);
       if (!campaignId) {
-        // No campaign linkage — never guess; surface instead of stopping.
-        result.orphaned.push(testId);
+        toDelete.push({
+          testId,
+          testName: test.test_name,
+          campaignStatus: "(no campaign_id)",
+          reason: "missing_campaign",
+        });
         continue;
       }
 
       const status = campaignStatus.get(campaignId);
       if (status === undefined) {
-        // Campaign deleted from Smartlead entirely.
-        result.orphaned.push(testId);
+        toDelete.push({
+          testId,
+          testName: test.test_name,
+          campaignId,
+          campaignStatus: "(missing from Smartlead)",
+          reason: "missing_campaign",
+        });
         continue;
       }
 
@@ -121,29 +137,75 @@ export class TestReconciler {
         continue;
       }
 
-      if (!isTestStoppable(test)) continue;
+      // Inactive campaign — stop if still living, then delete.
+      if (isTestStoppable(test)) {
+        const stopKey = `stop-auto-test:${testId}`;
+        if (!this.state.hasRemediation(stopKey)) {
+          try {
+            if (!result.dryRun) {
+              await this.smartDelivery.stopAutomatedTest(testId);
+              this.state.markRemediation(stopKey);
+              await sleep(300);
+            }
+            result.stopped.push({
+              testId,
+              testName: test.test_name,
+              campaignId,
+              campaignStatus: status || "(unknown)",
+            });
+            console.log(
+              `[test-reconciler] Stopped test ${testId} — campaign ${campaignId} is ${status}`,
+            );
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            // Already stopped / not in progress is fine — still delete.
+            if (!/not in progress|already stop/i.test(message)) {
+              result.errors.push(`stop test ${testId}: ${message}`);
+            }
+          }
+        }
+      }
 
-      const dedupeKey = `stop-auto-test:${testId}`;
+      toDelete.push({
+        testId,
+        testName: test.test_name,
+        campaignId,
+        campaignStatus: status || "(unknown)",
+        reason: "inactive_campaign",
+      });
+    }
+
+    const deleteIds: string[] = [];
+    for (const row of toDelete) {
+      const dedupeKey = `delete-test:${row.testId}`;
       if (this.state.hasRemediation(dedupeKey)) continue;
+      deleteIds.push(row.testId);
+    }
 
+    if (deleteIds.length) {
       try {
         if (!result.dryRun) {
-          await this.smartDelivery.stopAutomatedTest(testId);
-          this.state.markRemediation(dedupeKey);
-          await sleep(300);
+          // Bulk delete in chunks — SmartDelivery accepts spamTestIds arrays.
+          for (let i = 0; i < deleteIds.length; i += 25) {
+            const chunk = deleteIds.slice(i, i + 25);
+            await this.smartDelivery.deleteTests(chunk);
+            for (const id of chunk) {
+              this.state.markRemediation(`delete-test:${id}`);
+            }
+            await sleep(300);
+          }
         }
-        result.stopped.push({
-          testId,
-          testName: test.test_name,
-          campaignId,
-          campaignStatus: status || "(unknown)",
-        });
-        console.log(
-          `[test-reconciler] Stopped recurring test ${testId} — campaign ${campaignId} is ${status}`,
-        );
+        for (const row of toDelete) {
+          if (!deleteIds.includes(row.testId)) continue;
+          result.deleted.push(row);
+          console.log(
+            `[test-reconciler] Deleted test ${row.testId} — ${row.reason} (${row.campaignStatus})`,
+          );
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        result.errors.push(`stop test ${testId}: ${message}`);
+        result.errors.push(`delete tests: ${message}`);
       }
     }
 
@@ -155,14 +217,18 @@ export class TestReconciler {
     await this.state.save();
     console.log("[test-reconciler] Done", {
       dryRun: result.dryRun,
-      automatedTests: result.automatedTests,
+      listedTests: result.listedTests,
       stopped: result.stopped.length,
+      deleted: result.deleted.length,
       keptActive: result.keptActive,
-      orphaned: result.orphaned.length,
       errors: result.errors.length,
     });
 
-    if (result.stopped.length || result.errors.length) {
+    if (
+      result.stopped.length ||
+      result.deleted.length ||
+      result.errors.length
+    ) {
       await this.slack
         .notifyTestReconcile(result)
         .catch((error) => {

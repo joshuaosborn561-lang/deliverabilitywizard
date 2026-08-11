@@ -149,14 +149,20 @@ async function main(): Promise<void> {
     campaigns: unknown;
   }> | null = null;
 
-  const runScan = async (trigger: "cron" | "manual") => {
+  const runScan = async (
+    trigger: "cron" | "manual",
+    opts: { campaignIds?: number[] } = {},
+  ) => {
     assertRuntimeSecrets(config);
     if (scanInFlight) {
       console.log("[scan] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
     scanInFlight = (async () => {
-      const result = await scanner.run({ trigger });
+      const result = await scanner.run({
+        trigger,
+        campaignIds: opts.campaignIds,
+      });
       feedBugRemediator(
         "scan",
         (result as { errors?: string[] })?.errors ?? [],
@@ -1079,8 +1085,14 @@ async function main(): Promise<void> {
         });
         return;
       }
-      const result = await runScan("manual");
-      res.json({ ok: true, mode: "scan", result });
+      const campaignIdsRaw = req.body?.campaignIds ?? req.body?.campaign_ids;
+      const campaignIds = Array.isArray(campaignIdsRaw)
+        ? campaignIdsRaw
+            .map((id: unknown) => Number(id))
+            .filter((id: number) => Number.isFinite(id) && id > 0)
+        : undefined;
+      const result = await runScan("manual", { campaignIds });
+      res.json({ ok: true, mode: "scan", result, campaignIds: campaignIds ?? null });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("[run] Failed", error);

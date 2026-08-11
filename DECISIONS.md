@@ -636,3 +636,24 @@ Fixing quota math does not create tests when credits are exhausted — that stil
 needs a top-up.
 
 **Guard.** `countTestsAgainstQuota`, `placementCoverage — living quota`
+
+---
+
+## D34 — Delete placement tests without an ACTIVE campaign
+
+**Decision.** The test reconciler must **delete** (not merely leave orphaned)
+any SmartDelivery test whose campaign is missing, deleted, or not ACTIVE.
+Living tests are stopped first, then deleted via `POST /spam-test/delete`
+(`spamTestIds`). Enrich every listed test for `campaign_id` — including
+STOPPED/COMPLETED — so cleanup cannot skip rows as orphans.
+
+**Why.** Josh (2026-08-11): delete all tests that do not have an active
+campaign; the system should already be doing that. Orphan surfacing left dead
+tests in the account while daily coverage tried to recreate.
+
+**Tradeoff.** Historical reports for inactive campaigns are removed. Accepted:
+inactive campaigns should not retain SmartDelivery inventory. Sequence
+**credits** are a separate Smartlead billing balance — deleting tests does not
+top them up.
+
+**Guard.** `TestReconciler deletes non-ACTIVE campaign tests`

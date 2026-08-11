@@ -156,7 +156,13 @@ export class CampaignScanner {
     private readonly state: StateStore,
   ) {}
 
-  async run(options: { trigger: "cron" | "manual" } = { trigger: "cron" }): Promise<ScanResult> {
+  async run(
+    options: {
+      trigger: "cron" | "manual";
+      /** When set, only these campaign ids are considered (still must be ACTIVE). */
+      campaignIds?: number[];
+    } = { trigger: "cron" },
+  ): Promise<ScanResult> {
     const result: ScanResult = {
       scanned: 0,
       eligible: 0,
@@ -230,7 +236,14 @@ export class CampaignScanner {
       ? new Set(this.config.autoTestActiveStatuses)
       : statusSet;
 
+    const onlyIds = options.campaignIds?.length
+      ? new Set(options.campaignIds.map(Number))
+      : null;
+
     const candidates = campaigns.filter((campaign) => {
+      if (onlyIds && !onlyIds.has(Number(campaign.id))) {
+        return false;
+      }
       if (!creationStatusSet.has(String(campaign.status ?? "").toUpperCase())) {
         return false;
       }
@@ -268,6 +281,23 @@ export class CampaignScanner {
         result.skipped += 1;
       }
     }
+
+    // Prefer Goliath (and any explicit campaignIds order) so partial credit
+    // budgets land on the campaigns Josh asked for first.
+    plans.sort((a, b) => {
+      if (options.campaignIds?.length) {
+        const order = new Map(
+          options.campaignIds.map((id, idx) => [Number(id), idx]),
+        );
+        return (
+          (order.get(Number(a.campaign.id)) ?? 9999) -
+          (order.get(Number(b.campaign.id)) ?? 9999)
+        );
+      }
+      const ag = /goliath/i.test(String(a.campaign.name ?? "")) ? 0 : 1;
+      const bg = /goliath/i.test(String(b.campaign.name ?? "")) ? 0 : 1;
+      return ag - bg;
+    });
 
     result.plans = plans;
     result.eligible = plans.length;

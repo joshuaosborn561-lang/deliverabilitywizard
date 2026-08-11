@@ -152,9 +152,10 @@ export class SmartDeliveryClient {
   }
 
   /**
-   * The report list omits `campaign_id`. Fetch details for tests that still
-   * need linkage (active/automated first) so scanner skip + reconciler stop
-   * can key off the real campaign.
+   * The report list omits `campaign_id`. Fetch details for every row that
+   * still needs linkage so scanner coverage + reconciler delete can key off
+   * the real campaign — including STOPPED/COMPLETED history that used to be
+   * skipped and left as "orphans".
    */
   async enrichCampaignIds(
     tests: SpamTestSummary[],
@@ -166,7 +167,7 @@ export class SmartDeliveryClient {
         continue;
       }
       const id = testIdOf(test);
-      if (!id || !isAutomatedTest(test) || !isTestStoppable(test)) {
+      if (!id) {
         out.push(test);
         continue;
       }
@@ -231,6 +232,25 @@ export class SmartDeliveryClient {
       `spam-test/${spamTestId}/stop`,
       { method: "PUT", body: {} },
     );
+  }
+
+  /**
+   * Permanently delete placement tests. POST /spam-test/delete
+   * Body: `{ spamTestIds: number[] }` (SmartDelivery validation requires this key).
+   */
+  deleteTests(spamTestIds: Array<string | number>): Promise<unknown> {
+    const ids = [
+      ...new Set(
+        spamTestIds
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    ];
+    if (!ids.length) return Promise.resolve({ message: "nothing to delete" });
+    return apiRequest(BASE_URL, this.apiKey, "spam-test/delete", {
+      method: "POST",
+      body: { spamTestIds: ids },
+    });
   }
 
   getSeedProviders(): Promise<unknown> {

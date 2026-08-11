@@ -592,33 +592,54 @@ export class SlackClient {
 
   async notifyTestReconcile(summary: {
     dryRun: boolean;
-    automatedTests: number;
+    listedTests?: number;
+    automatedTests?: number;
     stopped: Array<{
       testId: string;
       testName?: string;
       campaignId: string;
       campaignStatus: string;
     }>;
-    orphaned: string[];
+    deleted?: Array<{
+      testId: string;
+      testName?: string;
+      campaignId?: string;
+      campaignStatus: string;
+      reason: string;
+    }>;
+    orphaned?: string[];
     errors: string[];
   }): Promise<void> {
-    if (!summary.stopped.length && !summary.errors.length) return;
+    const deleted = summary.deleted ?? [];
+    if (
+      !summary.stopped.length &&
+      !deleted.length &&
+      !summary.errors.length
+    ) {
+      return;
+    }
 
     await this.send(
       [
-        `*Stopped recurring placement tests*`,
+        `*Placement test cleanup*`,
         summary.stopped.length
-          ? `${summary.stopped.length} test${summary.stopped.length === 1 ? "" : "s"} stopped because the campaign is no longer active — this stops them from burning test runs.`
+          ? `${summary.stopped.length} living test${summary.stopped.length === 1 ? "" : "s"} stopped — campaign no longer ACTIVE.`
           : undefined,
         ...summary.stopped
+          .slice(0, 8)
+          .map(
+            (s) =>
+              `• stopped ${s.testName ? `*${s.testName}*` : `\`${s.testId}\``} — campaign ${s.campaignId} is ${s.campaignStatus}`,
+          ),
+        deleted.length
+          ? `${deleted.length} test${deleted.length === 1 ? "" : "s"} deleted — no ACTIVE campaign linked.`
+          : undefined,
+        ...deleted
           .slice(0, 12)
           .map(
             (s) =>
-              `• ${s.testName ? `*${s.testName}*` : `test \`${s.testId}\``} — campaign ${s.campaignId} is ${s.campaignStatus}`,
+              `• deleted ${s.testName ? `*${s.testName}*` : `\`${s.testId}\``} — ${s.campaignId ? `campaign ${s.campaignId} is ${s.campaignStatus}` : s.campaignStatus}`,
           ),
-        summary.orphaned.length
-          ? `\n${summary.orphaned.length} recurring test(s) have no matching campaign in Smartlead — left running, check manually: ${summary.orphaned.slice(0, 5).join(", ")}`
-          : undefined,
         (() => {
           const serious = summary.errors
             .filter((e) => !isRateLimitNoise(e))

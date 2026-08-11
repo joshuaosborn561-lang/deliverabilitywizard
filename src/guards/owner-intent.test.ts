@@ -146,6 +146,31 @@ describe("owner intent", () => {
     );
   });
 
+  it("D34: reconciler deletes tests without an ACTIVE campaign", async () => {
+    const src = await import("node:fs").then((fs) =>
+      fs.readFileSync(
+        new URL("../services/testReconciler.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      src,
+      /deleteTests/,
+      stop(
+        "Tests without an ACTIVE campaign are deleted from SmartDelivery (D34).",
+        "testReconciler.ts no longer calls deleteTests — orphans would be left in the account again.",
+      ),
+    );
+    assert.match(
+      src,
+      /missing_campaign|inactive_campaign/,
+      stop(
+        "Tests without an ACTIVE campaign are deleted from SmartDelivery (D34).",
+        "Delete reasons for missing/inactive campaigns were removed from the reconciler.",
+      ),
+    );
+  });
+
   it("D8: recurring daily autos stay on with ≤50 senders and reconciler", () => {
     assert.equal(
       defaults.autoPlacementTests,

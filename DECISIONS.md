@@ -548,6 +548,26 @@ to stop burst throttling.
 
 ---
 
+## D35 — Mailbox min-gap is enforced on every health pass
+
+**Decision.** The 10-minute mailbox Minimum time gap (D30) and 30/day volume
+(D24) are converged on **every** health cron (`*/15`), not only on the 6-hour
+full mailbox-settings pass. Signatures/warmup stay on the 6-hour full converge.
+Fan-out and top-up writes also set `time_to_wait_in_mins` + `max_email_per_day`
+when attaching or moving a mailbox. Drift triggers a dedicated Slack alert.
+
+**Why.** Josh (2026-08-11): Dave Ackley / Goliath bounce spike — suspected blank
+mailbox gap. Campaign account GET and email-account GET-by-id omit
+`minTimeToWaitInMins` (list endpoint is source of truth), and a 6-hour-only
+converge is too slow after fan-out/import. Gap must be checked all the time.
+
+**Tradeoff.** Health cron does an extra list+conditional-write pass every 15
+minutes. Accepted over another burst day.
+
+**Guard.** `D35: health enforces mailbox min gap every pass`
+
+---
+
 ## D31 — Mailbox signatures are plain two-line Name / Brand
 
 **Decision.** Every mailbox with a resolvable brand is converged to a plain

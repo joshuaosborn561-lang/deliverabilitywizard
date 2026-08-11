@@ -36,6 +36,7 @@ describe("ClientFanOutService", () => {
       ) => {
         adds.push([campaignId, [...ids]]);
       },
+      updateEmailAccount: async () => undefined,
     } as unknown as SmartleadClient;
 
     const state = {

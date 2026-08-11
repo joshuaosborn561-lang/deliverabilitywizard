@@ -386,31 +386,40 @@ async function main(): Promise<void> {
         }
       }
 
+      // D30/D35: gap + daily volume every health pass. Full signature/warmup
+      // converge stays throttled so it cannot starve the 15-minute staffing loop.
+      let mailboxGapResult: unknown = null;
       let mailboxSettingsResult: unknown = null;
-      const lastSettingsAt = state.get().lastMailboxSettingsAt;
-      const settingsAgeMs = lastSettingsAt
-        ? Date.now() - Date.parse(lastSettingsAt)
-        : Number.POSITIVE_INFINITY;
-      if (
-        config.enforceMailboxSettings &&
-        settingsAgeMs >= MAILBOX_SETTINGS_EVERY_MS
-      ) {
+      if (config.enforceMailboxSettings) {
         try {
-          mailboxSettingsResult = await mailboxSettings.run();
-          state.setLastMailboxSettingsAt(new Date().toISOString());
-          await state.save();
+          mailboxGapResult = await mailboxSettings.runGapEnforce();
         } catch (error) {
-          console.warn("[health] mailbox-settings failed", error);
+          console.warn("[health] mailbox gap enforce failed", error);
         }
-      } else {
-        console.log(
-          `[health] Skipping mailbox-settings (last ${lastSettingsAt ?? "never"}; due every 6h)`,
-        );
+
+        const lastSettingsAt = state.get().lastMailboxSettingsAt;
+        const settingsAgeMs = lastSettingsAt
+          ? Date.now() - Date.parse(lastSettingsAt)
+          : Number.POSITIVE_INFINITY;
+        if (settingsAgeMs >= MAILBOX_SETTINGS_EVERY_MS) {
+          try {
+            mailboxSettingsResult = await mailboxSettings.run({ mode: "full" });
+            state.setLastMailboxSettingsAt(new Date().toISOString());
+            await state.save();
+          } catch (error) {
+            console.warn("[health] mailbox-settings failed", error);
+          }
+        } else {
+          console.log(
+            `[health] Skipping full mailbox-settings (last ${lastSettingsAt ?? "never"}; due every 6h; gap enforce already ran)`,
+          );
+        }
       }
 
       return {
         health: healthResult,
         reconnect: reconnectResult,
+        mailboxGap: mailboxGapResult,
         mailboxSettings: mailboxSettingsResult,
       };
     })().finally(() => {
@@ -1113,7 +1122,7 @@ async function main(): Promise<void> {
       `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; floor ${config.minCampaignSenders} connected+inboxing; auto-resume protective pauses)` : "disabled"}`,
     );
     console.log(
-      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap, two-line signatures; runs with health)` : "not enforced"}`,
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
       `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (floor ${config.minCampaignSenders} staffable${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,

@@ -46,9 +46,24 @@ export function isApprovalGateNoise(message: string): boolean {
   );
 }
 
-/** Rate limits/timeouts + human approval gates — skip Slack paging. */
+/**
+ * SmartDelivery test ids that no longer exist (deleted, expired, or stopped
+ * and purged). Monitor/remediation still hold them in local state briefly —
+ * skip Slack paging; the next list/reconcile pass drops them.
+ */
+export function isMissingSpamTestNoise(message: string): boolean {
+  return /spam test not found|placement test not found|spam[_ -]?test.*\bnot found\b/i.test(
+    message,
+  );
+}
+
+/** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
-  return isRateLimitNoise(message) || isApprovalGateNoise(message);
+  return (
+    isRateLimitNoise(message) ||
+    isApprovalGateNoise(message) ||
+    isMissingSpamTestNoise(message)
+  );
 }
 
 /**
@@ -73,6 +88,10 @@ export function humanizeAlertError(message: string): string {
 
   if (/insufficient sequence credits|insufficient credits/i.test(raw)) {
     return "SmartDelivery is out of sequence credits — top up the SmartDelivery wallet to create more placement tests.";
+  }
+
+  if (isMissingSpamTestNoise(raw)) {
+    return "A SmartDelivery placement test is gone (deleted or expired). Skipping it.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

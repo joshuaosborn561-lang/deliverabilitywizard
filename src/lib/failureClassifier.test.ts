@@ -67,6 +67,22 @@ describe("classifyFailure", () => {
     );
   });
 
+  it("treats missing SmartDelivery spam tests as non-remediable noise", () => {
+    const c = classifyFailure("monitor", "test 502070: Spam test not found");
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:missing-test");
+  });
+
+  it("still flags SmartDelivery endpoint-not-found as stale_endpoint", () => {
+    const c = classifyFailure(
+      "scan",
+      "SmartDelivery endpoint not found — access may not be provisioned yet.",
+    );
+    assert.equal(c.class, "stale_endpoint");
+    assert.equal(c.autoRemediate, true);
+  });
+
   it("flags TypeErrors", () => {
     const c = classifyFailure(
       "remediation",

@@ -138,6 +138,55 @@ describe("ResultMonitor same-ESP alert scoring", () => {
     assert.equal(sender.scoredSameEsp, false);
   });
 
+  it("skips gone SmartDelivery tests without recording an error", async () => {
+    const smartlead = {
+      listAllEmailAccounts: async () => [],
+    } as unknown as SmartleadClient;
+
+    const state = {
+      get: () => ({
+        testedCampaigns: {
+          "1": {
+            campaignId: 1,
+            campaignName: "gone",
+            testedAt: new Date().toISOString(),
+            testIds: ["502070"],
+            mailboxCount: 1,
+            testsCreated: 1,
+          },
+        },
+      }),
+      hasAlert: () => false,
+      markAlert: () => undefined,
+      setLastMonitorAt: () => undefined,
+      save: async () => undefined,
+    } as unknown as StateStore;
+
+    const smartDelivery = {
+      listTests: async () => [],
+      getProviderwiseReport: async () => {
+        throw new Error("Spam test not found");
+      },
+      getSenderAccountReport: async () => [],
+      getDomainBlacklist: async () => {
+        throw new Error("Spam test not found");
+      },
+      getIpBlacklist: async () => [],
+      getMailboxSummary: async () => [],
+    } as unknown as SmartDeliveryClient;
+
+    const monitor = new ResultMonitor(
+      config,
+      smartDelivery,
+      smartlead,
+      fakeSlack({}),
+      state,
+    );
+    const result = await monitor.run();
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.testsChecked, 1);
+  });
+
   it("fetches Smartlead account types at most once per run", async () => {
     const captured: Captured = {};
     let calls = 0;

@@ -4,6 +4,7 @@ import {
   humanizeAlertError,
   isApprovalGateNoise,
   isBenignOpsNoise,
+  isMissingSpamTestNoise,
   isRateLimitNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
@@ -36,6 +37,14 @@ describe("alert noise", () => {
       humanizeAlertError("bounce stats: This operation was aborted"),
       /timed out/i,
     );
+  });
+
+  it("treats gone SmartDelivery spam tests as benign ops noise", () => {
+    const message = "test 502070: Spam test not found";
+    assert.equal(isMissingSpamTestNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /placement test is gone/i);
   });
 
   it("explains SmartDelivery sequence-credit exhaustion in plain English", () => {

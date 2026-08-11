@@ -100,8 +100,27 @@ export function classifyFailure(
     };
   }
 
+  // Deleted/expired SmartDelivery tests still linger in local state. "Spam
+  // test not found" is a missing resource, not a wrong API path — do not
+  // launch a remediator for it (fingerprint was collapsing to
+  // stale-endpoint:endpoint and paging every monitor pass).
   if (
-    /http 404|not found|endpoint not found|cannot (get|post) \/api/i.test(lower)
+    /spam test not found|placement test not found|spam[_ -]?test.*\bnot found\b/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "missing-test"),
+      autoRemediate: false,
+      summary: "SmartDelivery spam/placement test no longer exists",
+      raw: text,
+    };
+  }
+
+  if (
+    /http 404|endpoint not found|cannot (get|post) \/api/i.test(lower) ||
+    (/not found/i.test(lower) && /\/api\//i.test(lower))
   ) {
     const path = extractPath(lower) || "endpoint";
     return {

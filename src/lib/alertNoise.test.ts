@@ -43,7 +43,13 @@ describe("alert noise", () => {
       humanizeAlertError(
         "Failed creating tests for campaign 3763798: Insufficient sequence credits",
       ),
-      /out of sequence credits/i,
+      /sequence placement credits are exhausted/i,
+    );
+    assert.match(
+      humanizeAlertError(
+        "Failed creating tests for campaign 3763798: Insufficient sequence credits",
+      ),
+      /Deletes do not refund/i,
     );
     // Still pages Slack — human must top up — but not remediator noise.
     assert.equal(

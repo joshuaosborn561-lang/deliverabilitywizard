@@ -631,9 +631,10 @@ left remaining &lt; needed forever (`quotaBlocked`) even with 0 living autos.
 Josh: placement is supposed to run daily; a permanent backlog from dead tests
 is a bug, not intended throttling.
 
-**Tradeoff.** SmartDelivery **sequence credits** are a separate billing gate.
-Fixing quota math does not create tests when credits are exhausted — that still
-needs a top-up.
+**Tradeoff.** SmartDelivery **sequence placement credits** are a separate
+billing gate (Smartlead FAQ: credits = tests remaining on the SmartDelivery
+plan; deleting a test does **not** refund them). Fixing quota math does not
+create tests when that plan balance is exhausted.
 
 **Guard.** `countTestsAgainstQuota`, `placementCoverage — living quota`
 

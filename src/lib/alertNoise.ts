@@ -72,7 +72,7 @@ export function humanizeAlertError(message: string): string {
   const campaignAccounts = raw.match(/campaign\s+(\d+)\s+accounts/i);
 
   if (/insufficient sequence credits|insufficient credits/i.test(raw)) {
-    return "SmartDelivery is out of sequence credits — top up the SmartDelivery wallet to create more placement tests.";
+    return "SmartDelivery sequence placement credits are exhausted (separate SmartDelivery plan, not our 120 concurrent quota). Deletes do not refund credits — buy more sequence tests in Smartlead → SmartDelivery billing.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

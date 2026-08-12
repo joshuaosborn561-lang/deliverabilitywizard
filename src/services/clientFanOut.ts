@@ -151,6 +151,24 @@ export class ClientFanOutService {
             if (!dryRun) {
               await this.smartlead.addEmailAccountsToCampaign(campaignId, ids);
               await sleep(200);
+              // D30: newly attached mailboxes must hold the 10m gap immediately.
+              for (const row of chunk) {
+                try {
+                  await this.smartlead.updateEmailAccount(row.accountId, {
+                    time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
+                    max_email_per_day: this.config.messagePerDay,
+                  });
+                  await sleep(120);
+                } catch (settingsError) {
+                  const msg =
+                    settingsError instanceof Error
+                      ? settingsError.message
+                      : String(settingsError);
+                  result.errors.push(
+                    `${row.email} gap/cap after fan-out: ${msg}`,
+                  );
+                }
+              }
             }
             for (const row of chunk) {
               result.attached.push({
@@ -175,6 +193,21 @@ export class ClientFanOutService {
                     row.accountId,
                   ]);
                   await sleep(150);
+                  try {
+                    await this.smartlead.updateEmailAccount(row.accountId, {
+                      time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
+                      max_email_per_day: this.config.messagePerDay,
+                    });
+                    await sleep(120);
+                  } catch (settingsError) {
+                    const msg =
+                      settingsError instanceof Error
+                        ? settingsError.message
+                        : String(settingsError);
+                    result.errors.push(
+                      `${row.email} gap/cap after fan-out: ${msg}`,
+                    );
+                  }
                 }
                 result.attached.push({
                   email: row.email,

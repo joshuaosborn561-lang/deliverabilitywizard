@@ -378,6 +378,9 @@ export class CampaignTopUpService {
                 }),
                 from_name: `${firstName} ${lastName}`,
                 client_id: clientId,
+                // D30/D24: never leave a moved mailbox on blank gap / wrong cap.
+                time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
+                max_email_per_day: this.config.messagePerDay,
               });
               await sleep(200);
             } catch (moveError) {

@@ -54,12 +54,66 @@ describe("MailboxSettingsService", () => {
       { send: async () => undefined } as unknown as SlackClient,
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({ dryRun: false, mode: "full" });
     assert.equal(writes, 0);
     assert.equal(result.sendLimitSet, 0);
     assert.equal(result.minGapSet, 0);
     assert.equal(result.signatureSet, 0);
     assert.equal(result.warmupEnabled, 0);
+  });
+
+  it("gap enforce writes only volume + min gap, not signatures", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 9,
+          from_email: "nate@bcp.info",
+          from_name: "Nathaniel Cartwright",
+          message_per_day: 50,
+          minTimeToWaitInMins: null,
+          signature: "wrong",
+          client_id: 542838,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run in gap mode");
+      },
+    } as unknown as SmartleadClient;
+
+    const slackMessages: string[] = [];
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      {
+        send: async (msg: string) => {
+          slackMessages.push(msg);
+        },
+      } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.mode, "gap");
+    assert.equal(result.minGapSet, 1);
+    assert.equal(result.sendLimitSet, 1);
+    assert.equal(result.signatureSet, 0);
+    assert.equal(result.warmupEnabled, 0);
+    assert.deepEqual(updates[0]?.fields, {
+      max_email_per_day: 30,
+      time_to_wait_in_mins: 10,
+    });
+    assert.match(slackMessages.join("\n"), /min-gap drift fixed/i);
   });
 
   it("writes 30/day, 10m gap, and plain two-line signatures when drifted", async () => {
@@ -107,7 +161,7 @@ describe("MailboxSettingsService", () => {
       { send: async () => undefined } as unknown as SlackClient,
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({ dryRun: false, mode: "full" });
     assert.equal(result.sendLimitSet, 2);
     assert.equal(result.minGapSet, 2);
     assert.equal(result.signatureSet, 2);

@@ -344,6 +344,34 @@ describe("owner intent — mailbox settings", () => {
       ),
     );
   });
+
+  it("D35: health enforces mailbox min gap every pass, not only every 6h", async () => {
+    const fs = await import("node:fs");
+    const indexSrc = fs.readFileSync(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      indexSrc,
+      /runGapEnforce/,
+      stop(
+        "Mailbox min gap is enforced on every health pass (D35).",
+        "index.ts no longer calls runGapEnforce — gap drift can sit for hours again.",
+      ),
+    );
+    const settingsSrc = fs.readFileSync(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      settingsSrc,
+      /mode:\s*"gap"|MailboxSettingsMode/,
+      stop(
+        "Mailbox min gap is enforced on every health pass (D35).",
+        "mailboxSettings lost the gap-only mode used by the health cron.",
+      ),
+    );
+  });
 });
 
 describe("owner intent — auto bug remediator", () => {

@@ -12,6 +12,11 @@ import {
   brandFromClientDisplayName,
   desiredMailboxSignature,
 } from "../lib/mailboxSignature.js";
+import {
+  needsMinTimeGap,
+  readMessagePerDay,
+  readMinTimeGapMins,
+} from "../lib/mailboxSendSettings.js";
 import { totalDailySendCeiling } from "../lib/sendCeiling.js";
 
 /**
@@ -22,12 +27,15 @@ import { totalDailySendCeiling } from "../lib/sendCeiling.js";
  * by InboxKit arrives on whatever default it happened to get. Nothing
  * reconciled them, so the fleet drifted.
  *
- * This is a convergence pass: it applies the target settings to every mailbox
- * each run, and reports how many it had to change.
+ * Gap + daily volume (D24/D30) run on every health pass. Signatures/warmup
+ * stay on the slower full converge so a fleet rewrite cannot starve staffing.
  */
+
+export type MailboxSettingsMode = "gap" | "full";
 
 export interface MailboxSettingsResult {
   dryRun: boolean;
+  mode: MailboxSettingsMode;
   scanned: number;
   sendLimitSet: number;
   minGapSet: number;
@@ -39,32 +47,6 @@ export interface MailboxSettingsResult {
 /** Consecutive failures before the pass gives up for this run. */
 const MAX_CONSECUTIVE_FAILURES = 15;
 
-function readMessagePerDay(account: SmartleadAccountWithCampaigns): number {
-  const raw =
-    (account as { message_per_day?: number | string }).message_per_day ??
-    account.max_email_per_day;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-  if (typeof raw === "string" && raw.trim() !== "") {
-    const n = Number(raw);
-    if (Number.isFinite(n)) return n;
-  }
-  return NaN;
-}
-
-function readMinTimeGapMins(account: SmartleadAccountWithCampaigns): number {
-  const raw =
-    (account as { minTimeToWaitInMins?: number | string | null })
-      .minTimeToWaitInMins ??
-    (account as { time_to_wait_in_mins?: number | string | null })
-      .time_to_wait_in_mins;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-  if (typeof raw === "string" && raw.trim() !== "") {
-    const n = Number(raw);
-    if (Number.isFinite(n)) return n;
-  }
-  return NaN;
-}
-
 export class MailboxSettingsService {
   constructor(
     private readonly config: AppConfig,
@@ -72,10 +54,21 @@ export class MailboxSettingsService {
     private readonly slack: SlackClient,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<MailboxSettingsResult> {
+  /** D30/D24 only — safe to run every health cron. */
+  async runGapEnforce(
+    opts: { dryRun?: boolean } = {},
+  ): Promise<MailboxSettingsResult> {
+    return this.run({ ...opts, mode: "gap" });
+  }
+
+  async run(
+    opts: { dryRun?: boolean; mode?: MailboxSettingsMode } = {},
+  ): Promise<MailboxSettingsResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
+    const mode: MailboxSettingsMode = opts.mode ?? "full";
     const result: MailboxSettingsResult = {
       dryRun,
+      mode,
       scanned: 0,
       sendLimitSet: 0,
       minGapSet: 0,
@@ -97,19 +90,22 @@ export class MailboxSettingsService {
     })) as SmartleadAccountWithCampaigns[];
     result.scanned = accounts.length;
 
-    const clients = await this.smartlead
-      .listClients()
-      .catch(() => [] as SmartleadClientRecord[]);
     const brandByClientId = new Map<number, string>();
-    for (const client of clients) {
-      brandByClientId.set(
-        client.id,
-        brandFromClientDisplayName(clientDisplayName(client)),
-      );
+    if (mode === "full") {
+      const clients = await this.smartlead
+        .listClients()
+        .catch(() => [] as SmartleadClientRecord[]);
+      for (const client of clients) {
+        brandByClientId.set(
+          client.id,
+          brandFromClientDisplayName(clientDisplayName(client)),
+        );
+      }
     }
 
     console.log(
-      `[mailbox-settings] Converging ${accounts.length} mailbox(es) to ${target}/day (warmups not included), min gap ${targetGap}m, two-line signatures`,
+      `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to ${target}/day, min gap ${targetGap}m` +
+        (mode === "full" ? ", signatures/warmup" : " (gap+volume only)"),
     );
 
     let consecutiveFailures = 0;
@@ -119,30 +115,35 @@ export class MailboxSettingsService {
       if (!email || !account.id) continue;
 
       // Only write when the value differs — needless writes trip the limiter.
-      // Coerce: Smartlead often returns message_per_day as a string.
       const current = readMessagePerDay(account);
       const needsLimit = !(Number.isFinite(current) && current === target);
 
-      const currentGap = readMinTimeGapMins(account);
-      const needsGap = !(Number.isFinite(currentGap) && currentGap === targetGap);
+      const needsGap = needsMinTimeGap(account, targetGap);
 
-      const clientId =
-        typeof account.client_id === "number" && Number.isFinite(account.client_id)
-          ? account.client_id
-          : null;
-      const clientBrand = clientId != null ? brandByClientId.get(clientId) ?? "" : "";
-      const desiredSig = desiredMailboxSignature({
-        fromName: account.from_name,
-        signature: account.signature,
-        clientBrand,
-      });
-      const needsSignature =
-        desiredSig != null && (account.signature ?? "") !== desiredSig;
+      let needsSignature = false;
+      let desiredSig: string | null = null;
+      let needsWarmup = false;
 
-      const warmup = (account as { warmup_details?: { status?: string } | null })
-        .warmup_details;
-      const needsWarmup =
-        !warmup || String(warmup.status ?? "").toUpperCase() !== "ACTIVE";
+      if (mode === "full") {
+        const clientId =
+          typeof account.client_id === "number" && Number.isFinite(account.client_id)
+            ? account.client_id
+            : null;
+        const clientBrand =
+          clientId != null ? brandByClientId.get(clientId) ?? "" : "";
+        desiredSig = desiredMailboxSignature({
+          fromName: account.from_name,
+          signature: account.signature,
+          clientBrand,
+        });
+        needsSignature =
+          desiredSig != null && (account.signature ?? "") !== desiredSig;
+
+        const warmup = (account as { warmup_details?: { status?: string } | null })
+          .warmup_details;
+        needsWarmup =
+          !warmup || String(warmup.status ?? "").toUpperCase() !== "ACTIVE";
+      }
 
       if (!needsLimit && !needsGap && !needsSignature && !needsWarmup) continue;
 
@@ -163,7 +164,7 @@ export class MailboxSettingsService {
         if (needsGap) result.minGapSet += 1;
         if (needsSignature) result.signatureSet += 1;
 
-        if (!dryRun && needsWarmup) {
+        if (mode === "full" && !dryRun && needsWarmup) {
           await this.smartlead.configureWarmup(account.id, {
             warmup_enabled: true,
             total_warmup_per_day: this.config.warmupTotalPerDay,
@@ -185,19 +186,29 @@ export class MailboxSettingsService {
           );
           break;
         }
-        // Almost always a 429; back off rather than abandon the fleet.
         await sleep(2000 * consecutiveFailures);
       }
     }
 
     console.log(
-      `[mailbox-settings] Done — ${result.sendLimitSet} send limit(s)→${target}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s), ${result.errors.length} error(s)`,
+      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→${target}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s), ${result.errors.length} error(s)`,
     );
     for (const e of result.errors.slice(0, 10)) {
       console.log(`[mailbox-settings]   error: ${e}`);
     }
 
+    if (!dryRun && result.minGapSet > 0) {
+      try {
+        await this.slack.send(
+          `*Mailbox min-gap drift fixed (D30)*\n${result.minGapSet} mailbox(es) were missing the ${targetGap}-minute Minimum time gap — set now. Gap is enforced on every health pass so this should not recur.`,
+        );
+      } catch (error) {
+        console.warn("[mailbox-settings] Slack gap alert failed", error);
+      }
+    }
+
     if (
+      mode === "full" &&
       !dryRun &&
       (result.sendLimitSet ||
         result.minGapSet ||
@@ -216,3 +227,5 @@ export class MailboxSettingsService {
     return result;
   }
 }
+
+export { readMessagePerDay, readMinTimeGapMins, needsMinTimeGap };

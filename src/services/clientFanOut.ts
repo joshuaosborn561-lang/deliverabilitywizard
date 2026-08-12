@@ -11,6 +11,7 @@ import {
 import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
+import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -115,6 +116,20 @@ export class ClientFanOutService {
       for (const account of accounts as SmartleadAccountWithCampaigns[]) {
         const email = accountEmail(account);
         if (!email || !account.id) continue;
+
+        // A benched mailbox must never be fanned back out. Remediation pulls a
+        // sender for bad placement (D5) or bounce (D6) and tags it HOLD-UNTIL;
+        // without this check fan-out re-attaches it to every ACTIVE campaign
+        // for the client on the next 15-minute health pass, so held senders
+        // keep reappearing on live campaigns. Top-up already filters on this.
+        if (this.state.getHeldInbox(email)) {
+          result.skipped.push(`${email}: held`);
+          continue;
+        }
+        if (activeHoldUntilDate(tagNames(account))) {
+          result.skipped.push(`${email}: HOLD-UNTIL tag`);
+          continue;
+        }
 
         const belongs = this.accountBelongsToGroup(
           account,

@@ -664,7 +664,7 @@ export class SlackClient {
       falseHoldsFound: number;
       restored: Array<{
         email: string;
-        inboxRate: number;
+        inboxRate?: number;
         inboxRateAll?: number;
         reattachedCampaignIds: number[];
         clientName?: string;
@@ -773,11 +773,17 @@ export class SlackClient {
 
     if (restored.length) {
       parts.push(
-        `Put ${restored.length} inbox${restored.length === 1 ? "" : "es"} back on campaigns (same-ESP looks healthy again):`,
+        `Put ${restored.length} inbox${restored.length === 1 ? "" : "es"} back on campaigns:`,
       );
       for (const a of restored.slice(0, 12)) {
+        // No rate means it was released for lack of same-ESP evidence, not on
+        // a healthy score — say which, or the number reads as a placement pass.
         parts.push(
-          `• \`${a.email}\` — ${a.inboxRate.toFixed(0)}%`,
+          `• \`${a.email}\` — ${
+            typeof a.inboxRate === "number"
+              ? `${a.inboxRate.toFixed(0)}% same-ESP`
+              : "no same-ESP evidence, bounce clean"
+          }`,
         );
       }
     }

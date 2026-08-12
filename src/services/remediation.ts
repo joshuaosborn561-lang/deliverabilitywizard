@@ -79,7 +79,8 @@ export interface ClientBackfillAction {
 export interface RestoredInbox {
   id: number;
   email: string;
-  inboxRate: number;
+  /** Absent when released for lack of same-ESP evidence rather than a score. */
+  inboxRate?: number;
   inboxRateAll?: number;
   reattachedCampaignIds: number[];
   holdTagRemoved?: boolean;
@@ -95,6 +96,12 @@ export interface SameEspAuditResult {
   restored: RestoredInbox[];
   stillHeldBelowThreshold: number;
   skippedLowSamples: number;
+  /** Held, no usable same-ESP evidence, and not taken on a blended score. */
+  noSameEspEvidence: number;
+  /** Blended-score holds released because same-ESP never condemned them (D32). */
+  unprovenBlendedReleased: number;
+  /** Blended-score holds kept anyway because bounce still condemns them (D5). */
+  heldOnBounce: number;
   errors: string[];
 }
 
@@ -343,10 +350,53 @@ export class RemediationService {
       [...inboxRateRows.entries()].map(([k, v]) => [k, v.inboxRate]),
     );
 
+    // A sender can hold a clean inbox rate while bouncing hard against real
+    // leads — seed inboxes accept mail, so a placement test never sees it.
+    // Bounce is an independent signal, routed through the same hold-and-swap
+    // path as poor placement so a warmed generic takes over either way.
+    //
+    // Computed before the same-ESP audit because the audit needs it: a held
+    // record does not record *why* it was held, so bounce is the only way to
+    // tell a blended-placement hold from a bounce hold that happened to carry
+    // a blended row.
+    const bounceRotations = new Map<string, number>();
+    if (this.config.enableBounceRotation) {
+      try {
+        const stats = parseSenderBounceStats(
+          await this.smartlead.getMailboxHealthMetrics(),
+        );
+        console.log(`[remediation] bounce stats parsed for ${stats.length} sender(s)`);
+        for (const stat of stats) {
+          if (
+            shouldRotateForBounces(
+              stat,
+              this.config.bounceRateThreshold,
+              this.config.minBounceSample,
+            )
+          ) {
+            bounceRotations.set(stat.email, stat.bounceRate);
+          }
+        }
+        if (bounceRotations.size) {
+          console.log(
+            `[remediation] ${bounceRotations.size} sender(s) over ${this.config.bounceRateThreshold}% bounce:`,
+            [...bounceRotations.entries()]
+              .slice(0, 20)
+              .map(([e, r]) => `${e} ${r.toFixed(1)}%`),
+          );
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`bounce stats: ${message}`);
+        console.warn(`[remediation] bounce stats unavailable: ${message}`);
+      }
+    }
+
     // 3b) Undo prior pulls that fail the same-ESP audit (blended false positives)
     result.sameEspAudit = await this.auditAndRestoreFalseHolds({
       accounts,
       inboxRateRows,
+      bounceRotations,
       dryRun: result.dryRun,
     });
     result.errors.push(...result.sameEspAudit.errors);
@@ -503,43 +553,6 @@ export class RemediationService {
       inboxRateSameEsp?: number;
       scoredSameEsp?: boolean;
     }> = [];
-
-    // A sender can hold a clean inbox rate while bouncing hard against real
-    // leads — seed inboxes accept mail, so a placement test never sees it.
-    // Bounce is an independent signal, routed through the same hold-and-swap
-    // path as poor placement so a warmed generic takes over either way.
-    const bounceRotations = new Map<string, number>();
-    if (this.config.enableBounceRotation) {
-      try {
-        const stats = parseSenderBounceStats(
-          await this.smartlead.getMailboxHealthMetrics(),
-        );
-        console.log(`[remediation] bounce stats parsed for ${stats.length} sender(s)`);
-        for (const stat of stats) {
-          if (
-            shouldRotateForBounces(
-              stat,
-              this.config.bounceRateThreshold,
-              this.config.minBounceSample,
-            )
-          ) {
-            bounceRotations.set(stat.email, stat.bounceRate);
-          }
-        }
-        if (bounceRotations.size) {
-          console.log(
-            `[remediation] ${bounceRotations.size} sender(s) over ${this.config.bounceRateThreshold}% bounce:`,
-            [...bounceRotations.entries()]
-              .slice(0, 20)
-              .map(([e, r]) => `${e} ${r.toFixed(1)}%`),
-          );
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        result.errors.push(`bounce stats: ${message}`);
-        console.warn(`[remediation] bounce stats unavailable: ${message}`);
-      }
-    }
 
     // D28: campaign → copy signal (from placement provider split). When
     // Outlook is spam-burying while Gmail is fine, defer sender rotation and
@@ -880,6 +893,7 @@ export class RemediationService {
   async auditAndRestoreFalseHolds(opts: {
     accounts: SmartleadAccountWithCampaigns[];
     inboxRateRows: Map<string, SenderInboxRate>;
+    bounceRotations: Map<string, number>;
     dryRun: boolean;
   }): Promise<SameEspAuditResult> {
     const out: SameEspAuditResult = {
@@ -889,6 +903,9 @@ export class RemediationService {
       restored: [],
       stillHeldBelowThreshold: 0,
       skippedLowSamples: 0,
+      noSameEspEvidence: 0,
+      unprovenBlendedReleased: 0,
+      heldOnBounce: 0,
       errors: [],
     };
 
@@ -965,24 +982,40 @@ export class RemediationService {
       // Active pool swap — RecoveryPoolService restores these when healthy
       if (this.state.getSwap(email)) continue;
       const row = opts.inboxRateRows.get(email);
-      if (!row) continue;
+      const sameSamples = row?.sameEspSamples ?? 0;
+      const sameRate = row?.inboxRateSameEsp;
+      const allRate = row?.inboxRateAll ?? row?.inboxRate;
+      const hasSameEspEvidence =
+        typeof sameRate === "number" && sameSamples >= minSame;
 
-      const sameSamples = row.sameEspSamples ?? 0;
-      const sameRate = row.inboxRateSameEsp;
-      const allRate = row.inboxRateAll ?? row.inboxRate;
-
-      if (typeof sameRate !== "number" || sameSamples < minSame) {
-        out.skippedLowSamples += 1;
-        // D32: thin same-ESP samples — do NOT treat blended decision rates as
-        // confirmation the hold is still justified. Leave for a later audit
-        // once same-ESP seeds exist; bounce-driven holds are separate.
-        continue;
-      }
-
-      // Held but same-ESP is healthy → restore (prior blended-score false positive)
-      if (sameRate < threshold) {
-        out.stillHeldBelowThreshold += 1;
-        continue;
+      if (hasSameEspEvidence) {
+        // Same-ESP still condemns it — the hold stands (D32).
+        if (sameRate < threshold) {
+          out.stillHeldBelowThreshold += 1;
+          continue;
+        }
+        // Same-ESP says healthy → restore (prior blended-score false positive).
+      } else {
+        // No usable same-ESP evidence. A held mailbox is off its campaigns, so
+        // it drops out of placement tests and can never earn a fresh score —
+        // waiting for one means the hold only ever expires on the clock.
+        //
+        // D32: a blended score is never grounds to pull, so it cannot be
+        // grounds to *keep* holding either. Release those. Holds taken on a
+        // same-ESP score (or with no placement score at all — bounce pulls)
+        // are left alone; this is not a general amnesty.
+        if (record.scoredSameEsp !== false) {
+          out.noSameEspEvidence += 1;
+          continue;
+        }
+        // A held record does not say why it was held, and a bounce-driven pull
+        // can also carry scoredSameEsp=false. Bounce is an independent signal
+        // (D5) — never hand a live campaign back a sender that still fails it.
+        if (opts.bounceRotations.has(email)) {
+          out.heldOnBounce += 1;
+          continue;
+        }
+        out.unprovenBlendedReleased += 1;
       }
 
       out.falseHoldsFound += 1;
@@ -1012,6 +1045,21 @@ export class RemediationService {
       for (const id of campaignIdsOf(account)) {
         const camp = attachable.find((c) => c.id === id);
         if (camp) targetCampaigns.add(id);
+      }
+
+      // A sender belongs to one CLIENT (D26/D27) — cross-client membership is
+      // forbidden. Domain expansion above is unsafe for generic-pool domains:
+      // `crossscaleco.com` sits on every client's campaigns, so reattaching by
+      // domain alone would put one mailbox on 23 campaigns across 5 clients.
+      // Restrict to the client this mailbox was actually serving.
+      const ownerClientId =
+        client.clientId ??
+        [...targetCampaigns]
+          .map((id) => campaignClientById.get(id))
+          .find((c) => c !== null && c !== undefined);
+      for (const id of [...targetCampaigns]) {
+        const campClient = campaignClientById.get(id);
+        if (campClient !== ownerClientId) targetCampaigns.delete(id);
       }
 
       const reattached: number[] = [];
@@ -1074,9 +1122,16 @@ export class RemediationService {
           holdTagRemoved,
           clientId: client.clientId,
           clientName: client.clientName,
-          reason: `same-ESP ${sameRate.toFixed(1)}% (≥${threshold}%) over ${sameSamples} seeds; blended was ${
-            typeof allRate === "number" ? `${allRate.toFixed(1)}%` : "n/a"
-          }`,
+          reason:
+            typeof sameRate === "number"
+              ? `same-ESP ${sameRate.toFixed(1)}% (≥${threshold}%) over ${sameSamples} seeds; blended was ${
+                  typeof allRate === "number" ? `${allRate.toFixed(1)}%` : "n/a"
+                }`
+              : `held on a blended score with no same-ESP evidence since (D32); bounce clean${
+                  typeof allRate === "number"
+                    ? `; blended reads ${allRate.toFixed(1)}%`
+                    : ""
+                }`,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1084,10 +1139,18 @@ export class RemediationService {
       }
     }
 
+    // Every bucket is logged: a bare "falseHoldsFound: 0" used to read as
+    // "nothing wrong" when it really meant "nothing could be evaluated".
     console.log("[remediation] same-ESP audit", {
+      heldTotal: held.length,
+      scoredSenders: out.scoredSenders,
       falseHoldsFound: out.falseHoldsFound,
       restored: out.restored.length,
       stillHeldBelowThreshold: out.stillHeldBelowThreshold,
+      skippedLowSamples: out.skippedLowSamples,
+      noSameEspEvidence: out.noSameEspEvidence,
+      unprovenBlendedReleased: out.unprovenBlendedReleased,
+      heldOnBounce: out.heldOnBounce,
       errors: out.errors.length,
     });
 

@@ -1047,6 +1047,21 @@ export class RemediationService {
         if (camp) targetCampaigns.add(id);
       }
 
+      // A sender belongs to one CLIENT (D26/D27) — cross-client membership is
+      // forbidden. Domain expansion above is unsafe for generic-pool domains:
+      // `crossscaleco.com` sits on every client's campaigns, so reattaching by
+      // domain alone would put one mailbox on 23 campaigns across 5 clients.
+      // Restrict to the client this mailbox was actually serving.
+      const ownerClientId =
+        client.clientId ??
+        [...targetCampaigns]
+          .map((id) => campaignClientById.get(id))
+          .find((c) => c !== null && c !== undefined);
+      for (const id of [...targetCampaigns]) {
+        const campClient = campaignClientById.get(id);
+        if (campClient !== ownerClientId) targetCampaigns.delete(id);
+      }
+
       const reattached: number[] = [];
       let holdTagRemoved = false;
 

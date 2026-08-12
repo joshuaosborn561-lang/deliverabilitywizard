@@ -164,6 +164,72 @@ describe("D32 unproven blended holds", () => {
     assert.deepEqual(cleared, []);
   });
 
+  it("never reattaches a generic across client boundaries (D26/D27)", async () => {
+    // A generic-pool domain sits on many clients' campaigns, so expanding
+    // targets by sending domain would put one mailbox on all of them.
+    const record: HeldInboxRecord = {
+      accountId: 9,
+      email: "gen@pool.com",
+      heldAt: "2026-08-05T00:00:00.000Z",
+      holdUntil: "2026-08-19",
+      tagName: "HOLD-UNTIL-2026-08-19",
+      scoredSameEsp: false,
+      removedFromCampaigns: [10],
+    };
+    const cleared: string[] = [];
+    const state = {
+      listHeldInboxes: () => [record],
+      getSwap: () => undefined,
+      clearHeldInbox: (e: string) => cleared.push(e),
+      clearInboxRemediation: () => undefined,
+    } as unknown as StateStore;
+
+    const poolAccount = {
+      id: 9,
+      from_email: "gen@pool.com",
+      type: "GMAIL",
+      tags: [],
+      campaign_ids: [],
+    };
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 10, name: "ClientA", status: "ACTIVE", client_id: 1 },
+        { id: 20, name: "ClientB", status: "ACTIVE", client_id: 2 },
+      ],
+      // Same pool domain is present on BOTH clients' campaigns.
+      getCampaignEmailAccounts: async () => [poolAccount],
+      listClients: async () => [
+        { id: 1, name: "Client A" },
+        { id: 2, name: "Client B" },
+      ],
+      listTags: async () => [{ id: 7, name: "HOLD-UNTIL-2026-08-19" }],
+      removeTags: async () => undefined,
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new RemediationService(
+      config,
+      smartlead,
+      {} as unknown as SmartDeliveryClient,
+      null,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+      undefined as never,
+    );
+
+    const out = await service.auditAndRestoreFalseHolds({
+      accounts: [poolAccount] as never,
+      inboxRateRows: new Map<string, SenderInboxRate>(),
+      bounceRotations: new Map(),
+      dryRun: true,
+    });
+
+    assert.equal(out.restored.length, 1);
+    const targets = out.restored[0]?.reattachedCampaignIds ?? [];
+    assert.ok(!targets.includes(20), "must not reattach to another client");
+    assert.deepEqual(targets, [10]);
+  });
+
   it("still restores on a healthy same-ESP score, with the rate recorded", async () => {
     const records = [held("recovered@x.com", false, 6)];
     const { service, accounts } = makeFixture(records);

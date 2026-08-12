@@ -180,7 +180,16 @@ async function main(): Promise<void> {
       console.log("[remediation] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
-    remediationInFlight = remediation.run().finally(() => {
+    remediationInFlight = (async () => {
+      const result = await remediation.run();
+      // Also fed by runMonitor for the cron path; without it here a direct
+      // /run?mode=remediate discarded its errors entirely.
+      feedBugRemediator(
+        "remediation",
+        (result as { errors?: string[] })?.errors ?? [],
+      );
+      return result;
+    })().finally(() => {
       remediationInFlight = null;
     });
     return remediationInFlight;

@@ -46,6 +46,7 @@ import {
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
 import { classifyHoldOutcome } from "../lib/holdOutcome.js";
+import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 import {
   preferSenderInboxRate,
   shouldRotateForPlacement,
@@ -130,12 +131,24 @@ export interface RemediationResult {
     clientName?: string;
   }>;
   sameEspAudit?: SameEspAuditResult;
+  heldReconcile?: HeldReconcileResult;
   recoveryPool?: RecoveryPoolResult;
   clientActions: ClientBackfillAction[];
   holdTagged: number;
   pausedCampaigns: number[];
   errors: string[];
   dryRun: boolean;
+}
+
+/** Held mailboxes found still attached to ACTIVE campaigns, and re-pulled. */
+export interface HeldReconcileResult {
+  dryRun: boolean;
+  heldChecked: number;
+  stillActive: number;
+  repulled: Array<{ email: string; campaignIds: number[] }>;
+  /** Removals held back to keep a campaign at the D7 floor this pass. */
+  deferredForFloor: number;
+  errors: string[];
 }
 
 export class RemediationService {
@@ -801,6 +814,15 @@ export class RemediationService {
       }
     }
 
+    // Anything already held but still on an ACTIVE campaign is still sending —
+    // re-pull it. Runs after the main loop, which skips held mailboxes.
+    result.heldReconcile = await this.reconcileHeldStillOnCampaigns({
+      accounts,
+      campaignStatus,
+      dryRun: result.dryRun,
+    });
+    result.errors.push(...result.heldReconcile.errors);
+
     // Backfill HOLD tags for previously recovered inboxes that never got tagged
     await this.backfillHoldTags({
       accounts,
@@ -891,6 +913,116 @@ export class RemediationService {
     result.clientActions = buildClientBackfillActions(result);
     await this.finish(result);
     return result;
+  }
+
+  /**
+   * Re-pull mailboxes that are marked held but are still attached to ACTIVE
+   * campaigns — i.e. believed benched while still sending.
+   *
+   * The hold decision itself was right; only the removal failed. Two paths
+   * produced these: a removal failure that still got recorded as held (fixed
+   * in classifyHoldOutcome), and fan-out re-attaching benched senders (fixed
+   * by its held check). Both are closed, but the mailboxes already stranded
+   * stay stranded — the main loop skips anything already held, so nothing
+   * retries them. This reconciles that state rather than un-holding them.
+   */
+  async reconcileHeldStillOnCampaigns(opts: {
+    accounts: SmartleadAccountWithCampaigns[];
+    campaignStatus: Map<number, string>;
+    dryRun: boolean;
+  }): Promise<HeldReconcileResult> {
+    const out: HeldReconcileResult = {
+      dryRun: opts.dryRun,
+      heldChecked: 0,
+      stillActive: 0,
+      repulled: [],
+      deferredForFloor: 0,
+      errors: [],
+    };
+
+    // Current staffing per ACTIVE campaign, so one pass cannot gut a campaign.
+    const floor = this.config.minCampaignSenders;
+    const remainingByCampaign = new Map<number, number>();
+    for (const a of opts.accounts) {
+      for (const id of campaignIdsOf(a)) {
+        if (opts.campaignStatus.get(id) !== "ACTIVE") continue;
+        remainingByCampaign.set(id, (remainingByCampaign.get(id) ?? 0) + 1);
+      }
+    }
+
+    for (const account of opts.accounts) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (!email || !account.id) continue;
+
+      // Held in our state, or carrying an unexpired HOLD-UNTIL tag in
+      // Smartlead without a state record — both mean "should not be sending".
+      const held =
+        Boolean(this.state.getHeldInbox(email)) ||
+        Boolean(activeHoldUntilDate(tagNames(account)));
+      if (!held) continue;
+      out.heldChecked += 1;
+
+      const activeIds = campaignIdsOf(account).filter(
+        (id) => opts.campaignStatus.get(id) === "ACTIVE",
+      );
+      if (!activeIds.length) continue;
+      out.stillActive += 1;
+
+      const removed: number[] = [];
+      for (const campaignId of activeIds) {
+        // Never take a campaign that is currently at or above the D7 floor
+        // below it in a single pass — the remainder is re-pulled on later runs
+        // as top-up refills. A campaign already under the floor is not
+        // protected here: keeping a benched sender on it does not help.
+        const remaining = remainingByCampaign.get(campaignId) ?? 0;
+        if (remaining >= floor && remaining - 1 < floor) {
+          out.deferredForFloor += 1;
+          continue;
+        }
+        try {
+          if (!opts.dryRun) {
+            const onCampaign =
+              await this.smartlead.getCampaignEmailAccounts(campaignId);
+            if (!onCampaign.some((a) => a.id === account.id)) {
+              removed.push(campaignId);
+              continue;
+            }
+            // Smartlead rejects removing the last account from an ACTIVE
+            // campaign — pause first, same as the main recovery path.
+            if (onCampaign.filter((a) => a.id !== account.id).length === 0) {
+              await this.smartlead.updateCampaignStatus(campaignId, "PAUSED");
+              this.state.markPendingResume({
+                campaignId,
+                pausedAt: new Date().toISOString(),
+                reason: "held_reconcile_last_account",
+              });
+            }
+            await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
+              account.id,
+            ]);
+            await sleep(300);
+          }
+          removed.push(campaignId);
+          remainingByCampaign.set(campaignId, remaining - 1);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          out.errors.push(
+            `held re-pull ${email} from campaign ${campaignId}: ${message}`,
+          );
+        }
+      }
+
+      if (removed.length) out.repulled.push({ email, campaignIds: removed });
+    }
+
+    console.log("[remediation] held reconcile", {
+      heldChecked: out.heldChecked,
+      stillActive: out.stillActive,
+      repulled: out.repulled.length,
+      deferredForFloor: out.deferredForFloor,
+      errors: out.errors.length,
+    });
+    return out;
   }
 
   /**
@@ -1274,6 +1406,8 @@ export class RemediationService {
       poolRestores: result.recoveryPool?.restores.length ?? 0,
       clientActions: result.clientActions.length,
       pausedCampaigns: result.pausedCampaigns.length,
+      heldStillActive: result.heldReconcile?.stillActive ?? 0,
+      heldRepulled: result.heldReconcile?.repulled.length ?? 0,
       errors: result.errors.length,
     });
 

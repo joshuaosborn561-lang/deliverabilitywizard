@@ -1,6 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { SendVolumeService, businessDate } from "./sendVolume.js";
+import cron from "node-cron";
+import {
+  SendVolumeService,
+  businessDate,
+  parseSchedules,
+} from "./sendVolume.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 
@@ -110,6 +115,28 @@ describe("SendVolumeService", () => {
 
     await service.run({ alert: false });
     assert.equal(posted.length, 0);
+  });
+});
+
+describe("parseSchedules", () => {
+  it("splits the default midday / 16:30 pair into two valid expressions", () => {
+    const schedules = parseSchedules("0 12 * * *|30 16 * * *");
+    assert.deepEqual(schedules, ["0 12 * * *", "30 16 * * *"]);
+    for (const expression of schedules) {
+      assert.equal(cron.validate(expression), true, expression);
+    }
+  });
+
+  it("does not split on the commas inside a cron field", () => {
+    // A comma-separated parse would cut this into "0 9 * * 1" and "4".
+    assert.deepEqual(parseSchedules("0 9 * * 1,4"), ["0 9 * * 1,4"]);
+  });
+
+  it("tolerates padding and empty segments", () => {
+    assert.deepEqual(parseSchedules(" 0 12 * * * | | 30 16 * * * "), [
+      "0 12 * * *",
+      "30 16 * * *",
+    ]);
   });
 });
 

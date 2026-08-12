@@ -52,6 +52,20 @@ export function businessDate(now: Date = new Date()): string {
   }).format(now);
 }
 
+/**
+ * Split a `CRON_SEND_VOLUME` value into individual cron expressions.
+ *
+ * Pipe-separated rather than comma-separated because cron already uses commas
+ * inside a field ("0 9 * * 1,4"), so a comma split would silently cut valid
+ * expressions in half.
+ */
+export function parseSchedules(value: string): string[] {
+  return value
+    .split("|")
+    .map((expression) => expression.trim())
+    .filter(Boolean);
+}
+
 export class SendVolumeService {
   constructor(
     private readonly smartlead: SmartleadClient,

@@ -41,6 +41,7 @@ describe("ClientFanOutService", () => {
 
     const state = {
       getPoolMailbox: () => undefined,
+      getHeldInbox: () => undefined,
     } as unknown as StateStore;
 
     const service = new ClientFanOutService(

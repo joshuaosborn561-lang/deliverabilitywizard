@@ -45,6 +45,7 @@ import {
   parseSenderBounceStats,
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
+import { classifyHoldOutcome } from "../lib/holdOutcome.js";
 import {
   preferSenderInboxRate,
   shouldRotateForPlacement,
@@ -734,11 +735,19 @@ export class RemediationService {
         result.errors.push(`warmup ${email}: ${message}`);
       }
 
-      // Only record + dedupe when we actually recovered (warmup on) or removed from campaigns.
-      // Leave incomplete work unmarked so a later run can retry after rate limits.
-      if (!warmupOk && removedFrom.length === 0 && !result.dryRun) {
+      const holdOutcome = classifyHoldOutcome({
+        removeFailures,
+        warmupOk,
+        removedCount: removedFrom.length,
+        dryRun: result.dryRun,
+      });
+      if (holdOutcome === "retry-removal-failed") {
+        result.errors.push(
+          `${email}: ${removeFailures} campaign removal(s) failed — left unheld so the next run retries`,
+        );
         continue;
       }
+      if (holdOutcome === "retry-nothing-achieved") continue;
 
       let tagName: string | undefined;
       if (warmupOk) {
@@ -785,11 +794,9 @@ export class RemediationService {
       const pending = pendingHold.find((p) => p.accountId === account.id);
       if (pending) pending.removedFromCampaigns = removedFrom;
 
-      if (warmupOk && removeFailures === 0) {
-        this.state.markRemediation(key);
-      } else if (warmupOk) {
-        // Warmup on, but some campaign removals failed — mark so we don't keep re-warming;
-        // leave a soft error for visibility.
+      // A failed removal already bailed above, so reaching here means the
+      // mailbox really is off its campaigns — safe to dedupe.
+      if (warmupOk) {
         this.state.markRemediation(key);
       }
     }

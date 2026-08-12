@@ -46,6 +46,8 @@ import {
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
 import { classifyHoldOutcome } from "../lib/holdOutcome.js";
+import { isMissingSpamTestNoise } from "../lib/alertNoise.js";
+import { summarizeErrors } from "../lib/errorDigest.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 import {
   preferSenderInboxRate,
@@ -237,6 +239,10 @@ export class RemediationService {
       if (email) senderTypeByEmail.set(email, account.type);
     }
 
+    // Test ids we still track that SmartDelivery has purged. Counted once at
+    // the end rather than as per-test errors.
+    const deadTestIds: string[] = [];
+
     // 2) Collect blacklisted sending domains from SmartDelivery reports
     const blacklistHits = [];
     for (const testId of testIds) {
@@ -251,6 +257,10 @@ export class RemediationService {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (isMissingSpamTestNoise(message)) {
+          deadTestIds.push(testId);
+          continue;
+        }
         result.errors.push(`blacklist fetch ${testId}: ${message}`);
       }
     }
@@ -328,6 +338,13 @@ export class RemediationService {
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        // Tracked ids outlive the SmartDelivery record (stopped/purged tests).
+        // resultMonitor already skips these; remediation was still counting
+        // them, which is most of what its error total has been reporting.
+        if (isMissingSpamTestNoise(message)) {
+          deadTestIds.push(testId);
+          continue;
+        }
         result.errors.push(`sender report ${testId}: ${message}`);
       }
     }
@@ -404,6 +421,12 @@ export class RemediationService {
         result.errors.push(`bounce stats: ${message}`);
         console.warn(`[remediation] bounce stats unavailable: ${message}`);
       }
+    }
+
+    if (deadTestIds.length) {
+      console.log(
+        `[remediation] Skipped ${deadTestIds.length} tracked test id(s) SmartDelivery no longer has (not errors)`,
+      );
     }
 
     // 3b) Undo prior pulls that fail the same-ESP audit (blended false positives)
@@ -1410,6 +1433,17 @@ export class RemediationService {
       heldRepulled: result.heldReconcile?.repulled.length ?? 0,
       errors: result.errors.length,
     });
+
+    // The count alone is unreadable — a run reporting "errors: 40" gave no way
+    // to tell 40 purged test ids from 40 failed campaign removals. Print the
+    // actual messages, collapsed by shape so one repeated fault is one line.
+    if (result.errors.length) {
+      const shapes = summarizeErrors(result.errors);
+      console.warn(
+        `[remediation] ${result.errors.length} error(s) in ${shapes.length} distinct shape(s):`,
+      );
+      for (const s of shapes) console.warn(`  x${s.count}  ${s.sample}`);
+    }
 
     const acted =
       result.deletedSmartleadAccounts.length > 0 ||

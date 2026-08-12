@@ -37,6 +37,11 @@ import {
   PlacementResultsService,
 } from "./services/opsReporting.js";
 import { CursorCloudClient } from "./clients/cursorCloud.js";
+import {
+  briefingFromHealthBundle,
+  briefingFromMonitorBundle,
+  briefingNeedsPost,
+} from "./lib/execBriefing.js";
 import { OpsAuth } from "./ops/auth.js";
 import { CursorAssistantService } from "./ops/cursorAssistant.js";
 import { createOpsRouter } from "./ops/router.js";
@@ -416,12 +421,21 @@ async function main(): Promise<void> {
         }
       }
 
-      return {
+      const bundle = {
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
         mailboxSettings: mailboxSettingsResult,
       };
+      // Exec briefing on health only when something changed or needs eyes —
+      // avoids spamming every 15m when the fleet is quiet.
+      const briefing = briefingFromHealthBundle(bundle);
+      if (briefingNeedsPost(briefing)) {
+        await slack.notifyExecBriefing(briefing).catch((error) => {
+          console.warn("[health] exec briefing Slack failed", error);
+        });
+      }
+      return bundle;
     })().finally(() => {
       healthInFlight = null;
     });
@@ -524,7 +538,7 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[bounce-investigate] failed", error);
       }
-      return {
+      const bundle = {
         monitor: monitorResult,
         remediation: remediationResult,
         warmupGate: warmupGateResult,
@@ -533,6 +547,13 @@ async function main(): Promise<void> {
         campaignAudit: campaignAuditResult,
         bounceInvestigate: bounceInvestigateResult,
       };
+      // Always post a monitor exec briefing so quiet cycles are visible and
+      // coverage/staffing gaps cannot fail silently (D36).
+      const briefing = briefingFromMonitorBundle(bundle);
+      await slack.notifyExecBriefing(briefing).catch((error) => {
+        console.warn("[monitor] exec briefing Slack failed", error);
+      });
+      return bundle;
     })().finally(() => {
       monitorInFlight = null;
     });

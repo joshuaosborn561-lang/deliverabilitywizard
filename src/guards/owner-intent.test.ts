@@ -345,6 +345,30 @@ describe("owner intent — mailbox settings", () => {
     );
   });
 
+  it("D36: monitor always posts an exec briefing", async () => {
+    const fs = await import("node:fs");
+    const indexSrc = fs.readFileSync(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      indexSrc,
+      /briefingFromMonitorBundle/,
+      stop(
+        "Monitor cycles post an exec Slack briefing (D36).",
+        "index.ts no longer builds a monitor exec briefing — quiet failures go silent again.",
+      ),
+    );
+    assert.match(
+      indexSrc,
+      /notifyExecBriefing/,
+      stop(
+        "Monitor cycles post an exec Slack briefing (D36).",
+        "notifyExecBriefing was removed from the monitor path.",
+      ),
+    );
+  });
+
   it("D35: health enforces mailbox min gap every pass, not only every 6h", async () => {
     const fs = await import("node:fs");
     const indexSrc = fs.readFileSync(

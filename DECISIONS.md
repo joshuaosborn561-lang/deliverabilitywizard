@@ -568,6 +568,28 @@ minutes. Accepted over another burst day.
 
 ---
 
+## D36 — Slack ops updates are exec briefings, not silent success
+
+**Decision.** After each monitor cycle, Slack gets an **ops briefing** with
+three sections: *Done*, *Needs attention*, *Quiet (ran, nothing to fix)*.
+Health posts the same shape when there is work done or attention items (not
+every 15 minutes when idle). Untested ACTIVE campaigns, understaffed floors,
+gap drift, reconnect failures, and subsystem errors always land under
+*Needs attention* — rules must not fail silently.
+
+**Why.** Josh (2026-08-12): messages should read like exec briefings — high
+level what ran, and anything that isn’t sending / isn’t firing. Cayden-era
+fixes and fleet rules are useless if Slack only speaks when a mutation
+happens.
+
+**Tradeoff.** Monitor Slack volume is one structured message per cycle instead
+of many ad-hoc notes. Detailed mutation alerts (blacklist delete, etc.) may
+still fire; the briefing is the standing scoreboard.
+
+**Guard.** `D36: monitor posts exec briefing`
+
+---
+
 ## D31 — Mailbox signatures are plain two-line Name / Brand
 
 **Decision.** Every mailbox with a resolvable brand is converged to a plain

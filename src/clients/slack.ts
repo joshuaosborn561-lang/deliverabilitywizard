@@ -3,6 +3,10 @@ import {
   isBenignOpsNoise,
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
+import {
+  formatExecBriefing,
+  type ExecBriefingInput,
+} from "../lib/execBriefing.js";
 
 export interface SlackCredentials {
   webhookUrl?: string;
@@ -77,6 +81,11 @@ export class SlackClient {
         `Slack chat.postMessage failed: ${body.error || `HTTP ${response.status}`}`,
       );
     }
+  }
+
+  /** High-level Done / Needs attention / Quiet briefing for Josh. */
+  async notifyExecBriefing(input: ExecBriefingInput): Promise<void> {
+    await this.send(formatExecBriefing(input));
   }
 
   async notifyQuotaBlocked(details: {

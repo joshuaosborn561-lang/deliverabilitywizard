@@ -1,8 +1,6 @@
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
-import type { SmartleadClient } from "../clients/smartlead.js";
-import { accountEmail } from "../clients/smartlead.js";
 import {
   normalizeTestList,
   parseDomainBlacklistHits,
@@ -11,6 +9,12 @@ import {
   testIdOf,
   uniqueBlacklistedDomains,
 } from "../clients/smartdelivery.js";
+import type { SmartleadClient } from "../clients/smartlead.js";
+import {
+  accountEmail,
+  pickSequence,
+  sequenceSubjectPreview,
+} from "../clients/smartlead.js";
 import { isMissingSpamTestNoise } from "../lib/alertNoise.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import {
@@ -22,6 +26,10 @@ import {
   diagnoseBlacklists,
   filterTeardownBlacklistHits,
 } from "../lib/blacklistDiagnosis.js";
+import {
+  formatSpamCopySlackLines,
+  suggestSpamCopyChanges,
+} from "../lib/spamCopyHints.js";
 import type { StateStore } from "../state/store.js";
 import type {
   BlacklistedDomainHit,
@@ -276,13 +284,32 @@ export class ResultMonitor {
       console.warn(`[monitor] sender detail for ${testId} failed: ${message}`);
     }
 
+    const overall = overallSplit(rows);
+    const campaign = await this.resolveCampaignForTest(testId);
+    const copy = campaign
+      ? await this.buildCopyAdvice(campaign.id, campaign.name, overall?.spamPercent)
+      : {
+          copyHints: [] as ReturnType<typeof suggestSpamCopyChanges>,
+          copyAdviceLines: formatSpamCopySlackLines({
+            campaignName: testName,
+            hints: [],
+            spamPercent: overall?.spamPercent,
+          }),
+          sequenceSubject: undefined as string | undefined,
+        };
+
     await this.slack.notifyPlacementResult({
       testName,
       testId,
+      campaignId: campaign?.id,
+      campaignName: campaign?.name,
+      sequenceSubject: copy.sequenceSubject,
+      copyHints: copy.copyHints,
+      copyAdviceLines: copy.copyAdviceLines,
       threshold: this.config.deliverabilityThreshold,
       providers,
       autoRemediation: this.config.enableRemediation,
-      overall: overallSplit(rows),
+      overall,
       senders,
       authFailures,
       remediationThreshold: this.config.remediationInboxThreshold,
@@ -295,6 +322,99 @@ export class ResultMonitor {
         .join(", ")}`,
     );
     return 1;
+  }
+
+  /**
+   * Map a SmartDelivery test back to its Smartlead campaign (state first,
+   * then test details). Needed so spam alerts name the campaign and we can
+   * pull sequence copy for change suggestions.
+   */
+  private async resolveCampaignForTest(
+    testId: string,
+  ): Promise<{ id: number; name: string } | null> {
+    const tested = this.state.get().testedCampaigns ?? {};
+    for (const [campaignId, record] of Object.entries(tested)) {
+      if (!record?.testIds?.map(String).includes(String(testId))) continue;
+      const id = Number(campaignId);
+      if (!Number.isFinite(id)) continue;
+      return {
+        id,
+        name: record.campaignName || `Campaign ${id}`,
+      };
+    }
+
+    try {
+      const details = await this.smartDelivery.getTestDetails(testId);
+      const raw = details.campaign_id ?? details.campaignId;
+      const id = typeof raw === "number" ? raw : Number(raw);
+      if (!Number.isFinite(id) || id <= 0) return null;
+      let name = String(
+        details.campaign_name ?? details.campaignName ?? `Campaign ${id}`,
+      );
+      try {
+        const campaign = await this.smartlead.getCampaign(id);
+        if (campaign?.name) name = campaign.name;
+      } catch {
+        // Name from details is fine.
+      }
+      return { id, name };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[monitor] Could not resolve campaign for test ${testId}: ${message}`,
+      );
+      return null;
+    }
+  }
+
+  private async buildCopyAdvice(
+    campaignId: number,
+    campaignName: string,
+    spamPercent?: number,
+  ): Promise<{
+    sequenceSubject?: string;
+    copyHints: ReturnType<typeof suggestSpamCopyChanges>;
+    copyAdviceLines: string[];
+  }> {
+    let sequenceSubject: string | undefined;
+    let bodyHtml: string | undefined;
+    try {
+      const sequences = await this.smartlead.getCampaignSequences(campaignId);
+      const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
+      if (sequence) {
+        sequenceSubject = sequenceSubjectPreview(sequence);
+        const variant =
+          sequence.sequence_variants?.[0] ?? sequence.variants?.[0];
+        bodyHtml =
+          sequence.email_body ||
+          variant?.email_body ||
+          undefined;
+        if (!sequence.subject && variant?.subject) {
+          sequenceSubject = variant.subject;
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[monitor] sequence fetch for campaign ${campaignId} failed: ${message}`,
+      );
+    }
+
+    const copyHints = suggestSpamCopyChanges({
+      subject: sequenceSubject,
+      bodyHtml,
+    });
+    return {
+      sequenceSubject,
+      copyHints,
+      copyAdviceLines: formatSpamCopySlackLines({
+        campaignId,
+        campaignName,
+        subject: sequenceSubject,
+        hints: copyHints,
+        spamPercent,
+      }),
+    };
   }
 
   private async checkMailboxSummary(): Promise<number> {

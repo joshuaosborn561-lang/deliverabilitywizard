@@ -58,6 +58,7 @@ function fakeSmartDelivery(): SmartDeliveryClient {
     getDomainBlacklist: async () => [],
     getIpBlacklist: async () => [],
     getMailboxSummary: async () => [],
+    getTestDetails: async () => ({ campaign_id: 99, campaign_name: "Test Camp" }),
   } as unknown as SmartDeliveryClient;
 }
 
@@ -95,6 +96,15 @@ describe("ResultMonitor same-ESP alert scoring", () => {
       listAllEmailAccounts: async () => [
         { id: 1, from_email: "outlook-sender@brand.com", type: "OUTLOOK" },
       ],
+      getCampaign: async () => ({ id: 99, name: "Test Camp", status: "ACTIVE" }),
+      getCampaignSequences: async () => [
+        {
+          id: 1,
+          seq_number: 1,
+          subject: "quick question",
+          email_body: "<p>Hey there</p>",
+        },
+      ],
     } as unknown as SmartleadClient;
 
     const monitor = new ResultMonitor(
@@ -121,6 +131,8 @@ describe("ResultMonitor same-ESP alert scoring", () => {
       listAllEmailAccounts: async () => {
         throw new Error("smartlead down");
       },
+      getCampaign: async () => ({ id: 99, name: "Test Camp", status: "ACTIVE" }),
+      getCampaignSequences: async () => [],
     } as unknown as SmartleadClient;
 
     const monitor = new ResultMonitor(
@@ -141,6 +153,8 @@ describe("ResultMonitor same-ESP alert scoring", () => {
   it("skips gone SmartDelivery tests without recording an error", async () => {
     const smartlead = {
       listAllEmailAccounts: async () => [],
+      getCampaign: async () => ({ id: 1, name: "gone", status: "ACTIVE" }),
+      getCampaignSequences: async () => [],
     } as unknown as SmartleadClient;
 
     const state = {
@@ -195,6 +209,8 @@ describe("ResultMonitor same-ESP alert scoring", () => {
         calls += 1;
         return [{ id: 1, from_email: "outlook-sender@brand.com", type: "OUTLOOK" }];
       },
+      getCampaign: async () => ({ id: 99, name: "Test Camp", status: "ACTIVE" }),
+      getCampaignSequences: async () => [],
     } as unknown as SmartleadClient;
 
     const smartDelivery = {

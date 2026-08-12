@@ -105,6 +105,30 @@ const ConfigSchema = z.object({
     .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
   /**
+   * Campaign-level Smartlead bounce auto-pause % (settings API string).
+   * When a campaign hits this bounce rate, Smartlead stops sending (D37).
+   */
+  campaignBounceAutopauseThreshold: z.coerce
+    .number()
+    .min(0)
+    .max(100)
+    .default(5),
+  /**
+   * Converge client_id + bounce auto-pause + AI categorize (OOO / interested /
+   * not interested) on every monitor pass (D37).
+   */
+  enableCampaignSettingsGuard: boolFromEnv(true),
+  /** Campaign statuses that receive the settings converge write. */
+  campaignSettingsGuardStatuses: z
+    .string()
+    .default("ACTIVE,PAUSED,DRAFTED,STOPPED")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toUpperCase())
+        .filter(Boolean),
+    ),
+  /**
    * Aggregate sender bounce on a PAUSED campaign that triggers investigation
    * (D29). Separate from per-sender rotation (bounceRateThreshold).
    */
@@ -308,6 +332,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
+    campaignBounceAutopauseThreshold:
+      env.CAMPAIGN_BOUNCE_AUTOPAUSE_THRESHOLD ?? "5",
+    enableCampaignSettingsGuard: env.ENABLE_CAMPAIGN_SETTINGS_GUARD,
+    campaignSettingsGuardStatuses:
+      env.CAMPAIGN_SETTINGS_GUARD_STATUSES ?? "ACTIVE,PAUSED,DRAFTED,STOPPED",
     campaignBounceInvestigateThreshold:
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",

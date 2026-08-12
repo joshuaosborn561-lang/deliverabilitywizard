@@ -25,6 +25,7 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
+import { SendVolumeService } from "./services/sendVolume.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -283,6 +284,7 @@ async function main(): Promise<void> {
     smartDelivery,
     state,
   );
+  const sendVolume = new SendVolumeService(smartlead, slack);
   const manualRotation = new ManualRotationService(
     config,
     smartlead,
@@ -533,6 +535,14 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[bounce-investigate] failed", error);
       }
+      // Top-line "are we actually sending?" number. Read-only and last in the
+      // pass so its per-campaign analytics calls cannot delay staffing work.
+      let sendVolumeResult: unknown = null;
+      try {
+        sendVolumeResult = await sendVolume.run();
+      } catch (error) {
+        console.warn("[send-volume] failed", error);
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
@@ -541,6 +551,7 @@ async function main(): Promise<void> {
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
         bounceInvestigate: bounceInvestigateResult,
+        sendVolume: sendVolumeResult,
       };
     })().finally(() => {
       monitorInFlight = null;

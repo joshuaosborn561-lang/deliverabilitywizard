@@ -5,7 +5,22 @@
  * Pattern borrowed from the Slack placement takeaway: Outlook buried while
  * Gmail is fine usually means Microsoft is filtering the message content;
  * every provider weak is ambiguous; one provider weak is mailbox/ESP local.
+ *
+ * D36 adds the provider-agnostic case. The original rule only names Outlook
+ * as the buried side, so a Gmail-buried offer read as "local to that ESP".
+ * What actually indicates copy is *divergence*: the same senders reaching one
+ * provider's inbox while another buries them. Which provider is which does not
+ * matter, and a mailbox fault cannot explain it — the same mailbox is fine on
+ * the other side.
  */
+
+/**
+ * Points between the best and worst provider before divergence alone is
+ * treated as a copy signal. Sized off the Goliath L3 Manufacturing Defense
+ * campaigns: identical senders read 100% Office365 / 36% G Suite (a 64-point
+ * spread) on the AirPods offer, and 100% / 100% on the Tickets offer.
+ */
+export const COPY_DIVERGENCE_POINTS = 40;
 
 export type CopySignalKind =
   | "copy_likely"
@@ -46,6 +61,27 @@ export function classifyCopySignal(
       kind: "copy_likely",
       reason:
         "Outlook/Microsoft is mostly spam while Gmail is healthier — usually the copy/offer, not one mailbox.",
+    };
+  }
+
+  // D36 — provider-agnostic divergence. One provider is healthy while another
+  // is far below it, using the same senders. A broken mailbox cannot land 100%
+  // on one provider and be buried on another, so the message is the variable.
+  // Deliberately checked before the "one weak provider = mailbox/ESP local"
+  // branch, which is what previously swallowed this case.
+  const best = providers.reduce((a, b) =>
+    b.inboxPercent > a.inboxPercent ? b : a,
+  );
+  const worst = providers.reduce((a, b) =>
+    b.inboxPercent < a.inboxPercent ? b : a,
+  );
+  if (
+    best.inboxPercent >= threshold &&
+    best.inboxPercent - worst.inboxPercent >= COPY_DIVERGENCE_POINTS
+  ) {
+    return {
+      kind: "copy_likely",
+      reason: `${worst.name} is at ${worst.inboxPercent.toFixed(0)}% while ${best.name} is at ${best.inboxPercent.toFixed(0)}% on the same senders — a ${Math.round(best.inboxPercent - worst.inboxPercent)}-point split points at the copy/offer, not the mailboxes.`,
     };
   }
 

@@ -229,6 +229,37 @@ describe("owner intent", () => {
     );
   });
 
+  it("D36: copySignal defers a wide provider split in either direction", async () => {
+    const { classifyCopySignal, shouldDeferSenderRotationForCopy } =
+      await import("../lib/copySignal.js");
+    // Gmail buried, Outlook perfect — the Goliath shape D28 alone missed.
+    const gmailBuried = classifyCopySignal([
+      { name: "Office365", inboxPercent: 100 },
+      { name: "G Suite", inboxPercent: 36.4 },
+    ]);
+    assert.equal(
+      shouldDeferSenderRotationForCopy(gmailBuried),
+      true,
+      stop(
+        "A wide provider split is copy, whichever provider is buried (D36).",
+        "Gmail-buried placement no longer defers rotation, so senders get benched for a copy problem.",
+      ),
+    );
+    // Everything weak together is not a copy call — could be the domain.
+    const allWeak = classifyCopySignal([
+      { name: "Office365", inboxPercent: 60 },
+      { name: "G Suite", inboxPercent: 10 },
+    ]);
+    assert.equal(
+      shouldDeferSenderRotationForCopy(allWeak),
+      false,
+      stop(
+        "Divergence needs a healthy provider to diverge from (D36).",
+        "Campaigns weak on every provider now defer rotation, which would stall real remediation.",
+      ),
+    );
+  });
+
   it("D7: exclusions match a campaign id exactly, never by substring", () => {
     const msrs = { id: 3628940, name: "MSRS2 Ticket Offer" };
     assert.equal(

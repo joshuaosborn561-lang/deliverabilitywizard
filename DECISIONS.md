@@ -634,3 +634,38 @@ also be treated as pre-warmed. Accepted: those domains are dedicated,
 operator-managed pre-warmed inventory.
 
 **Guard.** `warmupGate helpers — explicit pre-warmed fleet domain`
+
+---
+
+## D36 — Copy detection is provider-agnostic (supersedes D28's direction rule)
+
+**Decision.** `copySignal` treats a **wide split between providers** as
+copy_likely regardless of which provider is buried: when the best provider is
+at or above the placement threshold and another sits `COPY_DIVERGENCE_POINTS`
+(40) or more below it, that is a copy/offer signal and sender rotation defers.
+D28's original Outlook-buried branch is kept and still fires; this adds the
+general case beneath it. Everything weak together stays **ambiguous** — that
+may be the domain, not the copy.
+
+**Why.** D28 named Outlook as the buried side, so a Gmail-buried offer read as
+"local to that ESP/mailbox" and never raised the copy flag. Goliath L3
+Manufacturing Defense showed the flaw with a controlled pair on 2026-08-12: the
+same 100 `cleartechco.com` senders scored **100% Office365 / 100% G Suite** on
+the *Tickets* offer and **100% Office365 / 36% G Suite** on the *AirPods*
+offer, same day, same lead segment. A mailbox fault cannot land 100% on one
+provider and 36% on another — the message is the variable. Mirroring the rule
+alone would still have missed it, because the original branch requires the
+buried side under 20% and Gmail read 36%.
+
+**Tradeoff — read this before approving.** A provider-specific *reputation*
+problem (e.g. Google Postmaster damage on a sending domain) produces the same
+provider-level shape as a copy problem, and `classifyCopySignal` only sees one
+campaign's provider split. Such a case would now be misread as copy and sender
+rotation would defer, leaving a genuinely damaged domain sending. The Goliath
+evidence separates the two only because sibling campaigns share senders and
+score 100% — information the function does not receive. Accepted for now
+because the failure mode is a *delay* in rotation with a Slack nudge attached,
+not a silent one; the stronger fix is to compare campaigns that share senders.
+
+**Guard.** `copySignal` — `D36 — divergence is provider-agnostic`,
+`COPY_DIVERGENCE_POINTS`, owner-intent D36.

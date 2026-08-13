@@ -133,6 +133,7 @@ export interface RemediationResult {
     clientName?: string;
   }>;
   sameEspAudit?: SameEspAuditResult;
+  heldRelease?: HeldReleaseResult;
   heldReconcile?: HeldReconcileResult;
   recoveryPool?: RecoveryPoolResult;
   clientActions: ClientBackfillAction[];
@@ -140,6 +141,19 @@ export interface RemediationResult {
   pausedCampaigns: number[];
   errors: string[];
   dryRun: boolean;
+}
+
+/** Holds that have served their D6 term and were let go. */
+export interface HeldReleaseResult {
+  dryRun: boolean;
+  heldChecked: number;
+  /** Served `RECOVERY_HOLD_DAYS` and released. */
+  released: Array<{ email: string; heldDays: number; stampedUntil?: string }>;
+  /** Served the term but still failing bounce — kept (D5). */
+  keptOnBounce: number;
+  /** Covered by an active pool swap; RecoveryPoolService owns those. */
+  skippedActiveSwap: number;
+  errors: string[];
 }
 
 /** Held mailboxes found still attached to ACTIVE campaigns, and re-pulled. */
@@ -837,6 +851,15 @@ export class RemediationService {
       }
     }
 
+    // Holds that have served their D6 term go back into supply. Runs before
+    // the still-active reconcile so a sender is not re-pulled on its way out.
+    result.heldRelease = await this.releaseServedHolds({
+      accounts,
+      bounceRotations,
+      dryRun: result.dryRun,
+    });
+    result.errors.push(...result.heldRelease.errors);
+
     // Anything already held but still on an ACTIVE campaign is still sending —
     // re-pull it. Runs after the main loop, which skips held mailboxes.
     result.heldReconcile = await this.reconcileHeldStillOnCampaigns({
@@ -936,6 +959,111 @@ export class RemediationService {
     result.clientActions = buildClientBackfillActions(result);
     await this.finish(result);
     return result;
+  }
+
+  /**
+   * Let go of holds that have served their term.
+   *
+   * D6 holds a benched sender `RECOVERY_HOLD_DAYS` (14) "before returning",
+   * but nothing ever returned them: `heldInboxes` records are only cleared by
+   * a pool-swap restore, the same-ESP audit, BCP restore, or a manual
+   * rotation. With none of those firing a record lives forever, and because
+   * `getHeldInbox` gates remediation, campaign top-up and fan-out, the mailbox
+   * is out of supply permanently.
+   *
+   * Term is measured from `heldAt` against the current setting, deliberately
+   * not against the stamped `holdUntil` — holds written before D6 landed carry
+   * a 28-day stamp from the old `+4 weeks` default, and those senders have
+   * long since served the 14 days Josh actually asked for.
+   */
+  async releaseServedHolds(opts: {
+    accounts: SmartleadAccountWithCampaigns[];
+    bounceRotations: Map<string, number>;
+    dryRun: boolean;
+  }): Promise<HeldReleaseResult> {
+    const out: HeldReleaseResult = {
+      dryRun: opts.dryRun,
+      heldChecked: 0,
+      released: [],
+      keptOnBounce: 0,
+      skippedActiveSwap: 0,
+      errors: [],
+    };
+
+    const term = this.config.recoveryHoldDays;
+    const byEmail = new Map(
+      opts.accounts
+        .map((a) => [accountEmail(a)?.toLowerCase(), a] as const)
+        .filter((x): x is [string, SmartleadAccountWithCampaigns] => Boolean(x[0])),
+    );
+
+    for (const record of this.state.listHeldInboxes()) {
+      const email = record.email.toLowerCase();
+      out.heldChecked += 1;
+
+      // A pool generic is covering this sender's campaigns; RecoveryPoolService
+      // restores the pair together and must not be pre-empted here.
+      if (this.state.getSwap(email)) {
+        out.skippedActiveSwap += 1;
+        continue;
+      }
+
+      const heldDays = record.heldAt
+        ? (Date.now() - Date.parse(record.heldAt)) / 86_400_000
+        : Number.NaN;
+      if (!Number.isFinite(heldDays) || heldDays < term) continue;
+
+      // Bounce is independent of the hold clock (D5). Returning a sender that
+      // still fails it would put a known bouncer straight back into supply.
+      if (opts.bounceRotations.has(email)) {
+        out.keptOnBounce += 1;
+        continue;
+      }
+
+      try {
+        if (!opts.dryRun) {
+          const account = byEmail.get(email);
+          const tagIds = new Set<number>();
+          for (const t of account?.tags ?? []) {
+            const id = (t as { tag_id?: number; id?: number }).tag_id ??
+              (t as { id?: number }).id;
+            const name =
+              (t as { tag_name?: string; name?: string }).tag_name ??
+              (t as { name?: string }).name ??
+              "";
+            if (typeof id === "number" && /^HOLD-UNTIL-/i.test(name)) {
+              tagIds.add(id);
+            }
+          }
+          if (account?.id && tagIds.size) {
+            await this.smartlead.removeTags([account.id], [...tagIds]);
+            await sleep(200);
+          }
+          // Both gates must clear or the sender stays skipped: the main loop
+          // checks getHeldInbox *and* hasRemediation.
+          this.state.clearHeldInbox(email);
+          this.state.clearInboxRemediation(email);
+        }
+        out.released.push({
+          email,
+          heldDays: Number(heldDays.toFixed(1)),
+          stampedUntil: record.holdUntil,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        out.errors.push(`release hold ${email}: ${message}`);
+      }
+    }
+
+    console.log("[remediation] hold release", {
+      term,
+      heldChecked: out.heldChecked,
+      released: out.released.length,
+      keptOnBounce: out.keptOnBounce,
+      skippedActiveSwap: out.skippedActiveSwap,
+      errors: out.errors.length,
+    });
+    return out;
   }
 
   /**
@@ -1429,6 +1557,7 @@ export class RemediationService {
       poolRestores: result.recoveryPool?.restores.length ?? 0,
       clientActions: result.clientActions.length,
       pausedCampaigns: result.pausedCampaigns.length,
+      heldReleased: result.heldRelease?.released.length ?? 0,
       heldStillActive: result.heldReconcile?.stillActive ?? 0,
       heldRepulled: result.heldReconcile?.repulled.length ?? 0,
       errors: result.errors.length,

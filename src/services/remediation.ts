@@ -122,9 +122,12 @@ export interface RemediationResult {
   recoveredInboxes: Array<{
     id: number;
     email: string;
+    /** Same-ESP inbox % — or the bounce % when `bounceDriven`. */
     inboxRate: number;
     inboxRateAll?: number;
     scoredSameEsp?: boolean;
+    /** Pulled on bounce (D5) rather than placement, so `inboxRate` is bounce. */
+    bounceDriven?: boolean;
     removedFromCampaigns: number[];
     holdUntil?: string;
     tagName?: string;
@@ -820,6 +823,10 @@ export class RemediationService {
         inboxRate: rate,
         inboxRateAll: rateRow?.inboxRateAll,
         scoredSameEsp: rateRow?.scoredSameEsp,
+        // `rate` is the bounce rate when there is no placement row, so the
+        // reader needs to know which number they are looking at — 25% bounce
+        // and 25% inbox mean opposite things.
+        bounceDriven,
         removedFromCampaigns: removedFrom,
         holdUntil: holdUntilDate,
         tagName,

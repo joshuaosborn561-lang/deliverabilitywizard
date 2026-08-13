@@ -404,7 +404,13 @@ export class SlackClient {
           "",
           `*Weak senders (under ${details.remediationThreshold ?? 80}%):*`,
           ...weakSenders.slice(0, 15).map((s) => {
-            const esp = s.scoredSameEsp ? "" : " _(blended ESP)_";
+            // Placement rotation runs on the same-ESP score only (D32), so say
+            // so rather than leaving it blank. A blended score is display-only
+            // and never pulls a mailbox — label it that way instead of letting
+            // it sit next to a "pulling off campaigns" line unqualified.
+            const esp = s.scoredSameEsp
+              ? " _(same-ESP)_"
+              : " _(blended — not used for rotation)_";
             const action = s.willRemediate
               ? ` → pulling off campaigns, ${details.holdDays ?? 14}d warmup, generic rotated in`
               : "";
@@ -653,6 +659,7 @@ export class SlackClient {
       inboxRate: number;
       inboxRateAll?: number;
       scoredSameEsp?: boolean;
+      bounceDriven?: boolean;
       removedFromCampaigns: number[];
       holdUntil?: string;
       tagName?: string;
@@ -765,9 +772,15 @@ export class SlackClient {
       );
       for (const a of details.recoveredInboxes.slice(0, 12)) {
         const hold = a.holdUntil ? ` · hold until ${a.holdUntil}` : "";
-        parts.push(
-          `• \`${a.email}\` — ${a.inboxRate.toFixed(0)}%${hold}`,
-        );
+        // Say which number this is. Placement pulls are same-ESP only (D32),
+        // and a bounce pull reports the bounce % in the same field — 25%
+        // bounce and 25% inbox mean opposite things.
+        const measure = a.bounceDriven
+          ? `${a.inboxRate.toFixed(0)}% bounce`
+          : a.scoredSameEsp
+            ? `${a.inboxRate.toFixed(0)}% same-ESP inbox`
+            : `${a.inboxRate.toFixed(0)}% inbox`;
+        parts.push(`• \`${a.email}\` — ${measure}${hold}`);
       }
     }
 

@@ -163,6 +163,24 @@ export function classifyFailure(
     };
   }
 
+  // Seed inventory / PROVIDER_IDS config — SmartDelivery has no usable seeds
+  // for the ids we sent. A remediator cannot provision seeds; Josh must fix
+  // PROVIDER_IDS or wait for SmartDelivery capacity.
+  if (
+    /no seed accounts found|seed accounts found for the provided provider/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "auth_access",
+      fingerprint: fingerprintOf("auth_access", "seed-providers"),
+      autoRemediate: false,
+      summary:
+        "SmartDelivery has no seed accounts for the provided provider IDs (human/config)",
+      raw: text,
+    };
+  }
+
   if (
     /smartdelivery access|api access is not active|invalid api key|unauthorized/i.test(
       lower,

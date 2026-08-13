@@ -435,6 +435,18 @@ export class CampaignScanner {
           `Failed creating tests for campaign ${plan.campaign.id}: ${message}`,
         );
         result.skipped += 1;
+        // Same provider_ids are used for every campaign this run — further
+        // creates will fail the same way. Stop and surface once.
+        if (
+          /no seed accounts found|seed accounts found for the provided provider/i.test(
+            message,
+          )
+        ) {
+          console.warn(
+            `[scan] No SmartDelivery seed accounts for provider IDs — skipping remaining campaigns this run`,
+          );
+          break;
+        }
       }
     }
 

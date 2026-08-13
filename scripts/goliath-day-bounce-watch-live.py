@@ -21,6 +21,8 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 ENV_PATH = "/tmp/railway-prod.env"
 WATCH_TZ = ZoneInfo("America/Chicago")
+# Josh: watch TOMORROW's sends only — hard-lock to Aug 13 Chicago.
+WATCH_DATE_ONLY = "2026-08-13"
 THRESHOLD = 7.0
 MIN_SENT = 50
 POLL_SECS = 900  # 15 minutes
@@ -42,6 +44,11 @@ def load_env() -> dict[str, str]:
 
 def chicago_date() -> str:
     return datetime.now(WATCH_TZ).date().isoformat()
+
+
+def watch_date() -> str:
+    """Hard-locked to Josh's requested day; never act on a prior calendar day."""
+    return WATCH_DATE_ONLY
 
 
 def api_get(sl: str, path: str, params: dict) -> dict:
@@ -167,8 +174,14 @@ def once(env: dict[str, str], state: dict) -> None:
     sl = env["SMARTLEAD_API_KEY"]
     token = env["SLACK_BOT_TOKEN"]
     channel = env.get("SLACK_CHANNEL_ID") or env.get("SLACK_CHANNEL")
-    day = chicago_date()
-    print(f"[{datetime.now(timezone.utc).isoformat()}] watch day={day}", flush=True)
+    day = watch_date()
+    today = chicago_date()
+    print(
+        f"[{datetime.now(timezone.utc).isoformat()}] watch day={day} (chicago today={today})",
+        flush=True,
+    )
+    if today < day:
+        print("  before watch day — measuring only, no pauses until Aug 13 Chicago", flush=True)
 
     stats = []
     for cid in GOLIATH_IDS:
@@ -186,6 +199,10 @@ def once(env: dict[str, str], state: dict) -> None:
         stats.append({"id": cid, "name": name, "sent": sent, "bounced": bounced, "rate": rate, "status": status})
         print(f"  #{cid} [{status}] sent={sent} bounce={bounced} rate={rate:.1f}% {name}", flush=True)
         time.sleep(0.25)
+
+    # Never pause/alert until the locked watch calendar day has started.
+    if today < day:
+        return
 
     for row in stats:
         if row["sent"] < MIN_SENT:
@@ -235,20 +252,19 @@ def main() -> None:
     state = load_state()
     # Run until end of Chicago Aug 13 (or later if still useful through Aug 14 06:00 Chicago)
     end = datetime(2026, 8, 14, 6, 0, tzinfo=WATCH_TZ)
+    # Clear any Aug-12 alert keys from the misfire so they cannot confuse Aug-13.
+    state["alerted"] = [k for k in state.get("alerted", []) if k.startswith("2026-08-13:")]
+    save_state(state)
     slack_send(
         env["SLACK_BOT_TOKEN"],
         env.get("SLACK_CHANNEL_ID") or env.get("SLACK_CHANNEL"),
-        "*Goliath live poller online* — checking every 15m for Aug 13 Chicago day bounce >7%. Will pause + ping Cayden on trips.",
+        "*Goliath live poller online (Aug 13 only)* — every 15m; pause + ping Cayden if that day’s bounce goes over 7%.",
     )
     while datetime.now(WATCH_TZ) < end:
         try:
             once(env, state)
         except Exception as e:
             print(f"loop error: {e}", flush=True)
-        # stop early once Chicago day rolls past Aug 13 and we've done a final pass
-        if chicago_date() > "2026-08-13" and datetime.now(WATCH_TZ).hour >= 1:
-            # one more pass after midnight then exit at end bound
-            pass
         time.sleep(POLL_SECS)
     print("watcher finished", flush=True)
 

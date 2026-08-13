@@ -133,6 +133,48 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * Lead reply categories for AI auto-categorize (Interested / Not Interested /
+   * Out Of Office, etc.). Ids are account-stable on this Smartlead tenant.
+   */
+  fetchLeadCategories(): Promise<
+    Array<{ id: number; name: string; sentiment_type?: string | null }>
+  > {
+    return apiRequest(BASE_URL, this.apiKey, "leads/fetch-categories");
+  }
+
+  /**
+   * Campaign-level settings Smartlead does not always echo on GET campaign.
+   * Converge by writing: bounce auto-pause %, AI categorize category ids,
+   * OOO auto-categorize, and optional client_id.
+   *
+   * `bounce_autopause_threshold` must be a string. `reactivateOOOwithDelay`
+   * must be a number. `autoCategorizeOOO` and `autoReactivateOOO` are mutually
+   * exclusive — prefer categorize.
+   */
+  updateCampaignSettings(
+    campaignId: number,
+    settings: {
+      bounce_autopause_threshold?: string;
+      ai_categorisation_options?: number[];
+      out_of_office_detection_settings?: {
+        ignoreOOOasReply?: boolean;
+        autoReactivateOOO?: boolean;
+        reactivateOOOwithDelay?: number;
+        autoCategorizeOOO?: boolean;
+      };
+      client_id?: number | null;
+      enable_ai_esp_matching?: boolean;
+    },
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`, {
+        method: "POST",
+        body: settings,
+      }),
+    );
+  }
+
   async listAllEmailAccounts(options: {
     fetchCampaigns?: boolean;
   } = {}): Promise<SmartleadAccountWithCampaigns[]> {

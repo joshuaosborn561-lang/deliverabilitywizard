@@ -634,3 +634,38 @@ also be treated as pre-warmed. Accepted: those domains are dedicated,
 operator-managed pre-warmed inventory.
 
 **Guard.** `warmupGate helpers — explicit pre-warmed fleet domain`
+
+---
+
+## D37 — Campaign settings + spam copy advice are standing checks
+
+**Decision.** On every monitor pass the app converges Smartlead campaign
+settings via API and keeps mailbox min-gap on the health path (D30/D35):
+
+1. **Mailbox min send gap = 10 minutes** at mailbox level (`time_to_wait_in_mins`
+   / list field `minTimeToWaitInMins`) — already D30/D35.
+2. **Every campaign has a `client_id`**. Missing clients are matched by name or
+   sibling brand token; unmatchable ACTIVE/PAUSED/DRAFTED campaigns Slack for
+   human assignment (no inventing clients).
+3. **Bounce auto-pause at 5%** via `bounce_autopause_threshold: "5"` (string —
+   Smartlead rejects a number).
+4. **AI auto-categorize** Interested (`1`), Not Interested (`3`), Out Of Office
+   (`6`) plus `out_of_office_detection_settings.autoCategorizeOOO: true`
+   (`autoReactivateOOO` false — mutually exclusive; `reactivateOOOwithDelay`
+   is a number).
+5. **When placement shows spam**, Slack names the **campaign id/name** and
+   lists **concrete copy changes** (gift bait, urgency, promo CTAs, etc.) from
+   sequence 1 subject/body — not just provider %.
+
+GET campaign often omits bounce/category/OOO fields, so the guard **always
+writes** the desired payload (idempotent). Statuses default to
+ACTIVE,PAUSED,DRAFTED,STOPPED.
+
+**Why.** Josh (2026-08-12): these must be standing rules enforceable through
+the APIs and part of regular checks — not one-off manual UI clicks. Spam
+alerts must say which campaign and what words/changes to make.
+
+**Tradeoff.** Monitor writes settings on every eligible campaign each cycle
+(~tens of POSTs). Accepted: Smartlead does not expose a reliable read-back.
+
+**Guard.** `D37: every campaign gets client + 5% bounce autopause + AI cats via API`

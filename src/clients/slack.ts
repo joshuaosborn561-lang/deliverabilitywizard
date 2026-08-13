@@ -313,6 +313,15 @@ export class SlackClient {
   async notifyPlacementResult(details: {
     testName?: string;
     testId?: string;
+    /** Smartlead campaign this placement test belongs to. */
+    campaignId?: number;
+    campaignName?: string;
+    /** Seq-1 subject for copy review. */
+    sequenceSubject?: string;
+    /** Concrete copy-change suggestions when spam is elevated. */
+    copyHints?: Array<{ trigger: string; found: string; change: string }>;
+    /** Preformatted Slack lines for campaign + copy advice. */
+    copyAdviceLines?: string[];
     threshold: number;
     providers: Array<{ name: string; inboxPercent: number }>;
     /** When true, tell the user we're handling weak inboxes automatically */
@@ -417,9 +426,23 @@ export class SlackClient {
       }
     }
 
+    const copyLines =
+      details.copyAdviceLines && details.copyAdviceLines.length
+        ? ["", ...details.copyAdviceLines]
+        : [];
+
+    const titleCampaign =
+      details.campaignId != null
+        ? ` — #${details.campaignId}${
+            details.campaignName ? ` ${details.campaignName}` : ""
+          }`
+        : details.campaignName
+          ? ` — ${details.campaignName}`
+          : "";
+
     await this.send(
       [
-        `*Placement look — ${details.testName || "campaign test"}*`,
+        `*Placement look — ${details.testName || "campaign test"}${titleCampaign}*`,
         details.testId ? `Test id: \`${details.testId}\`` : undefined,
         overallLine,
         "",
@@ -428,6 +451,7 @@ export class SlackClient {
         ...scoreLines,
         ...authLines,
         ...senderLines,
+        ...copyLines,
         "",
         details.autoRemediation
           ? `Senders under ${details.remediationThreshold ?? 80}% same-ESP are pulled off campaigns automatically, warmed for ${details.holdDays ?? 14} days, and covered by an ESP-matched generic with the client's signature. No action needed unless I flag a burned domain.`

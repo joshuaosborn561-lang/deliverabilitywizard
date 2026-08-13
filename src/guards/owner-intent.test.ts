@@ -372,6 +372,97 @@ describe("owner intent — mailbox settings", () => {
       ),
     );
   });
+
+  it("D37: every campaign gets client + 5% bounce autopause + AI cats via API", () => {
+    assert.equal(
+      defaults.enableCampaignSettingsGuard,
+      true,
+      stop(
+        "Campaign settings guard runs on every monitor pass (D37).",
+        "ENABLE_CAMPAIGN_SETTINGS_GUARD now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.campaignBounceAutopauseThreshold,
+      5,
+      stop(
+        "Campaign bounce auto-pause is 5% (D37).",
+        `Bounce autopause is now ${defaults.campaignBounceAutopauseThreshold}%.`,
+      ),
+    );
+  });
+
+  it("D37: monitor cron converges campaign settings through the API", async () => {
+    const fs = await import("node:fs");
+    const indexSrc = fs.readFileSync(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      indexSrc,
+      /campaignSettingsGuard\.run/,
+      stop(
+        "Campaign settings (client / bounce / AI cats) are part of regular monitor checks (D37).",
+        "index.ts no longer runs campaignSettingsGuard on the monitor path.",
+      ),
+    );
+    const guardSrc = fs.readFileSync(
+      new URL("../services/campaignSettingsGuard.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      guardSrc,
+      /bounce_autopause_threshold/,
+      stop(
+        "Campaign settings guard writes bounce autopause via API (D37).",
+        "campaignSettingsGuard lost the bounce_autopause_threshold write.",
+      ),
+    );
+    assert.match(
+      guardSrc,
+      /ai_categorisation_options/,
+      stop(
+        "Campaign settings guard writes AI categorize (interested / not interested / OOO) (D37).",
+        "campaignSettingsGuard lost ai_categorisation_options.",
+      ),
+    );
+    assert.match(
+      guardSrc,
+      /autoCategorizeOOO:\s*true/,
+      stop(
+        "Campaign settings guard enables OOO auto-categorize (D37).",
+        "campaignSettingsGuard no longer sets autoCategorizeOOO true.",
+      ),
+    );
+  });
+
+  it("D37: spam placement alerts name the campaign and suggest copy changes", async () => {
+    const fs = await import("node:fs");
+    const monitorSrc = fs.readFileSync(
+      new URL("../services/resultMonitor.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      monitorSrc,
+      /buildCopyAdvice|suggestSpamCopyChanges/,
+      stop(
+        "When placement shows spam, Slack must name the campaign and what copy to change (D37).",
+        "resultMonitor no longer builds spam copy advice.",
+      ),
+    );
+    const slackSrc = fs.readFileSync(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      slackSrc,
+      /copyAdviceLines/,
+      stop(
+        "When placement shows spam, Slack must name the campaign and what copy to change (D37).",
+        "notifyPlacementResult lost copyAdviceLines.",
+      ),
+    );
+  });
 });
 
 describe("owner intent — auto bug remediator", () => {

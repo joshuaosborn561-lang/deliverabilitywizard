@@ -26,6 +26,7 @@ import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
+import { CampaignSettingsGuardService } from "./services/campaignSettingsGuard.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
@@ -250,6 +251,11 @@ async function main(): Promise<void> {
 
   const dnsAudit = new DnsAuditService(smartlead, slack, state);
   const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
+  const campaignSettingsGuard = new CampaignSettingsGuardService(
+    config,
+    smartlead,
+    slack,
+  );
   const campaignTopUp = new CampaignTopUpService(
     config,
     smartlead,
@@ -533,6 +539,15 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[bounce-investigate] failed", error);
       }
+      // D37: client_id + 5% bounce autopause + AI cats (interested / not
+      // interested / OOO) on every monitor pass. GET omits these fields so we
+      // always write the desired payload.
+      let campaignSettingsResult: unknown = null;
+      try {
+        campaignSettingsResult = await campaignSettingsGuard.run();
+      } catch (error) {
+        console.warn("[campaign-settings] failed", error);
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
@@ -541,6 +556,7 @@ async function main(): Promise<void> {
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
         bounceInvestigate: bounceInvestigateResult,
+        campaignSettings: campaignSettingsResult,
       };
     })().finally(() => {
       monitorInFlight = null;

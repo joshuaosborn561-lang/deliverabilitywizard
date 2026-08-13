@@ -14,6 +14,13 @@ export interface SmartleadAccountWithCampaigns extends SmartleadEmailAccount {
   campaigns?: Array<{ id?: number; campaign_id?: number; status?: string; name?: string }>;
 }
 
+/** Subset of `campaigns/{id}/analytics-by-date` we rely on. */
+export interface SmartleadCampaignAnalytics {
+  sent_count?: number | string;
+  bounce_count?: number | string;
+  reply_count?: number | string;
+}
+
 export interface SmartleadClientRecord {
   id: number;
   name?: string;
@@ -122,6 +129,26 @@ export class SmartleadClient {
       {
         query: options.fetchCampaigns ? { fetch_campaigns: true } : undefined,
       },
+    );
+  }
+
+  /**
+   * Sent/bounce/reply counts for one campaign over a date window.
+   *
+   * Smartlead has no account-wide volume endpoint, so a fleet total means one
+   * call per campaign. Callers should filter to ACTIVE first and pace the
+   * loop — see SendVolumeService.
+   */
+  getCampaignAnalyticsByDate(
+    campaignId: number,
+    startDate: string,
+    endDate: string,
+  ): Promise<SmartleadCampaignAnalytics> {
+    return apiRequest<SmartleadCampaignAnalytics>(
+      BASE_URL,
+      this.apiKey,
+      `campaigns/${campaignId}/analytics-by-date`,
+      { query: { start_date: startDate, end_date: endDate } },
     );
   }
 

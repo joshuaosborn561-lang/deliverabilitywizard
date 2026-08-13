@@ -38,10 +38,18 @@ same session, with its guard.** Chat history is not durable; the repo is.
 Work on your own branch and merge through a PR — never push to another
 person's branch.
 
-**`cursor/generic-pool-expand-240-2606` is the deploying branch.** Railway
-watches it, so a push there is a production deploy. Each push restarts the
-app, which resets the cron cycle — avoid pushing in a tight sequence when you
-need a scheduled job to actually run.
+**`main` is the deploying branch.** Railway watches it, so a merge there is a
+production deploy. Each deploy restarts the app, which resets the cron cycle —
+avoid merging in a tight sequence when you need a scheduled job to actually
+run.
+
+Verified against Railway on 2026-08-12: service `deliverabilitywizard`,
+environment `production`, source repo `joshuaosborn561-lang/deliverabilitywizard`,
+active deployment on branch `main` at `7b6c83b`. This file previously named
+`cursor/generic-pool-expand-240-2606`, which by then sat 123 commits behind
+`main` and had not deployed in a long time. Re-check with
+`railway status --json` rather than trusting this line if the two ever
+disagree again.
 
 ## Warmup and the mailbox pool
 

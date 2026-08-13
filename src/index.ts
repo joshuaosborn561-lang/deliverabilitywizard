@@ -25,6 +25,7 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
+import { SendVolumeService, parseSchedules } from "./services/sendVolume.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -283,6 +284,7 @@ async function main(): Promise<void> {
     smartDelivery,
     state,
   );
+  const sendVolume = new SendVolumeService(smartlead, slack);
   const manualRotation = new ManualRotationService(
     config,
     smartlead,
@@ -567,6 +569,12 @@ async function main(): Promise<void> {
       `Invalid CRON_ACCOUNT_RECONNECT expression: ${config.cronAccountReconnect}`,
     );
   }
+  const sendVolumeSchedules = parseSchedules(config.cronSendVolume);
+  for (const expression of sendVolumeSchedules) {
+    if (!cron.validate(expression)) {
+      throw new Error(`Invalid CRON_SEND_VOLUME expression: ${expression}`);
+    }
+  }
 
   cron.schedule(config.cronScan, () => {
     void runScan("cron").catch((error) => {
@@ -581,6 +589,21 @@ async function main(): Promise<void> {
       feedBugRemediator("monitor-cron", error);
     });
   });
+
+  // Send volume posts at fixed local times (default midday and 16:30 ET), not
+  // with the monitor: the number only means something once the day has some
+  // sending in it. America/New_York so the times track EST/EDT.
+  for (const expression of sendVolumeSchedules) {
+    cron.schedule(
+      expression,
+      () => {
+        void sendVolume.run().catch((error) => {
+          console.error("[send-volume] Unhandled cron error", error);
+        });
+      },
+      { timezone: "America/New_York" },
+    );
+  }
 
   if (config.enableCampaignHealth) {
     cron.schedule(config.cronHealth, () => {

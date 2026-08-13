@@ -104,6 +104,63 @@ export class SlackClient {
     );
   }
 
+  /**
+   * Top-line fleet volume. Unlike the other notifiers this one is not
+   * conditional on a fault — it is the standing "are we sending?" number, so
+   * it posts even on a clean day.
+   */
+  async notifySendVolume(summary: {
+    date: string;
+    activeCampaigns: number;
+    sendingCampaigns: number;
+    totalSent: number;
+    rows: Array<{ id: number; name: string; sent: number }>;
+    errors: string[];
+  }): Promise<void> {
+    const lines = [
+      `*Send volume — ${summary.date}*`,
+      `${summary.totalSent.toLocaleString("en-US")} email${summary.totalSent === 1 ? "" : "s"} sent across ${summary.sendingCampaigns}/${summary.activeCampaigns} active campaign${summary.activeCampaigns === 1 ? "" : "s"}.`,
+    ];
+
+    const top = summary.rows.filter((r) => r.sent > 0).slice(0, 5);
+    if (top.length) {
+      lines.push(
+        "",
+        "Top senders:",
+        ...top.map(
+          (r) => `• ${r.name} — ${r.sent.toLocaleString("en-US")}`,
+        ),
+      );
+    }
+
+    // An ACTIVE campaign sending nothing is the failure this number exists to
+    // surface, so name them rather than leaving it to the reader's subtraction.
+    const idle = summary.rows.filter((r) => r.sent === 0);
+    if (idle.length) {
+      lines.push(
+        "",
+        `Active but sent nothing (${idle.length}):`,
+        ...idle.slice(0, 10).map((r) => `• ${r.name}`),
+      );
+      if (idle.length > 10) {
+        lines.push(`• …and ${idle.length - 10} more`);
+      }
+    }
+
+    const seriousErrors = summary.errors
+      .filter((e) => !isRateLimitNoise(e))
+      .map(humanizeAlertError);
+    if (seriousErrors.length) {
+      lines.push(
+        "",
+        "Could not read volume for:",
+        ...seriousErrors.slice(0, 5).map((e) => `• ${e}`),
+      );
+    }
+
+    await this.send(lines.join("\n"));
+  }
+
   async notifyRunSummary(summary: {
     scanned: number;
     eligible: number;

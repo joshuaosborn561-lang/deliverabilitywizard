@@ -105,6 +105,23 @@ const ConfigSchema = z.object({
     .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
   /**
+   * Goliath day-scoped bounce watch (D38). Uses analytics-by-date for the
+   * America/Chicago calendar day — not lifetime campaign bounce. Over
+   * threshold → pause + Slack Cayden + diagnose.
+   */
+  enableGoliathDayBounceWatch: boolFromEnv(true),
+  goliathBounceWatchThreshold: z.coerce.number().min(0).max(100).default(7),
+  goliathBounceWatchMinSent: z.coerce.number().int().min(1).default(50),
+  goliathBounceWatchTimezone: z.string().default("America/Chicago"),
+  /**
+   * Optional YYYY-MM-DD override. Empty = "today" in goliathBounceWatchTimezone.
+   */
+  goliathBounceWatchDate: z.string().default(""),
+  /** Dave Ackley / Goliath Smartlead client id (name match also works). */
+  goliathClientId: z.coerce.number().int().nonnegative().default(548611),
+  /** Slack user id for <@U…> Cayden pings on Goliath day-bounce trips. */
+  caydenSlackUserId: z.string().default(""),
+  /**
    * Aggregate sender bounce on a PAUSED campaign that triggers investigation
    * (D29). Separate from per-sender rotation (bounceRateThreshold).
    */
@@ -308,6 +325,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
+    enableGoliathDayBounceWatch: env.ENABLE_GOLIATH_DAY_BOUNCE_WATCH,
+    goliathBounceWatchThreshold: env.GOLIATH_BOUNCE_WATCH_THRESHOLD ?? "7",
+    goliathBounceWatchMinSent: env.GOLIATH_BOUNCE_WATCH_MIN_SENT ?? "50",
+    goliathBounceWatchTimezone:
+      env.GOLIATH_BOUNCE_WATCH_TIMEZONE ?? "America/Chicago",
+    goliathBounceWatchDate: env.GOLIATH_BOUNCE_WATCH_DATE ?? "",
+    goliathClientId: env.GOLIATH_CLIENT_ID ?? "548611",
+    caydenSlackUserId: env.CAYDEN_SLACK_USER_ID ?? "",
     campaignBounceInvestigateThreshold:
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",

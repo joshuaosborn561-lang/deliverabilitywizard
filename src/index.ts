@@ -25,6 +25,7 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
+import { GoliathDayBounceWatchService } from "./services/goliathDayBounceWatch.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -277,6 +278,13 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const goliathDayBounceWatch = new GoliathDayBounceWatchService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,
@@ -425,11 +433,20 @@ async function main(): Promise<void> {
         }
       }
 
+      // D38: Goliath day-scoped bounce (Chicago calendar day) → pause + Cayden.
+      let goliathDayBounceResult: unknown = null;
+      try {
+        goliathDayBounceResult = await goliathDayBounceWatch.run();
+      } catch (error) {
+        console.warn("[health] goliath day-bounce watch failed", error);
+      }
+
       return {
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
         mailboxSettings: mailboxSettingsResult,
+        goliathDayBounce: goliathDayBounceResult,
       };
     })().finally(() => {
       healthInFlight = null;
@@ -840,6 +857,21 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await bounceInvestigate.run();
         res.json({ ok: true, mode: "bounce-investigate", result });
+        return;
+      }
+      if (
+        mode === "goliath-day-bounce" ||
+        mode === "goliath-bounce-watch"
+      ) {
+        assertRuntimeSecrets(config);
+        const watchDate =
+          typeof req.query.date === "string" && req.query.date.trim()
+            ? req.query.date.trim()
+            : typeof req.body?.date === "string" && req.body.date.trim()
+              ? req.body.date.trim()
+              : undefined;
+        const result = await goliathDayBounceWatch.run({ watchDate });
+        res.json({ ok: true, mode: "goliath-day-bounce", result });
         return;
       }
       if (mode === "remediate") {

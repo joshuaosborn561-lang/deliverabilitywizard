@@ -634,3 +634,30 @@ also be treated as pre-warmed. Accepted: those domains are dedicated,
 operator-managed pre-warmed inventory.
 
 **Guard.** `warmupGate helpers — explicit pre-warmed fleet domain`
+
+---
+
+## D38 — Goliath day-bounce watch (Chicago calendar day, 7%)
+
+**Decision.** For Goliath campaigns (name contains "Goliath" or client
+`548611` Dave Ackley), every health pass checks **that calendar day's** bounce
+via Smartlead `analytics-by-date` in `America/Chicago` — **not** lifetime
+campaign bounce. If `bounced/sent` for the day is **over 7%** with at least
+`GOLIATH_BOUNCE_WATCH_MIN_SENT` (50) sends:
+
+1. **Pause** the campaign
+2. **Slack Cayden** (and the deliverability channel) with the day stats
+3. **Diagnose** delays/sender-originated vs spam/copy vs mailbox rotation
+   (bounce categories, Tickets vs AirPods siblings, placement copy signal,
+   hot senders)
+
+Deduped per campaign per watch date so we do not pause/alert twice.
+
+**Why.** Josh (2026-08-13): keep an eye on Goliath tomorrow; if any campaign
+hits over 7% bounce on *tomorrow's sends*, pause, alert Cayden, and figure out
+the cause. Lifetime bounce would mix prior days and miss a single bad day.
+
+**Tradeoff.** Early morning under 50 sends will not trip even if the early rate
+looks ugly — waits for a real sample. Accepted to avoid false pauses.
+
+**Guard.** `D38: Goliath day-bounce watch pauses over 7% Chicago-day bounce`

@@ -372,6 +372,49 @@ describe("owner intent — mailbox settings", () => {
       ),
     );
   });
+
+  it("D38: Goliath day-bounce watch pauses over 7% Chicago-day bounce", () => {
+    assert.equal(
+      defaults.enableGoliathDayBounceWatch,
+      true,
+      stop(
+        "Goliath day-bounce watch stays on (D38).",
+        "ENABLE_GOLIATH_DAY_BOUNCE_WATCH now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.goliathBounceWatchThreshold,
+      7,
+      stop(
+        "Goliath day bounce threshold is 7% (D38).",
+        `Threshold is now ${defaults.goliathBounceWatchThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.goliathBounceWatchTimezone,
+      "America/Chicago",
+      stop(
+        "Goliath day bounce uses America/Chicago calendar days (D38).",
+        `Timezone is now ${defaults.goliathBounceWatchTimezone}.`,
+      ),
+    );
+  });
+
+  it("D38: health cron runs the Goliath day-bounce watch", async () => {
+    const fs = await import("node:fs");
+    const indexSrc = fs.readFileSync(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      indexSrc,
+      /goliathDayBounceWatch\.run/,
+      stop(
+        "Goliath day-bounce watch runs on the health loop (D38).",
+        "index.ts no longer calls goliathDayBounceWatch.run during health.",
+      ),
+    );
+  });
 });
 
 describe("owner intent — auto bug remediator", () => {

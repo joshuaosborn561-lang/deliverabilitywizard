@@ -206,6 +206,66 @@ export class SmartleadClient {
   }
 
   /**
+   * Campaign metrics for a calendar date range (Smartlead scopes to emails
+   * *sent* in that window). Use for day-scoped bounce: bounced/sent on that
+   * day only — not lifetime campaign bounce.
+   */
+  getCampaignAnalyticsByDate(
+    campaignId: number,
+    startDate: string,
+    endDate: string,
+  ): Promise<{
+    id?: number;
+    name?: string;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+    sent_count?: string | number;
+    bounce_count?: string | number;
+    unique_sent_count?: string | number;
+    reply_count?: string | number;
+    [key: string]: unknown;
+  }> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/analytics-by-date`, {
+      query: { start_date: startDate, end_date: endDate },
+    });
+  }
+
+  /**
+   * Per-email campaign statistics (supports sent_time_* filters and
+   * email_status=bounced). Used to sample bounce categories for diagnosis.
+   */
+  getCampaignStatistics(
+    campaignId: number,
+    options: {
+      emailStatus?: string;
+      sentTimeStartDate?: string;
+      sentTimeEndDate?: string;
+      offset?: number;
+      limit?: number;
+    } = {},
+  ): Promise<{
+    total_stats?: string | number;
+    data?: Array<Record<string, unknown>>;
+    offset?: number;
+    limit?: number;
+  }> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`, {
+      query: {
+        ...(options.emailStatus ? { email_status: options.emailStatus } : {}),
+        ...(options.sentTimeStartDate
+          ? { sent_time_start_date: options.sentTimeStartDate }
+          : {}),
+        ...(options.sentTimeEndDate
+          ? { sent_time_end_date: options.sentTimeEndDate }
+          : {}),
+        offset: options.offset ?? 0,
+        limit: options.limit ?? 100,
+      },
+    });
+  }
+
+  /**
    * Daily sending ceiling for a mailbox.
    *
    * Written as `max_email_per_day` (POST); Smartlead rejects `message_per_day`

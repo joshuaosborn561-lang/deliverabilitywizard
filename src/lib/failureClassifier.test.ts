@@ -112,6 +112,17 @@ describe("classifyFailure", () => {
     assert.match(c.summary, /sequence credits exhausted/i);
   });
 
+  it("does not auto-remediate missing SmartDelivery seed accounts", () => {
+    const c = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 3798227: No seed accounts found for the provided provider IDs",
+    );
+    assert.equal(c.class, "auth_access");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "auth-access:seed-providers");
+    assert.match(c.summary, /no seed accounts/i);
+  });
+
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",

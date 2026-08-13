@@ -47,6 +47,22 @@ describe("alert noise", () => {
     assert.match(humanizeAlertError(message), /placement test is gone/i);
   });
 
+  it("explains missing SmartDelivery seed accounts in plain English", () => {
+    assert.match(
+      humanizeAlertError(
+        "Failed creating tests for campaign 3798227: No seed accounts found for the provided provider IDs",
+      ),
+      /no seed inboxes for the provider IDs/i,
+    );
+    // Still pages Slack — human/config must fix PROVIDER_IDS or seed capacity.
+    assert.equal(
+      isRateLimitNoise(
+        "Failed creating tests for campaign 3798227: No seed accounts found for the provided provider IDs",
+      ),
+      false,
+    );
+  });
+
   it("explains SmartDelivery sequence-credit exhaustion in plain English", () => {
     assert.match(
       humanizeAlertError(

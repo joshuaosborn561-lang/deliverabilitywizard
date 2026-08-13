@@ -90,6 +90,14 @@ export function humanizeAlertError(message: string): string {
     return "SmartDelivery is out of sequence credits — top up the SmartDelivery wallet to create more placement tests.";
   }
 
+  if (
+    /no seed accounts found|seed accounts found for the provided provider/i.test(
+      raw,
+    )
+  ) {
+    return "SmartDelivery has no seed inboxes for the provider IDs we sent — check PROVIDER_IDS or SmartDelivery seed capacity.";
+  }
+
   if (isMissingSpamTestNoise(raw)) {
     return "A SmartDelivery placement test is gone (deleted or expired). Skipping it.";
   }

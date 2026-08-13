@@ -347,6 +347,50 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.equal(typeof payload.scheduler_cron_value, "object");
   });
 
+  it("stops creating after SmartDelivery reports no seed accounts for provider IDs", async () => {
+    const config = loadConfig({});
+    let createCalls = 0;
+
+    const smartlead = {
+      listCampaigns: async () => [
+        campaign(1, "ACTIVE"),
+        campaign(2, "ACTIVE"),
+      ],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [11, 22],
+      createAutomatedPlacement: async () => {
+        createCalls += 1;
+        throw new Error(
+          "No seed accounts found for the provided provider IDs",
+        );
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(createCalls, 1, "must not retry every campaign with the same dead provider IDs");
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0]!, /No seed accounts found/i);
+  });
+
   it("does not skip a campaign whose only prior test is a completed manual", async () => {
     const config = loadConfig({});
     const created: unknown[] = [];

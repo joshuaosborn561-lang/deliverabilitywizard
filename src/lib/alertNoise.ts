@@ -57,12 +57,24 @@ export function isMissingSpamTestNoise(message: string): boolean {
   );
 }
 
+/**
+ * Remediation intentionally left a mailbox unheld after a campaign removal
+ * failed so the next cron retries. The specific `remove …` row is the
+ * actionable error; this summary is redundant in Slack.
+ */
+export function isRetryRemovalNoise(message: string): boolean {
+  return /left unheld so the next run retries|campaign removal\(s\) failed/i.test(
+    message,
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
     isRateLimitNoise(message) ||
     isApprovalGateNoise(message) ||
-    isMissingSpamTestNoise(message)
+    isMissingSpamTestNoise(message) ||
+    isRetryRemovalNoise(message)
   );
 }
 
@@ -100,6 +112,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isMissingSpamTestNoise(raw)) {
     return "A SmartDelivery placement test is gone (deleted or expired). Skipping it.";
+  }
+
+  if (isRetryRemovalNoise(raw)) {
+    return "Could not take a mailbox off every campaign — left it unheld so the next run retries.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

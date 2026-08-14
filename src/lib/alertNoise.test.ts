@@ -6,6 +6,7 @@ import {
   isBenignOpsNoise,
   isMissingSpamTestNoise,
   isRateLimitNoise,
+  isRetryRemovalNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
 
@@ -45,6 +46,15 @@ describe("alert noise", () => {
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
     assert.match(humanizeAlertError(message), /placement test is gone/i);
+  });
+
+  it("treats intentional unheld-retry summaries as benign ops noise", () => {
+    const message =
+      "escob.breanna@crossscaleco.com: 1 campaign removal(s) failed — left unheld so the next run retries";
+    assert.equal(isRetryRemovalNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /left it unheld/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

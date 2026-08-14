@@ -148,6 +148,16 @@ describe("classifyFailure", () => {
     assert.equal(pool.fingerprint, denied.fingerprint);
   });
 
+  it("treats intentional unheld-retry summaries as non-remediable noise", () => {
+    const c = classifyFailure(
+      "remediation",
+      "escob.breanna@crossscaleco.com: 1 campaign removal(s) failed — left unheld so the next run retries",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:retry-removal");
+  });
+
   it("fingerprints unknown failures stably across numeric ids", () => {
     const a = classifyFailure("scan", "weird boom campaign 501701");
     const b = classifyFailure("scan", "weird boom campaign 999999");

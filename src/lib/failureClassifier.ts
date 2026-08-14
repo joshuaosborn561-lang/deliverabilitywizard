@@ -82,6 +82,25 @@ export function classifyFailure(
     };
   }
 
+  // Intentional holdOutcome retry path: a campaign removal failed, so we
+  // deliberately left the mailbox unheld for the next run. The specific
+  // `remove … from campaign …` error is the actionable row; this summary must
+  // not launch a remediator (and used to fingerprint per-mailbox as unknown).
+  if (
+    /left unheld so the next run retries|campaign removal\(s\) failed/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "retry-removal"),
+      autoRemediate: false,
+      summary:
+        "Remediation deferred a hold after a campaign removal failed (next run retries)",
+      raw: text,
+    };
+  }
+
   if (
     /is required|must be of type|must be greater than|invalid parameters|validation/i.test(
       lower,

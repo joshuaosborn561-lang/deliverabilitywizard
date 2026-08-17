@@ -18,7 +18,6 @@ import {
   readMinTimeGapMins,
 } from "../lib/mailboxSendSettings.js";
 import { totalDailySendCeiling } from "../lib/sendCeiling.js";
-import type { StateStore } from "../state/store.js";
 
 /**
  * Hold every mailbox at the agreed sending settings.
@@ -30,7 +29,6 @@ import type { StateStore } from "../state/store.js";
  *
  * Gap + daily volume (D24/D30) run on every health pass. Signatures/warmup
  * stay on the slower full converge so a fleet rewrite cannot starve staffing.
- * D39 resting inboxes stay at MESSAGE_PER_DAY 0.
  */
 
 export type MailboxSettingsMode = "gap" | "full";
@@ -54,7 +52,6 @@ export class MailboxSettingsService {
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
-    private readonly state?: StateStore,
   ) {}
 
   /** D30/D24 only — safe to run every health cron. */
@@ -86,9 +83,7 @@ export class MailboxSettingsService {
     }
 
     // UI: "Message Per Day (Warmups not included)" — write MESSAGE_PER_DAY (D24).
-    // D39 resting inboxes stay at 0 so they keep warmup + placement tests but
-    // do not send lead volume.
-    const liveTarget = totalDailySendCeiling(this.config);
+    const target = totalDailySendCeiling(this.config);
     const targetGap = this.config.mailboxMinTimeGapMins;
     const accounts = (await this.smartlead.listAllEmailAccounts({
       fetchCampaigns: false,
@@ -109,7 +104,7 @@ export class MailboxSettingsService {
     }
 
     console.log(
-      `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to ${liveTarget}/day (0 while resting), min gap ${targetGap}m` +
+      `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to ${target}/day, min gap ${targetGap}m` +
         (mode === "full" ? ", signatures/warmup" : " (gap+volume only)"),
     );
 
@@ -118,8 +113,6 @@ export class MailboxSettingsService {
     for (const account of accounts) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
-
-      const target = this.state?.getRestingInbox(email) ? 0 : liveTarget;
 
       // Only write when the value differs — needless writes trip the limiter.
       const current = readMessagePerDay(account);
@@ -198,7 +191,7 @@ export class MailboxSettingsService {
     }
 
     console.log(
-      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→${liveTarget}/0-resting, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s), ${result.errors.length} error(s)`,
+      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→${target}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s), ${result.errors.length} error(s)`,
     );
     for (const e of result.errors.slice(0, 10)) {
       console.log(`[mailbox-settings]   error: ${e}`);
@@ -224,7 +217,7 @@ export class MailboxSettingsService {
     ) {
       try {
         await this.slack.send(
-          `Mailbox settings: ${result.sendLimitSet}→${liveTarget}/day (0 while resting), ${result.minGapSet}→${targetGap}m gap, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) (of ${result.scanned} scanned).`,
+          `Mailbox settings: ${result.sendLimitSet}→${target}/day (warmups not included), ${result.minGapSet}→${targetGap}m gap, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) (of ${result.scanned} scanned).`,
         );
       } catch (error) {
         console.warn("[mailbox-settings] Slack notify failed", error);

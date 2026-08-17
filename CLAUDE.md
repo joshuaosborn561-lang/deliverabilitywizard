@@ -114,21 +114,19 @@ investigate: copy_likely → Slack only; otherwise rotate worst bouncers and
 try to resume (D29).
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
-from the pool — connected SMTP/IMAP and not held **or resting (D39)**.
-Disconnected membership does not count (D25). Health also runs same-client
-fan-out and client-inbox rest. `CRON_HEALTH` every 15m; Measure on the slower
-monitor.
+from the pool — connected SMTP/IMAP and not held. Disconnected membership
+does not count (D25). Health also runs same-client fan-out. `CRON_HEALTH`
+every 15m; Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
 
-## Client inbox rest (D39)
+## Held mailbox placement tests (D39)
 
-Client inboxes (not pre-warmed generic fleets) split into cohorts A/B/C. One
-cohort rests each week (~33%): `MESSAGE_PER_DAY = 0`, warmup on, **still on
-campaigns** so placement tests continue. Restore to the normal send cap only
-at ≥90% same-ESP inbox. Slack day briefs are per-client (sent / bounce% /
-spam% + active vs resting counts), not per-mailbox lists.
+Mailboxes pulled off campaigns (HOLD) get **separate** SmartDelivery recurring
+tests — not re-attached to live campaigns. Slack day briefs are per-client
+(sent / bounce% / spam% + active vs held counts), not per-mailbox lists.
+A/B/C weekly rest is not shipped yet.
 
 ## Mailbox settings
 

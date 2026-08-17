@@ -126,8 +126,8 @@ export interface AppState {
   remediatedKeys: Record<string, string>;
   /** Inboxes held off campaigns until holdUntil (ISO date or datetime) */
   heldInboxes: Record<string, HeldInboxRecord>;
-  /** D39 — client inboxes resting (MESSAGE_PER_DAY=0) until ≥90% same-ESP */
-  restingInboxes: Record<string, RestingInboxRecord>;
+  /** D39 — separate placement tests for held/pulled mailboxes */
+  heldPlacementTests: Record<string, HeldPlacementTestRecord>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
   poolMailboxes: Record<string, PoolMailboxRecord>;
   /** Active original↔pool swaps */
@@ -204,16 +204,13 @@ export interface HeldInboxRecord {
   swappedWithPoolEmail?: string;
 }
 
-/** D39 — client inbox resting (send cap 0; still on campaigns for tests). */
-export interface RestingInboxRecord {
-  accountId: number;
-  email: string;
-  clientId: number;
-  clientName?: string;
-  cohort: "A" | "B" | "C";
-  restingSince: string;
-  /** Last same-ESP inbox % seen while resting (if any). */
-  lastSameEspInbox?: number;
+/** D39 — SmartDelivery test covering held/pulled mailboxes (off campaigns). */
+export interface HeldPlacementTestRecord {
+  testId: string;
+  emails: string[];
+  /** Campaign id used only as the sequence shell — senders are not re-attached. */
+  campaignId: number;
+  createdAt: string;
 }
 
 const EMPTY_POOL_PROVISION: PoolProvisionState = {
@@ -233,7 +230,7 @@ const EMPTY_STATE: AppState = {
   alertedKeys: {},
   remediatedKeys: {},
   heldInboxes: {},
-  restingInboxes: {},
+  heldPlacementTests: {},
   poolMailboxes: {},
   activeSwaps: {},
   clientMonthlyUsage: {},
@@ -263,7 +260,7 @@ export class StateStore {
         alertedKeys: parsed.alertedKeys ?? {},
         remediatedKeys: parsed.remediatedKeys ?? {},
         heldInboxes: parsed.heldInboxes ?? {},
-        restingInboxes: parsed.restingInboxes ?? {},
+        heldPlacementTests: parsed.heldPlacementTests ?? {},
         poolMailboxes: parsed.poolMailboxes ?? {},
         activeSwaps: parsed.activeSwaps ?? {},
         clientMonthlyUsage: parsed.clientMonthlyUsage ?? {},
@@ -355,20 +352,20 @@ export class StateStore {
     delete this.state.heldInboxes[email.toLowerCase()];
   }
 
-  markRestingInbox(record: RestingInboxRecord): void {
-    this.state.restingInboxes[record.email.toLowerCase()] = record;
+  markHeldPlacementTest(record: HeldPlacementTestRecord): void {
+    this.state.heldPlacementTests[record.testId] = record;
   }
 
-  getRestingInbox(email: string): RestingInboxRecord | undefined {
-    return this.state.restingInboxes[email.toLowerCase()];
+  getHeldPlacementTest(testId: string): HeldPlacementTestRecord | undefined {
+    return this.state.heldPlacementTests[testId];
   }
 
-  listRestingInboxes(): RestingInboxRecord[] {
-    return Object.values(this.state.restingInboxes);
+  listHeldPlacementTests(): HeldPlacementTestRecord[] {
+    return Object.values(this.state.heldPlacementTests);
   }
 
-  clearRestingInbox(email: string): void {
-    delete this.state.restingInboxes[email.toLowerCase()];
+  clearHeldPlacementTest(testId: string): void {
+    delete this.state.heldPlacementTests[testId];
   }
 
   clearInboxRemediation(email: string): void {

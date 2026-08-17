@@ -672,35 +672,28 @@ not a silent one; the stronger fix is to compare campaigns that share senders.
 
 ---
 
-## D39 — Client-inbox rest cohorts (66/33) with placement tests + 90% restore
+## D39 — Slack client day brief + separate tests for held/pulled mailboxes
 
-**Decision.** Client inboxes (not generic fleet domains / pool generics) are
-hashed into three stable cohorts A/B/C. Each America/New_York ISO week, one
-cohort rests (~33%) and the other two stay live (~66%).
+**Decision.** Fleet Slack is **per client**, not per mailbox: day sent, bounce %,
+spam % (from latest placement), and how many client inboxes are active vs
+**held** (pulled off campaigns).
 
-Rest means **`MESSAGE_PER_DAY = 0`** with warmup still on. Campaign membership
-is unchanged (D26 fan-out still applies) so SmartDelivery recurring tests keep
-covering resting inboxes. Resting senders do **not** count as staffable for
-the campaign floor (D25).
+Mailboxes that are held / pulled off live campaigns get **their own** recurring
+SmartDelivery tests. Those tests use a campaign only as a sequence shell and
+list the held emails as `sender_accounts` — they are **not** re-attached to
+live campaigns. When every mailbox on a held-recovery test leaves the hold set,
+the test is stopped to free quota.
 
-A resting inbox leaves rest and resumes the normal send cap only when its
-**same-ESP** inbox rate is ≥ `REST_RESTORE_SAME_ESP_THRESHOLD` (90). Thin or
-blended scores do not restore (D32). If a cohort's rest week ends under 90%,
-it stays resting until the score clears.
+A/B/C weekly rest cohorts are **not** part of this decision (deferred).
 
-Slack fleet updates are **per client**, not per mailbox: day sent, bounce %,
-spam % (from latest placement), and active vs resting client-inbox counts.
+**Why.** Josh (2026-08-17): Slack should show client-level day stats and
+active/held counts; pulled mailboxes must keep earning same-ESP scores without
+sitting back on live campaigns.
 
-**Why.** Josh (2026-08-17): cut daily load on client inboxes with a 3-group
-rest rotation, keep resting boxes on tests so we know when they hit a healthy
-same-ESP rate, restore only above 90%, and replace individual mailbox Slack
-lists with a per-client day brief.
+**Tradeoff.** Each held batch consumes a SmartDelivery test slot against
+`TOTAL_TEST_QUOTA` (120). Sequence shell must still resolve from a former or
+ACTIVE campaign.
 
-**Tradeoff.** Volume per client inbox drops ~⅓ while resting. Campaigns need
-enough non-resting staffable senders to hold the 50 floor (roughly ≥75 client
-boxes, or generics pad). Rest does not fix copy/offer spam (Goliath). First
-deploy puts one cohort to rest immediately.
-
-**Guards.** `restCohort`, `ClientRestService`, `ClientDayBriefService`,
-staffable `resting` flag, owner-intent D39.
+**Guards.** `HeldPlacementTestService`, `ClientDayBriefService`, test reconciler
+held-recovery keep path, owner-intent D39.
 

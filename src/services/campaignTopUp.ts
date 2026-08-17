@@ -126,7 +126,6 @@ export class CampaignTopUpService {
       if (
         !isStaffableSender(account, {
           held,
-          resting: Boolean(this.state.getRestingInbox?.(email)),
           inboxRate: heldRate,
           inboxThreshold,
         })

@@ -13,7 +13,6 @@ import {
   normalizeTestList,
   testIdOf,
 } from "../clients/smartdelivery.js";
-import { isClientInboxEmail } from "../lib/clientInbox.js";
 import { sleep } from "../lib/http.js";
 import { businessDate } from "./sendVolume.js";
 import { overallSplit } from "./resultMonitor.js";
@@ -21,7 +20,8 @@ import type { StateStore } from "../state/store.js";
 
 /**
  * Per-client day brief for Slack (D39): sent / bounce% / spam%, plus how many
- * client inboxes are resting vs active. Replaces per-mailbox Slack lists.
+ * client inboxes are live vs held (pulled off campaigns). Replaces per-mailbox
+ * Slack lists.
  */
 
 export interface ClientDayRow {
@@ -31,8 +31,10 @@ export interface ClientDayRow {
   bounced: number;
   bouncePercent: number | null;
   spamPercent: number | null;
+  /** Client inboxes on campaigns and not held. */
   activeInboxes: number;
-  restingInboxes: number;
+  /** Client inboxes currently held / pulled off campaigns. */
+  heldInboxes: number;
 }
 
 export interface ClientDayBriefResult {
@@ -128,7 +130,6 @@ export class ClientDayBriefService {
       await sleep(250);
     }
 
-    // Spam % from latest placement provider split per campaign, rolled to client.
     try {
       const tests = normalizeTestList(
         await this.smartDelivery.listTests({}).catch(() => []),
@@ -163,50 +164,36 @@ export class ClientDayBriefService {
       errors.push(`placement spam: ${message}`);
     }
 
-    const restingByClient = new Map<number, number>();
-    for (const row of this.state.listRestingInboxes()) {
-      restingByClient.set(
-        row.clientId,
-        (restingByClient.get(row.clientId) ?? 0) + 1,
-      );
-    }
-
+    const heldByClient = new Map<number, number>();
     const activeByClient = new Map<number, number>();
-    if (this.config.enableClientRest) {
-      try {
-        const accounts = (await this.smartlead.listAllEmailAccounts({
-          fetchCampaigns: false,
-        })) as SmartleadAccountWithCampaigns[];
-        for (const account of accounts) {
-          const email = accountEmail(account);
-          if (!email) continue;
-          const clientId = account.client_id;
-          if (
-            !isClientInboxEmail(email, {
-              clientId,
-              config: this.config,
-              state: this.state,
-            })
-          ) {
-            continue;
-          }
-          if (this.state.getRestingInbox(email)) continue;
+    try {
+      const accounts = (await this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: false,
+      })) as SmartleadAccountWithCampaigns[];
+      for (const account of accounts) {
+        const email = accountEmail(account);
+        if (!email) continue;
+        const clientId = account.client_id;
+        if (typeof clientId !== "number" || !Number.isFinite(clientId)) continue;
+        if (this.state.getHeldInbox(email)) {
+          heldByClient.set(clientId, (heldByClient.get(clientId) ?? 0) + 1);
+        } else {
           activeByClient.set(
-            clientId as number,
-            (activeByClient.get(clientId as number) ?? 0) + 1,
+            clientId,
+            (activeByClient.get(clientId) ?? 0) + 1,
           );
         }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        errors.push(`inbox counts: ${message}`);
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`inbox counts: ${message}`);
     }
 
     const rows: ClientDayRow[] = [...byClient.values()]
       .map((agg) => {
-        const resting =
-          agg.clientId != null ? restingByClient.get(agg.clientId) ?? 0 : 0;
-        const active =
+        const held =
+          agg.clientId != null ? heldByClient.get(agg.clientId) ?? 0 : 0;
+        const activeCount =
           agg.clientId != null ? activeByClient.get(agg.clientId) ?? 0 : 0;
         return {
           clientId: agg.clientId,
@@ -217,8 +204,8 @@ export class ClientDayBriefService {
             agg.sent > 0 ? (agg.bounced / agg.sent) * 100 : null,
           spamPercent:
             agg.spamWeight > 0 ? agg.spamWeighted / agg.spamWeight : null,
-          activeInboxes: active,
-          restingInboxes: resting,
+          activeInboxes: activeCount,
+          heldInboxes: held,
         };
       })
       .sort((a, b) => b.sent - a.sent);

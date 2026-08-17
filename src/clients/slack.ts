@@ -106,7 +106,7 @@ export class SlackClient {
 
   /**
    * Top-line fleet volume by client. Sent / bounce% / spam% for the day, plus
-   * resting vs active client-inbox counts (D39). Replaces per-mailbox lists.
+   * active vs held (pulled) client-inbox counts (D39). Replaces per-mailbox lists.
    */
   async notifyClientDayBrief(summary: {
     date: string;
@@ -117,7 +117,7 @@ export class SlackClient {
       bouncePercent: number | null;
       spamPercent: number | null;
       activeInboxes: number;
-      restingInboxes: number;
+      heldInboxes: number;
     }>;
     errors: string[];
   }): Promise<void> {
@@ -133,9 +133,9 @@ export class SlackClient {
       const spam =
         row.spamPercent == null ? "—" : `${row.spamPercent.toFixed(1)}%`;
       const restBits: string[] = [];
-      if (row.activeInboxes || row.restingInboxes) {
+      if (row.activeInboxes || row.heldInboxes) {
         restBits.push(
-          `${row.activeInboxes} active / ${row.restingInboxes} resting`,
+          `${row.activeInboxes} active / ${row.heldInboxes} held`,
         );
       }
       lines.push(
@@ -158,29 +158,6 @@ export class SlackClient {
       );
     }
 
-    await this.send(lines.join("\n"));
-  }
-
-  async notifyClientRest(details: {
-    restingCohort: string;
-    putToRest: number;
-    restored: number;
-    keptResting: number;
-    restoreThreshold: number;
-    errors: string[];
-  }): Promise<void> {
-    const lines = [
-      `*Client inbox rest (cohort ${details.restingCohort})*`,
-      `Put ${details.putToRest} to rest · restored ${details.restored} (≥${details.restoreThreshold}% same-ESP) · still resting ${details.keptResting}.`,
-    ];
-    const serious = details.errors
-      .filter((e) => !isRateLimitNoise(e))
-      .map(humanizeAlertError);
-    if (serious.length) {
-      lines.push(
-        ...serious.slice(0, 5).map((e) => `• ${e}`),
-      );
-    }
     await this.send(lines.join("\n"));
   }
 

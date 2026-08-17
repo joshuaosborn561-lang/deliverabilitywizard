@@ -84,7 +84,7 @@ describe("remediation / placement Slack is client-level (D39)", () => {
     assert.doesNotMatch(sent[0]!, /weak@x\.com/);
   });
 
-  it("client day brief shows sent / bounce / spam and rest counts", async () => {
+  it("client day brief shows sent / bounce / spam and held counts", async () => {
     const { client, sent } = capture();
     await client.notifyClientDayBrief({
       date: "2026-08-17",
@@ -96,7 +96,7 @@ describe("remediation / placement Slack is client-level (D39)", () => {
           bouncePercent: 2.5,
           spamPercent: 18,
           activeInboxes: 66,
-          restingInboxes: 34,
+          heldInboxes: 34,
         },
       ],
       errors: [],
@@ -106,6 +106,6 @@ describe("remediation / placement Slack is client-level (D39)", () => {
     assert.match(sent[0]!, /Goliath/);
     assert.match(sent[0]!, /2\.5% bounce/);
     assert.match(sent[0]!, /18\.0% spam/);
-    assert.match(sent[0]!, /66 active \/ 34 resting/);
+    assert.match(sent[0]!, /66 active \/ 34 held/);
   });
 });

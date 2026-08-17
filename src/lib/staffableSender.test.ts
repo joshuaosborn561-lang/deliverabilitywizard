@@ -35,6 +35,7 @@ describe("staffableSender", () => {
       false,
     );
     assert.equal(isStaffableSender({}, { held: true }), false);
+    assert.equal(isStaffableSender({}, { resting: true }), false);
     assert.equal(
       isStaffableSender({
         warmup_details: { is_warmup_blocked: true },

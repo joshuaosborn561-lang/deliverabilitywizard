@@ -32,6 +32,8 @@ export function parseWarmupReputation(
 export interface StaffableOptions {
   /** Email is currently on a recovery hold. */
   held?: boolean;
+  /** D39 — client inbox resting (send cap 0); does not staff live volume. */
+  resting?: boolean;
   /**
    * Latest known placement inbox rate (0–100). When set and below the
    * remediation threshold, the sender does not count as inboxing.
@@ -42,11 +44,12 @@ export interface StaffableOptions {
 }
 
 /**
- * Connected + not held + not warmup-blocked + not known-bad on placement.
- * Warmup reputation is intentionally ignored here — it is not an inboxing
- * signal, and using it under-counted live generics (TechEvo showed 29/87
- * "staffable" while SMTP/IMAP were fine). Measure/remediation owns spammy
- * removal; until a placement rate is known, connected membership staffs.
+ * Connected + not held + not resting + not warmup-blocked + not known-bad on
+ * placement. Warmup reputation is intentionally ignored here — it is not an
+ * inboxing signal, and using it under-counted live generics (TechEvo showed
+ * 29/87 "staffable" while SMTP/IMAP were fine). Measure/remediation owns
+ * spammy removal; until a placement rate is known, connected membership
+ * staffs.
  */
 export function isStaffableSender(
   account: Pick<
@@ -57,6 +60,7 @@ export function isStaffableSender(
 ): boolean {
   if (!isConnectedAccount(account)) return false;
   if (options.held) return false;
+  if (options.resting) return false;
   if (account.warmup_details?.is_warmup_blocked) return false;
 
   const threshold = options.inboxThreshold ?? 80;

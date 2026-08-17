@@ -25,7 +25,9 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
-import { SendVolumeService, parseSchedules } from "./services/sendVolume.js";
+import { parseSchedules } from "./services/sendVolume.js";
+import { ClientDayBriefService } from "./services/clientDayBrief.js";
+import { ClientRestService } from "./services/clientRest.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -250,7 +252,12 @@ async function main(): Promise<void> {
   };
 
   const dnsAudit = new DnsAuditService(smartlead, slack, state);
-  const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
+  const mailboxSettings = new MailboxSettingsService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const campaignTopUp = new CampaignTopUpService(
     config,
     smartlead,
@@ -271,6 +278,13 @@ async function main(): Promise<void> {
     campaignTopUp,
     clientFanOut,
   );
+  const clientRest = new ClientRestService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
   const bounceInvestigate = new CampaignBounceInvestigateService(
     config,
     smartlead,
@@ -284,7 +298,13 @@ async function main(): Promise<void> {
     smartDelivery,
     state,
   );
-  const sendVolume = new SendVolumeService(smartlead, slack);
+  const clientDayBrief = new ClientDayBriefService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
   const manualRotation = new ManualRotationService(
     config,
     smartlead,
@@ -401,6 +421,14 @@ async function main(): Promise<void> {
       // converge stays throttled so it cannot starve the 15-minute staffing loop.
       let mailboxGapResult: unknown = null;
       let mailboxSettingsResult: unknown = null;
+      let clientRestResult: unknown = null;
+      if (config.enableClientRest) {
+        try {
+          clientRestResult = await clientRest.run();
+        } catch (error) {
+          console.warn("[health] client rest failed", error);
+        }
+      }
       if (config.enforceMailboxSettings) {
         try {
           mailboxGapResult = await mailboxSettings.runGapEnforce();
@@ -430,6 +458,7 @@ async function main(): Promise<void> {
       return {
         health: healthResult,
         reconnect: reconnectResult,
+        clientRest: clientRestResult,
         mailboxGap: mailboxGapResult,
         mailboxSettings: mailboxSettingsResult,
       };
@@ -590,15 +619,14 @@ async function main(): Promise<void> {
     });
   });
 
-  // Send volume posts at fixed local times (default midday and 16:30 ET), not
-  // with the monitor: the number only means something once the day has some
-  // sending in it. America/New_York so the times track EST/EDT.
+  // Client day brief (sent / bounce% / spam% + resting vs active) posts at
+  // fixed local times. America/New_York so the times track EST/EDT.
   for (const expression of sendVolumeSchedules) {
     cron.schedule(
       expression,
       () => {
-        void sendVolume.run().catch((error) => {
-          console.error("[send-volume] Unhandled cron error", error);
+        void clientDayBrief.run().catch((error) => {
+          console.error("[client-day] Unhandled cron error", error);
         });
       },
       { timezone: "America/New_York" },
@@ -778,6 +806,8 @@ async function main(): Promise<void> {
         cronMonitor: config.cronMonitor,
         cronHealth: config.cronHealth,
         enableCampaignHealth: config.enableCampaignHealth,
+        enableClientRest: config.enableClientRest,
+        restRestoreSameEspThreshold: config.restRestoreSameEspThreshold,
         cronPoolProvision: config.cronPoolProvision,
         cronAccountReconnect: config.cronAccountReconnect,
         totalTestQuota: config.totalTestQuota,
@@ -854,6 +884,18 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await clientFanOut.run();
         res.json({ ok: true, mode: "fan-out", result });
+        return;
+      }
+      if (mode === "client-rest" || mode === "rest") {
+        assertRuntimeSecrets(config);
+        const result = await clientRest.run();
+        res.json({ ok: true, mode: "client-rest", result });
+        return;
+      }
+      if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
+        assertRuntimeSecrets(config);
+        const result = await clientDayBrief.run();
+        res.json({ ok: true, mode: "client-day", result });
         return;
       }
       if (
@@ -1152,6 +1194,9 @@ async function main(): Promise<void> {
     console.log(`[boot] Monitor cron: ${config.cronMonitor} (measure/remediate/DNS)`);
     console.log(
       `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; floor ${config.minCampaignSenders} connected+inboxing; auto-resume protective pauses)` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Client rest (D39): ${config.enableClientRest ? `ENABLED (cohort rest → MESSAGE_PER_DAY 0; restore ≥${config.restRestoreSameEspThreshold}% same-ESP; stay on campaigns for tests)` : "disabled"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,

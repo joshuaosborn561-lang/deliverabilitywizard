@@ -3,10 +3,8 @@ import assert from "node:assert/strict";
 import { SlackClient } from "./slack.js";
 
 /**
- * The remediation alert reports two different measures in one field:
- * placement pulls carry a same-ESP inbox %, bounce pulls carry a bounce %.
- * Rendering both as a bare "25%" reads as an inbox rate either way, which
- * inverts the meaning for bounce pulls.
+ * D39 — Slack fleet updates are client-level (counts + day bounce/spam), not
+ * per-mailbox lists. Remediation still names SPF/DKIM failures.
  */
 
 function capture() {
@@ -29,11 +27,13 @@ const base = {
   errors: [],
 };
 
-describe("remediation alert measure labels", () => {
-  it("labels a placement pull as same-ESP inbox", async () => {
+describe("remediation / placement Slack is client-level (D39)", () => {
+  it("summarizes pulls per client instead of listing each mailbox", async () => {
     const { client, sent } = capture();
     await client.notifyRemediation({
       ...base,
+      dryRun: false,
+      blacklistedDomains: [],
       recoveredInboxes: [
         {
           id: 1,
@@ -42,36 +42,25 @@ describe("remediation alert measure labels", () => {
           scoredSameEsp: true,
           removedFromCampaigns: [10],
           holdUntil: "2026-08-26",
+          clientName: "Acme",
         },
-      ],
-    } as never);
-
-    assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /weak@x\.com` — 45% same-ESP inbox/);
-    assert.doesNotMatch(sent[0]!, /blended/);
-  });
-
-  it("labels a bounce pull as bounce, not inbox", async () => {
-    const { client, sent } = capture();
-    await client.notifyRemediation({
-      ...base,
-      recoveredInboxes: [
         {
           id: 2,
-          email: "bouncer@x.com",
-          inboxRate: 25,
-          bounceDriven: true,
+          email: "weak2@x.com",
+          inboxRate: 30,
+          scoredSameEsp: true,
           removedFromCampaigns: [10],
+          clientName: "Acme",
         },
       ],
-    } as never);
+    });
 
-    // 25% bounce is bad; 25% inbox is a different claim entirely.
-    assert.match(sent[0]!, /bouncer@x\.com` — 25% bounce/);
-    assert.doesNotMatch(sent[0]!, /25% inbox/);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0]!, /\*Acme\* — 2/);
+    assert.doesNotMatch(sent[0]!, /weak@x\.com/);
   });
 
-  it("says same-ESP on a weak sender that is about to be pulled", async () => {
+  it("placement alerts count weak senders without listing emails", async () => {
     const { client, sent } = capture();
     await client.notifyPlacementResult({
       testId: "t1",
@@ -89,31 +78,34 @@ describe("remediation alert measure labels", () => {
           willRemediate: true,
         },
       ],
-    } as never);
+    });
 
-    assert.match(sent[0]!, /weak@x\.com` — 40\.0% _\(same-ESP\)_/);
-    assert.match(sent[0]!, /pulling off campaigns/);
+    assert.match(sent[0]!, /1 sender under 80%/);
+    assert.doesNotMatch(sent[0]!, /weak@x\.com/);
   });
 
-  it("marks a blended score as not driving rotation (D32)", async () => {
+  it("client day brief shows sent / bounce / spam and rest counts", async () => {
     const { client, sent } = capture();
-    await client.notifyPlacementResult({
-      testId: "t1",
-      testName: "Campaign",
-      threshold: 80,
-      providers: [{ name: "G Suite", inboxPercent: 40 }],
-      autoRemediation: true,
-      remediationThreshold: 80,
-      senders: [
+    await client.notifyClientDayBrief({
+      date: "2026-08-17",
+      totalSent: 1200,
+      rows: [
         {
-          email: "blendedonly@x.com",
-          inboxPercent: 40,
-          scoredSameEsp: false,
-          willRemediate: false,
+          clientName: "Goliath",
+          sent: 400,
+          bouncePercent: 2.5,
+          spamPercent: 18,
+          activeInboxes: 66,
+          restingInboxes: 34,
         },
       ],
-    } as never);
+      errors: [],
+    });
 
-    assert.match(sent[0]!, /not used for rotation/);
+    assert.match(sent[0]!, /Client day — 2026-08-17/);
+    assert.match(sent[0]!, /Goliath/);
+    assert.match(sent[0]!, /2\.5% bounce/);
+    assert.match(sent[0]!, /18\.0% spam/);
+    assert.match(sent[0]!, /66 active \/ 34 resting/);
   });
 });

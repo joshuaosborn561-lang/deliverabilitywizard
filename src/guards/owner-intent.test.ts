@@ -260,6 +260,30 @@ describe("owner intent", () => {
     );
   });
 
+  it("D39: client rest defaults on with 90% same-ESP restore", async () => {
+    assert.equal(
+      defaults.enableClientRest,
+      true,
+      stop(
+        "Client-inbox rest cohorts run by default (D39).",
+        "ENABLE_CLIENT_REST now defaults off, so the 66/33 rest rotation never applies.",
+      ),
+    );
+    assert.equal(
+      defaults.restRestoreSameEspThreshold,
+      90,
+      stop(
+        "Resting inboxes restore only at ≥90% same-ESP (D39).",
+        `Restore threshold is now ${defaults.restRestoreSameEspThreshold}%.`,
+      ),
+    );
+    const { cohortForEmail, restingCohortForDate } = await import(
+      "../lib/restCohort.js"
+    );
+    assert.equal(cohortForEmail("a@x.com"), cohortForEmail("A@X.com"));
+    assert.ok(["A", "B", "C"].includes(restingCohortForDate()));
+  });
+
   it("D7: exclusions match a campaign id exactly, never by substring", () => {
     const msrs = { id: 3628940, name: "MSRS2 Ticket Offer" };
     assert.equal(

@@ -193,6 +193,7 @@ export class CampaignHealthService {
       if (
         !isStaffableSender(account, {
           held: Boolean(heldRow),
+          resting: Boolean(this.state.getRestingInbox?.(email)),
           inboxRate: heldRow?.inboxRate,
           inboxThreshold: threshold,
         })

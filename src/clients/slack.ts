@@ -105,9 +105,64 @@ export class SlackClient {
   }
 
   /**
-   * Top-line fleet volume. Unlike the other notifiers this one is not
-   * conditional on a fault — it is the standing "are we sending?" number, so
-   * it posts even on a clean day.
+   * Top-line fleet volume by client. Sent / bounce% / spam% for the day, plus
+   * active vs held (pulled) client-inbox counts (D39). Replaces per-mailbox lists.
+   */
+  async notifyClientDayBrief(summary: {
+    date: string;
+    totalSent: number;
+    rows: Array<{
+      clientName: string;
+      sent: number;
+      bouncePercent: number | null;
+      spamPercent: number | null;
+      activeInboxes: number;
+      heldInboxes: number;
+    }>;
+    errors: string[];
+  }): Promise<void> {
+    const lines = [
+      `*Client day — ${summary.date}*`,
+      `${summary.totalSent.toLocaleString("en-US")} email${summary.totalSent === 1 ? "" : "s"} sent across ${summary.rows.length} client${summary.rows.length === 1 ? "" : "s"}.`,
+      "",
+    ];
+
+    for (const row of summary.rows.slice(0, 25)) {
+      const bounce =
+        row.bouncePercent == null ? "—" : `${row.bouncePercent.toFixed(1)}%`;
+      const spam =
+        row.spamPercent == null ? "—" : `${row.spamPercent.toFixed(1)}%`;
+      const restBits: string[] = [];
+      if (row.activeInboxes || row.heldInboxes) {
+        restBits.push(
+          `${row.activeInboxes} active / ${row.heldInboxes} held`,
+        );
+      }
+      lines.push(
+        `• *${row.clientName}* — ${row.sent.toLocaleString("en-US")} sent · ${bounce} bounce · ${spam} spam` +
+          (restBits.length ? ` · ${restBits.join("")}` : ""),
+      );
+    }
+    if (summary.rows.length > 25) {
+      lines.push(`• …and ${summary.rows.length - 25} more clients`);
+    }
+
+    const seriousErrors = summary.errors
+      .filter((e) => !isRateLimitNoise(e))
+      .map(humanizeAlertError);
+    if (seriousErrors.length) {
+      lines.push(
+        "",
+        "Could not read some clients:",
+        ...seriousErrors.slice(0, 5).map((e) => `• ${e}`),
+      );
+    }
+
+    await this.send(lines.join("\n"));
+  }
+
+  /**
+   * @deprecated Prefer notifyClientDayBrief — kept for older cron wiring.
    */
   async notifySendVolume(summary: {
     date: string;
@@ -126,7 +181,7 @@ export class SlackClient {
     if (top.length) {
       lines.push(
         "",
-        "Top senders:",
+        "Top campaigns:",
         ...top.map(
           (r) => `• ${r.name} — ${r.sent.toLocaleString("en-US")}`,
         ),
@@ -429,7 +484,8 @@ export class SlackClient {
       ? `Overall: *${details.overall.inboxPercent.toFixed(1)}% inbox* · ${details.overall.tabPercent.toFixed(1)}% tab · *${details.overall.spamPercent.toFixed(1)}% spam*`
       : undefined;
 
-    // SPF/DKIM failures explain bad placement better than any sender score
+    // Per-mailbox weak lists are replaced by the client day brief (D39).
+    // Keep SPF/DKIM failures — those need a named mailbox to fix DNS.
     const authLines: string[] = [];
     const auth = details.authFailures ?? [];
     if (auth.length) {
@@ -450,35 +506,9 @@ export class SlackClient {
       }
     }
 
-    const senderLines: string[] = [];
-    const senders = details.senders ?? [];
-    if (senders.length) {
-      const weakSenders = senders
-        .filter((s) => s.inboxPercent < (details.remediationThreshold ?? 80))
-        .sort((a, b) => a.inboxPercent - b.inboxPercent);
-      if (weakSenders.length) {
-        senderLines.push(
-          "",
-          `*Weak senders (under ${details.remediationThreshold ?? 80}%):*`,
-          ...weakSenders.slice(0, 15).map((s) => {
-            // Placement rotation runs on the same-ESP score only (D32), so say
-            // so rather than leaving it blank. A blended score is display-only
-            // and never pulls a mailbox — label it that way instead of letting
-            // it sit next to a "pulling off campaigns" line unqualified.
-            const esp = s.scoredSameEsp
-              ? " _(same-ESP)_"
-              : " _(blended — not used for rotation)_";
-            const action = s.willRemediate
-              ? ` → pulling off campaigns, ${details.holdDays ?? 14}d warmup, generic rotated in`
-              : "";
-            return `  • \`${s.email}\` — ${s.inboxPercent.toFixed(1)}%${esp}${action}`;
-          }),
-          ...(weakSenders.length > 15
-            ? [`  • …and ${weakSenders.length - 15} more`]
-            : []),
-        );
-      }
-    }
+    const weakSenderCount = (details.senders ?? []).filter(
+      (s) => s.inboxPercent < (details.remediationThreshold ?? 80),
+    ).length;
 
     await this.send(
       [
@@ -490,7 +520,9 @@ export class SlackClient {
         "",
         ...scoreLines,
         ...authLines,
-        ...senderLines,
+        weakSenderCount
+          ? `\n_${weakSenderCount} sender${weakSenderCount === 1 ? "" : "s"} under ${details.remediationThreshold ?? 80}% — see client day brief for fleet bounce/spam; remediation handles pulls._`
+          : undefined,
         "",
         details.autoRemediation
           ? `Senders under ${details.remediationThreshold ?? 80}% same-ESP are pulled off campaigns automatically, warmed for ${details.holdDays ?? 14} days, and covered by an ESP-matched generic with the client's signature. No action needed unless I flag a burned domain.`
@@ -824,37 +856,35 @@ export class SlackClient {
     }
 
     if (details.recoveredInboxes.length) {
+      // D39 — fleet Slack is client-level; count pulls per client, not each email.
+      const byClient = new Map<string, number>();
+      for (const a of details.recoveredInboxes) {
+        const name = a.clientName ?? "Unknown client";
+        byClient.set(name, (byClient.get(name) ?? 0) + 1);
+      }
       parts.push(
         `Pulled ${details.recoveredInboxes.length} weak inbox${details.recoveredInboxes.length === 1 ? "" : "es"} off campaigns for warmup:`,
       );
-      for (const a of details.recoveredInboxes.slice(0, 12)) {
-        const hold = a.holdUntil ? ` · hold until ${a.holdUntil}` : "";
-        // Say which number this is. Placement pulls are same-ESP only (D32),
-        // and a bounce pull reports the bounce % in the same field — 25%
-        // bounce and 25% inbox mean opposite things.
-        const measure = a.bounceDriven
-          ? `${a.inboxRate.toFixed(0)}% bounce`
-          : a.scoredSameEsp
-            ? `${a.inboxRate.toFixed(0)}% same-ESP inbox`
-            : `${a.inboxRate.toFixed(0)}% inbox`;
-        parts.push(`• \`${a.email}\` — ${measure}${hold}`);
+      for (const [name, count] of [...byClient.entries()].sort(
+        (a, b) => b[1] - a[1],
+      )) {
+        parts.push(`• *${name}* — ${count}`);
       }
     }
 
     if (restored.length) {
+      const byClient = new Map<string, number>();
+      for (const a of restored) {
+        const name = a.clientName ?? "Unknown client";
+        byClient.set(name, (byClient.get(name) ?? 0) + 1);
+      }
       parts.push(
         `Put ${restored.length} inbox${restored.length === 1 ? "" : "es"} back on campaigns:`,
       );
-      for (const a of restored.slice(0, 12)) {
-        // No rate means it was released for lack of same-ESP evidence, not on
-        // a healthy score — say which, or the number reads as a placement pass.
-        parts.push(
-          `• \`${a.email}\` — ${
-            typeof a.inboxRate === "number"
-              ? `${a.inboxRate.toFixed(0)}% same-ESP`
-              : "no same-ESP evidence, bounce clean"
-          }`,
-        );
+      for (const [name, count] of [...byClient.entries()].sort(
+        (a, b) => b[1] - a[1],
+      )) {
+        parts.push(`• *${name}* — ${count}`);
       }
     }
 

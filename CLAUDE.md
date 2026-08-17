@@ -96,12 +96,12 @@ Warmup stays **on for every mailbox** (mailbox-settings converge).
 A sender comes off active campaigns when either signal fails:
 
 - **Placement** below `REMEDIATION_INBOX_THRESHOLD` (80%) on the **same-ESP**
-  score only (D32). Never use the blended / all-ESP SmartDelivery score to
-  pull a mailbox. Thin same-ESP samples ⇒ skip placement rotation that run.
+ score only (D32). Never use the blended / all-ESP SmartDelivery score to
+ pull a mailbox. Thin same-ESP samples ⇒ skip placement rotation that run.
 - **Bounce** above `BOUNCE_RATE_THRESHOLD` (5%), once it has sent at least
-  `MIN_BOUNCE_SAMPLE` (50). These are independent — seed inboxes accept mail,
-  so a mailbox can hold a clean inbox rate while bouncing hard against real
-  leads.
+ `MIN_BOUNCE_SAMPLE` (50). These are independent — seed inboxes accept mail,
+ so a mailbox can hold a clean inbox rate while bouncing hard against real
+ leads.
 
 Both route through the same path: removed from active campaigns, warmup
 re-enabled, `HOLD-UNTIL` tag, held `RECOVERY_HOLD_DAYS` (14), and a warmed
@@ -120,6 +120,13 @@ every 15m; Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
+
+## Held mailbox placement tests (D39)
+
+Mailboxes pulled off campaigns (HOLD) get **separate** SmartDelivery recurring
+tests — not re-attached to live campaigns. Slack day briefs are per-client
+(sent / bounce% / spam% + active vs held counts), not per-mailbox lists.
+A/B/C weekly rest is not shipped yet.
 
 ## Mailbox settings
 

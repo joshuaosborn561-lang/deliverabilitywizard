@@ -669,3 +669,31 @@ not a silent one; the stronger fix is to compare campaigns that share senders.
 
 **Guard.** `copySignal` — `D36 — divergence is provider-agnostic`,
 `COPY_DIVERGENCE_POINTS`, owner-intent D36.
+
+---
+
+## D39 — Slack client day brief + separate tests for held/pulled mailboxes
+
+**Decision.** Fleet Slack is **per client**, not per mailbox: day sent, bounce %,
+spam % (from latest placement), and how many client inboxes are active vs
+**held** (pulled off campaigns).
+
+Mailboxes that are held / pulled off live campaigns get **their own** recurring
+SmartDelivery tests. Those tests use a campaign only as a sequence shell and
+list the held emails as `sender_accounts` — they are **not** re-attached to
+live campaigns. When every mailbox on a held-recovery test leaves the hold set,
+the test is stopped to free quota.
+
+A/B/C weekly rest cohorts are **not** part of this decision (deferred).
+
+**Why.** Josh (2026-08-17): Slack should show client-level day stats and
+active/held counts; pulled mailboxes must keep earning same-ESP scores without
+sitting back on live campaigns.
+
+**Tradeoff.** Each held batch consumes a SmartDelivery test slot against
+`TOTAL_TEST_QUOTA` (120). Sequence shell must still resolve from a former or
+ACTIVE campaign.
+
+**Guards.** `HeldPlacementTestService`, `ClientDayBriefService`, test reconciler
+held-recovery keep path, owner-intent D39.
+

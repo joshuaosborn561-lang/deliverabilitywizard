@@ -126,6 +126,8 @@ export interface AppState {
   remediatedKeys: Record<string, string>;
   /** Inboxes held off campaigns until holdUntil (ISO date or datetime) */
   heldInboxes: Record<string, HeldInboxRecord>;
+  /** D39 — separate placement tests for held/pulled mailboxes */
+  heldPlacementTests: Record<string, HeldPlacementTestRecord>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
   poolMailboxes: Record<string, PoolMailboxRecord>;
   /** Active original↔pool swaps */
@@ -202,6 +204,15 @@ export interface HeldInboxRecord {
   swappedWithPoolEmail?: string;
 }
 
+/** D39 — SmartDelivery test covering held/pulled mailboxes (off campaigns). */
+export interface HeldPlacementTestRecord {
+  testId: string;
+  emails: string[];
+  /** Campaign id used only as the sequence shell — senders are not re-attached. */
+  campaignId: number;
+  createdAt: string;
+}
+
 const EMPTY_POOL_PROVISION: PoolProvisionState = {
   phase: "idle",
 };
@@ -219,6 +230,7 @@ const EMPTY_STATE: AppState = {
   alertedKeys: {},
   remediatedKeys: {},
   heldInboxes: {},
+  heldPlacementTests: {},
   poolMailboxes: {},
   activeSwaps: {},
   clientMonthlyUsage: {},
@@ -248,6 +260,7 @@ export class StateStore {
         alertedKeys: parsed.alertedKeys ?? {},
         remediatedKeys: parsed.remediatedKeys ?? {},
         heldInboxes: parsed.heldInboxes ?? {},
+        heldPlacementTests: parsed.heldPlacementTests ?? {},
         poolMailboxes: parsed.poolMailboxes ?? {},
         activeSwaps: parsed.activeSwaps ?? {},
         clientMonthlyUsage: parsed.clientMonthlyUsage ?? {},
@@ -337,6 +350,22 @@ export class StateStore {
 
   clearHeldInbox(email: string): void {
     delete this.state.heldInboxes[email.toLowerCase()];
+  }
+
+  markHeldPlacementTest(record: HeldPlacementTestRecord): void {
+    this.state.heldPlacementTests[record.testId] = record;
+  }
+
+  getHeldPlacementTest(testId: string): HeldPlacementTestRecord | undefined {
+    return this.state.heldPlacementTests[testId];
+  }
+
+  listHeldPlacementTests(): HeldPlacementTestRecord[] {
+    return Object.values(this.state.heldPlacementTests);
+  }
+
+  clearHeldPlacementTest(testId: string): void {
+    delete this.state.heldPlacementTests[testId];
   }
 
   clearInboxRemediation(email: string): void {

@@ -89,6 +89,10 @@ const ConfigSchema = z.object({
    * Measure (placement/remediation/DNS) stays on the slower monitor cron.
    */
   enableCampaignHealth: boolFromEnv(true),
+  /**
+   * D39 — separate SmartDelivery tests for held/pulled mailboxes (off campaigns).
+   */
+  enableHeldPlacementTests: boolFromEnv(true),
   cronHealth: z.string().default("*/15 * * * *"),
   /** Daily campaign send cap held on every mailbox (warmups not included). */
   messagePerDay: z.coerce.number().int().min(1).default(30),
@@ -311,6 +315,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
+    enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
     mailboxMinTimeGapMins: env.MAILBOX_MIN_TIME_GAP_MINS ?? "10",

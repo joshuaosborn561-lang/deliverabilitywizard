@@ -260,6 +260,17 @@ describe("owner intent", () => {
     );
   });
 
+  it("D39: held placement tests and client day brief stay on", () => {
+    assert.equal(
+      defaults.enableHeldPlacementTests,
+      true,
+      stop(
+        "Held/pulled mailboxes get separate SmartDelivery tests (D39).",
+        "ENABLE_HELD_PLACEMENT_TESTS now defaults off, so pulled mailboxes earn no fresh same-ESP score.",
+      ),
+    );
+  });
+
   it("D7: exclusions match a campaign id exactly, never by substring", () => {
     const msrs = { id: 3628940, name: "MSRS2 Ticket Offer" };
     assert.equal(

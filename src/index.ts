@@ -25,7 +25,9 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
-import { SendVolumeService, parseSchedules } from "./services/sendVolume.js";
+import { parseSchedules } from "./services/sendVolume.js";
+import { ClientDayBriefService } from "./services/clientDayBrief.js";
+import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -271,6 +273,13 @@ async function main(): Promise<void> {
     campaignTopUp,
     clientFanOut,
   );
+  const heldPlacementTests = new HeldPlacementTestService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
   const bounceInvestigate = new CampaignBounceInvestigateService(
     config,
     smartlead,
@@ -284,7 +293,13 @@ async function main(): Promise<void> {
     smartDelivery,
     state,
   );
-  const sendVolume = new SendVolumeService(smartlead, slack);
+  const clientDayBrief = new ClientDayBriefService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
   const manualRotation = new ManualRotationService(
     config,
     smartlead,
@@ -502,6 +517,16 @@ async function main(): Promise<void> {
           (remediationResult as { errors?: string[] })?.errors ?? [],
         );
       }
+      // D39: held/pulled mailboxes get their own SmartDelivery tests — they
+      // stay off live campaigns; the test only uses a campaign as sequence shell.
+      let heldTestsResult: unknown = null;
+      if (config.enableHeldPlacementTests) {
+        try {
+          heldTestsResult = await heldPlacementTests.run();
+        } catch (error) {
+          console.warn("[held-tests] failed", error);
+        }
+      }
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
         warmupGateResult = await runWarmupGate();
@@ -538,6 +563,7 @@ async function main(): Promise<void> {
       return {
         monitor: monitorResult,
         remediation: remediationResult,
+        heldPlacementTests: heldTestsResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
@@ -590,15 +616,14 @@ async function main(): Promise<void> {
     });
   });
 
-  // Send volume posts at fixed local times (default midday and 16:30 ET), not
-  // with the monitor: the number only means something once the day has some
-  // sending in it. America/New_York so the times track EST/EDT.
+  // Client day brief (sent / bounce% / spam% + resting vs active) posts at
+  // fixed local times. America/New_York so the times track EST/EDT.
   for (const expression of sendVolumeSchedules) {
     cron.schedule(
       expression,
       () => {
-        void sendVolume.run().catch((error) => {
-          console.error("[send-volume] Unhandled cron error", error);
+        void clientDayBrief.run().catch((error) => {
+          console.error("[client-day] Unhandled cron error", error);
         });
       },
       { timezone: "America/New_York" },
@@ -778,6 +803,7 @@ async function main(): Promise<void> {
         cronMonitor: config.cronMonitor,
         cronHealth: config.cronHealth,
         enableCampaignHealth: config.enableCampaignHealth,
+        enableHeldPlacementTests: config.enableHeldPlacementTests,
         cronPoolProvision: config.cronPoolProvision,
         cronAccountReconnect: config.cronAccountReconnect,
         totalTestQuota: config.totalTestQuota,
@@ -854,6 +880,18 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await clientFanOut.run();
         res.json({ ok: true, mode: "fan-out", result });
+        return;
+      }
+      if (mode === "held-tests" || mode === "held-placement-tests") {
+        assertRuntimeSecrets(config);
+        const result = await heldPlacementTests.run();
+        res.json({ ok: true, mode: "held-tests", result });
+        return;
+      }
+      if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
+        assertRuntimeSecrets(config);
+        const result = await clientDayBrief.run();
+        res.json({ ok: true, mode: "client-day", result });
         return;
       }
       if (
@@ -1152,6 +1190,9 @@ async function main(): Promise<void> {
     console.log(`[boot] Monitor cron: ${config.cronMonitor} (measure/remediate/DNS)`);
     console.log(
       `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; floor ${config.minCampaignSenders} connected+inboxing; auto-resume protective pauses)` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,

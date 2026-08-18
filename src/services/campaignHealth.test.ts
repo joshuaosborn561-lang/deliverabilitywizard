@@ -133,4 +133,72 @@ describe("CampaignHealthService", () => {
     assert.equal(result.snapshots[0]?.needed, 50);
     assert.equal(result.stillShort[0]?.shortBy, 50);
   });
+
+  it("does not auto-START a STOPPED campaign even with pendingResume (D40)", async () => {
+    const pending = new Map<number, { campaignId: number; reason: string; pausedAt: string }>([
+      [
+        11,
+        {
+          campaignId: 11,
+          reason: "warmup_gate_last_account",
+          pausedAt: new Date().toISOString(),
+        },
+      ],
+    ]);
+    const state = {
+      listPoolMailboxes: () => [],
+      listActiveSwaps: () => [],
+      findReassignablePoolMailbox: () => undefined,
+      getHeldInbox: () => undefined,
+      hasPendingResume: (id: number) => pending.has(id),
+      listPendingResumes: () => [...pending.values()],
+      clearPendingResume: (id: number) => {
+        pending.delete(id);
+      },
+      markPendingResume: () => undefined,
+      setLastHealthAt: () => undefined,
+      save: async () => undefined,
+      upsertPoolMailbox: () => undefined,
+    } as unknown as StateStore;
+
+    const staffed = Array.from({ length: 50 }, (_, index) => ({
+      id: 200 + index,
+      from_email: `ok-${index}@pool.info`,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [11],
+    }));
+
+    let started = false;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 11, name: "Operator stopped", status: "STOPPED", client_id: 1 },
+      ],
+      listAllEmailAccounts: async () => staffed,
+      listClients: async () => [{ id: 1, name: "Client" }],
+      updateCampaignStatus: async (_id: number, status: string) => {
+        if (status === "START") started = true;
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const config = loadConfig({
+      MIN_CAMPAIGN_SENDERS: "50",
+      ENABLE_CAMPAIGN_TOP_UP: "false",
+    });
+    const topUp = new CampaignTopUpService(config, smartlead, fakeSlack(), state);
+    const health = new CampaignHealthService(
+      config,
+      smartlead,
+      fakeSlack(),
+      state,
+      topUp,
+    );
+
+    const result = await health.run({ dryRun: false });
+    assert.equal(started, false);
+    assert.equal(result.resumed.length, 0);
+    assert.equal(pending.size, 0);
+  });
 });

@@ -26,10 +26,11 @@ import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 
 /**
- * D29 — When a campaign is PAUSED and its senders' aggregate bounce is over
- * the investigate threshold (default 7%), dig in: if placement says the
+ * D29 / D40 — When a campaign is PAUSED and its senders' aggregate bounce is
+ * over the investigate threshold (default 7%), dig in: if placement says the
  * *copy* is the problem, Slack and leave senders alone; otherwise rotate the
- * worst bouncing senders and try to get the campaign sendable again.
+ * worst bouncing senders. Do **not** auto-START — a manual pause must stay
+ * paused (D40). Protective system pauses resume only via health + pendingResumes.
  */
 
 export interface BounceInvestigateFinding {
@@ -233,16 +234,17 @@ export class CampaignBounceInvestigateService {
       }
 
       try {
+        // D40 — never auto-START here. Manual pauses must stay paused; only
+        // health may resume campaigns we ourselves marked in pendingResumes.
         const remaining = await this.smartlead.getCampaignEmailAccounts(
           campaign.id,
         );
-        if (remaining.length > 0 && !dryRun) {
-          await this.smartlead.updateCampaignStatus(campaign.id, "START");
-          finding.resumed = true;
+        if (remaining.length === 0) {
+          finding.errors.push("no senders left after rotation");
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        finding.errors.push(`resume: ${message}`);
+        finding.errors.push(`post-rotate check: ${message}`);
       }
 
       result.findings.push(finding);
@@ -259,7 +261,7 @@ export class CampaignBounceInvestigateService {
           );
         } else {
           lines.push(
-            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — rotated ${f.rotated.length} sender(s)${f.resumed ? ", resumed" : ""}.`,
+            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — rotated ${f.rotated.length} sender(s). Not auto-resumed (manual pause stays paused).`,
           );
         }
       }

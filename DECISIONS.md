@@ -697,3 +697,31 @@ ACTIVE campaign.
 **Guards.** `HeldPlacementTestService`, `ClientDayBriefService`, test reconciler
 held-recovery keep path, owner-intent D39.
 
+---
+
+## D40 — Manual campaign stop/pause is never auto-resumed
+
+**Decision.** If an operator stops or pauses a campaign by hand, automation
+must not `START` it again.
+
+- Health may `START` **only** campaigns in `pendingResumes` (pauses **we**
+  took for last-account / warmup-gate / remediation), and only while status is
+  still `PAUSED`.
+- `STOPPED` (or any non-`PAUSED` status) clears `pendingResumes` and is never
+  resumed — that is the operator taking over.
+- Paused-campaign bounce investigation (D29) may still rotate bad senders and
+  Slack, but it **must not** `START` the campaign. That part of D29 is
+  superseded.
+
+**Why.** Josh (2026-08-18): “if I stop a campaign manually, do not auto
+resume.” Bounce-investigate was STARTing manually paused campaigns after
+rotating bouncers.
+
+**Tradeoff.** A campaign we protectively paused stays in `pendingResumes` and
+can still auto-resume when staffed. To keep a protective pause down
+permanently, set the campaign to **STOPPED** (or clear the pending-resume
+marker). Manual `PAUSED` without a pending-resume is never STARTed.
+
+**Guards.** `CampaignBounceInvestigateService` (no START),
+`CampaignHealthService` STOPPED path, owner-intent D40.
+

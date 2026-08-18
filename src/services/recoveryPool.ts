@@ -12,6 +12,8 @@ import {
   buildPoolSignature,
   parsePersonName,
   poolEspFromSmartleadType,
+  resolvePoolEspFromDomain,
+  type PoolEspDnsLookup,
 } from "../lib/poolSignature.js";
 import type { StateStore } from "../state/store.js";
 
@@ -52,6 +54,8 @@ export class RecoveryPoolService {
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    /** Injectable for tests; production resolves MX/SPF via public DNS. */
+    private readonly dnsLookup?: PoolEspDnsLookup,
   ) {}
 
   async run(opts: {
@@ -173,11 +177,20 @@ export class RecoveryPoolService {
       if (!held.removedFromCampaigns.length) continue;
 
       const account = byEmail.get(email);
-      const platform =
-        poolEspFromSmartleadType(held.type ?? account?.type) ?? null;
+      const rawType = held.type ?? account?.type;
+      let platform = poolEspFromSmartleadType(rawType) ?? null;
+      // Smartlead marks many Workspace/M365 mailboxes as SMTP when they use
+      // custom SMTP/IMAP rather than OAuth. Infer ESP from the domain's MX/SPF
+      // so recovery swaps still ESP-match (e.g. useroofsbypeterson.info → Google).
+      if (!platform) {
+        const domain = email.split("@")[1] ?? "";
+        platform = domain
+          ? await resolvePoolEspFromDomain(domain, this.dnsLookup)
+          : null;
+      }
       if (!platform) {
         result.errors.push(
-          `swap ${email}: unknown ESP type (${held.type ?? account?.type ?? "n/a"})`,
+          `swap ${email}: unknown ESP type (${rawType ?? "n/a"})`,
         );
         continue;
       }

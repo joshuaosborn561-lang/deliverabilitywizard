@@ -9,7 +9,9 @@ import {
 import {
   buildPoolSignature,
   parsePersonName,
+  poolEspFromDnsRecords,
   poolEspFromSmartleadType,
+  resolvePoolEspFromDomain,
 } from "./poolSignature.js";
 import {
   canBuyDomain,
@@ -64,7 +66,70 @@ describe("poolSignature", () => {
   it("maps Smartlead types to pool ESP", () => {
     assert.equal(poolEspFromSmartleadType("GMAIL"), "GOOGLE");
     assert.equal(poolEspFromSmartleadType("OUTLOOK"), "MICROSOFT");
+    // SMTP alone is not enough — need MX/SPF (see poolEspFromDnsRecords).
     assert.equal(poolEspFromSmartleadType("SMTP"), null);
+  });
+
+  it("infers Google Workspace from MX/SPF (SMTP custom-host case)", () => {
+    // Production failure: rachel.collins27@useroofsbypeterson.info typed SMTP.
+    assert.equal(
+      poolEspFromDnsRecords({
+        mx: ["smtp.google.com"],
+        txt: [
+          "google-site-verification=abc",
+          "v=spf1 include:_spf.google.com ~all",
+        ],
+      }),
+      "GOOGLE",
+    );
+    assert.equal(
+      poolEspFromDnsRecords({
+        mx: ["aspmx.l.google.com", "alt1.aspmx.l.google.com"],
+        txt: null,
+      }),
+      "GOOGLE",
+    );
+  });
+
+  it("infers Microsoft 365 from MX/SPF", () => {
+    assert.equal(
+      poolEspFromDnsRecords({
+        mx: ["brand-com.mail.protection.outlook.com"],
+        txt: ["v=spf1 include:spf.protection.outlook.com -all"],
+      }),
+      "MICROSOFT",
+    );
+  });
+
+  it("prefers Microsoft when both signals appear", () => {
+    assert.equal(
+      poolEspFromDnsRecords({
+        mx: ["brand-com.mail.protection.outlook.com"],
+        txt: ["v=spf1 include:_spf.google.com include:spf.protection.outlook.com ~all"],
+      }),
+      "MICROSOFT",
+    );
+  });
+
+  it("returns null when DNS has no Google/Microsoft signal", () => {
+    assert.equal(
+      poolEspFromDnsRecords({
+        mx: ["mail.example-hosting.com"],
+        txt: ["v=spf1 a mx ~all"],
+      }),
+      null,
+    );
+  });
+
+  it("resolvePoolEspFromDomain uses the provided lookup", async () => {
+    const platform = await resolvePoolEspFromDomain(
+      "useroofsbypeterson.info",
+      async () => ({
+        mx: ["smtp.google.com"],
+        txt: ["v=spf1 include:_spf.google.com ~all"],
+      }),
+    );
+    assert.equal(platform, "GOOGLE");
   });
 
   it("parses from_name", () => {

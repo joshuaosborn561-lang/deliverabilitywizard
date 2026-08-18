@@ -110,8 +110,10 @@ driven (Outlook buried, Gmail fine): then Slack to test the copy and do not
 bench those senders (D28).
 
 If a campaign is **PAUSED** with aggregate sender bounce over **7%**,
-investigate: copy_likely → Slack only; otherwise rotate worst bouncers and
-try to resume (D29).
+investigate: copy_likely → Slack only; otherwise rotate worst bouncers
+(D29). Do **not** auto-`START` — a manual pause stays paused (D40). Only
+protective pauses recorded in `pendingResumes` may be resumed by health,
+and never when the campaign is **STOPPED**.
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
 from the pool — connected SMTP/IMAP and not held. Disconnected membership

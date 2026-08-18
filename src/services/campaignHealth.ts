@@ -256,9 +256,13 @@ export class CampaignHealthService {
         this.state.clearPendingResume(pending.campaignId);
         continue;
       }
+      // D40 — only PAUSED protective pauses may be STARTed. STOPPED (and any
+      // other status) means the operator took over; never fight that.
       if (status !== "PAUSED") {
-        // STOPPED / archived — do not fight the operator.
         this.state.clearPendingResume(pending.campaignId);
+        console.log(
+          `[health] Cleared pending-resume for #${pending.campaignId} ${name} — status is ${status || "(unknown)"}, not auto-resuming`,
+        );
         continue;
       }
 
@@ -276,7 +280,7 @@ export class CampaignHealthService {
           staffable,
         });
         console.log(
-          `[health] Resumed #${pending.campaignId} ${name} (${staffable} staffable)`,
+          `[health] Resumed #${pending.campaignId} ${name} (${staffable} staffable) — protective pause only`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

@@ -212,6 +212,23 @@ describe("owner intent", () => {
     );
   });
 
+  it("D40: bounce investigate must not auto-START paused campaigns", async () => {
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/campaignBounceInvestigate.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.equal(
+      /updateCampaignStatus\([^)]*START/.test(src),
+      false,
+      stop(
+        "Manual pause/stop must not be auto-resumed (D40).",
+        "CampaignBounceInvestigateService still calls updateCampaignStatus(..., START).",
+      ),
+    );
+  });
+
   it("D28: copySignal defers Outlook-buried / Gmail-ok as copy", async () => {
     const { classifyCopySignal, shouldDeferSenderRotationForCopy } =
       await import("../lib/copySignal.js");

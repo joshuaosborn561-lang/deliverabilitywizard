@@ -9,6 +9,31 @@ describe("classifyFailure", () => {
     assert.equal(c.autoRemediate, false);
   });
 
+  it("treats sender-report rate limits as noise even when the test id contains 404", () => {
+    // Production: test id 512404 made the old /404/ exclusion cancel noise
+    // classification and launch the remediator (unknown:remediation:…rate-limit…).
+    const c = classifyFailure(
+      "remediation",
+      "sender report 512404: Rate limit exceeded. Please try again later.",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:remediation");
+  });
+
+  it("still lets a real HTTP 404 cancel rate-limit-only noise classification", () => {
+    // A message that is both rate-limit-shaped and a real missing endpoint
+    // should not be collapsed to noise:rate-limit via the HTTP 429 branch.
+    const c = classifyFailure(
+      "monitor",
+      "HTTP 404 rate limit exceeded on /api/v1/spam-test/12345",
+    );
+    // Falls through the noise gate because of \b404\b / not found-style paths;
+    // classified as stale_endpoint (actionable).
+    assert.equal(c.class, "stale_endpoint");
+    assert.equal(c.autoRemediate, true);
+  });
+
   it("treats bounce-stats request aborts / timeouts as noise", () => {
     for (const message of [
       "bounce stats: This operation was aborted",

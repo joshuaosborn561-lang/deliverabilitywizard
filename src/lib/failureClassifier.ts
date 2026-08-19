@@ -45,7 +45,13 @@ export function classifyFailure(
     // Already retried by apiRequest; not a code bug the remediator can fix.
     /\bhttp\s*5\d\d\b/i.test(lower)
   ) {
-    if (!/required|must be|validation|404|not found/i.test(lower)) {
+    // Do not cancel rate-limit noise just because a SmartDelivery test id
+    // happens to contain the digits 404 (e.g. sender report 512404).
+    if (
+      !/required|must be|validation|\bhttp\s*404\b|\b404\b|not found/i.test(
+        lower,
+      )
+    ) {
       return {
         class: "noise",
         fingerprint: fingerprintOf("noise", source),

@@ -431,6 +431,34 @@ describe("owner intent — mailbox settings", () => {
       ),
     );
   });
+
+  it("D41: health audits signatures on ACTIVE campaign mailboxes every pass", async () => {
+    const fs = await import("node:fs");
+    const indexSrc = fs.readFileSync(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      indexSrc,
+      /runActiveCampaignSignatures/,
+      stop(
+        "ACTIVE-campaign signatures are checked on every health pass (D41).",
+        "index.ts no longer calls runActiveCampaignSignatures — live senders can keep a wrong or HTML signature until the 6-hour full converge.",
+      ),
+    );
+    const settingsSrc = fs.readFileSync(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      settingsSrc,
+      /active-signatures/,
+      stop(
+        "ACTIVE-campaign signatures are checked on every health pass (D41).",
+        "mailboxSettings lost the active-signatures mode used by the health cron.",
+      ),
+    );
+  });
 });
 
 describe("owner intent — auto bug remediator", () => {

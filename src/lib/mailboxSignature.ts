@@ -7,6 +7,8 @@
  * normalize those back to newlines so every inbox matches the UI format.
  */
 
+import { normalizeName } from "./nameMatch.js";
+
 export function extractSignatureLines(signature?: string | null): string[] {
   const raw = (signature ?? "").trim();
   if (!raw) return [];
@@ -30,18 +32,64 @@ export function extractSignatureLines(signature?: string | null): string[] {
     .filter(Boolean);
 }
 
+function brandAcronym(normalized: string): string {
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word[0] ?? "")
+    .join("");
+}
+
 /**
- * Brand line for signature: prefer an existing second line (so HTML brands
- * like "Mid-South Roof Systems" are preserved), else the Smartlead client logo.
+ * True when two brand strings name the same client — exact, substring of a
+ * longer legal name, or acronym ("MSRS" vs "Mid-South Roof Systems").
+ */
+export function isSameBrand(a?: string | null, b?: string | null): boolean {
+  const left = normalizeName(a ?? "");
+  const right = normalizeName(b ?? "");
+  if (!left || !right) return false;
+  if (left === right) return true;
+  const shorter = left.length <= right.length ? left : right;
+  const longer = left.length <= right.length ? right : left;
+  if (shorter.length >= 4 && longer.includes(shorter)) return true;
+  if (brandAcronym(longer) === shorter) return true;
+  return false;
+}
+
+function isOtherClientBrand(
+  existing: string,
+  thisBrand: string,
+  otherClientBrands: string[],
+): boolean {
+  if (isSameBrand(existing, thisBrand)) return false;
+  return otherClientBrands.some(
+    (brand) => brand.trim() && isSameBrand(existing, brand),
+  );
+}
+
+/**
+ * Brand line for signature: prefer an existing second line when it is the
+ * same client (so "Mid-South Roof Systems" is kept over logo "MSRS"). A
+ * second line that belongs to a *different* known client is discarded and
+ * replaced with this mailbox's client brand.
  */
 export function resolveSignatureBrand(opts: {
   signature?: string | null;
   clientBrand?: string | null;
+  otherClientBrands?: string[];
 }): string {
   const lines = extractSignatureLines(opts.signature);
   const fromSig = lines[1]?.trim() ?? "";
+  const clientBrand = (opts.clientBrand ?? "").trim();
+  if (
+    fromSig &&
+    clientBrand &&
+    isOtherClientBrand(fromSig, clientBrand, opts.otherClientBrands ?? [])
+  ) {
+    return clientBrand;
+  }
   if (fromSig) return fromSig;
-  return (opts.clientBrand ?? "").trim();
+  return clientBrand;
 }
 
 /**
@@ -52,6 +100,7 @@ export function desiredMailboxSignature(opts: {
   fromName?: string | null;
   signature?: string | null;
   clientBrand?: string | null;
+  otherClientBrands?: string[];
 }): string | null {
   const name = (opts.fromName ?? "").trim();
   if (!name) return null;

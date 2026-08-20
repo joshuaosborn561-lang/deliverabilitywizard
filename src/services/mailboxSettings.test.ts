@@ -176,4 +176,129 @@ describe("MailboxSettingsService", () => {
       signature: "Katya Sanchez\nMid-South Roof Systems",
     });
   });
+
+  it("rewrites a live sender still signing as a previous client", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 1,
+          from_email: "harmony@crosslaunchco.com",
+          from_name: "Harmony Norris",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Harmony Norris\nTechEvolution",
+          client_id: 542838,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+        { id: 99, name: "Dave", logo: "TechEvolution" },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({ ENFORCE_MAILBOX_SETTINGS: "true" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.run({ dryRun: false, mode: "full" });
+    assert.equal(result.signatureSet, 1);
+    assert.equal(
+      updates[0]?.fields.signature,
+      "Harmony Norris\nBolder Cyber Partners",
+    );
+  });
+
+  it("scans ACTIVE campaign mailboxes only and fixes drifted signatures", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const campaignFetches: number[] = [];
+    const slackMessages: string[] = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 10, name: "BCP PE", status: "ACTIVE", client_id: 542838 },
+        { id: 11, name: "Paused leftover", status: "PAUSED", client_id: 542838 },
+        { id: 12, name: "MSRS tickets", status: "ACTIVE", client_id: 446286 },
+      ],
+      listClients: async () => [
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+        { id: 99, name: "Dave", logo: "TechEvolution" },
+        { id: 446286, name: "Randy Gaines", logo: "MSRS" },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 1,
+          from_email: "nate@bcp.info",
+          from_name: "Nathaniel Cartwright",
+          signature: "<div>Nathaniel Cartwright</div><div>Bolder Cyber Partners</div>",
+        },
+        {
+          id: 2,
+          from_email: "harmony@crosslaunchco.com",
+          from_name: "Harmony Norris",
+          signature: "Harmony Norris\nTechEvolution",
+        },
+        {
+          id: 3,
+          from_email: "katya@msrs.info",
+          from_name: "Katya Sanchez",
+          signature: "Katya Sanchez\nMid-South Roof Systems",
+        },
+        {
+          id: 99,
+          from_email: "idle@pool.info",
+          from_name: "Idle Pool",
+          signature: "wrong",
+        },
+      ],
+      getCampaignEmailAccounts: async (id: number) => {
+        campaignFetches.push(id);
+        if (id === 10) {
+          return [
+            { id: 1, from_email: "nate@bcp.info" },
+            { id: 2, from_email: "harmony@crosslaunchco.com" },
+          ];
+        }
+        if (id === 12) return [{ id: 3, from_email: "katya@msrs.info" }];
+        return [{ id: 99, from_email: "idle@pool.info" }];
+      },
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run in active-signatures mode");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({ ENFORCE_MAILBOX_SETTINGS: "true" }),
+      smartlead,
+      {
+        send: async (msg: string) => {
+          slackMessages.push(msg);
+        },
+      } as unknown as SlackClient,
+    );
+
+    const result = await service.runActiveCampaignSignatures({ dryRun: false });
+    assert.equal(result.mode, "active-signatures");
+    assert.equal(result.campaigns, 2);
+    assert.equal(result.scanned, 3);
+    assert.deepEqual(campaignFetches.sort((a, b) => a - b), [10, 12]);
+    assert.equal(result.signatureSet, 2);
+    assert.deepEqual(
+      updates.map((u) => u.fields),
+      [
+        { signature: "Nathaniel Cartwright\nBolder Cyber Partners" },
+        { signature: "Harmony Norris\nBolder Cyber Partners" },
+      ],
+    );
+    assert.match(slackMessages.join("\n"), /Active-campaign signatures fixed/i);
+  });
 });

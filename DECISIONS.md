@@ -725,3 +725,37 @@ marker). Manual `PAUSED` without a pending-resume is never STARTed.
 **Guards.** `CampaignBounceInvestigateService` (no START),
 `CampaignHealthService` STOPPED path, owner-intent D40.
 
+---
+
+## D41 — ACTIVE-campaign signatures are checked every health pass
+
+**Decision.** Every health cron walks mailboxes that sit on **ACTIVE**
+campaigns and converges each to the plain two-line signature:
+
+```
+First Last
+{Client Brand}
+```
+
+Membership is taken from each campaign's email-account list, not only the
+fleet `campaign_ids` field. Brand comes from the campaign's Smartlead client
+(BCP name heuristic if `client_id` is missing). A second line that is the
+same client under a longer legal name is kept (D31, "Mid-South Roof Systems"
+over logo "MSRS"). A second line that matches a *different* known client is
+rewritten to this campaign's brand — live mail must not go out under the
+previous client's company line.
+
+Full-fleet signature/warmup converge stays on the 6-hour pass (D35). This
+scan does not touch warmup, send volume, or idle pool inventory.
+
+**Why.** Josh (2026-08-20): scan all active-campaign mailboxes and ensure
+signatures are correct. The 6-hour full rewrite is too slow for mail that is
+already sending, and preserving *any* existing second line (D31) left
+generics that had moved clients still signing as the old brand.
+
+**Tradeoff.** Health does one extra campaign-account walk plus conditional
+signature writes. Bounded to live senders, not the whole fleet.
+
+**Guard.** `D41: health audits signatures on ACTIVE campaign mailboxes every pass`
+
+

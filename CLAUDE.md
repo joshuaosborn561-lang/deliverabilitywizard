@@ -132,11 +132,18 @@ A/B/C weekly rest is not shipped yet.
 
 ## Mailbox settings
 
-Every mailbox is converged each run to:
+Every mailbox is converged to:
 - `MESSAGE_PER_DAY` (30) — Smartlead **"Message Per Day (Warmups not included)"**
 - `MAILBOX_MIN_TIME_GAP_MINS` (10) — **"Minimum time gap"**
-- Warmup enabled (`WARMUP_TOTAL_PER_DAY` on its own field)
+- Warmup enabled (`WARMUP_TOTAL_PER_DAY` on its own field) on the 6-hour full pass
 - Plain two-line signature `Name\\n{Brand}` when a brand is known
+
+Gap + daily volume (D35) and **ACTIVE-campaign signatures** (D41) run on every
+health pass. A second line that is a longer form of the same client brand is
+kept (MSRS → "Mid-South Roof Systems"); a second line that belongs to a
+*different* known client is rewritten to the campaign's client. Full-fleet
+signatures/warmup stay on the 6-hour converge so idle inventory cannot starve
+staffing.
 
 Settings are per mailbox, so anything added by hand or re-imported arrives on
 a default and needs reconciling.

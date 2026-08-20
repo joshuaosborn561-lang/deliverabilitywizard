@@ -13,6 +13,10 @@ import {
   testIdOf,
 } from "../clients/smartdelivery.js";
 import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
+import {
+  idleWindow,
+  isIdleCampaign,
+} from "../lib/campaignActivity.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import type { StateStore } from "../state/store.js";
@@ -467,6 +471,13 @@ export class CampaignScanner {
       return null;
     }
 
+    if (await this.campaignIsIdle(campaign)) {
+      console.log(
+        `[scan] Skipping campaign ${campaign.id} — no sends in the last ${this.config.placementIdleDays}d (D41)`,
+      );
+      return null;
+    }
+
     const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
     const mappingId = sequence ? sequenceMappingIdOf(sequence) : undefined;
     if (!sequence || mappingId === undefined) {
@@ -483,6 +494,34 @@ export class CampaignScanner {
       subjectPreview: sequenceSubjectPreview(sequence),
       batches,
     };
+  }
+
+  /**
+   * A campaign whose list is fully worked stays ACTIVE in Smartlead, so status
+   * cannot distinguish it from a live one. Gate on recent send volume instead
+   * (D41). One range call per candidate.
+   *
+   * On any analytics failure this returns false — a broken read must never
+   * silently stop the fleet from being tested.
+   */
+  private async campaignIsIdle(campaign: SmartleadCampaign): Promise<boolean> {
+    const idleDays = this.config.placementIdleDays;
+    if (!idleDays) return false;
+    const { startDate, endDate } = idleWindow(idleDays);
+    try {
+      const analytics = await this.smartlead.getCampaignAnalyticsByDate(
+        campaign.id,
+        startDate,
+        endDate,
+      );
+      return isIdleCampaign(analytics, idleDays);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(
+        `[scan] Campaign ${campaign.id} idle check failed (${message}) — testing anyway`,
+      );
+      return false;
+    }
   }
 
   private async finish(result: ScanResult): Promise<void> {

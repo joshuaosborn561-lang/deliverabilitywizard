@@ -229,6 +229,55 @@ describe("owner intent", () => {
     );
   });
 
+  it("D42: warmup reputation rotates independently of placement and bounce", async () => {
+    const { shouldRotateForWarmupReputation, parseWarmupReputation } =
+      await import("../lib/warmupReputation.js");
+
+    assert.equal(
+      shouldRotateForWarmupReputation(61, defaults.warmupReputationThreshold),
+      true,
+      stop(
+        "A collapsed warmup reputation pulls a sender (D42).",
+        "The crossscaleco band (61-77%) no longer rotates at the default threshold.",
+      ),
+    );
+    assert.equal(
+      shouldRotateForWarmupReputation(null, defaults.warmupReputationThreshold),
+      false,
+      stop(
+        "A missing reputation reading is not a damaged mailbox (D42).",
+        "A null reading now rotates, which would bench every thinly-reported account.",
+      ),
+    );
+    assert.equal(
+      parseWarmupReputation({ warmup_details: { warmup_reputation: "0%" } }),
+      0,
+      stop(
+        "A real 0% reputation is a reading, not a missing value (D42).",
+        "0% now parses as null, so dead mailboxes would stay on campaigns.",
+      ),
+    );
+    assert.equal(
+      defaults.enableWarmupReputationRotation,
+      false,
+      stop(
+        "Reputation rotation ships OFF until replacements are staffed (D42).",
+        "It now defaults on — enabling it pulls 36 mailboxes at once, 23 from a campaign already at the MIN_CAMPAIGN_SENDERS floor.",
+      ),
+    );
+
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/remediation.ts", import.meta.url), "utf8"),
+    );
+    assert.ok(
+      /!bounceDriven && !reputationDriven/.test(src),
+      stop(
+        "A damaged mailbox is not a copy problem (D28 + D42).",
+        "The copy-defer branch can now swallow a reputation-driven pull.",
+      ),
+    );
+  });
+
   it("D28: copySignal defers Outlook-buried / Gmail-ok as copy", async () => {
     const { classifyCopySignal, shouldDeferSenderRotationForCopy } =
       await import("../lib/copySignal.js");

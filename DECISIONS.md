@@ -725,3 +725,75 @@ marker). Manual `PAUSED` without a pending-resume is never STARTed.
 **Guards.** `CampaignBounceInvestigateService` (no START),
 `CampaignHealthService` STOPPED path, owner-intent D40.
 
+
+---
+
+## D42 — Warmup reputation is a third rotation signal
+
+> **PROPOSED — not yet ratified by Josh, and shipped OFF by default.**
+> Numbered assuming PR #62 (D41) lands first; if it does not, this is D41.
+
+**Decision.** A sender whose Smartlead warmup reputation is below
+`WARMUP_REPUTATION_THRESHOLD` (90) is pulled through the existing remediation
+path — removed from active campaigns, warmup re-enabled, `HOLD-UNTIL` tagged,
+a warmed generic swapped in. Independent of placement and bounce, exactly as
+those two are independent of each other. `0` disables the signal, and
+`ENABLE_WARMUP_REPUTATION_ROTATION` defaults **false**.
+
+Reputation also blocks a hold from being released and blocks the D32 same-ESP
+audit from restoring a sender: the hold clock does not repair a mailbox.
+
+A **null** reading never rotates. A **0%** reading does — that is a dead mailbox,
+not a missing value, and three `salesgliderfly.info` mailboxes genuinely read 0%
+while attached to six live campaigns.
+
+**Why.** The two existing signals both miss a badly damaged mailbox. Bounce
+needs `MIN_BOUNCE_SAMPLE` (50) sends, and a mailbox that is barely delivering
+never accumulates a dirty bounce rate. Placement needs a seeded test to happen
+to cover it. Reputation is converged on every mailbox on every health pass
+already, so it costs no extra API call and fires weeks earlier.
+
+Measured 2026-08-20 — SalesGlider senders from placement tests
+`#507468`/`#507469`, grouped by current reputation:
+
+| Reputation | Mailboxes | Seeds | Inbox |
+|---|---|---|---|
+| 98–100% | 49 | 3,014 | **86%** |
+| 90–97% | 3 | 134 | 38% |
+| below 90% | 8 | 310 | **36%** |
+
+The same split separates the client pools, which nothing else did — not sender
+host, not mailbox age, not copy:
+
+| Pool | Mailboxes under 98% | Gmail placement |
+|---|---|---|
+| SalesGlider | 11 | 22% |
+| BCP | 1 | 79% |
+| Vasco | 0 | 97% |
+| Peterson | 0 | 99% |
+
+Vasco kills the sender-host theory (28 Outlook + 52 SMTP, zero Google-hosted,
+same AirPods copy, 97%). Mailbox age kills itself (SalesGlider's 120-day+
+mailboxes place at 100%, its under-30-day mailboxes at 36%). And rewriting
+`AirPods` to `Air Pods` moved Gmail 22% → 21% in control test `#514416`.
+
+**Tradeoff.** This is a **correlation**: reputation was read on 2026-08-20 and
+the placement tests ran 2026-08-11, so low reputation may be a *consequence* of
+poor placement rather than its cause. It is still the signal that surfaces a bad
+mailbox first, and a mailbox reading 36% inbox belongs off campaigns regardless
+of which way the arrow points. Settling causation needs reputation sampled
+*before* a placement test — worth wiring into the health pass, it costs nothing.
+
+Set too high, the threshold benches healthy mailboxes mid-warmup and burns
+inventory — the failure mode D28 exists to prevent on the copy side. 90 is the
+lowest value that catches every mailbox currently damaged (61–77% band) while
+clearing every mailbox in the healthy pools (98–100%).
+
+**Why it ships off.** Enabling it today pulls **36 mailboxes at once**, 23 of
+them from `TechEvo New England Red Sox` — which has exactly 50 senders and sits
+*on* the `MIN_CAMPAIGN_SENDERS` floor, so the pull would drop it under and
+trigger a protective pause. Staff replacements first, then enable.
+
+**Guards.** `warmupReputation.shouldRotateForWarmupReputation` (null never
+rotates, 0% does), `ENABLE_WARMUP_REPUTATION_ROTATION` defaults false,
+reputation-driven pulls bypass the D28 copy defer, owner-intent D42.

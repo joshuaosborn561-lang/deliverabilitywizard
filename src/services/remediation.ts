@@ -45,6 +45,7 @@ import {
   parseSenderBounceStats,
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
+import { collectWarmupReputationRotations } from "../lib/warmupReputation.js";
 import { classifyHoldOutcome } from "../lib/holdOutcome.js";
 import { isMissingSpamTestNoise } from "../lib/alertNoise.js";
 import { summarizeErrors } from "../lib/errorDigest.js";
@@ -106,6 +107,8 @@ export interface SameEspAuditResult {
   unprovenBlendedReleased: number;
   /** Blended-score holds kept anyway because bounce still condemns them (D5). */
   heldOnBounce: number;
+  /** Held back because warmup reputation still fails (D42). */
+  heldOnReputation?: number;
   errors: string[];
 }
 
@@ -154,6 +157,8 @@ export interface HeldReleaseResult {
   released: Array<{ email: string; heldDays: number; stampedUntil?: string }>;
   /** Served the term but still failing bounce — kept (D5). */
   keptOnBounce: number;
+  /** Kept on hold because warmup reputation still fails (D42). */
+  keptOnReputation?: number;
   /** Covered by an active pool swap; RecoveryPoolService owns those. */
   skippedActiveSwap: number;
   errors: string[];
@@ -446,11 +451,28 @@ export class RemediationService {
       );
     }
 
+    // Warmup reputation is a third independent signal (D42). Smartlead converges
+    // it on every mailbox already, so this costs no extra API call — and it is
+    // the only one of the three that catches a mailbox which is barely
+    // delivering: too little volume to fail bounce, and no seeded test yet.
+    const reputationRotations = this.config.enableWarmupReputationRotation
+      ? collectWarmupReputationRotations(accounts, this.config.warmupReputationThreshold)
+      : new Map<string, number>();
+    if (reputationRotations.size) {
+      console.log(
+        `[remediation] ${reputationRotations.size} sender(s) under ${this.config.warmupReputationThreshold}% warmup reputation:`,
+        [...reputationRotations.entries()]
+          .slice(0, 20)
+          .map(([e, r]) => `${e} ${r}%`),
+      );
+    }
+
     // 3b) Undo prior pulls that fail the same-ESP audit (blended false positives)
     result.sameEspAudit = await this.auditAndRestoreFalseHolds({
       accounts,
       inboxRateRows,
       bounceRotations,
+      reputationRotations,
       dryRun: result.dryRun,
     });
     result.errors.push(...result.sameEspAudit.errors);
@@ -661,6 +683,9 @@ export class RemediationService {
       if (blacklistedSet.has(domain)) return false;
       // High bounce is disqualifying on its own, regardless of placement.
       if (bounceRotations.has(email)) return true;
+      // So is a collapsed warmup reputation (D42) — same reasoning, different
+      // instrument. Neither waits on a placement score.
+      if (reputationRotations.has(email)) return true;
       // D32: placement rotation requires a same-ESP score — never blended.
       return shouldRotateForPlacement(inboxRateRows.get(email), threshold, {
         scoreSameEspOnly: this.config.scoreSameEspOnly,
@@ -671,17 +696,21 @@ export class RemediationService {
       const email = accountEmail(account)!;
       const rateRow = inboxRateRows.get(email.toLowerCase());
       const bounceDriven = bounceRotations.has(email.toLowerCase());
-      // Bounce-only pulls may lack a same-ESP placement row; don't require one.
+      const reputationDriven = reputationRotations.has(email.toLowerCase());
+      // Bounce- or reputation-only pulls may lack a same-ESP placement row;
+      // don't require one.
       const rate =
         inboxRates.get(email.toLowerCase()) ??
-        (bounceDriven ? bounceRotations.get(email.toLowerCase())! : undefined);
+        (bounceDriven ? bounceRotations.get(email.toLowerCase())! : undefined) ??
+        (reputationDriven ? reputationRotations.get(email.toLowerCase())! : undefined);
       if (typeof rate !== "number") continue;
       const key = `remediate-inbox:${email.toLowerCase()}`;
       if (this.state.hasRemediation(key)) continue;
       if (this.state.getHeldInbox(email)) continue;
 
-      // Bounce still rotates. Low inbox alone defers when copy looks guilty.
-      if (!bounceDriven) {
+      // Bounce and reputation still rotate. Low inbox alone defers when copy
+      // looks guilty (D28) — but a damaged mailbox is not a copy problem.
+      if (!bounceDriven && !reputationDriven) {
         const onCampaigns = campaignIdsOf(account).filter((id) => {
           const status = campaignStatus.get(id);
           return !status || status === "ACTIVE";
@@ -863,6 +892,7 @@ export class RemediationService {
     result.heldRelease = await this.releaseServedHolds({
       accounts,
       bounceRotations,
+      reputationRotations,
       dryRun: result.dryRun,
     });
     result.errors.push(...result.heldRelease.errors);
@@ -986,6 +1016,8 @@ export class RemediationService {
   async releaseServedHolds(opts: {
     accounts: SmartleadAccountWithCampaigns[];
     bounceRotations: Map<string, number>;
+    /** Absent means the D42 signal is off for this run. */
+    reputationRotations?: Map<string, number>;
     dryRun: boolean;
   }): Promise<HeldReleaseResult> {
     const out: HeldReleaseResult = {
@@ -993,6 +1025,7 @@ export class RemediationService {
       heldChecked: 0,
       released: [],
       keptOnBounce: 0,
+      keptOnReputation: 0,
       skippedActiveSwap: 0,
       errors: [],
     };
@@ -1024,6 +1057,11 @@ export class RemediationService {
       // still fails it would put a known bouncer straight back into supply.
       if (opts.bounceRotations.has(email)) {
         out.keptOnBounce += 1;
+        continue;
+      }
+      // Same for reputation (D42) — the hold clock does not repair a mailbox.
+      if (opts.reputationRotations?.has(email)) {
+        out.keptOnReputation = (out.keptOnReputation ?? 0) + 1;
         continue;
       }
 
@@ -1067,6 +1105,7 @@ export class RemediationService {
       heldChecked: out.heldChecked,
       released: out.released.length,
       keptOnBounce: out.keptOnBounce,
+      keptOnReputation: out.keptOnReputation,
       skippedActiveSwap: out.skippedActiveSwap,
       errors: out.errors.length,
     });
@@ -1191,6 +1230,8 @@ export class RemediationService {
     accounts: SmartleadAccountWithCampaigns[];
     inboxRateRows: Map<string, SenderInboxRate>;
     bounceRotations: Map<string, number>;
+    /** Absent means the D42 signal is off for this run. */
+    reputationRotations?: Map<string, number>;
     dryRun: boolean;
   }): Promise<SameEspAuditResult> {
     const out: SameEspAuditResult = {
@@ -1203,6 +1244,7 @@ export class RemediationService {
       noSameEspEvidence: 0,
       unprovenBlendedReleased: 0,
       heldOnBounce: 0,
+      heldOnReputation: 0,
       errors: [],
     };
 
@@ -1310,6 +1352,10 @@ export class RemediationService {
         // (D5) — never hand a live campaign back a sender that still fails it.
         if (opts.bounceRotations.has(email)) {
           out.heldOnBounce += 1;
+          continue;
+        }
+        if (opts.reputationRotations?.has(email)) {
+          out.heldOnReputation = (out.heldOnReputation ?? 0) + 1;
           continue;
         }
         out.unprovenBlendedReleased += 1;
@@ -1448,6 +1494,7 @@ export class RemediationService {
       noSameEspEvidence: out.noSameEspEvidence,
       unprovenBlendedReleased: out.unprovenBlendedReleased,
       heldOnBounce: out.heldOnBounce,
+      heldOnReputation: out.heldOnReputation,
       errors: out.errors.length,
     });
 

@@ -121,6 +121,21 @@ const ConfigSchema = z.object({
   minBounceSample: z.coerce.number().int().min(0).default(50),
   enableBounceRotation: boolFromEnv(true),
   /**
+   * Warmup reputation below this pulls a sender (D42). 0 disables the signal.
+   *
+   * Independent of placement and bounce: a badly damaged mailbox is barely
+   * delivering, so its bounce rate reads clean, and it only fails placement
+   * once a seeded test happens to cover it.
+   */
+  warmupReputationThreshold: z.coerce.number().min(0).max(100).default(90),
+  /**
+   * Off by default. Turning this on today pulls 36 mailboxes at once, 23 of
+   * them from TechEvo New England Red Sox — which sits exactly on the
+   * MIN_CAMPAIGN_SENDERS floor of 50 and would drop under it. Staff the
+   * replacements first, then enable. See D42.
+   */
+  enableWarmupReputationRotation: boolFromEnv(false),
+  /**
    * Pre-warmed generic mailboxes that live outside the .info pool plan, matched
    * against Smartlead by email address or by from_name (e.g. "Harmony Norris").
    *
@@ -326,6 +341,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
+    warmupReputationThreshold: env.WARMUP_REPUTATION_THRESHOLD ?? "90",
+    enableWarmupReputationRotation: env.ENABLE_WARMUP_REPUTATION_ROTATION,
     extraGenericMailboxes:
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     extraGenericDomains:

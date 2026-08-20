@@ -434,7 +434,7 @@ describe("owner intent — mailbox settings", () => {
 });
 
 describe("owner intent — auto bug remediator", () => {
-  it("D21: remediator defaults on with auto-merge after threshold", () => {
+  it("D21: remediator defaults on after threshold (merge is D41)", () => {
     assert.equal(
       defaults.enableBugRemediator,
       true,
@@ -461,10 +461,97 @@ describe("owner intent — auto bug remediator", () => {
     );
     assert.equal(
       defaults.bugRemediatorAutoMerge,
+      false,
+      stop(
+        "Cayden's Cursor identity cannot merge remediator PRs (D41; supersedes D21 auto-merge).",
+        "Auto-merge now defaults on, so an account without merge rights would be told to merge main.",
+      ),
+    );
+  });
+
+  it("D41: code-changing Cursor agents always auto-create a PR and do not merge", async () => {
+    const fs = await import("node:fs");
+    const assistantSrc = fs.readFileSync(
+      new URL("../ops/cursorAssistant.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      assistantSrc,
+      /autoCreatePR:\s*true/,
+      stop(
+        "Ops Cursor agents open a PR for code changes (D41).",
+        "CursorAssistantService no longer launches with autoCreatePR: true.",
+      ),
+    );
+    assert.match(
+      assistantSrc,
+      /Always open a PR for any code change \(D41\)/,
+      stop(
+        "Ops Cursor agents are told to open a PR and never merge (D41).",
+        "cursorAssistant policy preamble lost the D41 PR rule.",
+      ),
+    );
+    const clientSrc = fs.readFileSync(
+      new URL("../clients/cursorCloud.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      clientSrc,
+      /autoCreatePR:\s*input\.autoCreatePR\s*\?\?\s*true/,
+      stop(
+        "Cursor Cloud agents default to opening a PR (D41).",
+        "CursorCloudClient autoCreatePR default is no longer true.",
+      ),
+    );
+    const remediatorSrc = fs.readFileSync(
+      new URL("../services/bugRemediator.ts", import.meta.url),
+      "utf8",
+    );
+    assert.equal(
+      /autoCreatePR:\s*true/.test(remediatorSrc),
       true,
       stop(
-        "Remediator merges green PRs so Josh does not babysit (D21).",
-        "Auto-merge now defaults off.",
+        "Bug remediator still opens a fix PR (D21/D41).",
+        "BugRemediator no longer passes autoCreatePR: true.",
+      ),
+    );
+    const { buildRemediatorPrompt } = await import(
+      "../services/bugRemediator.js"
+    );
+    const prompt = buildRemediatorPrompt(
+      {
+        class: "api_validation",
+        fingerprint: "api_validation:d41",
+        autoRemediate: true,
+        summary: "validation",
+        raw: "example",
+      },
+      {
+        fingerprint: "api_validation:d41",
+        failureClass: "api_validation",
+        summary: "validation",
+        source: "scan",
+        count: 2,
+        firstSeenAt: "2026-01-01T00:00:00.000Z",
+        lastSeenAt: "2026-01-01T00:00:00.000Z",
+        status: "watching",
+      },
+      defaults,
+    );
+    assert.match(
+      prompt,
+      /Do NOT merge/,
+      stop(
+        "Remediator must not merge under Cayden's Cursor identity (D41).",
+        "Default remediator prompt no longer forbids merge.",
+      ),
+    );
+    assert.equal(
+      /merge the PR into main yourself/.test(prompt),
+      false,
+      stop(
+        "Remediator must not self-merge by default (D41).",
+        "Default remediator prompt still tells the agent to merge main.",
       ),
     );
   });

@@ -74,7 +74,8 @@ win—do not select “ours” or “theirs” blindly.
 ## Pull requests
 
 Every change reaches `main` through a PR, including documentation and
-maintainer-authored changes.
+maintainer-authored changes. Cayden's Cursor/GitHub identity cannot merge
+(D41) — agents using that account must open a PR and stop.
 
 - Keep the PR focused and describe user-visible behavior.
 - Complete the test plan in the template.

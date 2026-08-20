@@ -381,8 +381,10 @@ async function main(): Promise<void> {
 
   /**
    * Fast staffing loop (D25): refill/unpause first, then reconnect.
-   * Mailbox-settings converge is throttled (every 6h) so a full-fleet rewrite
-   * cannot starve the 15-minute staffing pass. Measure stays on CRON_MONITOR.
+   * Full-fleet mailbox-settings converge is throttled (every 6h) so a rewrite
+   * of idle inventory cannot starve the 15-minute staffing pass. Gap (D35)
+   * and ACTIVE-campaign signatures (D41) still run every health pass.
+   * Measure stays on CRON_MONITOR.
    */
   const runHealth = async () => {
     assertRuntimeSecrets(config);
@@ -412,15 +414,24 @@ async function main(): Promise<void> {
         }
       }
 
-      // D30/D35: gap + daily volume every health pass. Full signature/warmup
-      // converge stays throttled so it cannot starve the 15-minute staffing loop.
+      // D30/D35: gap + daily volume every health pass. D41: live-campaign
+      // signatures every pass (bounded to ACTIVE membership). Full-fleet
+      // signature/warmup converge stays throttled so it cannot starve staffing.
       let mailboxGapResult: unknown = null;
+      let mailboxSignaturesResult: unknown = null;
       let mailboxSettingsResult: unknown = null;
       if (config.enforceMailboxSettings) {
         try {
           mailboxGapResult = await mailboxSettings.runGapEnforce();
         } catch (error) {
           console.warn("[health] mailbox gap enforce failed", error);
+        }
+
+        try {
+          mailboxSignaturesResult =
+            await mailboxSettings.runActiveCampaignSignatures();
+        } catch (error) {
+          console.warn("[health] active-campaign signatures failed", error);
         }
 
         const lastSettingsAt = state.get().lastMailboxSettingsAt;
@@ -437,7 +448,7 @@ async function main(): Promise<void> {
           }
         } else {
           console.log(
-            `[health] Skipping full mailbox-settings (last ${lastSettingsAt ?? "never"}; due every 6h; gap enforce already ran)`,
+            `[health] Skipping full mailbox-settings (last ${lastSettingsAt ?? "never"}; due every 6h; gap + active signatures already ran)`,
           );
         }
       }
@@ -446,6 +457,7 @@ async function main(): Promise<void> {
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
+        mailboxSignatures: mailboxSignaturesResult,
         mailboxSettings: mailboxSettingsResult,
       };
     })().finally(() => {
@@ -986,6 +998,16 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "mailbox-settings", result });
         return;
       }
+      if (
+        mode === "signatures" ||
+        mode === "mailbox-signatures" ||
+        mode === "active-signatures"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await mailboxSettings.runActiveCampaignSignatures();
+        res.json({ ok: true, mode: "signatures", result });
+        return;
+      }
       if (mode === "reconcile" || mode === "test-reconcile") {
         const result = await runTestReconcile();
         res.json({ ok: true, mode: "reconcile", result });
@@ -1195,7 +1217,7 @@ async function main(): Promise<void> {
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
     );
     console.log(
-      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap + ACTIVE-campaign signatures every health pass; full signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
       `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (floor ${config.minCampaignSenders} staffable${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,

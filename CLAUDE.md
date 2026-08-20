@@ -222,3 +222,30 @@ Pick one deliberately. They have not been consolidated.
   read rather than guessed
 - Railway variable *values* are not readable over the OAuth connection; names
   are. Deploy code that logs what you need instead of guessing at config
+
+## Cursor Cloud specific instructions
+
+Node 20+/npm only; there is no database or other external service to run. Standard
+commands live in `package.json` and `README.md` (`npm run dev`, `npm run typecheck`,
+`npm test`) — use those rather than duplicating them here.
+
+Non-obvious gotchas when running locally / in a cloud agent:
+
+- **No dotenv.** The app never reads a `.env` file — `.env.example` documents
+  Railway variables only. Nothing loads it. Export vars into the shell before
+  `npm run dev`, e.g. `set -a; source your.env; set +a; npm run dev`.
+- **Boots without secrets.** With no `SMARTLEAD_API_KEY`/Slack set, `/health`
+  and the `/ops` console still come up, but any scan/monitor/remediate path
+  (most `POST /run?mode=…` calls) throws `Missing required secrets` and every
+  Smartlead call returns `Invalid API Key`. Offline you can only exercise
+  `/health` and the `/ops` console (login + dashboard render local state; live
+  fleet numbers show `---`). Real end-to-end scans need live Smartlead
+  credentials.
+- **State path defaults to a Railway volume.** `STATE_FILE_PATH` defaults to
+  `/data/state.json`, which does not exist locally. Set
+  `STATE_FILE_PATH=data/local-state.json` (already gitignored) for local runs.
+- **`/ops` requires configuration or it refuses to boot.** With
+  `OPS_UI_ENABLED=true` you must also set `OPS_OWNER_TOKEN`,
+  `OPS_OPERATOR_TOKEN` and `OPS_SESSION_SECRET` (each 32+ chars) or startup
+  throws. Log in at `/ops` with `OPS_OWNER_USERNAME` (default `josh`) +
+  `OPS_OWNER_TOKEN`.

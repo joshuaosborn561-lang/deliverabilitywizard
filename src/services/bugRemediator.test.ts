@@ -16,7 +16,6 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       CURSOR_API_KEY: "test-key",
       BUG_REMEDIATOR_MIN_HITS: "2",
       BUG_REMEDIATOR_COOLDOWN_HOURS: "24",
-      BUG_REMEDIATOR_AUTO_MERGE: "true",
     } as NodeJS.ProcessEnv),
     ...overrides,
   };
@@ -124,7 +123,7 @@ describe("BugRemediator", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("buildRemediatorPrompt forbids spend/delete and mentions auto-merge", () => {
+  it("buildRemediatorPrompt forbids spend/delete and defaults to PR-only (D41)", () => {
     const prompt = buildRemediatorPrompt(
       {
         class: "api_validation",
@@ -143,11 +142,12 @@ describe("BugRemediator", () => {
         lastSeenAt: "2026-01-01T01:00:00.000Z",
         status: "watching",
       },
-      testConfig({ bugRemediatorAutoMerge: true }),
+      testConfig(),
     );
     assert.match(prompt, /Never buy domains/);
     assert.match(prompt, /Never delete/);
-    assert.match(prompt, /merge the PR/);
+    assert.match(prompt, /Do NOT merge/);
+    assert.equal(/merge the PR into main yourself/.test(prompt), false);
     assert.match(prompt, /scheduler_cron_value/);
   });
 });

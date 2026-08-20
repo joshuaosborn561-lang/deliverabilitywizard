@@ -725,3 +725,36 @@ marker). Manual `PAUSED` without a pending-resume is never STARTed.
 **Guards.** `CampaignBounceInvestigateService` (no START),
 `CampaignHealthService` STOPPED path, owner-intent D40.
 
+---
+
+## D41 — Cayden's Cursor/GitHub identity always opens a PR (never merges)
+
+**Decision.** Code changes made under Cayden's Cursor or GitHub account always
+land as a pull request. That identity must not push to `main`, merge to
+`main`, or skip the PR — it does not have merge rights on the deploying
+branch.
+
+Defaults that hold this:
+
+- Ops freeform Cursor agents (`CursorAssistantService`) launch with
+  `autoCreatePR: true`.
+- The Cursor Cloud client defaults `autoCreatePR` to true for any agent that
+  can change code.
+- Bug remediator still opens a fix PR (D21) but must not merge it.
+  `BUG_REMEDIATOR_AUTO_MERGE` defaults **off**. This supersedes D21's
+  "agent merges after CI is green" instruction for this identity; Josh
+  merges (or sets the flag only if the Cursor key is his).
+
+**Why.** Cayden (2026-08-20): this account will need to open PRs always; set
+that as the default for any code change. CONTRIBUTING already forbids direct
+commits to `main`. Ops chat had been launching Cursor agents with
+`autoCreatePR: false`, so a code-changing agent could finish without a PR.
+D21 told the remediator to self-merge, which this account cannot do.
+
+**Tradeoff.** Fix PRs wait on Josh (or a reviewer with merge rights) instead
+of auto-deploying. Accepted: an unreviewed merge from an account that cannot
+merge would fail anyway, and a silent push to `main` is a production deploy.
+
+**Guards.** owner-intent D41, `CursorAssistantService`, `CursorCloudClient`
+`autoCreatePR` default, remediator prompt.
+

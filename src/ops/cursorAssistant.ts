@@ -40,6 +40,7 @@ function policyPreamble(actor: string, role: OpsRole): string {
     "- Never change fleet policy (50-sender floor, 30/day cap, thresholds) without",
     "  a reviewed PR and Josh's decision recorded in DECISIONS.md.",
     "- Prefer investigate → explain → PR. Do not deploy by pushing to main.",
+    "- Always open a PR for any code change (D41). Never push to main. Never merge.",
     "- For Cayden (operator): keep responses operational; refuse spend/policy",
     "  overrides and explain why.",
     "",
@@ -110,7 +111,7 @@ export class CursorAssistantService {
       startingRef: this.options.startingRef,
       name: `Ops UI — ${input.actor}`,
       mode: "agent",
-      autoCreatePR: false,
+      autoCreatePR: true,
     });
     this.state.setOpsCursorAgentId(input.actor, created.agent.id);
     await this.state.save();

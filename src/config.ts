@@ -263,10 +263,10 @@ const ConfigSchema = z.object({
   /** Hours to wait before re-launching for the same fingerprint. */
   bugRemediatorCooldownHours: z.coerce.number().int().positive().default(24),
   /**
-   * When true, the Cursor remediator is told to merge the PR after CI is green
-   * so Josh does not have to. Default on — still cannot spend/delete/bypass.
+   * When true, the Cursor remediator is told to merge the PR after CI is green.
+   * Default off (D41): Cayden's Cursor identity cannot merge to main.
    */
-  bugRemediatorAutoMerge: boolFromEnv(true),
+  bugRemediatorAutoMerge: boolFromEnv(false),
   dryRun: boolFromEnv(false),
 });
 

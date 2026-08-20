@@ -38,6 +38,12 @@ same session, with its guard.** Chat history is not durable; the repo is.
 Work on your own branch and merge through a PR — never push to another
 person's branch.
 
+**Cayden's Cursor/GitHub identity always opens a PR (D41).** That account
+cannot merge to `main`. For any code change: feature branch, commit, push,
+open a PR. Do not push to `main`, do not merge, do not skip the PR. Ops
+Cursor agents and the bug remediator launch with `autoCreatePR` on; the
+remediator must not self-merge.
+
 **`main` is the deploying branch.** Railway watches it, so a merge there is a
 production deploy. Each deploy restarts the app, which resets the cron cycle —
 avoid merging in a tight sequence when you need a scheduled job to actually
@@ -171,8 +177,9 @@ not public. `/health` is the only unauthenticated operational endpoint.
 signed HttpOnly sessions, CSRF protection, role checks and a persisted audit
 log. Fast chat commands stay allowlisted. Freeform chat (when `CURSOR_API_KEY`
 is set) goes to a Cursor Cloud Agent on **Grok 4.5 High Fast** — same style as
-Josh's agent — and may open PRs, but still cannot spend, purge, bypass safety
-gates, or deploy production directly (D18/D20).
+Josh's agent — and **always opens a PR** for code changes (D41). It still
+cannot spend, purge, bypass safety gates, merge to `main`, or deploy
+production directly (D18/D20/D41).
 
 Cayden may check placement/campaigns/DNS, reconnect mailboxes and perform a
 confirmed one-mailbox rotation when every runtime precondition passes. Spending,

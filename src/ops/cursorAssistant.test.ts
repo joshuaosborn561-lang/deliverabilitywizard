@@ -14,11 +14,13 @@ describe("CursorAssistantService", () => {
     await state.load();
 
     let polls = 0;
+    let lastCreateAgent: { autoCreatePR?: boolean } | undefined;
     const client = {
       async getAgent(id: string) {
         return { id, url: `https://cursor.com/agents/${id}` };
       },
-      async createAgent() {
+      async createAgent(input: { autoCreatePR?: boolean }) {
+        lastCreateAgent = input;
         return {
           agent: {
             id: "bc-test-1",
@@ -66,6 +68,7 @@ describe("CursorAssistantService", () => {
     });
     assert.equal(started.agentId, "bc-test-1");
     assert.equal(started.runId, "run-1");
+    assert.equal(lastCreateAgent?.autoCreatePR, true);
     assert.equal(state.getOpsCursorAgentId("cayden"), "bc-test-1");
 
     const pending = await assistant.poll(started.agentId, started.runId);

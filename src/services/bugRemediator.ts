@@ -21,7 +21,7 @@ const ACTOR = "bug-remediator";
  * Turns repeated runtime failures into Cursor Cloud Agent draft PRs so Josh
  * does not have to chase every SmartDelivery validation / stale-endpoint bug.
  *
- * Never spends, deletes, bypasses holds, or pushes to main — D18/D20/D21.
+ * Never spends, deletes, bypasses holds, or pushes to main — D18/D20/D21/D41.
  */
 export class BugRemediator {
   private inFlight = false;
@@ -247,7 +247,8 @@ export function buildRemediatorPrompt(
         "for review and say so clearly in Slack/PR body.",
       ].join("\n")
     : [
-        "Open a ready-for-review PR. Do NOT merge — Josh or Cayden will merge.",
+        "Open a ready-for-review PR. Do NOT merge — this Cursor identity cannot",
+        "merge to main (D41). Josh merges after review.",
       ].join("\n");
 
   return [

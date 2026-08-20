@@ -86,7 +86,7 @@ export class CursorCloudClient {
       model: input.model,
       name: input.name,
       mode: input.mode ?? "agent",
-      autoCreatePR: input.autoCreatePR ?? false,
+      autoCreatePR: input.autoCreatePR ?? true,
       repos: [
         {
           url: input.repositoryUrl,

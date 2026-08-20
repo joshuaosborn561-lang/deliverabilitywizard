@@ -57,6 +57,13 @@ const ConfigSchema = z.object({
    */
   placementTestEndDays: z.coerce.number().int().nonnegative().default(0),
   /**
+   * Skip creating a placement test for a campaign that has sent nothing in
+   * this many days (D41). A worked-out list leaves the campaign ACTIVE, so
+   * status alone cannot tell a live campaign from a finished one. 0 disables
+   * the gate.
+   */
+  placementIdleDays: z.coerce.number().int().nonnegative().default(7),
+  /**
    * Campaign statuses that keep an automated test running. A test whose
    * campaign leaves this set is stopped by the reconciler.
    */
@@ -304,6 +311,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     autoPlacementTests: env.AUTO_PLACEMENT_TESTS,
     placementTestEveryDays: env.PLACEMENT_TEST_EVERY_DAYS ?? "1",
     placementTestEndDays: env.PLACEMENT_TEST_END_DAYS ?? "0",
+    placementIdleDays: env.PLACEMENT_IDLE_DAYS ?? "7",
     autoTestActiveStatuses: env.AUTO_TEST_ACTIVE_STATUSES ?? "ACTIVE",
     enableTestReconciler: env.ENABLE_TEST_RECONCILER,
     deliverabilityThreshold: env.DELIVERABILITY_THRESHOLD ?? "90",

@@ -229,6 +229,39 @@ describe("owner intent", () => {
     );
   });
 
+  it("D41: idle campaigns do not consume placement-test quota", async () => {
+    const { isIdleCampaign } = await import("../lib/campaignActivity.js");
+    assert.equal(
+      isIdleCampaign({ sent_count: 0 }, defaults.placementIdleDays),
+      true,
+      stop(
+        "A campaign that has sent nothing must not earn a placement test (D41).",
+        "isIdleCampaign no longer treats a zero-send window as idle.",
+      ),
+    );
+    assert.ok(
+      defaults.placementIdleDays > 0,
+      stop(
+        "The idle gate is on by default (D41).",
+        "PLACEMENT_IDLE_DAYS now defaults to 0, so finished campaigns burn quota again.",
+      ),
+    );
+
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/campaignScanner.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.ok(
+      /idle check failed[\s\S]{0,80}?testing anyway/.test(src),
+      stop(
+        "A failed analytics read must not bench the fleet (D41).",
+        "campaignScanner no longer falls through to testing when the idle check throws.",
+      ),
+    );
+  });
+
   it("D28: copySignal defers Outlook-buried / Gmail-ok as copy", async () => {
     const { classifyCopySignal, shouldDeferSenderRotationForCopy } =
       await import("../lib/copySignal.js");

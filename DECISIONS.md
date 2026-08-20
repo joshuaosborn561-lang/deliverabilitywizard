@@ -725,3 +725,59 @@ marker). Manual `PAUSED` without a pending-resume is never STARTed.
 **Guards.** `CampaignBounceInvestigateService` (no START),
 `CampaignHealthService` STOPPED path, owner-intent D40.
 
+
+---
+
+## D41 — A campaign that has stopped sending does not earn a placement test
+
+> **PROPOSED — not yet ratified by Josh.** Everything below describes the
+> behaviour on this branch. Nothing has been merged or deployed.
+
+**Decision.** Before building a test plan, the scanner checks whether the
+campaign sent anything in the last `PLACEMENT_IDLE_DAYS` (default 7). If it
+sent nothing, the campaign is skipped and consumes no quota. `0` disables the
+gate. A failed analytics read falls through to testing, so a broken API call
+can never silently bench the fleet.
+
+**Why.** Campaign status cannot tell a live campaign from a finished one — a
+Smartlead campaign stays `ACTIVE` after its list is fully worked, and the
+scanner's eligibility filter looks at status only. Measured 2026-08-20:
+
+- **24 of 47 ACTIVE placement tests** — half of everything running — sat on
+  **11 campaigns with zero uncontacted leads**.
+- `MSRS2 Ticket Offer Property Manager` had a recurring test running against a
+  campaign that last sent on **2026-07-20**, a month earlier.
+- Quota was at **118 of 120** with 2 slots free, which is what stopped the
+  Gmail-placement investigation from running a proper 5-cell copy matrix.
+
+This is unrecoverable rather than merely wasteful. SmartDelivery has **no delete
+endpoint** — `DELETE /spam-test/{id}`, `POST /spam-test/{id}/delete`,
+`PUT /spam-test/{id}/archive` and `DELETE /spam-test/report/{id}` all return the
+web server's HTML 404, while `GET /spam-test/{id}` and `PUT /spam-test/{id}/stop`
+on the same non-existent id return JSON `"Test not found"`, proving the routes
+themselves are absent. `campaignScanner.ts` counts `existingTests.length` with no
+status filter, so a STOPPED test still holds its slot. On 2026-08-20, 83 of 118
+slots were held by tests that will never run again. **Every slot spent on a dead
+campaign is spent permanently.**
+
+**Why send volume and not a lead count.** Exhaustion would have to be derived by
+paginating leads and statistics — tens of thousands of rows for a campaign like
+`BCP Generic (With Team)` (42,264 leads). One `analytics-by-date` range call per
+candidate gives the same answer, and it is the more honest signal anyway: a
+placement test measures nothing while no mail is flowing.
+
+**Tradeoff.** A campaign that is dormant but about to be reloaded loses test
+coverage until its first send lands, so the first day of a relaunch goes
+unmeasured. Widening `PLACEMENT_IDLE_DAYS` trades quota back for that coverage.
+The gate also hides a genuinely stuck campaign — one that *should* be sending
+and is not — from placement testing; that condition is better surfaced by
+send-volume alerting than by burning a test slot on it.
+
+**This does not reclaim anything on its own.** It stops the bleeding. The 118
+slots already consumed can only be recovered by raising `TOTAL_TEST_QUOTA`, and
+**whether 120 reflects a real SmartDelivery plan cap is still unconfirmed** — if
+it does, raising it converts a clean soft block into hard API failures mid-scan.
+That needs an answer from Smartlead before anyone touches it.
+
+**Guards.** `campaignActivity.isIdleCampaign`, `PLACEMENT_IDLE_DAYS` default > 0,
+scanner falls through to testing on analytics error, owner-intent D41.

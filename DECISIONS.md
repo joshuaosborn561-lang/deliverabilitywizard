@@ -805,3 +805,37 @@ still waits for top-up rather than emptying a campaign.
 **Guards.** `isRestEligibleMailbox`, resting filter in
 `findAvailablePoolMailbox` / `findReassignablePoolMailbox`, owner-intent D42.
 
+---
+
+## D43 — Per-client A/B rest, generic send clock, no canary in this loop
+
+**Decision.** Client rest is an **even A/B split per client**, not a global
+email hash. That client's off-week half leaves ACTIVE campaigns (warmup on).
+Resting is not staffable and does not fan out. Health then tops every live
+campaign to **50 staffable** with generics and keeps at least **~30% Google
+and ~30% Microsoft**.
+
+Generics do **not** sit on the same fortnight as clients (qualifies D42).
+A generic sits after **~14 days of live send**, then becomes supply again
+after the same sit. Clocks start when we first see the box on an ACTIVE
+campaign (or from pool `assignedAt`). Staggered — half the spare tire does
+not vanish the morning clients sit.
+
+**Canary** (7-day / 15% slice / pause on 3+ domain drops) is **out of this
+loop**. It is another project.
+
+MSRS and other `TOP_UP_EXCLUDE_CAMPAIGNS` stay excluded from rest and top-up.
+Manual pauses still do not auto-START (D40). Fresh warmup stays 21 days (D41).
+
+**Why.** Josh (2026-08-21): the global hash + same-fortnight generic rest
+was too complicated. Split each client's inboxes A/B, drop the off half,
+backfill to 50 with generics, keep both ESPs, and track generic tenure
+separately. Canary is a later project.
+
+**Tradeoff.** Existing generics without `assignedAt` get a fresh 14-day clock
+on first sight after deploy, so we do not bench the whole fleet on day one.
+
+**Guards.** `assignClientCohorts`, `isRestEligibleMailbox` client-only,
+`GenericSendRestService`, `espFillOrder` 30% default, no canary config,
+owner-intent D43.
+

@@ -128,8 +128,10 @@ export interface AppState {
   heldInboxes: Record<string, HeldInboxRecord>;
   /** D39 — separate placement tests for held/pulled mailboxes */
   heldPlacementTests: Record<string, HeldPlacementTestRecord>;
-  /** D41 — client inboxes in their off-week (removed from live campaigns) */
+  /** D41/D43 — client A/B resters and generics on the send-clock sit */
   restingInboxes: Record<string, RestingInboxRecord>;
+  /** First time we saw a generic on a live campaign (send clock). */
+  genericSendStartedAt: Record<string, string>;
   /** D41 — separate placement tests for resting (off-week) client inboxes */
   restPlacementTests: Record<string, HeldPlacementTestRecord>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
@@ -208,12 +210,13 @@ export interface HeldInboxRecord {
   swappedWithPoolEmail?: string;
 }
 
-/** D41 — client inbox resting off live campaigns for its off-week. */
+/** D41/D43 — mailbox resting off live campaigns. */
 export interface RestingInboxRecord {
   accountId: number;
   email: string;
   clientId: string;
-  cohort: "A" | "B";
+  cohort: "A" | "B" | "send";
+  kind?: "client" | "generic";
   restingSince: string;
   removedFromCampaigns: number[];
   lastSameEspInbox: number | null;
@@ -247,6 +250,7 @@ const EMPTY_STATE: AppState = {
   heldInboxes: {},
   heldPlacementTests: {},
   restingInboxes: {},
+  genericSendStartedAt: {},
   restPlacementTests: {},
   poolMailboxes: {},
   activeSwaps: {},
@@ -279,6 +283,7 @@ export class StateStore {
         heldInboxes: parsed.heldInboxes ?? {},
         heldPlacementTests: parsed.heldPlacementTests ?? {},
         restingInboxes: parsed.restingInboxes ?? {},
+        genericSendStartedAt: parsed.genericSendStartedAt ?? {},
         restPlacementTests: parsed.restPlacementTests ?? {},
         poolMailboxes: parsed.poolMailboxes ?? {},
         activeSwaps: parsed.activeSwaps ?? {},
@@ -401,6 +406,21 @@ export class StateStore {
 
   clearRestingInbox(email: string): void {
     delete this.state.restingInboxes[email.toLowerCase()];
+  }
+
+  getGenericSendStartedAt(email: string): string | undefined {
+    return this.state.genericSendStartedAt[email.toLowerCase()];
+  }
+
+  markGenericSendStartedAt(email: string, startedAt: string): void {
+    const key = email.toLowerCase();
+    if (!this.state.genericSendStartedAt[key]) {
+      this.state.genericSendStartedAt[key] = startedAt;
+    }
+  }
+
+  clearGenericSendStartedAt(email: string): void {
+    delete this.state.genericSendStartedAt[email.toLowerCase()];
   }
 
   markRestPlacementTest(record: HeldPlacementTestRecord): void {
@@ -622,7 +642,7 @@ export class StateStore {
    * as long as releasing one leaves the donor above its floor, which only the
    * caller can judge. Warming mailboxes are never returned — a mailbox that
    * has not served its warmup is not supply at any floor. Resting generics
-   * (D42) are not supply either.
+   * (D43 send-clock sit) are not supply either.
    */
   findReassignablePoolMailbox(
     platforms: Array<"GOOGLE" | "MICROSOFT">,

@@ -6,16 +6,13 @@ import {
   campaignIdsOf,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
-import { isCanaryCampaign, canaryAllowsClientInbox } from "../lib/canaryCampaign.js";
-import {
-  isClientInbox,
-  isRestEligibleMailbox,
-} from "../lib/clientInbox.js";
+import { isBcpOwnedDomain } from "../lib/bcp.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
 import { sleep } from "../lib/http.js";
 import {
+  assignClientCohorts,
   isOffWeek,
   onWeekCohort,
-  restCohortOf,
   type RestCohort,
 } from "../lib/restCohort.js";
 import type { StateStore } from "../state/store.js";
@@ -24,12 +21,8 @@ import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 
 /**
- * D41 + D42 — 2 weeks on / 2 weeks off for client inboxes and generics.
- *
- * Off-week mailboxes are removed from live campaigns (warmup stays on).
- * Health can veto putting a mailbox back on if same-ESP inbox is known-bad;
- * no score allows the first swap so rotation can start. On-week generics
- * remain the spare tire; resting generics are not top-up supply.
+ * D43 — per-client A/B rest. Half of that client's inboxes sit for two
+ * weeks (off live campaigns, warmup on). Generics are not in this loop.
  */
 
 export interface ClientRestResult {
@@ -43,12 +36,6 @@ export interface ClientRestResult {
   errors: string[];
 }
 
-function clientKeyOf(account: SmartleadAccountWithCampaigns): string {
-  return typeof account.client_id === "number"
-    ? `id:${account.client_id}`
-    : "unknown";
-}
-
 export function shouldVetoRestRestore(
   lastSameEspInbox: number | null | undefined,
   threshold: number,
@@ -57,6 +44,25 @@ export function shouldVetoRestRestore(
     return false;
   }
   return lastSameEspInbox < threshold;
+}
+
+export function clientRestGroupKey(
+  account: SmartleadAccountWithCampaigns,
+  email: string,
+  campaignClientById: Map<number, number | null | undefined>,
+): string | null {
+  if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
+    return `id:${account.client_id}`;
+  }
+  for (const id of campaignIdsOf(account)) {
+    const clientId = campaignClientById.get(id);
+    if (typeof clientId === "number" && Number.isFinite(clientId)) {
+      return `id:${clientId}`;
+    }
+  }
+  const domain = email.split("@")[1] ?? "";
+  if (isBcpOwnedDomain(domain)) return "bcp";
+  return null;
 }
 
 export class ClientRestService {
@@ -94,6 +100,9 @@ export class ClientRestService {
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );
+    const campaignClientById = new Map(
+      (campaigns as SmartleadCampaign[]).map((c) => [c.id, c.client_id]),
+    );
     const activeByClient = new Map<number, SmartleadCampaign[]>();
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
@@ -112,25 +121,69 @@ export class ClientRestService {
       }
     }
 
+    const candidates: Array<{
+      account: SmartleadAccountWithCampaigns;
+      email: string;
+      groupKey: string;
+    }> = [];
+    const byGroup = new Map<string, string[]>();
+
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
-      if (!isRestEligibleMailbox(account, email, this.config, this.state)) {
+      if (isGenericMailbox(account, email, this.config, this.state)) continue;
+      const groupKey = clientRestGroupKey(account, email, campaignClientById);
+      if (!groupKey) {
+        result.skipped.push(`${email}: no client group`);
         continue;
       }
-      const clientOwned = isClientInbox(account, email, this.config, this.state);
+      const onCampaigns = campaignIdsOf(account);
+      const onlyExcluded =
+        onCampaigns.length > 0 &&
+        onCampaigns.every((id) => {
+          const campaign = campaignById.get(id);
+          return (
+            !campaign ||
+            isExcluded(campaign, this.config.topUpExcludeCampaigns)
+          );
+        });
+      if (onlyExcluded) {
+        result.skipped.push(`${email}: excluded campaign`);
+        continue;
+      }
+      candidates.push({ account, email, groupKey });
+      const list = byGroup.get(groupKey) ?? [];
+      list.push(email);
+      byGroup.set(groupKey, list);
+    }
+
+    const cohortByEmail = new Map<string, RestCohort>();
+    for (const [, emails] of byGroup) {
+      for (const [email, cohort] of assignClientCohorts(emails)) {
+        cohortByEmail.set(email, cohort);
+      }
+    }
+
+    for (const { account, email, groupKey } of candidates) {
       result.examined += 1;
+      const cohort = cohortByEmail.get(email);
+      if (!cohort) continue;
 
       if (this.state.getHeldInbox(email) || activeHoldUntilDate(tagNames(account))) {
         result.skipped.push(`${email}: held`);
         continue;
       }
 
-      const off = isOffWeek(email, now);
+      const off = isOffWeek(cohort, now);
       const existing = this.state.getRestingInbox(email);
+      if (existing?.kind === "generic") continue;
+
       const onCampaigns = campaignIdsOf(account).filter((id) => {
         const campaign = campaignById.get(id);
-        return String(campaign?.status ?? "").toUpperCase() === "ACTIVE";
+        if (!campaign) return false;
+        if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
+        if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) return false;
+        return true;
       });
 
       if (off) {
@@ -163,8 +216,9 @@ export class ClientRestService {
           const record = {
             accountId: account.id,
             email,
-            clientId: clientKeyOf(account),
-            cohort: restCohortOf(email),
+            clientId: groupKey,
+            cohort,
+            kind: "client" as const,
             restingSince: existing?.restingSince ?? now.toISOString(),
             removedFromCampaigns: [
               ...new Set([
@@ -183,11 +237,7 @@ export class ClientRestService {
         continue;
       }
 
-      // On-week: put back unless health vetoes a known-bad same-ESP score.
-      // Available pool generics with no campaign history just clear the rest flag.
-      if (!existing && !onCampaigns.length) {
-        continue;
-      }
+      if (!existing && !onCampaigns.length) continue;
       if (
         shouldVetoRestRestore(
           existing?.lastSameEspInbox,
@@ -206,13 +256,14 @@ export class ClientRestService {
 
       const clientId =
         typeof account.client_id === "number" ? account.client_id : null;
+      const parsedId = groupKey.startsWith("id:")
+        ? Number(groupKey.slice(3))
+        : clientId;
       const targets = this.restoreTargets(
         existing?.removedFromCampaigns ?? onCampaigns,
-        clientId,
+        Number.isFinite(parsedId) ? parsedId : null,
         activeByClient,
         campaignById,
-        email,
-        clientOwned,
       );
       const added: number[] = [];
       for (const campaignId of targets) {
@@ -254,44 +305,24 @@ export class ClientRestService {
     clientId: number | null,
     activeByClient: Map<number, SmartleadCampaign[]>,
     campaignById: Map<number, SmartleadCampaign>,
-    email: string,
-    applyCanarySlice: boolean,
   ): number[] {
-    const allowsCanary = (campaign: SmartleadCampaign): boolean => {
-      if (!applyCanarySlice) return true;
-      if (
-        !isCanaryCampaign(
-          campaign,
-          new Date(),
-          this.config.canaryCampaignDays,
-        )
-      ) {
-        return true;
-      }
-      return canaryAllowsClientInbox(
-        email,
-        this.config.canaryClientInboxPercent,
-      );
-    };
     const fromPrevious = previous.filter((id) => {
       const campaign = campaignById.get(id);
       if (!campaign) return false;
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) return false;
-      return allowsCanary(campaign);
+      return true;
     });
     if (fromPrevious.length) return fromPrevious;
     if (clientId == null) return [];
-    return (activeByClient.get(clientId) ?? [])
-      .filter((campaign) => allowsCanary(campaign))
-      .map((c) => c.id);
+    return (activeByClient.get(clientId) ?? []).map((c) => c.id);
   }
 
   private async notify(result: ClientRestResult): Promise<void> {
     const lines = [
-      `${result.dryRun ? "[DRY RUN] " : ""}Sender rest (2 weeks on / 2 weeks off; clients + generics), on-week cohort ${result.onWeekCohort}:`,
-      `- ${result.benched.length} mailbox(es) taken off live campaigns`,
-      `- ${result.restored.length} mailbox(es) put back on`,
+      `${result.dryRun ? "[DRY RUN] " : ""}Client rest (per-client A/B, 2 weeks on / 2 weeks off), on-week ${result.onWeekCohort}:`,
+      `- ${result.benched.length} client inbox(es) taken off live campaigns`,
+      `- ${result.restored.length} client inbox(es) put back on`,
     ];
     if (result.vetoed.length) {
       lines.push(

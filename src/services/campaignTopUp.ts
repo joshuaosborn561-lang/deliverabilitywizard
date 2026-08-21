@@ -66,6 +66,22 @@ export function isExcluded(
   });
 }
 
+/** Prefer the ESP that is short of the mix floor (D43: ~30% each). */
+export function espFillOrder(
+  counts: { GOOGLE: number; MICROSOFT: number },
+  floor: number,
+  minPercent: number,
+): Array<"GOOGLE" | "MICROSOFT"> {
+  const minEsp = Math.ceil((floor * minPercent) / 100);
+  const needGoogle = Math.max(0, minEsp - counts.GOOGLE);
+  const needMicrosoft = Math.max(0, minEsp - counts.MICROSOFT);
+  if (needGoogle > needMicrosoft) return ["GOOGLE", "MICROSOFT"];
+  if (needMicrosoft > needGoogle) return ["MICROSOFT", "GOOGLE"];
+  return counts.MICROSOFT > counts.GOOGLE
+    ? ["MICROSOFT", "GOOGLE"]
+    : ["GOOGLE", "MICROSOFT"];
+}
+
 /** Consecutive write failures before a campaign is abandoned for this run. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
@@ -304,10 +320,6 @@ export class CampaignTopUpService {
         const platform = poolEspFromSmartleadType(account.type);
         if (platform) espCounts[platform] += 1;
       }
-      const platformOrder: Array<"GOOGLE" | "MICROSOFT"> =
-        espCounts.MICROSOFT > espCounts.GOOGLE
-          ? ["MICROSOFT", "GOOGLE"]
-          : ["GOOGLE", "MICROSOFT"];
 
       let placed = 0;
       let consecutiveFailures = 0;
@@ -316,8 +328,11 @@ export class CampaignTopUpService {
       // Assigning is two writes per mailbox; a long run trips Smartlead's
       // limiter, so the loop is allowed more attempts than mailboxes needed.
       for (let attempt = 0; placed < need && attempt < need * 2; attempt += 1) {
-        // Match the campaign's existing ESP mix where we can; a Google
-        // campaign sending through a Microsoft mailbox scores differently.
+        const platformOrder = espFillOrder(
+          espCounts,
+          floor,
+          this.config.campaignEspMixMinPercent,
+        );
         const pool = this.state.findReassignablePoolMailbox(
           platformOrder,
           (email) => {
@@ -459,6 +474,9 @@ export class CampaignTopUpService {
             });
           }
           placed += 1;
+          if (pool.platform === "GOOGLE" || pool.platform === "MICROSOFT") {
+            espCounts[pool.platform] += 1;
+          }
           result.assigned.push({
             campaignId: campaign.id,
             campaignName: String(campaign.name ?? campaign.id),

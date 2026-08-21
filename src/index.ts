@@ -29,6 +29,7 @@ import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { ClientRestService } from "./services/clientRest.js";
+import { GenericSendRestService } from "./services/genericSendRest.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -267,6 +268,12 @@ async function main(): Promise<void> {
     state,
   );
   const clientRest = new ClientRestService(config, smartlead, slack, state);
+  const genericSendRest = new GenericSendRestService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -403,6 +410,13 @@ async function main(): Promise<void> {
           restResult = await clientRest.run();
         } catch (error) {
           console.warn("[health] client rest failed", error);
+        }
+      }
+      if (config.enableGenericSendRest) {
+        try {
+          await genericSendRest.run();
+        } catch (error) {
+          console.warn("[health] generic send rest failed", error);
         }
       }
 
@@ -1232,7 +1246,7 @@ async function main(): Promise<void> {
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
     );
     console.log(
-      `[boot] Sender rest (D41/D42): ${config.enableClientRest ? "ENABLED (2 weeks on / 2 weeks off for client inboxes and generics; on-week half is the spare tire)" : "disabled"}`,
+      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,

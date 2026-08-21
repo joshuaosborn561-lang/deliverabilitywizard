@@ -4,9 +4,9 @@ import type { SmartleadEmailAccount } from "../types/index.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
 
 /**
- * A client inbox is a mailbox that belongs to a Smartlead client and is not
- * a pool generic or a pre-warmed fleet sender. Client vs generic still matters
- * for canary slice and day-brief piles; both rest on the 2/2 cadence (D41/D42).
+ * A client inbox belongs to a Smartlead client and is not a pool generic
+ * or a pre-warmed fleet sender. Only these take the per-client A/B rest
+ * (D43). Generics fill to 50 and rest on a 2-week send clock.
  */
 export function isClientInbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
@@ -16,30 +16,21 @@ export function isClientInbox(
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
-  if (typeof account.client_id !== "number" || !Number.isFinite(account.client_id)) {
-    return false;
+  if (isGenericMailbox(account, normalized, config, state)) return false;
+  if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
+    return true;
   }
-  if (state.getPoolMailbox(normalized)) return false;
-  if (isPrewarmedGeneric(account, normalized, config, state)) return false;
-  return true;
+  return false;
 }
 
-/**
- * True for mailboxes that owe 2 weeks on / 2 weeks off (D41 + D42):
- * client inboxes, pool generics, and pre-warmed fleet senders.
- */
+/** A/B rest is client inboxes only (D43). Generics use the send clock. */
 export function isRestEligibleMailbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
 ): boolean {
-  const normalized = email.trim().toLowerCase();
-  if (!normalized.includes("@")) return false;
-  if (isClientInbox(account, email, config, state)) return true;
-  if (state.getPoolMailbox(normalized)) return true;
-  if (isPrewarmedGeneric(account, normalized, config, state)) return true;
-  return false;
+  return isClientInbox(account, email, config, state);
 }
 
 export function isGenericMailbox(

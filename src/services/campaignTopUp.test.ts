@@ -7,7 +7,20 @@ import type {
   PoolMailboxRecord,
   StateStore,
 } from "../state/store.js";
-import { CampaignTopUpService, isExcluded } from "./campaignTopUp.js";
+import { CampaignTopUpService, espFillOrder, isExcluded } from "./campaignTopUp.js";
+
+describe("espFillOrder", () => {
+  it("prefers the ESP that is short of the 30% floor (D43)", () => {
+    assert.deepEqual(espFillOrder({ GOOGLE: 40, MICROSOFT: 5 }, 50, 30), [
+      "MICROSOFT",
+      "GOOGLE",
+    ]);
+    assert.deepEqual(espFillOrder({ GOOGLE: 4, MICROSOFT: 40 }, 50, 30), [
+      "GOOGLE",
+      "MICROSOFT",
+    ]);
+  });
+});
 
 describe("isExcluded", () => {
   const msrs = { id: 3628940, name: "MSRS2 Ticket Offer Property Manager" };

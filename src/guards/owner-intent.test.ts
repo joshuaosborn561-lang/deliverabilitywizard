@@ -580,27 +580,20 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 
-  it("D41: canary is 7 days / 15% / 3 domains", () => {
+  it("D43: canary is not in this loop", () => {
     assert.equal(
-      defaults.canaryCampaignDays,
-      7,
-      stop("New campaigns stay canary for 7 days (D41).", "Canary window changed."),
-    );
-    assert.equal(
-      defaults.canaryClientInboxPercent,
-      15,
-      stop("Canary campaigns get ~15% of on-week client inboxes (D41).", "Canary slice changed."),
-    );
-    assert.equal(
-      defaults.canaryDomainDropMin,
-      3,
-      stop("Canary pause needs 3+ unrelated domains (D41).", "Domain-drop floor changed."),
+      "canaryCampaignDays" in defaults,
+      false,
+      stop(
+        "Canary launch is another project (D43).",
+        "Canary config is still on the live rest path.",
+      ),
     );
   });
 });
 
-describe("owner intent — D42 generic rest", () => {
-  it("D42: rest eligibility includes pool generics and pre-warmed fleets", async () => {
+describe("owner intent — D43 rest model", () => {
+  it("D43: A/B rest is client inboxes only; generics use a send clock", async () => {
     const { isRestEligibleMailbox, isClientInbox } = await import(
       "../lib/clientInbox.js"
     );
@@ -621,7 +614,7 @@ describe("owner intent — D42 generic rest", () => {
       ),
       false,
       stop(
-        "Fleet generics stay non-client for canary/day-brief (D41/D42).",
+        "Fleet generics stay non-client (D43).",
         "A fleet domain is now counted as a client inbox.",
       ),
     );
@@ -632,26 +625,34 @@ describe("owner intent — D42 generic rest", () => {
         fleet,
         { getPoolMailbox: () => undefined },
       ),
-      true,
+      false,
       stop(
-        "Generics rest on the same 2/2 cadence (D42).",
-        "Fleet generics are no longer rest-eligible.",
+        "Generics do not ride the client A/B fortnight (D43).",
+        "Fleet generics are A/B rest-eligible again.",
       ),
     );
     assert.equal(
-      isRestEligibleMailbox(
-        { client_id: 9, from_name: "Pool" },
-        "spare@pool.info",
-        fleet,
-        {
-          getPoolMailbox: () =>
-            ({ email: "spare@pool.info", status: "available" }) as never,
-        },
-      ),
+      defaults.enableGenericSendRest,
       true,
       stop(
-        "Pool generics rest on the same 2/2 cadence (D42).",
-        "Pool generics are no longer rest-eligible.",
+        "Generics sit after ~14 days of live send (D43).",
+        "ENABLE_GENERIC_SEND_REST now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.genericSendRestDays,
+      14,
+      stop(
+        "Generic send clock is 14 days (D43).",
+        `Generic send rest is now ${defaults.genericSendRestDays} days.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignEspMixMinPercent,
+      30,
+      stop(
+        "Top-up keeps ~30% Google and ~30% Microsoft (D43).",
+        `ESP mix floor is now ${defaults.campaignEspMixMinPercent}%.`,
       ),
     );
   });

@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { isClientInbox, isRestEligibleMailbox } from "./clientInbox.js";
+import {
+  isClientInbox,
+  isGenericMailbox,
+  isRestEligibleMailbox,
+} from "./clientInbox.js";
 
 const fleet = {
   extraGenericMailboxes: ["harmony norris"],
@@ -61,7 +65,7 @@ describe("isClientInbox", () => {
 });
 
 describe("isRestEligibleMailbox", () => {
-  it("includes client inboxes, pool generics, and fleet generics (D42)", () => {
+  it("is client inboxes only — generics use the send clock (D43)", () => {
     assert.equal(
       isRestEligibleMailbox(
         { client_id: 9, from_name: "Josh" },
@@ -78,6 +82,18 @@ describe("isRestEligibleMailbox", () => {
         fleet,
         { getPoolMailbox: () => undefined },
       ),
+      false,
+    );
+    assert.equal(
+      isGenericMailbox(
+        { from_name: "Pool" },
+        "spare@pool.info",
+        fleet,
+        {
+          getPoolMailbox: () =>
+            ({ email: "spare@pool.info", status: "available" }) as never,
+        },
+      ),
       true,
     );
     assert.equal(
@@ -89,18 +105,6 @@ describe("isRestEligibleMailbox", () => {
           getPoolMailbox: () =>
             ({ email: "spare@pool.info", status: "available" }) as never,
         },
-      ),
-      true,
-    );
-  });
-
-  it("skips unrelated mailboxes with no client and no generic mark", () => {
-    assert.equal(
-      isRestEligibleMailbox(
-        { from_name: "Orphan" },
-        "orphan@other.info",
-        fleet,
-        { getPoolMailbox: () => undefined },
       ),
       false,
     );

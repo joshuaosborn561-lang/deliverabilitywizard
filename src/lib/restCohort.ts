@@ -1,16 +1,13 @@
 /**
- * D41 — 2 weeks on / 2 weeks off for client inboxes.
- *
- * Cohort is a stable hash of the email (A or B). The fortnight block is
- * derived from the ISO week number in America/New_York so the cut flips
- * with the business calendar, not the UTC clock.
+ * D43 — 2 weeks on / 2 weeks off for *client* inboxes, split evenly
+ * per client (A/B). The fortnight follows ISO weeks in America/New_York.
  *
  * Block 0 → A on, B off. Block 1 → reverse.
  */
 
 export type RestCohort = "A" | "B";
 
-/** djb2-style hash; stable across processes. */
+/** djb2-style hash; kept for stable fingerprints elsewhere. */
 export function hashEmail(email: string): number {
   const normalized = email.trim().toLowerCase();
   let hash = 5381;
@@ -20,8 +17,22 @@ export function hashEmail(email: string): number {
   return hash;
 }
 
-export function restCohortOf(email: string): RestCohort {
-  return hashEmail(email) % 2 === 0 ? "A" : "B";
+/**
+ * Even A/B split of one client's inboxes. Sorted by email so the cut is
+ * stable across runs. First half (ceil) is A; the rest is B.
+ */
+export function assignClientCohorts(emails: string[]): Map<string, RestCohort> {
+  const sorted = [
+    ...new Set(
+      emails.map((email) => email.trim().toLowerCase()).filter(Boolean),
+    ),
+  ].sort();
+  const mid = Math.ceil(sorted.length / 2);
+  const out = new Map<string, RestCohort>();
+  sorted.forEach((email, index) => {
+    out.set(email, index < mid ? "A" : "B");
+  });
+  return out;
 }
 
 export function nyYmd(now: Date = new Date()): {
@@ -57,9 +68,11 @@ export function restFortnightBlock(now: Date = new Date()): 0 | 1 {
   return (Math.floor(isoWeekNumberNy(now) / 2) % 2) as 0 | 1;
 }
 
-/** True when this mailbox's cohort is the off-week this fortnight. */
-export function isOffWeek(email: string, now: Date = new Date()): boolean {
-  const cohort = restCohortOf(email);
+/** True when this cohort is sitting this fortnight. */
+export function isOffWeek(
+  cohort: RestCohort,
+  now: Date = new Date(),
+): boolean {
   const block = restFortnightBlock(now);
   return block === 0 ? cohort === "B" : cohort === "A";
 }

@@ -100,7 +100,7 @@ async function loadDashboard(force = false) {
   const cards = [
     ["Sending mailboxes", count(data.fleet.sendingMailboxes), data.fleet.activeCampaigns == null ? "Live Smartlead count unavailable" : `Across ${data.fleet.activeCampaigns} active campaigns`],
     ["In recovery", data.fleet.mailboxesInRecovery, `${data.policy.recoveryHoldDays}-day recovery hold`],
-    ["Resting (off-week)", data.pool.restingInboxes || 0, data.policy.clientRest ? "Clients + generics · 2 on / 2 off" : "Sender rest is off"],
+    ["Resting (off-week)", data.pool.restingInboxes || 0, data.policy.clientRest ? "Per-client A/B · generics on send clock" : "Sender rest is off"],
     ["Total mailboxes", count(data.fleet.totalMailboxes), "All Smartlead accounts"],
     ["Available generics", data.pool.byStatus.available || 0, `${data.pool.total} total pool records`],
     ["Warming generics", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day pool / ${data.policy.freshInboxWarmupDays}-day fresh`],
@@ -121,8 +121,8 @@ async function loadDashboard(force = false) {
     ["Inbox threshold", `${data.policy.inboxThreshold}% same-ESP`],
     ["Bounce pull / warn", `${data.policy.bounceThreshold}% pull · ${data.policy.bounceWarnThreshold}% warn`],
     ["Fresh / pool warmup", `${data.policy.freshInboxWarmupDays}d fresh · ${data.policy.warmupDays}d pool`],
-    ["Client rest", data.policy.clientRest ? "2 on / 2 off (clients + generics)" : "Off"],
-    ["Canary", `${data.policy.canaryDays}d · ${data.policy.canaryPercent}% of on-week`],
+    ["Client rest", data.policy.clientRest ? "Per-client A/B · 2 on / 2 off" : "Off"],
+    ["Generic sit / ESP mix", `${data.policy.genericSendRestDays}d send · ${data.policy.espMixMinPercent}% each ESP`],
     ["Recovery hold", `${data.policy.recoveryHoldDays} days`],
   ];
   $("#policy-grid").replaceChildren(

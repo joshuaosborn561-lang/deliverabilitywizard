@@ -260,8 +260,8 @@ export function createOpsRouter(opts: {
           bounceWarnThreshold: opts.config.bounceRateWarnThreshold,
           bounceMinSample: opts.config.minBounceSample,
           clientRest: opts.config.enableClientRest,
-          canaryDays: opts.config.canaryCampaignDays,
-          canaryPercent: opts.config.canaryClientInboxPercent,
+          genericSendRestDays: opts.config.genericSendRestDays,
+          espMixMinPercent: opts.config.campaignEspMixMinPercent,
         },
         pendingApprovals:
           req.opsSession!.role === "owner" ? pendingApprovals : undefined,

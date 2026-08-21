@@ -94,22 +94,21 @@ const ConfigSchema = z.object({
    */
   enableHeldPlacementTests: boolFromEnv(true),
   /**
-   * D41 — 2 weeks on / 2 weeks off for client inboxes (removed from campaigns
-   * while off; warmup stays on). Generics do not rest.
+   * D43 — 2 weeks on / 2 weeks off for client inboxes, split A/B per client.
    */
   enableClientRest: boolFromEnv(true),
   /**
-   * D41 — separate SmartDelivery tests for resting (off-week) client inboxes.
+   * D41/D43 — separate SmartDelivery tests for resting (off-week) client inboxes.
    */
   enableRestPlacementTests: boolFromEnv(true),
   /**
-   * D41 — new campaigns (created_at within this many days) get only a slice
-   * of on-week client inboxes until they graduate.
+   * D43 — generics sit after this many days of live campaign send, then
+   * become supply again after the same sit. Not the client A/B fortnight.
    */
-  canaryCampaignDays: z.coerce.number().int().min(0).default(7),
-  canaryClientInboxPercent: z.coerce.number().int().min(0).max(100).default(15),
-  /** Pause a canary campaign when this many unrelated domains drop (same-ESP). */
-  canaryDomainDropMin: z.coerce.number().int().min(1).default(3),
+  enableGenericSendRest: boolFromEnv(true),
+  genericSendRestDays: z.coerce.number().int().positive().default(14),
+  /** Minimum share of each ESP (Google / Microsoft) when topping up to 50. */
+  campaignEspMixMinPercent: z.coerce.number().int().min(0).max(50).default(30),
   cronHealth: z.string().default("*/15 * * * *"),
   /** Daily campaign send cap held on every mailbox (warmups not included). */
   messagePerDay: z.coerce.number().int().min(1).default(30),
@@ -346,9 +345,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
     enableClientRest: env.ENABLE_CLIENT_REST,
     enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,
-    canaryCampaignDays: env.CANARY_CAMPAIGN_DAYS ?? "7",
-    canaryClientInboxPercent: env.CANARY_CLIENT_INBOX_PERCENT ?? "15",
-    canaryDomainDropMin: env.CANARY_DOMAIN_DROP_MIN ?? "3",
+    enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
+    genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
+    campaignEspMixMinPercent: env.CAMPAIGN_ESP_MIX_MIN_PERCENT ?? "30",
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
     mailboxMinTimeGapMins: env.MAILBOX_MIN_TIME_GAP_MINS ?? "10",

@@ -14,11 +14,6 @@ import {
 } from "../clients/smartdelivery.js";
 import { filterTeardownBlacklistHits } from "../lib/blacklistDiagnosis.js";
 import { burnChecklistReady } from "../lib/burnChecklist.js";
-import {
-  droppedUnrelatedDomains,
-  isCanaryCampaign,
-  shouldPauseCanaryForDomainDrops,
-} from "../lib/canaryCampaign.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
@@ -509,19 +504,6 @@ export class RemediationService {
       resolveAccountClient(account, campaignClientById, clientsById);
 
     this.refreshRestingScores(inboxRateRows);
-
-    try {
-      await this.pauseFallenCanaries({
-        accounts,
-        inboxRateRows,
-        campaignStatus,
-        campaignNameById,
-        dryRun: result.dryRun,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`canary watch: ${message}`);
-    }
 
     // 4) Delete blacklisted domains from Smartlead + InboxKit
     for (const domain of actionableBlacklistedDomains) {
@@ -1727,65 +1709,6 @@ export class RemediationService {
     }
   }
 
-  private async pauseFallenCanaries(opts: {
-    accounts: SmartleadAccountWithCampaigns[];
-    inboxRateRows: Map<string, SenderInboxRate>;
-    campaignStatus: Map<number, string>;
-    campaignNameById: Map<number, string>;
-    dryRun: boolean;
-  }): Promise<void> {
-    const campaigns = await this.smartlead.listCampaigns();
-    const threshold = this.config.remediationInboxThreshold;
-    for (const campaign of campaigns) {
-      if (!isCanaryCampaign(campaign, new Date(), this.config.canaryCampaignDays)) {
-        continue;
-      }
-      if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
-      const senders = opts.accounts
-        .filter((a) => campaignIdsOf(a).includes(campaign.id))
-        .map((a) => {
-          const email = accountEmail(a)?.toLowerCase() ?? "";
-          const row = opts.inboxRateRows.get(email);
-          return {
-            domain: email.split("@")[1] ?? "",
-            sameEspInbox: row?.scoredSameEsp ? row.inboxRate : null,
-            scoredSameEsp: row?.scoredSameEsp,
-          };
-        });
-      const dropped = droppedUnrelatedDomains(senders, threshold);
-      if (
-        !shouldPauseCanaryForDomainDrops(
-          dropped.length,
-          this.config.canaryDomainDropMin,
-        )
-      ) {
-        continue;
-      }
-      const key = `canary-pause:${campaign.id}:${dropped.slice().sort().join(",")}`;
-      if (this.state.hasRecentAlert(key, 24 * 60 * 60 * 1000)) continue;
-      if (!opts.dryRun) {
-        // D40 — pause only. Do not record pendingResume; do not auto-START.
-        await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
-      }
-      this.state.markAlert(key);
-      const name =
-        opts.campaignNameById.get(campaign.id) ?? String(campaign.name ?? campaign.id);
-      console.log(
-        `[canary] Paused #${campaign.id} ${name} — ${dropped.length} unrelated domain(s) dropped: ${dropped.join(", ")}`,
-      );
-      await this.slack
-        .send(
-          [
-            `${opts.dryRun ? "[DRY RUN] " : ""}Canary campaign paused (not auto-resumed): *${name}*`,
-            `${dropped.length} unrelated sending domains dropped below ${threshold}% same-ESP: ${dropped.join(", ")}.`,
-            "This looks like copy/offer, not one bad mailbox. Leave it paused until you change the sequence.",
-          ].join("\n"),
-        )
-        .catch((error) =>
-          console.warn("[canary] Slack notify failed", error),
-        );
-    }
-  }
 }
 
 /**

@@ -406,6 +406,23 @@ main {
   margin-top: 14px;
 }
 
+.setup-lede {
+  margin: 0 0 12px;
+}
+
+.setup-prompt {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #0c1219;
+  color: #d5dde6;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
 .section-heading {
   display: flex;
   justify-content: space-between;

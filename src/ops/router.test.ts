@@ -144,9 +144,14 @@ describe("ops HTTP boundary", () => {
       assert.equal(dashboard.status, 200);
       const dashboardBody = (await dashboard.json()) as {
         fleet: { sendingMailboxes: number; mailboxesInRecovery: number };
+        policy: { clientRest: boolean; freshInboxWarmupDays: number };
+        campaignSetupPrompt: string;
       };
       assert.equal(dashboardBody.fleet.sendingMailboxes, 1);
       assert.equal(dashboardBody.fleet.mailboxesInRecovery, 1);
+      assert.equal(dashboardBody.policy.clientRest, true);
+      assert.equal(dashboardBody.policy.freshInboxWarmupDays, 21);
+      assert.match(dashboardBody.campaignSetupPrompt, /2 weeks on \/ 2 weeks off/);
 
       const placements = await fetch(`${fixture.base}/placements`, {
         headers: { cookie: session.cookie },

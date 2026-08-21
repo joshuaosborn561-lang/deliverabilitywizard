@@ -3,6 +3,7 @@ import express from "express";
 import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { OpsAuth, OpsRole, OpsSession } from "./auth.js";
+import { campaignSetupPrompt } from "./campaignSetupPrompt.js";
 import { classifyOpsMessage, opsHelp } from "./policy.js";
 import type { CursorAssistantService } from "./cursorAssistant.js";
 import type {
@@ -235,6 +236,7 @@ export function createOpsRouter(opts: {
           remediation: state.lastRemediationAt,
           reconnect: state.lastReconnectAt,
           warmupGate: state.lastWarmupGateAt,
+          health: state.lastHealthAt,
         },
         fleet,
         fleetError,
@@ -243,6 +245,7 @@ export function createOpsRouter(opts: {
           byStatus: poolByStatus,
           activeSwaps: Object.keys(state.activeSwaps).length,
           heldInboxes: Object.keys(state.heldInboxes).length,
+          restingInboxes: Object.keys(state.restingInboxes ?? {}).length,
           phase: state.poolProvision.phase,
           message: state.poolProvision.lastMessage,
         },
@@ -250,14 +253,20 @@ export function createOpsRouter(opts: {
           campaignSenderFloor: opts.config.minCampaignSenders,
           mailboxDailyCap: opts.config.messagePerDay,
           warmupDays: opts.config.poolWarmupDays,
+          freshInboxWarmupDays: opts.config.freshInboxWarmupDays,
           recoveryHoldDays: opts.config.recoveryHoldDays,
           inboxThreshold: opts.config.remediationInboxThreshold,
           bounceThreshold: opts.config.bounceRateThreshold,
+          bounceWarnThreshold: opts.config.bounceRateWarnThreshold,
           bounceMinSample: opts.config.minBounceSample,
+          clientRest: opts.config.enableClientRest,
+          canaryDays: opts.config.canaryCampaignDays,
+          canaryPercent: opts.config.canaryClientInboxPercent,
         },
         pendingApprovals:
           req.opsSession!.role === "owner" ? pendingApprovals : undefined,
         recentAudit: opts.state.listOpsAudit(30),
+        campaignSetupPrompt: campaignSetupPrompt(),
       });
     } catch (error) {
       res.status(503).json({ error: safeMessage(error) });
@@ -466,6 +475,10 @@ export function createOpsRouter(opts: {
             "Current operational status is refreshed in the dashboard cards.",
             { refreshDashboard: true },
           );
+          return;
+        case "campaign_setup":
+          await audit(session, "campaign-setup", "success");
+          respond(campaignSetupPrompt());
           return;
         case "approvals":
           if (session.role !== "owner") {

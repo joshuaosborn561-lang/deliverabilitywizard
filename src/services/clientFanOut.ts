@@ -263,8 +263,12 @@ export class ClientFanOutService {
       try {
         await this.slack.send(
           [
-            `${dryRun ? "[DRY RUN] " : ""}Same-client fan-out (mailbox → every campaign for that client):`,
-            ...[...byCampaign].map(([name, n]) => `- ${name}: +${n}`),
+            `${dryRun ? "Preview — " : ""}Same-client inboxes`,
+            `If an inbox belongs to a client, it should sit on every live campaign for that client, not just one.`,
+            ...[...byCampaign].map(
+              ([name, n]) =>
+                `• ${name} — added ${n} inbox${n === 1 ? "" : "es"} that way`,
+            ),
           ].join("\n"),
         );
       } catch (error) {

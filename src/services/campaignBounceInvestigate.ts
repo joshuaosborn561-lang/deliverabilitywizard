@@ -252,16 +252,16 @@ export class CampaignBounceInvestigateService {
 
     if (result.findings.length) {
       const lines = [
-        `${dryRun ? "[DRY RUN] " : ""}Paused-campaign bounce investigation (>${threshold}%):`,
+        `${dryRun ? "Preview — " : ""}Paused campaign — high bounce (over ${threshold}%):`,
       ];
       for (const f of result.findings) {
         if (f.copyDefer) {
           lines.push(
-            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — copy/offer likely, not rotating senders. ${f.copyReason ?? "Test/fix the sequence copy."}`,
+            `• ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — this looks like the copy or offer, so we left the inboxes on. ${f.copyReason ?? "Test or fix the email copy."}`,
           );
         } else {
           lines.push(
-            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — rotated ${f.rotated.length} sender(s). Not auto-resumed (manual pause stays paused).`,
+            `• ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — swapped out ${f.rotated.length} worst inbox${f.rotated.length === 1 ? "" : "es"}. Campaign stays paused until someone turns it back on.`,
           );
         }
       }

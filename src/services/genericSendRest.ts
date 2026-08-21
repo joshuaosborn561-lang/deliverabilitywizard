@@ -189,10 +189,14 @@ export class GenericSendRestService {
       try {
         await this.slack.send(
           [
-            `${dryRun ? "[DRY RUN] " : ""}Generic send rest (${owed} days on, then sit):`,
-            `- ${result.benched.length} generic(s) taken off after ${owed} days of live send`,
-            `- ${result.released.length} generic(s) back on supply after sitting`,
-          ].join("\n"),
+            `${dryRun ? "Preview — " : ""}Spare inbox rotation`,
+            `${result.benched.length} spare inbox${result.benched.length === 1 ? "" : "es"} came off campaigns after about ${owed} days of sending. They’ll sit about ${owed} days, then we can use them again.`,
+            result.released.length
+              ? `${result.released.length} spare${result.released.length === 1 ? "" : "s"} finished sitting and are available again.`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join("\n"),
         );
       } catch (error) {
         console.warn("[generic-rest] Slack notify failed", error);

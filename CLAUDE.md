@@ -215,6 +215,10 @@ confirmed one-mailbox rotation when every runtime precondition passes. Spending,
 approval decisions, destructive teardown, safety-policy changes, bulk
 remediation and deployment remain unavailable to the operator.
 
+**Slack that people read is plain English (D47).** No D-numbers, `same-ESP`,
+`staffable`, `fan-out`, hold-tag names, or env vars. Say what happened and
+what to do. Logs may stay technical.
+
 ## Campaign move safety
 
 A pool mailbox named in `activeSwaps` is reserved for that recovery and is not

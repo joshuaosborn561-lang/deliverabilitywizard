@@ -319,13 +319,15 @@ export class ClientRestService {
 
   private async notify(result: ClientRestResult): Promise<void> {
     const lines = [
-      `${result.dryRun ? "[DRY RUN] " : ""}Client rest (per-client A/B, 2 weeks on / 2 weeks off), on-week ${result.onWeekCohort}:`,
-      `- ${result.benched.length} client inbox(es) taken off live campaigns`,
-      `- ${result.restored.length} client inbox(es) put back on`,
+      `${result.dryRun ? "Preview — " : ""}Client inbox rotation`,
+      `This fortnight, group ${result.onWeekCohort} is sending and group ${result.onWeekCohort === "A" ? "B" : "A"} is sitting.`,
+      `${result.benched.length} client inbox${result.benched.length === 1 ? "" : "es"} came off live campaigns.`,
+      `${result.restored.length} came back on.`,
+      `Warmup stayed on for everyone sitting.`,
     ];
     if (result.vetoed.length) {
       lines.push(
-        `- ${result.vetoed.length} handoff(s) vetoed (known-bad same-ESP)`,
+        `${result.vetoed.length} stayed off — ${result.vetoed.length === 1 ? "it" : "they"} already failed an inbox test.`,
       );
     }
     try {

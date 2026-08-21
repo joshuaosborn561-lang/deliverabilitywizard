@@ -225,7 +225,7 @@ export function classifyFailure(
       class: "report_fanout",
       fingerprint: fingerprintOf("report_fanout", "cap"),
       autoRemediate: true,
-      summary: "Placement report fan-out / test-id selection bug",
+      summary: "Placement report picked the wrong test",
       raw: text,
     };
   }

@@ -80,7 +80,7 @@ describe("remediation / placement Slack is client-level (D39)", () => {
       ],
     });
 
-    assert.match(sent[0]!, /1 sender under 80%/);
+    assert.match(sent[0]!, /1 inbox on this test landed below 80%/);
     assert.doesNotMatch(sent[0]!, /weak@x\.com/);
   });
 
@@ -108,6 +108,6 @@ describe("remediation / placement Slack is client-level (D39)", () => {
     assert.match(sent[0]!, /Goliath/);
     assert.match(sent[0]!, /2\.5% bounce/);
     assert.match(sent[0]!, /18\.0% spam/);
-    assert.match(sent[0]!, /66 on \/ 20 off \/ 12 generic-spare \/ 34 held/);
+    assert.match(sent[0]!, /66 on \/ 20 off \/ 12 spare \/ 34 held/);
   });
 });

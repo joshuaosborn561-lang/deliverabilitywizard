@@ -173,7 +173,9 @@ export class CampaignScanner {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(message);
-      await this.slack.send(`:x: *SmartDelivery access check failed*\n${message}`);
+      await this.slack.send(
+        `:x: *Couldn't reach placement tests*\nWill retry. If this keeps happening, Josh needs to check the Smartlead connection.\n${message}`,
+      );
       await this.finish(result);
       return result;
     }
@@ -187,7 +189,9 @@ export class CampaignScanner {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`Failed to list campaigns: ${message}`);
-      await this.slack.send(`:x: *Campaign scan failed*\n${message}`);
+      await this.slack.send(
+        `:x: *Couldn't scan campaigns for placement tests*\nWill retry.\n${message}`,
+      );
       await this.finish(result);
       return result;
     }

@@ -908,3 +908,25 @@ Do not waive from chat.
 
 **Guards.** `campaignSetupPrompt` 85% launch / 80% live; owner-intent D46.
 
+---
+
+## D47 — Slack that people read is plain English
+
+**Decision.** Every Slack message the app sends must be readable by Cayden
+without D-numbers, API field names, or internal labels. Say what happened
+and what to do. Logs, `DECISIONS.md`, and `/ops` chat prompts may keep the
+jargon. Slack may not.
+
+No `D43`, `same-ESP`, `staffable`, `fan-out`, `HOLD-UNTIL`, `ESP-matched`,
+`Fingerprint`, env var names, or `monthly quota`. Say “inbox test for that
+mailbox type,” “sending inboxes,” “same-client inboxes,” “sitting after a
+bad test,” “matching spare,” “same error N times,” “a cap we set.”
+
+**Why.** Josh (2026-08-21): Cayden works from Slack. Jargon updates are
+noise. Tonight’s hold rebuild / rest / top-up notes were the example.
+
+**Tradeoff.** Messages get a bit longer. A person who wants the exact field
+name still has the logs.
+
+**Guards.** `slackJargonHits` / `slack.plainEnglish.test.ts`; owner-intent D47.
+

@@ -310,24 +310,25 @@ export class CampaignHealthService {
     }
 
     const lines = [
-      `${result.dryRun ? "[DRY RUN] " : ""}Campaign health (floor ${result.floor} connected+inboxing):`,
+      `${result.dryRun ? "Preview — " : ""}Campaign staffing`,
+      `Every live campaign should have ${result.floor} inboxes that can actually send.`,
     ];
     for (const [name, n] of byCampaign) {
-      lines.push(`- ${name}: +${n} generic(s)`);
+      lines.push(`• ${name} — added ${n} spare${n === 1 ? "" : "s"}`);
     }
     for (const r of result.resumed) {
       lines.push(
-        `- #${r.campaignId} ${r.name}: resumed (${r.staffable} staffable)`,
+        `• ${r.name} — turned back on (${r.staffable} sending inboxes). This was a pause we took to protect it, not a pause someone made by hand.`,
       );
     }
     for (const u of result.stillShort) {
       lines.push(
-        `- #${u.campaignId} ${u.name}: still short ${u.shortBy} staffable (${u.status}) — pool/reconnect could not close the gap`,
+        `• ${u.name} — still short ${u.shortBy} sending inbox${u.shortBy === 1 ? "" : "es"} (${u.status}). Not enough warmed spares yet.`,
       );
     }
     if (topUp?.released.length) {
       lines.push(
-        `- released ${topUp.released.length} duplicated generic(s) from misbranded campaigns`,
+        `Took ${topUp.released.length} spare${topUp.released.length === 1 ? "" : "s"} off campaigns they didn’t belong on.`,
       );
     }
 

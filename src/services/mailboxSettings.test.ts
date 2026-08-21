@@ -113,7 +113,8 @@ describe("MailboxSettingsService", () => {
       max_email_per_day: 30,
       time_to_wait_in_mins: 10,
     });
-    assert.match(slackMessages.join("\n"), /min-gap drift fixed/i);
+    assert.match(slackMessages.join("\n"), /Sending pace/);
+    assert.match(slackMessages.join("\n"), /10 minutes/);
   });
 
   it("writes 30/day, 10m gap, and plain two-line signatures when drifted", async () => {

@@ -94,9 +94,9 @@ export class SlackClient {
 
     await this.send(
       [
-        `*Couldn't create placement tests — monthly quota is full*`,
+        `*Couldn't create placement tests — a cap we set is full*`,
         `Used ${details.used} of ${details.quota}. This batch needed ${details.needed} more.`,
-        `Nothing was created. Free quota or skip a campaign, then re-run.`,
+        `Nothing new was created. Raise the cap or skip a campaign, then try again.`,
         lines || undefined,
       ]
         .filter(Boolean)
@@ -144,7 +144,7 @@ export class SlackClient {
         const piles = [
           `${row.activeInboxes} on`,
           `${row.restingInboxes ?? 0} off`,
-          `${row.genericSpare ?? 0} generic-spare`,
+          `${row.genericSpare ?? 0} spare`,
         ];
         if (row.heldInboxes) piles.push(`${row.heldInboxes} held`);
         restBits.push(piles.join(" / "));
@@ -532,12 +532,12 @@ export class SlackClient {
         ...scoreLines,
         ...authLines,
         weakSenderCount
-          ? `\n_${weakSenderCount} sender${weakSenderCount === 1 ? "" : "s"} under ${details.remediationThreshold ?? 80}% — see client day brief for fleet bounce/spam; remediation handles pulls._`
+          ? `\n_${weakSenderCount} inbox${weakSenderCount === 1 ? "" : "es"} on this test landed below ${details.remediationThreshold ?? 80}% in their own mailbox type (Gmail or Outlook). Check the daily client note for bounce/spam. You don't need to pull them by hand._`
           : undefined,
         "",
         details.autoRemediation
-          ? `Senders under ${details.remediationThreshold ?? 80}% same-ESP are pulled off campaigns automatically, warmed for ${details.holdDays ?? 14} days, and covered by an ESP-matched generic with the client's signature. No action needed unless I flag a burned domain.`
-          : `Auto-remediation is OFF — these need manual handling.`,
+          ? `Inboxes under ${details.remediationThreshold ?? 80}% in their own mailbox type come off automatically, warm for ${details.holdDays ?? 14} days, and get a matching spare with the client's name. No action needed unless I flag a burned domain.`
+          : `Automatic pull is off — these need a person to handle them.`,
       ]
         .filter((x): x is string => Boolean(x))
         .join("\n"),
@@ -585,7 +585,7 @@ export class SlackClient {
           : undefined,
         ...failed,
         summary.inboxkitReexports > 0
-          ? `Also re-queued ${summary.inboxkitReexports} failed InboxKit→Smartlead exports.`
+          ? `Also retried ${summary.inboxkitReexports} failed InboxKit export${summary.inboxkitReexports === 1 ? "" : "s"} into Smartlead.`
           : undefined,
         (() => {
           const serious = summary.errors
@@ -643,7 +643,7 @@ export class SlackClient {
     for (const [label, rows] of byCampaign) {
       const lines = rows.slice(0, 10).map((r) => {
         if (r.reason === "hold_until") {
-          return `• \`${r.email}\` — still on recovery hold until ${r.holdUntil}`;
+          return `• \`${r.email}\` — still sitting after a bad test until ${r.holdUntil}`;
         }
         const days =
           r.daysWarmed == null ? "?" : `${r.daysWarmed.toFixed(0)}`;
@@ -677,7 +677,7 @@ export class SlackClient {
           ? `${under.length} hadn't finished the 14-day warmup.`
           : undefined,
         held.length
-          ? `${held.length} still had a HOLD recovery tag.`
+          ? `${held.length} ${held.length === 1 ? "was" : "were"} still on a 2-week recovery sit after a bad inbox or bounce test.`
           : undefined,
         summary.pausedCampaigns.length
           ? `Paused campaign(s) that would have been empty: ${summary.pausedCampaigns.join(", ")}`
@@ -714,7 +714,7 @@ export class SlackClient {
       [
         `*Stopped recurring placement tests*`,
         summary.stopped.length
-          ? `${summary.stopped.length} test${summary.stopped.length === 1 ? "" : "s"} stopped because the campaign is no longer active — this stops them from burning test runs.`
+          ? `${summary.stopped.length} test${summary.stopped.length === 1 ? "" : "s"} stopped because the campaign is no longer active — no point testing a campaign that isn't sending.`
           : undefined,
         ...summary.stopped
           .slice(0, 12)

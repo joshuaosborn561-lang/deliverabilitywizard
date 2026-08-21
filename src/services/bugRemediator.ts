@@ -216,10 +216,9 @@ export class BugRemediator {
 
       await this.slack.send(
         [
-          `*Auto bug remediator*`,
+          `*The app hit the same error ${record.count} time${record.count === 1 ? "" : "s"}*`,
           classified.summary,
-          `Fingerprint: \`${classified.fingerprint}\` (${record.count} hits)`,
-          `Cursor is opening a fix PR — no spend/delete/deploy.`,
+          `Cursor is opening a fix PR. No spend, no deletes, no deploy.`,
           agentUrl,
         ].join("\n"),
       );

@@ -230,11 +230,11 @@ export class DnsAuditService {
     try {
       await this.slack.send(
         [
-          `DNS audit: ${critical.length} sending domain(s) cannot authenticate — ${mailboxes} mailbox(es) affected.`,
+          `DNS problem: ${critical.length} sending domain${critical.length === 1 ? "" : "s"} will look fake to Gmail/Outlook until this is fixed — ${mailboxes} inbox${mailboxes === 1 ? "" : "es"} affected.`,
           ...lines,
           more,
           "",
-          "These send mail but fail SPF at the receiver. Fix the zone in InboxKit.",
+          "These send mail but fail the “is this you?” check. Fix SPF in InboxKit.",
         ]
           .filter(Boolean)
           .join("\n"),

@@ -864,3 +864,47 @@ rebuild stamps `restBaselineRebuiltAt` and does not run again.
 **Guards.** `holdHasSameEspProof`, `RestBaselineRebuildService` one-shot,
 owner-intent D44.
 
+---
+
+## D45 — Placement-test quota is unlimited (0)
+
+**Decision.** `TOTAL_TEST_QUOTA` defaults to **0**, meaning unlimited.
+Scanner, held-recovery tests, and rest-recovery tests must **not** block
+when the quota is 0. A positive value still caps and blocks (old D8
+behaviour). This supersedes D8's **120 cap only**. Recurring daily
+schedules, **≤50 senders per test** (SmartDelivery API limit, not a plan
+quota), and the inactive-campaign reconciler stay (D8).
+
+**Why.** Josh (2026-08-21): he has unlimited SmartDelivery tests. The 120
+cap was leftover from the old plan and was refusing campaign / held / rest
+creates.
+
+**Tradeoff.** Every eligible ACTIVE campaign (plus held/rest batches) can
+get a schedule. Idle or zero-lead ACTIVE campaigns become more expensive
+to leave tested — skip those rather than re-capping (see open PR #62).
+
+**Do not** change Railway `TOTAL_TEST_QUOTA` until this code is on `main`.
+Production still has `TOTAL_TEST_QUOTA=120`, and older deploys reject `0`
+(`.positive()`). After merge: delete the var or set `TOTAL_TEST_QUOTA=0`.
+
+**Guards.** owner-intent D45 (default 0), `quotaWouldBlock` treats 0 as
+unlimited.
+
+---
+
+## D46 — Campaign launch placement bar is 85%
+
+**Decision.** A new campaign does not go ACTIVE until a SmartDelivery test
+of the **real attached sender set** scores **≥85% same-ESP**, with Gmail
+Promotions counted as a miss. That is the **pre-launch** bar (campaign-setup
+skill / Claude). It does **not** change live rotation: health still pulls at
+**80%** same-ESP (D32) or bounce over 5% with 50 sends (D5).
+
+**Why.** Josh (2026-08-21): launch on a harder bar than the live pull, and
+treat promo tab as a miss for cold outbound.
+
+**Tradeoff.** Some campaigns wait longer or launch on a smaller survivor set.
+Do not waive from chat.
+
+**Guards.** `campaignSetupPrompt` 85% launch / 80% live; owner-intent D46.
+

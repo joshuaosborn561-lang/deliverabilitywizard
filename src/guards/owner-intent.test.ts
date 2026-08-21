@@ -117,13 +117,40 @@ describe("owner intent", () => {
     );
   });
 
-  it("D8: the placement test quota is 120", () => {
+  it("D45: placement-test quota defaults to unlimited (0)", () => {
     assert.equal(
       defaults.totalTestQuota,
-      120,
+      0,
       stop(
-        "No more than 120 concurrent placement tests (D8).",
-        `Quota is now ${defaults.totalTestQuota}, which may exceed the SmartDelivery plan.`,
+        "SmartDelivery tests are uncapped by default (D45).",
+        `Quota default is now ${defaults.totalTestQuota}, which would re-cap the unlimited plan.`,
+      ),
+    );
+    assert.doesNotThrow(
+      () => loadConfig({ TOTAL_TEST_QUOTA: "0" }),
+      stop(
+        "TOTAL_TEST_QUOTA=0 must load as unlimited (D45).",
+        "Config still rejects 0 (old D8 .positive()), so a post-merge Railway clear would crash.",
+      ),
+    );
+  });
+
+  it("D45: scanner / held / rest must not block when quota is 0", async () => {
+    const { quotaWouldBlock } = await import("../lib/testQuota.js");
+    assert.equal(
+      quotaWouldBlock(0, 999, 80),
+      false,
+      stop(
+        "Quota 0 is unlimited — do not block creates (D45).",
+        "quotaWouldBlock(0, …) is true again, so scanner/held/rest would refuse tests.",
+      ),
+    );
+    assert.equal(
+      quotaWouldBlock(120, 118, 3),
+      true,
+      stop(
+        "A positive quota still caps (D8/D45).",
+        "Positive TOTAL_TEST_QUOTA no longer blocks when exhausted.",
       ),
     );
   });
@@ -694,6 +721,39 @@ describe("owner intent — D44 hold rebuild", () => {
       stop(
         "No same-ESP score is not proof (D44).",
         "A no-score hold now counts as proven-weak.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D46 launch bar", () => {
+  it("D46: launch bar is 85%; live pull stays 80%", async () => {
+    const { campaignSetupPrompt } = await import(
+      "../ops/campaignSetupPrompt.js"
+    );
+    const prompt = campaignSetupPrompt();
+    assert.match(
+      prompt,
+      /85%/,
+      stop(
+        "New campaigns launch at 85% same-ESP (D46).",
+        "campaignSetupPrompt no longer states the 85% launch bar.",
+      ),
+    );
+    assert.match(
+      prompt,
+      /80%/,
+      stop(
+        "Live pull stays 80% same-ESP (D32/D46).",
+        "campaignSetupPrompt dropped the live 80% bar.",
+      ),
+    );
+    assert.equal(
+      defaults.remediationInboxThreshold,
+      80,
+      stop(
+        "Health still pulls at 80%, not 85% (D32/D46).",
+        `Remediation threshold is now ${defaults.remediationInboxThreshold}%.`,
       ),
     );
   });

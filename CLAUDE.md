@@ -134,7 +134,7 @@ Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 4. Generics do not sit on the same A/B fortnight. They rest after ~14 days of live send, then become supply again after the same sit.
 5. Fresh (non-prewarmed) InboxKit mailboxes owe 21 days before live send. Pre-warmed fleets (`crosslaunchco.com`, `crossscaleco.com`, `cleartechco.com`) skip that wait. Pool warmup stays 14 days.
 6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON, plain Name / Brand signature.
-7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. Quota is 120.
+7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
 8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only.
 9. Do not spend, purge, or bypass warmup/holds from chat. Approvals stay on.
 10. After launch: health (15m) will rest, top-up, and fan-out. Watch Slack on / off / generic-spare piles and `[client-rest]` / `[health]` logs.
@@ -179,9 +179,11 @@ Tests are **recurring, not new-daily**: `POST /spam-test/schedule` with
 re-runs itself. The count does not grow daily and nothing needs deleting each
 morning.
 
-`TOTAL_TEST_QUOTA` (120) is checked before creating; the scanner blocks and
-alerts rather than exceeding it. The reconciler stops a recurring test when its
-campaign goes inactive, freeing the slot.
+`TOTAL_TEST_QUOTA` defaults to **0 (unlimited, D45)**. Josh has unlimited
+SmartDelivery tests. A positive value still caps, and scanner / held / rest
+creates block rather than exceeding it. The 50-sender batch size is a
+SmartDelivery API limit, not a plan quota. The reconciler stops a recurring
+test when its campaign goes inactive.
 
 ## Spend
 

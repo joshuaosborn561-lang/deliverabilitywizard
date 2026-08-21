@@ -42,7 +42,13 @@ const ConfigSchema = z.object({
   /** InboxKit→Smartlead sequencer login (one-time; password not the API key) */
   smartleadLoginEmail: z.string().default(""),
   smartleadLoginPassword: z.string().default(""),
-  totalTestQuota: z.coerce.number().int().positive().default(120),
+  /**
+   * Concurrent SmartDelivery test cap. 0 = unlimited (D45). A positive
+   * value still blocks scanner / held / rest creates (old D8 behaviour).
+   * Do not set Railway TOTAL_TEST_QUOTA=0 until this code is on main —
+   * older deploys reject 0 via `.positive()`.
+   */
+  totalTestQuota: z.coerce.number().int().nonnegative().default(0),
   maxMailboxesPerTest: z.coerce.number().int().positive().max(50).default(50),
   /**
    * Create recurring (automated) placement tests instead of one-off manual
@@ -332,7 +338,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cronAccountReconnect: env.CRON_ACCOUNT_RECONNECT ?? "0 3 * * *",
     smartleadLoginEmail: env.SMARTLEAD_LOGIN_EMAIL ?? "",
     smartleadLoginPassword: env.SMARTLEAD_LOGIN_PASSWORD ?? "",
-    totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",
+    totalTestQuota: env.TOTAL_TEST_QUOTA ?? "0",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
     autoPlacementTests: env.AUTO_PLACEMENT_TESTS,
     placementTestEveryDays: env.PLACEMENT_TEST_EVERY_DAYS ?? "1",

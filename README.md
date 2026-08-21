@@ -1,79 +1,97 @@
 # Deliverability Wizard
 
-Internal automation service that finds new Smartlead campaigns and automatically creates SmartDelivery placement tests — no manual setup each time.
+Internal service that staffs Smartlead campaigns, rotates senders, and keeps
+SmartDelivery placement tests running. Railway watches `main`
+(`deliverabilitywizard` / production).
 
-## What it does
+Two people drive this repo: **Josh** owns product calls (`DECISIONS.md`);
+**Cayden** contributes alongside him. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-1. **Twice a week** (Mon & Thu 09:00 UTC by default) scans Smartlead for campaigns that do not already have a placement test.
-2. For each eligible campaign, pulls **sender mailboxes** and **email sequence/copy**.
-3. Creates SmartDelivery **recurring (automated) placement tests** that re-run **daily** (`PLACEMENT_TEST_EVERY_DAYS`, default 1) for as long as the campaign stays active, so inbox rate is trackable day over day — with:
-   - `spam_filters: ["spam_assassin"]` explicitly set
-   - `link_checker: true` explicitly set
-   - mailboxes split into batches of **≤ 50** senders per test
+## How senders rotate
 
-   Set `AUTO_PLACEMENT_TESTS=false` to go back to one-off manual tests.
-3b. **Stops** a recurring test as soon as its campaign is no longer active (runs with the monitor cron), so paused/stopped campaigns don't keep burning test runs.
-4. Before creating anything, checks **total test usage vs a 120-test quota**. If the full batch would exceed the quota, **nothing is created** and Slack is notified so you can prioritize or wait.
-5. On a separate schedule (every 6 hours by default), monitors results and Slack-alerts with:
-   - overall **inbox / tab / spam** split and per-provider breakdown
-   - **per-sender placement**, worst first, and what will be done about each
-   - **SPF/DKIM failures** — flagged loudly, since failing auth sinks placement regardless of copy or warmup
-   - **blacklist diagnosis** that distinguishes a **burned domain** from a **shared InboxKit IP** (see below)
+Health runs every **15 minutes**. That is the live loop.
 
-### Blacklist diagnosis
+**Client inboxes (D43).** Each client is split evenly A/B. The off-week half
+comes **off** live campaigns; warmup stays on. Resting boxes are not staffable
+and do not fan out. The on-week half stays on every ACTIVE campaign for that
+same client.
 
-Not every blacklist hit means a domain is burned. The monitor separates them by checking whether one listed IP carries several of our sending domains:
+**Generics — the queue, not the client fortnight.** A generic sends for
+**~14 days**, sits for the same stretch, then is supply again. The clock starts
+when we first see it on an ACTIVE campaign (or from pool `assignedAt`). Sit is
+**staggered per mailbox**, so half the spare tire does not vanish the morning
+clients rest.
+
+**Top-up.** Every live campaign is filled to **50 staffable** senders
+(connected SMTP/IMAP, not held, not resting) with at least **~30% Google and
+~30% Microsoft**. Generics may staff any client, including BCP.
+
+**Holds (D44).** First health after deploy rebuilds the hold pile once: keep
+only **same-ESP** fails below 80%. Unproven HOLDs go back into D43. Going
+forward, only proven-weak senders are pulled — same-ESP inbox below 80%, or
+bounce above 5% with at least 50 sends. Copy/offer (Outlook buried, Gmail fine)
+is Slack only; those senders stay up.
+
+**Left alone.** MSRS, HVAC, and Roofers (`TOP_UP_EXCLUDE_CAMPAIGNS`, exact
+ids). A pause someone made by hand is never auto-`START`ed.
+
+## Placement tests
+
+One **recurring** SmartDelivery schedule per campaign (`every_days: 1`). The
+count does not grow each morning. Held mailboxes and off-week **client**
+inboxes get their own tests (not re-attached to live campaigns). The
+reconciler stops a test when its campaign is no longer active.
+
+**No 120 plan quota.** Josh has unlimited SmartDelivery tests. Default
+`TOTAL_TEST_QUOTA=0` means unlimited (D45). A positive value still caps and
+blocks. **≤50 senders per test** is a SmartDelivery API limit, not a plan
+quota.
+
+**Launch bar is 85% same-ESP** (promo tab = miss, D46). Live pull stays **80%**
+same-ESP (D32) or bounce over 5% with 50 sends. Do not mix the two.
+
+Idle or zero-lead ACTIVE campaigns still get a daily test unless we skip them
+— that matters more with the cap gone.
+
+## What else runs
+
+| Loop | When | What |
+|------|------|------|
+| Health | every 15m | Rest, generic sit, top-up, fan-out, hold rebuild once, gap/settings |
+| Scan | Mon & Thu 09:00 UTC | Create recurring tests for live campaigns that lack one |
+| Monitor | every 6h | Placement scores, DNS audit (advisory), blacklist, Slack day brief |
+| Reconnect | 3am ET + every monitor + boot | Reauth failed SMTP/IMAP; retry InboxKit exports |
+| Pool provisioner | every 30m | Buy → export → 14-day warmup for managed generics (spend-gated) |
+
+Mailbox settings converge to 30 campaign emails/day (warmups not included),
+10-minute gap, warmup on, and a plain `Name / Brand` signature.
+
+Manual trigger: `POST /run?mode=scan|monitor|remediate|pool|reconnect|warmup-gate|health|all`.
+
+## Blacklist diagnosis
+
+Not every hit means a domain is burned. Monitor separates them:
 
 | Verdict | Signal | Action |
 |---------|--------|--------|
-| `domain_burned` | The sending domain itself is listed | Replace the domain — remediation handles it |
-| `shared_ip` | Domain is clean; its IP is listed **and** shared with our other domains | **Do not replace domains** — take the IP to InboxKit |
-| `domain_ip` | Domain clean, its IP listed, no other domain behind it | Confirm with InboxKit whether the IP is dedicated |
-| `unclear` | Report didn't say | Check manually before replacing |
+| `domain_burned` | The sending domain itself is listed | Replace — remediation handles it |
+| `shared_ip` | Domain clean; IP listed and shared with our other domains | Take the IP to InboxKit; do not replace domains |
+| `domain_ip` | Domain clean, IP listed, no other domain behind it | Confirm with InboxKit |
+| `unclear` | Report didn't say | Check before replacing |
 
-Only `domain_burned` is eligible for automatic replacement, so a bad shared IP can't trigger a round of pointless domain buying.
-6. When `ENABLE_REMEDIATION=true`, automatically remediates:
-   - **Blacklisted sending domains** → delete matching Smartlead email accounts and purge the domain from InboxKit
-   - **Inboxes under 80%** (not blacklisted) → remove from all ACTIVE campaigns and enable warmup to recover
-7. When `ENABLE_RECOVERY_POOL=true` (and pool inventory is in state), swaps a warmed **generic** mailbox (ESP-matched) into those campaigns with signature `First Last\\n{Client Brand}`; when the original recovers ≥80% same-ESP, swaps back and frees the generic.
-8. **Daily at 3:00am America/New_York** (`ENABLE_ACCOUNT_RECONNECT=true`), plus **every monitor run (6h)** and on **boot**: polls Smartlead for accounts with failed SMTP/IMAP and calls `/email-accounts/{id}/reauth`. Also re-queues failed InboxKit→Smartlead exports for the generic pool workspace.
-9. **Warmup gate** (`ENABLE_WARMUP_GATE=true`, runs with the monitor cron): removes mailboxes from ACTIVE campaigns if they have warmed fewer than **14 days** (configurable) or still carry an active `HOLD-UNTIL-YYYY-MM-DD` tag from remediation. Mailboxes listed in `EXTRA_GENERIC_MAILBOXES` are **exempt** from the under-warmed rule — they are already warm, so Smartlead's warmup start date must not pull them off live campaigns.
+Only `domain_burned` is eligible for automatic replacement.
 
-Manual trigger is available via `POST /run` (`?mode=scan|monitor|remediate|pool|reconnect|warmup-gate|all`).
+## Generic recovery pool
 
-## Generic recovery pool (setup)
+Managed plan plus pre-warmed fleets on `crosslaunchco.com`,
+`crossscaleco.com`, and `cleartechco.com` (`EXTRA_GENERIC_DOMAINS`). Those
+fleets arrive pre-warmed and owe no import warmup. Fresh (non-prewarmed)
+InboxKit mailboxes owe **21 days** before live send; pool warmup stays 14.
 
-The managed plan contains 40 domains × 5 mailboxes = 200 (24 Google / 16
-Microsoft). The current plan still contains 25 `.info` and 15 `.com` domains.
-Two pre-warmed generic fleets (`EXTRA_GENERIC_MAILBOXES`) add roughly 200 more
-mailboxes to runtime pool state.
-
-**You do not need to babysit.** With `ENABLE_POOL_PROVISIONER=true` (default), a cron (`CRON_POOL_PROVISION`, every 30m) self-advances:
-
-`awaiting_ns` → `buying` → `awaiting_mailboxes` → `awaiting_sequencer` → `exporting` → `awaiting_export` → `warming` → `ready`
-
-Slack pings only on phase transitions / the one-time Smartlead login need.
-
-One-time requirement for Smartlead export: set `SMARTLEAD_LOGIN_EMAIL` + `SMARTLEAD_LOGIN_PASSWORD` on Railway, **or** connect Smartlead once in InboxKit → DW Generic Pool → Sequencers. After that, cron finishes export + 14-day warmup alone.
-
-Manual kick: `POST /run?mode=pool`.
-
-Restart a stuck pipeline with `POST /run?mode=pool&phase=idle` (valid phases are listed in the error if you pass a bad one). This never spends — any purchase the restarted pipeline wants still has to clear the approval gateway.
-
-Client-scoped spend is hard-capped at **$25 domains / month** and **25
-mailboxes / month**. A client spend request without cap metadata is rejected.
-Generic-pool replenishment is not client spend and remains separately
-single-use approval-gated.
-
-## SmartDelivery access
-
-SmartDelivery lives on `smartdelivery.smartlead.ai` and must be **provisioned by Smartlead support** before the API works. On every scan the app probes access first; if it is not active you will get a Slack message instead of silent failures.
-
-Docs:
-
-- Core API: https://api.smartlead.ai
-- Full docs index: https://helpcenter.smartlead.ai/en/articles/125-full-api-documentation
-- Create manual placement: https://api.smartlead.ai/reference/create-a-manual-placement
+With `ENABLE_POOL_PROVISIONER=true`, cron self-advances
+`awaiting_ns` → `buying` → `awaiting_mailboxes` → `awaiting_sequencer` →
+`exporting` → `awaiting_export` → `warming` → `ready`. Slack only on phase
+changes. Purchases still go through `/approvals`.
 
 ## API surface
 
@@ -81,198 +99,90 @@ Docs:
 |--------|------|---------|
 | `GET` | `/health` | Liveness + last run timestamps |
 | `GET` | `/status` | Full state + effective config (requires `X-Run-Token`) |
-| `POST` | `/run` | Manual trigger (`?mode=scan\|monitor\|remediate\|pool\|reconnect\|warmup-gate\|reconcile\|all`) |
+| `POST` | `/run` | Manual trigger |
 | `GET` | `/approvals` | Token-authenticated read-only approval listing |
-| `GET` | `/ops` | Employee console; owner approval decisions live here |
+| `GET` | `/ops` | Employee console |
 
-Set `RUN_TOKEN` and pass header `X-Run-Token: <token>` for `/status`, `/run`
-and `/approvals/*`. Those routes return 503 when no token is configured;
-`/health` remains public.
+`/status`, `/run`, and `/approvals/*` stay disabled when `RUN_TOKEN` is unset.
+`/health` is the only unauthenticated operational endpoint.
 
 ## Employee operations UI
 
-The Railway service hosts a private console at **`/ops`**. It gives Josh
-(`owner`) and Cayden (`operator`) separate signed sessions and a chat-style
-interface over an explicit operation allowlist.
+Private console at **`/ops`**. Josh (`owner`) and Cayden (`operator`) have
+separate signed sessions.
 
-Allowlisted for Cayden:
+Cayden may check placement/campaigns/DNS, reconnect mailboxes, and confirm
+one-mailbox rotations when every runtime precondition passes. Spending,
+approval decisions, destructive teardown, safety-policy changes, bulk
+remediation, and production deploy stay with Josh.
 
-- Check placement/deliverability
-- Audit campaign sender counts and placement-test coverage
-- Audit SPF/DMARC/MX without changing DNS
-- Reconnect disconnected Smartlead mailboxes
-- Preview and confirm one-mailbox rotations
+Required Railway variables: `OPS_UI_ENABLED`, independent owner/operator
+usernames and tokens, and `OPS_SESSION_SECRET`. Do not reuse `RUN_TOKEN`
+for login.
 
-A manual rotation revalidates immediately before writing: the original must be
-on an active, non-excluded campaign; the replacement must be idle, fully warmed
-and ESP-matched; active recovery swaps and client-branded cross-client moves
-are forbidden. The operation reserves the generic and compensates completed
-Smartlead writes if a later step fails.
+`railway.toml` pins **one replica**. Do not scale without a shared lock.
 
-Chat refuses purchases, deletion/purge, spend decisions, policy/threshold
-changes, warmup bypasses, bulk remediation, code changes and deployment. Josh
-gets a separate owner-only approval panel. Every console action is persisted
-in the bounded audit log.
+## Spend approval
 
-Required Railway variables:
+`REQUIRE_SPEND_APPROVAL` stays **on**. Real-money spend is held for human
+approval via `/ops` → Approvals. Approvals are single-use. Client-scoped
+spend must carry the $25 domain / 25 mailbox monthly-cap metadata.
 
-```text
-OPS_UI_ENABLED=true
-OPS_OWNER_USERNAME=josh
-OPS_OPERATOR_USERNAME=cayden
-OPS_OWNER_TOKEN=<independent 32+ character secret>
-OPS_OPERATOR_TOKEN=<independent 32+ character secret>
-OPS_SESSION_SECRET=<independent 32+ character secret>
-OPS_SESSION_HOURS=12
-```
-
-Do not reuse `RUN_TOKEN` for either user's login.
-
-Rotation additionally requires `ENABLE_RECOVERY_POOL=true` and warmed,
-`available` pool inventory. Otherwise preview fails safely and explains why.
-
-The console and cron mutation locks are process-local. `railway.toml` pins the
-US West service to **one replica**; do not scale it without adding a shared
-Redis/database lock.
-
-## Spend approval gateway
-
-`REQUIRE_SPEND_APPROVAL` (default `true`) gates every action that spends real money/credits or destroys paid assets:
-
-| Action | Where | Approval key |
-|--------|-------|--------------|
-| Buy InboxKit mailboxes (`use_wallet_balance: true`) | pool provisioner cron | `pool-auto-{domain}-{platform}-n{n}-v3` |
-| Delete mailboxes on a blacklisted domain + purge it from InboxKit (forces re-buying replacements) | remediation | `teardown-domain:{domain}` |
-
-The manual CLI (`scripts/provision-pool-mailboxes.ts`) additionally refuses to buy unless passed `--yes-spend-money`; `--buy` alone only previews.
-
-Two hard safety rails sit underneath the gateway:
-
-- `purgeDomain` **refuses** to run against the generic-pool workspace, so a client-domain purge can never tear down the recovery pool.
-- Before cancelling, every mailbox returned by InboxKit's fuzzy `keyword` search is re-checked for an exact domain match, so searching `parlaytech.info` can't cancel `parlaytechnow.info`.
-
-With the gateway on:
-
-1. The pool provisioner computes what it needs to buy, but instead of buying, it records a **pending** spend request (one per domain/platform/count batch) and Slack-notifies with the exact request.
-2. Nothing is purchased until Josh approves it from `/ops` → **Approvals**.
-3. Once approved, the next `pool` run executes that exact purchase and
-   consumes the approval. The same approval can never spend twice.
-4. Denying from the owner panel permanently blocks that batch (a changed
-   underlying need creates a new request).
-
-`DRY_RUN=true` skips the buying step entirely (no approval request is even created) — use it to see what the provisioner would otherwise ask permission for.
-
-Setting `REQUIRE_SPEND_APPROVAL=false` restores fully unattended spend — not recommended.
+`DRY_RUN=true` skips buying entirely (no approval request is created).
 
 ## Environment variables
 
-Copy `.env.example`. Required:
-
-| Variable | Description |
-|----------|-------------|
-| `SMARTLEAD_API_KEY` | Smartlead core API key (`server.smartlead.ai`) |
-| `SLACK_WEBHOOK_URL` | Incoming webhook for alerts |
-
-Common optional vars:
+Copy `.env.example`. Required: `SMARTLEAD_API_KEY` and Slack
+(`SLACK_WEBHOOK_URL`, or bot token + channel).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SMARTDELIVERY_API_KEY` | same as Smartlead key | Use if SmartDelivery uses a separate key |
-| `TOTAL_TEST_QUOTA` | `120` | Hard cap before refusing a batch |
-| `MAX_MAILBOXES_PER_TEST` | `50` | Split threshold |
-| `AUTO_PLACEMENT_TESTS` | `true` | Create recurring tests that keep testing while the campaign is live (`false` = one-off manual) |
-| `PLACEMENT_TEST_EVERY_DAYS` | `1` | Recurrence interval — daily, so inbox rate is trackable day over day |
-| `PLACEMENT_TEST_END_DAYS` | `0` | Optional hard stop in days; `0` = open-ended |
-| `AUTO_TEST_ACTIVE_STATUSES` | `ACTIVE` | Campaign statuses that keep a recurring test alive |
-| `ENABLE_TEST_RECONCILER` | `true` | Stop recurring tests whose campaign went inactive |
-| `DELIVERABILITY_THRESHOLD` | `90` | Slack when inbox placement is below this % |
-| `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull non-blacklisted inboxes below this % for warmup |
-| `RECOVERY_HOLD_DAYS` | `14` | Warmup hold (2 weeks) before a pulled inbox may return to campaigns |
-| `EXTRA_GENERIC_MAILBOXES` | `harmony norris,breanna escobar` | Pre-warmed generics outside the `.info` plan (matched by email or `from_name`); registered swap-ready and exempt from the warmup gate |
-| `EXTRA_GENERIC_DOMAINS` | `crosslaunchco.com,crossscaleco.com,cleartechco.com` | Explicit whole-domain pre-warmed fleets; authoritative over unreliable Smartlead warmup dates/name variants |
-| `ENABLE_REMEDIATION` | `false` | When true, auto-delete blacklisted domains + recover low inboxes |
-| `ENABLE_RECOVERY_POOL` | `false` | Swap warmed generics into campaigns while originals recover |
-| `POOL_WARMUP_DAYS` | `14` | Days before a pool generic is free for swaps |
-| `CLIENT_DOMAIN_BUDGET_USD` | `25` | Porkbun domain $ cap per client / UTC month |
-| `CLIENT_MAILBOX_MONTHLY_CAP` | `25` | New mailboxes per client / UTC month |
-| `GENERIC_POOL_WORKSPACE_ID` | _(empty)_ | InboxKit workspace for the managed and pre-warmed generics |
-| `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY` | _(empty)_ | Domain purchase for replaces |
-| `INBOXKIT_API_KEY` | _(empty)_ | Required for InboxKit domain purge |
-| `INBOXKIT_WORKSPACE_ID` | _(auto)_ | Optional; resolved from InboxKit workspaces if empty |
-| `CRON_SCAN` | `0 9 * * 1,4` | Twice weekly scan |
-| `CRON_MONITOR` | `0 */6 * * *` | Results / blacklist / remediation polling |
-| `ENABLE_ACCOUNT_RECONNECT` | `true` | Reauth disconnected Smartlead accounts (3am ET + every monitor + boot) |
-| `CRON_ACCOUNT_RECONNECT` | `0 3 * * *` | Daily pass in `America/New_York` (also runs with monitor cron) |
-| `ENABLE_WARMUP_GATE` | `true` | Strip under-warmed / HOLD mailboxes from ACTIVE campaigns |
-| `MIN_CAMPAIGN_WARMUP_DAYS` | `14` | Min warmup days before an inbox may stay on ACTIVE campaigns |
-| `ENABLE_CAMPAIGN_TOP_UP` | `true` | Rebalance warmed generics to keep ACTIVE campaigns at their floor |
-| `MIN_CAMPAIGN_SENDERS` | `50` | Sender floor for ACTIVE campaigns |
-| `ENFORCE_MAILBOX_SETTINGS` | `true` | Converge every mailbox to warmup on + daily send cap |
-| `MESSAGE_PER_DAY` | `30` | Smartlead Message Per Day (warmups not included) |
-| `MAILBOX_MIN_TIME_GAP_MINS` | `10` | Smartlead minimum time gap between sends |
-| `CAMPAIGN_STATUSES` | `ACTIVE,PAUSED` | Which campaigns are eligible |
-| `PROVIDER_IDS` | _(auto)_ | Comma-separated seed provider ints; empty = auto-fetch |
-| `STATE_FILE_PATH` | `/data/state.json` | Persist tested campaigns + alert dedupe |
-| `RUN_TOKEN` | _(empty)_ | Required to enable `/status`, `/run` and `/approvals/*` |
-| `DRY_RUN` | `false` | Plan remediation without applying writes; also skips pool mailbox purchases |
-| `REQUIRE_SPEND_APPROVAL` | `true` | Hold pool mailbox purchases for human approval via `/approvals` instead of spending automatically |
+| `TOTAL_TEST_QUOTA` | `0` | Concurrent SmartDelivery test cap. **0 = unlimited**. Do not set Railway to 0 until this code is on `main` — older deploys reject 0. After merge, delete the var or set `0`. |
+| `MAX_MAILBOXES_PER_TEST` | `50` | SmartDelivery API limit per test |
+| `AUTO_PLACEMENT_TESTS` | `true` | Recurring daily tests while the campaign is live |
+| `PLACEMENT_TEST_EVERY_DAYS` | `1` | Recurrence interval |
+| `ENABLE_TEST_RECONCILER` | `true` | Stop tests whose campaign went inactive |
+| `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull on same-ESP inbox below this % |
+| `MIN_CAMPAIGN_SENDERS` | `50` | Staffable-sender floor |
+| `CRON_HEALTH` | `*/15 * * * *` | Rest / sit / top-up / fan-out |
+| `CRON_MONITOR` | `0 */6 * * *` | Placement / DNS / Slack brief |
+| `CRON_SCAN` | `0 9 * * 1,4` | New-campaign test create |
+| `ENABLE_CLIENT_REST` | `true` | Per-client A/B fortnight |
+| `ENABLE_GENERIC_SEND_REST` | `true` | Generic 14-day send clock |
+| `GENERIC_SEND_REST_DAYS` | `14` | Days of live send before a generic sits |
+| `ENABLE_REST_BASELINE_REBUILD` | `true` | One-shot unproven-HOLD release |
+| `CAMPAIGN_ESP_MIX_MIN_PERCENT` | `30` | Min Google / Microsoft share on top-up |
+| `MESSAGE_PER_DAY` | `30` | Campaign send cap (warmups not included) |
+| `MAILBOX_MIN_TIME_GAP_MINS` | `10` | Minimum time gap |
+| `POOL_WARMUP_DAYS` | `14` | Import warmup for managed generics |
+| `EXTRA_GENERIC_DOMAINS` | `crosslaunchco.com,crossscaleco.com,cleartechco.com` | Pre-warmed fleets |
+| `REQUIRE_SPEND_APPROVAL` | `true` | Hold real-money spend for `/approvals` |
+| `RUN_TOKEN` | _(empty)_ | Required to enable `/status`, `/run`, `/approvals/*` |
+| `DRY_RUN` | `false` | Plan writes without applying; skips pool buys |
 
 **Do not hardcode secrets.** Set them as Railway service variables.
 
 ## Local development
 
-Two-person workflow: read [CONTRIBUTING.md](CONTRIBUTING.md) before starting.
-Every task branches from current `main`, is claimed in Slack, and merges through
-a reviewed PR. Production deployment ownership is documented in
-[DEPLOYMENT.md](DEPLOYMENT.md).
-
 ```bash
 cp .env.example .env
-# fill in SMARTLEAD_API_KEY + SLACK_WEBHOOK_URL
+# fill in SMARTLEAD_API_KEY + Slack
 npm install
+npm run typecheck && npm test
 npm run dev
-```
-
-Useful commands:
-
-```bash
-npm run typecheck
-npm test
-curl -X POST http://localhost:3000/run
 ```
 
 ## Railway deploy
 
-This service is meant to sit alongside your other internal tools (AI reply handler, auto-CRM sync, client onboarding).
+1. Attach a volume at `/data` (`STATE_FILE_PATH=/data/state.json`).
+2. Set the variables above as Railway secrets.
+3. Deploy from `main`. Health check: `GET /health`.
 
-1. Create/add a service in your existing Railway project (recommended) or deploy this repo.
-2. Attach a **volume** mounted at `/data` so `STATE_FILE_PATH=/data/state.json` survives restarts.
-3. Set the environment variables above as Railway secrets.
-4. Deploy. Health check: `GET /health`.
-
-```bash
-railway up --detach -m "Deploy Deliverability Wizard"
-```
-
-After deploy, optionally force a first run:
-
-```bash
-curl -X POST "https://<your-service>/run" -H "X-Run-Token: $RUN_TOKEN"
-```
-
-## Quota behavior
-
-```
-used = number of existing SmartDelivery tests
-needed = sum over eligible campaigns of ceil(mailboxCount / 50)
-
-if used + needed > TOTAL_TEST_QUOTA:
-  create nothing
-  Slack notify with per-campaign test counts
-else:
-  create all planned tests
-```
+After this D45 code is on `main`, **delete `TOTAL_TEST_QUOTA` or set it to
+`0`**. Leaving `120` keeps the old cap even though the default is unlimited.
+Do not set `0` on the currently deployed (pre-D45) code — that crash-loops.
 
 ## Tracking
 
-The app keeps a local state file of campaigns it has already tested and also cross-checks SmartDelivery's existing test list (`campaign_id`) so the same campaign is not tested repeatedly across restarts.
+State file plus SmartDelivery's existing test list so the same campaign is
+not given a second recurring schedule across restarts.

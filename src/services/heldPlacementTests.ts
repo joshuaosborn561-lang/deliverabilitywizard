@@ -13,6 +13,7 @@ import {
   normalizeTestList,
 } from "../clients/smartdelivery.js";
 import { chunkArray, sleep } from "../lib/http.js";
+import { quotaWouldBlock } from "../lib/testQuota.js";
 import {
   OPEN_ENDED_TEST_DAYS,
   addDaysIso,
@@ -133,10 +134,10 @@ export class HeldPlacementTestService {
     const used = existing.filter(
       (t) => isAutomatedTest(t) && isTestStoppable(t),
     ).length;
-    const remaining = Math.max(0, this.config.totalTestQuota - used);
 
     const batches = chunkArray(uncovered, this.config.maxMailboxesPerTest);
-    if (batches.length > remaining) {
+    if (quotaWouldBlock(this.config.totalTestQuota, used, batches.length)) {
+      const remaining = Math.max(0, this.config.totalTestQuota - used);
       result.quotaBlocked = true;
       result.skipped.push(
         `quota: need ${batches.length} held-recovery test(s), only ${remaining} slot(s) left`,
@@ -337,10 +338,10 @@ export class HeldPlacementTestService {
     const used = existing.filter(
       (t) => isAutomatedTest(t) && isTestStoppable(t),
     ).length;
-    const remaining = Math.max(0, this.config.totalTestQuota - used);
 
     const batches = chunkArray(uncovered, this.config.maxMailboxesPerTest);
-    if (batches.length > remaining) {
+    if (quotaWouldBlock(this.config.totalTestQuota, used, batches.length)) {
+      const remaining = Math.max(0, this.config.totalTestQuota - used);
       result.quotaBlocked = true;
       result.skipped.push(
         `quota: need ${batches.length} rest-recovery test(s), only ${remaining} slot(s) left`,

@@ -128,10 +128,10 @@ future campaign with a similar name is not skipped by accident.
 
 Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 
-1. Staffing floor is 50 *staffable* senders (connected SMTP/IMAP, not held, not resting). Generics fill the gap. Do not buy a third client-domain set.
-2. Client inboxes rest 2 weeks on / 2 weeks off. Off-week boxes come OFF live campaigns (warmup stays on). Do not leave resters on a campaign at `MESSAGE_PER_DAY=0`.
+1. Staffing floor is 50 *staffable* senders (connected SMTP/IMAP, not held, not resting). On-week generics fill the gap. Do not buy a third client-domain set.
+2. Client inboxes *and* generics rest 2 weeks on / 2 weeks off (same A/B cohort). Off-week boxes come OFF live campaigns (warmup stays on). Do not leave resters on a campaign at `MESSAGE_PER_DAY=0`.
 3. Same-client fan-out still applies for *on-week* client inboxes only. A resting mailbox must not be added to every ACTIVE campaign for that client.
-4. New campaigns (`created_at` last 7 days) are canaries: attach only ~15% of on-week client inboxes. Generics may still top up to 50. If 3+ unrelated sending domains drop on same-ESP, pause *that* campaign only — do not auto-START it.
+4. New campaigns (`created_at` last 7 days) are canaries: attach only ~15% of on-week client inboxes. On-week generics may still top up to 50. If 3+ unrelated sending domains drop on same-ESP, pause *that* campaign only — do not auto-START it.
 5. Fresh (non-prewarmed) InboxKit mailboxes owe 21 days before live send. Pre-warmed fleets (`crosslaunchco.com`, `crossscaleco.com`, `cleartechco.com`) skip that wait. Pool warmup stays 14 days.
 6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON, plain Name / Brand signature.
 7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. Quota is 120.
@@ -145,11 +145,12 @@ Mailboxes pulled off campaigns (HOLD) get **separate** SmartDelivery recurring
 tests — not re-attached to live campaigns. Slack day briefs are per-client
 (sent / bounce% / spam% + on / off / generic-spare / held counts), not per-mailbox lists.
 
-## Client inbox rest (D41)
+## Sender rest (D41 / D42)
 
-Client inboxes (not pre-warmed fleet domains / pool generics) work **2 weeks
-on / 2 weeks off**. Off-week they are removed from live campaigns; warmup stays
-on. Resting is not staffable. Generics are the spare tire and do not rest.
+Client inboxes **and** generics (pool + pre-warmed fleets) work **2 weeks
+on / 2 weeks off** on the same A/B cohort. Off-week they are removed from
+live campaigns; warmup stays on. Resting is not staffable and is not top-up
+or recovery supply. The on-week half of generics is the spare tire.
 New campaigns (`created_at` last 7 days) get ~15% of on-week client inboxes;
 3+ unrelated domains dropping same-ESP pauses that campaign only (no auto-START).
 Fresh (non-prewarmed) inboxes owe **21** days before live campaigns;

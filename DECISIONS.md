@@ -780,3 +780,28 @@ manual to unstick (D40).
 `owedWarmupDays`, `burnChecklistReady`, `bounceRateWarnThreshold` default 2,
 `freshInboxWarmupDays` default 21, `poolWarmupDays` still 14, owner-intent D41.
 
+---
+
+## D42 — Generics rest on the same 2/2 cadence
+
+**Decision.** Pool generics and pre-warmed fleet senders rest on the **same**
+2 weeks on / 2 weeks off A/B cohort as client inboxes (D41). Off-week generics
+are removed from live campaigns (warmup stays on) and are **not** top-up or
+recovery-pool supply. The on-week half remains the spare tire that fills the
+50-staffable floor.
+
+Canary still applies only to the ~15% client-inbox slice; restoring an
+on-week generic onto a canary campaign is allowed (generics may top up to 50).
+
+This **qualifies D41** where it said generics do not rest.
+
+**Why.** Josh (2026-08-21): generics also need to rest after 2 weeks — leaving
+them on forever burns the spare tire the same way client inboxes burned.
+
+**Tradeoff.** Roughly half the generic pool is unavailable each fortnight, so
+thin pools may leave campaigns short until the next on-week. Last-account rest
+still waits for top-up rather than emptying a campaign.
+
+**Guards.** `isRestEligibleMailbox`, resting filter in
+`findAvailablePoolMailbox` / `findReassignablePoolMailbox`, owner-intent D42.
+

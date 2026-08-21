@@ -221,6 +221,7 @@ export class CampaignTopUpService {
       // A recovery swap is a dedicated one-for-one assignment until the
       // original recovers. Campaign balancing must never steal it.
       if (activeSwapPoolEmails.has(row.email.toLowerCase())) continue;
+      if (this.state.getRestingInbox(row.email)) continue;
       const on = (campaignsByEmail.get(row.email.toLowerCase()) ?? []).filter(
         (id) => activeIds.has(id),
       );

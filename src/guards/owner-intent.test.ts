@@ -598,3 +598,61 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 });
+
+describe("owner intent — D42 generic rest", () => {
+  it("D42: rest eligibility includes pool generics and pre-warmed fleets", async () => {
+    const { isRestEligibleMailbox, isClientInbox } = await import(
+      "../lib/clientInbox.js"
+    );
+    const fleet = {
+      extraGenericMailboxes: ["harmony norris"],
+      extraGenericDomains: [
+        "crosslaunchco.com",
+        "crossscaleco.com",
+        "cleartechco.com",
+      ],
+    };
+    assert.equal(
+      isClientInbox(
+        { client_id: 9, from_name: "Harmony Norris" },
+        "harmony@crosslaunchco.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      stop(
+        "Fleet generics stay non-client for canary/day-brief (D41/D42).",
+        "A fleet domain is now counted as a client inbox.",
+      ),
+    );
+    assert.equal(
+      isRestEligibleMailbox(
+        { client_id: 9, from_name: "Harmony Norris" },
+        "harmony@crosslaunchco.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+      stop(
+        "Generics rest on the same 2/2 cadence (D42).",
+        "Fleet generics are no longer rest-eligible.",
+      ),
+    );
+    assert.equal(
+      isRestEligibleMailbox(
+        { client_id: 9, from_name: "Pool" },
+        "spare@pool.info",
+        fleet,
+        {
+          getPoolMailbox: () =>
+            ({ email: "spare@pool.info", status: "available" }) as never,
+        },
+      ),
+      true,
+      stop(
+        "Pool generics rest on the same 2/2 cadence (D42).",
+        "Pool generics are no longer rest-eligible.",
+      ),
+    );
+  });
+});

@@ -608,7 +608,10 @@ export class StateStore {
     platform: "GOOGLE" | "MICROSOFT",
   ): PoolMailboxRecord | undefined {
     return Object.values(this.state.poolMailboxes).find(
-      (m) => m.status === "available" && m.platform === platform,
+      (m) =>
+        m.status === "available" &&
+        m.platform === platform &&
+        !this.getRestingInbox(m.email),
     );
   }
 
@@ -618,7 +621,8 @@ export class StateStore {
    * Includes generics already serving a campaign: they are legitimate supply
    * as long as releasing one leaves the donor above its floor, which only the
    * caller can judge. Warming mailboxes are never returned — a mailbox that
-   * has not served its warmup is not supply at any floor.
+   * has not served its warmup is not supply at any floor. Resting generics
+   * (D42) are not supply either.
    */
   findReassignablePoolMailbox(
     platforms: Array<"GOOGLE" | "MICROSOFT">,
@@ -629,6 +633,7 @@ export class StateStore {
         (m) =>
           m.platform === platform &&
           (m.status === "available" || m.status === "assigned") &&
+          !this.getRestingInbox(m.email) &&
           canTake(m.email),
       );
       if (match) return match;

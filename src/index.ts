@@ -1232,7 +1232,7 @@ async function main(): Promise<void> {
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
     );
     console.log(
-      `[boot] Client rest (D41): ${config.enableClientRest ? "ENABLED (2 weeks on / 2 weeks off for client inboxes; generics stay the spare tire)" : "disabled"}`,
+      `[boot] Sender rest (D41/D42): ${config.enableClientRest ? "ENABLED (2 weeks on / 2 weeks off for client inboxes and generics; on-week half is the spare tire)" : "disabled"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,

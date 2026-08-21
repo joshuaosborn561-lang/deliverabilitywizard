@@ -7,7 +7,10 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { isCanaryCampaign, canaryAllowsClientInbox } from "../lib/canaryCampaign.js";
-import { isClientInbox } from "../lib/clientInbox.js";
+import {
+  isClientInbox,
+  isRestEligibleMailbox,
+} from "../lib/clientInbox.js";
 import { sleep } from "../lib/http.js";
 import {
   isOffWeek,
@@ -21,11 +24,12 @@ import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 
 /**
- * D41 — 2 weeks on / 2 weeks off for client inboxes.
+ * D41 + D42 — 2 weeks on / 2 weeks off for client inboxes and generics.
  *
  * Off-week mailboxes are removed from live campaigns (warmup stays on).
  * Health can veto putting a mailbox back on if same-ESP inbox is known-bad;
- * no score allows the first swap so rotation can start.
+ * no score allows the first swap so rotation can start. On-week generics
+ * remain the spare tire; resting generics are not top-up supply.
  */
 
 export interface ClientRestResult {
@@ -111,11 +115,10 @@ export class ClientRestService {
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
-      if (
-        !isClientInbox(account, email, this.config, this.state)
-      ) {
+      if (!isRestEligibleMailbox(account, email, this.config, this.state)) {
         continue;
       }
+      const clientOwned = isClientInbox(account, email, this.config, this.state);
       result.examined += 1;
 
       if (this.state.getHeldInbox(email) || activeHoldUntilDate(tagNames(account))) {
@@ -137,7 +140,7 @@ export class ClientRestService {
           const remaining = membership.get(campaignId) ?? 0;
           if (remaining <= 1) {
             result.skipped.push(
-              `${email}: last account on #${campaignId} — wait for generic top-up`,
+              `${email}: last account on #${campaignId} — wait for top-up`,
             );
             continue;
           }
@@ -181,6 +184,7 @@ export class ClientRestService {
       }
 
       // On-week: put back unless health vetoes a known-bad same-ESP score.
+      // Available pool generics with no campaign history just clear the rest flag.
       if (!existing && !onCampaigns.length) {
         continue;
       }
@@ -208,6 +212,7 @@ export class ClientRestService {
         activeByClient,
         campaignById,
         email,
+        clientOwned,
       );
       const added: number[] = [];
       for (const campaignId of targets) {
@@ -250,46 +255,41 @@ export class ClientRestService {
     activeByClient: Map<number, SmartleadCampaign[]>,
     campaignById: Map<number, SmartleadCampaign>,
     email: string,
+    applyCanarySlice: boolean,
   ): number[] {
+    const allowsCanary = (campaign: SmartleadCampaign): boolean => {
+      if (!applyCanarySlice) return true;
+      if (
+        !isCanaryCampaign(
+          campaign,
+          new Date(),
+          this.config.canaryCampaignDays,
+        )
+      ) {
+        return true;
+      }
+      return canaryAllowsClientInbox(
+        email,
+        this.config.canaryClientInboxPercent,
+      );
+    };
     const fromPrevious = previous.filter((id) => {
       const campaign = campaignById.get(id);
       if (!campaign) return false;
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) return false;
-      if (
-        isCanaryCampaign(
-          campaign,
-          new Date(),
-          this.config.canaryCampaignDays,
-        ) &&
-        !canaryAllowsClientInbox(email, this.config.canaryClientInboxPercent)
-      ) {
-        return false;
-      }
-      return true;
+      return allowsCanary(campaign);
     });
     if (fromPrevious.length) return fromPrevious;
     if (clientId == null) return [];
     return (activeByClient.get(clientId) ?? [])
-      .filter((campaign) => {
-        if (
-          isCanaryCampaign(
-            campaign,
-            new Date(),
-            this.config.canaryCampaignDays,
-          ) &&
-          !canaryAllowsClientInbox(email, this.config.canaryClientInboxPercent)
-        ) {
-          return false;
-        }
-        return true;
-      })
+      .filter((campaign) => allowsCanary(campaign))
       .map((c) => c.id);
   }
 
   private async notify(result: ClientRestResult): Promise<void> {
     const lines = [
-      `${result.dryRun ? "[DRY RUN] " : ""}Client inbox rest (2 weeks on / 2 weeks off), on-week cohort ${result.onWeekCohort}:`,
+      `${result.dryRun ? "[DRY RUN] " : ""}Sender rest (2 weeks on / 2 weeks off; clients + generics), on-week cohort ${result.onWeekCohort}:`,
       `- ${result.benched.length} mailbox(es) taken off live campaigns`,
       `- ${result.restored.length} mailbox(es) put back on`,
     ];

@@ -137,7 +137,7 @@ export function opsHelp(role: OpsRole): string {
     "• “Check deliverability” — placement results plus campaign and DNS audits",
     "• “Check DNS” — SPF/DMARC/MX audit without changing DNS",
     "• “Audit campaigns” — sender floor, rest piles, and placement-test coverage",
-    "• “Campaign setup” — D41 rails for launching a new campaign",
+    "• “Campaign setup” — D43 rails for launching a new campaign",
     "• “Reconnect disconnected mailboxes”",
     "• “Rotate name@example.com” — preview first, then explicit confirmation",
     "• “Status” — pool, holds, swaps and recent runs",

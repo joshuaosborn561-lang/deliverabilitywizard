@@ -156,6 +156,11 @@ Fresh (non-prewarmed) inboxes owe **21** days before live campaigns;
 `POOL_WARMUP_DAYS` stays 14. Blacklist alone does not burn a domain.
 Canary launch is a separate project (not in this loop).
 
+First health after this lands runs a one-shot hold rebuild (D44): HOLDs
+without a same-ESP fail are released into D43. Proven same-ESP fails stay.
+New weak same-ESP / bounce still pull. Do not treat leftover HOLD-UNTIL
+tags as the rotation system.
+
 ## Mailbox settings
 
 Every mailbox is converged each run to:

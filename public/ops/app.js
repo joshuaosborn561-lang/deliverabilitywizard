@@ -123,6 +123,7 @@ async function loadDashboard(force = false) {
     ["Fresh / pool warmup", `${data.policy.freshInboxWarmupDays}d fresh · ${data.policy.warmupDays}d pool`],
     ["Client rest", data.policy.clientRest ? "Per-client A/B · 2 on / 2 off" : "Off"],
     ["Generic sit / ESP mix", `${data.policy.genericSendRestDays}d send · ${data.policy.espMixMinPercent}% each ESP`],
+    ["Hold rebuild", data.policy.restBaselineRebuiltAt ? `Done ${String(data.policy.restBaselineRebuiltAt).slice(0, 10)}` : data.policy.restBaselineRebuild ? "Pending first health" : "Off"],
     ["Recovery hold", `${data.policy.recoveryHoldDays} days`],
   ];
   $("#policy-grid").replaceChildren(

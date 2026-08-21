@@ -107,6 +107,12 @@ const ConfigSchema = z.object({
    */
   enableGenericSendRest: boolFromEnv(true),
   genericSendRestDays: z.coerce.number().int().positive().default(14),
+  /**
+   * D44 — one-shot: drop HOLD state/tags that are not a proven same-ESP
+   * fail so D43 rest can take over. Stamped in state after the first
+   * successful pass.
+   */
+  enableRestBaselineRebuild: boolFromEnv(true),
   /** Minimum share of each ESP (Google / Microsoft) when topping up to 50. */
   campaignEspMixMinPercent: z.coerce.number().int().min(0).max(50).default(30),
   cronHealth: z.string().default("*/15 * * * *"),
@@ -347,6 +353,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
+    enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
     campaignEspMixMinPercent: env.CAMPAIGN_ESP_MIX_MIN_PERCENT ?? "30",
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",

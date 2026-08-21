@@ -839,3 +839,28 @@ on first sight after deploy, so we do not bench the whole fleet on day one.
 `GenericSendRestService`, `espFillOrder` 30% default, no canary config,
 owner-intent D43.
 
+---
+
+## D44 — Rebuild the hold pile so D43 is the rotation system
+
+**Decision.** One-shot after deploy: release every HOLD that lacks same-ESP
+proof. Keep only `scoredSameEsp === true` and same-ESP inbox rate below
+`REMEDIATION_INBOX_THRESHOLD` (80%). Strip `HOLD-UNTIL-*` tags on released
+boxes, clear `heldInboxes` and the swap reservation. Do not yank covering
+generics off campaigns. Do not touch `WARMUP-GATE-EXEMPT`.
+
+Going-forward placement (same-ESP) and bounce pulls stay (D5/D32). This is
+not a new rest method — it clears the graveyard so per-client A/B and the
+generic send clock can take over.
+
+**Why.** Josh (2026-08-21): existing HOLDs are not known-weak. Census that
+day: 236 held, 108 with no same-ESP score, 61 already expired. Treating the
+tag pile as rotation stranded senders that should be on D43.
+
+**Tradeoff.** Bounce-only historic holds are released; if bounce is still
+over 5% with 50 sends, D5 re-holds them on the next remediation pass. The
+rebuild stamps `restBaselineRebuiltAt` and does not run again.
+
+**Guards.** `holdHasSameEspProof`, `RestBaselineRebuildService` one-shot,
+owner-intent D44.
+

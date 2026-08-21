@@ -163,6 +163,11 @@ export interface AppState {
    * auto-resumed once staffed again (D25).
    */
   pendingResumes: Record<string, PendingResumeRecord>;
+  /**
+   * D44 — ISO time the one-shot hold rebuild finished. Empty means it has
+   * not run yet and the next health pass should.
+   */
+  restBaselineRebuiltAt: string | null;
 }
 
 export interface BugRemediationRecord {
@@ -262,6 +267,7 @@ const EMPTY_STATE: AppState = {
   opsCursorAgents: {},
   bugRemediations: {},
   pendingResumes: {},
+  restBaselineRebuiltAt: null,
 };
 
 export class StateStore {
@@ -300,6 +306,7 @@ export class StateStore {
         pendingResumes: parsed.pendingResumes ?? {},
         lastHealthAt: parsed.lastHealthAt ?? null,
         lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
+        restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -374,6 +381,14 @@ export class StateStore {
 
   clearHeldInbox(email: string): void {
     delete this.state.heldInboxes[email.toLowerCase()];
+  }
+
+  getRestBaselineRebuiltAt(): string | null {
+    return this.state.restBaselineRebuiltAt;
+  }
+
+  markRestBaselineRebuilt(iso: string): void {
+    this.state.restBaselineRebuiltAt = iso;
   }
 
   markHeldPlacementTest(record: HeldPlacementTestRecord): void {

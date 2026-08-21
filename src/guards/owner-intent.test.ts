@@ -657,3 +657,44 @@ describe("owner intent — D43 rest model", () => {
     );
   });
 });
+
+describe("owner intent — D44 hold rebuild", () => {
+  it("D44: one-shot rebuild defaults on; only same-ESP fails stay held", async () => {
+    assert.equal(
+      defaults.enableRestBaselineRebuild,
+      true,
+      stop(
+        "Unproven HOLDs are rebuilt once so D43 can rest (D44).",
+        "ENABLE_REST_BASELINE_REBUILD now defaults off.",
+      ),
+    );
+    const { holdHasSameEspProof } = await import("../lib/holdProof.js");
+    assert.equal(
+      holdHasSameEspProof(
+        { scoredSameEsp: true, inboxRateSameEsp: 40 },
+        80,
+      ),
+      true,
+      stop(
+        "A same-ESP fail stays held (D32/D44).",
+        "Proven same-ESP holds are no longer kept.",
+      ),
+    );
+    assert.equal(
+      holdHasSameEspProof({ scoredSameEsp: false, inboxRate: 40 }, 80),
+      false,
+      stop(
+        "Blended-only HOLDs are not proof (D44).",
+        "A blended-only hold now counts as proven-weak.",
+      ),
+    );
+    assert.equal(
+      holdHasSameEspProof({ inboxRate: 40 }, 80),
+      false,
+      stop(
+        "No same-ESP score is not proof (D44).",
+        "A no-score hold now counts as proven-weak.",
+      ),
+    );
+  });
+});

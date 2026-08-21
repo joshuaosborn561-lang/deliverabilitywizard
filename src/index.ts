@@ -30,6 +30,7 @@ import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { ClientRestService } from "./services/clientRest.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
+import { RestBaselineRebuildService } from "./services/restBaselineRebuild.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -274,6 +275,12 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const restBaselineRebuild = new RestBaselineRebuildService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -404,6 +411,15 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     healthInFlight = (async () => {
+      let restBaseline: unknown = null;
+      if (config.enableRestBaselineRebuild) {
+        try {
+          restBaseline = await restBaselineRebuild.run();
+        } catch (error) {
+          console.warn("[health] rest baseline rebuild failed", error);
+        }
+      }
+
       let restResult: unknown = null;
       if (config.enableClientRest) {
         try {
@@ -468,6 +484,7 @@ async function main(): Promise<void> {
       }
 
       return {
+        restBaseline,
         clientRest: restResult,
         health: healthResult,
         reconnect: reconnectResult,
@@ -841,6 +858,8 @@ async function main(): Promise<void> {
         enableHeldPlacementTests: config.enableHeldPlacementTests,
         enableClientRest: config.enableClientRest,
         enableRestPlacementTests: config.enableRestPlacementTests,
+        enableGenericSendRest: config.enableGenericSendRest,
+        enableRestBaselineRebuild: config.enableRestBaselineRebuild,
         freshInboxWarmupDays: config.freshInboxWarmupDays,
         bounceRateWarnThreshold: config.bounceRateWarnThreshold,
         cronPoolProvision: config.cronPoolProvision,
@@ -931,6 +950,16 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await clientRest.run();
         res.json({ ok: true, mode: "client-rest", result });
+        return;
+      }
+      if (
+        mode === "rest-baseline" ||
+        mode === "hold-rebuild" ||
+        mode === "rest-baseline-rebuild"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await restBaselineRebuild.run();
+        res.json({ ok: true, mode: "rest-baseline", result });
         return;
       }
       if (mode === "rest-tests" || mode === "rest-placement-tests") {
@@ -1246,7 +1275,7 @@ async function main(): Promise<void> {
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
     );
     console.log(
-      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}`,
+      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}; hold rebuild (D44) ${config.enableRestBaselineRebuild ? (state.getRestBaselineRebuiltAt() ? `done ${state.getRestBaselineRebuiltAt()}` : "PENDING first health") : "disabled"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,

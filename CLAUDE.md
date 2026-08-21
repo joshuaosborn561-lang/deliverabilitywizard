@@ -78,7 +78,8 @@ those have already caused live pre-warmed senders to be pulled.
 ## Sender identity
 
 **One client per sender — not one campaign.** A mailbox (client domain or
-generic) may sit on **every ACTIVE campaign for that same client**. BCP
+generic) may sit on **every ACTIVE campaign for that same client**, except
+when it is in its off-week rest (D43 qualifies D26). BCP
 mailboxes go on all BCP campaigns; Parlay on all Parlay; etc. (`ClientFanOutService`,
 D26). Cross-client membership is still forbidden.
 
@@ -101,7 +102,7 @@ A sender comes off active campaigns when either signal fails:
 - **Bounce** above `BOUNCE_RATE_THRESHOLD` (5%), once it has sent at least
  `MIN_BOUNCE_SAMPLE` (50). These are independent — seed inboxes accept mail,
  so a mailbox can hold a clean inbox rate while bouncing hard against real
- leads.
+ leads. Slack warns at `BOUNCE_RATE_WARN_THRESHOLD` (2%) without pulling (D41).
 
 Both route through the same path: removed from active campaigns, warmup
 re-enabled, `HOLD-UNTIL` tag, held `RECOVERY_HOLD_DAYS` (14), and a warmed
@@ -116,19 +117,49 @@ protective pauses recorded in `pendingResumes` may be resumed by health,
 and never when the campaign is **STOPPED**.
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
-from the pool — connected SMTP/IMAP and not held. Disconnected membership
-does not count (D25). Health also runs same-client fan-out. `CRON_HEALTH`
+from the pool — connected SMTP/IMAP, not held, and not resting. Disconnected membership
+does not count (D25). Health also runs same-client fan-out and client rest (D43). `CRON_HEALTH`
 every 15m; Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
 
+## When setting up a campaign
+
+Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
+
+1. Staffing floor is 50 *staffable* senders (connected SMTP/IMAP, not held, not resting). Generics fill the gap. Keep at least ~30% Google and ~30% Microsoft. Do not buy a third client-domain set.
+2. Split that client's inboxes into A and B (even split). Off-week half comes OFF live campaigns (warmup stays on). Do not leave resters on a campaign at `MESSAGE_PER_DAY=0`.
+3. Same-client fan-out still applies for *on-week* client inboxes only. A resting mailbox must not be added to every ACTIVE campaign for that client.
+4. Generics do not sit on the same A/B fortnight. They rest after ~14 days of live send, then become supply again after the same sit.
+5. Fresh (non-prewarmed) InboxKit mailboxes owe 21 days before live send. Pre-warmed fleets (`crosslaunchco.com`, `crossscaleco.com`, `cleartechco.com`) skip that wait. Pool warmup stays 14 days.
+6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON, plain Name / Brand signature.
+7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
+8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only.
+9. Do not spend, purge, or bypass warmup/holds from chat. Approvals stay on.
+10. After launch: health (15m) will rest, top-up, and fan-out. Watch Slack on / off / generic-spare piles and `[client-rest]` / `[health]` logs.
+
 ## Held mailbox placement tests (D39)
 
 Mailboxes pulled off campaigns (HOLD) get **separate** SmartDelivery recurring
 tests — not re-attached to live campaigns. Slack day briefs are per-client
-(sent / bounce% / spam% + active vs held counts), not per-mailbox lists.
-A/B/C weekly rest is not shipped yet.
+(sent / bounce% / spam% + on / off / generic-spare / held counts), not per-mailbox lists.
+
+## Sender rest (D43)
+
+Client inboxes are split **A/B per client** (even, stable). Off-week they
+are removed from live campaigns; warmup stays on. Resting is not staffable.
+Generics fill every live campaign to 50 staffable with at least ~30% Google
+and ~30% Microsoft. A generic sits only after ~14 days of live send — not
+on the client fortnight — then becomes supply again after the same sit.
+Fresh (non-prewarmed) inboxes owe **21** days before live campaigns;
+`POOL_WARMUP_DAYS` stays 14. Blacklist alone does not burn a domain.
+Canary launch is a separate project (not in this loop).
+
+First health after this lands runs a one-shot hold rebuild (D44): HOLDs
+without a same-ESP fail are released into D43. Proven same-ESP fails stay.
+New weak same-ESP / bounce still pull. Do not treat leftover HOLD-UNTIL
+tags as the rotation system.
 
 ## Mailbox settings
 
@@ -148,9 +179,14 @@ Tests are **recurring, not new-daily**: `POST /spam-test/schedule` with
 re-runs itself. The count does not grow daily and nothing needs deleting each
 morning.
 
-`TOTAL_TEST_QUOTA` (120) is checked before creating; the scanner blocks and
-alerts rather than exceeding it. The reconciler stops a recurring test when its
-campaign goes inactive, freeing the slot.
+`TOTAL_TEST_QUOTA` defaults to **0 (unlimited, D45)**. Josh has unlimited
+SmartDelivery tests. A positive value still caps, and scanner / held / rest
+creates block rather than exceeding it. The 50-sender batch size is a
+SmartDelivery API limit, not a plan quota. The reconciler stops a recurring
+test when its campaign goes inactive.
+
+**Launch bar is 85% same-ESP** (promo tab = miss, D46). Live pull stays
+**80%** same-ESP (D32). Do not launch at 80 or pull at 85.
 
 ## Spend
 

@@ -42,7 +42,13 @@ const ConfigSchema = z.object({
   /** InboxKit→Smartlead sequencer login (one-time; password not the API key) */
   smartleadLoginEmail: z.string().default(""),
   smartleadLoginPassword: z.string().default(""),
-  totalTestQuota: z.coerce.number().int().positive().default(120),
+  /**
+   * Concurrent SmartDelivery test cap. 0 = unlimited (D45). A positive
+   * value still blocks scanner / held / rest creates (old D8 behaviour).
+   * Do not set Railway TOTAL_TEST_QUOTA=0 until this code is on main —
+   * older deploys reject 0 via `.positive()`.
+   */
+  totalTestQuota: z.coerce.number().int().nonnegative().default(0),
   maxMailboxesPerTest: z.coerce.number().int().positive().max(50).default(50),
   /**
    * Create recurring (automated) placement tests instead of one-off manual
@@ -76,7 +82,7 @@ const ConfigSchema = z.object({
   enableRemediation: boolFromEnv(false),
   /** Score Gmail→G Suite / Outlook→O365 only (matches ESP-matched campaigns). */
   scoreSameEspOnly: boolFromEnv(true),
-  /** Min same-ESP seed hits before trusting same-ESP % (else fall back to all-ESP). */
+  /** Min same-ESP seed hits before trusting same-ESP %. Below that, skip placement rotation (D32). */
   minSameEspSamples: z.coerce.number().int().positive().default(3),
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
@@ -93,6 +99,28 @@ const ConfigSchema = z.object({
    * D39 — separate SmartDelivery tests for held/pulled mailboxes (off campaigns).
    */
   enableHeldPlacementTests: boolFromEnv(true),
+  /**
+   * D43 — 2 weeks on / 2 weeks off for client inboxes, split A/B per client.
+   */
+  enableClientRest: boolFromEnv(true),
+  /**
+   * D41/D43 — separate SmartDelivery tests for resting (off-week) client inboxes.
+   */
+  enableRestPlacementTests: boolFromEnv(true),
+  /**
+   * D43 — generics sit after this many days of live campaign send, then
+   * become supply again after the same sit. Not the client A/B fortnight.
+   */
+  enableGenericSendRest: boolFromEnv(true),
+  genericSendRestDays: z.coerce.number().int().positive().default(14),
+  /**
+   * D44 — one-shot: drop HOLD state/tags that are not a proven same-ESP
+   * fail so D43 rest can take over. Stamped in state after the first
+   * successful pass.
+   */
+  enableRestBaselineRebuild: boolFromEnv(true),
+  /** Minimum share of each ESP (Google / Microsoft) when topping up to 50. */
+  campaignEspMixMinPercent: z.coerce.number().int().min(0).max(50).default(30),
   cronHealth: z.string().default("*/15 * * * *"),
   /** Daily campaign send cap held on every mailbox (warmups not included). */
   messagePerDay: z.coerce.number().int().min(1).default(30),
@@ -108,6 +136,11 @@ const ConfigSchema = z.object({
     .default("")
     .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
+  /**
+   * D41 — Slack/investigate warn below the 5% pull. Does not rotate.
+   * D5's bounceRateThreshold stays the sender-pull line.
+   */
+  bounceRateWarnThreshold: z.coerce.number().min(0).max(100).default(2),
   /**
    * Aggregate sender bounce on a PAUSED campaign that triggers investigation
    * (D29). Separate from per-sender rotation (bounceRateThreshold).
@@ -158,6 +191,12 @@ const ConfigSchema = z.object({
    */
   enableWarmupGate: boolFromEnv(true),
   campaignMinWarmupDays: z.coerce.number().int().positive().default(14),
+  /**
+   * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
+   * a live campaign. Pre-warmed fleets stay on campaignMinWarmupDays / exempt.
+   * Do not change poolWarmupDays or campaignMinWarmupDays defaults (D1).
+   */
+  freshInboxWarmupDays: z.coerce.number().int().positive().default(21),
   /** Porkbun domain spend cap per client per UTC month (USD). */
   clientDomainBudgetUsd: z.coerce.number().nonnegative().default(25),
   /** New mailboxes per client per UTC month (blacklist replace). */
@@ -299,7 +338,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cronAccountReconnect: env.CRON_ACCOUNT_RECONNECT ?? "0 3 * * *",
     smartleadLoginEmail: env.SMARTLEAD_LOGIN_EMAIL ?? "",
     smartleadLoginPassword: env.SMARTLEAD_LOGIN_PASSWORD ?? "",
-    totalTestQuota: env.TOTAL_TEST_QUOTA ?? "120",
+    totalTestQuota: env.TOTAL_TEST_QUOTA ?? "0",
     maxMailboxesPerTest: env.MAX_MAILBOXES_PER_TEST ?? "50",
     autoPlacementTests: env.AUTO_PLACEMENT_TESTS,
     placementTestEveryDays: env.PLACEMENT_TEST_EVERY_DAYS ?? "1",
@@ -316,12 +355,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
+    enableClientRest: env.ENABLE_CLIENT_REST,
+    enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,
+    enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
+    genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
+    enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
+    campaignEspMixMinPercent: env.CAMPAIGN_ESP_MIX_MIN_PERCENT ?? "30",
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
     mailboxMinTimeGapMins: env.MAILBOX_MIN_TIME_GAP_MINS ?? "10",
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
+    bounceRateWarnThreshold: env.BOUNCE_RATE_WARN_THRESHOLD ?? "2",
     campaignBounceInvestigateThreshold:
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
@@ -335,6 +381,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
     campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "14",
+    freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
     clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",
     warmupTotalPerDay: env.WARMUP_TOTAL_PER_DAY ?? "20",

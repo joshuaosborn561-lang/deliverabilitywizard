@@ -128,6 +128,12 @@ export interface AppState {
   heldInboxes: Record<string, HeldInboxRecord>;
   /** D39 — separate placement tests for held/pulled mailboxes */
   heldPlacementTests: Record<string, HeldPlacementTestRecord>;
+  /** D41/D43 — client A/B resters and generics on the send-clock sit */
+  restingInboxes: Record<string, RestingInboxRecord>;
+  /** First time we saw a generic on a live campaign (send clock). */
+  genericSendStartedAt: Record<string, string>;
+  /** D41 — separate placement tests for resting (off-week) client inboxes */
+  restPlacementTests: Record<string, HeldPlacementTestRecord>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
   poolMailboxes: Record<string, PoolMailboxRecord>;
   /** Active original↔pool swaps */
@@ -157,6 +163,11 @@ export interface AppState {
    * auto-resumed once staffed again (D25).
    */
   pendingResumes: Record<string, PendingResumeRecord>;
+  /**
+   * D44 — ISO time the one-shot hold rebuild finished. Empty means it has
+   * not run yet and the next health pass should.
+   */
+  restBaselineRebuiltAt: string | null;
 }
 
 export interface BugRemediationRecord {
@@ -204,6 +215,18 @@ export interface HeldInboxRecord {
   swappedWithPoolEmail?: string;
 }
 
+/** D41/D43 — mailbox resting off live campaigns. */
+export interface RestingInboxRecord {
+  accountId: number;
+  email: string;
+  clientId: string;
+  cohort: "A" | "B" | "send";
+  kind?: "client" | "generic";
+  restingSince: string;
+  removedFromCampaigns: number[];
+  lastSameEspInbox: number | null;
+}
+
 /** D39 — SmartDelivery test covering held/pulled mailboxes (off campaigns). */
 export interface HeldPlacementTestRecord {
   testId: string;
@@ -231,6 +254,9 @@ const EMPTY_STATE: AppState = {
   remediatedKeys: {},
   heldInboxes: {},
   heldPlacementTests: {},
+  restingInboxes: {},
+  genericSendStartedAt: {},
+  restPlacementTests: {},
   poolMailboxes: {},
   activeSwaps: {},
   clientMonthlyUsage: {},
@@ -241,6 +267,7 @@ const EMPTY_STATE: AppState = {
   opsCursorAgents: {},
   bugRemediations: {},
   pendingResumes: {},
+  restBaselineRebuiltAt: null,
 };
 
 export class StateStore {
@@ -261,6 +288,9 @@ export class StateStore {
         remediatedKeys: parsed.remediatedKeys ?? {},
         heldInboxes: parsed.heldInboxes ?? {},
         heldPlacementTests: parsed.heldPlacementTests ?? {},
+        restingInboxes: parsed.restingInboxes ?? {},
+        genericSendStartedAt: parsed.genericSendStartedAt ?? {},
+        restPlacementTests: parsed.restPlacementTests ?? {},
         poolMailboxes: parsed.poolMailboxes ?? {},
         activeSwaps: parsed.activeSwaps ?? {},
         clientMonthlyUsage: parsed.clientMonthlyUsage ?? {},
@@ -276,6 +306,7 @@ export class StateStore {
         pendingResumes: parsed.pendingResumes ?? {},
         lastHealthAt: parsed.lastHealthAt ?? null,
         lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
+        restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -352,6 +383,14 @@ export class StateStore {
     delete this.state.heldInboxes[email.toLowerCase()];
   }
 
+  getRestBaselineRebuiltAt(): string | null {
+    return this.state.restBaselineRebuiltAt;
+  }
+
+  markRestBaselineRebuilt(iso: string): void {
+    this.state.restBaselineRebuiltAt = iso;
+  }
+
   markHeldPlacementTest(record: HeldPlacementTestRecord): void {
     this.state.heldPlacementTests[record.testId] = record;
   }
@@ -366,6 +405,53 @@ export class StateStore {
 
   clearHeldPlacementTest(testId: string): void {
     delete this.state.heldPlacementTests[testId];
+  }
+
+  markRestingInbox(record: RestingInboxRecord): void {
+    this.state.restingInboxes[record.email.toLowerCase()] = record;
+  }
+
+  getRestingInbox(email: string): RestingInboxRecord | undefined {
+    return this.state.restingInboxes[email.toLowerCase()];
+  }
+
+  listRestingInboxes(): RestingInboxRecord[] {
+    return Object.values(this.state.restingInboxes);
+  }
+
+  clearRestingInbox(email: string): void {
+    delete this.state.restingInboxes[email.toLowerCase()];
+  }
+
+  getGenericSendStartedAt(email: string): string | undefined {
+    return this.state.genericSendStartedAt[email.toLowerCase()];
+  }
+
+  markGenericSendStartedAt(email: string, startedAt: string): void {
+    const key = email.toLowerCase();
+    if (!this.state.genericSendStartedAt[key]) {
+      this.state.genericSendStartedAt[key] = startedAt;
+    }
+  }
+
+  clearGenericSendStartedAt(email: string): void {
+    delete this.state.genericSendStartedAt[email.toLowerCase()];
+  }
+
+  markRestPlacementTest(record: HeldPlacementTestRecord): void {
+    this.state.restPlacementTests[record.testId] = record;
+  }
+
+  getRestPlacementTest(testId: string): HeldPlacementTestRecord | undefined {
+    return this.state.restPlacementTests[testId];
+  }
+
+  listRestPlacementTests(): HeldPlacementTestRecord[] {
+    return Object.values(this.state.restPlacementTests);
+  }
+
+  clearRestPlacementTest(testId: string): void {
+    delete this.state.restPlacementTests[testId];
   }
 
   clearInboxRemediation(email: string): void {
@@ -557,7 +643,10 @@ export class StateStore {
     platform: "GOOGLE" | "MICROSOFT",
   ): PoolMailboxRecord | undefined {
     return Object.values(this.state.poolMailboxes).find(
-      (m) => m.status === "available" && m.platform === platform,
+      (m) =>
+        m.status === "available" &&
+        m.platform === platform &&
+        !this.getRestingInbox(m.email),
     );
   }
 
@@ -567,7 +656,8 @@ export class StateStore {
    * Includes generics already serving a campaign: they are legitimate supply
    * as long as releasing one leaves the donor above its floor, which only the
    * caller can judge. Warming mailboxes are never returned — a mailbox that
-   * has not served its warmup is not supply at any floor.
+   * has not served its warmup is not supply at any floor. Resting generics
+   * (D43 send-clock sit) are not supply either.
    */
   findReassignablePoolMailbox(
     platforms: Array<"GOOGLE" | "MICROSOFT">,
@@ -578,6 +668,7 @@ export class StateStore {
         (m) =>
           m.platform === platform &&
           (m.status === "available" || m.status === "assigned") &&
+          !this.getRestingInbox(m.email) &&
           canTake(m.email),
       );
       if (match) return match;
@@ -605,6 +696,20 @@ export class StateStore {
 
   listActiveSwaps(): ActiveSwapRecord[] {
     return Object.values(this.state.activeSwaps);
+  }
+
+  /**
+   * Drop the original↔generic reservation only. The covering generic stays
+   * assigned if it is still on campaigns (D44). Use clearSwap when the
+   * generic is actually free again.
+   */
+  releaseSwapReservation(originalEmail: string): boolean {
+    const key = originalEmail.toLowerCase();
+    if (!this.state.activeSwaps[key]) return false;
+    delete this.state.activeSwaps[key];
+    const held = this.state.heldInboxes[key];
+    if (held) held.swappedWithPoolEmail = undefined;
+    return true;
   }
 
   clearSwap(originalEmail: string): void {

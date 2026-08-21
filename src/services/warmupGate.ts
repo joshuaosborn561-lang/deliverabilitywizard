@@ -35,7 +35,7 @@ export interface WarmupGateResult {
 }
 
 export function isPrewarmedGeneric(
-  account: SmartleadEmailAccount,
+  account: Pick<SmartleadEmailAccount, "from_name">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
@@ -84,7 +84,7 @@ export class WarmupGateService {
     }
 
     console.log(
-      `[warmup-gate] Starting (${result.dryRun ? "DRY RUN" : "LIVE"}) minDays=${this.config.campaignMinWarmupDays}`,
+      `[warmup-gate] Starting (${result.dryRun ? "DRY RUN" : "LIVE"}) minDays=${this.config.campaignMinWarmupDays} freshDays=${this.config.freshInboxWarmupDays}`,
     );
 
     let campaigns;
@@ -151,8 +151,6 @@ export class WarmupGateService {
         const holdUntil = activeHoldUntilDate(tags);
         const started = warmupStartedAt(account);
         const daysWarmed = started != null ? daysSince(started) : null;
-        const underWarmed =
-          daysWarmed == null || daysWarmed < this.config.campaignMinWarmupDays;
 
         if (isWarmupGateExempt(tags)) {
           continue;
@@ -182,6 +180,9 @@ export class WarmupGateService {
           this.config,
           this.state,
         );
+        const owedDays = owedWarmupDays(prewarmed, this.config);
+        const underWarmed =
+          daysWarmed == null || daysWarmed < owedDays;
 
         if (underWarmed && prewarmed) {
           result.skipped += 1;
@@ -380,6 +381,14 @@ export function warmupStartedAt(
     account.created_at ||
     null
   );
+}
+
+/** D41 — fresh InboxKit inboxes owe 21 days; pre-warmed fleets stay on the 14-day / exempt path. */
+export function owedWarmupDays(
+  prewarmed: boolean,
+  config: Pick<AppConfig, "campaignMinWarmupDays" | "freshInboxWarmupDays">,
+): number {
+  return prewarmed ? config.campaignMinWarmupDays : config.freshInboxWarmupDays;
 }
 
 export function daysSince(iso: string, now = Date.now()): number {

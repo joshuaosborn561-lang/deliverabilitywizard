@@ -355,6 +355,7 @@ export class BcpClientRestoreService {
       if (isPrewarmedGeneric(account, email, this.config, this.state)) {
         return false;
       }
+      if (this.state.getRestingInbox(email)) return false;
       // Idle = not on any campaign after this restore (or only removed).
       const remaining = campaignIdsOf(account).filter((cid) => {
         if (removed.has(`${account.id}:${cid}`)) return false;

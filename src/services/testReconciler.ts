@@ -11,7 +11,10 @@ import {
 } from "../clients/smartdelivery.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
-import { isHeldRecoveryTestName } from "./heldPlacementTests.js";
+import {
+  isHeldRecoveryTestName,
+  isRestRecoveryTestName,
+} from "./heldPlacementTests.js";
 
 export interface StoppedTest {
   testId: string;
@@ -123,8 +126,11 @@ export class TestReconciler {
       // D39 held-recovery tests: keep while any mailbox is still held, even if
       // the sequence-shell campaign is no longer ACTIVE.
       const heldRecord = this.state.getHeldPlacementTest(testId);
+      const restRecord = this.state.getRestPlacementTest(testId);
       const isHeldRecovery =
         Boolean(heldRecord) || isHeldRecoveryTestName(test.test_name);
+      const isRestRecovery =
+        Boolean(restRecord) || isRestRecoveryTestName(test.test_name);
       if (isHeldRecovery) {
         const heldEmails = new Set(
           this.state.listHeldInboxes().map((h) => h.email.toLowerCase()),
@@ -139,6 +145,19 @@ export class TestReconciler {
           continue;
         }
         // No longer held — fall through to stop (free the quota slot).
+      } else if (isRestRecovery) {
+        const restEmails = new Set(
+          this.state.listRestingInboxes().map((h) => h.email.toLowerCase()),
+        );
+        const emails = restRecord?.emails ?? [];
+        const stillResting =
+          emails.length === 0
+            ? restEmails.size > 0
+            : emails.some((e) => restEmails.has(e.toLowerCase()));
+        if (stillResting) {
+          result.keptActive += 1;
+          continue;
+        }
       } else if (activeStatuses.has(status)) {
         result.keptActive += 1;
         continue;

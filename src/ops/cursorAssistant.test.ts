@@ -18,7 +18,10 @@ describe("CursorAssistantService", () => {
       async getAgent(id: string) {
         return { id, url: `https://cursor.com/agents/${id}` };
       },
-      async createAgent() {
+      async createAgent(input: { prompt: string }) {
+        assert.match(input.prompt, /Campaign setup rules \(D43\)/);
+        assert.match(input.prompt, /Split that client's inboxes into A and B/);
+        assert.match(input.prompt, /2 weeks on \/ 2 weeks off/);
         return {
           agent: {
             id: "bc-test-1",

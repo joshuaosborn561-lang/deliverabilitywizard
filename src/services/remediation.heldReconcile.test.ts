@@ -37,6 +37,8 @@ function fixture(opts: {
   const state = {
     getHeldInbox: (email: string) =>
       heldSet.has(email.toLowerCase()) ? heldRecord(email) : undefined,
+    getRestingInbox: () => undefined,
+    listRestingInboxes: () => [],
     markPendingResume: (r: { campaignId: number }) => {
       paused.push(r.campaignId);
     },
@@ -178,6 +180,8 @@ describe("held mailboxes still on ACTIVE campaigns", () => {
     const removed: Array<[number, number[]]> = [];
     const state = {
       getHeldInbox: (email: string) => heldRecord(email),
+      getRestingInbox: () => undefined,
+      listRestingInboxes: () => [],
       markPendingResume: () => undefined,
     } as unknown as StateStore;
     const smartlead = {
@@ -216,6 +220,8 @@ describe("held mailboxes still on ACTIVE campaigns", () => {
     const removed: Array<[number, number[]]> = [];
     const state = {
       getHeldInbox: (email: string) => heldRecord(email),
+      getRestingInbox: () => undefined,
+      listRestingInboxes: () => [],
       markPendingResume: () => undefined,
     } as unknown as StateStore;
     const smartlead = {

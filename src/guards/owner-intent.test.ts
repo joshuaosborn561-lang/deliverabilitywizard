@@ -117,13 +117,40 @@ describe("owner intent", () => {
     );
   });
 
-  it("D8: the placement test quota is 120", () => {
+  it("D45: placement-test quota defaults to unlimited (0)", () => {
     assert.equal(
       defaults.totalTestQuota,
-      120,
+      0,
       stop(
-        "No more than 120 concurrent placement tests (D8).",
-        `Quota is now ${defaults.totalTestQuota}, which may exceed the SmartDelivery plan.`,
+        "SmartDelivery tests are uncapped by default (D45).",
+        `Quota default is now ${defaults.totalTestQuota}, which would re-cap the unlimited plan.`,
+      ),
+    );
+    assert.doesNotThrow(
+      () => loadConfig({ TOTAL_TEST_QUOTA: "0" }),
+      stop(
+        "TOTAL_TEST_QUOTA=0 must load as unlimited (D45).",
+        "Config still rejects 0 (old D8 .positive()), so a post-merge Railway clear would crash.",
+      ),
+    );
+  });
+
+  it("D45: scanner / held / rest must not block when quota is 0", async () => {
+    const { quotaWouldBlock } = await import("../lib/testQuota.js");
+    assert.equal(
+      quotaWouldBlock(0, 999, 80),
+      false,
+      stop(
+        "Quota 0 is unlimited — do not block creates (D45).",
+        "quotaWouldBlock(0, …) is true again, so scanner/held/rest would refuse tests.",
+      ),
+    );
+    assert.equal(
+      quotaWouldBlock(120, 118, 3),
+      true,
+      stop(
+        "A positive quota still caps (D8/D45).",
+        "Positive TOTAL_TEST_QUOTA no longer blocks when exhausted.",
       ),
     );
   });
@@ -502,6 +529,232 @@ describe("owner intent — sender supply", () => {
       reassignable([1, 2]),
       false,
       "a sender on several campaigns is only movable if every donor holds",
+    );
+  });
+});
+
+describe("owner intent — D41 beanstalk rotation", () => {
+  it("D41: client rest and rest-placement tests default on", () => {
+    assert.equal(
+      defaults.enableClientRest,
+      true,
+      stop(
+        "Client inboxes rest 2 weeks on / 2 weeks off (D41).",
+        "ENABLE_CLIENT_REST now defaults off, so client inboxes stay on campaigns every week.",
+      ),
+    );
+    assert.equal(
+      defaults.enableRestPlacementTests,
+      true,
+      stop(
+        "Off-week client inboxes get separate SmartDelivery tests (D41).",
+        "ENABLE_REST_PLACEMENT_TESTS now defaults off.",
+      ),
+    );
+  });
+
+  it("D41: fresh inboxes owe 21 days; pool warmup stays 14 (D1)", () => {
+    assert.equal(
+      defaults.freshInboxWarmupDays,
+      21,
+      stop(
+        "Fresh InboxKit inboxes owe 21 days before a live campaign (D41).",
+        `Fresh warmup is now ${defaults.freshInboxWarmupDays} days.`,
+      ),
+    );
+    assert.equal(
+      defaults.poolWarmupDays,
+      14,
+      stop(
+        "Pool warmup stays 14 days (D1). D41 must not change it.",
+        `Pool warmup is now ${defaults.poolWarmupDays} days.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignMinWarmupDays,
+      14,
+      stop(
+        "MIN_CAMPAIGN_WARMUP_DAYS stays 14 (D1). Fresh boxes use freshInboxWarmupDays.",
+        `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
+      ),
+    );
+  });
+
+  it("D41: bounce warn is 2%; pull stays 5%; paused investigate stays 7%", () => {
+    assert.equal(
+      defaults.bounceRateWarnThreshold,
+      2,
+      stop(
+        "Bounce warns at 2% without pulling (D41).",
+        `Warn threshold is now ${defaults.bounceRateWarnThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.bounceRateThreshold,
+      5,
+      stop(
+        "Senders above 5% bounce are still rotated out (D5).",
+        `Bounce pull is now ${defaults.bounceRateThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignBounceInvestigateThreshold,
+      7,
+      stop(
+        "Paused-campaign investigate stays 7% (D29).",
+        `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
+      ),
+    );
+  });
+
+  it("D43: canary is not in this loop", () => {
+    assert.equal(
+      "canaryCampaignDays" in defaults,
+      false,
+      stop(
+        "Canary launch is another project (D43).",
+        "Canary config is still on the live rest path.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D43 rest model", () => {
+  it("D43: A/B rest is client inboxes only; generics use a send clock", async () => {
+    const { isRestEligibleMailbox, isClientInbox } = await import(
+      "../lib/clientInbox.js"
+    );
+    const fleet = {
+      extraGenericMailboxes: ["harmony norris"],
+      extraGenericDomains: [
+        "crosslaunchco.com",
+        "crossscaleco.com",
+        "cleartechco.com",
+      ],
+    };
+    assert.equal(
+      isClientInbox(
+        { client_id: 9, from_name: "Harmony Norris" },
+        "harmony@crosslaunchco.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      stop(
+        "Fleet generics stay non-client (D43).",
+        "A fleet domain is now counted as a client inbox.",
+      ),
+    );
+    assert.equal(
+      isRestEligibleMailbox(
+        { client_id: 9, from_name: "Harmony Norris" },
+        "harmony@crosslaunchco.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      stop(
+        "Generics do not ride the client A/B fortnight (D43).",
+        "Fleet generics are A/B rest-eligible again.",
+      ),
+    );
+    assert.equal(
+      defaults.enableGenericSendRest,
+      true,
+      stop(
+        "Generics sit after ~14 days of live send (D43).",
+        "ENABLE_GENERIC_SEND_REST now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.genericSendRestDays,
+      14,
+      stop(
+        "Generic send clock is 14 days (D43).",
+        `Generic send rest is now ${defaults.genericSendRestDays} days.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignEspMixMinPercent,
+      30,
+      stop(
+        "Top-up keeps ~30% Google and ~30% Microsoft (D43).",
+        `ESP mix floor is now ${defaults.campaignEspMixMinPercent}%.`,
+      ),
+    );
+  });
+});
+
+describe("owner intent — D44 hold rebuild", () => {
+  it("D44: one-shot rebuild defaults on; only same-ESP fails stay held", async () => {
+    assert.equal(
+      defaults.enableRestBaselineRebuild,
+      true,
+      stop(
+        "Unproven HOLDs are rebuilt once so D43 can rest (D44).",
+        "ENABLE_REST_BASELINE_REBUILD now defaults off.",
+      ),
+    );
+    const { holdHasSameEspProof } = await import("../lib/holdProof.js");
+    assert.equal(
+      holdHasSameEspProof(
+        { scoredSameEsp: true, inboxRateSameEsp: 40 },
+        80,
+      ),
+      true,
+      stop(
+        "A same-ESP fail stays held (D32/D44).",
+        "Proven same-ESP holds are no longer kept.",
+      ),
+    );
+    assert.equal(
+      holdHasSameEspProof({ scoredSameEsp: false, inboxRate: 40 }, 80),
+      false,
+      stop(
+        "Blended-only HOLDs are not proof (D44).",
+        "A blended-only hold now counts as proven-weak.",
+      ),
+    );
+    assert.equal(
+      holdHasSameEspProof({ inboxRate: 40 }, 80),
+      false,
+      stop(
+        "No same-ESP score is not proof (D44).",
+        "A no-score hold now counts as proven-weak.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D46 launch bar", () => {
+  it("D46: launch bar is 85%; live pull stays 80%", async () => {
+    const { campaignSetupPrompt } = await import(
+      "../ops/campaignSetupPrompt.js"
+    );
+    const prompt = campaignSetupPrompt();
+    assert.match(
+      prompt,
+      /85%/,
+      stop(
+        "New campaigns launch at 85% same-ESP (D46).",
+        "campaignSetupPrompt no longer states the 85% launch bar.",
+      ),
+    );
+    assert.match(
+      prompt,
+      /80%/,
+      stop(
+        "Live pull stays 80% same-ESP (D32/D46).",
+        "campaignSetupPrompt dropped the live 80% bar.",
+      ),
+    );
+    assert.equal(
+      defaults.remediationInboxThreshold,
+      80,
+      stop(
+        "Health still pulls at 80%, not 85% (D32/D46).",
+        `Remediation threshold is now ${defaults.remediationInboxThreshold}%.`,
+      ),
     );
   });
 });

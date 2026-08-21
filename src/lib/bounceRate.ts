@@ -125,3 +125,18 @@ export function shouldRotateForBounces(
   if (stat.sent < minSample) return false;
   return stat.bounceRate > thresholdPercent;
 }
+
+/**
+ * D41 — warn (Slack / investigate) above ~2% but do not pull.
+ * Rotation stays on bounceRateThreshold (5%, D5).
+ */
+export function shouldWarnForBounces(
+  stat: SenderBounceStats,
+  warnPercent: number,
+  rotatePercent: number,
+  minSample: number,
+): boolean {
+  if (stat.sent < minSample) return false;
+  if (stat.bounceRate > rotatePercent) return false;
+  return stat.bounceRate > warnPercent;
+}

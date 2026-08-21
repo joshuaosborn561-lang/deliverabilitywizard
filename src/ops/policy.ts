@@ -6,6 +6,7 @@ export type OpsIntent =
   | { type: "deliverability" }
   | { type: "dns" }
   | { type: "campaigns" }
+  | { type: "campaign_setup" }
   | { type: "reconnect" }
   | { type: "rotate"; email: string }
   | { type: "approvals" }
@@ -103,6 +104,13 @@ export function classifyOpsMessage(
     return { type: "reconnect" };
   }
   if (/\b(dns|spf|dmarc|mx)\b/i.test(message)) return { type: "dns" };
+  if (
+    /\b(campaign setup|setup prompt|how (do|to) (we )?launch|new campaign rules)\b/i.test(
+      message,
+    )
+  ) {
+    return { type: "campaign_setup" };
+  }
   if (/\b(campaigns?|sender count|headcount|coverage)\b/i.test(message)) {
     return { type: "campaigns" };
   }
@@ -128,7 +136,8 @@ export function opsHelp(role: OpsRole): string {
     "Fast allowlisted ops (run locally, no Cursor charge):",
     "• “Check deliverability” — placement results plus campaign and DNS audits",
     "• “Check DNS” — SPF/DMARC/MX audit without changing DNS",
-    "• “Audit campaigns” — sender floor and placement-test coverage",
+    "• “Audit campaigns” — sender floor, rest piles, and placement-test coverage",
+    "• “Campaign setup” — D43 rails for launching a new campaign",
     "• “Reconnect disconnected mailboxes”",
     "• “Rotate name@example.com” — preview first, then explicit confirmation",
     "• “Status” — pool, holds, swaps and recent runs",

@@ -100,9 +100,10 @@ async function loadDashboard(force = false) {
   const cards = [
     ["Sending mailboxes", count(data.fleet.sendingMailboxes), data.fleet.activeCampaigns == null ? "Live Smartlead count unavailable" : `Across ${data.fleet.activeCampaigns} active campaigns`],
     ["In recovery", data.fleet.mailboxesInRecovery, `${data.policy.recoveryHoldDays}-day recovery hold`],
+    ["Resting (off-week)", data.pool.restingInboxes || 0, data.policy.clientRest ? "Per-client A/B · generics on send clock" : "Sender rest is off"],
     ["Total mailboxes", count(data.fleet.totalMailboxes), "All Smartlead accounts"],
     ["Available generics", data.pool.byStatus.available || 0, `${data.pool.total} total pool records`],
-    ["Warming generics", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day requirement`],
+    ["Warming generics", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day pool / ${data.policy.freshInboxWarmupDays}-day fresh`],
     ["Disconnected", count(data.fleet.disconnectedMailboxes), "SMTP or IMAP failed"],
   ];
   const kpis = $("#kpis");
@@ -115,11 +116,14 @@ async function loadDashboard(force = false) {
   );
 
   const policies = [
-    ["Campaign floor", `${data.policy.campaignSenderFloor} senders`],
+    ["Campaign floor", `${data.policy.campaignSenderFloor} staffable`],
     ["Mailbox cap", `${data.policy.mailboxDailyCap}/day`],
-    ["Inbox threshold", `${data.policy.inboxThreshold}%`],
-    ["Bounce trigger", `${data.policy.bounceThreshold}% after ${data.policy.bounceMinSample}`],
-    ["Pool warmup", `${data.policy.warmupDays} days`],
+    ["Inbox threshold", `${data.policy.inboxThreshold}% same-ESP`],
+    ["Bounce pull / warn", `${data.policy.bounceThreshold}% pull · ${data.policy.bounceWarnThreshold}% warn`],
+    ["Fresh / pool warmup", `${data.policy.freshInboxWarmupDays}d fresh · ${data.policy.warmupDays}d pool`],
+    ["Client rest", data.policy.clientRest ? "Per-client A/B · 2 on / 2 off" : "Off"],
+    ["Generic sit / ESP mix", `${data.policy.genericSendRestDays}d send · ${data.policy.espMixMinPercent}% each ESP`],
+    ["Hold rebuild", data.policy.restBaselineRebuiltAt ? `Done ${String(data.policy.restBaselineRebuiltAt).slice(0, 10)}` : data.policy.restBaselineRebuild ? "Pending first health" : "Off"],
     ["Recovery hold", `${data.policy.recoveryHoldDays} days`],
   ];
   $("#policy-grid").replaceChildren(
@@ -136,6 +140,7 @@ async function loadDashboard(force = false) {
     remediation: "Remediation",
     reconnect: "Reconnect",
     warmupGate: "Warmup gate",
+    health: "Campaign health / rest",
   };
   $("#last-runs").replaceChildren(
     ...Object.entries(data.lastRuns).map(([key, value]) => {
@@ -150,6 +155,9 @@ async function loadDashboard(force = false) {
     $("#approval-badge").textContent = String(data.pendingApprovals || 0);
   }
   if (data.fleetError) toast(`Live fleet count unavailable: ${data.fleetError}`);
+  if (data.campaignSetupPrompt) {
+    $("#setup-prompt").textContent = data.campaignSetupPrompt;
+  }
   renderAudit(data.recentAudit || []);
 }
 
@@ -542,6 +550,19 @@ $("#chat-input").addEventListener("keydown", (event) => {
 
 $$(".nav-item").forEach((button) => button.addEventListener("click", () => switchPanel(button.dataset.panel)));
 $$("[data-command]").forEach((button) => button.addEventListener("click", () => sendChat(button.dataset.command)));
+$("#copy-setup-prompt").addEventListener("click", async () => {
+  const text = $("#setup-prompt").textContent || "";
+  if (!text) {
+    toast("Load the dashboard first.");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Campaign setup prompt copied.");
+  } catch {
+    toast("Copy failed — select the prompt text instead.");
+  }
+});
 $("#refresh-dashboard").addEventListener("click", (event) =>
   withLoadingButton(event.currentTarget, "Refreshing…", () =>
     loadDashboard(true),

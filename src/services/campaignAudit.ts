@@ -95,8 +95,10 @@ export class CampaignAuditService {
         continue;
       }
       const held = this.state.getHeldInbox(email);
+      const resting = Boolean(this.state.getRestingInbox(email));
       const staffable = isStaffableSender(account, {
         held: Boolean(held),
+        resting,
         inboxRate: held?.inboxRate,
         inboxThreshold,
       });

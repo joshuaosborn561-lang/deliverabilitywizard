@@ -32,6 +32,8 @@ export function parseWarmupReputation(
 export interface StaffableOptions {
   /** Email is currently on a recovery hold. */
   held?: boolean;
+  /** D43 — off-week client inbox or send-clock generic; not staffable. */
+  resting?: boolean;
   /**
    * Latest known placement inbox rate (0–100). When set and below the
    * remediation threshold, the sender does not count as inboxing.
@@ -57,6 +59,7 @@ export function isStaffableSender(
 ): boolean {
   if (!isConnectedAccount(account)) return false;
   if (options.held) return false;
+  if (options.resting) return false;
   if (account.warmup_details?.is_warmup_blocked) return false;
 
   const threshold = options.inboxThreshold ?? 80;

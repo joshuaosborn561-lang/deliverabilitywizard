@@ -13,6 +13,7 @@ import {
   normalizeTestList,
 } from "../clients/smartdelivery.js";
 import { chunkArray, sleep } from "../lib/http.js";
+import { quotaWouldBlock } from "../lib/testQuota.js";
 import {
   OPEN_ENDED_TEST_DAYS,
   addDaysIso,
@@ -30,6 +31,7 @@ import type { SmartleadCampaign } from "../types/index.js";
  */
 
 export const HELD_TEST_NAME_PREFIX = "Held recovery:";
+export const REST_TEST_NAME_PREFIX = "Rest recovery:";
 
 export interface HeldPlacementTestResult {
   dryRun: boolean;
@@ -132,10 +134,10 @@ export class HeldPlacementTestService {
     const used = existing.filter(
       (t) => isAutomatedTest(t) && isTestStoppable(t),
     ).length;
-    const remaining = Math.max(0, this.config.totalTestQuota - used);
 
     const batches = chunkArray(uncovered, this.config.maxMailboxesPerTest);
-    if (batches.length > remaining) {
+    if (quotaWouldBlock(this.config.totalTestQuota, used, batches.length)) {
+      const remaining = Math.max(0, this.config.totalTestQuota - used);
       result.quotaBlocked = true;
       result.skipped.push(
         `quota: need ${batches.length} held-recovery test(s), only ${remaining} slot(s) left`,
@@ -254,6 +256,210 @@ export class HeldPlacementTestService {
   }
 
   /**
+   * D41 — same pattern as held-recovery tests, for off-week client inboxes.
+   * They stay off live campaigns; the test uses a campaign only as a shell.
+   */
+  async runResting(
+    opts: { dryRun?: boolean } = {},
+  ): Promise<HeldPlacementTestResult> {
+    const dryRun = opts.dryRun ?? this.config.dryRun;
+    const result: HeldPlacementTestResult = {
+      dryRun,
+      heldMailboxes: 0,
+      created: [],
+      stopped: [],
+      kept: 0,
+      skipped: [],
+      errors: [],
+      quotaBlocked: false,
+    };
+
+    if (!this.config.enableRestPlacementTests) {
+      console.log(
+        "[rest-tests] Disabled (ENABLE_REST_PLACEMENT_TESTS=false)",
+      );
+      return result;
+    }
+
+    const resting = this.state
+      .listRestingInboxes()
+      .filter((row) => row.kind !== "generic" && row.cohort !== "send");
+    result.heldMailboxes = resting.length;
+    const restEmails = new Set(resting.map((h) => h.email.toLowerCase()));
+
+    for (const row of this.state.listRestPlacementTests()) {
+      const still = row.emails.some((e) => restEmails.has(e.toLowerCase()));
+      if (still) {
+        result.kept += 1;
+        continue;
+      }
+      try {
+        if (!dryRun) {
+          await this.smartDelivery.stopAutomatedTest(row.testId);
+          this.state.clearRestPlacementTest(row.testId);
+        }
+        result.stopped.push(row.testId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`stop ${row.testId}: ${message}`);
+      }
+      await sleep(200);
+    }
+
+    if (!resting.length) {
+      console.log(
+        `[rest-tests] No resting mailboxes; stopped=${result.stopped.length}`,
+      );
+      await this.state.save();
+      return result;
+    }
+
+    const covered = new Set<string>();
+    for (const row of this.state.listRestPlacementTests()) {
+      for (const email of row.emails) covered.add(email.toLowerCase());
+    }
+
+    const uncovered = resting.filter(
+      (h) => !covered.has(h.email.toLowerCase()),
+    );
+    if (!uncovered.length) {
+      console.log(
+        `[rest-tests] All ${resting.length} resting mailbox(es) already on a recovery test`,
+      );
+      await this.state.save();
+      return result;
+    }
+
+    const [campaigns, existingRaw] = await Promise.all([
+      this.smartlead.listCampaigns(),
+      this.smartDelivery.listTests({}).catch(() => []),
+    ]);
+    const existing = normalizeTestList(existingRaw);
+    const used = existing.filter(
+      (t) => isAutomatedTest(t) && isTestStoppable(t),
+    ).length;
+
+    const batches = chunkArray(uncovered, this.config.maxMailboxesPerTest);
+    if (quotaWouldBlock(this.config.totalTestQuota, used, batches.length)) {
+      const remaining = Math.max(0, this.config.totalTestQuota - used);
+      result.quotaBlocked = true;
+      result.skipped.push(
+        `quota: need ${batches.length} rest-recovery test(s), only ${remaining} slot(s) left`,
+      );
+      await this.slack
+        .notifyQuotaBlocked({
+          used,
+          quota: this.config.totalTestQuota,
+          needed: batches.length,
+          campaigns: [
+            {
+              id: 0,
+              name: "Rest recovery (off-week)",
+              testsNeeded: batches.length,
+            },
+          ],
+        })
+        .catch(() => undefined);
+      await this.state.save();
+      return result;
+    }
+
+    const providerIds = this.config.providerIds;
+
+    for (const batch of batches) {
+      const shell = await this.pickShellCampaign(batch, campaigns);
+      if (!shell) {
+        result.skipped.push(
+          `no sequence shell for ${batch.map((b) => b.email).join(",")}`,
+        );
+        continue;
+      }
+
+      const sequences = await this.smartlead
+        .getCampaignSequences(shell.campaignId)
+        .catch(() => []);
+      const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
+      const mappingId = sequence ? sequenceMappingIdOf(sequence) : undefined;
+      if (!sequence || mappingId === undefined) {
+        result.skipped.push(
+          `campaign #${shell.campaignId} has no sequence for rest batch`,
+        );
+        continue;
+      }
+
+      const emails = batch.map((b) => b.email);
+      const testName =
+        `${REST_TEST_NAME_PREFIX} ${emails.length} mailbox(es)`.slice(0, 120);
+      const payload = {
+        test_name: testName,
+        description: [
+          `Off-week client inbox rest test (D43)`,
+          `Senders are OFF live campaigns — this test does not re-attach them.`,
+          `Sequence shell campaign: ${shell.campaignId}`,
+          `Subject: ${sequenceSubjectPreview(sequence)}`,
+          `Emails: ${emails.join(", ")}`,
+        ].join("\n"),
+        spam_filters: ["spam_assassin"],
+        link_checker: true,
+        campaign_id: shell.campaignId,
+        sequence_mapping_id: mappingId,
+        sender_accounts: emails,
+        all_email_sent_without_time_gap: false,
+        min_time_btwn_emails: 5,
+        min_time_unit: "minutes" as const,
+        is_warmup: false,
+        ...(providerIds.length ? { provider_ids: providerIds } : {}),
+      };
+
+      if (dryRun) {
+        result.created.push(`dry-run:${emails[0]}`);
+        continue;
+      }
+
+      try {
+        const scheduledAt = paddedScheduleDate();
+        const created = await this.smartDelivery.createAutomatedPlacement({
+          ...payload,
+          every_days: this.config.placementTestEveryDays,
+          schedule_start_time: scheduledAt.toISOString(),
+          scheduler_cron_value: schedulerCronValue(
+            this.config.placementTestEveryDays,
+            scheduledAt,
+          ),
+          test_end_date: addDaysIsoLocal(
+            new Date(),
+            this.config.placementTestEndDays > 0
+              ? this.config.placementTestEndDays
+              : OPEN_ENDED_TEST_DAYS,
+          ),
+          provider_ids: providerIds,
+        });
+        const id = String(created.id);
+        this.state.markRestPlacementTest({
+          testId: id,
+          emails,
+          campaignId: shell.campaignId,
+          createdAt: new Date().toISOString(),
+        });
+        result.created.push(id);
+        console.log(
+          `[rest-tests] Created rest test ${id} for ${emails.length} mailbox(es) (shell campaign #${shell.campaignId})`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`create rest test: ${message}`);
+      }
+      await sleep(500);
+    }
+
+    console.log(
+      `[rest-tests] resting=${result.heldMailboxes} created=${result.created.length} stopped=${result.stopped.length} kept=${result.kept} errors=${result.errors.length}`,
+    );
+    await this.state.save();
+    return result;
+  }
+
+  /**
    * Prefer a campaign the mailbox was pulled from (sequence already matches
    * the offer they were sending). Fall back to any ACTIVE campaign.
    */
@@ -279,4 +485,9 @@ export class HeldPlacementTestService {
 /** True when a SmartDelivery test is one of our held-recovery schedules. */
 export function isHeldRecoveryTestName(name: string | undefined): boolean {
   return String(name ?? "").startsWith(HELD_TEST_NAME_PREFIX);
+}
+
+/** True when a SmartDelivery test is one of our off-week rest schedules. */
+export function isRestRecoveryTestName(name: string | undefined): boolean {
+  return String(name ?? "").startsWith(REST_TEST_NAME_PREFIX);
 }

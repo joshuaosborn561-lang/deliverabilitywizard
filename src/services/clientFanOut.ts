@@ -126,6 +126,10 @@ export class ClientFanOutService {
           result.skipped.push(`${email}: held`);
           continue;
         }
+        if (this.state.getRestingInbox(email)) {
+          result.skipped.push(`${email}: resting`);
+          continue;
+        }
         if (activeHoldUntilDate(tagNames(account))) {
           result.skipped.push(`${email}: HOLD-UNTIL tag`);
           continue;

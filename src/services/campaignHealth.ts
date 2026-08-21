@@ -190,9 +190,11 @@ export class CampaignHealthService {
         membership.set(id, (membership.get(id) ?? 0) + 1);
       }
       const heldRow = this.state.getHeldInbox(email);
+      const resting = Boolean(this.state.getRestingInbox(email));
       if (
         !isStaffableSender(account, {
           held: Boolean(heldRow),
+          resting,
           inboxRate: heldRow?.inboxRate,
           inboxThreshold: threshold,
         })

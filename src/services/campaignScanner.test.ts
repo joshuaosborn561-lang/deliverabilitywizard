@@ -444,4 +444,97 @@ describe("CampaignScanner — status re-check before creation", () => {
 
     assert.equal(created.length, 1, "completed manual must not block a new auto");
   });
+
+  it("does not block creates when TOTAL_TEST_QUOTA is 0 (unlimited, D45)", async () => {
+    const config = loadConfig({ TOTAL_TEST_QUOTA: "0" });
+    const created: unknown[] = [];
+    const existing = Array.from({ length: 200 }, (_, i) => ({
+      spam_test_id: `old-${i}`,
+      test_type: "auto",
+      status: "ACTIVE",
+    }));
+
+    const smartlead = {
+      listCampaigns: async () => [campaign(9, "ACTIVE")],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => existing,
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: unknown) => {
+        created.push(input);
+        return { id: "unlimited-test" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(result.quotaBlocked, false);
+    assert.equal(created.length, 1);
+  });
+
+  it("still blocks when a positive quota is exhausted", async () => {
+    const config = loadConfig({ TOTAL_TEST_QUOTA: "2" });
+    const created: unknown[] = [];
+    let quotaNotices = 0;
+
+    const smartlead = {
+      listCampaigns: async () => [campaign(9, "ACTIVE")],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [
+        { spam_test_id: "a", test_type: "auto", status: "ACTIVE" },
+        { spam_test_id: "b", test_type: "auto", status: "ACTIVE" },
+      ],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: unknown) => {
+        created.push(input);
+        return { id: "should-not" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const slack = {
+      ...fakeSlack(),
+      notifyQuotaBlocked: async () => {
+        quotaNotices += 1;
+      },
+    } as SlackClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      slack,
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(result.quotaBlocked, true);
+    assert.equal(created.length, 0);
+    assert.equal(quotaNotices, 1);
+  });
 });

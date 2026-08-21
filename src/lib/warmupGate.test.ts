@@ -5,6 +5,7 @@ import {
   daysSince,
   isActiveCampaignStatus,
   isPrewarmedGeneric,
+  owedWarmupDays,
   warmupStartedAt,
 } from "../services/warmupGate.js";
 
@@ -109,6 +110,23 @@ describe("warmupGate helpers", () => {
         },
       ),
       true,
+    );
+  });
+
+  it("owes 21 days for fresh inboxes and 14 for pre-warmed fleets", () => {
+    assert.equal(
+      owedWarmupDays(false, {
+        campaignMinWarmupDays: 14,
+        freshInboxWarmupDays: 21,
+      }),
+      21,
+    );
+    assert.equal(
+      owedWarmupDays(true, {
+        campaignMinWarmupDays: 14,
+        freshInboxWarmupDays: 21,
+      }),
+      14,
     );
   });
 

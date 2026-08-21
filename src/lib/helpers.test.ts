@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { chunkArray, uniqueStrings } from "./http.js";
+import {
+  quotaWouldBlock,
+  remainingTestSlots,
+} from "./testQuota.js";
 import { extractSenderEmails, pickSequence } from "../clients/smartlead.js";
 import {
   asBlacklistRows,
@@ -149,20 +153,23 @@ describe("domain blacklist callouts", () => {
 });
 
 describe("quota gate math", () => {
-  it("blocks when needed tests exceed remaining quota", () => {
+  it("blocks when needed tests exceed a positive remaining quota", () => {
     const used = 110;
     const quota = 120;
     const mailboxCounts = [45, 60];
     const needed = mailboxCounts
       .map((n) => Math.ceil(n / 50))
       .reduce((a, b) => a + b, 0);
-    const remaining = Math.max(0, quota - used);
     assert.equal(needed, 3);
-    assert.equal(remaining, 10);
-    assert.equal(needed > remaining, false);
+    assert.equal(remainingTestSlots(quota, used), 10);
+    assert.equal(quotaWouldBlock(quota, used, needed), false);
+    assert.equal(quotaWouldBlock(quota, 118, needed), true);
+  });
 
-    const tightUsed = 118;
-    assert.equal(needed > Math.max(0, quota - tightUsed), true);
+  it("never blocks when quota is 0 (unlimited, D45)", () => {
+    assert.equal(remainingTestSlots(0, 999), Number.POSITIVE_INFINITY);
+    assert.equal(quotaWouldBlock(0, 0, 50), false);
+    assert.equal(quotaWouldBlock(0, 500, 80), false);
   });
 });
 

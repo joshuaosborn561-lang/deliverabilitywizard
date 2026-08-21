@@ -56,6 +56,40 @@ describe("invariants", () => {
     assert.equal(s.findAvailablePoolMailbox("GOOGLE")?.email, "warm@pool.info");
   });
 
+  it("a resting generic is never handed out for top-up or recovery (D43)", () => {
+    const s = store();
+    s.upsertPoolMailbox({
+      email: "resting@pool.info",
+      domain: "pool.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 99,
+      firstName: "Rest",
+      lastName: "Ing",
+      status: "available",
+      warmedAt: "2020-01-01T00:00:00.000Z",
+      availableAt: "2020-01-15T00:00:00.000Z",
+    });
+    s.markRestingInbox({
+      accountId: 99,
+      email: "resting@pool.info",
+      clientId: "unknown",
+      cohort: "A",
+      restingSince: "2026-08-01T00:00:00.000Z",
+      removedFromCampaigns: [],
+      lastSameEspInbox: null,
+    });
+    assert.equal(
+      s.findAvailablePoolMailbox("GOOGLE"),
+      undefined,
+      "a resting generic must not be recovery supply",
+    );
+    assert.equal(
+      s.findReassignablePoolMailbox(["GOOGLE"], () => true),
+      undefined,
+      "a resting generic must not be top-up supply",
+    );
+  });
+
   it("an ESP mismatch never yields a mailbox", () => {
     const s = store();
     s.upsertPoolMailbox({

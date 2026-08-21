@@ -25,7 +25,16 @@ export type DnsIssue =
   | "spf-neutral-all"
   | "spf-no-all"
   | "no-dmarc"
+  | "dmarc-none"
+  | "no-dkim"
   | "no-mx";
+
+/** Common InboxKit / Google / Microsoft DKIM selector hosts (relative to the domain). */
+export const COMMON_DKIM_SELECTORS = [
+  "google._domainkey",
+  "selector1._domainkey",
+  "selector2._domainkey",
+] as const;
 
 export interface DomainAudit {
   domain: string;
@@ -55,6 +64,7 @@ export function classifyDomain(
     txt: string[] | null;
     dmarc: string[] | null;
     mx: string[] | null;
+    dkim?: string[] | null;
   },
 ): DomainAudit {
   const issues: DnsIssue[] = [];
@@ -72,7 +82,14 @@ export function classifyDomain(
   if (spfs.length > 1) issues.push("multiple-spf");
   if (spf && /\?all\b/i.test(spf)) issues.push("spf-neutral-all");
   if (spf && !/[-~?+]all\b/i.test(spf)) issues.push("spf-no-all");
-  if (!records.dmarc?.some((r) => /^v=DMARC1/i.test(r))) issues.push("no-dmarc");
+  const dmarcRecords = records.dmarc?.filter((r) => /^v=DMARC1/i.test(r)) ?? [];
+  if (!dmarcRecords.length) issues.push("no-dmarc");
+  else if (dmarcRecords.some((r) => /;\s*p\s*=\s*none\b/i.test(r) || /\bp\s*=\s*none\b/i.test(r))) {
+    issues.push("dmarc-none");
+  }
+  if (records.dkim !== undefined && !records.dkim?.some((r) => /v=DKIM1/i.test(r) || /k=rsa/i.test(r) || r.length > 0)) {
+    issues.push("no-dkim");
+  }
   if (!records.mx?.length) issues.push("no-mx");
 
   return { domain, mailboxes, issues, spf };
@@ -139,13 +156,21 @@ export class DnsAuditService {
     const worker = async () => {
       while (cursor < domains.length) {
         const domain = domains[cursor++]!;
-        const [txt, dmarc, mx] = await Promise.all([
+        const [txt, dmarc, mx, ...dkimRows] = await Promise.all([
           this.txt(domain),
           this.txt(`_dmarc.${domain}`),
           this.mx(domain),
+          ...COMMON_DKIM_SELECTORS.map((sel) => this.txt(`${sel}.${domain}`)),
         ]);
+        const dkim = dkimRows.flatMap((row) => row ?? []);
+        const dkimFound = dkimRows.some((row) => row && row.length > 0);
         audits.push(
-          classifyDomain(domain, counts.get(domain) ?? 0, { txt, dmarc, mx }),
+          classifyDomain(domain, counts.get(domain) ?? 0, {
+            txt,
+            dmarc,
+            mx,
+            dkim: dkimFound ? dkim : [],
+          }),
         );
       }
     };

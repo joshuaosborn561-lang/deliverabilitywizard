@@ -5,6 +5,7 @@ import {
   parseSenderBounceStats,
   parseSenderRow,
   shouldRotateForBounces,
+  shouldWarnForBounces,
 } from "./bounceRate.js";
 
 describe("parseSenderRow", () => {
@@ -120,6 +121,23 @@ describe("shouldRotateForBounces", () => {
     // 1 bounce out of 3 is 33% and means nothing.
     assert.equal(
       shouldRotateForBounces({ email: "a@x.com", bounceRate: 33, sent: 3 }, 5, 50),
+      false,
+    );
+  });
+});
+
+describe("shouldWarnForBounces", () => {
+  it("warns between 2% and the 5% pull line", () => {
+    assert.equal(
+      shouldWarnForBounces({ email: "a@x.com", bounceRate: 3, sent: 200 }, 2, 5, 50),
+      true,
+    );
+    assert.equal(
+      shouldWarnForBounces({ email: "a@x.com", bounceRate: 1.5, sent: 200 }, 2, 5, 50),
+      false,
+    );
+    assert.equal(
+      shouldWarnForBounces({ email: "a@x.com", bounceRate: 6, sent: 200 }, 2, 5, 50),
       false,
     );
   });

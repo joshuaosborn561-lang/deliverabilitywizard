@@ -725,3 +725,186 @@ marker). Manual `PAUSED` without a pending-resume is never STARTed.
 **Guards.** `CampaignBounceInvestigateService` (no START),
 `CampaignHealthService` STOPPED path, owner-intent D40.
 
+---
+
+## D41 — Beanstalk rotation: 2/2 rest, canary, 21-day fresh warmup
+
+**Decision.** Client inboxes (not generic fleet domains / pool generics) work
+**2 weeks on / 2 weeks off**. Cohort is a stable hash of the email (A/B).
+The fortnight follows ISO weeks in America/New_York. Off-week mailboxes are
+**removed from live campaigns** — not left on at `MESSAGE_PER_DAY=0`. Warmup
+stays on. Resting does **not** count as staffable.
+
+This **qualifies D26**: a resting mailbox is not fanned onto every ACTIVE
+campaign for that client. Cross-client membership is still forbidden.
+Generics remain the spare tire and do not rest; they may staff any client
+including BCP (D27). ~50 staffable senders is still the campaign floor.
+
+Health may **veto** putting a rester back on if same-ESP inbox is known-bad.
+No score ⇒ allow the first swap so rotation can start. Fan-out, top-up,
+health, remediation restore, BCP restore and ops rotate skip resters.
+
+Off-week mailboxes get **separate** SmartDelivery tests (same pattern as D39
+held tests). Slack client-day briefs show **on / off / generic-spare / held**.
+
+**Canary.** A campaign whose `created_at` is within 7 days gets ~15% of
+on-week client inboxes until it graduates. If **3+ unrelated sending domains**
+drop on same-ESP, pause **that campaign only**. Do not auto-`START` (D40).
+
+**Fresh warmup.** Non-prewarmed inboxes owe **21 days** from the existing
+warmup-gate clock before a live campaign. `POOL_WARMUP_DAYS` and
+`MIN_CAMPAIGN_WARMUP_DAYS` stay **14** (D1). Pre-warmed fleets stay exempt.
+
+**Bounce warn.** Slack/investigate at **~2%** bounce (with the usual sample
+floor). The **5% sender pull** (D5) and the **7% paused-campaign investigate**
+(D29) are unchanged.
+
+**Burn.** Blacklist alone is not enough to purge a domain. Require a named
+non-SURBL listing plus corroborating same-ESP placement fail or bounce over
+the pull threshold. Approval still gates the spend (D4/D15).
+
+**DNS.** The advisory audit also reports DKIM selector TXT (common Google /
+Microsoft selectors) and DMARC `p=none`. It still does not write DNS.
+
+**Why.** Josh (2026-08-21): implement the Beanstalk-style rest for client
+inboxes, keep generics as spare capacity, start new campaigns on a canary
+slice, give fresh InboxKit boxes 21 days, warn at 2% bounce, and do not
+burn a domain on a blacklist hit alone.
+
+**Tradeoff.** Rest tests compete with campaign + held tests against the 120
+quota. A campaign that is all off-week client inboxes waits one health pass
+for generic top-up before the last account can come off. Canary pause is
+manual to unstick (D40).
+
+**Guards.** `ClientRestService`, rest skip in fan-out/top-up/health/restore,
+`owedWarmupDays`, `burnChecklistReady`, `bounceRateWarnThreshold` default 2,
+`freshInboxWarmupDays` default 21, `poolWarmupDays` still 14, owner-intent D41.
+
+---
+
+## D42 — Generics rest on the same 2/2 cadence
+
+**Decision.** Pool generics and pre-warmed fleet senders rest on the **same**
+2 weeks on / 2 weeks off A/B cohort as client inboxes (D41). Off-week generics
+are removed from live campaigns (warmup stays on) and are **not** top-up or
+recovery-pool supply. The on-week half remains the spare tire that fills the
+50-staffable floor.
+
+Canary still applies only to the ~15% client-inbox slice; restoring an
+on-week generic onto a canary campaign is allowed (generics may top up to 50).
+
+This **qualifies D41** where it said generics do not rest.
+
+**Why.** Josh (2026-08-21): generics also need to rest after 2 weeks — leaving
+them on forever burns the spare tire the same way client inboxes burned.
+
+**Tradeoff.** Roughly half the generic pool is unavailable each fortnight, so
+thin pools may leave campaigns short until the next on-week. Last-account rest
+still waits for top-up rather than emptying a campaign.
+
+**Guards.** `isRestEligibleMailbox`, resting filter in
+`findAvailablePoolMailbox` / `findReassignablePoolMailbox`, owner-intent D42.
+
+---
+
+## D43 — Per-client A/B rest, generic send clock, no canary in this loop
+
+**Decision.** Client rest is an **even A/B split per client**, not a global
+email hash. That client's off-week half leaves ACTIVE campaigns (warmup on).
+Resting is not staffable and does not fan out. Health then tops every live
+campaign to **50 staffable** with generics and keeps at least **~30% Google
+and ~30% Microsoft**.
+
+Generics do **not** sit on the same fortnight as clients (qualifies D42).
+A generic sits after **~14 days of live send**, then becomes supply again
+after the same sit. Clocks start when we first see the box on an ACTIVE
+campaign (or from pool `assignedAt`). Staggered — half the spare tire does
+not vanish the morning clients sit.
+
+**Canary** (7-day / 15% slice / pause on 3+ domain drops) is **out of this
+loop**. It is another project.
+
+MSRS and other `TOP_UP_EXCLUDE_CAMPAIGNS` stay excluded from rest and top-up.
+Manual pauses still do not auto-START (D40). Fresh warmup stays 21 days (D41).
+
+**Why.** Josh (2026-08-21): the global hash + same-fortnight generic rest
+was too complicated. Split each client's inboxes A/B, drop the off half,
+backfill to 50 with generics, keep both ESPs, and track generic tenure
+separately. Canary is a later project.
+
+**Tradeoff.** Existing generics without `assignedAt` get a fresh 14-day clock
+on first sight after deploy, so we do not bench the whole fleet on day one.
+
+**Guards.** `assignClientCohorts`, `isRestEligibleMailbox` client-only,
+`GenericSendRestService`, `espFillOrder` 30% default, no canary config,
+owner-intent D43.
+
+---
+
+## D44 — Rebuild the hold pile so D43 is the rotation system
+
+**Decision.** One-shot after deploy: release every HOLD that lacks same-ESP
+proof. Keep only `scoredSameEsp === true` and same-ESP inbox rate below
+`REMEDIATION_INBOX_THRESHOLD` (80%). Strip `HOLD-UNTIL-*` tags on released
+boxes, clear `heldInboxes` and the swap reservation. Do not yank covering
+generics off campaigns. Do not touch `WARMUP-GATE-EXEMPT`.
+
+Going-forward placement (same-ESP) and bounce pulls stay (D5/D32). This is
+not a new rest method — it clears the graveyard so per-client A/B and the
+generic send clock can take over.
+
+**Why.** Josh (2026-08-21): existing HOLDs are not known-weak. Census that
+day: 236 held, 108 with no same-ESP score, 61 already expired. Treating the
+tag pile as rotation stranded senders that should be on D43.
+
+**Tradeoff.** Bounce-only historic holds are released; if bounce is still
+over 5% with 50 sends, D5 re-holds them on the next remediation pass. The
+rebuild stamps `restBaselineRebuiltAt` and does not run again.
+
+**Guards.** `holdHasSameEspProof`, `RestBaselineRebuildService` one-shot,
+owner-intent D44.
+
+---
+
+## D45 — Placement-test quota is unlimited (0)
+
+**Decision.** `TOTAL_TEST_QUOTA` defaults to **0**, meaning unlimited.
+Scanner, held-recovery tests, and rest-recovery tests must **not** block
+when the quota is 0. A positive value still caps and blocks (old D8
+behaviour). This supersedes D8's **120 cap only**. Recurring daily
+schedules, **≤50 senders per test** (SmartDelivery API limit, not a plan
+quota), and the inactive-campaign reconciler stay (D8).
+
+**Why.** Josh (2026-08-21): he has unlimited SmartDelivery tests. The 120
+cap was leftover from the old plan and was refusing campaign / held / rest
+creates.
+
+**Tradeoff.** Every eligible ACTIVE campaign (plus held/rest batches) can
+get a schedule. Idle or zero-lead ACTIVE campaigns become more expensive
+to leave tested — skip those rather than re-capping (see open PR #62).
+
+**Do not** change Railway `TOTAL_TEST_QUOTA` until this code is on `main`.
+Production still has `TOTAL_TEST_QUOTA=120`, and older deploys reject `0`
+(`.positive()`). After merge: delete the var or set `TOTAL_TEST_QUOTA=0`.
+
+**Guards.** owner-intent D45 (default 0), `quotaWouldBlock` treats 0 as
+unlimited.
+
+---
+
+## D46 — Campaign launch placement bar is 85%
+
+**Decision.** A new campaign does not go ACTIVE until a SmartDelivery test
+of the **real attached sender set** scores **≥85% same-ESP**, with Gmail
+Promotions counted as a miss. That is the **pre-launch** bar (campaign-setup
+skill / Claude). It does **not** change live rotation: health still pulls at
+**80%** same-ESP (D32) or bounce over 5% with 50 sends (D5).
+
+**Why.** Josh (2026-08-21): launch on a harder bar than the live pull, and
+treat promo tab as a miss for cold outbound.
+
+**Tradeoff.** Some campaigns wait longer or launch on a smaller survivor set.
+Do not waive from chat.
+
+**Guards.** `campaignSetupPrompt` 85% launch / 80% live; owner-intent D46.
+

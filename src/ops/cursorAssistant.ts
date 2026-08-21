@@ -2,6 +2,7 @@ import type { CursorCloudClient } from "../clients/cursorCloud.js";
 import type { CursorModelSelection } from "../clients/cursorCloud.js";
 import type { StateStore } from "../state/store.js";
 import type { OpsRole } from "./auth.js";
+import { campaignSetupPrompt } from "./campaignSetupPrompt.js";
 
 export interface CursorAssistantStart {
   agentId: string;
@@ -37,8 +38,9 @@ function policyPreamble(actor: string, role: OpsRole): string {
     "- Never delete/purge domains or mailboxes from chat unless Josh explicitly",
     "  approved that exact destructive action.",
     "- Never bypass warmup, recovery holds, or spend-approval safety gates.",
-    "- Never change fleet policy (50-sender floor, 30/day cap, thresholds) without",
-    "  a reviewed PR and Josh's decision recorded in DECISIONS.md.",
+    "- Never change fleet policy (50-sender floor, 30/day cap, per-client A/B rest, 21-day",
+    "  fresh warmup, thresholds) without a reviewed PR and Josh's decision",
+    "  recorded in DECISIONS.md.",
     "- Prefer investigate → explain → PR. Do not deploy by pushing to main.",
     "- For Cayden (operator): keep responses operational; refuse spend/policy",
     "  overrides and explain why.",
@@ -46,6 +48,8 @@ function policyPreamble(actor: string, role: OpsRole): string {
     "Allowed: diagnose deliverability, inspect code/logs/state patterns, propose",
     "or implement fixes on a feature branch via PR, answer questions about how",
     "the system works, and suggest safe next steps.",
+    "",
+    campaignSetupPrompt(),
     "",
   ].join("\n");
 }

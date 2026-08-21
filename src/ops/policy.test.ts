@@ -9,6 +9,10 @@ describe("ops chat policy", () => {
       "deliverability",
     );
     assert.equal(classifyOpsMessage("audit campaigns", "operator").type, "campaigns");
+    assert.equal(
+      classifyOpsMessage("campaign setup", "operator").type,
+      "campaign_setup",
+    );
     assert.equal(classifyOpsMessage("check SPF and DNS", "operator").type, "dns");
     assert.equal(
       classifyOpsMessage("reconnect disconnected accounts", "operator").type,

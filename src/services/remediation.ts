@@ -13,6 +13,7 @@ import {
   type SenderInboxRate,
 } from "../clients/smartdelivery.js";
 import { filterTeardownBlacklistHits } from "../lib/blacklistDiagnosis.js";
+import { burnChecklistReady } from "../lib/burnChecklist.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
@@ -44,6 +45,7 @@ import {
 import {
   parseSenderBounceStats,
   shouldRotateForBounces,
+  shouldWarnForBounces,
 } from "../lib/bounceRate.js";
 import { classifyHoldOutcome } from "../lib/holdOutcome.js";
 import { isMissingSpamTestNoise } from "../lib/alertNoise.js";
@@ -408,13 +410,19 @@ export class RemediationService {
     // tell a blended-placement hold from a bounce hold that happened to carry
     // a blended row.
     const bounceRotations = new Map<string, number>();
+    const bounceByEmail = new Map<string, { bounceRate: number; sent: number }>();
     if (this.config.enableBounceRotation) {
       try {
         const stats = parseSenderBounceStats(
           await this.smartlead.getMailboxHealthMetrics(),
         );
         console.log(`[remediation] bounce stats parsed for ${stats.length} sender(s)`);
+        const bounceWatches: Array<{ email: string; bounceRate: number; sent: number }> = [];
         for (const stat of stats) {
+          bounceByEmail.set(stat.email, {
+            bounceRate: stat.bounceRate,
+            sent: stat.sent,
+          });
           if (
             shouldRotateForBounces(
               stat,
@@ -423,7 +431,19 @@ export class RemediationService {
             )
           ) {
             bounceRotations.set(stat.email, stat.bounceRate);
+          } else if (
+            shouldWarnForBounces(
+              stat,
+              this.config.bounceRateWarnThreshold,
+              this.config.bounceRateThreshold,
+              this.config.minBounceSample,
+            )
+          ) {
+            bounceWatches.push(stat);
           }
+        }
+        if (bounceWatches.length) {
+          await this.notifyBounceWatch(bounceWatches);
         }
         if (bounceRotations.size) {
           console.log(
@@ -483,6 +503,8 @@ export class RemediationService {
     const accountClient = (account: SmartleadAccountWithCampaigns) =>
       resolveAccountClient(account, campaignClientById, clientsById);
 
+    this.refreshRestingScores(inboxRateRows);
+
     // 4) Delete blacklisted domains from Smartlead + InboxKit
     for (const domain of actionableBlacklistedDomains) {
       const slKey = `remediate-domain-sl:${domain}`;
@@ -493,6 +515,39 @@ export class RemediationService {
       const domainAccounts = accounts.filter(
         (a) => accountDomain(a) === domain,
       );
+      const namedBlacklist = teardownHits.some(
+        (hit) =>
+          hit.domain.toLowerCase() === domain &&
+          Boolean(hit.listName?.trim()) &&
+          !/surbl|uribl|unnamed/i.test(hit.listName ?? ""),
+      );
+      const domainBounce = domainAccounts
+        .map((a) => bounceByEmail.get((accountEmail(a) ?? "").toLowerCase()))
+        .filter((s): s is { bounceRate: number; sent: number } => Boolean(s))
+        .sort((a, b) => b.bounceRate - a.bounceRate)[0];
+      const domainPlacement = domainAccounts
+        .map((a) => inboxRateRows.get((accountEmail(a) ?? "").toLowerCase()))
+        .filter((row): row is SenderInboxRate => Boolean(row))
+        .sort((a, b) => a.inboxRate - b.inboxRate)[0];
+      const checklist = burnChecklistReady({
+        namedBlacklist,
+        sameEspInbox: domainPlacement?.inboxRate ?? null,
+        scoredSameEsp: domainPlacement?.scoredSameEsp,
+        bounceRate: domainBounce?.bounceRate ?? null,
+        sent: domainBounce?.sent ?? 0,
+        inboxThreshold: this.config.remediationInboxThreshold,
+        bounceThreshold: this.config.bounceRateThreshold,
+        minBounceSample: this.config.minBounceSample,
+      });
+      if (!checklist.ready) {
+        console.log(
+          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")}`,
+        );
+        result.errors.push(
+          `${domain}: burn checklist not ready (${checklist.reasons.join("; ")}) — blacklist alone is not enough`,
+        );
+        continue;
+      }
       let teardownSpend:
         | { decision: SpendDecision; request: SpendRequest }
         | undefined;
@@ -679,6 +734,7 @@ export class RemediationService {
       const key = `remediate-inbox:${email.toLowerCase()}`;
       if (this.state.hasRemediation(key)) continue;
       if (this.state.getHeldInbox(email)) continue;
+      if (this.state.getRestingInbox(email)) continue;
 
       // Bounce still rotates. Low inbox alone defers when copy looks guilty.
       if (!bounceDriven) {
@@ -1278,6 +1334,7 @@ export class RemediationService {
       const email = record.email.toLowerCase();
       // Active pool swap — RecoveryPoolService restores these when healthy
       if (this.state.getSwap(email)) continue;
+      if (this.state.getRestingInbox(email)) continue;
       const row = opts.inboxRateRows.get(email);
       const sameSamples = row?.sameEspSamples ?? 0;
       const sameRate = row?.inboxRateSameEsp;
@@ -1473,6 +1530,7 @@ export class RemediationService {
       if (!key.startsWith("remediate-inbox:")) continue;
       const email = key.slice("remediate-inbox:".length);
       if (this.state.getHeldInbox(email)) continue;
+      if (this.state.getRestingInbox(email)) continue;
       const account = byEmail.get(email);
       if (!account) continue;
       if (alreadyQueued.has(account.id)) continue;
@@ -1607,6 +1665,50 @@ export class RemediationService {
       );
     }
   }
+
+  private refreshRestingScores(inboxRateRows: Map<string, SenderInboxRate>): void {
+    for (const rest of this.state.listRestingInboxes()) {
+      const row = inboxRateRows.get(rest.email.toLowerCase());
+      if (row?.scoredSameEsp !== true || typeof row.inboxRate !== "number") {
+        continue;
+      }
+      this.state.markRestingInbox({
+        ...rest,
+        lastSameEspInbox: row.inboxRate,
+      });
+    }
+  }
+
+  private async notifyBounceWatch(
+    watches: Array<{ email: string; bounceRate: number; sent: number }>,
+  ): Promise<void> {
+    const fresh = watches.filter((w) => {
+      const key = `bounce-watch:${w.email.toLowerCase()}`;
+      return !this.state.hasRecentAlert(key, 24 * 60 * 60 * 1000);
+    });
+    if (!fresh.length) return;
+    const lines = [
+      `Bounce watch (≥${this.config.bounceRateWarnThreshold}%, below the ${this.config.bounceRateThreshold}% pull):`,
+      ...fresh
+        .slice(0, 15)
+        .map(
+          (w) =>
+            `- ${w.email} — ${w.bounceRate.toFixed(1)}% bounce on ${w.sent} sends`,
+        ),
+    ];
+    if (fresh.length > 15) {
+      lines.push(`- …and ${fresh.length - 15} more`);
+    }
+    try {
+      await this.slack.send(lines.join("\n"));
+      for (const w of fresh) {
+        this.state.markAlert(`bounce-watch:${w.email.toLowerCase()}`);
+      }
+    } catch (error) {
+      console.warn("[remediation] bounce-watch Slack failed", error);
+    }
+  }
+
 }
 
 /**

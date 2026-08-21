@@ -83,6 +83,34 @@ describe("ManualRotationService", () => {
     assert.equal(preview.campaigns[0]?.id, 1);
   });
 
+  it("does not pick a send-clock-resting generic", async () => {
+    const { state, campaigns, accounts } = await fixture();
+    state.markRestingInbox({
+      accountId: 20,
+      email: "generic@pool.info",
+      clientId: "generic",
+      cohort: "send",
+      kind: "generic",
+      restingSince: "2026-08-01T00:00:00.000Z",
+      removedFromCampaigns: [],
+      lastSameEspInbox: null,
+    });
+    const smartlead = {
+      listCampaigns: async () => campaigns,
+      listAllEmailAccounts: async () => accounts,
+      listClients: async () => [{ id: 7, name: "Client Seven" }],
+    } as unknown as SmartleadClient;
+    const service = new ManualRotationService(
+      config(),
+      smartlead,
+      slack(),
+      state,
+    );
+    const preview = await service.preview("original@client.info");
+    assert.equal(preview.allowed, false);
+    assert.match(preview.reasons.join(" "), /fully warmed|available/i);
+  });
+
   it("blocks rotation when the matching generic is still warming", async () => {
     const { state, campaigns, accounts } = await fixture({
       poolStatus: "warming",

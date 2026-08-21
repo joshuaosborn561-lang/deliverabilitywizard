@@ -15,6 +15,7 @@ import {
 import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
+import { quotaWouldBlock, remainingTestSlots } from "../lib/testQuota.js";
 import type { StateStore } from "../state/store.js";
 import type {
   CampaignTestPlan,
@@ -280,13 +281,14 @@ export class CampaignScanner {
 
     const testsNeeded = plans.reduce((sum, plan) => sum + plan.batches.length, 0);
     const used = existingTests.length;
-    const remaining = Math.max(0, this.config.totalTestQuota - used);
+    const remaining = remainingTestSlots(this.config.totalTestQuota, used);
+    const remainingLabel = Number.isFinite(remaining) ? String(remaining) : "unlimited";
 
     console.log(
-      `[scan] Quota check: used=${used} quota=${this.config.totalTestQuota} needed=${testsNeeded} remaining=${remaining}`,
+      `[scan] Quota check: used=${used} quota=${this.config.totalTestQuota || "unlimited"} needed=${testsNeeded} remaining=${remainingLabel}`,
     );
 
-    if (testsNeeded > remaining) {
+    if (quotaWouldBlock(this.config.totalTestQuota, used, testsNeeded)) {
       result.quotaBlocked = true;
       result.skipped += plans.length;
       await this.slack.notifyQuotaBlocked({

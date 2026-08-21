@@ -185,6 +185,9 @@ creates block rather than exceeding it. The 50-sender batch size is a
 SmartDelivery API limit, not a plan quota. The reconciler stops a recurring
 test when its campaign goes inactive.
 
+**Launch bar is 85% same-ESP** (promo tab = miss, D46). Live pull stays
+**80%** same-ESP (D32). Do not launch at 80 or pull at 85.
+
 ## Spend
 
 `REQUIRE_SPEND_APPROVAL` stays **on**. Real-money spend is held for human

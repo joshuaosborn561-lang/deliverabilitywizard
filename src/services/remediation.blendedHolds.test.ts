@@ -44,6 +44,8 @@ function makeFixture(records: HeldInboxRecord[]) {
   const state = {
     listHeldInboxes: () => records,
     getSwap: () => undefined,
+    getRestingInbox: () => undefined,
+    listRestingInboxes: () => [],
     clearHeldInbox: (e: string) => cleared.push(e.toLowerCase()),
     clearInboxRemediation: () => undefined,
   } as unknown as StateStore;
@@ -180,6 +182,8 @@ describe("D32 unproven blended holds", () => {
     const state = {
       listHeldInboxes: () => [record],
       getSwap: () => undefined,
+      getRestingInbox: () => undefined,
+      listRestingInboxes: () => [],
       clearHeldInbox: (e: string) => cleared.push(e),
       clearInboxRemediation: () => undefined,
     } as unknown as StateStore;

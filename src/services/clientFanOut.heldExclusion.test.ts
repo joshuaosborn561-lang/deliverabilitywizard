@@ -62,6 +62,7 @@ function fixture(opts: {
     getPoolMailbox: () => undefined,
     getHeldInbox: (email: string) =>
       heldSet.has(email.toLowerCase()) ? heldRecord(email) : undefined,
+    getRestingInbox: () => undefined,
   } as unknown as StateStore;
 
   const service = new ClientFanOutService(

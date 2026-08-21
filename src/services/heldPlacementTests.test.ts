@@ -5,7 +5,9 @@ import { StateStore } from "../state/store.js";
 import {
   HeldPlacementTestService,
   HELD_TEST_NAME_PREFIX,
+  REST_TEST_NAME_PREFIX,
   isHeldRecoveryTestName,
+  isRestRecoveryTestName,
 } from "./heldPlacementTests.js";
 
 describe("HeldPlacementTestService", () => {
@@ -15,6 +17,11 @@ describe("HeldPlacementTestService", () => {
       true,
     );
     assert.equal(isHeldRecoveryTestName("Auto: Campaign X"), false);
+    assert.equal(
+      isRestRecoveryTestName(`${REST_TEST_NAME_PREFIX} 2 mailbox(es)`),
+      true,
+    );
+    assert.equal(isRestRecoveryTestName("Held recovery: 1 mailbox(es)"), false);
   });
 
   it("creates a separate test for held mailboxes without re-attaching", async () => {

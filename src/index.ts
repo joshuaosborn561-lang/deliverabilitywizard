@@ -28,6 +28,7 @@ import { CampaignBounceInvestigateService } from "./services/campaignBounceInves
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
+import { ClientRestService } from "./services/clientRest.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -265,6 +266,7 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const clientRest = new ClientRestService(config, smartlead, slack, state);
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -395,6 +397,15 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     healthInFlight = (async () => {
+      let restResult: unknown = null;
+      if (config.enableClientRest) {
+        try {
+          restResult = await clientRest.run();
+        } catch (error) {
+          console.warn("[health] client rest failed", error);
+        }
+      }
+
       let healthResult: unknown = null;
       try {
         healthResult = await campaignHealth.run();
@@ -443,6 +454,7 @@ async function main(): Promise<void> {
       }
 
       return {
+        clientRest: restResult,
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
@@ -527,6 +539,14 @@ async function main(): Promise<void> {
           console.warn("[held-tests] failed", error);
         }
       }
+      let restTestsResult: unknown = null;
+      if (config.enableRestPlacementTests) {
+        try {
+          restTestsResult = await heldPlacementTests.runResting();
+        } catch (error) {
+          console.warn("[rest-tests] failed", error);
+        }
+      }
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
         warmupGateResult = await runWarmupGate();
@@ -564,6 +584,7 @@ async function main(): Promise<void> {
         monitor: monitorResult,
         remediation: remediationResult,
         heldPlacementTests: heldTestsResult,
+        restPlacementTests: restTestsResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
@@ -804,6 +825,10 @@ async function main(): Promise<void> {
         cronHealth: config.cronHealth,
         enableCampaignHealth: config.enableCampaignHealth,
         enableHeldPlacementTests: config.enableHeldPlacementTests,
+        enableClientRest: config.enableClientRest,
+        enableRestPlacementTests: config.enableRestPlacementTests,
+        freshInboxWarmupDays: config.freshInboxWarmupDays,
+        bounceRateWarnThreshold: config.bounceRateWarnThreshold,
         cronPoolProvision: config.cronPoolProvision,
         cronAccountReconnect: config.cronAccountReconnect,
         totalTestQuota: config.totalTestQuota,
@@ -886,6 +911,18 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await heldPlacementTests.run();
         res.json({ ok: true, mode: "held-tests", result });
+        return;
+      }
+      if (mode === "client-rest" || mode === "rest") {
+        assertRuntimeSecrets(config);
+        const result = await clientRest.run();
+        res.json({ ok: true, mode: "client-rest", result });
+        return;
+      }
+      if (mode === "rest-tests" || mode === "rest-placement-tests") {
+        assertRuntimeSecrets(config);
+        const result = await heldPlacementTests.runResting();
+        res.json({ ok: true, mode: "rest-tests", result });
         return;
       }
       if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
@@ -1193,6 +1230,9 @@ async function main(): Promise<void> {
     );
     console.log(
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
+    );
+    console.log(
+      `[boot] Client rest (D41): ${config.enableClientRest ? "ENABLED (2 weeks on / 2 weeks off for client inboxes; generics stay the spare tire)" : "disabled"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,

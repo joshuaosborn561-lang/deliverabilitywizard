@@ -122,10 +122,12 @@ export class CampaignTopUpService {
       const email = accountEmail(account);
       if (!email) continue;
       const held = Boolean(this.state.getHeldInbox(email));
+      const resting = Boolean(this.state.getRestingInbox(email));
       const heldRate = this.state.getHeldInbox(email)?.inboxRate;
       if (
         !isStaffableSender(account, {
           held,
+          resting,
           inboxRate: heldRate,
           inboxThreshold,
         })

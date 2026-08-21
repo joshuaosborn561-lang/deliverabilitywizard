@@ -14,6 +14,7 @@ import {
   testIdOf,
 } from "../clients/smartdelivery.js";
 import { sleep } from "../lib/http.js";
+import { isClientInbox } from "../lib/clientInbox.js";
 import { businessDate } from "./sendVolume.js";
 import { overallSplit } from "./resultMonitor.js";
 import type { StateStore } from "../state/store.js";
@@ -31,10 +32,14 @@ export interface ClientDayRow {
   bounced: number;
   bouncePercent: number | null;
   spamPercent: number | null;
-  /** Client inboxes on campaigns and not held. */
+  /** Client inboxes on-week and not held. */
   activeInboxes: number;
   /** Client inboxes currently held / pulled off campaigns. */
   heldInboxes: number;
+  /** D41 — client inboxes in their off-week rest. */
+  restingInboxes: number;
+  /** Generics currently staffing this client (spare tire). */
+  genericSpare: number;
 }
 
 export interface ClientDayBriefResult {
@@ -166,6 +171,8 @@ export class ClientDayBriefService {
 
     const heldByClient = new Map<number, number>();
     const activeByClient = new Map<number, number>();
+    const restingByClient = new Map<number, number>();
+    const genericByClient = new Map<number, number>();
     try {
       const accounts = (await this.smartlead.listAllEmailAccounts({
         fetchCampaigns: false,
@@ -177,6 +184,16 @@ export class ClientDayBriefService {
         if (typeof clientId !== "number" || !Number.isFinite(clientId)) continue;
         if (this.state.getHeldInbox(email)) {
           heldByClient.set(clientId, (heldByClient.get(clientId) ?? 0) + 1);
+        } else if (this.state.getRestingInbox(email)) {
+          restingByClient.set(
+            clientId,
+            (restingByClient.get(clientId) ?? 0) + 1,
+          );
+        } else if (!isClientInbox(account, email, this.config, this.state)) {
+          genericByClient.set(
+            clientId,
+            (genericByClient.get(clientId) ?? 0) + 1,
+          );
         } else {
           activeByClient.set(
             clientId,
@@ -195,6 +212,10 @@ export class ClientDayBriefService {
           agg.clientId != null ? heldByClient.get(agg.clientId) ?? 0 : 0;
         const activeCount =
           agg.clientId != null ? activeByClient.get(agg.clientId) ?? 0 : 0;
+        const resting =
+          agg.clientId != null ? restingByClient.get(agg.clientId) ?? 0 : 0;
+        const genericSpare =
+          agg.clientId != null ? genericByClient.get(agg.clientId) ?? 0 : 0;
         return {
           clientId: agg.clientId,
           clientName: agg.clientName,
@@ -206,6 +227,8 @@ export class ClientDayBriefService {
             agg.spamWeight > 0 ? agg.spamWeighted / agg.spamWeight : null,
           activeInboxes: activeCount,
           heldInboxes: held,
+          restingInboxes: resting,
+          genericSpare,
         };
       })
       .sort((a, b) => b.sent - a.sent);

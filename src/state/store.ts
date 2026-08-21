@@ -128,6 +128,10 @@ export interface AppState {
   heldInboxes: Record<string, HeldInboxRecord>;
   /** D39 — separate placement tests for held/pulled mailboxes */
   heldPlacementTests: Record<string, HeldPlacementTestRecord>;
+  /** D41 — client inboxes in their off-week (removed from live campaigns) */
+  restingInboxes: Record<string, RestingInboxRecord>;
+  /** D41 — separate placement tests for resting (off-week) client inboxes */
+  restPlacementTests: Record<string, HeldPlacementTestRecord>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
   poolMailboxes: Record<string, PoolMailboxRecord>;
   /** Active original↔pool swaps */
@@ -204,6 +208,17 @@ export interface HeldInboxRecord {
   swappedWithPoolEmail?: string;
 }
 
+/** D41 — client inbox resting off live campaigns for its off-week. */
+export interface RestingInboxRecord {
+  accountId: number;
+  email: string;
+  clientId: string;
+  cohort: "A" | "B";
+  restingSince: string;
+  removedFromCampaigns: number[];
+  lastSameEspInbox: number | null;
+}
+
 /** D39 — SmartDelivery test covering held/pulled mailboxes (off campaigns). */
 export interface HeldPlacementTestRecord {
   testId: string;
@@ -231,6 +246,8 @@ const EMPTY_STATE: AppState = {
   remediatedKeys: {},
   heldInboxes: {},
   heldPlacementTests: {},
+  restingInboxes: {},
+  restPlacementTests: {},
   poolMailboxes: {},
   activeSwaps: {},
   clientMonthlyUsage: {},
@@ -261,6 +278,8 @@ export class StateStore {
         remediatedKeys: parsed.remediatedKeys ?? {},
         heldInboxes: parsed.heldInboxes ?? {},
         heldPlacementTests: parsed.heldPlacementTests ?? {},
+        restingInboxes: parsed.restingInboxes ?? {},
+        restPlacementTests: parsed.restPlacementTests ?? {},
         poolMailboxes: parsed.poolMailboxes ?? {},
         activeSwaps: parsed.activeSwaps ?? {},
         clientMonthlyUsage: parsed.clientMonthlyUsage ?? {},
@@ -366,6 +385,38 @@ export class StateStore {
 
   clearHeldPlacementTest(testId: string): void {
     delete this.state.heldPlacementTests[testId];
+  }
+
+  markRestingInbox(record: RestingInboxRecord): void {
+    this.state.restingInboxes[record.email.toLowerCase()] = record;
+  }
+
+  getRestingInbox(email: string): RestingInboxRecord | undefined {
+    return this.state.restingInboxes[email.toLowerCase()];
+  }
+
+  listRestingInboxes(): RestingInboxRecord[] {
+    return Object.values(this.state.restingInboxes);
+  }
+
+  clearRestingInbox(email: string): void {
+    delete this.state.restingInboxes[email.toLowerCase()];
+  }
+
+  markRestPlacementTest(record: HeldPlacementTestRecord): void {
+    this.state.restPlacementTests[record.testId] = record;
+  }
+
+  getRestPlacementTest(testId: string): HeldPlacementTestRecord | undefined {
+    return this.state.restPlacementTests[testId];
+  }
+
+  listRestPlacementTests(): HeldPlacementTestRecord[] {
+    return Object.values(this.state.restPlacementTests);
+  }
+
+  clearRestPlacementTest(testId: string): void {
+    delete this.state.restPlacementTests[testId];
   }
 
   clearInboxRemediation(email: string): void {

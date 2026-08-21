@@ -725,3 +725,58 @@ marker). Manual `PAUSED` without a pending-resume is never STARTed.
 **Guards.** `CampaignBounceInvestigateService` (no START),
 `CampaignHealthService` STOPPED path, owner-intent D40.
 
+---
+
+## D41 — Beanstalk rotation: 2/2 rest, canary, 21-day fresh warmup
+
+**Decision.** Client inboxes (not generic fleet domains / pool generics) work
+**2 weeks on / 2 weeks off**. Cohort is a stable hash of the email (A/B).
+The fortnight follows ISO weeks in America/New_York. Off-week mailboxes are
+**removed from live campaigns** — not left on at `MESSAGE_PER_DAY=0`. Warmup
+stays on. Resting does **not** count as staffable.
+
+This **qualifies D26**: a resting mailbox is not fanned onto every ACTIVE
+campaign for that client. Cross-client membership is still forbidden.
+Generics remain the spare tire and do not rest; they may staff any client
+including BCP (D27). ~50 staffable senders is still the campaign floor.
+
+Health may **veto** putting a rester back on if same-ESP inbox is known-bad.
+No score ⇒ allow the first swap so rotation can start. Fan-out, top-up,
+health, remediation restore, BCP restore and ops rotate skip resters.
+
+Off-week mailboxes get **separate** SmartDelivery tests (same pattern as D39
+held tests). Slack client-day briefs show **on / off / generic-spare / held**.
+
+**Canary.** A campaign whose `created_at` is within 7 days gets ~15% of
+on-week client inboxes until it graduates. If **3+ unrelated sending domains**
+drop on same-ESP, pause **that campaign only**. Do not auto-`START` (D40).
+
+**Fresh warmup.** Non-prewarmed inboxes owe **21 days** from the existing
+warmup-gate clock before a live campaign. `POOL_WARMUP_DAYS` and
+`MIN_CAMPAIGN_WARMUP_DAYS` stay **14** (D1). Pre-warmed fleets stay exempt.
+
+**Bounce warn.** Slack/investigate at **~2%** bounce (with the usual sample
+floor). The **5% sender pull** (D5) and the **7% paused-campaign investigate**
+(D29) are unchanged.
+
+**Burn.** Blacklist alone is not enough to purge a domain. Require a named
+non-SURBL listing plus corroborating same-ESP placement fail or bounce over
+the pull threshold. Approval still gates the spend (D4/D15).
+
+**DNS.** The advisory audit also reports DKIM selector TXT (common Google /
+Microsoft selectors) and DMARC `p=none`. It still does not write DNS.
+
+**Why.** Josh (2026-08-21): implement the Beanstalk-style rest for client
+inboxes, keep generics as spare capacity, start new campaigns on a canary
+slice, give fresh InboxKit boxes 21 days, warn at 2% bounce, and do not
+burn a domain on a blacklist hit alone.
+
+**Tradeoff.** Rest tests compete with campaign + held tests against the 120
+quota. A campaign that is all off-week client inboxes waits one health pass
+for generic top-up before the last account can come off. Canary pause is
+manual to unstick (D40).
+
+**Guards.** `ClientRestService`, rest skip in fan-out/top-up/health/restore,
+`owedWarmupDays`, `burnChecklistReady`, `bounceRateWarnThreshold` default 2,
+`freshInboxWarmupDays` default 21, `poolWarmupDays` still 14, owner-intent D41.
+

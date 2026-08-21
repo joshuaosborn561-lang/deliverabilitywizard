@@ -78,7 +78,8 @@ those have already caused live pre-warmed senders to be pulled.
 ## Sender identity
 
 **One client per sender — not one campaign.** A mailbox (client domain or
-generic) may sit on **every ACTIVE campaign for that same client**. BCP
+generic) may sit on **every ACTIVE campaign for that same client**, except
+when it is in its off-week rest (D41 qualifies D26). BCP
 mailboxes go on all BCP campaigns; Parlay on all Parlay; etc. (`ClientFanOutService`,
 D26). Cross-client membership is still forbidden.
 
@@ -101,7 +102,7 @@ A sender comes off active campaigns when either signal fails:
 - **Bounce** above `BOUNCE_RATE_THRESHOLD` (5%), once it has sent at least
  `MIN_BOUNCE_SAMPLE` (50). These are independent — seed inboxes accept mail,
  so a mailbox can hold a clean inbox rate while bouncing hard against real
- leads.
+ leads. Slack warns at `BOUNCE_RATE_WARN_THRESHOLD` (2%) without pulling (D41).
 
 Both route through the same path: removed from active campaigns, warmup
 re-enabled, `HOLD-UNTIL` tag, held `RECOVERY_HOLD_DAYS` (14), and a warmed
@@ -116,8 +117,8 @@ protective pauses recorded in `pendingResumes` may be resumed by health,
 and never when the campaign is **STOPPED**.
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
-from the pool — connected SMTP/IMAP and not held. Disconnected membership
-does not count (D25). Health also runs same-client fan-out. `CRON_HEALTH`
+from the pool — connected SMTP/IMAP, not held, and not resting. Disconnected membership
+does not count (D25). Health also runs same-client fan-out and client rest (D41). `CRON_HEALTH`
 every 15m; Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
@@ -127,8 +128,17 @@ future campaign with a similar name is not skipped by accident.
 
 Mailboxes pulled off campaigns (HOLD) get **separate** SmartDelivery recurring
 tests — not re-attached to live campaigns. Slack day briefs are per-client
-(sent / bounce% / spam% + active vs held counts), not per-mailbox lists.
-A/B/C weekly rest is not shipped yet.
+(sent / bounce% / spam% + on / off / generic-spare / held counts), not per-mailbox lists.
+
+## Client inbox rest (D41)
+
+Client inboxes (not pre-warmed fleet domains / pool generics) work **2 weeks
+on / 2 weeks off**. Off-week they are removed from live campaigns; warmup stays
+on. Resting is not staffable. Generics are the spare tire and do not rest.
+New campaigns (`created_at` last 7 days) get ~15% of on-week client inboxes;
+3+ unrelated domains dropping same-ESP pauses that campaign only (no auto-START).
+Fresh (non-prewarmed) inboxes owe **21** days before live campaigns;
+`POOL_WARMUP_DAYS` stays 14. Blacklist alone does not burn a domain.
 
 ## Mailbox settings
 

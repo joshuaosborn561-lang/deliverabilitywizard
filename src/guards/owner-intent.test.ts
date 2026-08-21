@@ -505,3 +505,96 @@ describe("owner intent — sender supply", () => {
     );
   });
 });
+
+describe("owner intent — D41 beanstalk rotation", () => {
+  it("D41: client rest and rest-placement tests default on", () => {
+    assert.equal(
+      defaults.enableClientRest,
+      true,
+      stop(
+        "Client inboxes rest 2 weeks on / 2 weeks off (D41).",
+        "ENABLE_CLIENT_REST now defaults off, so client inboxes stay on campaigns every week.",
+      ),
+    );
+    assert.equal(
+      defaults.enableRestPlacementTests,
+      true,
+      stop(
+        "Off-week client inboxes get separate SmartDelivery tests (D41).",
+        "ENABLE_REST_PLACEMENT_TESTS now defaults off.",
+      ),
+    );
+  });
+
+  it("D41: fresh inboxes owe 21 days; pool warmup stays 14 (D1)", () => {
+    assert.equal(
+      defaults.freshInboxWarmupDays,
+      21,
+      stop(
+        "Fresh InboxKit inboxes owe 21 days before a live campaign (D41).",
+        `Fresh warmup is now ${defaults.freshInboxWarmupDays} days.`,
+      ),
+    );
+    assert.equal(
+      defaults.poolWarmupDays,
+      14,
+      stop(
+        "Pool warmup stays 14 days (D1). D41 must not change it.",
+        `Pool warmup is now ${defaults.poolWarmupDays} days.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignMinWarmupDays,
+      14,
+      stop(
+        "MIN_CAMPAIGN_WARMUP_DAYS stays 14 (D1). Fresh boxes use freshInboxWarmupDays.",
+        `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
+      ),
+    );
+  });
+
+  it("D41: bounce warn is 2%; pull stays 5%; paused investigate stays 7%", () => {
+    assert.equal(
+      defaults.bounceRateWarnThreshold,
+      2,
+      stop(
+        "Bounce warns at 2% without pulling (D41).",
+        `Warn threshold is now ${defaults.bounceRateWarnThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.bounceRateThreshold,
+      5,
+      stop(
+        "Senders above 5% bounce are still rotated out (D5).",
+        `Bounce pull is now ${defaults.bounceRateThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignBounceInvestigateThreshold,
+      7,
+      stop(
+        "Paused-campaign investigate stays 7% (D29).",
+        `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
+      ),
+    );
+  });
+
+  it("D41: canary is 7 days / 15% / 3 domains", () => {
+    assert.equal(
+      defaults.canaryCampaignDays,
+      7,
+      stop("New campaigns stay canary for 7 days (D41).", "Canary window changed."),
+    );
+    assert.equal(
+      defaults.canaryClientInboxPercent,
+      15,
+      stop("Canary campaigns get ~15% of on-week client inboxes (D41).", "Canary slice changed."),
+    );
+    assert.equal(
+      defaults.canaryDomainDropMin,
+      3,
+      stop("Canary pause needs 3+ unrelated domains (D41).", "Domain-drop floor changed."),
+    );
+  });
+});

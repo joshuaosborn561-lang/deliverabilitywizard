@@ -54,6 +54,24 @@ describe("classifyDomain", () => {
     assert.equal(isCritical(a), true);
   });
 
+  it("flags DMARC p=none as a warning, not critical", () => {
+    const a = classifyDomain("none.info", 2, {
+      ...ok,
+      dmarc: ["v=DMARC1; p=none; rua=mailto:dmarc@none.info"],
+    });
+    assert.ok(a.issues.includes("dmarc-none"));
+    assert.equal(isCritical(a), false);
+  });
+
+  it("flags missing common DKIM selectors without paging", () => {
+    const a = classifyDomain("nodkim.info", 1, {
+      ...ok,
+      dkim: [],
+    });
+    assert.ok(a.issues.includes("no-dkim"));
+    assert.equal(isCritical(a), false);
+  });
+
   it("flags missing DMARC and MX without calling them critical", () => {
     const a = classifyDomain("bare.info", 1, {
       txt: ["v=spf1 include:_spf.google.com ~all"],

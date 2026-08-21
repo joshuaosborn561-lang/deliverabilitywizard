@@ -93,6 +93,23 @@ const ConfigSchema = z.object({
    * D39 — separate SmartDelivery tests for held/pulled mailboxes (off campaigns).
    */
   enableHeldPlacementTests: boolFromEnv(true),
+  /**
+   * D41 — 2 weeks on / 2 weeks off for client inboxes (removed from campaigns
+   * while off; warmup stays on). Generics do not rest.
+   */
+  enableClientRest: boolFromEnv(true),
+  /**
+   * D41 — separate SmartDelivery tests for resting (off-week) client inboxes.
+   */
+  enableRestPlacementTests: boolFromEnv(true),
+  /**
+   * D41 — new campaigns (created_at within this many days) get only a slice
+   * of on-week client inboxes until they graduate.
+   */
+  canaryCampaignDays: z.coerce.number().int().min(0).default(7),
+  canaryClientInboxPercent: z.coerce.number().int().min(0).max(100).default(15),
+  /** Pause a canary campaign when this many unrelated domains drop (same-ESP). */
+  canaryDomainDropMin: z.coerce.number().int().min(1).default(3),
   cronHealth: z.string().default("*/15 * * * *"),
   /** Daily campaign send cap held on every mailbox (warmups not included). */
   messagePerDay: z.coerce.number().int().min(1).default(30),
@@ -108,6 +125,11 @@ const ConfigSchema = z.object({
     .default("")
     .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
+  /**
+   * D41 — Slack/investigate warn below the 5% pull. Does not rotate.
+   * D5's bounceRateThreshold stays the sender-pull line.
+   */
+  bounceRateWarnThreshold: z.coerce.number().min(0).max(100).default(2),
   /**
    * Aggregate sender bounce on a PAUSED campaign that triggers investigation
    * (D29). Separate from per-sender rotation (bounceRateThreshold).
@@ -158,6 +180,12 @@ const ConfigSchema = z.object({
    */
   enableWarmupGate: boolFromEnv(true),
   campaignMinWarmupDays: z.coerce.number().int().positive().default(14),
+  /**
+   * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
+   * a live campaign. Pre-warmed fleets stay on campaignMinWarmupDays / exempt.
+   * Do not change poolWarmupDays or campaignMinWarmupDays defaults (D1).
+   */
+  freshInboxWarmupDays: z.coerce.number().int().positive().default(21),
   /** Porkbun domain spend cap per client per UTC month (USD). */
   clientDomainBudgetUsd: z.coerce.number().nonnegative().default(25),
   /** New mailboxes per client per UTC month (blacklist replace). */
@@ -316,12 +344,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
+    enableClientRest: env.ENABLE_CLIENT_REST,
+    enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,
+    canaryCampaignDays: env.CANARY_CAMPAIGN_DAYS ?? "7",
+    canaryClientInboxPercent: env.CANARY_CLIENT_INBOX_PERCENT ?? "15",
+    canaryDomainDropMin: env.CANARY_DOMAIN_DROP_MIN ?? "3",
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
     mailboxMinTimeGapMins: env.MAILBOX_MIN_TIME_GAP_MINS ?? "10",
     enforceMailboxSettings: env.ENFORCE_MAILBOX_SETTINGS,
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
+    bounceRateWarnThreshold: env.BOUNCE_RATE_WARN_THRESHOLD ?? "2",
     campaignBounceInvestigateThreshold:
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
@@ -335,6 +369,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
     campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "14",
+    freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
     clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",
     warmupTotalPerDay: env.WARMUP_TOTAL_PER_DAY ?? "20",

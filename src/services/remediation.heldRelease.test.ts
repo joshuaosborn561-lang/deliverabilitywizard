@@ -42,6 +42,8 @@ function fixture(records: HeldInboxRecord[], opts: { swaps?: string[] } = {}) {
   const state = {
     listHeldInboxes: () => records,
     getSwap: (email: string) => (swaps.has(email.toLowerCase()) ? {} : undefined),
+    getRestingInbox: () => undefined,
+    listRestingInboxes: () => [],
     clearHeldInbox: (e: string) => cleared.push(e.toLowerCase()),
     clearInboxRemediation: (e: string) => clearedRemediation.push(e.toLowerCase()),
   } as unknown as StateStore;

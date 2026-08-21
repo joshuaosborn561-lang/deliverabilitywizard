@@ -118,6 +118,8 @@ export class SlackClient {
       spamPercent: number | null;
       activeInboxes: number;
       heldInboxes: number;
+      restingInboxes?: number;
+      genericSpare?: number;
     }>;
     errors: string[];
   }): Promise<void> {
@@ -133,10 +135,19 @@ export class SlackClient {
       const spam =
         row.spamPercent == null ? "—" : `${row.spamPercent.toFixed(1)}%`;
       const restBits: string[] = [];
-      if (row.activeInboxes || row.heldInboxes) {
-        restBits.push(
-          `${row.activeInboxes} active / ${row.heldInboxes} held`,
-        );
+      if (
+        row.activeInboxes ||
+        row.heldInboxes ||
+        row.restingInboxes ||
+        row.genericSpare
+      ) {
+        const piles = [
+          `${row.activeInboxes} on`,
+          `${row.restingInboxes ?? 0} off`,
+          `${row.genericSpare ?? 0} generic-spare`,
+        ];
+        if (row.heldInboxes) piles.push(`${row.heldInboxes} held`);
+        restBits.push(piles.join(" / "));
       }
       lines.push(
         `• *${row.clientName}* — ${row.sent.toLocaleString("en-US")} sent · ${bounce} bounce · ${spam} spam` +

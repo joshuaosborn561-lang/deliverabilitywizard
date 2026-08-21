@@ -82,6 +82,9 @@ export class ManualRotationService {
     if (this.state.getHeldInbox(email) || this.state.getSwap(email)) {
       reasons.push("That mailbox is already held or covered by an active swap.");
     }
+    if (this.state.getRestingInbox(email)) {
+      reasons.push("That mailbox is in its off-week rest and is not on live campaigns.");
+    }
 
     const [campaigns, accounts, clients] = await Promise.all([
       this.smartlead.listCampaigns(),

@@ -79,6 +79,7 @@ function fakeState(
       current = { ...record };
     },
     getHeldInbox: () => undefined,
+    getRestingInbox: () => undefined,
     hasPendingResume: () => false,
     listPendingResumes: () => [],
     save: async () => undefined,

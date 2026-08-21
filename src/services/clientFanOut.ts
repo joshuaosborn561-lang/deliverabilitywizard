@@ -10,6 +10,11 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import {
+  canaryAllowsClientInbox,
+  isCanaryCampaign,
+} from "../lib/canaryCampaign.js";
+import { isClientInbox } from "../lib/clientInbox.js";
 import { sleep } from "../lib/http.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 import type { StateStore } from "../state/store.js";
@@ -126,6 +131,10 @@ export class ClientFanOutService {
           result.skipped.push(`${email}: held`);
           continue;
         }
+        if (this.state.getRestingInbox(email)) {
+          result.skipped.push(`${email}: resting`);
+          continue;
+        }
         if (activeHoldUntilDate(tagNames(account))) {
           result.skipped.push(`${email}: HOLD-UNTIL tag`);
           continue;
@@ -151,6 +160,23 @@ export class ClientFanOutService {
 
         for (const campaign of groupCampaigns) {
           if (on.has(campaign.id)) continue;
+          if (
+            isCanaryCampaign(
+              campaign,
+              new Date(),
+              this.config.canaryCampaignDays,
+            ) &&
+            isClientInbox(account, email, this.config, this.state) &&
+            !canaryAllowsClientInbox(
+              email,
+              this.config.canaryClientInboxPercent,
+            )
+          ) {
+            result.skipped.push(
+              `${email}: canary #${campaign.id} (not in ${this.config.canaryClientInboxPercent}% slice)`,
+            );
+            continue;
+          }
           const list = pendingByCampaign.get(campaign.id) ?? [];
           list.push({ accountId: account.id, email });
           pendingByCampaign.set(campaign.id, list);

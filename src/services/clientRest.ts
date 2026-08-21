@@ -237,7 +237,6 @@ export class ClientRestService {
         continue;
       }
 
-      if (!existing && !onCampaigns.length) continue;
       if (
         shouldVetoRestRestore(
           existing?.lastSameEspInbox,

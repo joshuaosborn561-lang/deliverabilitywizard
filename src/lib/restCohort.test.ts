@@ -2,7 +2,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   assignClientCohorts,
-  hashEmail,
   isOffWeek,
   isoWeekNumberNy,
   onWeekCohort,
@@ -48,7 +47,4 @@ describe("restCohort", () => {
     assert.equal(isOffWeek("B", week3), false);
   });
 
-  it("normalizes email case for hashing fingerprints", () => {
-    assert.equal(hashEmail("Alex@Client.INFO"), hashEmail("alex@client.info"));
-  });
 });

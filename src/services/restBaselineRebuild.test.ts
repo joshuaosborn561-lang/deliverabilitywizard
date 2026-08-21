@@ -51,6 +51,18 @@ async function fixture(opts: {
     state.markHeldInbox(record);
   }
   if (opts.withSwap) {
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 99,
+      firstName: "Spare",
+      lastName: "Tire",
+      status: "assigned",
+      warmedAt: "2026-01-01T00:00:00.000Z",
+      availableAt: "2026-01-15T00:00:00.000Z",
+      prewarmed: true,
+    });
     state.markSwap({
       originalEmail: opts.withSwap,
       originalAccountId: 1,
@@ -170,6 +182,11 @@ describe("RestBaselineRebuildService", () => {
     assert.equal(result.swapsCleared, 1);
     assert.equal(state.getSwap("moved@client.info"), undefined);
     assert.equal(state.getHeldInbox("moved@client.info"), undefined);
+    assert.equal(
+      state.getPoolMailbox("spare@crosslaunchco.com")?.status,
+      "assigned",
+      "covering generic stays assigned while still on campaigns",
+    );
   });
 
   it("does not strip WARMUP-GATE-EXEMPT", async () => {

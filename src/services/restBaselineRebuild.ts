@@ -109,7 +109,7 @@ export class RestBaselineRebuildService {
         }
       }
       if (this.state.getSwap(email)) {
-        if (!dryRun) this.state.clearSwap(email);
+        if (!dryRun) this.state.releaseSwapReservation(email);
         result.swapsCleared += 1;
       }
       if (!dryRun) {

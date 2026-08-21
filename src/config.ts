@@ -76,7 +76,7 @@ const ConfigSchema = z.object({
   enableRemediation: boolFromEnv(false),
   /** Score Gmail→G Suite / Outlook→O365 only (matches ESP-matched campaigns). */
   scoreSameEspOnly: boolFromEnv(true),
-  /** Min same-ESP seed hits before trusting same-ESP % (else fall back to all-ESP). */
+  /** Min same-ESP seed hits before trusting same-ESP %. Below that, skip placement rotation (D32). */
   minSameEspSamples: z.coerce.number().int().positive().default(3),
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),

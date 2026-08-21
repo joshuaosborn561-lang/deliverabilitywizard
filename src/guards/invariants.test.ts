@@ -56,7 +56,7 @@ describe("invariants", () => {
     assert.equal(s.findAvailablePoolMailbox("GOOGLE")?.email, "warm@pool.info");
   });
 
-  it("a resting generic is never handed out for top-up or recovery (D42)", () => {
+  it("a resting generic is never handed out for top-up or recovery (D43)", () => {
     const s = store();
     s.upsertPoolMailbox({
       email: "resting@pool.info",

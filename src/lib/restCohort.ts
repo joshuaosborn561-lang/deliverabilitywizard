@@ -7,16 +7,6 @@
 
 export type RestCohort = "A" | "B";
 
-/** djb2-style hash; kept for stable fingerprints elsewhere. */
-export function hashEmail(email: string): number {
-  const normalized = email.trim().toLowerCase();
-  let hash = 5381;
-  for (let i = 0; i < normalized.length; i += 1) {
-    hash = ((hash << 5) + hash + normalized.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-}
-
 /**
  * Even A/B split of one client's inboxes. Sorted by email so the cut is
  * stable across runs. First half (ceil) is A; the rest is B.

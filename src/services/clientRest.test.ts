@@ -200,4 +200,60 @@ describe("ClientRestService", () => {
     assert.equal(result.benched.length, 0);
     assert.equal(state.getRestingInbox("generic@pool.info"), undefined);
   });
+
+  it("puts an on-week idle client back on the client's live campaigns (D44)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const idle = "a@client.info";
+    assert.equal(assignClientCohorts([idle, "z@client.info"]).get(idle), "A");
+    assert.equal(isOffWeek("A", now), false);
+
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-idle-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Live", status: "ACTIVE", client_id: 9 },
+        { id: 2, name: "Also", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: idle,
+          client_id: 9,
+          campaign_ids: [],
+        },
+        {
+          id: 21,
+          from_email: "z@client.info",
+          client_id: 9,
+          campaign_ids: [1, 2],
+        },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.ok(
+      result.restored.some((row) => row.email === idle),
+      "idle on-week client must be restored",
+    );
+    assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
+    assert.ok(adds.some((row) => row[0] === 2 && row[1].includes(20)));
+  });
 });

@@ -280,7 +280,9 @@ export class HeldPlacementTestService {
       return result;
     }
 
-    const resting = this.state.listRestingInboxes();
+    const resting = this.state
+      .listRestingInboxes()
+      .filter((row) => row.kind !== "generic" && row.cohort !== "send");
     result.heldMailboxes = resting.length;
     const restEmails = new Set(resting.map((h) => h.email.toLowerCase()));
 
@@ -390,7 +392,7 @@ export class HeldPlacementTestService {
       const payload = {
         test_name: testName,
         description: [
-          `Off-week client inbox rest test (D41)`,
+          `Off-week client inbox rest test (D43)`,
           `Senders are OFF live campaigns — this test does not re-attach them.`,
           `Sequence shell campaign: ${shell.campaignId}`,
           `Subject: ${sequenceSubjectPreview(sequence)}`,

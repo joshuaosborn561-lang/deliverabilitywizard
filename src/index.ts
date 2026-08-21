@@ -377,6 +377,34 @@ async function main(): Promise<void> {
     });
   };
 
+  const runRestGates = async () => {
+    let restBaseline: unknown = null;
+    let restResult: unknown = null;
+    let genericRest: unknown = null;
+    if (config.enableRestBaselineRebuild) {
+      try {
+        restBaseline = await restBaselineRebuild.run();
+      } catch (error) {
+        console.warn("[health] rest baseline rebuild failed", error);
+      }
+    }
+    if (config.enableClientRest) {
+      try {
+        restResult = await clientRest.run();
+      } catch (error) {
+        console.warn("[health] client rest failed", error);
+      }
+    }
+    if (config.enableGenericSendRest) {
+      try {
+        genericRest = await genericSendRest.run();
+      } catch (error) {
+        console.warn("[health] generic send rest failed", error);
+      }
+    }
+    return { restBaseline, clientRest: restResult, genericRest };
+  };
+
   const runCampaignTopUp = async () => {
     if (manualRotationInFlight) {
       console.log("[top-up] Manual rotation active — skipping overlapping run");
@@ -386,7 +414,11 @@ async function main(): Promise<void> {
       console.log("[top-up] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
-    topUpInFlight = campaignTopUp.run().finally(() => {
+    topUpInFlight = (async () => {
+      const rest = await runRestGates();
+      const result = await campaignTopUp.run();
+      return { ...rest, topUp: result };
+    })().finally(() => {
       topUpInFlight = null;
     });
     return topUpInFlight;
@@ -396,9 +428,9 @@ async function main(): Promise<void> {
   const MAILBOX_SETTINGS_EVERY_MS = 6 * 60 * 60 * 1000;
 
   /**
-   * Fast staffing loop (D25): refill/unpause first, then reconnect.
-   * Mailbox-settings converge is throttled (every 6h) so a full-fleet rewrite
-   * cannot starve the 15-minute staffing pass. Measure stays on CRON_MONITOR.
+   * Fast staffing loop (D43/D44): hold rebuild → client rest → generic
+   * send clock → top-up/fan-out → reconnect. Mailbox-settings converge is
+   * throttled (every 6h). Measure stays on CRON_MONITOR.
    */
   const runHealth = async () => {
     assertRuntimeSecrets(config);
@@ -411,30 +443,7 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     healthInFlight = (async () => {
-      let restBaseline: unknown = null;
-      if (config.enableRestBaselineRebuild) {
-        try {
-          restBaseline = await restBaselineRebuild.run();
-        } catch (error) {
-          console.warn("[health] rest baseline rebuild failed", error);
-        }
-      }
-
-      let restResult: unknown = null;
-      if (config.enableClientRest) {
-        try {
-          restResult = await clientRest.run();
-        } catch (error) {
-          console.warn("[health] client rest failed", error);
-        }
-      }
-      if (config.enableGenericSendRest) {
-        try {
-          await genericSendRest.run();
-        } catch (error) {
-          console.warn("[health] generic send rest failed", error);
-        }
-      }
+      const rest = await runRestGates();
 
       let healthResult: unknown = null;
       try {
@@ -484,8 +493,9 @@ async function main(): Promise<void> {
       }
 
       return {
-        restBaseline,
-        clientRest: restResult,
+        restBaseline: rest.restBaseline,
+        clientRest: rest.clientRest,
+        genericRest: rest.genericRest,
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
@@ -936,8 +946,17 @@ async function main(): Promise<void> {
       }
       if (mode === "fan-out" || mode === "client-fanout") {
         assertRuntimeSecrets(config);
+        if (healthInFlight || topUpInFlight || manualRotationInFlight) {
+          res.json({
+            ok: true,
+            mode: "fan-out",
+            result: { skipped: true, reason: "already-running" },
+          });
+          return;
+        }
+        const rest = await runRestGates();
         const result = await clientFanOut.run();
-        res.json({ ok: true, mode: "fan-out", result });
+        res.json({ ok: true, mode: "fan-out", result: { ...rest, fanOut: result } });
         return;
       }
       if (mode === "held-tests" || mode === "held-placement-tests") {

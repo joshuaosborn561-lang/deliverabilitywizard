@@ -32,7 +32,7 @@ export function parseWarmupReputation(
 export interface StaffableOptions {
   /** Email is currently on a recovery hold. */
   held?: boolean;
-  /** D41 — off-week client inbox; not staffable while resting. */
+  /** D43 — off-week client inbox or send-clock generic; not staffable. */
   resting?: boolean;
   /**
    * Latest known placement inbox rate (0–100). When set and below the

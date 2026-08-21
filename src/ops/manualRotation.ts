@@ -170,7 +170,8 @@ export class ManualRotationService {
             pool.status !== "available" ||
             pool.platform !== platform ||
             !pool.smartleadAccountId ||
-            activeSwapPool.has(pool.email.toLowerCase())
+            activeSwapPool.has(pool.email.toLowerCase()) ||
+            this.state.getRestingInbox(pool.email)
           ) {
             return false;
           }

@@ -698,6 +698,20 @@ export class StateStore {
     return Object.values(this.state.activeSwaps);
   }
 
+  /**
+   * Drop the original↔generic reservation only. The covering generic stays
+   * assigned if it is still on campaigns (D44). Use clearSwap when the
+   * generic is actually free again.
+   */
+  releaseSwapReservation(originalEmail: string): boolean {
+    const key = originalEmail.toLowerCase();
+    if (!this.state.activeSwaps[key]) return false;
+    delete this.state.activeSwaps[key];
+    const held = this.state.heldInboxes[key];
+    if (held) held.swappedWithPoolEmail = undefined;
+    return true;
+  }
+
   clearSwap(originalEmail: string): void {
     const key = originalEmail.toLowerCase();
     const swap = this.state.activeSwaps[key];

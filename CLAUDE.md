@@ -79,7 +79,7 @@ those have already caused live pre-warmed senders to be pulled.
 
 **One client per sender — not one campaign.** A mailbox (client domain or
 generic) may sit on **every ACTIVE campaign for that same client**, except
-when it is in its off-week rest (D41 qualifies D26). BCP
+when it is in its off-week rest (D43 qualifies D26). BCP
 mailboxes go on all BCP campaigns; Parlay on all Parlay; etc. (`ClientFanOutService`,
 D26). Cross-client membership is still forbidden.
 
@@ -118,7 +118,7 @@ and never when the campaign is **STOPPED**.
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
 from the pool — connected SMTP/IMAP, not held, and not resting. Disconnected membership
-does not count (D25). Health also runs same-client fan-out and client rest (D41). `CRON_HEALTH`
+does not count (D25). Health also runs same-client fan-out and client rest (D43). `CRON_HEALTH`
 every 15m; Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a

@@ -70,7 +70,8 @@ export function isRetryRemovalNoise(message: string): boolean {
 
 /**
  * D41 burn gate: blacklist without corroborating same-ESP fail or bounce
- * over threshold. Policy skip, not an actionable failure.
+ * over threshold. Policy skip, not an actionable failure — skip Slack paging
+ * and remediator relaunches even if a leftover string surfaces.
  */
 export function isBurnChecklistNoise(message: string): boolean {
   return (

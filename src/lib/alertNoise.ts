@@ -131,7 +131,7 @@ export function humanizeAlertError(message: string): string {
   }
 
   if (isBurnChecklistNoise(raw)) {
-    return "Blacklist hit without matching placement/bounce evidence — not burning the domain (D41).";
+    return "Blacklist hit alone is not enough to burn that domain — waiting for a same-ESP placement fail or bounce over threshold.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

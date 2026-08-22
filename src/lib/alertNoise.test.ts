@@ -118,14 +118,19 @@ describe("alert noise", () => {
   });
 
   it("treats burn-checklist deferrals as benign ops noise", () => {
-    for (const message of [
-      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-      "vascowarrantynow.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+    for (const domain of [
+      "trymeetconnect.info",
+      "gogetintroduced.info",
+      "vascowarrantynow.info",
     ]) {
+      const message = `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`;
       assert.equal(isBurnChecklistNoise(message), true, message);
       assert.equal(isBenignOpsNoise(message), true, message);
       assert.equal(isRateLimitNoise(message), false, message);
-      assert.match(humanizeAlertError(message), /not burning the domain/i);
+      assert.match(
+        humanizeAlertError(message),
+        /blacklist hit alone is not enough/i,
+      );
     }
     assert.equal(
       isBurnChecklistNoise("delete SL account x@y.com: connection reset"),

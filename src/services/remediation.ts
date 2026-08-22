@@ -540,12 +540,13 @@ export class RemediationService {
         minBounceSample: this.config.minBounceSample,
       });
       if (!checklist.ready) {
-        // D41: blacklist alone is not enough. Expected until same-ESP fail
-        // or bounce corroborates — log, surface in status, but do not page
-        // Slack or launch the bug remediator (classified as noise).
-        const msg = `${domain}: burn checklist not ready (${checklist.reasons.join("; ")}) — blacklist alone is not enough`;
-        console.log(`[remediation] ${msg}`);
-        result.errors.push(msg);
+        // D41: blacklist alone is not enough to burn. Log and skip — do not
+        // push into result.errors (that used to page Slack / launch the
+        // remediator). Classifier/alertNoise also treat leftover wording as
+        // benign if it surfaces elsewhere.
+        console.log(
+          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")} — blacklist alone is not enough`,
+        );
         continue;
       }
       let teardownSpend:

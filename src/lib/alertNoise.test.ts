@@ -117,6 +117,27 @@ describe("alert noise", () => {
     );
   });
 
+  it("treats burn-checklist deferrals as benign ops noise", () => {
+    for (const domain of [
+      "trymeetconnect.info",
+      "gogetintroduced.info",
+      "vascowarrantynow.info",
+    ]) {
+      const message = `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`;
+      assert.equal(isBurnChecklistNoise(message), true, message);
+      assert.equal(isBenignOpsNoise(message), true, message);
+      assert.equal(isRateLimitNoise(message), false, message);
+      assert.match(
+        humanizeAlertError(message),
+        /blacklist hit alone is not enough/i,
+      );
+    }
+    assert.equal(
+      isBurnChecklistNoise("delete SL account x@y.com: connection reset"),
+      false,
+    );
+  });
+
   it("groups manual OAuth errors into one stable category", () => {
     assert.equal(
       reconnectFailureCategory("AADSTS50076: MFA required"),
@@ -137,18 +158,6 @@ describe("alert noise", () => {
     assert.match(
       humanizeAlertError("list accounts: HTTP 429"),
       /Nothing was changed/i,
-    );
-  });
-
-  it("treats burn-checklist deferrals as benign ops noise", () => {
-    const message =
-      "gogetintroduced.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
-    assert.equal(isBurnChecklistNoise(message), true);
-    assert.equal(isBenignOpsNoise(message), true);
-    assert.equal(isRateLimitNoise(message), false);
-    assert.match(
-      humanizeAlertError(message),
-      /blacklist hit alone is not enough/i,
     );
   });
 

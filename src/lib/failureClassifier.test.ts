@@ -191,6 +191,7 @@ describe("classifyFailure", () => {
       "gogetintroduced.info",
       "hubroofsbypeterson.info",
       "winvascowarranty.info",
+      "vascowarrantynow.info",
     ]) {
       const c = classifyFailure(
         "remediation",
@@ -199,7 +200,15 @@ describe("classifyFailure", () => {
       assert.equal(c.class, "noise", domain);
       assert.equal(c.autoRemediate, false, domain);
       assert.equal(c.fingerprint, "noise:burn-checklist", domain);
+      assert.match(c.summary, /burn checklist/i);
     }
+    assert.notEqual(
+      classifyFailure(
+        "remediation",
+        "winvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+      ).fingerprint,
+      "unknown:remediation:remediation-winvascowarranty-info-burn-checklist",
+    );
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

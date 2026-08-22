@@ -184,19 +184,18 @@ describe("classifyFailure", () => {
   });
 
   it("treats D41 burn-checklist skips as non-remediable noise", () => {
-    // Production fingerprint that wrongly launched this remediator:
+    // Production fingerprints that wrongly launched remediators:
     // unknown:remediation:remediation-salesgliderrun-org-burn-checklist-no
-    const c = classifyFailure(
-      "remediation",
-      "salesgliderrun.org: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(c.class, "noise");
-    assert.equal(c.autoRemediate, false);
-    assert.equal(c.fingerprint, "noise:burn-checklist");
-    assert.notEqual(
-      c.fingerprint,
-      "unknown:remediation:remediation-salesgliderrun-org-burn-checklist-no",
-    );
+    // (and trymeetconnect.info under the same shape)
+    for (const domain of ["salesgliderrun.org", "trymeetconnect.info"]) {
+      const c = classifyFailure(
+        "remediation",
+        `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,
+      );
+      assert.equal(c.class, "noise");
+      assert.equal(c.autoRemediate, false);
+      assert.equal(c.fingerprint, "noise:burn-checklist");
+    }
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

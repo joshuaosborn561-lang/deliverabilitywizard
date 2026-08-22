@@ -142,7 +142,7 @@ describe("alert noise", () => {
 
   it("treats burn-checklist deferrals as benign ops noise", () => {
     const message =
-      "winvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
+      "gogetintroduced.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
     assert.equal(isBurnChecklistNoise(message), true);
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);

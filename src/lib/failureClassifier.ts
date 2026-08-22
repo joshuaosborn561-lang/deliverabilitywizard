@@ -62,6 +62,23 @@ export function classifyFailure(
     }
   }
 
+  // D41 burn gate working as designed — blacklist alone never purges a
+  // domain. Not a code bug; do not launch a remediator (was fingerprinting
+  // per-domain as unknown:remediation:…burn-checklist-no).
+  // Checked before SURBL: checklist reasons can mention "non-SURBL".
+  if (
+    /burn checklist not ready|blacklist alone is not enough/i.test(lower)
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "burn-checklist"),
+      autoRemediate: false,
+      summary:
+        "Burn checklist not ready (D41: blacklist alone is not enough)",
+      raw: text,
+    };
+  }
+
   if (/surbl|uribl|unnamed domain-blacklist/i.test(lower)) {
     return {
       class: "noise",
@@ -103,22 +120,6 @@ export function classifyFailure(
       autoRemediate: false,
       summary:
         "Remediation deferred a hold after a campaign removal failed (next run retries)",
-      raw: text,
-    };
-  }
-
-  // D41 burn gate working as designed — blacklist alone never purges a
-  // domain. Not a code bug; do not launch a remediator (was fingerprinting
-  // per-domain as unknown:remediation:…burn-checklist-no).
-  if (
-    /burn checklist not ready|blacklist alone is not enough/i.test(lower)
-  ) {
-    return {
-      class: "noise",
-      fingerprint: fingerprintOf("noise", "burn-checklist"),
-      autoRemediate: false,
-      summary:
-        "Burn checklist not ready (D41: blacklist alone is not enough)",
       raw: text,
     };
   }

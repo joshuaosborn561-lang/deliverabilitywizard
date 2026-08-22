@@ -107,6 +107,24 @@ export function classifyFailure(
     };
   }
 
+  // D41 burn gate: named blacklist without corroborating same-ESP fail or
+  // bounce-over-threshold. Protective skip, not a bug — remediator used to
+  // fingerprint these as unknown:remediation:…burn-checklist-no.
+  if (
+    /burn checklist not ready|blacklist alone is not enough|no corroborating same-esp/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "burn-checklist"),
+      autoRemediate: false,
+      summary:
+        "Burn checklist skipped domain (blacklist alone is not enough — D41)",
+      raw: text,
+    };
+  }
+
   if (
     /is required|must be of type|must be greater than|invalid parameters|validation/i.test(
       lower,

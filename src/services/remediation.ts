@@ -540,11 +540,11 @@ export class RemediationService {
         minBounceSample: this.config.minBounceSample,
       });
       if (!checklist.ready) {
+        // D41 — blacklist alone must not burn/purge. This is the gate working
+        // as designed, not a code failure: log once per run, do not push to
+        // result.errors (that pages Slack and launches the bug remediator).
         console.log(
-          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")}`,
-        );
-        result.errors.push(
-          `${domain}: burn checklist not ready (${checklist.reasons.join("; ")}) — blacklist alone is not enough`,
+          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")} — blacklist alone is not enough`,
         );
         continue;
       }

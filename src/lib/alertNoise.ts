@@ -68,13 +68,26 @@ export function isRetryRemovalNoise(message: string): boolean {
   );
 }
 
+/**
+ * D41 burn checklist refused a domain (blacklist without corroborating
+ * same-ESP fail or bounce). Protective skip — not actionable in Slack.
+ */
+export function isBurnChecklistNoise(message: string): boolean {
+  return (
+    /burn checklist not ready/i.test(message) ||
+    /blacklist alone is not enough/i.test(message) ||
+    /no corroborating same-esp/i.test(message)
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
     isRateLimitNoise(message) ||
     isApprovalGateNoise(message) ||
     isMissingSpamTestNoise(message) ||
-    isRetryRemovalNoise(message)
+    isRetryRemovalNoise(message) ||
+    isBurnChecklistNoise(message)
   );
 }
 
@@ -116,6 +129,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isRetryRemovalNoise(raw)) {
     return "Could not take a mailbox off every campaign — left it unheld so the next run retries.";
+  }
+
+  if (isBurnChecklistNoise(raw)) {
+    return "Skipped burning a domain — blacklist alone is not enough (need same-ESP fail or bounce over threshold).";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

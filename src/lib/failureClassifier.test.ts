@@ -183,6 +183,22 @@ describe("classifyFailure", () => {
     assert.equal(c.fingerprint, "noise:retry-removal");
   });
 
+  it("treats D41 burn-checklist skips as non-remediable noise", () => {
+    // Production fingerprint that wrongly launched this remediator:
+    // unknown:remediation:remediation-salesgliderrun-org-burn-checklist-no
+    const c = classifyFailure(
+      "remediation",
+      "salesgliderrun.org: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:burn-checklist");
+    assert.notEqual(
+      c.fingerprint,
+      "unknown:remediation:remediation-salesgliderrun-org-burn-checklist-no",
+    );
+  });
+
   it("fingerprints unknown failures stably across numeric ids", () => {
     const a = classifyFailure("scan", "weird boom campaign 501701");
     const b = classifyFailure("scan", "weird boom campaign 999999");

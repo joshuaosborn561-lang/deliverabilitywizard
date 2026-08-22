@@ -183,6 +183,23 @@ describe("classifyFailure", () => {
     assert.equal(c.fingerprint, "noise:retry-removal");
   });
 
+  it("treats burn-checklist-not-ready as non-remediable noise (D41)", () => {
+    // Production fingerprint was collapsing to unknown and launching the
+    // remediator every time a blacklisted domain lacked same-ESP/bounce
+    // corroboration — which is the D41 skip working as designed.
+    const c = classifyFailure(
+      "remediation",
+      "winroofsbypeterson.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:burn-checklist");
+    assert.notEqual(
+      c.fingerprint,
+      "unknown:remediation:remediation-winroofsbypeterson-info-burn-checkli",
+    );
+  });
+
   it("fingerprints unknown failures stably across numeric ids", () => {
     const a = classifyFailure("scan", "weird boom campaign 501701");
     const b = classifyFailure("scan", "weird boom campaign 999999");

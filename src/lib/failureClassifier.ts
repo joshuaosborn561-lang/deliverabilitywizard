@@ -62,6 +62,22 @@ export function classifyFailure(
     }
   }
 
+  // D41 burn gate working as designed — blacklist alone must not purge a
+  // domain. Checked before the SURBL noise rule because checklist reasons
+  // can say "non-SURBL" and would otherwise fingerprint as noise:surbl.
+  if (
+    /burn checklist not ready|blacklist alone is not enough/i.test(lower)
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "burn-checklist"),
+      autoRemediate: false,
+      summary:
+        "Burn checklist refused teardown (blacklist alone is not enough)",
+      raw: text,
+    };
+  }
+
   if (/surbl|uribl|unnamed domain-blacklist/i.test(lower)) {
     return {
       class: "noise",
@@ -84,22 +100,6 @@ export function classifyFailure(
       fingerprint: fingerprintOf("noise", "approval-gate"),
       autoRemediate: false,
       summary: "Spend/destructive approval gate (human decision, not a bug)",
-      raw: text,
-    };
-  }
-
-  // Burn checklist (blacklist alone is not enough): remediation correctly
-  // refuses teardown until same-ESP placement or bounce corroborates. That is
-  // working-as-designed, not a code bug — do not relaunch the remediator.
-  if (
-    /burn checklist not ready|blacklist alone is not enough/i.test(lower)
-  ) {
-    return {
-      class: "noise",
-      fingerprint: fingerprintOf("noise", "burn-checklist"),
-      autoRemediate: false,
-      summary:
-        "Burn checklist deferred teardown (blacklist alone is not enough)",
       raw: text,
     };
   }

@@ -183,10 +183,12 @@ describe("classifyFailure", () => {
     assert.equal(c.fingerprint, "noise:retry-removal");
   });
 
-  it("treats burn-checklist deferrals as non-remediable noise", () => {
-    // Production fingerprints relaunched the remediator when blacklist alone
-    // blocked teardown (D41) — intentional gate, not a code bug.
+  it("treats D41 burn-checklist refusal as non-remediable noise", () => {
+    // Production fingerprints were collapsing per-domain to
+    // unknown:remediation:remediation-…-burn-checklist and launching the
+    // remediator after 2 hits.
     for (const domain of [
+      "newvascowarranty.info",
       "trymeetconnect.info",
       "gogetintroduced.info",
       "hubroofsbypeterson.info",
@@ -209,6 +211,21 @@ describe("classifyFailure", () => {
       ).fingerprint,
       "unknown:remediation:remediation-winvascowarranty-info-burn-checklist",
     );
+    assert.notEqual(
+      classifyFailure(
+        "remediation",
+        "newvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+      ).fingerprint,
+      "unknown:remediation:remediation-newvascowarranty-info-burn-checklist",
+    );
+
+    // Checklist reasons can say "non-SURBL" — must not fingerprint as noise:surbl.
+    const nonSurblReason = classifyFailure(
+      "remediation",
+      "otherdomain.info: burn checklist not ready (no named (non-SURBL) blacklist hit) — blacklist alone is not enough",
+    );
+    assert.equal(nonSurblReason.fingerprint, "noise:burn-checklist");
+    assert.equal(nonSurblReason.autoRemediate, false);
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

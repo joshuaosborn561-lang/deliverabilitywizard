@@ -69,9 +69,8 @@ export function isRetryRemovalNoise(message: string): boolean {
 }
 
 /**
- * Burn checklist deferred a teardown: blacklist hit without corroborating
- * same-ESP placement fail or bounce-over-threshold. Working as designed —
- * skip Slack paging and remediator relaunches.
+ * D41 burn checklist refused teardown — blacklist alone is not enough.
+ * Working as designed; do not page Slack or treat as a remediable error.
  */
 export function isBurnChecklistNoise(message: string): boolean {
   return /burn checklist not ready|blacklist alone is not enough/i.test(
@@ -131,7 +130,7 @@ export function humanizeAlertError(message: string): string {
   }
 
   if (isBurnChecklistNoise(raw)) {
-    return "Blacklist hit alone is not enough to burn that domain — waiting for a same-ESP placement fail or bounce over threshold.";
+    return "Blacklist alone is not enough to burn that domain — waiting for a same-ESP placement fail or bounce over threshold.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

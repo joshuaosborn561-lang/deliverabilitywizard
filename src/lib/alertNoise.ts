@@ -131,6 +131,10 @@ export function humanizeAlertError(message: string): string {
     return "Could not take a mailbox off every campaign — left it unheld so the next run retries.";
   }
 
+  if (isBurnChecklistNoise(raw)) {
+    return "Blacklist hit alone is not enough to burn that domain — waiting for a same-ESP placement fail or bounce over threshold.";
+  }
+
   if (bounceStats && /\b404\b/i.test(raw)) {
     return "Couldn't load bounce stats from Smartlead (the stats endpoint was unavailable).";
   }

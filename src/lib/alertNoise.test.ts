@@ -119,10 +119,14 @@ describe("alert noise", () => {
 
   it("treats burn-checklist-not-ready as benign ops noise (D41)", () => {
     const message =
-      "winroofsbypeterson.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
+      "hubroofsbypeterson.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
     assert.equal(isBurnChecklistNoise(message), true);
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
+    assert.match(
+      humanizeAlertError(message),
+      /blacklist hit alone is not enough/i,
+    );
   });
 
   it("groups manual OAuth errors into one stable category", () => {

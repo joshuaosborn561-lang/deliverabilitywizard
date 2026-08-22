@@ -184,7 +184,7 @@ describe("classifyFailure", () => {
   });
 
   it("treats D41 burn-checklist skips as non-remediable noise", () => {
-    // Production fingerprint was collapsing per-domain to
+    // Production fingerprints were collapsing per-domain to
     // unknown:remediation:…burn-checklist-no and relaunching the remediator.
     const c = classifyFailure(
       "remediation",
@@ -195,11 +195,18 @@ describe("classifyFailure", () => {
     assert.equal(c.fingerprint, "noise:burn-checklist");
     assert.match(c.summary, /blacklist alone is not enough/i);
 
-    const other = classifyFailure(
+    const otherDomain = classifyFailure(
+      "remediation",
+      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+    );
+    assert.equal(otherDomain.fingerprint, c.fingerprint);
+
+    // Reasons can say "non-SURBL" — must still be burn-checklist, not surbl noise.
+    const noNamedList = classifyFailure(
       "remediation",
       "otherdomain.info: burn checklist not ready (no named (non-SURBL) blacklist hit) — blacklist alone is not enough",
     );
-    assert.equal(other.fingerprint, c.fingerprint);
+    assert.equal(noNamedList.fingerprint, c.fingerprint);
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

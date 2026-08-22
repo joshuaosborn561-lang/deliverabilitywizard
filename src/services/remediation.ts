@@ -1650,7 +1650,7 @@ export class RemediationService {
       (result.recoveryPool?.swaps.length ?? 0) > 0 ||
       (result.recoveryPool?.restores.length ?? 0) > 0;
 
-    // Rate-limit / approval-gate noise alone should not page Slack
+    // Rate-limit / approval-gate / burn-checklist noise alone should not page Slack
     const seriousErrors = result.errors.filter((e) => !isBenignOpsNoise(e));
 
     if (acted || seriousErrors.length) {
@@ -1662,7 +1662,7 @@ export class RemediationService {
       });
     } else if (result.errors.length) {
       console.log(
-        `[remediation] Skipping Slack (no actions; ${result.errors.length} rate-limit/approval-gate noise error(s))`,
+        `[remediation] Skipping Slack (no actions; ${result.errors.length} benign ops noise error(s))`,
       );
     }
   }

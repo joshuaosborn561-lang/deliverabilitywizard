@@ -186,31 +186,27 @@ describe("classifyFailure", () => {
   it("treats D41 burn-checklist refusal as non-remediable noise", () => {
     // Production fingerprints were collapsing per-domain to
     // unknown:remediation:remediation-…-burn-checklist and launching the
-    // remediator after 2 hits (newvascowarranty.info / trymeetconnect.info).
-    const c = classifyFailure(
-      "remediation",
-      "newvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(c.class, "noise");
-    assert.equal(c.autoRemediate, false);
-    assert.equal(c.fingerprint, "noise:burn-checklist");
-    assert.notEqual(
-      c.fingerprint,
-      "unknown:remediation:remediation-newvascowarranty-info-burn-checklist",
-    );
-
-    const otherDomain = classifyFailure(
-      "remediation",
-      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(otherDomain.fingerprint, c.fingerprint);
+    // remediator after 2 hits.
+    for (const domain of [
+      "newvascowarranty.info",
+      "trymeetconnect.info",
+      "gogetintroduced.info",
+    ]) {
+      const c = classifyFailure(
+        "remediation",
+        `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,
+      );
+      assert.equal(c.class, "noise", domain);
+      assert.equal(c.autoRemediate, false, domain);
+      assert.equal(c.fingerprint, "noise:burn-checklist", domain);
+    }
 
     // Checklist reasons can say "non-SURBL" — must not fingerprint as noise:surbl.
     const nonSurblReason = classifyFailure(
       "remediation",
       "otherdomain.info: burn checklist not ready (no named (non-SURBL) blacklist hit) — blacklist alone is not enough",
     );
-    assert.equal(nonSurblReason.fingerprint, c.fingerprint);
+    assert.equal(nonSurblReason.fingerprint, "noise:burn-checklist");
     assert.equal(nonSurblReason.autoRemediate, false);
   });
 

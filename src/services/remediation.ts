@@ -540,8 +540,10 @@ export class RemediationService {
         minBounceSample: this.config.minBounceSample,
       });
       if (!checklist.ready) {
-        // D41 working as designed — log once per run, do not treat as an
-        // error that pages Slack or launches the bug remediator.
+        // D41: blacklist alone is not enough to burn. Log and skip — do not
+        // push into result.errors (that used to page Slack / launch the
+        // remediator). Classifier/alertNoise also treat leftover wording as
+        // benign if it surfaces elsewhere.
         console.log(
           `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")} — blacklist alone is not enough`,
         );

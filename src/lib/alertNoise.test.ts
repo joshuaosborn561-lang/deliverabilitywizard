@@ -59,12 +59,17 @@ describe("alert noise", () => {
   });
 
   it("treats D41 burn-checklist refusal as benign ops noise", () => {
-    const message =
-      "newvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
-    assert.equal(isBurnChecklistNoise(message), true);
-    assert.equal(isBenignOpsNoise(message), true);
-    assert.equal(isRateLimitNoise(message), false);
-    assert.match(humanizeAlertError(message), /blacklist alone is not enough/i);
+    for (const domain of [
+      "newvascowarranty.info",
+      "trymeetconnect.info",
+      "gogetintroduced.info",
+    ]) {
+      const message = `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`;
+      assert.equal(isBurnChecklistNoise(message), true, domain);
+      assert.equal(isBenignOpsNoise(message), true, domain);
+      assert.equal(isRateLimitNoise(message), false, domain);
+      assert.match(humanizeAlertError(message), /blacklist alone is not enough/i);
+    }
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

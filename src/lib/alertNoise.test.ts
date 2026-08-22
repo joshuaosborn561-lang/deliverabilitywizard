@@ -142,10 +142,14 @@ describe("alert noise", () => {
 
   it("treats burn-checklist deferrals as benign ops noise", () => {
     const message =
-      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
+      "winvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
     assert.equal(isBurnChecklistNoise(message), true);
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
+    assert.match(
+      humanizeAlertError(message),
+      /blacklist hit alone is not enough/i,
+    );
   });
 
   it("keeps mailbox identifiers when humanizing remove/swap failures", () => {

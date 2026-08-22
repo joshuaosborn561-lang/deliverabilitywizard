@@ -191,6 +191,7 @@ describe("classifyFailure", () => {
       "newvascowarranty.info",
       "trymeetconnect.info",
       "gogetintroduced.info",
+      "vascowarrantynow.info",
     ]) {
       const c = classifyFailure(
         "remediation",
@@ -199,7 +200,15 @@ describe("classifyFailure", () => {
       assert.equal(c.class, "noise", domain);
       assert.equal(c.autoRemediate, false, domain);
       assert.equal(c.fingerprint, "noise:burn-checklist", domain);
+      assert.match(c.summary, /burn checklist/i);
     }
+    assert.notEqual(
+      classifyFailure(
+        "remediation",
+        "newvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+      ).fingerprint,
+      "unknown:remediation:remediation-newvascowarranty-info-burn-checklist",
+    );
 
     // Checklist reasons can say "non-SURBL" — must not fingerprint as noise:surbl.
     const nonSurblReason = classifyFailure(

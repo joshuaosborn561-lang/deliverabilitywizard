@@ -63,6 +63,7 @@ describe("alert noise", () => {
       "newvascowarranty.info",
       "trymeetconnect.info",
       "gogetintroduced.info",
+      "vascowarrantynow.info",
     ]) {
       const message = `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`;
       assert.equal(isBurnChecklistNoise(message), true, domain);
@@ -70,6 +71,10 @@ describe("alert noise", () => {
       assert.equal(isRateLimitNoise(message), false, domain);
       assert.match(humanizeAlertError(message), /blacklist alone is not enough/i);
     }
+    assert.equal(
+      isBurnChecklistNoise("delete SL account x@y.com: connection reset"),
+      false,
+    );
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

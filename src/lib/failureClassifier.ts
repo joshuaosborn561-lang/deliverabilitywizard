@@ -107,6 +107,22 @@ export function classifyFailure(
     };
   }
 
+  // Burn checklist (blacklist alone is not enough): remediation correctly
+  // refuses teardown until same-ESP placement or bounce corroborates. That is
+  // working-as-designed, not a code bug — do not relaunch the remediator.
+  if (
+    /burn checklist not ready|blacklist alone is not enough/i.test(lower)
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "burn-checklist"),
+      autoRemediate: false,
+      summary:
+        "Burn checklist deferred teardown (blacklist alone is not enough)",
+      raw: text,
+    };
+  }
+
   if (
     /is required|must be of type|must be greater than|invalid parameters|validation/i.test(
       lower,

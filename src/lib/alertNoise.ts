@@ -68,13 +68,25 @@ export function isRetryRemovalNoise(message: string): boolean {
   );
 }
 
+/**
+ * Burn checklist deferred a teardown: blacklist hit without corroborating
+ * same-ESP placement fail or bounce-over-threshold. Working as designed —
+ * skip Slack paging and remediator relaunches.
+ */
+export function isBurnChecklistNoise(message: string): boolean {
+  return /burn checklist not ready|blacklist alone is not enough/i.test(
+    message,
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
     isRateLimitNoise(message) ||
     isApprovalGateNoise(message) ||
     isMissingSpamTestNoise(message) ||
-    isRetryRemovalNoise(message)
+    isRetryRemovalNoise(message) ||
+    isBurnChecklistNoise(message)
   );
 }
 

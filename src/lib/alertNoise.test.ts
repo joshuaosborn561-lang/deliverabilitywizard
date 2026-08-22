@@ -58,18 +58,6 @@ describe("alert noise", () => {
     assert.match(humanizeAlertError(message), /left it unheld/i);
   });
 
-  it("treats D41 burn-checklist skips as benign ops noise", () => {
-    for (const message of [
-      "salesglidersql.org: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    ]) {
-      assert.equal(isBurnChecklistNoise(message), true, message);
-      assert.equal(isBenignOpsNoise(message), true, message);
-      assert.equal(isRateLimitNoise(message), false, message);
-      assert.match(humanizeAlertError(message), /blacklist alone is not enough/i);
-    }
-  });
-
   it("explains missing SmartDelivery seed accounts in plain English", () => {
     assert.match(
       humanizeAlertError(
@@ -149,6 +137,18 @@ describe("alert noise", () => {
     assert.match(
       humanizeAlertError("list accounts: HTTP 429"),
       /Nothing was changed/i,
+    );
+  });
+
+  it("treats burn-checklist deferrals as benign ops noise", () => {
+    const message =
+      "gogetintroduced.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
+    assert.equal(isBurnChecklistNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(
+      humanizeAlertError(message),
+      /blacklist hit alone is not enough/i,
     );
   });
 

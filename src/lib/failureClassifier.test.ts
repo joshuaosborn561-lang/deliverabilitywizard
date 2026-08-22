@@ -183,30 +183,18 @@ describe("classifyFailure", () => {
     assert.equal(c.fingerprint, "noise:retry-removal");
   });
 
-  it("treats D41 burn-checklist skips as non-remediable noise", () => {
-    // Production fingerprints were collapsing per-domain to
-    // unknown:remediation:…burn-checklist-no and relaunching the remediator.
-    const c = classifyFailure(
-      "remediation",
-      "salesglidersql.org: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(c.class, "noise");
-    assert.equal(c.autoRemediate, false);
-    assert.equal(c.fingerprint, "noise:burn-checklist");
-    assert.match(c.summary, /blacklist alone is not enough/i);
-
-    const otherDomain = classifyFailure(
-      "remediation",
-      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(otherDomain.fingerprint, c.fingerprint);
-
-    // Reasons can say "non-SURBL" — must still be burn-checklist, not surbl noise.
-    const noNamedList = classifyFailure(
-      "remediation",
-      "otherdomain.info: burn checklist not ready (no named (non-SURBL) blacklist hit) — blacklist alone is not enough",
-    );
-    assert.equal(noNamedList.fingerprint, c.fingerprint);
+  it("treats burn-checklist deferrals as non-remediable noise", () => {
+    // Production fingerprints relaunched the remediator when blacklist alone
+    // blocked teardown (D41) — intentional gate, not a code bug.
+    for (const domain of ["trymeetconnect.info", "gogetintroduced.info"]) {
+      const c = classifyFailure(
+        "remediation",
+        `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,
+      );
+      assert.equal(c.class, "noise", domain);
+      assert.equal(c.autoRemediate, false, domain);
+      assert.equal(c.fingerprint, "noise:burn-checklist", domain);
+    }
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

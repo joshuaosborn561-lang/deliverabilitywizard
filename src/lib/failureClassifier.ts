@@ -88,8 +88,9 @@ export function classifyFailure(
     };
   }
 
-  // D41 burn bar: blacklist alone must not purge. Missing corroboration is
-  // the checklist working, not a code bug — do not launch a remediator.
+  // Burn checklist (blacklist alone is not enough): remediation correctly
+  // refuses teardown until same-ESP placement or bounce corroborates. That is
+  // working-as-designed, not a code bug — do not relaunch the remediator.
   if (
     /burn checklist not ready|blacklist alone is not enough/i.test(lower)
   ) {
@@ -98,7 +99,7 @@ export function classifyFailure(
       fingerprint: fingerprintOf("noise", "burn-checklist"),
       autoRemediate: false,
       summary:
-        "Burn checklist blocked teardown (blacklist alone is not enough)",
+        "Burn checklist deferred teardown (blacklist alone is not enough)",
       raw: text,
     };
   }

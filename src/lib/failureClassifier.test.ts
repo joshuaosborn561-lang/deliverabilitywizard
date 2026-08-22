@@ -183,19 +183,26 @@ describe("classifyFailure", () => {
     assert.equal(c.fingerprint, "noise:retry-removal");
   });
 
-  it("treats D41 burn-checklist blocks as non-remediable noise", () => {
-    const c = classifyFailure(
-      "remediation",
-      "vascowarrantynow.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(c.class, "noise");
-    assert.equal(c.autoRemediate, false);
-    assert.equal(c.fingerprint, "noise:burn-checklist");
+  it("treats burn-checklist deferrals as non-remediable noise", () => {
+    // Production fingerprints (trymeetconnect / vascowarrantynow): blacklist
+    // without corroborating same-ESP/bounce — intentional gate, not a bug.
+    for (const domain of ["trymeetconnect.info", "vascowarrantynow.info"]) {
+      const c = classifyFailure(
+        "remediation",
+        `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,
+      );
+      assert.equal(c.class, "noise");
+      assert.equal(c.autoRemediate, false);
+      assert.equal(c.fingerprint, "noise:burn-checklist");
+      assert.match(c.summary, /burn checklist/i);
+    }
     assert.notEqual(
-      c.fingerprint,
+      classifyFailure(
+        "remediation",
+        "vascowarrantynow.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+      ).fingerprint,
       "unknown:remediation:remediation-vascowarrantynow-info-burn-checklist",
     );
-    assert.match(c.summary, /burn checklist/i);
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

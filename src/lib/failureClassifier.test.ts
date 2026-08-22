@@ -184,9 +184,9 @@ describe("classifyFailure", () => {
   });
 
   it("treats D41 burn-checklist refusal as non-remediable noise", () => {
-    // Production fingerprint was collapsing per-domain to
-    // unknown:remediation:remediation-newvascowarranty-info-burn-checklist
-    // and launching the remediator after 2 hits.
+    // Production fingerprints were collapsing per-domain to
+    // unknown:remediation:remediation-…-burn-checklist and launching the
+    // remediator after 2 hits (newvascowarranty.info / trymeetconnect.info).
     const c = classifyFailure(
       "remediation",
       "newvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
@@ -199,12 +199,19 @@ describe("classifyFailure", () => {
       "unknown:remediation:remediation-newvascowarranty-info-burn-checklist",
     );
 
-    const other = classifyFailure(
+    const otherDomain = classifyFailure(
+      "remediation",
+      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+    );
+    assert.equal(otherDomain.fingerprint, c.fingerprint);
+
+    // Checklist reasons can say "non-SURBL" — must not fingerprint as noise:surbl.
+    const nonSurblReason = classifyFailure(
       "remediation",
       "otherdomain.info: burn checklist not ready (no named (non-SURBL) blacklist hit) — blacklist alone is not enough",
     );
-    assert.equal(other.fingerprint, c.fingerprint);
-    assert.equal(other.autoRemediate, false);
+    assert.equal(nonSurblReason.fingerprint, c.fingerprint);
+    assert.equal(nonSurblReason.autoRemediate, false);
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

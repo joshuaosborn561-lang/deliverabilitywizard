@@ -73,9 +73,8 @@ export function isRetryRemovalNoise(message: string): boolean {
  * Working as designed; do not page Slack or treat as a remediable error.
  */
 export function isBurnChecklistNoise(message: string): boolean {
-  return (
-    /burn checklist not ready/i.test(message) ||
-    /blacklist alone is not enough/i.test(message)
+  return /burn checklist not ready|blacklist alone is not enough/i.test(
+    message,
   );
 }
 

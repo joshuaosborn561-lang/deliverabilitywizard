@@ -88,23 +88,6 @@ export function classifyFailure(
     };
   }
 
-  // D41 burn gate: named blacklist without same-ESP fail or bounce-over-
-  // threshold is intentional skip, not a code failure.
-  if (
-    /burn checklist not ready|blacklist alone is not enough|no corroborating same-esp placement fail/i.test(
-      lower,
-    )
-  ) {
-    return {
-      class: "noise",
-      fingerprint: fingerprintOf("noise", "burn-checklist"),
-      autoRemediate: false,
-      summary:
-        "Burn checklist not ready (blacklist alone is not enough — D41)",
-      raw: text,
-    };
-  }
-
   // Intentional holdOutcome retry path: a campaign removal failed, so we
   // deliberately left the mailbox unheld for the next run. The specific
   // `remove … from campaign …` error is the actionable row; this summary must
@@ -120,6 +103,23 @@ export function classifyFailure(
       autoRemediate: false,
       summary:
         "Remediation deferred a hold after a campaign removal failed (next run retries)",
+      raw: text,
+    };
+  }
+
+  // D41 burn gate: named blacklist without same-ESP fail or bounce-over-
+  // threshold is intentional skip, not a code failure. Do not relaunch.
+  if (
+    /burn checklist not ready|blacklist alone is not enough|no corroborating same-esp placement fail/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "burn-checklist"),
+      autoRemediate: false,
+      summary:
+        "Burn checklist not ready (blacklist alone is not enough — D41)",
       raw: text,
     };
   }

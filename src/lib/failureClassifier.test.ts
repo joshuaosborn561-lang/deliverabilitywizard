@@ -184,18 +184,22 @@ describe("classifyFailure", () => {
   });
 
   it("treats burn-checklist-not-ready as non-remediable noise (D41)", () => {
-    // Production fingerprint was collapsing to unknown and launching the
-    // remediator every time a blacklisted domain lacked same-ESP/bounce
-    // corroboration — which is the D41 skip working as designed.
-    const c = classifyFailure(
-      "remediation",
-      "winroofsbypeterson.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(c.class, "noise");
-    assert.equal(c.autoRemediate, false);
-    assert.equal(c.fingerprint, "noise:burn-checklist");
+    // Production fingerprints (winroofsbypeterson / trymeetconnect) collapsed
+    // to unknown and relaunched the remediator — D41 skip working as designed.
+    for (const domain of ["winroofsbypeterson.info", "trymeetconnect.info"]) {
+      const c = classifyFailure(
+        "remediation",
+        `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,
+      );
+      assert.equal(c.class, "noise", domain);
+      assert.equal(c.autoRemediate, false, domain);
+      assert.equal(c.fingerprint, "noise:burn-checklist", domain);
+    }
     assert.notEqual(
-      c.fingerprint,
+      classifyFailure(
+        "remediation",
+        "winroofsbypeterson.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+      ).fingerprint,
       "unknown:remediation:remediation-winroofsbypeterson-info-burn-checkli",
     );
   });

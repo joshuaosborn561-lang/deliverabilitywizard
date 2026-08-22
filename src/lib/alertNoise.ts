@@ -68,13 +68,26 @@ export function isRetryRemovalNoise(message: string): boolean {
   );
 }
 
+/**
+ * D41 burn checklist refused teardown — blacklist without corroborating
+ * same-ESP fail or bounce. Expected every run until evidence appears;
+ * not Slack-actionable.
+ */
+export function isBurnChecklistNoise(message: string): boolean {
+  return (
+    /burn checklist not ready/i.test(message) ||
+    /blacklist alone is not enough/i.test(message)
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
     isRateLimitNoise(message) ||
     isApprovalGateNoise(message) ||
     isMissingSpamTestNoise(message) ||
-    isRetryRemovalNoise(message)
+    isRetryRemovalNoise(message) ||
+    isBurnChecklistNoise(message)
   );
 }
 
@@ -116,6 +129,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isRetryRemovalNoise(raw)) {
     return "Could not take a mailbox off every campaign — left it unheld so the next run retries.";
+  }
+
+  if (isBurnChecklistNoise(raw)) {
+    return "Blacklist hit without matching placement/bounce evidence — not burning the domain (D41).";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

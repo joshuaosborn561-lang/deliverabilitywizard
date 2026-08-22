@@ -88,6 +88,21 @@ export function classifyFailure(
     };
   }
 
+  // D41 burn bar: blacklist alone must not purge. Missing corroboration is
+  // the checklist working, not a code bug — do not launch a remediator.
+  if (
+    /burn checklist not ready|blacklist alone is not enough/i.test(lower)
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "burn-checklist"),
+      autoRemediate: false,
+      summary:
+        "Burn checklist blocked teardown (blacklist alone is not enough)",
+      raw: text,
+    };
+  }
+
   // Intentional holdOutcome retry path: a campaign removal failed, so we
   // deliberately left the mailbox unheld for the next run. The specific
   // `remove … from campaign …` error is the actionable row; this summary must

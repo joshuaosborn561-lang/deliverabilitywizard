@@ -4,6 +4,7 @@ import {
   humanizeAlertError,
   isApprovalGateNoise,
   isBenignOpsNoise,
+  isBurnChecklistNoise,
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
@@ -112,6 +113,18 @@ describe("alert noise", () => {
     assert.equal(isRateLimitNoise(denied), false);
     assert.equal(
       isApprovalGateNoise("delete SL account x@y.com: connection reset"),
+      false,
+    );
+  });
+
+  it("treats D41 burn-checklist refusals as benign ops noise", () => {
+    const message =
+      "vascowarrantynow.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough";
+    assert.equal(isBurnChecklistNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.equal(
+      isBurnChecklistNoise("delete SL account x@y.com: connection reset"),
       false,
     );
   });

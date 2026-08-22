@@ -184,15 +184,22 @@ describe("classifyFailure", () => {
   });
 
   it("treats burn-checklist deferrals as non-remediable noise", () => {
-    // Production: trymeetconnect.info blacklisted without corroborating
-    // same-ESP/bounce — intentional gate, not a code bug.
-    const c = classifyFailure(
-      "remediation",
-      "trymeetconnect.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
-    );
-    assert.equal(c.class, "noise");
-    assert.equal(c.autoRemediate, false);
-    assert.equal(c.fingerprint, "noise:burn-checklist");
+    // Production fingerprints that relaunched under the old unknown class:
+    // trymeetconnect / hubroofsbypeterson / winvascowarranty / gogetintroduced.
+    for (const domain of [
+      "trymeetconnect.info",
+      "hubroofsbypeterson.info",
+      "winvascowarranty.info",
+      "gogetintroduced.info",
+    ]) {
+      const c = classifyFailure(
+        "remediation",
+        `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,
+      );
+      assert.equal(c.class, "noise", domain);
+      assert.equal(c.autoRemediate, false, domain);
+      assert.equal(c.fingerprint, "noise:burn-checklist", domain);
+    }
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

@@ -540,11 +540,11 @@ export class RemediationService {
         minBounceSample: this.config.minBounceSample,
       });
       if (!checklist.ready) {
+        // D41: blacklist alone is not enough to burn. Log and skip — do not
+        // push into result.errors (that still clutters status even after the
+        // classifier treats the string as noise).
         console.log(
-          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")}`,
-        );
-        result.errors.push(
-          `${domain}: burn checklist not ready (${checklist.reasons.join("; ")}) — blacklist alone is not enough`,
+          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")} — blacklist alone is not enough`,
         );
         continue;
       }

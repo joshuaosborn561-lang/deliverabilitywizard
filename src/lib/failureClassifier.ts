@@ -107,6 +107,22 @@ export function classifyFailure(
     };
   }
 
+  // D41 burn gate working as designed — blacklist alone never purges a
+  // domain. Not a code bug; do not launch a remediator (was fingerprinting
+  // per-domain as unknown:remediation:…burn-checklist-no).
+  if (
+    /burn checklist not ready|blacklist alone is not enough/i.test(lower)
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "burn-checklist"),
+      autoRemediate: false,
+      summary:
+        "Burn checklist not ready (D41: blacklist alone is not enough)",
+      raw: text,
+    };
+  }
+
   if (
     /is required|must be of type|must be greater than|invalid parameters|validation/i.test(
       lower,

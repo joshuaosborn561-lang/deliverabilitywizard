@@ -68,13 +68,24 @@ export function isRetryRemovalNoise(message: string): boolean {
   );
 }
 
+/**
+ * D41 burn gate: named blacklist without same-ESP fail or bounce-over-
+ * threshold. Remediation correctly skips purge; do not page Slack.
+ */
+export function isBurnChecklistNoise(message: string): boolean {
+  return /burn checklist not ready|blacklist alone is not enough/i.test(
+    message,
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
     isRateLimitNoise(message) ||
     isApprovalGateNoise(message) ||
     isMissingSpamTestNoise(message) ||
-    isRetryRemovalNoise(message)
+    isRetryRemovalNoise(message) ||
+    isBurnChecklistNoise(message)
   );
 }
 
@@ -116,6 +127,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isRetryRemovalNoise(raw)) {
     return "Could not take a mailbox off every campaign — left it unheld so the next run retries.";
+  }
+
+  if (isBurnChecklistNoise(raw)) {
+    return "Blacklist alone is not enough to burn that domain — waiting on same-ESP placement fail or bounce over threshold.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

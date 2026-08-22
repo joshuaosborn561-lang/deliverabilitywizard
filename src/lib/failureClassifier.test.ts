@@ -184,20 +184,14 @@ describe("classifyFailure", () => {
   });
 
   it("treats burn-checklist deferrals as non-remediable noise", () => {
-<<<<<<< HEAD
-    // Production fingerprints that relaunched under the old unknown class:
-    // trymeetconnect / hubroofsbypeterson / winvascowarranty / gogetintroduced.
-    for (const domain of [
-      "trymeetconnect.info",
-      "hubroofsbypeterson.info",
-      "winvascowarranty.info",
-      "gogetintroduced.info",
-    ]) {
-=======
     // Production fingerprints relaunched the remediator when blacklist alone
     // blocked teardown (D41) — intentional gate, not a code bug.
-    for (const domain of ["trymeetconnect.info", "gogetintroduced.info"]) {
->>>>>>> origin/main
+    for (const domain of [
+      "trymeetconnect.info",
+      "gogetintroduced.info",
+      "hubroofsbypeterson.info",
+      "winvascowarranty.info",
+    ]) {
       const c = classifyFailure(
         "remediation",
         `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,

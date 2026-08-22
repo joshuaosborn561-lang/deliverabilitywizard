@@ -186,7 +186,11 @@ describe("classifyFailure", () => {
   it("treats burn-checklist deferrals as non-remediable noise", () => {
     // Production fingerprints relaunched the remediator when blacklist alone
     // blocked teardown (D41) — intentional gate, not a code bug.
-    for (const domain of ["trymeetconnect.info", "gogetintroduced.info"]) {
+    for (const domain of [
+      "salesglidersql.org",
+      "trymeetconnect.info",
+      "gogetintroduced.info",
+    ]) {
       const c = classifyFailure(
         "remediation",
         `${domain}: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough`,
@@ -195,6 +199,13 @@ describe("classifyFailure", () => {
       assert.equal(c.autoRemediate, false, domain);
       assert.equal(c.fingerprint, "noise:burn-checklist", domain);
     }
+
+    // Reasons can say "non-SURBL" — must stay burn-checklist, not surbl noise.
+    const noNamedList = classifyFailure(
+      "remediation",
+      "otherdomain.info: burn checklist not ready (no named (non-SURBL) blacklist hit) — blacklist alone is not enough",
+    );
+    assert.equal(noNamedList.fingerprint, "noise:burn-checklist");
   });
 
   it("fingerprints unknown failures stably across numeric ids", () => {

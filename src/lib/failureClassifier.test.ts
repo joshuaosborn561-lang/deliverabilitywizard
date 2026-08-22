@@ -183,6 +183,30 @@ describe("classifyFailure", () => {
     assert.equal(c.fingerprint, "noise:retry-removal");
   });
 
+  it("treats D41 burn-checklist refusal as non-remediable noise", () => {
+    // Production fingerprint was collapsing per-domain to
+    // unknown:remediation:remediation-newvascowarranty-info-burn-checklist
+    // and launching the remediator after 2 hits.
+    const c = classifyFailure(
+      "remediation",
+      "newvascowarranty.info: burn checklist not ready (no corroborating same-ESP placement fail or bounce-over-threshold) — blacklist alone is not enough",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:burn-checklist");
+    assert.notEqual(
+      c.fingerprint,
+      "unknown:remediation:remediation-newvascowarranty-info-burn-checklist",
+    );
+
+    const other = classifyFailure(
+      "remediation",
+      "otherdomain.info: burn checklist not ready (no named (non-SURBL) blacklist hit) — blacklist alone is not enough",
+    );
+    assert.equal(other.fingerprint, c.fingerprint);
+    assert.equal(other.autoRemediate, false);
+  });
+
   it("fingerprints unknown failures stably across numeric ids", () => {
     const a = classifyFailure("scan", "weird boom campaign 501701");
     const b = classifyFailure("scan", "weird boom campaign 999999");

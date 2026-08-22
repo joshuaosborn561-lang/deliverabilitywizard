@@ -540,11 +540,10 @@ export class RemediationService {
         minBounceSample: this.config.minBounceSample,
       });
       if (!checklist.ready) {
+        // D41 working as designed — log once per run, do not treat as an
+        // error that pages Slack or launches the bug remediator.
         console.log(
-          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")}`,
-        );
-        result.errors.push(
-          `${domain}: burn checklist not ready (${checklist.reasons.join("; ")}) — blacklist alone is not enough`,
+          `[remediation] Burn checklist not ready for ${domain}: ${checklist.reasons.join("; ")} — blacklist alone is not enough`,
         );
         continue;
       }
@@ -1649,7 +1648,7 @@ export class RemediationService {
       (result.recoveryPool?.swaps.length ?? 0) > 0 ||
       (result.recoveryPool?.restores.length ?? 0) > 0;
 
-    // Rate-limit / approval-gate noise alone should not page Slack
+    // Rate-limit / approval-gate / burn-checklist noise alone should not page Slack
     const seriousErrors = result.errors.filter((e) => !isBenignOpsNoise(e));
 
     if (acted || seriousErrors.length) {
@@ -1661,7 +1660,7 @@ export class RemediationService {
       });
     } else if (result.errors.length) {
       console.log(
-        `[remediation] Skipping Slack (no actions; ${result.errors.length} rate-limit/approval-gate noise error(s))`,
+        `[remediation] Skipping Slack (no actions; ${result.errors.length} benign ops noise error(s))`,
       );
     }
   }

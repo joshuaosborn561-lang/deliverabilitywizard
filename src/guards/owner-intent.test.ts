@@ -758,3 +758,40 @@ describe("owner intent — D46 launch bar", () => {
     );
   });
 });
+
+describe("owner intent — D47 plain English Slack", () => {
+  it("D47: Slack templates do not use internal jargon", async () => {
+    const { SlackClient } = await import("../clients/slack.js");
+    const { slackJargonHits } = await import("../lib/slackPlainEnglish.js");
+    const sent: string[] = [];
+    const client = new SlackClient({ channelLabel: "#test" });
+    (client as unknown as { send: (t: string) => Promise<void> }).send = async (
+      text: string,
+    ) => {
+      sent.push(text);
+    };
+    await client.notifyQuotaBlocked({
+      used: 1,
+      quota: 1,
+      needed: 1,
+      campaigns: [],
+    });
+    await client.notifyPlacementResult({
+      threshold: 80,
+      providers: [{ name: "Gmail", inboxPercent: 10 }],
+      autoRemediation: true,
+      remediationThreshold: 80,
+      holdDays: 14,
+      senders: [{ email: "a@x.com", inboxPercent: 10 }],
+    });
+    const hits = sent.flatMap((t) => slackJargonHits(t));
+    assert.deepEqual(
+      hits,
+      [],
+      stop(
+        "Slack that people read is plain English (D47).",
+        `Jargon leaked into Slack: ${hits.join(", ")}`,
+      ),
+    );
+  });
+});

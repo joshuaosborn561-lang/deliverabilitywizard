@@ -301,25 +301,25 @@ export class RecoveryPoolService {
 
   private async notify(result: RecoveryPoolResult): Promise<void> {
     const lines = [
-      `*Recovery pool* (${result.dryRun ? "DRY RUN" : "LIVE"})`,
+      `*Backup inbox*${result.dryRun ? " (preview)" : ""}`,
       result.swaps.length
-        ? `• Swapped in ${result.swaps.length} generic(s)`
+        ? `Took a weak inbox off and put a spare on (${result.swaps.length}):`
         : null,
       ...result.swaps.slice(0, 8).map(
         (s) =>
-          `  – \`${s.originalEmail}\` → \`${s.poolEmail}\` (${s.platform}, ${s.clientName})`,
+          `  • \`${s.originalEmail}\` → \`${s.poolEmail}\` (${s.platform === "GOOGLE" ? "Gmail" : "Outlook"}, ${s.clientName})`,
       ),
       result.restores.length
-        ? `• Restored ${result.restores.length} original(s)`
+        ? `Put the original back (${result.restores.length}):`
         : null,
       ...result.restores.slice(0, 8).map(
         (r) =>
-          `  – \`${r.originalEmail}\` back (pool \`${r.poolEmail}\` freed) @ ${r.inboxRate.toFixed(1)}%`,
+          `  • \`${r.originalEmail}\` back at ${r.inboxRate.toFixed(1)}% inbox; spare \`${r.poolEmail}\` is free again`,
       ),
       result.skippedNoPool.length
-        ? `• Couldn't cover these — no free warmed generic of the right type (Gmail/Microsoft) is available yet:\n${result.skippedNoPool
+        ? `Couldn't cover these — no warmed spare of the right type (Gmail or Outlook) yet:\n${result.skippedNoPool
             .slice(0, 5)
-            .map((e) => `  – \`${e}\``)
+            .map((e) => `  • \`${e}\``)
             .join("\n")}`
         : null,
     ].filter(Boolean);

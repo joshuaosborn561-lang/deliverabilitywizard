@@ -200,7 +200,7 @@ export class MailboxSettingsService {
     if (!dryRun && result.minGapSet > 0) {
       try {
         await this.slack.send(
-          `*Mailbox min-gap drift fixed (D30)*\n${result.minGapSet} mailbox(es) were missing the ${targetGap}-minute Minimum time gap — set now. Gap is enforced on every health pass so this should not recur.`,
+          `*Sending pace*\n${result.minGapSet} inbox${result.minGapSet === 1 ? "" : "es"} ${result.minGapSet === 1 ? "was" : "were"} sending closer together than ${targetGap} minutes. Set back to ${targetGap} minutes. We check this every staffing pass.`,
         );
       } catch (error) {
         console.warn("[mailbox-settings] Slack gap alert failed", error);
@@ -217,7 +217,14 @@ export class MailboxSettingsService {
     ) {
       try {
         await this.slack.send(
-          `Mailbox settings: ${result.sendLimitSet}→${target}/day (warmups not included), ${result.minGapSet}→${targetGap}m gap, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) (of ${result.scanned} scanned).`,
+          [
+            `*Inbox settings*`,
+            `${result.sendLimitSet} inbox${result.sendLimitSet === 1 ? "" : "es"} set to ${target} campaign emails/day.`,
+            `${result.minGapSet} set to ${targetGap} minutes apart.`,
+            `${result.signatureSet} signature${result.signatureSet === 1 ? "" : "s"} set to name + company.`,
+            `${result.warmupEnabled} warmup${result.warmupEnabled === 1 ? "" : "s"} turned on.`,
+            `(Looked at ${result.scanned}.)`,
+          ].join("\n"),
         );
       } catch (error) {
         console.warn("[mailbox-settings] Slack notify failed", error);

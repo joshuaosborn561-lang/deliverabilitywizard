@@ -158,11 +158,11 @@ export class RestBaselineRebuildService {
       try {
         await this.slack.send(
           [
-            `${dryRun ? "[DRY RUN] " : ""}Hold rebuild for D43 rest:`,
-            `- Released ${result.released.length} mailbox(es) with no same-ESP proof — they go into per-client A/B`,
-            `- Kept ${result.kept} with a real same-ESP fail`,
+            `${dryRun ? "Preview — " : ""}Inbox hold clean-up`,
+            `We took ${result.released.length} inbox${result.released.length === 1 ? "" : "es"} off “held.” They weren’t actually failing inbox tests, so they can send again on their normal schedule.`,
+            `${result.kept} stay held — ${result.kept === 1 ? "that one really failed" : "those really failed"} inbox tests.`,
             result.swapsCleared
-              ? `- Cleared ${result.swapsCleared} recovery swap reservation(s)`
+              ? `${result.swapsCleared} backup inbox${result.swapsCleared === 1 ? "" : "es"} we had reserved for them stay where they are (still sending).`
               : undefined,
           ]
             .filter(Boolean)

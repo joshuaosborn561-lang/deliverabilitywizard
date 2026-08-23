@@ -20,6 +20,10 @@ import {
   parseIsolationActionValue,
   slackSignatureValid,
 } from "./lib/slackSignature.js";
+import {
+  exchangeSlackOauth,
+  writeSlackBotTokenFile,
+} from "./lib/slackOauth.js";
 import { StateStore, type PoolProvisionPhase } from "./state/store.js";
 import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
@@ -100,6 +104,7 @@ async function main(): Promise<void> {
   const slack = new SlackClient({
     webhookUrl: config.slackWebhookUrl,
     botToken: config.slackBotToken,
+    botTokenFile: config.slackBotTokenFile,
     channelId: config.slackChannelId,
     channelLabel: config.slackChannel,
   });
@@ -955,6 +960,53 @@ async function main(): Promise<void> {
       }
     },
   );
+  app.get("/slack/oauth", async (req, res) => {
+    const error = String(req.query.error ?? "");
+    if (error) {
+      res.status(400).send(`Slack install was cancelled (${error}).`);
+      return;
+    }
+    const code = String(req.query.code ?? "").trim();
+    if (!code) {
+      res.status(400).send("Missing Slack install code.");
+      return;
+    }
+    if (!config.slackClientId || !config.slackClientSecret) {
+      res.status(503).send("Slack app credentials are not on this service yet.");
+      return;
+    }
+    try {
+      const installed = await exchangeSlackOauth({
+        clientId: config.slackClientId,
+        clientSecret: config.slackClientSecret,
+        code,
+        redirectUri: config.slackOauthRedirectUri,
+      });
+      await writeSlackBotTokenFile(config.slackBotTokenFile, installed.botToken);
+      try {
+        await slack.send(
+          "Deliverability Wizard is now its own Slack app. Approve / retire / buy buttons on new messages will work here. Invite *Deliverability Wizard* to this channel if you do not see this note.",
+        );
+      } catch (postError) {
+        console.warn("[slack-oauth] installed but could not post yet", postError);
+      }
+      res
+        .status(200)
+        .type("html")
+        .send(
+          "<p>Installed. You can close this tab. Check the deliverability channel for a confirmation.</p>",
+        );
+    } catch (installError) {
+      console.error("[slack-oauth]", installError);
+      res
+        .status(400)
+        .send(
+          installError instanceof Error
+            ? installError.message
+            : "Slack install failed.",
+        );
+    }
+  });
   app.use(express.json({ limit: "100kb" }));
 
   app.use("/ops", (_req, res, next) => {

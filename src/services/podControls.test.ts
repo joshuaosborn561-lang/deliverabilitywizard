@@ -33,11 +33,18 @@ describe("pod controls", () => {
             campaign_ids: [1],
           },
         ],
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Quick check-in" },
+        ],
       } as never,
       {
         listFolders: async () => [],
         createFolder: async () => ({ id: 3 }),
-        createAutomatedPlacement: async (payload: { sender_accounts?: string[] }) => {
+        listTests: async () => [],
+        createAutomatedPlacement: async (payload: {
+          sender_accounts?: string[];
+          sequence_mapping_id?: number;
+        }) => {
           created.push(payload);
           return { id: `pod-${created.length}` };
         },
@@ -57,6 +64,11 @@ describe("pod controls", () => {
         JSON.stringify(row).includes("Quick check-in"),
       ),
       true,
+    );
+    assert.equal(
+      created.every((row) => row.sequence_mapping_id === 77),
+      true,
+      "SmartDelivery schedule requires sequence_mapping_id from the shell campaign",
     );
   });
 });

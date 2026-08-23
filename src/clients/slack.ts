@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   humanizeAlertError,
   isBenignOpsNoise,
@@ -7,15 +8,30 @@ import {
 export interface SlackCredentials {
   webhookUrl?: string;
   botToken?: string;
+  /** If this file exists, it wins over botToken (new Slack app install). */
+  botTokenFile?: string;
   channelId?: string;
   channelLabel: string;
+}
+
+export function readSlackBotToken(creds: SlackCredentials): string {
+  const file = creds.botTokenFile?.trim();
+  if (file) {
+    try {
+      const fromFile = readFileSync(file, "utf8").trim();
+      if (fromFile) return fromFile;
+    } catch {
+      // File missing until Josh installs the new Slack app.
+    }
+  }
+  return creds.botToken?.trim() ?? "";
 }
 
 export class SlackClient {
   constructor(private readonly creds: SlackCredentials) {}
 
   async send(text: string, blocks?: unknown[]): Promise<void> {
-    if (this.creds.botToken) {
+    if (readSlackBotToken(this.creds)) {
       await this.sendViaBot(text, blocks);
       return;
     }
@@ -65,7 +81,7 @@ export class SlackClient {
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.creds.botToken}`,
+        Authorization: `Bearer ${readSlackBotToken(this.creds)}`,
         "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(payload),

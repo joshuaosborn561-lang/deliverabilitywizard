@@ -16,6 +16,12 @@ const ConfigSchema = z.object({
   slackBotToken: z.string().default(""),
   slackChannelId: z.string().default(""),
   slackChannel: z.string().default("#deliverability"),
+  slackClientId: z.string().default(""),
+  slackClientSecret: z.string().default(""),
+  slackBotTokenFile: z.string().default("/data/slack-bot-token"),
+  slackOauthRedirectUri: z.string().default(
+    "https://deliverabilitywizard-production.up.railway.app/slack/oauth",
+  ),
   inboxkitApiKey: z.string().default(""),
   inboxkitWorkspaceId: z.string().default(""),
   /** Dedicated InboxKit workspace for the 75 generic recovery-pool mailboxes */
@@ -379,6 +385,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     slackBotToken: env.SLACK_BOT_TOKEN ?? "",
     slackChannelId: env.SLACK_CHANNEL_ID ?? "",
     slackChannel: env.SLACK_CHANNEL ?? env.SLACK_CHANNEL_ID ?? "#deliverability",
+    slackClientId: env.SLACK_CLIENT_ID ?? "",
+    slackClientSecret: env.SLACK_CLIENT_SECRET ?? "",
+    slackBotTokenFile: env.SLACK_BOT_TOKEN_FILE ?? "/data/slack-bot-token",
+    slackOauthRedirectUri:
+      env.SLACK_OAUTH_REDIRECT_URI ??
+      "https://deliverabilitywizard-production.up.railway.app/slack/oauth",
     inboxkitApiKey: env.INBOXKIT_API_KEY ?? "",
     inboxkitWorkspaceId: env.INBOXKIT_WORKSPACE_ID ?? "",
     genericPoolWorkspaceId:

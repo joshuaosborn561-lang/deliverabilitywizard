@@ -915,4 +915,209 @@ export class SlackClient {
 
     await this.send(parts.filter(Boolean).join("\n"));
   }
+
+  async notifyIsolationVerdict(details: {
+    campaignName: string;
+    clientName?: string;
+    podName?: string;
+    dateLabel?: string;
+    verdict: "INFRA" | "COPY" | "INCONCLUSIVE" | "HEALTHY";
+    reason: string;
+    repliesFrom?: number;
+    repliesTo?: number;
+    oooFrom?: number;
+    oooTo?: number;
+    bounceFlat?: boolean;
+    teardownStarted?: boolean;
+    infraSummary?: string;
+    proof?: string;
+  }): Promise<void> {
+    const who = [details.clientName, details.campaignName, details.podName]
+      .filter(Boolean)
+      .join(" / ");
+    const watch =
+      details.repliesFrom != null && details.repliesTo != null
+        ? `Replies ${details.repliesFrom} → ${details.repliesTo}` +
+          (details.oooFrom != null && details.oooTo != null
+            ? `, out-of-office ${details.oooFrom} → ${details.oooTo}`
+            : "") +
+          (details.bounceFlat ? ", bounces flat." : ".")
+        : undefined;
+
+    let verdictLine: string;
+    if (details.verdict === "COPY") {
+      verdictLine = details.teardownStarted
+        ? "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes. The word hunt is already running. I will not edit the live email until you tap Switch the word."
+        : "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes.";
+    } else if (details.verdict === "INFRA") {
+      verdictLine =
+        "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes also landed in spam, so this is the inboxes, not the copy. Do not rewrite the email.";
+    } else if (details.verdict === "HEALTHY") {
+      verdictLine = "Campaign and standing inbox test both look fine.";
+    } else {
+      verdictLine =
+        details.reason ||
+        "This campaign is in spam. That is a flag — either the inboxes or the copy. I need another known-good reading before I pick one.";
+    }
+
+    await this.send(
+      [
+        `*${who || details.campaignName}*${details.dateLabel ? ` / ${details.dateLabel}` : ""}`,
+        watch,
+        verdictLine,
+        details.infraSummary,
+        details.proof,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  async notifyCopyIsolation(details: {
+    campaignName: string;
+    recovered?: Array<{ element: string; kind: string }>;
+    unchanged?: string[];
+    noneRecovered?: boolean;
+    waiting?: boolean;
+    missingRig?: boolean;
+  }): Promise<void> {
+    if (details.missingRig) {
+      await this.send(
+        [
+          `*${details.campaignName}* — copy problem, word hunt waiting.`,
+          "The standing inbox test says the inboxes are fine. We still need the low-rep test domain set (two mailboxes, never attached to a campaign) before we can isolate the word. We did not change the live email.",
+        ].join("\n"),
+      );
+      return;
+    }
+    if (details.waiting) {
+      await this.send(
+        `*${details.campaignName}* — copy word hunt is in flight. Same-day tests from the low-rep domain; we will post what recovered. We are not editing the live email.`,
+      );
+      return;
+    }
+    if (details.noneRecovered) {
+      await this.send(
+        [
+          `*${details.campaignName}* — no single change put this back in the inbox.`,
+          "Likely the whole message shape, not one word. We did not change the live email.",
+        ].join("\n"),
+      );
+      return;
+    }
+    const recovered = details.recovered ?? [];
+    await this.send(
+      [
+        `*${details.campaignName}* — copy word hunt.`,
+        recovered.length
+          ? `Recovered when we changed: ${recovered
+              .map((row) => `*${row.element}*`)
+              .join(", ")}.`
+          : undefined,
+        details.unchanged?.length
+          ? `No change: ${details.unchanged.slice(0, 8).join(", ")}.`
+          : undefined,
+        "Recommended: edit the live sequence to match the change that landed. We did not edit it.",
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  async notifyPodControls(details: {
+    pods: number;
+    testsCreated: number;
+    sendersRead: number;
+    kill: number;
+    watch: number;
+    errors: string[];
+  }): Promise<void> {
+    if (
+      !details.testsCreated &&
+      !details.kill &&
+      !details.watch &&
+      !details.errors.length
+    ) {
+      return;
+    }
+    await this.send(
+      [
+        "*Standing inbox tests*",
+        details.testsCreated
+          ? `Started ${details.testsCreated} test${details.testsCreated === 1 ? "" : "s"} across ${details.pods} inbox group${details.pods === 1 ? "" : "s"}. Every inbox in the group is on the test.`
+          : `Read ${details.sendersRead} inbox${details.sendersRead === 1 ? "" : "es"} on the standing tests.`,
+        details.kill
+          ? `${details.kill} inbox${details.kill === 1 ? "" : "es"} failed the standing test more than once — worth a cull look. We did not pull them.`
+          : undefined,
+        details.watch
+          ? `${details.watch} more ${details.watch === 1 ? "inbox is" : "inboxes are"} on a watch after one fail.`
+          : undefined,
+        details.errors.length
+          ? `What went wrong: ${details.errors.slice(0, 5).join("; ")}`
+          : undefined,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  async notifyOooDetectionOff(campaigns: Array<{ id: number; name: string }>): Promise<void> {
+    if (!campaigns.length) return;
+    await this.send(
+      [
+        "Out-of-office detection is off on these campaigns, so the silent-delivery watch is blind:",
+        ...campaigns.slice(0, 12).map((c) => `• ${c.name} (#${c.id})`),
+        "Turn it on in Smartlead if you want that alert. We did not change campaign settings.",
+      ].join("\n"),
+    );
+  }
+
+  async notifyIsolationAction(details: {
+    title: string;
+    proof: string;
+    actionId: string;
+    kind: "retire_domain" | "buy_domains" | "swap_copy";
+    who: string;
+  }): Promise<void> {
+    const approveLabel =
+      details.kind === "swap_copy"
+        ? "Switch the word"
+        : details.kind === "buy_domains"
+          ? "Buy replacements"
+          : "Retire this domain";
+    const text = [
+      `*${details.title}*`,
+      details.proof,
+      "",
+      details.kind === "buy_domains"
+        ? "Cayden cannot approve a purchase. Josh: tap the button or open Railway → /ops."
+        : details.kind === "retire_domain"
+          ? "Josh: tap to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
+          : "Josh or Cayden: tap to switch the live email. I will change only that one word.",
+    ].join("\n");
+    await this.send(text, [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: approveLabel },
+            style: "primary",
+            action_id: "isolation_approve",
+            value: `${details.kind}:${details.actionId}:approve`,
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Not now" },
+            action_id: "isolation_deny",
+            value: `${details.kind}:${details.actionId}:deny`,
+          },
+        ],
+      },
+    ]);
+  }
 }

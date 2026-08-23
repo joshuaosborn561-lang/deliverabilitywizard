@@ -8,6 +8,30 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+describe("SmartleadClient.addEmailAccountsToCampaign", () => {
+  it("refuses isolation-domain mailbox IDs before any write", async () => {
+    const { IsolationAttachBlockedError } = await import(
+      "../lib/isolationDomain.js"
+    );
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new SmartleadClient("test-key");
+    client.setIsolationDenylist([77, 88]);
+    await assert.rejects(
+      () => client.addEmailAccountsToCampaign(1, [11, 77]),
+      IsolationAttachBlockedError,
+    );
+    assert.equal(called, false);
+  });
+});
+
 describe("SmartleadClient.updateCampaignStatus", () => {
   it("sends POST — Smartlead's live status endpoint 404s on PATCH", async () => {
     const calls: Array<{ url: string; method?: string; body?: unknown }> = [];

@@ -119,6 +119,62 @@ const ConfigSchema = z.object({
    * successful pass.
    */
   enableRestBaselineRebuild: boolFromEnv(true),
+  /**
+   * D48 — standing per-pod control tests (fixed control email, per-sender
+   * read). Tests are unlimited (D45); this does not wait for seed approval.
+   */
+  enablePodControls: boolFromEnv(true),
+  /** Low-rep isolation domain weekly baseline + copy teardown senders. */
+  enableIsolationRig: boolFromEnv(true),
+  /** Infra-vs-copy lookup from standing controls. */
+  enableIsolationBranch: boolFromEnv(true),
+  /** One-variable copy teardown; starts on its own when the verdict is copy. */
+  enableCopyIsolation: boolFromEnv(true),
+  /** Daily replies + out-of-office collapse watch. */
+  enableDeliveryWatch: boolFromEnv(true),
+  isolationDomain: z.string().default(""),
+  isolationMailboxIds: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => Number(x.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  isolationMailboxEmails: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  isolationVariantCap: z.coerce.number().int().positive().max(20).default(8),
+  cronDeliveryWatch: z.string().default("0 13 * * *"),
+  /** Slack signing secret so button clicks can be verified. */
+  slackSigningSecret: z.string().default(""),
+  slackJoshUserIds: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    ),
+  slackCaydenUserIds: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    ),
+  isolationBuyParentDomain: z.string().default("crosslaunchco.com"),
+  isolationMailboxesPerBuyDomain: z.coerce.number().int().positive().max(10).default(3),
   /** Minimum share of each ESP (Google / Microsoft) when topping up to 50. */
   campaignEspMixMinPercent: z.coerce.number().int().min(0).max(50).default(30),
   cronHealth: z.string().default("*/15 * * * *"),
@@ -360,6 +416,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
     enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
+    enablePodControls: env.ENABLE_POD_CONTROLS,
+    enableIsolationRig: env.ENABLE_ISOLATION_RIG,
+    enableIsolationBranch: env.ENABLE_ISOLATION_BRANCH,
+    enableCopyIsolation: env.ENABLE_COPY_ISOLATION,
+    enableDeliveryWatch: env.ENABLE_DELIVERY_WATCH,
+    isolationDomain: env.ISOLATION_DOMAIN ?? "",
+    isolationMailboxIds: env.ISOLATION_MAILBOX_IDS ?? "",
+    isolationMailboxEmails: env.ISOLATION_MAILBOX_EMAILS ?? "",
+    isolationVariantCap: env.ISOLATION_VARIANT_CAP ?? "8",
+    cronDeliveryWatch: env.CRON_DELIVERY_WATCH ?? "0 13 * * *",
+    slackSigningSecret: env.SLACK_SIGNING_SECRET ?? "",
+    slackJoshUserIds: env.SLACK_JOSH_USER_ID ?? "",
+    slackCaydenUserIds: env.SLACK_CAYDEN_USER_ID ?? "",
+    isolationBuyParentDomain:
+      env.ISOLATION_BUY_PARENT_DOMAIN ?? "crosslaunchco.com",
+    isolationMailboxesPerBuyDomain: env.ISOLATION_MAILBOXES_PER_BUY_DOMAIN ?? "3",
     campaignEspMixMinPercent: env.CAMPAIGN_ESP_MIX_MIN_PERCENT ?? "30",
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",

@@ -795,3 +795,199 @@ describe("owner intent — D47 plain English Slack", () => {
     );
   });
 });
+
+describe("owner intent — D48 isolation", () => {
+  it("D48: isolation reports only; tests are unlimited and do not wait for seed approval", async () => {
+    assert.equal(
+      defaults.enablePodControls,
+      true,
+      stop(
+        "Standing pod controls start on their own (D48).",
+        "ENABLE_POD_CONTROLS now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.enableCopyIsolation,
+      true,
+      stop(
+        "Copy teardown starts on its own when the verdict is copy (D48).",
+        "ENABLE_COPY_ISOLATION now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.totalTestQuota,
+      0,
+      stop(
+        "Isolation must not re-cap SmartDelivery tests (D45/D48).",
+        `TOTAL_TEST_QUOTA default is ${defaults.totalTestQuota}.`,
+      ),
+    );
+    assert.equal(
+      "podControlSeedApproved" in defaults,
+      false,
+      stop(
+        "Do not hold isolation tests for seed approval (D48).",
+        "A seed-approval config flag is back.",
+      ),
+    );
+
+    const { SmartleadClient } = await import("../clients/smartlead.js");
+    const { IsolationAttachBlockedError } = await import(
+      "../lib/isolationDomain.js"
+    );
+    const client = new SmartleadClient("test-key");
+    client.setIsolationDenylist([99]);
+    await assert.rejects(
+      () => client.addEmailAccountsToCampaign(1, [99]),
+      IsolationAttachBlockedError,
+      stop(
+        "Isolation-domain mailboxes never attach to a campaign (D48).",
+        "The denylist did not block addEmailAccountsToCampaign.",
+      ),
+    );
+
+    const { decideIsolationVerdict, failedControlIsNeverCopy } = await import(
+      "../lib/isolationVerdict.js"
+    );
+    const failing = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["SPAM"],
+    });
+    assert.equal(
+      failing.verdict,
+      "INFRA",
+      stop(
+        "A failing control is inboxes, not copy (D48).",
+        `Verdict was ${failing.verdict}.`,
+      ),
+    );
+    assert.equal(
+      failedControlIsNeverCopy(failing),
+      true,
+      stop(
+        "A failed control is never a copy finding (D48).",
+        "COPY leaked from a failing control.",
+      ),
+    );
+
+    const { isSingleVariable } = await import("../lib/copyVariants.js");
+    assert.equal(
+      isSingleVariable(
+        { subject: "A", body: "B" },
+        { subject: "C", body: "D" },
+      ),
+      false,
+      stop(
+        "A two-change variant is discarded (D48).",
+        "Two-field edits now count as one variable.",
+      ),
+    );
+
+    const { campaignSetupPrompt } = await import(
+      "../ops/campaignSetupPrompt.js"
+    );
+    const prompt = campaignSetupPrompt();
+    assert.match(
+      prompt,
+      /never edits the live sequence/i,
+      stop(
+        "Isolation is report-only on campaigns (D48).",
+        "campaignSetupPrompt dropped the report-only rule.",
+      ),
+    );
+    assert.match(
+      prompt,
+      /do not hold a copy teardown for seed approval/i,
+      stop(
+        "Copy teardown does not wait for seed approval (D48).",
+        "campaignSetupPrompt still treats isolation tests as gated.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D49 isolation autonomy", () => {
+  it("D49: humans only for retire, buy, and copy; fleet needs several failing inboxes", async () => {
+    const { canDecideIsolationAction } = await import(
+      "../lib/isolationActors.js"
+    );
+    assert.equal(
+      canDecideIsolationAction("buy_domains", "operator"),
+      false,
+      stop(
+        "Only Josh can approve buying replacement domains (D49).",
+        "Cayden can now approve a domain purchase.",
+      ),
+    );
+    assert.equal(
+      canDecideIsolationAction("retire_domain", "operator"),
+      false,
+      stop(
+        "Only Josh can retire a domain (D49).",
+        "Cayden can now retire a domain.",
+      ),
+    );
+    assert.equal(
+      canDecideIsolationAction("swap_copy", "operator"),
+      true,
+      stop(
+        "Josh or Cayden can approve a one-word copy swap (D49).",
+        "Cayden can no longer tap Switch the word.",
+      ),
+    );
+    assert.equal(
+      defaults.requireSpendApproval,
+      true,
+      stop(
+        "Real-money spend still needs a human (D4/D49).",
+        "Spend approval now defaults off.",
+      ),
+    );
+
+    const { FLEET_MIN_FAILING_INBOXES, judgeDomainCycle } = await import(
+      "../lib/domainControl.js"
+    );
+    assert.equal(
+      FLEET_MIN_FAILING_INBOXES,
+      3,
+      stop(
+        "A fleet domain needs several failing inboxes, not one (D49).",
+        `Fleet fail floor is ${FLEET_MIN_FAILING_INBOXES}.`,
+      ),
+    );
+    const oneBox = judgeDomainCycle(
+      "crosslaunchco.com",
+      [{ email: "a@crosslaunchco.com", placement: "SPAM" }],
+      ["crosslaunchco.com"],
+    );
+    assert.equal(
+      oneBox.domainFailed,
+      false,
+      stop(
+        "One failing inbox does not kill a fleet domain (D49).",
+        "A single mailbox fail now condemns the fleet.",
+      ),
+    );
+
+    const { campaignSetupPrompt } = await import(
+      "../ops/campaignSetupPrompt.js"
+    );
+    const prompt = campaignSetupPrompt();
+    assert.match(
+      prompt,
+      /campaign in spam is a flag/i,
+      stop(
+        "Campaign spam is research, not a domain death sentence (D49).",
+        "campaignSetupPrompt dropped the flag language.",
+      ),
+    );
+    assert.match(
+      prompt,
+      /until Josh or Cayden tap Switch the word/i,
+      stop(
+        "Live copy changes only after Josh or Cayden approve (D49).",
+        "campaignSetupPrompt no longer names the Slack tap.",
+      ),
+    );
+  });
+});

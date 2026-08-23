@@ -1,5 +1,6 @@
 import { apiRequest, sleep } from "../lib/http.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
+import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
 import type {
   SmartleadCampaign,
   SmartleadEmailAccount,
@@ -31,8 +32,20 @@ export interface SmartleadClientRecord {
 
 export class SmartleadClient {
   private mutationQueue: MutationQueue | null = null;
+  private isolationAccountIds = new Set<number>();
 
   constructor(private readonly apiKey: string) {}
+
+  /** D48 — isolation-domain mailbox IDs may never join a campaign. */
+  setIsolationDenylist(accountIds: number[]): void {
+    this.isolationAccountIds = new Set(
+      accountIds.filter((id) => Number.isFinite(id) && id > 0),
+    );
+  }
+
+  isolationDenylistIds(): number[] {
+    return [...this.isolationAccountIds];
+  }
 
   /**
    * Optional serialiser for mutating calls. When set, writes share one queue
@@ -160,6 +173,22 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * Write sequence steps/variants. Only used after a human approves a
+   * one-word copy swap (D49).
+   */
+  updateCampaignSequences(
+    campaignId: number,
+    sequences: SmartleadSequence[],
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/sequences`, {
+        method: "POST",
+        body: { sequences },
+      }),
+    );
+  }
+
   async listAllEmailAccounts(options: {
     fetchCampaigns?: boolean;
   } = {}): Promise<SmartleadAccountWithCampaigns[]> {
@@ -204,11 +233,59 @@ export class SmartleadClient {
     campaignId: number,
     emailAccountIds: number[],
   ): Promise<unknown> {
+    try {
+      assertNotIsolationAccountIds(emailAccountIds, {
+        accountIds: this.isolationAccountIds,
+      });
+    } catch (error) {
+      return Promise.reject(error);
+    }
     return this.mutate(() =>
       apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
         method: "POST",
         body: { email_account_ids: emailAccountIds },
       }),
+    );
+  }
+
+  getCampaignStatistics(campaignId: number): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`);
+  }
+
+  getCampaignSettings(campaignId: number): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`);
+  }
+
+  getDayWiseOverallStats(options: {
+    startDate: string;
+    endDate: string;
+  }): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, "analytics/day-wise-overall-stats", {
+      query: { start_date: options.startDate, end_date: options.endDate },
+    });
+  }
+
+  getDayWisePositiveReplyStats(options: {
+    startDate: string;
+    endDate: string;
+  }): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      "analytics/day-wise-positive-reply-stats",
+      { query: { start_date: options.startDate, end_date: options.endDate } },
+    );
+  }
+
+  getDomainWiseHealthMetrics(options: {
+    startDate: string;
+    endDate: string;
+  }): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      "analytics/mailbox/domain-wise-health-metrics",
+      { query: { start_date: options.startDate, end_date: options.endDate } },
     );
   }
 

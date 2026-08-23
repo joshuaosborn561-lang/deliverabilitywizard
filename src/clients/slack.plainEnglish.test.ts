@@ -140,6 +140,40 @@ describe("Slack copy is plain English (D47)", () => {
       ],
     });
 
+    await client.notifyIsolationVerdict({
+      campaignName: "Acme Healthcare",
+      clientName: "Acme",
+      dateLabel: "Aug 23",
+      verdict: "COPY",
+      reason: "The standing inbox test landed.",
+      repliesFrom: 11,
+      repliesTo: 0,
+      oooFrom: 6,
+      oooTo: 0,
+      bounceFlat: true,
+      teardownStarted: true,
+    });
+    await client.notifyCopyIsolation({
+      campaignName: "Acme Healthcare",
+      recovered: [{ element: "free", kind: "word" }],
+      unchanged: ["phone"],
+    });
+    await client.notifyPodControls({
+      pods: 2,
+      testsCreated: 2,
+      sendersRead: 10,
+      kill: 1,
+      watch: 2,
+      errors: [],
+    });
+    await client.notifyIsolationAction({
+      title: "Buy a replacement for acme.info",
+      proof: "What I ran: the known-good email from 3 inboxes on acme.info.\nWho failed: a@acme.info, b@acme.info, c@acme.info.",
+      actionId: "buy-1",
+      kind: "buy_domains",
+      who: "Josh",
+    });
+
     assert.ok(sent.length >= 7);
     for (const [i, text] of sent.entries()) {
       assertPlain(text, `message ${i}`);

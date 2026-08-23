@@ -6,6 +6,19 @@ import {
   normalizeMonthlyUsage,
   type MonthlyUsageBucket,
 } from "../lib/monthlyCaps.js";
+import {
+  EMPTY_ISOLATION_STATE,
+  normalizeIsolationState,
+  type CopySuspectRecord,
+  type IsolationActionRecord,
+  type IsolationRunRecord,
+  type IsolationState,
+  type IsolationVariantRecord,
+  type MailboxControlResultRecord,
+  type PodControlRecord,
+  type DomainControlHistoryRecord,
+} from "./isolationState.js";
+import type { SuppressedTerm } from "../lib/suppressedTerms.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -168,6 +181,8 @@ export interface AppState {
    * not run yet and the next health pass should.
    */
   restBaselineRebuiltAt: string | null;
+  /** D48 — standing pod controls, isolation runs, suppressed terms. */
+  isolation: IsolationState;
 }
 
 export interface BugRemediationRecord {
@@ -268,6 +283,7 @@ const EMPTY_STATE: AppState = {
   bugRemediations: {},
   pendingResumes: {},
   restBaselineRebuiltAt: null,
+  isolation: structuredClone(EMPTY_ISOLATION_STATE),
 };
 
 export class StateStore {
@@ -307,6 +323,7 @@ export class StateStore {
         lastHealthAt: parsed.lastHealthAt ?? null,
         lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
         restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
+        isolation: normalizeIsolationState(parsed.isolation),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -813,6 +830,116 @@ export class StateStore {
 
   clearPendingResume(campaignId: number): void {
     delete this.state.pendingResumes[String(campaignId)];
+  }
+
+  getIsolation(): IsolationState {
+    return this.state.isolation;
+  }
+
+  patchIsolation(patch: Partial<IsolationState>): IsolationState {
+    this.state.isolation = {
+      ...this.state.isolation,
+      ...patch,
+    };
+    return this.state.isolation;
+  }
+
+  upsertPodControl(record: PodControlRecord): void {
+    this.state.isolation.podControls[record.id] = record;
+  }
+
+  listPodControls(): PodControlRecord[] {
+    return Object.values(this.state.isolation.podControls);
+  }
+
+  upsertMailboxControl(record: MailboxControlResultRecord): void {
+    this.state.isolation.mailboxResults[record.email.toLowerCase()] = record;
+  }
+
+  getMailboxControl(email: string): MailboxControlResultRecord | undefined {
+    return this.state.isolation.mailboxResults[email.toLowerCase()];
+  }
+
+  listMailboxControls(): MailboxControlResultRecord[] {
+    return Object.values(this.state.isolation.mailboxResults);
+  }
+
+  upsertIsolationRun(record: IsolationRunRecord): void {
+    this.state.isolation.runs[record.id] = record;
+  }
+
+  getIsolationRun(id: string): IsolationRunRecord | undefined {
+    return this.state.isolation.runs[id];
+  }
+
+  listIsolationRuns(): IsolationRunRecord[] {
+    return Object.values(this.state.isolation.runs);
+  }
+
+  latestIsolationRunForCampaign(
+    campaignId: number,
+  ): IsolationRunRecord | undefined {
+    return Object.values(this.state.isolation.runs)
+      .filter((run) => run.campaignId === campaignId)
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  }
+
+  upsertIsolationVariant(record: IsolationVariantRecord): void {
+    this.state.isolation.variants[record.id] = record;
+  }
+
+  listIsolationVariants(runId?: string): IsolationVariantRecord[] {
+    const rows = Object.values(this.state.isolation.variants);
+    return runId ? rows.filter((row) => row.runId === runId) : rows;
+  }
+
+  upsertSuppressedTerm(term: SuppressedTerm): void {
+    const scope = (term.clientScope ?? "*").toLowerCase();
+    this.state.isolation.suppressedTerms[`${scope}:${term.term.toLowerCase()}`] =
+      term;
+  }
+
+  listSuppressedTerms(): SuppressedTerm[] {
+    return Object.values(this.state.isolation.suppressedTerms);
+  }
+
+  markCopySuspect(record: CopySuspectRecord): void {
+    this.state.isolation.copySuspects[String(record.campaignId)] = {
+      ...this.state.isolation.copySuspects[String(record.campaignId)],
+      ...record,
+    };
+  }
+
+  listCopySuspects(): CopySuspectRecord[] {
+    return Object.values(this.state.isolation.copySuspects);
+  }
+
+  upsertDomainHistory(record: DomainControlHistoryRecord): void {
+    this.state.isolation.domainHistory[record.domain.toLowerCase()] = record;
+  }
+
+  getDomainHistory(domain: string): DomainControlHistoryRecord | undefined {
+    return this.state.isolation.domainHistory[domain.toLowerCase()];
+  }
+
+  listDomainHistory(): DomainControlHistoryRecord[] {
+    return Object.values(this.state.isolation.domainHistory);
+  }
+
+  upsertIsolationAction(record: IsolationActionRecord): void {
+    this.state.isolation.actions[record.id] = record;
+  }
+
+  getIsolationAction(id: string): IsolationActionRecord | undefined {
+    return this.state.isolation.actions[id];
+  }
+
+  listIsolationActions(): IsolationActionRecord[] {
+    return Object.values(this.state.isolation.actions);
+  }
+
+  pendingIsolationActions(): IsolationActionRecord[] {
+    return this.listIsolationActions().filter((row) => row.status === "pending");
   }
 
   async save(): Promise<void> {

@@ -18,5 +18,7 @@ describe("campaignSetupPrompt", () => {
     assert.match(prompt, /85%/);
     assert.doesNotMatch(prompt, /canary/i);
     assert.doesNotMatch(prompt, /Quota is 120/);
+    assert.match(prompt, /never edits the live sequence/i);
+    assert.match(prompt, /do not hold a copy teardown for seed approval/i);
   });
 });

@@ -13,7 +13,13 @@ import {
   testIdOf,
 } from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
+import { PorkbunClient } from "./clients/porkbun.js";
 import { SlackClient } from "./clients/slack.js";
+import { slackRoleOf } from "./lib/isolationActors.js";
+import {
+  parseIsolationActionValue,
+  slackSignatureValid,
+} from "./lib/slackSignature.js";
 import { StateStore, type PoolProvisionPhase } from "./state/store.js";
 import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
@@ -52,6 +58,14 @@ import {
 } from "./ops/manualRotation.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
+import { PodControlService } from "./services/podControls.js";
+import { IsolationRigService } from "./services/isolationRig.js";
+import { CopyIsolationService } from "./services/copyIsolation.js";
+import { IsolationBranchService } from "./services/isolationBranch.js";
+import { DeliveryWatchService } from "./services/deliveryWatch.js";
+import { IsolationBuyService } from "./services/isolationBuy.js";
+import { IsolationExecuteService } from "./services/isolationExecute.js";
+import { DomainLifecycleService } from "./services/domainLifecycle.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -303,6 +317,69 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const isolationRig = new IsolationRigService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const copyIsolation = new CopyIsolationService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    isolationRig,
+  );
+  const isolationBranch = new IsolationBranchService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    copyIsolation,
+    isolationRig,
+  );
+  const podControls = new PodControlService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const porkbun =
+    config.porkbunApiKey && config.porkbunSecretApiKey
+      ? new PorkbunClient({
+          apiKey: config.porkbunApiKey,
+          secretApiKey: config.porkbunSecretApiKey,
+        })
+      : null;
+  const isolationBuy = new IsolationBuyService(
+    config,
+    inboxkit,
+    porkbun,
+    state,
+    spendGateway,
+  );
+  const isolationExecute = new IsolationExecuteService(
+    config,
+    smartlead,
+    slack,
+    state,
+    isolationBuy,
+  );
+  const domainLifecycle = new DomainLifecycleService(config, state, slack);
+  const deliveryWatch = new DeliveryWatchService(
+    config,
+    smartlead,
+    slack,
+    state,
+    isolationBranch,
+  );
+  void isolationRig.applyDenylist().catch((error) => {
+    console.warn("[isolation-rig] denylist at boot failed", error);
+  });
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,
@@ -621,6 +698,50 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[bounce-investigate] failed", error);
       }
+      let podControlResult: unknown = null;
+      if (config.enablePodControls) {
+        try {
+          podControlResult = await podControls.run();
+          try {
+            await domainLifecycle.run();
+          } catch (error) {
+            console.warn("[domain-lifecycle] failed", error);
+          }
+          try {
+            await isolationBuy.resume();
+          } catch (error) {
+            console.warn("[isolation-buy] resume failed", error);
+          }
+        } catch (error) {
+          console.warn("[pod-controls] failed", error);
+        }
+      }
+      let isolationRigResult: unknown = null;
+      if (config.enableIsolationRig) {
+        try {
+          isolationRigResult = await isolationRig.run();
+        } catch (error) {
+          console.warn("[isolation-rig] failed", error);
+        }
+      }
+      let isolationBranchResult: unknown = null;
+      if (config.enableIsolationBranch) {
+        try {
+          isolationBranchResult = await isolationBranch.run();
+        } catch (error) {
+          console.warn("[isolation-branch] failed", error);
+        }
+      }
+      if (config.enableCopyIsolation) {
+        try {
+          for (const run of state.listIsolationRuns()) {
+            if (!run.teardownStarted) continue;
+            await copyIsolation.runForCampaign(run);
+          }
+        } catch (error) {
+          console.warn("[copy-isolation] poll failed", error);
+        }
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
@@ -631,6 +752,9 @@ async function main(): Promise<void> {
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
         bounceInvestigate: bounceInvestigateResult,
+        podControls: podControlResult,
+        isolationRig: isolationRigResult,
+        isolationBranch: isolationBranchResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -655,6 +779,11 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronAccountReconnect)) {
     throw new Error(
       `Invalid CRON_ACCOUNT_RECONNECT expression: ${config.cronAccountReconnect}`,
+    );
+  }
+  if (!cron.validate(config.cronDeliveryWatch)) {
+    throw new Error(
+      `Invalid CRON_DELIVERY_WATCH expression: ${config.cronDeliveryWatch}`,
     );
   }
   const sendVolumeSchedules = parseSchedules(config.cronSendVolume);
@@ -686,6 +815,18 @@ async function main(): Promise<void> {
       () => {
         void clientDayBrief.run().catch((error) => {
           console.error("[client-day] Unhandled cron error", error);
+        });
+      },
+      { timezone: "America/New_York" },
+    );
+  }
+
+  if (config.enableDeliveryWatch) {
+    cron.schedule(
+      config.cronDeliveryWatch,
+      () => {
+        void deliveryWatch.run().catch((error) => {
+          console.error("[delivery-watch] Unhandled cron error", error);
         });
       },
       { timezone: "America/New_York" },
@@ -745,6 +886,75 @@ async function main(): Promise<void> {
   // req.ip useful for login throttling without trusting arbitrary forwarded
   // chains.
   app.set("trust proxy", 1);
+  app.post(
+    "/slack/interactions",
+    express.raw({ type: "application/x-www-form-urlencoded" }),
+    async (req, res) => {
+      try {
+        const rawBody = Buffer.isBuffer(req.body)
+          ? req.body.toString("utf8")
+          : String(req.body ?? "");
+        if (
+          !slackSignatureValid({
+            signingSecret: config.slackSigningSecret,
+            timestamp: String(req.header("x-slack-request-timestamp") ?? ""),
+            rawBody,
+            signature: String(req.header("x-slack-signature") ?? ""),
+          })
+        ) {
+          res.status(401).json({ error: "Bad Slack signature" });
+          return;
+        }
+        const payloadRaw = new URLSearchParams(rawBody).get("payload");
+        if (!payloadRaw) {
+          res.status(400).json({ error: "Missing payload" });
+          return;
+        }
+        const payload = JSON.parse(payloadRaw) as {
+          user?: { id?: string; name?: string; username?: string };
+          actions?: Array<{ value?: string }>;
+        };
+        const parsed = parseIsolationActionValue(
+          payload.actions?.[0]?.value ?? "",
+        );
+        if (!parsed) {
+          res.status(200).json({ text: "That button is not one I handle." });
+          return;
+        }
+        const role = slackRoleOf(
+          payload.user?.id,
+          config.slackJoshUserIds,
+          config.slackCaydenUserIds,
+        );
+        const name =
+          role === "owner"
+            ? "Josh"
+            : role === "operator"
+              ? "Cayden"
+              : payload.user?.name || payload.user?.username || "unknown";
+        if (
+          role === "unknown" &&
+          (parsed.kind === "buy_domains" || parsed.kind === "retire_domain")
+        ) {
+          res.status(200).json({
+            text: "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
+          });
+          return;
+        }
+        const result = await isolationExecute.decide(
+          parsed.id,
+          parsed.decision,
+          { name, role },
+        );
+        res.status(200).json({ text: result.message });
+      } catch (error) {
+        console.error("[slack-interactions]", error);
+        res.status(200).json({
+          text: error instanceof Error ? error.message : "That tap failed.",
+        });
+      }
+    },
+  );
   app.use(express.json({ limit: "100kb" }));
 
   app.use("/ops", (_req, res, next) => {
@@ -764,6 +974,7 @@ async function main(): Promise<void> {
       rotation: manualRotation,
       executeRotation: runManualRotation,
       cursorAssistant,
+      isolationExecute,
       runtime: {
         deliverability: runOpsDeliverability,
         dns: () => dnsAudit.run({ alert: false }),
@@ -1000,6 +1211,42 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await bounceInvestigate.run();
         res.json({ ok: true, mode: "bounce-investigate", result });
+        return;
+      }
+      if (mode === "pod-controls" || mode === "pod-control") {
+        assertRuntimeSecrets(config);
+        const result = await podControls.run();
+        res.json({ ok: true, mode: "pod-controls", result });
+        return;
+      }
+      if (mode === "isolation-rig" || mode === "rig") {
+        assertRuntimeSecrets(config);
+        const result = await isolationRig.run({
+          force:
+            String(req.query.force ?? req.body?.force ?? "") === "1" ||
+            String(req.query.force ?? req.body?.force ?? "").toLowerCase() ===
+              "true",
+        });
+        res.json({ ok: true, mode: "isolation-rig", result });
+        return;
+      }
+      if (mode === "isolation" || mode === "isolation-branch") {
+        assertRuntimeSecrets(config);
+        const campaignId = Number(
+          req.query.campaignId ?? req.body?.campaignId ?? "",
+        );
+        const result = Number.isFinite(campaignId) && campaignId > 0
+          ? {
+              run: await isolationBranch.evaluate(campaignId),
+            }
+          : await isolationBranch.run();
+        res.json({ ok: true, mode: "isolation", result });
+        return;
+      }
+      if (mode === "delivery-watch" || mode === "copy-watch") {
+        assertRuntimeSecrets(config);
+        const result = await deliveryWatch.run();
+        res.json({ ok: true, mode: "delivery-watch", result });
         return;
       }
       if (mode === "remediate") {

@@ -930,3 +930,49 @@ name still has the logs.
 
 **Guards.** `slackJargonHits` / `slack.plainEnglish.test.ts`; owner-intent D47.
 
+---
+
+## D48 — Isolation system: report-only on campaigns, unlimited tests
+
+**Decision.** When a campaign is in spam, the wizard answers **inboxes vs copy**, and if copy, **which element**. It does that with standing per-pod control tests plus a low-rep isolation rig. It **never** pauses, edits, launches, or attaches isolation-domain mailboxes to a production campaign. Slack recommends the fix; a human edits the sequence.
+
+Standing controls are keyed to a **pod** (that client's A group, B group, or the generic sending / sitting piles), not to each campaign. One control test (chunked at 50 senders — SmartDelivery's API limit) attaches every mailbox in the pod and is read **per sender**. A campaign inherits the reading of the mailboxes it is actually sending from. A burnt minority in an otherwise fine pod is still inboxes, not copy.
+
+The control email is a versioned constant (no offer, no link, no spam vocabulary). Changing it starts a new `control_version`. A failed control is never a copy finding.
+
+Copy teardown (one change per variant, same day, same isolation domain, in parallel) **starts on its own** when the verdict is copy. Do **not** hold those SmartDelivery tests for seed approval. Josh (2026-08-23): unlimited monthly tests — do not be stingy and do not ask. That qualifies the draft isolation plan's "estimate seeds and stop for approval" and "do not auto-run Phase 2" lines. `TOTAL_TEST_QUOTA` stays 0 (D45). Real-money spend (buying the isolation domain) still needs D4 approval.
+
+Keep/watch/kill tags on control history are **evidence for a cull note**, not an automatic pull. Live rotation stays 80% same-ESP (D32) and 5% bounce (D5). Copy/offer still does not bench senders (D28).
+
+Persistence stays the Railway state file (this app's system of record). Do not add a second database for isolation.
+
+**Why.** Eric found "free" alone burying a campaign; "complimentary" fixed it in hours. At 75–95 words with one proof point, a single word is a live risk and there was no diagnostic. Live SmartDelivery against production pods is uninterpretable in both directions — trusted infra can land bad copy, and a struggling pod can bury good copy. A standing control on the pod, plus a deliberately low-rep rig for teardown, is the constant.
+
+**Tradeoff.** Standing controls consume seeds every cycle. Accepted: tests are unlimited, and the alternative is guessing. The isolation domain must stay cold and off campaigns or it will start masking copy the same way production pods do.
+
+**Guards.** Isolation denylist on `addEmailAccountsToCampaign`; failed control never `COPY`; one variable per variant; no seed-approval gate on isolation tests; owner-intent D48.
+
+---
+
+## D49 — Autonomous isolation; humans only for retire, buy, and copy
+
+**Decision.** The wizard runs on its own: standing known-good tests, copy-vs-inboxes research, word hunting, daily rest, rotation, and filling campaigns back to 50 after a cut. A human is in the loop only for three things:
+
+1. **Retire a domain** — Josh only, Slack button or Railway `/ops`.
+2. **Buy replacement domains / mailboxes** — Josh only. Cayden cannot approve spend. Slack button is the approval (same D4 ledger; do not ask a second time in Approvals). Porkbun + InboxKit follow the existing onboarding path: spin `.info` names, buy at Porkbun, attach InboxKit nameservers, order mailboxes on the generic pool, register them `warming` (14 days from import).
+3. **Change live copy** — Josh **or** Cayden, Slack button or `/ops`. One recovered word. That qualifies D48's "never edit the sequence": the hunt still starts alone; the live email changes only after a tap.
+
+**Domains, not mailboxes.** Judge a domain only on the known-good email, never on campaign placement (copy fingerprinting must not condemn a domain). One domain-level fail cycle → count it in the buy-ahead number so replacements can warm. Two **consecutive** domain-level fails → ask Josh to retire. Fleet domains (`EXTRA_GENERIC_DOMAINS`) may die fleet-wide, but only when **several inboxes** fail (at least three). One or two readings is not enough. Sitting / off-week inboxes get the known-good test only; if those fail, they count toward that several.
+
+**A campaign in spam is a flag**, not a death sentence. Something is wrong — inboxes **or** copy — and isolation is the research. Every diagnosis Slack/`/ops` shows proof: what ran, who failed, why it is not the other cause.
+
+**Autonomy choice A.** Daily rest and fill-up stay automatic. Only killing a domain waits for Josh; after he approves, health fills on its own. Do not ask before every rest or rotation (that was C). Do not wait to restaff after an approved retire (that was B).
+
+Josh's Slack user ids (`SLACK_JOSH_USER_ID`) and Cayden's (`SLACK_CAYDEN_USER_ID`) map button taps. Interactivity URL is `POST /slack/interactions` with `SLACK_SIGNING_SECRET`. `/ops` Isolation panel is the same queue in the Railway UI.
+
+**Why.** The wizard was a dashboard Josh still had to interpret. After production showed cold clocks and copy-driven Outlook fails, the missing piece was: prove the cause, then only stop for money, a dead domain, or a live word change.
+
+**Tradeoff.** Slack buttons spend real money once Josh taps. Accepted: that *is* the approval. Nameserver lag may delay mailbox orders; resume finishes them without a second tap.
+
+**Guards.** Owner-intent D49; `canDecideIsolationAction`; domain rollup needs multiple fleet inbox fails; campaign placement does not open a retire.
+

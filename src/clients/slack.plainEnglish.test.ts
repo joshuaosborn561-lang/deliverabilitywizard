@@ -173,6 +173,12 @@ describe("Slack copy is plain English (D47)", () => {
       kind: "buy_domains",
       who: "Josh",
     });
+    await client.notifyLeadRunout({
+      text: "Parlay A is three quarters through its list. About 400 leads left, sending about 200 a day, so about 2 days. This one is working, so running out matters. You need the next batch in hand. I have not imported anything.",
+    });
+    await client.notifySendingInfra({
+      text: "Our mailboxes are sending from reputable ranges in the right region.\nThe add-on that claims a reply lift by moving inboxes onto better IPs would buy us nothing. Drop it.",
+    });
 
     assert.ok(sent.length >= 7);
     for (const [i, text] of sent.entries()) {

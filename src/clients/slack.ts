@@ -1173,4 +1173,12 @@ export class SlackClient {
       },
     ]);
   }
+
+  async notifyLeadRunout(details: { text: string }): Promise<void> {
+    await this.send(details.text);
+  }
+
+  async notifySendingInfra(details: { text: string }): Promise<void> {
+    await this.send(details.text);
+  }
 }

@@ -1397,3 +1397,96 @@ describe("owner intent — D59 clean slate", () => {
     );
   });
 });
+
+describe("owner intent — D52 lead runout", () => {
+  it("D52: watch remaining leads; never import; do not reuse campaign audit", async () => {
+    assert.equal(
+      defaults.enableLeadRunout,
+      true,
+      stop(
+        "Tell Josh when a live campaign is running out of leads (D52).",
+        "ENABLE_LEAD_RUNOUT now defaults off.",
+      ),
+    );
+    const { formatRunoutMessage } = await import("../lib/leadRunout.js");
+    const text = formatRunoutMessage({
+      campaignName: "Parlay A",
+      stage: "half",
+      remaining: 400,
+      sentPerDay: 100,
+      performance: "working",
+    });
+    assert.match(
+      text,
+      /have not imported/i,
+      stop(
+        "Lead runout tells Josh and waits. It never imports (D52).",
+        "The Slack copy no longer says we have not imported.",
+      ),
+    );
+    const { readFileSync } = await import("node:fs");
+    const runout = readFileSync(new URL("../services/leadRunout.ts", import.meta.url), "utf8");
+    const audit = readFileSync(new URL("../services/campaignAudit.ts", import.meta.url), "utf8");
+    assert.doesNotMatch(
+      runout,
+      /addLeads|importLeads|uploadLeads/i,
+      stop(
+        "Lead runout must not import leads (D52).",
+        "leadRunout.ts now writes leads.",
+      ),
+    );
+    assert.doesNotMatch(
+      audit,
+      /total_leads|notStarted|lead_stats/i,
+      stop(
+        "Campaign audit watches senders, not remaining leads (D52).",
+        "campaignAudit.ts now watches the same lead number.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D53 sending infra", () => {
+  it("D53: census sending IPs from placement reports; do not spend", async () => {
+    assert.equal(
+      defaults.enableSendingInfraCensus,
+      true,
+      stop(
+        "Read sending IPs from placement reports before any add-on (D53).",
+        "ENABLE_SENDING_INFRA_CENSUS now defaults off.",
+      ),
+    );
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(
+      new URL("../services/sendingInfra.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      source,
+      /spendGateway|purchase|porkbun|inboxkit/i,
+      stop(
+        "The infra census must not spend (D53).",
+        "sendingInfra.ts now touches spend or a vendor buy.",
+      ),
+    );
+    const { formatInfraMessage, summarizeSendingInfra } = await import(
+      "../lib/sendingInfra.js"
+    );
+    const good = formatInfraMessage(
+      summarizeSendingInfra([
+        {
+          ip: "142.250.1.1",
+          domain: "crosslaunchco.com",
+          country: "United States",
+          owner: "Google LLC",
+          regionOk: true,
+          listed: false,
+          listNames: [],
+          reputableEsp: true,
+        },
+      ]),
+    );
+    assert.match(good, /would buy us nothing/);
+    assert.doesNotMatch(good, /D\d+/);
+  });
+});

@@ -254,6 +254,17 @@ They are not equivalent:
 
 Pick one deliberately. They have not been consolidated.
 
+## Lead runout and sending IPs
+
+Campaign audit watches **sender headcount**. Send volume watches **today's
+sent count**. Remaining leads are a third number (D52): Slack at half,
+three quarters, and done, with leads left and recent send rate. Never
+import. A working campaign running low is urgent; a silent campaign
+running low is "do not top up."
+
+Sending IPs come from placement reports we already pull (D53). Do not
+buy an add-on until that census says the ranges are bad.
+
 ## Before changing behaviour
 
 - `npm run typecheck && npm test` must pass

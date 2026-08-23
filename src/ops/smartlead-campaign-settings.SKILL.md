@@ -396,5 +396,14 @@ this loop. Placement-test quota is unlimited (D45).
 Health owns rest execution, hold rebuild, top-up, fan-out, live 80% / 5%
 pulls, and pause handling. Do not duplicate those here.
 
+## Isolation (D48)
+
+Standing per-pod control tests (fixed control email) answer inboxes vs copy.
+If copy, the wizard starts a same-day one-variable teardown from the
+low-rep isolation domain — tests are unlimited, do not wait for seed
+approval. **Recommend the change. Do not edit the live sequence.** Isolation
+mailboxes never attach to a campaign. A confirmed trigger is a pre-send
+lint warning, not a launch block.
+
 If Josh changes a standard, **update this skill** rather than relying on a
 future session remembering the old number.

@@ -15,6 +15,7 @@ import {
   isHeldRecoveryTestName,
   isRestRecoveryTestName,
 } from "./heldPlacementTests.js";
+import { isIsolationManagedTestName } from "../lib/isolationNames.js";
 
 export interface StoppedTest {
   testId: string;
@@ -131,6 +132,10 @@ export class TestReconciler {
         Boolean(heldRecord) || isHeldRecoveryTestName(test.test_name);
       const isRestRecovery =
         Boolean(restRecord) || isRestRecoveryTestName(test.test_name);
+      if (isIsolationManagedTestName(test.test_name)) {
+        result.keptActive += 1;
+        continue;
+      }
       if (isHeldRecovery) {
         const heldEmails = new Set(
           this.state.listHeldInboxes().map((h) => h.email.toLowerCase()),

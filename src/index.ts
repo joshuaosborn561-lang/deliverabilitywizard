@@ -52,6 +52,11 @@ import {
 } from "./ops/manualRotation.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
+import { PodControlService } from "./services/podControls.js";
+import { IsolationRigService } from "./services/isolationRig.js";
+import { CopyIsolationService } from "./services/copyIsolation.js";
+import { IsolationBranchService } from "./services/isolationBranch.js";
+import { DeliveryWatchService } from "./services/deliveryWatch.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -303,6 +308,47 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const isolationRig = new IsolationRigService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const copyIsolation = new CopyIsolationService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    isolationRig,
+  );
+  const isolationBranch = new IsolationBranchService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    copyIsolation,
+    isolationRig,
+  );
+  const podControls = new PodControlService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const deliveryWatch = new DeliveryWatchService(
+    config,
+    smartlead,
+    slack,
+    state,
+    isolationBranch,
+  );
+  void isolationRig.applyDenylist().catch((error) => {
+    console.warn("[isolation-rig] denylist at boot failed", error);
+  });
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,
@@ -621,6 +667,40 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[bounce-investigate] failed", error);
       }
+      let podControlResult: unknown = null;
+      if (config.enablePodControls) {
+        try {
+          podControlResult = await podControls.run();
+        } catch (error) {
+          console.warn("[pod-controls] failed", error);
+        }
+      }
+      let isolationRigResult: unknown = null;
+      if (config.enableIsolationRig) {
+        try {
+          isolationRigResult = await isolationRig.run();
+        } catch (error) {
+          console.warn("[isolation-rig] failed", error);
+        }
+      }
+      let isolationBranchResult: unknown = null;
+      if (config.enableIsolationBranch) {
+        try {
+          isolationBranchResult = await isolationBranch.run();
+        } catch (error) {
+          console.warn("[isolation-branch] failed", error);
+        }
+      }
+      if (config.enableCopyIsolation) {
+        try {
+          for (const run of state.listIsolationRuns()) {
+            if (!run.teardownStarted) continue;
+            await copyIsolation.runForCampaign(run);
+          }
+        } catch (error) {
+          console.warn("[copy-isolation] poll failed", error);
+        }
+      }
       return {
         monitor: monitorResult,
         remediation: remediationResult,
@@ -631,6 +711,9 @@ async function main(): Promise<void> {
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
         bounceInvestigate: bounceInvestigateResult,
+        podControls: podControlResult,
+        isolationRig: isolationRigResult,
+        isolationBranch: isolationBranchResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -655,6 +738,11 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronAccountReconnect)) {
     throw new Error(
       `Invalid CRON_ACCOUNT_RECONNECT expression: ${config.cronAccountReconnect}`,
+    );
+  }
+  if (!cron.validate(config.cronDeliveryWatch)) {
+    throw new Error(
+      `Invalid CRON_DELIVERY_WATCH expression: ${config.cronDeliveryWatch}`,
     );
   }
   const sendVolumeSchedules = parseSchedules(config.cronSendVolume);
@@ -686,6 +774,18 @@ async function main(): Promise<void> {
       () => {
         void clientDayBrief.run().catch((error) => {
           console.error("[client-day] Unhandled cron error", error);
+        });
+      },
+      { timezone: "America/New_York" },
+    );
+  }
+
+  if (config.enableDeliveryWatch) {
+    cron.schedule(
+      config.cronDeliveryWatch,
+      () => {
+        void deliveryWatch.run().catch((error) => {
+          console.error("[delivery-watch] Unhandled cron error", error);
         });
       },
       { timezone: "America/New_York" },
@@ -1000,6 +1100,42 @@ async function main(): Promise<void> {
         assertRuntimeSecrets(config);
         const result = await bounceInvestigate.run();
         res.json({ ok: true, mode: "bounce-investigate", result });
+        return;
+      }
+      if (mode === "pod-controls" || mode === "pod-control") {
+        assertRuntimeSecrets(config);
+        const result = await podControls.run();
+        res.json({ ok: true, mode: "pod-controls", result });
+        return;
+      }
+      if (mode === "isolation-rig" || mode === "rig") {
+        assertRuntimeSecrets(config);
+        const result = await isolationRig.run({
+          force:
+            String(req.query.force ?? req.body?.force ?? "") === "1" ||
+            String(req.query.force ?? req.body?.force ?? "").toLowerCase() ===
+              "true",
+        });
+        res.json({ ok: true, mode: "isolation-rig", result });
+        return;
+      }
+      if (mode === "isolation" || mode === "isolation-branch") {
+        assertRuntimeSecrets(config);
+        const campaignId = Number(
+          req.query.campaignId ?? req.body?.campaignId ?? "",
+        );
+        const result = Number.isFinite(campaignId) && campaignId > 0
+          ? {
+              run: await isolationBranch.evaluate(campaignId),
+            }
+          : await isolationBranch.run();
+        res.json({ ok: true, mode: "isolation", result });
+        return;
+      }
+      if (mode === "delivery-watch" || mode === "copy-watch") {
+        assertRuntimeSecrets(config);
+        const result = await deliveryWatch.run();
+        res.json({ ok: true, mode: "delivery-watch", result });
         return;
       }
       if (mode === "remediate") {

@@ -696,6 +696,13 @@ export class RemediationService {
       }
     }
     if (copyDeferByCampaign.size) {
+      for (const id of copyDeferByCampaign.keys()) {
+        this.state.markCopySuspect({
+          campaignId: id,
+          campaignName: campaignNameById.get(id),
+          at: new Date().toISOString(),
+        });
+      }
       const lines = [
         "Low inbox looks like *copy/offer* filtering (not a single mailbox). Holding sender rotation — test/fix the campaign copy:",
         ...[...copyDeferByCampaign.entries()].map(

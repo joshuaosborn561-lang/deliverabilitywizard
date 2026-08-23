@@ -795,3 +795,113 @@ describe("owner intent — D47 plain English Slack", () => {
     );
   });
 });
+
+describe("owner intent — D48 isolation", () => {
+  it("D48: isolation reports only; tests are unlimited and do not wait for seed approval", async () => {
+    assert.equal(
+      defaults.enablePodControls,
+      true,
+      stop(
+        "Standing pod controls start on their own (D48).",
+        "ENABLE_POD_CONTROLS now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.enableCopyIsolation,
+      true,
+      stop(
+        "Copy teardown starts on its own when the verdict is copy (D48).",
+        "ENABLE_COPY_ISOLATION now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.totalTestQuota,
+      0,
+      stop(
+        "Isolation must not re-cap SmartDelivery tests (D45/D48).",
+        `TOTAL_TEST_QUOTA default is ${defaults.totalTestQuota}.`,
+      ),
+    );
+    assert.equal(
+      "podControlSeedApproved" in defaults,
+      false,
+      stop(
+        "Do not hold isolation tests for seed approval (D48).",
+        "A seed-approval config flag is back.",
+      ),
+    );
+
+    const { SmartleadClient } = await import("../clients/smartlead.js");
+    const { IsolationAttachBlockedError } = await import(
+      "../lib/isolationDomain.js"
+    );
+    const client = new SmartleadClient("test-key");
+    client.setIsolationDenylist([99]);
+    await assert.rejects(
+      () => client.addEmailAccountsToCampaign(1, [99]),
+      IsolationAttachBlockedError,
+      stop(
+        "Isolation-domain mailboxes never attach to a campaign (D48).",
+        "The denylist did not block addEmailAccountsToCampaign.",
+      ),
+    );
+
+    const { decideIsolationVerdict, failedControlIsNeverCopy } = await import(
+      "../lib/isolationVerdict.js"
+    );
+    const failing = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["SPAM"],
+    });
+    assert.equal(
+      failing.verdict,
+      "INFRA",
+      stop(
+        "A failing control is inboxes, not copy (D48).",
+        `Verdict was ${failing.verdict}.`,
+      ),
+    );
+    assert.equal(
+      failedControlIsNeverCopy(failing),
+      true,
+      stop(
+        "A failed control is never a copy finding (D48).",
+        "COPY leaked from a failing control.",
+      ),
+    );
+
+    const { isSingleVariable } = await import("../lib/copyVariants.js");
+    assert.equal(
+      isSingleVariable(
+        { subject: "A", body: "B" },
+        { subject: "C", body: "D" },
+      ),
+      false,
+      stop(
+        "A two-change variant is discarded (D48).",
+        "Two-field edits now count as one variable.",
+      ),
+    );
+
+    const { campaignSetupPrompt } = await import(
+      "../ops/campaignSetupPrompt.js"
+    );
+    const prompt = campaignSetupPrompt();
+    assert.match(
+      prompt,
+      /never edits the live sequence/i,
+      stop(
+        "Isolation is report-only on campaigns (D48).",
+        "campaignSetupPrompt dropped the report-only rule.",
+      ),
+    );
+    assert.match(
+      prompt,
+      /do not hold a copy teardown for seed approval/i,
+      stop(
+        "Copy teardown does not wait for seed approval (D48).",
+        "campaignSetupPrompt still treats isolation tests as gated.",
+      ),
+    );
+  });
+});

@@ -930,3 +930,25 @@ name still has the logs.
 
 **Guards.** `slackJargonHits` / `slack.plainEnglish.test.ts`; owner-intent D47.
 
+---
+
+## D48 — Isolation system: report-only on campaigns, unlimited tests
+
+**Decision.** When a campaign is in spam, the wizard answers **inboxes vs copy**, and if copy, **which element**. It does that with standing per-pod control tests plus a low-rep isolation rig. It **never** pauses, edits, launches, or attaches isolation-domain mailboxes to a production campaign. Slack recommends the fix; a human edits the sequence.
+
+Standing controls are keyed to a **pod** (that client's A group, B group, or the generic sending / sitting piles), not to each campaign. One control test (chunked at 50 senders — SmartDelivery's API limit) attaches every mailbox in the pod and is read **per sender**. A campaign inherits the reading of the mailboxes it is actually sending from. A burnt minority in an otherwise fine pod is still inboxes, not copy.
+
+The control email is a versioned constant (no offer, no link, no spam vocabulary). Changing it starts a new `control_version`. A failed control is never a copy finding.
+
+Copy teardown (one change per variant, same day, same isolation domain, in parallel) **starts on its own** when the verdict is copy. Do **not** hold those SmartDelivery tests for seed approval. Josh (2026-08-23): unlimited monthly tests — do not be stingy and do not ask. That qualifies the draft isolation plan's "estimate seeds and stop for approval" and "do not auto-run Phase 2" lines. `TOTAL_TEST_QUOTA` stays 0 (D45). Real-money spend (buying the isolation domain) still needs D4 approval.
+
+Keep/watch/kill tags on control history are **evidence for a cull note**, not an automatic pull. Live rotation stays 80% same-ESP (D32) and 5% bounce (D5). Copy/offer still does not bench senders (D28).
+
+Persistence stays the Railway state file (this app's system of record). Do not add a second database for isolation.
+
+**Why.** Eric found "free" alone burying a campaign; "complimentary" fixed it in hours. At 75–95 words with one proof point, a single word is a live risk and there was no diagnostic. Live SmartDelivery against production pods is uninterpretable in both directions — trusted infra can land bad copy, and a struggling pod can bury good copy. A standing control on the pod, plus a deliberately low-rep rig for teardown, is the constant.
+
+**Tradeoff.** Standing controls consume seeds every cycle. Accepted: tests are unlimited, and the alternative is guessing. The isolation domain must stay cold and off campaigns or it will start masking copy the same way production pods do.
+
+**Guards.** Isolation denylist on `addEmailAccountsToCampaign`; failed control never `COPY`; one variable per variant; no seed-approval gate on isolation tests; owner-intent D48.
+

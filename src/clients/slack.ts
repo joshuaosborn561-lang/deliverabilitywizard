@@ -930,6 +930,7 @@ export class SlackClient {
     bounceFlat?: boolean;
     teardownStarted?: boolean;
     infraSummary?: string;
+    proof?: string;
   }): Promise<void> {
     const who = [details.clientName, details.campaignName, details.podName]
       .filter(Boolean)
@@ -946,15 +947,17 @@ export class SlackClient {
     let verdictLine: string;
     if (details.verdict === "COPY") {
       verdictLine = details.teardownStarted
-        ? "The standing inbox test for these senders landed in the inbox. This is the copy, not the inboxes. The word hunt is already running — we will not edit the live email."
-        : "The standing inbox test for these senders landed in the inbox. This is the copy, not the inboxes.";
+        ? "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes. The word hunt is already running. I will not edit the live email until you tap Switch the word."
+        : "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes.";
     } else if (details.verdict === "INFRA") {
       verdictLine =
-        "The standing inbox test for these senders also landed in spam. This is the inboxes, not the copy. Do not rewrite the email.";
+        "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes also landed in spam, so this is the inboxes, not the copy. Do not rewrite the email.";
     } else if (details.verdict === "HEALTHY") {
       verdictLine = "Campaign and standing inbox test both look fine.";
     } else {
-      verdictLine = details.reason;
+      verdictLine =
+        details.reason ||
+        "This campaign is in spam. That is a flag — either the inboxes or the copy. I need another known-good reading before I pick one.";
     }
 
     await this.send(
@@ -963,9 +966,7 @@ export class SlackClient {
         watch,
         verdictLine,
         details.infraSummary,
-        details.reason && details.verdict !== "INCONCLUSIVE"
-          ? undefined
-          : undefined,
+        details.proof,
       ]
         .filter((line): line is string => Boolean(line))
         .join("\n"),
@@ -1069,5 +1070,54 @@ export class SlackClient {
         "Turn it on in Smartlead if you want that alert. We did not change campaign settings.",
       ].join("\n"),
     );
+  }
+
+  async notifyIsolationAction(details: {
+    title: string;
+    proof: string;
+    actionId: string;
+    kind: "retire_domain" | "buy_domains" | "swap_copy";
+    who: string;
+  }): Promise<void> {
+    const approveLabel =
+      details.kind === "swap_copy"
+        ? "Switch the word"
+        : details.kind === "buy_domains"
+          ? "Buy replacements"
+          : "Retire this domain";
+    const text = [
+      `*${details.title}*`,
+      details.proof,
+      "",
+      details.kind === "buy_domains"
+        ? "Cayden cannot approve a purchase. Josh: tap the button or open Railway → /ops."
+        : details.kind === "retire_domain"
+          ? "Josh: tap to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
+          : "Josh or Cayden: tap to switch the live email. I will change only that one word.",
+    ].join("\n");
+    await this.send(text, [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: approveLabel },
+            style: "primary",
+            action_id: "isolation_approve",
+            value: `${details.kind}:${details.actionId}:approve`,
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Not now" },
+            action_id: "isolation_deny",
+            value: `${details.kind}:${details.actionId}:deny`,
+          },
+        ],
+      },
+    ]);
   }
 }

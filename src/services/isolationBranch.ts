@@ -12,6 +12,7 @@ import {
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
 import { decideIsolationVerdict } from "../lib/isolationVerdict.js";
+import { campaignProof } from "../lib/isolationProof.js";
 import { nyDateLabel } from "../lib/campaignDayStats.js";
 import type { IsolationRunRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
@@ -154,6 +155,21 @@ export class IsolationBranchService {
       this.state.upsertIsolationRun(run);
     }
 
+    const proof = campaignProof({
+      verdict: decided.verdict,
+      controlVersion: this.state.getIsolation().controlTemplate?.controlVersion,
+      senderSummary: `${emails.length} inbox${emails.length === 1 ? "" : "es"} on this campaign`,
+      whyNotTheOther: whyNotTheOtherCause(decided.verdict, decided.reason),
+      next:
+        decided.verdict === "COPY"
+          ? "I will not edit the live email until Josh or Cayden tap Switch the word."
+          : decided.verdict === "INFRA"
+            ? "I will not rewrite the email. Domain retire or a replacement buy still waits for Josh."
+            : "I will keep testing. A campaign in spam is a flag, not a domain death sentence.",
+    });
+    run.notes = proof;
+    this.state.upsertIsolationRun(run);
+
     if (!opts.silent) {
       await this.slack.notifyIsolationVerdict({
         campaignName: campaign.name,
@@ -163,6 +179,7 @@ export class IsolationBranchService {
         reason: decided.reason,
         teardownStarted: run.teardownStarted,
         infraSummary: summarizeInfra(infraCheck),
+        proof,
       });
     }
     await this.state.save();
@@ -221,6 +238,22 @@ function decidedNeedsRig(
     senderControls.some((placement) => placement === "PRIMARY") &&
     !senderControls.some((placement) => placement === "SPAM")
   );
+}
+
+function whyNotTheOtherCause(
+  verdict: IsolationRunRecord["verdict"],
+  reason: string,
+): string {
+  if (verdict === "COPY") {
+    return "Why not the inboxes: the same inboxes landed the known-good email (no offer, no link, no spam words).";
+  }
+  if (verdict === "INFRA") {
+    return "Why not the copy: the known-good email from those same inboxes also landed in spam, so rewriting the campaign will not fix this.";
+  }
+  if (verdict === "HEALTHY") {
+    return "Why nothing is broken: the campaign test and the known-good email both look fine.";
+  }
+  return `Why I will not pick a cause yet: ${reason}`;
 }
 
 function summarizeInfra(infra?: Record<string, unknown>): string | undefined {

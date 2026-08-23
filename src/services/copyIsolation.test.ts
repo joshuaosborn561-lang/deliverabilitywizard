@@ -50,6 +50,7 @@ describe("copy isolation", () => {
     const slack = {
       notifyCopyIsolation: async () => undefined,
       notifyIsolationVerdict: async () => undefined,
+      notifyIsolationAction: async () => undefined,
     };
     const rig = new IsolationRigService(
       { ...config, isolationDomain: "iso.test", isolationMailboxEmails: ["lab@iso.test"] },

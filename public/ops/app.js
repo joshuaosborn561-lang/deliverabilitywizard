@@ -154,6 +154,7 @@ async function loadDashboard(force = false) {
   if (state.user.role === "owner") {
     $("#approval-badge").textContent = String(data.pendingApprovals || 0);
   }
+  $("#isolation-badge").textContent = String(data.pendingIsolation || 0);
   if (data.fleetError) toast(`Live fleet count unavailable: ${data.fleetError}`);
   if (data.campaignSetupPrompt) {
     $("#setup-prompt").textContent = data.campaignSetupPrompt;
@@ -164,9 +165,10 @@ async function loadDashboard(force = false) {
 function switchPanel(name) {
   $$(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.panel === name));
   $$(".panel").forEach((panel) => panel.classList.toggle("active", panel.id === `${name}-panel`));
-  const title = { overview: "Overview", placement: "Placement results", chat: "Assistant", approvals: "Approvals", audit: "Audit log" };
+  const title = { overview: "Overview", placement: "Placement results", isolation: "Isolation", chat: "Assistant", approvals: "Approvals", audit: "Audit log" };
   $("#panel-title").textContent = title[name] || name;
   if (name === "approvals") loadApprovals().catch((error) => toast(error.message));
+  if (name === "isolation") loadIsolation().catch((error) => toast(error.message));
   if (name === "audit") loadAudit().catch((error) => toast(error.message));
   if (name === "placement" && !state.placementRows.length) {
     loadPlacement().catch((error) => toast(error.message));
@@ -438,6 +440,120 @@ async function executeRotation(email, button) {
   }
 }
 
+function isolationKindLabel(kind) {
+  if (kind === "buy_domains") return "Buy replacements";
+  if (kind === "retire_domain") return "Retire domain";
+  if (kind === "swap_copy") return "Switch the word";
+  return kind;
+}
+
+function canDecideIsolation(action) {
+  if (action.status !== "pending") return false;
+  if (action.kind === "swap_copy") return true;
+  return state.user.role === "owner";
+}
+
+async function loadIsolation() {
+  const data = await api("/isolation");
+  const actions = $("#isolation-actions");
+  const domains = $("#isolation-domains");
+  const runs = $("#isolation-runs");
+  if (!data.actions.length) {
+    actions.replaceChildren(make("p", "muted", "Nothing waiting on a human."));
+  } else {
+    actions.replaceChildren(
+      ...data.actions.map((action) => {
+        const card = make("div", "stack-card");
+        const header = make("header");
+        header.append(
+          make("strong", "", action.title || isolationKindLabel(action.kind)),
+          make("span", `status ${action.status}`, action.status),
+        );
+        card.append(header);
+        if (action.proof) card.append(make("pre", "setup-prompt", action.proof));
+        card.append(make("p", "muted", formatDate(action.requestedAt)));
+        if (canDecideIsolation(action)) {
+          const row = make("div", "approval-actions");
+          const approve = make(
+            "button",
+            "approve",
+            action.kind === "swap_copy"
+              ? "Switch the word"
+              : action.kind === "buy_domains"
+                ? "Buy replacements"
+                : "Retire this domain",
+          );
+          const deny = make("button", "deny", "Not now");
+          approve.addEventListener("click", () => decideIsolation(action.id, "approve"));
+          deny.addEventListener("click", () => decideIsolation(action.id, "deny"));
+          row.append(approve, deny);
+          card.append(row);
+        } else if (action.status === "pending" && state.user.role !== "owner") {
+          card.append(make("p", "muted", "Josh has to approve this one."));
+        }
+        return card;
+      }),
+    );
+  }
+
+  if (!data.domains.length) {
+    domains.replaceChildren(make("p", "muted", "No known-good domain readings yet."));
+  } else {
+    domains.replaceChildren(
+      ...data.domains.map((row) => {
+        const card = make("div", "stack-card");
+        const header = make("header");
+        header.append(make("strong", "", row.domain), make("span", `status ${row.status}`, row.status));
+        card.append(header);
+        card.append(
+          make(
+            "p",
+            "",
+            row.fleet
+              ? `${row.consecutiveFails} fail cycle${row.consecutiveFails === 1 ? "" : "s"} in a row. Fleet domain — several inboxes must fail.`
+              : `${row.consecutiveFails} fail cycle${row.consecutiveFails === 1 ? "" : "s"} in a row.`,
+          ),
+        );
+        if (row.lastReason) card.append(make("p", "muted", row.lastReason));
+        const last = row.readings?.[row.readings.length - 1];
+        if (last?.failingEmails?.length) {
+          card.append(make("p", "", `Failed: ${last.failingEmails.join(", ")}`));
+        }
+        return card;
+      }),
+    );
+  }
+
+  if (!data.runs.length) {
+    runs.replaceChildren(make("p", "muted", "No campaign copy-or-inboxes checks yet."));
+  } else {
+    runs.replaceChildren(
+      ...data.runs.map((run) => {
+        const card = make("div", "stack-card");
+        const header = make("header");
+        header.append(
+          make("strong", "", run.campaignName || `Campaign ${run.campaignId}`),
+          make("span", `status ${run.verdict}`, run.verdict),
+        );
+        card.append(header, make("p", "", run.reason || ""));
+        if (run.notes) card.append(make("pre", "setup-prompt", run.notes));
+        return card;
+      }),
+    );
+  }
+}
+
+async function decideIsolation(id, decision) {
+  const label = decision === "approve" ? "Do this" : "Leave it";
+  if (!window.confirm(`${label}?`)) return;
+  const result = await api(`/isolation/actions/${encodeURIComponent(id)}/${decision}`, {
+    method: "POST",
+    body: JSON.stringify({ confirm: true }),
+  });
+  toast(result.message || `Request ${decision}d`);
+  await Promise.all([loadIsolation(), loadDashboard()]);
+}
+
 async function loadApprovals() {
   if (state.user.role !== "owner") return;
   const { approvals } = await api("/approvals");
@@ -593,6 +709,7 @@ $$("[data-sort]").forEach((button) =>
   }),
 );
 $("#refresh-approvals").addEventListener("click", () => loadApprovals().catch((error) => toast(error.message)));
+$("#refresh-isolation").addEventListener("click", () => loadIsolation().catch((error) => toast(error.message)));
 $("#refresh-audit").addEventListener("click", () => loadAudit().catch((error) => toast(error.message)));
 
 (async function boot() {

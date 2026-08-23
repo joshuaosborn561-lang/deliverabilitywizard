@@ -109,6 +109,48 @@ export interface CopySuspectRecord {
   evaluatedAt?: string;
 }
 
+export type IsolationActionKind =
+  | "retire_domain"
+  | "buy_domains"
+  | "swap_copy";
+
+export type IsolationActionStatus =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "executed"
+  | "failed";
+
+export interface IsolationActionRecord {
+  id: string;
+  kind: IsolationActionKind;
+  status: IsolationActionStatus;
+  title: string;
+  proof: string;
+  detail: Record<string, unknown>;
+  allowed: "owner" | "owner_or_operator";
+  requestedAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+  executedAt?: string;
+  error?: string;
+}
+
+export interface DomainControlHistoryRecord {
+  domain: string;
+  fleet: boolean;
+  consecutiveFails: number;
+  status: "ok" | "watch" | "retire_pending" | "retired";
+  readings: Array<{
+    at: string;
+    domainFailed: boolean;
+    failingEmails: string[];
+    testedEmails: string[];
+  }>;
+  lastReason?: string;
+  retiredAt?: string;
+}
+
 export interface IsolationState {
   controlTemplate: IsolationControlTemplateRecord | null;
   folders: IsolationFolderRecord;
@@ -123,6 +165,8 @@ export interface IsolationState {
   lastPodControlAt: string | null;
   lastDeliveryWatchAt: string | null;
   lastRigBaselineAt: string | null;
+  domainHistory: Record<string, DomainControlHistoryRecord>;
+  actions: Record<string, IsolationActionRecord>;
 }
 
 export const EMPTY_ISOLATION_STATE: IsolationState = {
@@ -139,6 +183,8 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   lastPodControlAt: null,
   lastDeliveryWatchAt: null,
   lastRigBaselineAt: null,
+  domainHistory: {},
+  actions: {},
 };
 
 export function normalizeIsolationState(
@@ -160,5 +206,7 @@ export function normalizeIsolationState(
     lastPodControlAt: raw?.lastPodControlAt ?? null,
     lastDeliveryWatchAt: raw?.lastDeliveryWatchAt ?? null,
     lastRigBaselineAt: raw?.lastRigBaselineAt ?? null,
+    domainHistory: raw?.domainHistory ?? {},
+    actions: raw?.actions ?? {},
   };
 }

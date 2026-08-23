@@ -13,7 +13,13 @@ import {
   testIdOf,
 } from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
+import { PorkbunClient } from "./clients/porkbun.js";
 import { SlackClient } from "./clients/slack.js";
+import { slackRoleOf } from "./lib/isolationActors.js";
+import {
+  parseIsolationActionValue,
+  slackSignatureValid,
+} from "./lib/slackSignature.js";
 import { StateStore, type PoolProvisionPhase } from "./state/store.js";
 import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
@@ -57,6 +63,9 @@ import { IsolationRigService } from "./services/isolationRig.js";
 import { CopyIsolationService } from "./services/copyIsolation.js";
 import { IsolationBranchService } from "./services/isolationBranch.js";
 import { DeliveryWatchService } from "./services/deliveryWatch.js";
+import { IsolationBuyService } from "./services/isolationBuy.js";
+import { IsolationExecuteService } from "./services/isolationExecute.js";
+import { DomainLifecycleService } from "./services/domainLifecycle.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -339,6 +348,28 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const porkbun =
+    config.porkbunApiKey && config.porkbunSecretApiKey
+      ? new PorkbunClient({
+          apiKey: config.porkbunApiKey,
+          secretApiKey: config.porkbunSecretApiKey,
+        })
+      : null;
+  const isolationBuy = new IsolationBuyService(
+    config,
+    inboxkit,
+    porkbun,
+    state,
+    spendGateway,
+  );
+  const isolationExecute = new IsolationExecuteService(
+    config,
+    smartlead,
+    slack,
+    state,
+    isolationBuy,
+  );
+  const domainLifecycle = new DomainLifecycleService(config, state, slack);
   const deliveryWatch = new DeliveryWatchService(
     config,
     smartlead,
@@ -671,6 +702,16 @@ async function main(): Promise<void> {
       if (config.enablePodControls) {
         try {
           podControlResult = await podControls.run();
+          try {
+            await domainLifecycle.run();
+          } catch (error) {
+            console.warn("[domain-lifecycle] failed", error);
+          }
+          try {
+            await isolationBuy.resume();
+          } catch (error) {
+            console.warn("[isolation-buy] resume failed", error);
+          }
         } catch (error) {
           console.warn("[pod-controls] failed", error);
         }
@@ -845,6 +886,75 @@ async function main(): Promise<void> {
   // req.ip useful for login throttling without trusting arbitrary forwarded
   // chains.
   app.set("trust proxy", 1);
+  app.post(
+    "/slack/interactions",
+    express.raw({ type: "application/x-www-form-urlencoded" }),
+    async (req, res) => {
+      try {
+        const rawBody = Buffer.isBuffer(req.body)
+          ? req.body.toString("utf8")
+          : String(req.body ?? "");
+        if (
+          !slackSignatureValid({
+            signingSecret: config.slackSigningSecret,
+            timestamp: String(req.header("x-slack-request-timestamp") ?? ""),
+            rawBody,
+            signature: String(req.header("x-slack-signature") ?? ""),
+          })
+        ) {
+          res.status(401).json({ error: "Bad Slack signature" });
+          return;
+        }
+        const payloadRaw = new URLSearchParams(rawBody).get("payload");
+        if (!payloadRaw) {
+          res.status(400).json({ error: "Missing payload" });
+          return;
+        }
+        const payload = JSON.parse(payloadRaw) as {
+          user?: { id?: string; name?: string; username?: string };
+          actions?: Array<{ value?: string }>;
+        };
+        const parsed = parseIsolationActionValue(
+          payload.actions?.[0]?.value ?? "",
+        );
+        if (!parsed) {
+          res.status(200).json({ text: "That button is not one I handle." });
+          return;
+        }
+        const role = slackRoleOf(
+          payload.user?.id,
+          config.slackJoshUserIds,
+          config.slackCaydenUserIds,
+        );
+        const name =
+          role === "owner"
+            ? "Josh"
+            : role === "operator"
+              ? "Cayden"
+              : payload.user?.name || payload.user?.username || "unknown";
+        if (
+          role === "unknown" &&
+          (parsed.kind === "buy_domains" || parsed.kind === "retire_domain")
+        ) {
+          res.status(200).json({
+            text: "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
+          });
+          return;
+        }
+        const result = await isolationExecute.decide(
+          parsed.id,
+          parsed.decision,
+          { name, role },
+        );
+        res.status(200).json({ text: result.message });
+      } catch (error) {
+        console.error("[slack-interactions]", error);
+        res.status(200).json({
+          text: error instanceof Error ? error.message : "That tap failed.",
+        });
+      }
+    },
+  );
   app.use(express.json({ limit: "100kb" }));
 
   app.use("/ops", (_req, res, next) => {
@@ -864,6 +974,7 @@ async function main(): Promise<void> {
       rotation: manualRotation,
       executeRotation: runManualRotation,
       cursorAssistant,
+      isolationExecute,
       runtime: {
         deliverability: runOpsDeliverability,
         dns: () => dnsAudit.run({ alert: false }),

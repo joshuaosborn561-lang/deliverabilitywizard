@@ -173,6 +173,22 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * Write sequence steps/variants. Only used after a human approves a
+   * one-word copy swap (D49).
+   */
+  updateCampaignSequences(
+    campaignId: number,
+    sequences: SmartleadSequence[],
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/sequences`, {
+        method: "POST",
+        body: { sequences },
+      }),
+    );
+  }
+
   async listAllEmailAccounts(options: {
     fetchCampaigns?: boolean;
   } = {}): Promise<SmartleadAccountWithCampaigns[]> {

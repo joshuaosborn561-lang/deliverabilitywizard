@@ -166,6 +166,13 @@ describe("Slack copy is plain English (D47)", () => {
       watch: 2,
       errors: [],
     });
+    await client.notifyIsolationAction({
+      title: "Buy a replacement for acme.info",
+      proof: "What I ran: the known-good email from 3 inboxes on acme.info.\nWho failed: a@acme.info, b@acme.info, c@acme.info.",
+      actionId: "buy-1",
+      kind: "buy_domains",
+      who: "Josh",
+    });
 
     assert.ok(sent.length >= 7);
     for (const [i, text] of sent.entries()) {

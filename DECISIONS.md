@@ -952,3 +952,27 @@ Persistence stays the Railway state file (this app's system of record). Do not a
 
 **Guards.** Isolation denylist on `addEmailAccountsToCampaign`; failed control never `COPY`; one variable per variant; no seed-approval gate on isolation tests; owner-intent D48.
 
+---
+
+## D49 — Autonomous isolation; humans only for retire, buy, and copy
+
+**Decision.** The wizard runs on its own: standing known-good tests, copy-vs-inboxes research, word hunting, daily rest, rotation, and filling campaigns back to 50 after a cut. A human is in the loop only for three things:
+
+1. **Retire a domain** — Josh only, Slack button or Railway `/ops`.
+2. **Buy replacement domains / mailboxes** — Josh only. Cayden cannot approve spend. Slack button is the approval (same D4 ledger; do not ask a second time in Approvals). Porkbun + InboxKit follow the existing onboarding path: spin `.info` names, buy at Porkbun, attach InboxKit nameservers, order mailboxes on the generic pool, register them `warming` (14 days from import).
+3. **Change live copy** — Josh **or** Cayden, Slack button or `/ops`. One recovered word. That qualifies D48's "never edit the sequence": the hunt still starts alone; the live email changes only after a tap.
+
+**Domains, not mailboxes.** Judge a domain only on the known-good email, never on campaign placement (copy fingerprinting must not condemn a domain). One domain-level fail cycle → count it in the buy-ahead number so replacements can warm. Two **consecutive** domain-level fails → ask Josh to retire. Fleet domains (`EXTRA_GENERIC_DOMAINS`) may die fleet-wide, but only when **several inboxes** fail (at least three). One or two readings is not enough. Sitting / off-week inboxes get the known-good test only; if those fail, they count toward that several.
+
+**A campaign in spam is a flag**, not a death sentence. Something is wrong — inboxes **or** copy — and isolation is the research. Every diagnosis Slack/`/ops` shows proof: what ran, who failed, why it is not the other cause.
+
+**Autonomy choice A.** Daily rest and fill-up stay automatic. Only killing a domain waits for Josh; after he approves, health fills on its own. Do not ask before every rest or rotation (that was C). Do not wait to restaff after an approved retire (that was B).
+
+Josh's Slack user ids (`SLACK_JOSH_USER_ID`) and Cayden's (`SLACK_CAYDEN_USER_ID`) map button taps. Interactivity URL is `POST /slack/interactions` with `SLACK_SIGNING_SECRET`. `/ops` Isolation panel is the same queue in the Railway UI.
+
+**Why.** The wizard was a dashboard Josh still had to interpret. After production showed cold clocks and copy-driven Outlook fails, the missing piece was: prove the cause, then only stop for money, a dead domain, or a live word change.
+
+**Tradeoff.** Slack buttons spend real money once Josh taps. Accepted: that *is* the approval. Nameserver lag may delay mailbox orders; resume finishes them without a second tap.
+
+**Guards.** Owner-intent D49; `canDecideIsolationAction`; domain rollup needs multiple fleet inbox fails; campaign placement does not open a retire.
+

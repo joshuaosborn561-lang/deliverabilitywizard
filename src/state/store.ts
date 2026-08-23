@@ -10,11 +10,13 @@ import {
   EMPTY_ISOLATION_STATE,
   normalizeIsolationState,
   type CopySuspectRecord,
+  type IsolationActionRecord,
   type IsolationRunRecord,
   type IsolationState,
   type IsolationVariantRecord,
   type MailboxControlResultRecord,
   type PodControlRecord,
+  type DomainControlHistoryRecord,
 } from "./isolationState.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
 
@@ -910,6 +912,34 @@ export class StateStore {
 
   listCopySuspects(): CopySuspectRecord[] {
     return Object.values(this.state.isolation.copySuspects);
+  }
+
+  upsertDomainHistory(record: DomainControlHistoryRecord): void {
+    this.state.isolation.domainHistory[record.domain.toLowerCase()] = record;
+  }
+
+  getDomainHistory(domain: string): DomainControlHistoryRecord | undefined {
+    return this.state.isolation.domainHistory[domain.toLowerCase()];
+  }
+
+  listDomainHistory(): DomainControlHistoryRecord[] {
+    return Object.values(this.state.isolation.domainHistory);
+  }
+
+  upsertIsolationAction(record: IsolationActionRecord): void {
+    this.state.isolation.actions[record.id] = record;
+  }
+
+  getIsolationAction(id: string): IsolationActionRecord | undefined {
+    return this.state.isolation.actions[id];
+  }
+
+  listIsolationActions(): IsolationActionRecord[] {
+    return Object.values(this.state.isolation.actions);
+  }
+
+  pendingIsolationActions(): IsolationActionRecord[] {
+    return this.listIsolationActions().filter((row) => row.status === "pending");
   }
 
   async save(): Promise<void> {

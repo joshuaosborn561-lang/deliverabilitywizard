@@ -22,6 +22,12 @@ import { ISOLATION_FOLDER_NAME, isolationVariantTestName } from "../lib/isolatio
 import { copySequence, isolationManualPayload } from "../lib/isolationPlacement.js";
 import { confirmSuppressedTerm } from "../lib/suppressedTerms.js";
 import { CONTROL_PRIMARY_THRESHOLD } from "../lib/mailboxControlTag.js";
+import { copySwapProof } from "../lib/isolationProof.js";
+import {
+  buildIsolationAction,
+  requestIsolationAction,
+  suggestedCopySwap,
+} from "../lib/isolationActions.js";
 import type { IsolationRunRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import type { IsolationRigService } from "./isolationRig.js";
@@ -253,6 +259,31 @@ export class CopyIsolationService {
       unchanged: result.unchanged,
       noneRecovered: !result.recovered.length && !pending,
     });
+    const winner = result.recovered[0];
+    if (winner) {
+      const swap = suggestedCopySwap(winner.element);
+      const proof = copySwapProof({
+        campaignName: run.campaignName ?? `Campaign ${run.campaignId}`,
+        element: winner.element,
+        swap,
+        controlLanded: run.control === "CLEAN",
+      });
+      await requestIsolationAction({
+        store: this.state,
+        slack: this.slack,
+        action: buildIsolationAction({
+          kind: "swap_copy",
+          title: `Switch “${winner.element}” on ${run.campaignName ?? run.campaignId}`,
+          proof,
+          detail: {
+            campaignId: run.campaignId,
+            campaignName: run.campaignName,
+            element: winner.element,
+            swap,
+          },
+        }),
+      });
+    }
     await this.state.save();
     return result;
   }

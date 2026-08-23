@@ -60,6 +60,9 @@
           <nav>
             <button class="nav-item active" data-panel="overview">Overview</button>
             <button class="nav-item" data-panel="placement">Placement</button>
+            <button class="nav-item" data-panel="isolation">
+              Isolation <span id="isolation-badge" class="badge">0</span>
+            </button>
             <button class="nav-item" data-panel="chat">Assistant</button>
             <button class="nav-item owner-only" data-panel="approvals">
               Approvals <span id="approval-badge" class="badge">0</span>
@@ -192,6 +195,52 @@
               </p>
             </div>
             <p id="placement-errors" class="error"></p>
+          </article>
+        </section>
+
+        <section id="isolation-panel" class="panel">
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Proof first</p>
+                <h3>Waiting on a human</h3>
+                <p class="muted">
+                  Rotation, rest, testing and word hunting run on their own.
+                  Josh taps to retire a domain or buy replacements. Josh or
+                  Cayden tap to switch one word in a live email.
+                </p>
+              </div>
+              <button id="refresh-isolation" class="ghost compact">Refresh</button>
+            </div>
+            <div id="isolation-actions" class="stack-list"></div>
+          </article>
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Known-good inbox tests</p>
+                <h3>Domain health</h3>
+                <p class="muted">
+                  Domains are judged only on the known-good email, never on
+                  campaign performance. Fleet domains need several failing
+                  inboxes. Sitting inboxes count.
+                </p>
+              </div>
+            </div>
+            <div id="isolation-domains" class="stack-list"></div>
+          </article>
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Campaign flags</p>
+                <h3>Copy or inboxes</h3>
+                <p class="muted">
+                  A campaign in spam is a flag that something is wrong —
+                  either the inboxes or the copy. This is the research, with
+                  proof.
+                </p>
+              </div>
+            </div>
+            <div id="isolation-runs" class="stack-list"></div>
           </article>
         </section>
 

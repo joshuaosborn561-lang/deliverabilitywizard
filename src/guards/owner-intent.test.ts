@@ -905,3 +905,89 @@ describe("owner intent — D48 isolation", () => {
     );
   });
 });
+
+describe("owner intent — D49 isolation autonomy", () => {
+  it("D49: humans only for retire, buy, and copy; fleet needs several failing inboxes", async () => {
+    const { canDecideIsolationAction } = await import(
+      "../lib/isolationActors.js"
+    );
+    assert.equal(
+      canDecideIsolationAction("buy_domains", "operator"),
+      false,
+      stop(
+        "Only Josh can approve buying replacement domains (D49).",
+        "Cayden can now approve a domain purchase.",
+      ),
+    );
+    assert.equal(
+      canDecideIsolationAction("retire_domain", "operator"),
+      false,
+      stop(
+        "Only Josh can retire a domain (D49).",
+        "Cayden can now retire a domain.",
+      ),
+    );
+    assert.equal(
+      canDecideIsolationAction("swap_copy", "operator"),
+      true,
+      stop(
+        "Josh or Cayden can approve a one-word copy swap (D49).",
+        "Cayden can no longer tap Switch the word.",
+      ),
+    );
+    assert.equal(
+      defaults.requireSpendApproval,
+      true,
+      stop(
+        "Real-money spend still needs a human (D4/D49).",
+        "Spend approval now defaults off.",
+      ),
+    );
+
+    const { FLEET_MIN_FAILING_INBOXES, judgeDomainCycle } = await import(
+      "../lib/domainControl.js"
+    );
+    assert.equal(
+      FLEET_MIN_FAILING_INBOXES,
+      3,
+      stop(
+        "A fleet domain needs several failing inboxes, not one (D49).",
+        `Fleet fail floor is ${FLEET_MIN_FAILING_INBOXES}.`,
+      ),
+    );
+    const oneBox = judgeDomainCycle(
+      "crosslaunchco.com",
+      [{ email: "a@crosslaunchco.com", placement: "SPAM" }],
+      ["crosslaunchco.com"],
+    );
+    assert.equal(
+      oneBox.domainFailed,
+      false,
+      stop(
+        "One failing inbox does not kill a fleet domain (D49).",
+        "A single mailbox fail now condemns the fleet.",
+      ),
+    );
+
+    const { campaignSetupPrompt } = await import(
+      "../ops/campaignSetupPrompt.js"
+    );
+    const prompt = campaignSetupPrompt();
+    assert.match(
+      prompt,
+      /campaign in spam is a flag/i,
+      stop(
+        "Campaign spam is research, not a domain death sentence (D49).",
+        "campaignSetupPrompt dropped the flag language.",
+      ),
+    );
+    assert.match(
+      prompt,
+      /until Josh or Cayden tap Switch the word/i,
+      stop(
+        "Live copy changes only after Josh or Cayden approve (D49).",
+        "campaignSetupPrompt no longer names the Slack tap.",
+      ),
+    );
+  });
+});

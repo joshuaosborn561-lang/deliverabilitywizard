@@ -4,6 +4,8 @@ import {
   isBenignOpsNoise,
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
+import { slackActionHref } from "../lib/slackActionLink.js";
+import { isolationActionValue } from "../lib/slackSignature.js";
 
 export interface SlackCredentials {
   webhookUrl?: string;
@@ -12,6 +14,9 @@ export interface SlackCredentials {
   botTokenFile?: string;
   channelId?: string;
   channelLabel: string;
+  /** Used to sign /slack/action links so buttons work even when posted by another bot. */
+  actionLinkSecret?: string;
+  publicBaseUrl?: string;
 }
 
 export function readSlackBotToken(creds: SlackCredentials): string {
@@ -1108,13 +1113,39 @@ export class SlackClient {
       details.proof,
       "",
       details.kind === "buy_domains"
-        ? "Cayden cannot approve a purchase. Josh: tap the button or open Railway → /ops."
+        ? "Cayden cannot approve a purchase. Josh: tap the button (opens a confirm page) or open Railway → /ops."
         : details.kind === "buy_canary_fleet"
-          ? "Cayden cannot approve a purchase. Josh: tap to buy two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns."
+          ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
           : details.kind === "retire_domain"
-            ? "Josh: tap to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
-            : "Josh or Cayden: tap to switch the live email. I will change only that one word.",
+            ? "Josh: tap the button (opens a confirm page) to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
+            : "Josh or Cayden: tap the button (opens a confirm page) to switch the live email. I will change only that one word.",
     ].join("\n");
+    const approveValue = isolationActionValue(
+      details.kind,
+      details.actionId,
+      "approve",
+    );
+    const denyValue = isolationActionValue(details.kind, details.actionId, "deny");
+    const secret = this.creds.actionLinkSecret?.trim();
+    const base = this.creds.publicBaseUrl?.trim();
+    const approveUrl =
+      secret && base
+        ? slackActionHref({
+            baseUrl: base,
+            secret,
+            id: details.actionId,
+            decision: "approve",
+          })
+        : undefined;
+    const denyUrl =
+      secret && base
+        ? slackActionHref({
+            baseUrl: base,
+            secret,
+            id: details.actionId,
+            decision: "deny",
+          })
+        : undefined;
     await this.send(text, [
       {
         type: "section",
@@ -1128,13 +1159,15 @@ export class SlackClient {
             text: { type: "plain_text", text: approveLabel },
             style: "primary",
             action_id: "isolation_approve",
-            value: `${details.kind}:${details.actionId}:approve`,
+            value: approveValue,
+            ...(approveUrl ? { url: approveUrl } : {}),
           },
           {
             type: "button",
             text: { type: "plain_text", text: "Not now" },
             action_id: "isolation_deny",
-            value: `${details.kind}:${details.actionId}:deny`,
+            value: denyValue,
+            ...(denyUrl ? { url: denyUrl } : {}),
           },
         ],
       },

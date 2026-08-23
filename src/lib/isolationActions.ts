@@ -54,14 +54,33 @@ export async function requestIsolationAction(input: {
     .find((row) => samePending(row, input.action));
   if (existing) return null;
   input.store.upsertIsolationAction(input.action);
-  await input.slack.notifyIsolationAction({
-    title: input.action.title,
-    proof: input.action.proof,
-    actionId: input.action.id,
-    kind: input.action.kind,
-    who: input.action.kind === "swap_copy" ? "Josh or Cayden" : "Josh",
-  });
+  await notifyIsolationActionRecord(input.slack, input.action);
   return input.action;
+}
+
+export async function notifyIsolationActionRecord(
+  slack: SlackClient,
+  action: IsolationActionRecord,
+): Promise<void> {
+  await slack.notifyIsolationAction({
+    title: action.title,
+    proof: action.proof,
+    actionId: action.id,
+    kind: action.kind,
+    who: action.kind === "swap_copy" ? "Josh or Cayden" : "Josh",
+  });
+}
+
+/** Re-send Slack buttons for pending asks. Does not create or approve anything. */
+export async function remindPendingIsolationActions(input: {
+  store: StateStore;
+  slack: SlackClient;
+}): Promise<number> {
+  const pending = input.store.pendingIsolationActions();
+  for (const action of pending) {
+    await notifyIsolationActionRecord(input.slack, action);
+  }
+  return pending.length;
 }
 
 export function suggestedCopySwap(element: string): string {

@@ -42,5 +42,19 @@ describe("slack signature", () => {
       id: "abc",
       decision: "approve",
     });
+    assert.deepEqual(
+      parseIsolationActionValue(
+        isolationActionValue(
+          "buy_canary_fleet",
+          "buy_canary_fleet-1787514583731-e260ym",
+          "approve",
+        ),
+      ),
+      {
+        kind: "buy_canary_fleet",
+        id: "buy_canary_fleet-1787514583731-e260ym",
+        decision: "approve",
+      },
+    );
   });
 });

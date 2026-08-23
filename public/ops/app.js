@@ -442,9 +442,17 @@ async function executeRotation(email, button) {
 
 function isolationKindLabel(kind) {
   if (kind === "buy_domains") return "Buy replacements";
+  if (kind === "buy_canary_fleet") return "Buy canary fleet";
   if (kind === "retire_domain") return "Retire domain";
   if (kind === "swap_copy") return "Switch the word";
   return kind;
+}
+
+function isolationApproveLabel(kind) {
+  if (kind === "swap_copy") return "Switch the word";
+  if (kind === "buy_domains") return "Buy replacements";
+  if (kind === "buy_canary_fleet") return "Buy canary fleet";
+  return "Retire this domain";
 }
 
 function canDecideIsolation(action) {
@@ -477,11 +485,7 @@ async function loadIsolation() {
           const approve = make(
             "button",
             "approve",
-            action.kind === "swap_copy"
-              ? "Switch the word"
-              : action.kind === "buy_domains"
-                ? "Buy replacements"
-                : "Retire this domain",
+            isolationApproveLabel(action.kind),
           );
           const deny = make("button", "deny", "Not now");
           approve.addEventListener("click", () => decideIsolation(action.id, "approve"));

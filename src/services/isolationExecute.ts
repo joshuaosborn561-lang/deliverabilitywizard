@@ -12,6 +12,7 @@ import { canDecideIsolationAction } from "../lib/isolationActors.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import type { IsolationBuyService } from "./isolationBuy.js";
+import type { CopyCanaryBuyService } from "./copyCanaryBuy.js";
 
 export class IsolationExecuteService {
   constructor(
@@ -20,6 +21,7 @@ export class IsolationExecuteService {
     private readonly slack: SlackClient,
     private readonly state: StateStore,
     private readonly buy: IsolationBuyService,
+    private readonly canaryBuy?: CopyCanaryBuyService,
   ) {}
 
   async decide(
@@ -37,7 +39,7 @@ export class IsolationExecuteService {
         message:
           action.kind === "swap_copy"
             ? "Josh or Cayden can switch the word."
-            : "Only Josh can approve retiring a domain or buying replacements.",
+            : "Only Josh can approve retiring a domain or buying replacements / the canary fleet.",
       };
     }
     if (decision === "deny") {
@@ -63,6 +65,8 @@ export class IsolationExecuteService {
     try {
       if (approved.kind === "retire_domain") await this.retire(approved);
       else if (approved.kind === "swap_copy") await this.swapCopy(approved);
+      else if (approved.kind === "buy_canary_fleet")
+        await this.buyCanaryFleet(approved);
       else await this.buyDomains(approved);
       this.state.upsertIsolationAction({
         ...this.state.getIsolationAction(actionId)!,
@@ -140,6 +144,31 @@ export class IsolationExecuteService {
           : undefined,
         result.awaitingNameservers
           ? "Nameservers are still catching up. I will finish the mailbox order myself — no second tap."
+          : undefined,
+        action.proof,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  private async buyCanaryFleet(action: IsolationActionRecord): Promise<void> {
+    if (!this.canaryBuy) {
+      throw new Error("Canary fleet buy is not wired.");
+    }
+    const result = await this.canaryBuy.run(action);
+    await this.slack.send(
+      [
+        `Bought the unwarmed canary fleet: ${result.domains.join(", ") || "two new domains"}.`,
+        `Google: ${result.googleDomain ?? "pending"}. Outlook: ${result.microsoftDomain ?? "pending"}.`,
+        result.mailboxesOrdered
+          ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered. Warmup stays off. They send live campaign copy. They are not spare supply.`
+          : undefined,
+        result.awaitingNameservers
+          ? "Nameservers are still catching up. I will finish the mailbox order myself — no second tap."
+          : undefined,
+        result.awaitingExport
+          ? "Inboxes are bought. I will import them into Smartlead and keep warmup off."
           : undefined,
         action.proof,
       ]

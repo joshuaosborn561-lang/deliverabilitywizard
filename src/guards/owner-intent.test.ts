@@ -1113,3 +1113,66 @@ describe("owner intent — D51 kill-only pull", () => {
     );
   });
 });
+
+describe("owner intent — D54 dedicated canary fleet", () => {
+  it("D54: two domains, three inboxes each, Google + Outlook, warmup off, Josh-only spend", async () => {
+    const { COPY_CANARY_FLEET_DOMAIN_COUNT, COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN } =
+      await import("../lib/copyCanaryFleet.js");
+    assert.equal(
+      COPY_CANARY_FLEET_DOMAIN_COUNT,
+      2,
+      stop(
+        "The canary fleet is two new domains (D54).",
+        `Domain count is now ${COPY_CANARY_FLEET_DOMAIN_COUNT}.`,
+      ),
+    );
+    assert.equal(
+      COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN,
+      3,
+      stop(
+        "Each canary domain gets three inboxes (D54).",
+        `Mailboxes per domain is now ${COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN}.`,
+      ),
+    );
+    const { canDecideIsolationAction } = await import(
+      "../lib/isolationActors.js"
+    );
+    assert.equal(
+      canDecideIsolationAction("buy_canary_fleet", "operator"),
+      false,
+      stop(
+        "Only Josh can approve buying the canary fleet (D4/D54).",
+        "Cayden can now approve the canary fleet purchase.",
+      ),
+    );
+    assert.equal(
+      defaults.requireSpendApproval,
+      true,
+      stop(
+        "Canary fleet spend still goes through the approval ledger (D4/D54).",
+        "Spend approval now defaults off.",
+      ),
+    );
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      src,
+      /getCopyCanaryFleet/,
+      stop(
+        "Copy canaries come from the dedicated fleet (D54).",
+        "copyCanary.ts no longer reads the dedicated fleet.",
+      ),
+    );
+    assert.doesNotMatch(
+      src,
+      /status !== "warming"/,
+      stop(
+        "Do not pick still-warming pool generics as canaries (D54).",
+        "copyCanary.ts is attaching warming-pool mailboxes again.",
+      ),
+    );
+  });
+});

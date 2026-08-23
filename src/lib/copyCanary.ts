@@ -1,6 +1,6 @@
 /**
- * D51 — unwarmed mailboxes kept on live campaigns so campaign copy can be
- * compared against warmed peers. Not launch canary (D43).
+ * D51/D54 — dedicated unwarmed fleet kept on live campaigns so campaign
+ * copy can be compared against warmed peers. Not launch canary (D43).
  */
 
 export interface CopyCanarySplit {

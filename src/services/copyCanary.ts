@@ -3,10 +3,8 @@ import type { SlackClient } from "../clients/slack.js";
 import {
   accountEmail,
   campaignIdsOf,
-  clientDisplayName,
   type SmartleadAccountWithCampaigns,
   type SmartleadClient,
-  type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import {
   campaignIdOf,
@@ -14,14 +12,21 @@ import {
   testIdOf,
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
+import {
+  buildIsolationAction,
+  requestIsolationAction,
+} from "../lib/isolationActions.js";
 import { sleep } from "../lib/http.js";
 import {
   interpretCopyCanary,
   majorityLanded,
   type CopyCanarySplit,
 } from "../lib/copyCanary.js";
-import { buildPoolSignature } from "../lib/poolSignature.js";
-import { daysSince, isPrewarmedGeneric } from "./warmupGate.js";
+import { isCopyCanaryFleetEmail } from "../lib/copyCanaryFleet.js";
+import {
+  buildPoolSignature,
+  poolEspFromSmartleadType,
+} from "../lib/poolSignature.js";
 import { isExcluded } from "./campaignTopUp.js";
 import type { PoolMailboxRecord, StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -31,11 +36,12 @@ export interface CopyCanaryAttachResult {
   attached: Array<{ campaignId: number; email: string }>;
   skipped: string[];
   errors: string[];
+  buyRequested: boolean;
 }
 
 /**
- * Keep a few still-warming pool generics on each ACTIVE campaign so they
- * send the live sequence. Isolation reads that against warmed peers (D51).
+ * Keep the dedicated unwarmed canary fleet on each ACTIVE campaign so they
+ * send the live sequence. Isolation reads that against warmed peers (D54).
  */
 export class CopyCanaryService {
   constructor(
@@ -53,21 +59,28 @@ export class CopyCanaryService {
       attached: [],
       skipped: [],
       errors: [],
+      buyRequested: false,
     };
-    const want = this.config.copyCanaryPerCampaign;
-    if (!this.config.enableCopyCanary || want <= 0) {
+    if (!this.config.enableCopyCanary) {
       console.log("[copy-canary] Disabled");
+      return result;
+    }
+
+    const fleet = this.state.getCopyCanaryFleet();
+    const fleetEmails = fleet?.emails ?? [];
+    if (!fleetEmails.length) {
+      result.buyRequested = await this.requestFleetBuy();
+      result.skipped.push("canary fleet not bought yet");
+      await this.state.save();
       return result;
     }
 
     let campaigns: SmartleadCampaign[] = [];
     let accounts: SmartleadAccountWithCampaigns[] = [];
-    let clients: SmartleadClientRecord[] = [];
     try {
-      [campaigns, accounts, clients] = await Promise.all([
+      [campaigns, accounts] = await Promise.all([
         this.smartlead.listCampaigns(),
         this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-        this.smartlead.listClients().catch(() => []),
       ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -85,11 +98,14 @@ export class CopyCanaryService {
           Boolean(row),
         ),
     );
-    const clientsById = new Map(clients.map((row) => [row.id, row]));
-    const reserved = new Set(
-      this.state.listActiveSwaps().map((swap) => swap.poolEmail.toLowerCase()),
-    );
-    const usedThisRun = new Set<string>();
+    this.syncFleetAccountIds(accountByEmail);
+
+    const picks = this.fleetReady(accountByEmail);
+    if (!picks.length) {
+      result.skipped.push("canary fleet not in Smartlead yet");
+      await this.state.save();
+      return result;
+    }
 
     const active = campaigns.filter((campaign) => {
       const status = String(campaign.status ?? "").toUpperCase();
@@ -99,35 +115,11 @@ export class CopyCanaryService {
 
     for (const campaign of active) {
       const current = this.liveCanariesOnCampaign(campaign.id, accountByEmail);
-      const need = Math.max(0, want - current.length);
-      if (need === 0) {
-        this.state.setCopyCanaries(campaign.id, current);
-        continue;
-      }
-
-      const clientId =
-        typeof campaign.client_id === "number" ? campaign.client_id : null;
-      const picks = this.pickCanaries({
-        need,
-        campaign,
-        accountByEmail,
-        reserved,
-        usedThisRun,
-      });
-      if (!picks.length) {
-        result.skipped.push(`#${campaign.id}: no unwarmed pool supply`);
-        this.state.setCopyCanaries(campaign.id, current);
-        continue;
-      }
-
-      const clientName = clientId
-        ? clientDisplayName(clientsById.get(clientId) ?? { id: clientId })
-        : "Unassigned / Agency";
-      const brand =
-        clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName;
+      const already = new Set(current);
       const kept = [...current];
 
       for (const pool of picks) {
+        if (already.has(pool.email.toLowerCase())) continue;
         const accountId = pool.smartleadAccountId;
         if (!accountId) continue;
         try {
@@ -138,19 +130,23 @@ export class CopyCanaryService {
             await sleep(250);
             await this.smartlead.updateEmailAccount(accountId, {
               signature: buildPoolSignature({
-                firstName: pool.firstName || "Pool",
-                lastName: pool.lastName || "User",
-                clientBrand: brand,
+                firstName: pool.firstName || "Canary",
+                lastName: pool.lastName || "Box",
+                clientBrand: "Canary",
               }),
-              from_name: `${pool.firstName || "Pool"} ${pool.lastName || "User"}`,
-              client_id: clientId,
+              from_name: `${pool.firstName || "Canary"} ${pool.lastName || "Box"}`,
               max_email_per_day: this.config.messagePerDay,
               time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
+            });
+            await this.smartlead.configureWarmup(accountId, {
+              warmup_enabled: false,
+              total_warmup_per_day: this.config.warmupTotalPerDay,
+              daily_rampup: this.config.warmupDailyRampup,
+              reply_rate_percentage: this.config.warmupReplyRatePercentage,
             });
             await sleep(150);
           }
           kept.push(pool.email.toLowerCase());
-          usedThisRun.add(pool.email.toLowerCase());
           result.attached.push({
             campaignId: campaign.id,
             email: pool.email.toLowerCase(),
@@ -166,17 +162,21 @@ export class CopyCanaryService {
 
     if (result.attached.length) {
       console.log(
-        `[copy-canary] attached ${result.attached.length} unwarmed mailbox(es) for campaign copy`,
+        `[copy-canary] attached ${result.attached.length} dedicated canary mailbox(es) for campaign copy`,
       );
     }
+    await this.state.save();
     return result;
   }
 
   async readSplit(campaignId: number): Promise<CopyCanarySplit | null> {
     if (!this.smartDelivery) return null;
-    const canaries = new Set(
-      this.state.getCopyCanaries(campaignId).map((email) => email.toLowerCase()),
-    );
+    const canaries = new Set([
+      ...this.state.getCopyCanaries(campaignId).map((email) => email.toLowerCase()),
+      ...(this.state.getCopyCanaryFleet()?.emails ?? []).map((email) =>
+        email.toLowerCase(),
+      ),
+    ]);
     if (!canaries.size) return null;
 
     try {
@@ -234,101 +234,101 @@ export class CopyCanaryService {
     campaignId: number,
     accountByEmail: Map<string, SmartleadAccountWithCampaigns>,
   ): string[] {
-    const remembered = this.state.getCopyCanaries(campaignId);
+    const remembered = new Set([
+      ...this.state.getCopyCanaries(campaignId),
+      ...(this.state.getCopyCanaryFleet()?.emails ?? []),
+    ]);
     const live: string[] = [];
     for (const email of remembered) {
       const account = accountByEmail.get(email);
       if (!account) continue;
       if (!campaignIdsOf(account).includes(campaignId)) continue;
-      if (!this.stillUnwarmed(email, account)) continue;
+      if (!this.stillUnwarmed(email)) continue;
       live.push(email);
     }
     return live;
   }
 
-  private pickCanaries(input: {
-    need: number;
-    campaign: SmartleadCampaign;
-    accountByEmail: Map<string, SmartleadAccountWithCampaigns>;
-    reserved: Set<string>;
-    usedThisRun: Set<string>;
-  }): PoolMailboxRecord[] {
-    const clientId =
-      typeof input.campaign.client_id === "number"
-        ? input.campaign.client_id
-        : null;
-    const alreadyOn = new Set(
-      [...input.accountByEmail.values()]
-        .filter((account) => campaignIdsOf(account).includes(input.campaign.id))
-        .map((account) => accountEmail(account)?.toLowerCase())
-        .filter((email): email is string => Boolean(email)),
-    );
-
-    const scored = this.state
-      .listPoolMailboxes()
-      .filter((row) => this.isCandidate(row, input.reserved))
-      .map((row) => {
-        const account = input.accountByEmail.get(row.email.toLowerCase());
-        const on = account ? campaignIdsOf(account) : [];
-        const sameClient = on.some((id) => {
-          // Prefer boxes already sending for this client.
-          return id !== input.campaign.id;
-        });
-        const otherClient = Boolean(
-          account &&
-            clientId != null &&
-            account.client_id != null &&
-            account.client_id !== clientId &&
-            on.length,
-        );
-        return { row, account, sameClient, otherClient };
-      })
-      .filter((row) => !row.otherClient)
-      .filter((row) => !alreadyOn.has(row.row.email.toLowerCase()))
-      .filter((row) => !input.usedThisRun.has(row.row.email.toLowerCase()))
-      .sort((a, b) => Number(b.sameClient) - Number(a.sameClient));
-
-    return scored.slice(0, input.need).map((row) => row.row);
-  }
-
-  private isCandidate(
-    row: PoolMailboxRecord,
-    reserved: Set<string>,
-  ): boolean {
-    if (row.status !== "warming") return false;
-    if (row.prewarmed) return false;
-    if (!row.smartleadAccountId) return false;
-    if (!row.warmedAt) return false;
-    const email = row.email.toLowerCase();
-    if (reserved.has(email)) return false;
-    if (this.state.getRestingInbox(email)) return false;
-    if (this.state.getHeldInbox(email)) return false;
-    if (
-      isPrewarmedGeneric(
-        { from_name: `${row.firstName} ${row.lastName}` },
+  private fleetReady(
+    accountByEmail: Map<string, SmartleadAccountWithCampaigns>,
+  ): PoolMailboxRecord[] {
+    const fleet = this.state.getCopyCanaryFleet();
+    if (!fleet?.emails.length) return [];
+    const out: PoolMailboxRecord[] = [];
+    for (const email of fleet.emails) {
+      const row = this.state.getPoolMailbox(email);
+      const account = accountByEmail.get(email);
+      const accountId = row?.smartleadAccountId ?? account?.id;
+      if (!accountId) continue;
+      if (row) {
+        if (!row.smartleadAccountId) {
+          this.state.upsertPoolMailbox({ ...row, smartleadAccountId: accountId });
+        }
+        out.push({ ...row, smartleadAccountId: accountId });
+        continue;
+      }
+      if (!account) continue;
+      const domain = email.split("@")[1] ?? "";
+      const nameParts = (account.from_name || email.split("@")[0] || "Canary Box")
+        .trim()
+        .split(/\s+/);
+      const created: PoolMailboxRecord = {
         email,
-        this.config,
-        this.state,
-      )
-    ) {
-      return false;
+        domain,
+        platform: poolEspFromSmartleadType(account.type) ?? "GOOGLE",
+        smartleadAccountId: accountId,
+        firstName: nameParts[0] || "Canary",
+        lastName: nameParts.slice(1).join(" ") || "Box",
+        status: "available",
+        copyCanary: true,
+      };
+      this.state.upsertPoolMailbox(created);
+      out.push(created);
     }
-    const days = daysSince(row.warmedAt);
-    return Number.isFinite(days) && days < this.config.poolWarmupDays;
+    return out;
   }
 
-  private stillUnwarmed(
-    email: string,
-    account: SmartleadAccountWithCampaigns,
-  ): boolean {
-    if (
-      isPrewarmedGeneric(account, email, this.config, this.state)
-    ) {
-      return false;
+  private syncFleetAccountIds(
+    accountByEmail: Map<string, SmartleadAccountWithCampaigns>,
+  ): void {
+    const fleet = this.state.getCopyCanaryFleet();
+    if (!fleet) return;
+    for (const email of fleet.emails) {
+      const account = accountByEmail.get(email);
+      const row = this.state.getPoolMailbox(email);
+      if (!account || !row || row.smartleadAccountId) continue;
+      this.state.upsertPoolMailbox({ ...row, smartleadAccountId: account.id });
     }
-    const pool = this.state.getPoolMailbox(email);
-    if (!pool?.warmedAt) return false;
-    const days = daysSince(pool.warmedAt);
-    return Number.isFinite(days) && days < this.config.poolWarmupDays;
+  }
+
+  private stillUnwarmed(email: string): boolean {
+    return isCopyCanaryFleetEmail(email, this.state.getCopyCanaryFleet());
+  }
+
+  private async requestFleetBuy(): Promise<boolean> {
+    const opened = await requestIsolationAction({
+      store: this.state,
+      slack: this.slack,
+      action: buildIsolationAction({
+        kind: "buy_canary_fleet",
+        title: "Buy the unwarmed canary fleet",
+        proof:
+          "Two new domains, three inboxes each — one Google, one Outlook. Warmup stays off. They send live campaign copy so we can tell copy from inboxes. They are not spare supply.",
+        detail: {
+          quantity: 2,
+          mailboxesPerDomain: 3,
+          parentDomain: this.config.isolationBuyParentDomain,
+        },
+      }),
+    });
+    if (!opened) return false;
+    this.state.setCopyCanaryFleet({
+      status: "pending",
+      domains: [],
+      emails: [],
+      actionId: opened.id,
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
   }
 }

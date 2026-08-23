@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { loadConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
+import { StateStore } from "../state/store.js";
 import { MailboxSettingsService } from "./mailboxSettings.js";
 
 describe("MailboxSettingsService", () => {
@@ -176,5 +177,52 @@ describe("MailboxSettingsService", () => {
       time_to_wait_in_mins: 10,
       signature: "Katya Sanchez\nMid-South Roof Systems",
     });
+  });
+
+  it("never enables warmup on the dedicated canary fleet", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-canary-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["canary-g.info"],
+      emails: ["g1@canary-g.info"],
+      googleDomain: "canary-g.info",
+      updatedAt: new Date().toISOString(),
+    });
+    let warmupWrites = 0;
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 3,
+          from_email: "g1@canary-g.info",
+          from_name: "Gale Canary",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Gale Canary\nCanary",
+          warmup_details: null,
+        },
+      ],
+      listClients: async () => [],
+      updateEmailAccount: async () => undefined,
+      configureWarmup: async () => {
+        warmupWrites += 1;
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, mode: "full" });
+    assert.equal(warmupWrites, 0);
+    assert.equal(result.warmupEnabled, 0);
   });
 });

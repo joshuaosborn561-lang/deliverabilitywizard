@@ -7,6 +7,10 @@ import {
   type MonthlyUsageBucket,
 } from "../lib/monthlyCaps.js";
 import {
+  isCopyCanaryFleetEmail,
+  type CopyCanaryFleetRecord,
+} from "../lib/copyCanaryFleet.js";
+import {
   EMPTY_ISOLATION_STATE,
   normalizeIsolationState,
   type CopySuspectRecord,
@@ -72,6 +76,8 @@ export interface PoolMailboxRecord {
   lastName: string;
   /** Hand-bought fleet that completed warmup before this app managed it. */
   prewarmed?: boolean;
+  /** D54 dedicated campaign-copy canary — never staffable, warmup stays off. */
+  copyCanary?: boolean;
   status: PoolMailboxRecordStatus;
   warmedAt?: string;
   availableAt?: string;
@@ -644,6 +650,7 @@ export class StateStore {
     let flipped = 0;
     const ms = warmupDays * 24 * 60 * 60 * 1000;
     for (const row of Object.values(this.state.poolMailboxes)) {
+      if (row.copyCanary) continue;
       if (row.status !== "warming") continue;
       const start = row.warmedAt ? Date.parse(row.warmedAt) : NaN;
       if (!Number.isFinite(start)) continue;
@@ -663,6 +670,8 @@ export class StateStore {
       (m) =>
         m.status === "available" &&
         m.platform === platform &&
+        !m.copyCanary &&
+        !this.isCopyCanary(m.email) &&
         !this.getRestingInbox(m.email),
     );
   }
@@ -685,6 +694,8 @@ export class StateStore {
         (m) =>
           m.platform === platform &&
           (m.status === "available" || m.status === "assigned") &&
+          !m.copyCanary &&
+          !this.isCopyCanary(m.email) &&
           !this.getRestingInbox(m.email) &&
           canTake(m.email),
       );
@@ -936,7 +947,21 @@ export class StateStore {
   }
 
   isCopyCanary(email: string): boolean {
-    return this.listCopyCanaryEmails().has(email.toLowerCase());
+    const lower = email.toLowerCase();
+    if (this.listCopyCanaryEmails().has(lower)) return true;
+    return isCopyCanaryFleetEmail(lower, this.getCopyCanaryFleet());
+  }
+
+  setCopyCanaryFleet(record: CopyCanaryFleetRecord): void {
+    this.state.isolation.copyCanaryFleet = {
+      ...record,
+      domains: [...new Set(record.domains.map((row) => row.toLowerCase()))],
+      emails: [...new Set(record.emails.map((row) => row.toLowerCase()))],
+    };
+  }
+
+  getCopyCanaryFleet(): CopyCanaryFleetRecord | null {
+    return this.state.isolation.copyCanaryFleet;
   }
 
   upsertDomainHistory(record: DomainControlHistoryRecord): void {

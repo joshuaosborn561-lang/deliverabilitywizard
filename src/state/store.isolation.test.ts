@@ -35,4 +35,24 @@ describe("isolation state", () => {
     assert.equal(reloaded.listSuppressedTerms()[0]?.term, "free");
     assert.equal(reloaded.listCopySuspects()[0]?.campaignId, 7);
   });
+
+  it("reloads the dedicated canary fleet", async () => {
+    const path = `/tmp/dw-iso-canary-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(path);
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      googleDomain: "canary-g.info",
+      microsoftDomain: "canary-o.info",
+      domains: ["canary-g.info", "canary-o.info"],
+      emails: ["a@canary-g.info", "b@canary-o.info"],
+      updatedAt: "2026-08-23T00:00:00.000Z",
+    });
+    await state.save();
+    const reloaded = new StateStore(path);
+    await reloaded.load();
+    assert.equal(reloaded.getCopyCanaryFleet()?.status, "ready");
+    assert.equal(reloaded.isCopyCanary("A@canary-g.info"), true);
+    assert.equal(reloaded.isCopyCanary("other@pool.info"), false);
+  });
 });

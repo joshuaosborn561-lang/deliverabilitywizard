@@ -1054,3 +1054,47 @@ of 3 canaries.
 `enableLegacyMailboxPulls` default false; `copyCanaryPerCampaign` default 3;
 owner-intent D51.
 
+---
+
+## D54 — Dedicated unwarmed canary fleet (2 domains × 3 inboxes)
+
+**Decision.** Campaign-copy canaries are a **bought research fleet**, not
+still-warming pool generics. Buy **two new domains**, **three inboxes
+each**: domain 1 Google, domain 2 Outlook. **Warmup stays off** on those
+six mailboxes. They send the **live campaign sequence**.
+
+They are not staffable supply (D25). Generic send-rest does not sit them
+(D43). Mailbox-settings converge still writes daily volume and gap; it
+does **not** turn warmup on for this fleet (qualifies “warmup on for
+every mailbox”).
+
+**D26 exception.** These six may sit on **every ACTIVE campaign**,
+including across clients. They are research instrumentation, not a
+client sender. Identity stays a fixed canary signature; do not assign
+them as a client’s staffed from-name.
+
+Spend is still Josh-only through the isolation Slack tap
+(`buy_canary_fleet`) and the D4 ledger. “Just buy” in chat is owner
+intent to implement the path, not a substitute for the tap.
+
+Health requests the buy when the fleet is missing. After Josh taps,
+nameserver lag and Smartlead export resume without a second tap.
+`configureWarmup(..., warmup_enabled: false)` after import.
+
+Do not pick `status === "warming"` pool rows as canaries anymore. D51’s
+isolation reading (unwarmed vs warmed campaign copy) stays; only the
+supply source changed.
+
+**Why.** Josh (2026-08-23): the unwarmed canary should be purpose-bought
+boxes that never turn warmup on — two domains, three inboxes each, one
+Gmail and one Outlook — and those are the canaries that send.
+
+**Tradeoff.** Six boxes total, not three fresh warming generics per
+campaign. Accepted: a stable Google + Outlook pair is a cleaner reading
+than a rotating warming pile, and it does not steal staffable supply.
+Cross-client attach is an explicit D26 exception for this fleet only.
+
+**Guards.** `COPY_CANARY_FLEET_DOMAIN_COUNT` 2;
+`COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN` 3; `buy_canary_fleet` owner-only;
+warmup never enabled for fleet emails; owner-intent D54.
+

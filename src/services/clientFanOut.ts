@@ -11,6 +11,7 @@ import {
 import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
+import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 import type { StateStore } from "../state/store.js";
 
@@ -80,18 +81,7 @@ export class ClientFanOutService {
     const activeByGroup = new Map<string, SmartleadCampaign[]>();
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
-      // Exclusions (MSRS etc.) stay untouched.
-      const excluded = this.config.topUpExcludeCampaigns.some((raw) => {
-        const p = raw.trim().toLowerCase();
-        if (!p) return false;
-        return (
-          p === String(campaign.id) ||
-          String(campaign.name ?? "")
-            .toLowerCase()
-            .includes(p)
-        );
-      });
-      if (excluded) continue;
+      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
       const key = clientGroupKey(campaign);
       if (!key) continue;
       const list = activeByGroup.get(key) ?? [];

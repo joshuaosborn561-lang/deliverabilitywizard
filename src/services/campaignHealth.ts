@@ -272,6 +272,10 @@ export class CampaignHealthService {
           pending.campaignId,
       );
 
+      if (isExcluded({ id: pending.campaignId, name }, this.config.topUpExcludeCampaigns)) {
+        this.state.clearPendingResume(pending.campaignId);
+        continue;
+      }
       if (staffable < result.floor) continue;
       if (status === "ACTIVE") {
         // Already live — drop the stale resume marker.

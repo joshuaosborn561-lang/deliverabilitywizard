@@ -17,6 +17,7 @@ import {
   parseSenderBounceStats,
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
+import { isExcluded } from "./campaignTopUp.js";
 import {
   classifyCopySignal,
   shouldDeferSenderRotationForCopy,
@@ -137,6 +138,7 @@ export class CampaignBounceInvestigateService {
     result.scannedPaused = paused.length;
 
     for (const campaign of paused) {
+      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
       // Our own last-account protective pauses are resumed by health staffing.
       const pending = this.state.getPendingResume(campaign.id);
       if (pending?.reason?.includes("last_account")) continue;

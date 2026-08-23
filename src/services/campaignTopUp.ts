@@ -14,6 +14,7 @@ import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
+import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 
@@ -56,6 +57,7 @@ export function isExcluded(
   campaign: { id: number; name?: string | null },
   patterns: string[],
 ): boolean {
+  if (isPodControlShellCampaign(campaign)) return true;
   if (!patterns.length) return false;
   const name = String(campaign.name ?? "").toLowerCase();
   const id = String(campaign.id);

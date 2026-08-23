@@ -130,6 +130,11 @@ const ConfigSchema = z.object({
    * read). Tests are unlimited (D45); this does not wait for seed approval.
    */
   enablePodControls: boolFromEnv(true),
+  /**
+   * D56 — pinned Smartlead id for the paused known-good shell. 0 means
+   * find-or-create by name (`Pod control shell`).
+   */
+  podControlShellCampaignId: z.coerce.number().int().nonnegative().default(0),
   /** Low-rep isolation domain weekly baseline + copy teardown senders. */
   enableIsolationRig: boolFromEnv(true),
   /** Infra-vs-copy lookup from standing controls. */
@@ -449,6 +454,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
     enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
     enablePodControls: env.ENABLE_POD_CONTROLS,
+    podControlShellCampaignId: env.POD_CONTROL_SHELL_CAMPAIGN_ID ?? "0",
     enableIsolationRig: env.ENABLE_ISOLATION_RIG,
     enableIsolationBranch: env.ENABLE_ISOLATION_BRANCH,
     enableCopyIsolation: env.ENABLE_COPY_ISOLATION,

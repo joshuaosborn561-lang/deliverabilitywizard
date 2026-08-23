@@ -3,11 +3,10 @@ import type { SlackClient } from "../clients/slack.js";
 import {
   accountEmail,
   campaignIdsOf,
-  pickSequence,
   resolveAccountClient,
-  sequenceMappingIdOf,
   type SmartleadClient,
 } from "../clients/smartlead.js";
+import { ensurePodControlShell } from "./podControlShell.js";
 import {
   folderIdOf,
   parseSenderInboxRates,
@@ -104,11 +103,28 @@ export class PodControlService {
     this.persistPods(pods);
 
     const folderId = await this.ensureFolder(POD_CONTROL_FOLDER_NAME, "podControls");
-    const shellCampaignId = await this.shellCampaignId();
-    const sequenceMappingId = await this.shellSequenceMappingId(shellCampaignId);
-    if (sequenceMappingId == null) {
+    let shellCampaignId: number | undefined;
+    let sequenceMappingId: number | undefined;
+    try {
+      const shell = await ensurePodControlShell({
+        config: this.config,
+        smartlead: this.smartlead,
+        state: this.state,
+        pods,
+        template,
+        dryRun,
+      });
+      shellCampaignId = shell.campaignId;
+      sequenceMappingId = shell.sequenceMappingId;
+    } catch (error) {
       result.errors.push(
-        "shell campaign has no sequence_mapping_id — cannot schedule pod controls",
+        error instanceof Error ? error.message : String(error),
+      );
+      return result;
+    }
+    if (sequenceMappingId == null || shellCampaignId == null) {
+      result.errors.push(
+        "paused pod-control shell is missing — will not hang tests on a live campaign",
       );
       return result;
     }
@@ -343,21 +359,23 @@ export class PodControlService {
       campaignId: input.shellCampaignId,
       sequenceMappingId: input.sequenceMappingId,
     });
-    const created = await this.smartDelivery.createAutomatedPlacement(
-      isolationSchedulePayload(
-        manual,
-        this.config.placementTestEveryDays,
-        scheduledAt,
-        schedulerCronValue(this.config.placementTestEveryDays, scheduledAt),
-        addDaysIso(
-          new Date(),
-          this.config.placementTestEndDays > 0
-            ? this.config.placementTestEndDays
-            : OPEN_ENDED_TEST_DAYS,
-        ),
-        input.providerIds,
+    const scheduled = isolationSchedulePayload(
+      manual,
+      this.config.placementTestEveryDays,
+      scheduledAt,
+      schedulerCronValue(this.config.placementTestEveryDays, scheduledAt),
+      addDaysIso(
+        new Date(),
+        this.config.placementTestEndDays > 0
+          ? this.config.placementTestEndDays
+          : OPEN_ENDED_TEST_DAYS,
       ),
+      input.providerIds,
     );
+    // SmartDelivery /spam-test/schedule rejects a custom `sequence` body.
+    // The paused shell's sequence is the known-good email (D56).
+    delete (scheduled as { sequence?: unknown }).sequence;
+    const created = await this.smartDelivery.createAutomatedPlacement(scheduled);
     return String(created.id);
   }
 
@@ -459,17 +477,6 @@ export class PodControlService {
     }
   }
 
-  private async shellCampaignId(): Promise<number | undefined> {
-    try {
-      const campaigns = await this.smartlead.listCampaigns();
-      return campaigns.find(
-        (campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE",
-      )?.id;
-    } catch {
-      return undefined;
-    }
-  }
-
   private async resolveProviderIds(): Promise<number[]> {
     try {
       const resolved = await this.smartDelivery.resolveProviderIds(
@@ -505,18 +512,6 @@ export class PodControlService {
     return [];
   }
 
-  private async shellSequenceMappingId(
-    campaignId: number | undefined,
-  ): Promise<number | undefined> {
-    if (campaignId == null) return undefined;
-    try {
-      const sequences = await this.smartlead.getCampaignSequences(campaignId);
-      const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
-      return sequence ? sequenceMappingIdOf(sequence) : undefined;
-    } catch {
-      return undefined;
-    }
-  }
 }
 
 function findFolderId(raw: unknown, name: string): string | number | undefined {

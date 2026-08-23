@@ -1129,3 +1129,32 @@ Accepted: that is the point of a research fleet.
 **Guards.** `copyCanary.ts` never calls `addEmailAccountsToCampaign`;
 owner-intent D55.
 
+---
+
+## D56 — Pod controls hang on a paused known-good shell
+
+**Decision.** Standing pod-control tests use a dedicated Smartlead campaign
+named **Pod control shell**. It stays **PAUSED** (D40 — never START it).
+Its sequence **is** the versioned known-good control email. SmartDelivery's
+schedule endpoint rejects a custom `sequence` body, so the shell sequence
+is the email that actually sends.
+
+Sitters (off-week client A/B and generic sit) are members of **that shell
+only** — not live campaigns. Sending pods are also members of the shell so
+their known-good tests can run; they stay on their live client campaigns
+too. Do **not** hang pod controls on a live client campaign.
+
+Health, top-up, fan-out, rest, scanner Auto: tests, bounce-investigate, and
+copy-canary never treat the shell as a production campaign. Isolation-domain
+and D54 canary fleet mailboxes never join it.
+
+**Why.** Josh (2026-08-23): paused shell is the path. Sitters are off live
+campaigns, and SmartDelivery will only test senders that are already
+campaign members.
+
+**Tradeoff.** Sending mailboxes sit on live + the paused shell. Accepted:
+the shell never sends to leads.
+
+**Guards.** `isPodControlShellCampaign` / `isExcluded`; owner-intent D56;
+pod controls refuse a first-ACTIVE fallback.
+

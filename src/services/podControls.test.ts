@@ -17,6 +17,7 @@ describe("pod controls", () => {
       {
         listCampaigns: async () => [
           { id: 1, name: "Acme", status: "ACTIVE", client_id: 9 },
+          { id: 99, name: "Pod control shell", status: "PAUSED" },
         ],
         listClients: async () => [{ id: 9, name: "Acme" }],
         listAllEmailAccounts: async () => [
@@ -36,6 +37,11 @@ describe("pod controls", () => {
         getCampaignSequences: async () => [
           { id: 77, seq_number: 1, subject: "Quick check-in" },
         ],
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateCampaignSequences: async () => undefined,
+        updateCampaignStatus: async () => undefined,
       } as never,
       {
         listFolders: async () => [],
@@ -47,6 +53,7 @@ describe("pod controls", () => {
           sender_accounts?: string[];
           sequence_mapping_id?: number;
           provider_ids?: number[];
+          campaign_id?: number;
         }) => {
           created.push(payload);
           return { id: `pod-${created.length}` };
@@ -63,15 +70,19 @@ describe("pod controls", () => {
     assert.ok(attached.includes("a@client.com"));
     assert.ok(attached.includes("b@client.com"));
     assert.equal(
-      created.some((row) =>
-        JSON.stringify(row).includes("Quick check-in"),
-      ),
+      created.every((row) => !("sequence" in row)),
       true,
+      "schedule endpoint rejects a custom sequence body; the shell carries the known-good email",
     );
     assert.equal(
       created.every((row) => row.sequence_mapping_id === 77),
       true,
       "SmartDelivery schedule requires sequence_mapping_id from the shell campaign",
+    );
+    assert.equal(
+      created.every((row) => row.campaign_id === 99),
+      true,
+      "pod controls hang on the paused shell, not a live campaign",
     );
     assert.deepEqual(created[0]?.provider_ids, [2, 20, 21]);
   });

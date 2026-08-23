@@ -6,6 +6,7 @@ import {
   resolveAccountClient,
   type SmartleadClient,
 } from "../clients/smartlead.js";
+import { ensurePodControlShell } from "./podControlShell.js";
 import {
   folderIdOf,
   parseSenderInboxRates,
@@ -102,8 +103,39 @@ export class PodControlService {
     this.persistPods(pods);
 
     const folderId = await this.ensureFolder(POD_CONTROL_FOLDER_NAME, "podControls");
-    const shellCampaignId = await this.shellCampaignId();
-    const existingByPod = this.indexExistingControls();
+    let shellCampaignId: number | undefined;
+    let sequenceMappingId: number | undefined;
+    try {
+      const shell = await ensurePodControlShell({
+        config: this.config,
+        smartlead: this.smartlead,
+        state: this.state,
+        pods,
+        template,
+        dryRun,
+      });
+      shellCampaignId = shell.campaignId;
+      sequenceMappingId = shell.sequenceMappingId;
+    } catch (error) {
+      result.errors.push(
+        error instanceof Error ? error.message : String(error),
+      );
+      return result;
+    }
+    if (sequenceMappingId == null || shellCampaignId == null) {
+      result.errors.push(
+        "paused pod-control shell is missing — will not hang tests on a live campaign",
+      );
+      return result;
+    }
+    const providerIds = await this.resolveProviderIds();
+    if (!providerIds.length) {
+      result.errors.push(
+        "no SmartDelivery provider_ids — cannot schedule pod controls",
+      );
+      return result;
+    }
+    const existingByPod = await this.indexExistingControls(pods);
 
     for (const pod of pods) {
       const emails = emailsForPod(pod);
@@ -126,6 +158,8 @@ export class PodControlService {
             chunks: chunks.length,
             folderId,
             shellCampaignId,
+            sequenceMappingId,
+            providerIds,
             template,
           });
           this.state.upsertPodControl({
@@ -248,10 +282,53 @@ export class PodControlService {
     this.state.patchIsolation({ pods: records });
   }
 
-  private indexExistingControls(): Map<string, string> {
+  private async indexExistingControls(
+    pods: Pod[],
+  ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     for (const row of this.state.listPodControls()) {
       if (row.spamTestId) out.set(row.id, row.spamTestId);
+    }
+    try {
+      const tests = await this.smartDelivery.listTests();
+      for (const pod of pods) {
+        const emails = emailsForPod(pod);
+        if (!emails.length) continue;
+        const chunks = chunkArray(emails, this.config.maxMailboxesPerTest);
+        for (let index = 0; index < chunks.length; index += 1) {
+          const key = `${pod.id}:${index}`;
+          if (out.has(key)) continue;
+          const wanted = podControlTestName(pod.name, index + 1, chunks.length);
+          const found = tests.find((test) => {
+            const name = String(test.test_name ?? "");
+            if (name !== wanted) return false;
+            const status = String(test.status ?? "").toLowerCase();
+            return !/stop|complet|cancel|expir|fail|delet|finish|end/i.test(
+              status,
+            );
+          });
+          const id = found?.spam_test_id ?? found?.id;
+          if (id == null) continue;
+          out.set(key, String(id));
+          if (!this.state.listPodControls().some((row) => row.id === key)) {
+            this.state.upsertPodControl({
+              id: key,
+              podId: pod.id,
+              controlVersion:
+                this.state.getIsolation().controlTemplate?.controlVersion ??
+                "imported",
+              spamTestId: String(id),
+              emails: chunks[index] ?? [],
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "[pod-controls] existing-test index failed:",
+        error instanceof Error ? error.message : error,
+      );
     }
     return out;
   }
@@ -263,9 +340,10 @@ export class PodControlService {
     chunks: number;
     folderId?: string | number;
     shellCampaignId?: number;
+    sequenceMappingId: number;
+    providerIds: number[];
     template: ReturnType<typeof defaultControlTemplate>;
   }): Promise<string> {
-    const providerIds = this.config.providerIds;
     const scheduledAt = paddedScheduleDate();
     const manual = isolationManualPayload({
       testName: podControlTestName(input.pod.name, input.chunk, input.chunks),
@@ -277,24 +355,27 @@ export class PodControlService {
       senderAccounts: input.emails,
       sequence: controlSequence(input.template, "Pod control"),
       folderId: input.folderId,
-      providerIds,
+      providerIds: input.providerIds,
       campaignId: input.shellCampaignId,
+      sequenceMappingId: input.sequenceMappingId,
     });
-    const created = await this.smartDelivery.createAutomatedPlacement(
-      isolationSchedulePayload(
-        manual,
-        this.config.placementTestEveryDays,
-        scheduledAt,
-        schedulerCronValue(this.config.placementTestEveryDays, scheduledAt),
-        addDaysIso(
-          new Date(),
-          this.config.placementTestEndDays > 0
-            ? this.config.placementTestEndDays
-            : OPEN_ENDED_TEST_DAYS,
-        ),
-        providerIds,
+    const scheduled = isolationSchedulePayload(
+      manual,
+      this.config.placementTestEveryDays,
+      scheduledAt,
+      schedulerCronValue(this.config.placementTestEveryDays, scheduledAt),
+      addDaysIso(
+        new Date(),
+        this.config.placementTestEndDays > 0
+          ? this.config.placementTestEndDays
+          : OPEN_ENDED_TEST_DAYS,
       ),
+      input.providerIds,
     );
+    // SmartDelivery /spam-test/schedule rejects a custom `sequence` body.
+    // The paused shell's sequence is the known-good email (D56).
+    delete (scheduled as { sequence?: unknown }).sequence;
+    const created = await this.smartDelivery.createAutomatedPlacement(scheduled);
     return String(created.id);
   }
 
@@ -396,16 +477,41 @@ export class PodControlService {
     }
   }
 
-  private async shellCampaignId(): Promise<number | undefined> {
+  private async resolveProviderIds(): Promise<number[]> {
     try {
-      const campaigns = await this.smartlead.listCampaigns();
-      return campaigns.find(
-        (campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE",
-      )?.id;
-    } catch {
-      return undefined;
+      const resolved = await this.smartDelivery.resolveProviderIds(
+        this.config.providerIds,
+      );
+      if (resolved.length) return resolved;
+    } catch (error) {
+      console.warn(
+        "[pod-controls] provider resolve failed:",
+        error instanceof Error ? error.message : error,
+      );
     }
+    try {
+      const tests = await this.smartDelivery.listTests();
+      for (const test of tests) {
+        const id = test.spam_test_id ?? test.id;
+        if (id == null) continue;
+        const details = await this.smartDelivery.getTestDetails(id);
+        const raw =
+          (details as { provider_id?: unknown; provider_ids?: unknown })
+            .provider_id ??
+          (details as { provider_ids?: unknown }).provider_ids;
+        if (Array.isArray(raw) && raw.every((n) => typeof n === "number")) {
+          return raw;
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "[pod-controls] provider fallback failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    return [];
   }
+
 }
 
 function findFolderId(raw: unknown, name: string): string | number | undefined {

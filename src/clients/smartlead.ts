@@ -297,6 +297,15 @@ export class SmartleadClient {
     );
   }
 
+  createCampaign(name: string): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, "campaigns/create", {
+        method: "POST",
+        body: { name },
+      }),
+    );
+  }
+
   updateCampaignStatus(
     campaignId: number,
     status: "START" | "PAUSED" | "STOPPED",

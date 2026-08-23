@@ -13,6 +13,7 @@ import {
   testIdOf,
 } from "../clients/smartdelivery.js";
 import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
+import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { quotaWouldBlock, remainingTestSlots } from "../lib/testQuota.js";
@@ -233,6 +234,7 @@ export class CampaignScanner {
       : statusSet;
 
     const candidates = campaigns.filter((campaign) => {
+      if (isPodControlShellCampaign(campaign)) return false;
       if (!creationStatusSet.has(String(campaign.status ?? "").toUpperCase())) {
         return false;
       }

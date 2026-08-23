@@ -1210,3 +1210,57 @@ describe("owner intent — D55 canaries off campaigns", () => {
     );
   });
 });
+
+describe("owner intent — D56 paused pod-control shell", () => {
+  it("D56: known-good tests hang on a paused shell, never a live campaign", async () => {
+    const { isPodControlShellCampaign, POD_CONTROL_SHELL_NAME } = await import(
+      "../lib/podControlShell.js"
+    );
+    assert.equal(
+      isPodControlShellCampaign({ id: 1, name: POD_CONTROL_SHELL_NAME }),
+      true,
+      stop(
+        "The paused shell is identified by name (D56).",
+        "isPodControlShellCampaign no longer matches Pod control shell.",
+      ),
+    );
+    assert.equal(
+      isExcluded({ id: 99, name: POD_CONTROL_SHELL_NAME }, []),
+      true,
+      stop(
+        "Health / top-up / fan-out never staff the shell (D56).",
+        "isExcluded no longer always excludes the pod-control shell.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../services/podControls.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      src,
+      /ensurePodControlShell/,
+      stop(
+        "Pod controls create or reuse the paused shell (D56).",
+        "podControls.ts no longer calls ensurePodControlShell.",
+      ),
+    );
+    assert.doesNotMatch(
+      src,
+      /status === "ACTIVE"\)\?\.id/,
+      stop(
+        "Do not hang pod controls on the first ACTIVE campaign (D56).",
+        "podControls.ts fell back to a live campaign as the shell.",
+      ),
+    );
+    assert.match(
+      src,
+      /delete \(scheduled as \{ sequence\?: unknown \}\)\.sequence/,
+      stop(
+        "Schedule payload omits a custom sequence; the shell is the email (D56).",
+        "podControls.ts still sends a custom sequence on /spam-test/schedule.",
+      ),
+    );
+  });
+});

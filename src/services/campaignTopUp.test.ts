@@ -30,6 +30,13 @@ describe("isExcluded", () => {
     assert.equal(isExcluded(msrs, []), false);
   });
 
+  it("always excludes the paused pod-control shell (D56)", () => {
+    assert.equal(
+      isExcluded({ id: 99, name: "Pod control shell" }, []),
+      true,
+    );
+  });
+
   it("matches a name fragment case-insensitively", () => {
     assert.equal(isExcluded(msrs, ["msrs"]), true);
     assert.equal(isExcluded(msrs, ["MSRS"]), true);

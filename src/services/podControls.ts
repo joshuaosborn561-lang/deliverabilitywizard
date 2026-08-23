@@ -112,6 +112,13 @@ export class PodControlService {
       );
       return result;
     }
+    const providerIds = await this.resolveProviderIds();
+    if (!providerIds.length) {
+      result.errors.push(
+        "no SmartDelivery provider_ids — cannot schedule pod controls",
+      );
+      return result;
+    }
     const existingByPod = await this.indexExistingControls(pods);
 
     for (const pod of pods) {
@@ -136,6 +143,7 @@ export class PodControlService {
             folderId,
             shellCampaignId,
             sequenceMappingId,
+            providerIds,
             template,
           });
           this.state.upsertPodControl({
@@ -317,9 +325,9 @@ export class PodControlService {
     folderId?: string | number;
     shellCampaignId?: number;
     sequenceMappingId: number;
+    providerIds: number[];
     template: ReturnType<typeof defaultControlTemplate>;
   }): Promise<string> {
-    const providerIds = this.config.providerIds;
     const scheduledAt = paddedScheduleDate();
     const manual = isolationManualPayload({
       testName: podControlTestName(input.pod.name, input.chunk, input.chunks),
@@ -331,7 +339,7 @@ export class PodControlService {
       senderAccounts: input.emails,
       sequence: controlSequence(input.template, "Pod control"),
       folderId: input.folderId,
-      providerIds,
+      providerIds: input.providerIds,
       campaignId: input.shellCampaignId,
       sequenceMappingId: input.sequenceMappingId,
     });
@@ -347,7 +355,7 @@ export class PodControlService {
             ? this.config.placementTestEndDays
             : OPEN_ENDED_TEST_DAYS,
         ),
-        providerIds,
+        input.providerIds,
       ),
     );
     return String(created.id);
@@ -460,6 +468,41 @@ export class PodControlService {
     } catch {
       return undefined;
     }
+  }
+
+  private async resolveProviderIds(): Promise<number[]> {
+    try {
+      const resolved = await this.smartDelivery.resolveProviderIds(
+        this.config.providerIds,
+      );
+      if (resolved.length) return resolved;
+    } catch (error) {
+      console.warn(
+        "[pod-controls] provider resolve failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    try {
+      const tests = await this.smartDelivery.listTests();
+      for (const test of tests) {
+        const id = test.spam_test_id ?? test.id;
+        if (id == null) continue;
+        const details = await this.smartDelivery.getTestDetails(id);
+        const raw =
+          (details as { provider_id?: unknown; provider_ids?: unknown })
+            .provider_id ??
+          (details as { provider_ids?: unknown }).provider_ids;
+        if (Array.isArray(raw) && raw.every((n) => typeof n === "number")) {
+          return raw;
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "[pod-controls] provider fallback failed:",
+        error instanceof Error ? error.message : error,
+      );
+    }
+    return [];
   }
 
   private async shellSequenceMappingId(

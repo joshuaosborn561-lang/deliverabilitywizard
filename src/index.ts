@@ -21,6 +21,12 @@ import {
   slackSignatureValid,
 } from "./lib/slackSignature.js";
 import {
+  publicBaseUrlFromEnv,
+  slackInstallHref,
+  verifySlackActionLink,
+} from "./lib/slackActionLink.js";
+import { remindPendingIsolationActions } from "./lib/isolationActions.js";
+import {
   exchangeSlackOauth,
   writeSlackBotTokenFile,
 } from "./lib/slackOauth.js";
@@ -109,6 +115,8 @@ async function main(): Promise<void> {
     botTokenFile: config.slackBotTokenFile,
     channelId: config.slackChannelId,
     channelLabel: config.slackChannel,
+    actionLinkSecret: config.slackSigningSecret,
+    publicBaseUrl: publicBaseUrlFromEnv(process.env),
   });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, smartlead, slack, state);
@@ -916,11 +924,204 @@ async function main(): Promise<void> {
     }, 20_000);
   }
 
+  // Old Slack buttons were posted by another bot, so taps never arrived.
+  // Re-send pending asks with signed /slack/action links after deploy.
+  setTimeout(() => {
+    void remindPendingIsolationActions({ store: state, slack })
+      .then((count) => {
+        if (count) {
+          console.log(`[slack] Re-posted ${count} pending isolation button(s)`);
+        }
+      })
+      .catch((error) => {
+        console.error("[slack] isolation remind failed", error);
+      });
+  }, 25_000);
+
   const app = express();
   // Railway terminates TLS one proxy hop in front of the app. This makes
   // req.ip useful for login throttling without trusting arbitrary forwarded
   // chains.
   app.set("trust proxy", 1);
+
+  const escapeHtml = (value: string): string =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const slackActionHtml = (opts: {
+    title: string;
+    body: string;
+    form?: { id: string; decision: string; exp: string; sig: string };
+  }): string => {
+    const form = opts.form
+      ? `<form method="post" action="/slack/action">
+<input type="hidden" name="id" value="${escapeHtml(opts.form.id)}" />
+<input type="hidden" name="decision" value="${escapeHtml(opts.form.decision)}" />
+<input type="hidden" name="exp" value="${escapeHtml(opts.form.exp)}" />
+<input type="hidden" name="sig" value="${escapeHtml(opts.form.sig)}" />
+<input type="hidden" name="confirm" value="1" />
+<button type="submit">${opts.form.decision === "approve" ? "Confirm" : "Confirm deny"}</button>
+</form>`
+      : "";
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(opts.title)}</title>
+<style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:2rem;}
+main{max-width:36rem;margin:0 auto;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:1.5rem;}
+h1{font-size:1.25rem;margin:0 0 .75rem;}
+p{line-height:1.5;color:#cbd5e1;white-space:pre-wrap;}
+button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem 1.1rem;font-weight:700;cursor:pointer;}
+</style></head><body><main><h1>${escapeHtml(opts.title)}</h1><p>${escapeHtml(opts.body)}</p>${form}</main></body></html>`;
+  };
+
+  const isolationKindTitle = (kind: string): string => {
+    if (kind === "buy_canary_fleet") return "Buy canary fleet";
+    if (kind === "buy_domains") return "Buy replacements";
+    if (kind === "retire_domain") return "Retire this domain";
+    if (kind === "swap_copy") return "Switch the word";
+    return kind;
+  };
+
+  const readSignedSlackAction = (src: Record<string, unknown>) => {
+    const id = typeof src.id === "string" ? src.id : "";
+    const decision = typeof src.decision === "string" ? src.decision : "";
+    const exp = typeof src.exp === "string" ? src.exp : "";
+    const sig = typeof src.sig === "string" ? src.sig : "";
+    const verified = verifySlackActionLink({
+      secret: config.slackSigningSecret,
+      id,
+      decision,
+      exp,
+      sig,
+    });
+    if (!verified.ok) return { ok: false as const, reason: verified.reason };
+    return {
+      ok: true as const,
+      id,
+      decision: verified.decision,
+      exp,
+      sig,
+    };
+  };
+
+  app.get("/slack/install", (_req, res) => {
+    if (!config.slackClientId) {
+      res
+        .status(503)
+        .type("html")
+        .send(
+          slackActionHtml({
+            title: "Slack install not configured",
+            body: "SLACK_CLIENT_ID is missing. Add the Wizard Slack app credentials and retry.",
+          }),
+        );
+      return;
+    }
+    res.redirect(
+      302,
+      slackInstallHref({
+        clientId: config.slackClientId,
+        redirectUri: config.slackOauthRedirectUri,
+      }),
+    );
+  });
+
+  app.get("/slack/action", (req, res) => {
+    const parsed = readSignedSlackAction(req.query as Record<string, unknown>);
+    if (!parsed.ok) {
+      res
+        .status(400)
+        .type("html")
+        .send(
+          slackActionHtml({
+            title: "Link expired or invalid",
+            body: `${parsed.reason} Ask the Wizard to send a fresh Slack message, or use /ops Isolation.`,
+          }),
+        );
+      return;
+    }
+    const pending = state.getIsolationAction(parsed.id);
+    const title = isolationKindTitle(pending?.kind ?? "request");
+    if (!pending || pending.status !== "pending") {
+      res.type("html").send(
+        slackActionHtml({
+          title,
+          body: pending
+            ? `This request is already ${pending.status}.`
+            : "That request is no longer pending.",
+        }),
+      );
+      return;
+    }
+    const spendNote =
+      pending.kind === "buy_canary_fleet" || pending.kind === "buy_domains"
+        ? " Confirming spends real money."
+        : "";
+    const verb =
+      parsed.decision === "approve"
+        ? `This will ${title.toLowerCase()} now.${spendNote}`
+        : "This will deny the request. Nothing will be bought or retired.";
+    res.type("html").send(
+      slackActionHtml({
+        title: pending.title || title,
+        body: [pending.proof, verb].filter(Boolean).join("\n\n"),
+        form: parsed,
+      }),
+    );
+  });
+
+  app.post(
+    "/slack/action",
+    express.urlencoded({ extended: false }),
+    async (req, res) => {
+      const parsed = readSignedSlackAction(
+        (req.body ?? {}) as Record<string, unknown>,
+      );
+      if (!parsed.ok || req.body?.confirm !== "1") {
+        res
+          .status(400)
+          .type("html")
+          .send(
+            slackActionHtml({
+              title: "Link expired or invalid",
+              body: `${!parsed.ok ? parsed.reason : "Confirm the form first."} Ask the Wizard to send a fresh Slack message, or use /ops Isolation.`,
+            }),
+          );
+        return;
+      }
+      try {
+        const result = await isolationExecute.decide(
+          parsed.id,
+          parsed.decision,
+          { name: "Josh", role: "owner" },
+        );
+        res
+          .status(result.ok ? 200 : 409)
+          .type("html")
+          .send(
+            slackActionHtml({
+              title: result.ok ? "Done" : "Could not complete",
+              body: result.message,
+            }),
+          );
+      } catch (error) {
+        res
+          .status(500)
+          .type("html")
+          .send(
+            slackActionHtml({
+              title: "Failed",
+              body: error instanceof Error ? error.message : String(error),
+            }),
+          );
+      }
+    },
+  );
+
   app.post(
     "/slack/interactions",
     express.raw({ type: "application/x-www-form-urlencoded" }),
@@ -937,6 +1138,7 @@ async function main(): Promise<void> {
             signature: String(req.header("x-slack-signature") ?? ""),
           })
         ) {
+          console.warn("[slack-interactions] bad signature");
           res.status(401).json({ error: "Bad Slack signature" });
           return;
         }
@@ -948,6 +1150,7 @@ async function main(): Promise<void> {
         const payload = JSON.parse(payloadRaw) as {
           user?: { id?: string; name?: string; username?: string };
           actions?: Array<{ value?: string }>;
+          response_url?: string;
         };
         const parsed = parseIsolationActionValue(
           payload.actions?.[0]?.value ?? "",
@@ -967,6 +1170,9 @@ async function main(): Promise<void> {
             : role === "operator"
               ? "Cayden"
               : payload.user?.name || payload.user?.username || "unknown";
+        console.log(
+          `[slack-interactions] kind=${parsed.kind} decision=${parsed.decision} role=${role}`,
+        );
         if (
           role === "unknown" &&
           (parsed.kind === "buy_domains" ||
@@ -978,17 +1184,35 @@ async function main(): Promise<void> {
           });
           return;
         }
-        const result = await isolationExecute.decide(
-          parsed.id,
-          parsed.decision,
-          { name, role },
-        );
-        res.status(200).json({ text: result.message });
+        // Slack requires an answer in 3s. Buying domains takes longer, so
+        // ack now and post the result to response_url / the channel.
+        res.status(200).json({
+          text: "Working on it — I will post here when it is done.",
+        });
+        void isolationExecute
+          .decide(parsed.id, parsed.decision, { name, role })
+          .then(async (result) => {
+            const text = result.message;
+            if (payload.response_url) {
+              await fetch(payload.response_url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text }),
+              });
+              return;
+            }
+            await slack.send(text);
+          })
+          .catch((error) => {
+            console.error("[slack-interactions] decide failed", error);
+          });
       } catch (error) {
         console.error("[slack-interactions]", error);
-        res.status(200).json({
-          text: error instanceof Error ? error.message : "That tap failed.",
-        });
+        if (!res.headersSent) {
+          res.status(200).json({
+            text: error instanceof Error ? error.message : "That tap failed.",
+          });
+        }
       }
     },
   );
@@ -1328,6 +1552,11 @@ async function main(): Promise<void> {
             }
           : await isolationBranch.run();
         res.json({ ok: true, mode: "isolation", result });
+        return;
+      }
+      if (mode === "isolation-remind" || mode === "remind-isolation") {
+        const count = await remindPendingIsolationActions({ store: state, slack });
+        res.json({ ok: true, mode: "isolation-remind", result: { count } });
         return;
       }
       if (mode === "delivery-watch" || mode === "copy-watch") {

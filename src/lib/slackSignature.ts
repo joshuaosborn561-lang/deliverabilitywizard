@@ -27,7 +27,14 @@ export function isolationActionValue(kind: string, id: string, decision: "approv
 export function parseIsolationActionValue(
   value: string,
 ): { kind: string; id: string; decision: "approve" | "deny" } | undefined {
-  const [kind, id, decision] = value.split(":");
+  const lastColon = value.lastIndexOf(":");
+  if (lastColon <= 0) return undefined;
+  const decision = value.slice(lastColon + 1);
+  const rest = value.slice(0, lastColon);
+  const firstColon = rest.indexOf(":");
+  if (firstColon <= 0) return undefined;
+  const kind = rest.slice(0, firstColon);
+  const id = rest.slice(firstColon + 1);
   if (!kind || !id || (decision !== "approve" && decision !== "deny")) return undefined;
   return { kind, id, decision };
 }

@@ -41,9 +41,12 @@ describe("pod controls", () => {
         listFolders: async () => [],
         createFolder: async () => ({ id: 3 }),
         listTests: async () => [],
+        resolveProviderIds: async () => [2, 20, 21],
+        getTestDetails: async () => ({ provider_id: [2, 20, 21] }),
         createAutomatedPlacement: async (payload: {
           sender_accounts?: string[];
           sequence_mapping_id?: number;
+          provider_ids?: number[];
         }) => {
           created.push(payload);
           return { id: `pod-${created.length}` };
@@ -70,5 +73,6 @@ describe("pod controls", () => {
       true,
       "SmartDelivery schedule requires sequence_mapping_id from the shell campaign",
     );
+    assert.deepEqual(created[0]?.provider_ids, [2, 20, 21]);
   });
 });

@@ -1174,13 +1174,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           `[slack-interactions] kind=${parsed.kind} decision=${parsed.decision} role=${role}`,
         );
         if (
-          role === "unknown" &&
+          (role === "unknown" || role === "operator") &&
           (parsed.kind === "buy_domains" ||
             parsed.kind === "buy_canary_fleet" ||
             parsed.kind === "retire_domain")
         ) {
           res.status(200).json({
-            text: "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
+            text:
+              role === "operator"
+                ? "Only Josh can approve a purchase or a retire. The confirm page is the same rule."
+                : "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
           });
           return;
         }
@@ -1557,6 +1560,11 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       if (mode === "isolation-remind" || mode === "remind-isolation") {
         const count = await remindPendingIsolationActions({ store: state, slack });
         res.json({ ok: true, mode: "isolation-remind", result: { count } });
+        return;
+      }
+      if (mode === "copy-canary-resume" || mode === "canary-resume") {
+        const finished = await copyCanaryBuy.resume();
+        res.json({ ok: true, mode: "copy-canary-resume", result: { finished } });
         return;
       }
       if (mode === "delivery-watch" || mode === "copy-watch") {

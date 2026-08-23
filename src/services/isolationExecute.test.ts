@@ -76,6 +76,41 @@ describe("IsolationExecuteService", () => {
     assert.equal(state.getIsolationAction(canary.id)?.status, "pending");
   });
 
+  it("a second Josh tap on an already-bought canary fleet is not an error", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-exec-again-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy the unwarmed canary fleet",
+      proof: "proof",
+      detail: {
+        quantity: 2,
+        domains: ["getcrosslaunchco.info", "crosslaunchcoget.info"],
+      },
+    });
+    state.upsertIsolationAction({
+      ...action,
+      status: "executed",
+      decidedBy: "Josh",
+    });
+    const svc = new IsolationExecuteService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const result = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /Already done/);
+    assert.match(result.message, /getcrosslaunchco\.info/);
+  });
+
   it("Josh or Cayden can deny a word swap without editing copy", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-deny-${process.pid}-${Date.now()}.json`,

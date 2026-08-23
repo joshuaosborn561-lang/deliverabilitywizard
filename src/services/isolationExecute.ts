@@ -30,8 +30,28 @@ export class IsolationExecuteService {
     actor: { name: string; role: "owner" | "operator" | "unknown" },
   ): Promise<{ ok: boolean; message: string }> {
     const action = this.state.getIsolationAction(actionId);
-    if (!action || action.status !== "pending") {
+    if (!action) {
       return { ok: false, message: "That request is no longer waiting." };
+    }
+    if (action.status !== "pending") {
+      if (
+        action.kind === "buy_canary_fleet" &&
+        (action.status === "approved" || action.status === "executed")
+      ) {
+        const domains = Array.isArray(action.detail.domains)
+          ? (action.detail.domains as string[]).join(", ")
+          : "";
+        return {
+          ok: true,
+          message: domains
+            ? `Already done — bought ${domains}. Mailboxes finish when nameservers catch up. No second tap.`
+            : "Already done — that buy is in progress. No second tap.",
+        };
+      }
+      return {
+        ok: false,
+        message: `This request is already ${action.status}.`,
+      };
     }
     if (!canDecideIsolationAction(action.kind, actor.role)) {
       return {

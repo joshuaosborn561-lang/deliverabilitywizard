@@ -976,3 +976,35 @@ Josh's Slack user ids (`SLACK_JOSH_USER_ID`) and Cayden's (`SLACK_CAYDEN_USER_ID
 
 **Guards.** Owner-intent D49; `canDecideIsolationAction`; domain rollup needs multiple fleet inbox fails; campaign placement does not open a retire.
 
+---
+
+## D50 — Live-send warmup is 21 days from InboxKit import
+
+**Decision.** A mailbox owes **21 days** from InboxKit import before it may
+send campaign copy or be handed out as pool supply. `POOL_WARMUP_DAYS` and
+`MIN_CAMPAIGN_WARMUP_DAYS` default to **21**. `freshInboxWarmupDays` stays
+**21**. Pre-warmed fleets (`EXTRA_GENERIC_DOMAINS` /
+`EXTRA_GENERIC_MAILBOXES`) stay exempt and may send immediately.
+
+This supersedes the **duration** in D1 and D41 (those said pool / campaign-min
+stay 14). It does **not** reverse D1's clock: warmup is still owed from the
+InboxKit import stamp (`warmedAt`), never from Smartlead's
+`warmup_details.created_at`. The warmup gate prefers that pool stamp when
+one exists.
+
+Unchanged:
+- Recovery hold after a bounce / placement pull stays **14 days** (D6)
+- Generic send / sit rotation stays **~14 days** (D43)
+- Warmup stays on for every mailbox
+
+**Why.** Josh (2026-08-23): unwarmed mailboxes were still able to sit on
+ACTIVE campaigns and send the campaign sequence. Fourteen days was not
+enough; make the live-send clock 21 across the pool and the gate.
+
+**Tradeoff.** Newly bought non-prewarmed mailboxes stay off live send for
+an extra week. Accepted: campaign copy on a cold box is worse than a
+thinner spare pile.
+
+**Guards.** `poolWarmupDays` / `campaignMinWarmupDays` default 21;
+`warmupClockStartedAt` prefers pool `warmedAt`; owner-intent D50.
+

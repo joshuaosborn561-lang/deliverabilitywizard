@@ -86,7 +86,7 @@ Only `domain_burned` is eligible for automatic replacement.
 Managed plan plus pre-warmed fleets on `crosslaunchco.com`,
 `crossscaleco.com`, and `cleartechco.com` (`EXTRA_GENERIC_DOMAINS`). Those
 fleets arrive pre-warmed and owe no import warmup. Fresh (non-prewarmed)
-InboxKit mailboxes owe **21 days** before live send; pool warmup stays 14.
+InboxKit mailboxes owe **21 days** from import before live send (D50).
 
 With `ENABLE_POOL_PROVISIONER=true`, cron self-advances
 `awaiting_ns` → `buying` → `awaiting_mailboxes` → `awaiting_sequencer` →
@@ -154,7 +154,7 @@ Copy `.env.example`. Required: `SMARTLEAD_API_KEY` and Slack
 | `CAMPAIGN_ESP_MIX_MIN_PERCENT` | `30` | Min Google / Microsoft share on top-up |
 | `MESSAGE_PER_DAY` | `30` | Campaign send cap (warmups not included) |
 | `MAILBOX_MIN_TIME_GAP_MINS` | `10` | Minimum time gap |
-| `POOL_WARMUP_DAYS` | `14` | Import warmup for managed generics |
+| `POOL_WARMUP_DAYS` | `21` | Import warmup for managed generics |
 | `EXTRA_GENERIC_DOMAINS` | `crosslaunchco.com,crossscaleco.com,cleartechco.com` | Pre-warmed fleets |
 | `REQUIRE_SPEND_APPROVAL` | `true` | Hold real-money spend for `/approvals` |
 | `RUN_TOKEN` | _(empty)_ | Required to enable `/status`, `/run`, `/approvals/*` |

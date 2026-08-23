@@ -402,7 +402,7 @@ export class PoolProvisioner {
               "The domains and mailboxes are ready. To finish importing them:",
               "1. Josh: connect Smartlead inside InboxKit (DW Generic Pool → Sequencers), or",
               "2. Josh: add the InboxKit Smartlead login in Railway.",
-              "After that, the job will import them and warm them for 14 days on its own.",
+              `After that, the job will import them and warm them for ${this.config.poolWarmupDays} days on its own.`,
             ].join("\n"),
           );
           this.state.setPoolProvision({

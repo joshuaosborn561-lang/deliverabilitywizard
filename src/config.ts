@@ -245,18 +245,22 @@ const ConfigSchema = z.object({
     ),
   /** Sub in warmed generics while originals recover (requires pool inventory in state). */
   enableRecoveryPool: boolFromEnv(false),
-  /** Days of Smartlead-only warmup before a generic is free for swaps. */
-  poolWarmupDays: z.coerce.number().int().positive().default(14),
+  /**
+   * Days from InboxKit import before a generic is free for live send / swaps.
+   * Clock is `warmedAt` at import, not Smartlead's warmup record (D1).
+   * Duration is 21 days (D50; superseded D1's 14).
+   */
+  poolWarmupDays: z.coerce.number().int().positive().default(21),
   /**
    * Pull mailboxes off ACTIVE campaigns until they have warmed this many days.
    * Also strips active HOLD-UNTIL-* tagged accounts from ACTIVE campaigns.
    */
   enableWarmupGate: boolFromEnv(true),
-  campaignMinWarmupDays: z.coerce.number().int().positive().default(14),
+  campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
   /**
    * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
-   * a live campaign. Pre-warmed fleets stay on campaignMinWarmupDays / exempt.
-   * Do not change poolWarmupDays or campaignMinWarmupDays defaults (D1).
+   * a live campaign. Pre-warmed fleets stay exempt. D50 aligned the pool
+   * and campaign-min clocks to the same 21 days.
    */
   freshInboxWarmupDays: z.coerce.number().int().positive().default(21),
   /** Porkbun domain spend cap per client per UTC month (USD). */
@@ -462,9 +466,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.EXTRA_GENERIC_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
-    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
+    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
-    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "14",
+    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "21",
     freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
     clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",

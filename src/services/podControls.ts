@@ -3,7 +3,9 @@ import type { SlackClient } from "../clients/slack.js";
 import {
   accountEmail,
   campaignIdsOf,
+  pickSequence,
   resolveAccountClient,
+  sequenceMappingIdOf,
   type SmartleadClient,
 } from "../clients/smartlead.js";
 import {
@@ -103,7 +105,14 @@ export class PodControlService {
 
     const folderId = await this.ensureFolder(POD_CONTROL_FOLDER_NAME, "podControls");
     const shellCampaignId = await this.shellCampaignId();
-    const existingByPod = this.indexExistingControls();
+    const sequenceMappingId = await this.shellSequenceMappingId(shellCampaignId);
+    if (sequenceMappingId == null) {
+      result.errors.push(
+        "shell campaign has no sequence_mapping_id — cannot schedule pod controls",
+      );
+      return result;
+    }
+    const existingByPod = await this.indexExistingControls(pods);
 
     for (const pod of pods) {
       const emails = emailsForPod(pod);
@@ -126,6 +135,7 @@ export class PodControlService {
             chunks: chunks.length,
             folderId,
             shellCampaignId,
+            sequenceMappingId,
             template,
           });
           this.state.upsertPodControl({
@@ -248,10 +258,53 @@ export class PodControlService {
     this.state.patchIsolation({ pods: records });
   }
 
-  private indexExistingControls(): Map<string, string> {
+  private async indexExistingControls(
+    pods: Pod[],
+  ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     for (const row of this.state.listPodControls()) {
       if (row.spamTestId) out.set(row.id, row.spamTestId);
+    }
+    try {
+      const tests = await this.smartDelivery.listTests();
+      for (const pod of pods) {
+        const emails = emailsForPod(pod);
+        if (!emails.length) continue;
+        const chunks = chunkArray(emails, this.config.maxMailboxesPerTest);
+        for (let index = 0; index < chunks.length; index += 1) {
+          const key = `${pod.id}:${index}`;
+          if (out.has(key)) continue;
+          const wanted = podControlTestName(pod.name, index + 1, chunks.length);
+          const found = tests.find((test) => {
+            const name = String(test.test_name ?? "");
+            if (name !== wanted) return false;
+            const status = String(test.status ?? "").toLowerCase();
+            return !/stop|complet|cancel|expir|fail|delet|finish|end/i.test(
+              status,
+            );
+          });
+          const id = found?.spam_test_id ?? found?.id;
+          if (id == null) continue;
+          out.set(key, String(id));
+          if (!this.state.listPodControls().some((row) => row.id === key)) {
+            this.state.upsertPodControl({
+              id: key,
+              podId: pod.id,
+              controlVersion:
+                this.state.getIsolation().controlTemplate?.controlVersion ??
+                "imported",
+              spamTestId: String(id),
+              emails: chunks[index] ?? [],
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(
+        "[pod-controls] existing-test index failed:",
+        error instanceof Error ? error.message : error,
+      );
     }
     return out;
   }
@@ -263,6 +316,7 @@ export class PodControlService {
     chunks: number;
     folderId?: string | number;
     shellCampaignId?: number;
+    sequenceMappingId: number;
     template: ReturnType<typeof defaultControlTemplate>;
   }): Promise<string> {
     const providerIds = this.config.providerIds;
@@ -279,6 +333,7 @@ export class PodControlService {
       folderId: input.folderId,
       providerIds,
       campaignId: input.shellCampaignId,
+      sequenceMappingId: input.sequenceMappingId,
     });
     const created = await this.smartDelivery.createAutomatedPlacement(
       isolationSchedulePayload(
@@ -402,6 +457,19 @@ export class PodControlService {
       return campaigns.find(
         (campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE",
       )?.id;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async shellSequenceMappingId(
+    campaignId: number | undefined,
+  ): Promise<number | undefined> {
+    if (campaignId == null) return undefined;
+    try {
+      const sequences = await this.smartlead.getCampaignSequences(campaignId);
+      const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
+      return sequence ? sequenceMappingIdOf(sequence) : undefined;
     } catch {
       return undefined;
     }

@@ -53,6 +53,7 @@ export function isolationManualPayload(input: {
   folderId?: string | number;
   providerIds: number[];
   campaignId?: number;
+  sequenceMappingId?: number;
   linkChecker?: boolean;
 }): CreateManualPlacementInput {
   return {
@@ -67,6 +68,9 @@ export function isolationManualPayload(input: {
     min_time_unit: "minutes",
     is_warmup: false,
     ...(input.campaignId ? { campaign_id: input.campaignId } : {}),
+    ...(input.sequenceMappingId != null
+      ? { sequence_mapping_id: input.sequenceMappingId }
+      : {}),
     ...(input.folderId !== undefined ? { folder_id: input.folderId } : {}),
     ...(input.providerIds.length ? { provider_ids: input.providerIds } : {}),
   };

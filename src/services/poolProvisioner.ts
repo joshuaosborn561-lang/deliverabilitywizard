@@ -170,6 +170,7 @@ export class PoolProvisioner {
             if (!email) continue;
             const domain = email.split("@")[1] ?? "";
             if (!planDomains.has(domain)) continue;
+            if (this.state.isCopyCanary(email)) continue;
             try {
               await this.smartlead.configureWarmup(account.id, {
                 warmup_enabled: true,
@@ -585,6 +586,7 @@ export class PoolProvisioner {
           const domain = email.split("@")[1]!;
           const platform = platformByDomain.get(domain) ?? "GOOGLE";
           const existing = this.state.getPoolMailbox(email);
+          if (this.state.isCopyCanary(email) || existing?.copyCanary) continue;
           try {
             await this.smartlead.configureWarmup(account.id, {
               warmup_enabled: true,
@@ -659,6 +661,7 @@ export class PoolProvisioner {
             if (!email) continue;
             const domain = email.split("@")[1] ?? "";
             if (!planDomains.has(domain)) continue;
+            if (this.state.isCopyCanary(email)) continue;
             try {
               await this.smartlead.configureWarmup(account.id, {
                 warmup_enabled: true,

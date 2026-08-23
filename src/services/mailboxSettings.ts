@@ -18,6 +18,7 @@ import {
   readMinTimeGapMins,
 } from "../lib/mailboxSendSettings.js";
 import { totalDailySendCeiling } from "../lib/sendCeiling.js";
+import type { StateStore } from "../state/store.js";
 
 /**
  * Hold every mailbox at the agreed sending settings.
@@ -52,6 +53,7 @@ export class MailboxSettingsService {
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
+    private readonly store?: StateStore,
   ) {}
 
   /** D30/D24 only — safe to run every health cron. */
@@ -141,8 +143,10 @@ export class MailboxSettingsService {
 
         const warmup = (account as { warmup_details?: { status?: string } | null })
           .warmup_details;
+        const skipWarmup = this.store?.isCopyCanary(email) ?? false;
         needsWarmup =
-          !warmup || String(warmup.status ?? "").toUpperCase() !== "ACTIVE";
+          !skipWarmup &&
+          (!warmup || String(warmup.status ?? "").toUpperCase() !== "ACTIVE");
       }
 
       if (!needsLimit && !needsGap && !needsSignature && !needsWarmup) continue;

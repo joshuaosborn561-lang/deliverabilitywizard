@@ -1,6 +1,7 @@
 import type { MailboxControlPlacement, MailboxControlTag } from "../lib/mailboxControlTag.js";
 import type { IsolationVerdict } from "../lib/isolationVerdict.js";
 import type { VariantKind } from "../lib/copyVariants.js";
+import type { CopyCanaryFleetRecord } from "../lib/copyCanaryFleet.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
 import type { PodPool, PodStatus } from "../lib/pods.js";
 
@@ -109,16 +110,18 @@ export interface CopySuspectRecord {
   evaluatedAt?: string;
 }
 
-/** D51 — unwarmed mailboxes attached to send live campaign copy. */
+/** D51/D54/D55 — dedicated canary fleet sending campaign copy off-campaign. */
 export interface CopyCanaryRecord {
   campaignId: number;
   emails: string[];
+  testId?: string;
   updatedAt: string;
 }
 
 export type IsolationActionKind =
   | "retire_domain"
   | "buy_domains"
+  | "buy_canary_fleet"
   | "swap_copy";
 
 export type IsolationActionStatus =
@@ -170,6 +173,7 @@ export interface IsolationState {
   suppressedTerms: Record<string, SuppressedTerm>;
   copySuspects: Record<string, CopySuspectRecord>;
   copyCanaries: Record<string, CopyCanaryRecord>;
+  copyCanaryFleet: CopyCanaryFleetRecord | null;
   lastPodControlAt: string | null;
   lastDeliveryWatchAt: string | null;
   lastRigBaselineAt: string | null;
@@ -189,6 +193,7 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   suppressedTerms: {},
   copySuspects: {},
   copyCanaries: {},
+  copyCanaryFleet: null,
   lastPodControlAt: null,
   lastDeliveryWatchAt: null,
   lastRigBaselineAt: null,
@@ -212,6 +217,7 @@ export function normalizeIsolationState(
     suppressedTerms: raw?.suppressedTerms ?? {},
     copySuspects: raw?.copySuspects ?? {},
     copyCanaries: raw?.copyCanaries ?? {},
+    copyCanaryFleet: raw?.copyCanaryFleet ?? null,
     controlTemplate: raw?.controlTemplate ?? null,
     lastPodControlAt: raw?.lastPodControlAt ?? null,
     lastDeliveryWatchAt: raw?.lastDeliveryWatchAt ?? null,

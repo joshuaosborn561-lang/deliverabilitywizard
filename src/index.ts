@@ -68,6 +68,7 @@ import { CopyIsolationService } from "./services/copyIsolation.js";
 import { IsolationBranchService } from "./services/isolationBranch.js";
 import { DeliveryWatchService } from "./services/deliveryWatch.js";
 import { IsolationBuyService } from "./services/isolationBuy.js";
+import { CopyCanaryBuyService } from "./services/copyCanaryBuy.js";
 import { IsolationExecuteService } from "./services/isolationExecute.js";
 import { DomainLifecycleService } from "./services/domainLifecycle.js";
 import { CopyCanaryService } from "./services/copyCanary.js";
@@ -275,7 +276,12 @@ async function main(): Promise<void> {
   };
 
   const dnsAudit = new DnsAuditService(smartlead, slack, state);
-  const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
+  const mailboxSettings = new MailboxSettingsService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const campaignTopUp = new CampaignTopUpService(
     config,
     smartlead,
@@ -377,12 +383,21 @@ async function main(): Promise<void> {
     state,
     spendGateway,
   );
+  const copyCanaryBuy = new CopyCanaryBuyService(
+    config,
+    inboxkit,
+    porkbun,
+    smartlead,
+    state,
+    spendGateway,
+  );
   const isolationExecute = new IsolationExecuteService(
     config,
     smartlead,
     slack,
     state,
     isolationBuy,
+    copyCanaryBuy,
   );
   const domainLifecycle = new DomainLifecycleService(config, state, slack);
   const deliveryWatch = new DeliveryWatchService(
@@ -727,6 +742,11 @@ async function main(): Promise<void> {
           } catch (error) {
             console.warn("[isolation-buy] resume failed", error);
           }
+          try {
+            await copyCanaryBuy.resume();
+          } catch (error) {
+            console.warn("[copy-canary-buy] resume failed", error);
+          }
         } catch (error) {
           console.warn("[pod-controls] failed", error);
         }
@@ -949,7 +969,9 @@ async function main(): Promise<void> {
               : payload.user?.name || payload.user?.username || "unknown";
         if (
           role === "unknown" &&
-          (parsed.kind === "buy_domains" || parsed.kind === "retire_domain")
+          (parsed.kind === "buy_domains" ||
+            parsed.kind === "buy_canary_fleet" ||
+            parsed.kind === "retire_domain")
         ) {
           res.status(200).json({
             text: "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
@@ -1630,7 +1652,7 @@ async function main(): Promise<void> {
       `[boot] Live mailbox pull: ${config.enableLegacyMailboxPulls ? "LEGACY (placement/bounce/HOLD)" : "KILL-ONLY (domain retire + backfill)"}`,
     );
     console.log(
-      `[boot] Copy canaries: ${config.enableCopyCanary ? `ENABLED (${config.copyCanaryPerCampaign} unwarmed per campaign, campaign copy)` : "disabled"}`,
+      `[boot] Copy canaries: ${config.enableCopyCanary ? "ENABLED (dedicated 2-domain fleet, warmup off, off-campaign copy tests)" : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(

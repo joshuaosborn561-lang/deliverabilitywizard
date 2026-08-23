@@ -15,7 +15,11 @@ import {
   isHeldRecoveryTestName,
   isRestRecoveryTestName,
 } from "./heldPlacementTests.js";
-import { isIsolationManagedTestName } from "../lib/isolationNames.js";
+import {
+  campaignIdFromCanaryTestName,
+  isCanaryCopyTestName,
+  isIsolationManagedTestName,
+} from "../lib/isolationNames.js";
 
 export interface StoppedTest {
   testId: string;
@@ -108,7 +112,11 @@ export class TestReconciler {
       result.automatedTests += 1;
 
       const testId = testIdOf(test);
-      const campaignId = campaignIdOf(test);
+      const campaignId =
+        campaignIdOf(test) ??
+        (isCanaryCopyTestName(test.test_name)
+          ? campaignIdFromCanaryTestName(test.test_name)?.toString()
+          : undefined);
       if (!testId) continue;
 
       if (!campaignId) {

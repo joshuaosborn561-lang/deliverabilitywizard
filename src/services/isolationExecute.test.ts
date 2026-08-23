@@ -35,6 +35,12 @@ describe("IsolationExecuteService", () => {
       proof: "proof",
       detail: { domain: "crosslaunchco.com", quantity: 1 },
     });
+    const canary = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy the unwarmed canary fleet",
+      proof: "proof",
+      detail: { quantity: 2 },
+    });
     const retire = buildIsolationAction({
       kind: "retire_domain",
       title: "Retire it",
@@ -42,6 +48,7 @@ describe("IsolationExecuteService", () => {
       detail: { domain: "crosslaunchco.com" },
     });
     state.upsertIsolationAction(buy);
+    state.upsertIsolationAction(canary);
     state.upsertIsolationAction(retire);
     const svc = new IsolationExecuteService(
       loadConfig({} as NodeJS.ProcessEnv),
@@ -54,13 +61,19 @@ describe("IsolationExecuteService", () => {
       name: "Cayden",
       role: "operator",
     });
+    const canaryDenied = await svc.decide(canary.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
     const retireDenied = await svc.decide(retire.id, "approve", {
       name: "Cayden",
       role: "operator",
     });
     assert.equal(buyDenied.ok, false);
+    assert.equal(canaryDenied.ok, false);
     assert.equal(retireDenied.ok, false);
     assert.equal(state.getIsolationAction(buy.id)?.status, "pending");
+    assert.equal(state.getIsolationAction(canary.id)?.status, "pending");
   });
 
   it("Josh or Cayden can deny a word swap without editing copy", async () => {

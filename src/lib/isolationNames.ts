@@ -3,6 +3,7 @@
 export const POD_CONTROL_TEST_PREFIX = "Pod control:";
 export const RIG_CONTROL_TEST_PREFIX = "Rig control:";
 export const ISOLATION_TEST_PREFIX = "Isolation:";
+export const CANARY_COPY_TEST_PREFIX = "Canary copy:";
 export const POD_CONTROL_FOLDER_NAME = "Pod controls";
 export const ISOLATION_FOLDER_NAME = "Isolation teardowns";
 
@@ -13,6 +14,29 @@ export function isIsolationManagedTestName(name: string | undefined): boolean {
     value.startsWith(RIG_CONTROL_TEST_PREFIX) ||
     value.startsWith(ISOLATION_TEST_PREFIX)
   );
+}
+
+export function canaryCopyTestName(
+  campaignId: number,
+  campaignName?: string,
+): string {
+  const label = campaignName?.trim() ? ` ${campaignName.trim()}` : "";
+  return `${CANARY_COPY_TEST_PREFIX} #${campaignId}${label}`.slice(0, 120);
+}
+
+export function campaignIdFromCanaryTestName(
+  name: string | undefined,
+): number | undefined {
+  const match = String(name ?? "").match(
+    new RegExp(`^${CANARY_COPY_TEST_PREFIX}\\s+#(\\d+)`),
+  );
+  if (!match) return undefined;
+  const id = Number(match[1]);
+  return Number.isFinite(id) ? id : undefined;
+}
+
+export function isCanaryCopyTestName(name: string | undefined): boolean {
+  return String(name ?? "").startsWith(CANARY_COPY_TEST_PREFIX);
 }
 
 export function podControlTestName(podName: string, chunk: number, chunks: number): string {

@@ -37,6 +37,7 @@ function samePending(
         String(next.detail.element ?? "").toLowerCase()
     );
   }
+  if (next.kind === "buy_canary_fleet") return true;
   return (
     String(existing.detail.domain ?? "").toLowerCase() ===
     String(next.detail.domain ?? "").toLowerCase()

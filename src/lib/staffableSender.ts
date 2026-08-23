@@ -34,6 +34,8 @@ export interface StaffableOptions {
   held?: boolean;
   /** D43 — off-week client inbox or send-clock generic; not staffable. */
   resting?: boolean;
+  /** D51 — unwarmed campaign-copy canary; extra to the 50 floor. */
+  copyCanary?: boolean;
   /**
    * Latest known placement inbox rate (0–100). When set and below the
    * remediation threshold, the sender does not count as inboxing.
@@ -60,6 +62,7 @@ export function isStaffableSender(
   if (!isConnectedAccount(account)) return false;
   if (options.held) return false;
   if (options.resting) return false;
+  if (options.copyCanary) return false;
   if (account.warmup_details?.is_warmup_blocked) return false;
 
   const threshold = options.inboxThreshold ?? 80;

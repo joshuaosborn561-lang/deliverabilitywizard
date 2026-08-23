@@ -62,18 +62,18 @@ describe("owner intent", () => {
       defaults.campaignMinWarmupDays,
       21,
       stop(
-        "The warmup gate also uses 21 days before campaign copy (D50).",
+        "21 days is the warmed-vs-unwarmed clock (D50). D51 stopped the gate from pulling.",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
   });
 
-  it("D5: rotation thresholds are 80% placement and 5% bounce", () => {
+  it("D5/D51: 80% placement and 5% bounce stay readings, not live pulls", () => {
     assert.equal(
       defaults.remediationInboxThreshold,
       80,
       stop(
-        "Senders below 80% placement are rotated out (D5).",
+        "80% same-ESP is still the placement *reading* (D5/D51). It does not pull.",
         `Placement threshold is now ${defaults.remediationInboxThreshold}%.`,
       ),
     );
@@ -81,8 +81,16 @@ describe("owner intent", () => {
       defaults.bounceRateThreshold,
       5,
       stop(
-        "Senders above 5% bounce are rotated out (D5).",
+        "5% bounce is still the bounce *reading* (D5/D51). It does not pull.",
         `Bounce threshold is now ${defaults.bounceRateThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.enableLegacyMailboxPulls,
+      false,
+      stop(
+        "Placement / bounce / HOLD no longer pull a live mailbox (D51).",
+        "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
       ),
     );
   });
@@ -1014,7 +1022,7 @@ describe("owner intent — D50 live-send warmup", () => {
       defaults.campaignMinWarmupDays,
       21,
       stop(
-        "The warmup gate pulls campaign copy before 21 days (D50).",
+        "21 days is the warmed-vs-unwarmed clock (D50). The gate does not pull (D51).",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
@@ -1040,6 +1048,67 @@ describe("owner intent — D50 live-send warmup", () => {
       stop(
         "Generic send / sit rotation stays ~14 days (D43). D50 is the live-send warmup clock only.",
         `Generic send rest is now ${defaults.genericSendRestDays} days.`,
+      ),
+    );
+  });
+});
+
+describe("owner intent — D51 kill-only pull", () => {
+  it("D51: no placement/bounce/warmup pulls; copy canaries stay on campaign copy", () => {
+    assert.equal(
+      defaults.enableWarmupGate,
+      false,
+      stop(
+        "The warmup gate does not strip campaign copy (D51).",
+        "ENABLE_WARMUP_GATE now defaults on.",
+      ),
+    );
+    assert.equal(
+      defaults.enableBounceRotation,
+      false,
+      stop(
+        "Bounce does not pull a live mailbox (D51).",
+        "ENABLE_BOUNCE_ROTATION now defaults on.",
+      ),
+    );
+    assert.equal(
+      defaults.enableLegacyMailboxPulls,
+      false,
+      stop(
+        "The only automatic live pull is Josh killing a mailbox (D51).",
+        "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
+      ),
+    );
+    assert.equal(
+      defaults.enableCopyCanary,
+      true,
+      stop(
+        "Purposely unwarmed boxes send campaign copy (D51).",
+        "ENABLE_COPY_CANARY now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.copyCanaryPerCampaign,
+      3,
+      stop(
+        "Each live campaign keeps 3 unwarmed campaign-copy canaries (D51).",
+        `Copy canaries per campaign is now ${defaults.copyCanaryPerCampaign}.`,
+      ),
+    );
+    assert.equal(
+      defaults.enableRemediation,
+      false,
+      stop(
+        "Remediation stays off so placement pull cannot sneak back (D51).",
+        "ENABLE_REMEDIATION now defaults on.",
+      ),
+    );
+    assert.equal(
+      "canaryCampaignDays" in defaults,
+      false,
+      stop(
+        "Launch canary is still not in this loop (D43). Copy canaries are a different thing.",
+        "canaryCampaignDays came back.",
       ),
     );
   });

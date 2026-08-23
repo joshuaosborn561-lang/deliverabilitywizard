@@ -914,6 +914,31 @@ export class StateStore {
     return Object.values(this.state.isolation.copySuspects);
   }
 
+  setCopyCanaries(campaignId: number, emails: string[]): void {
+    const unique = [...new Set(emails.map((email) => email.toLowerCase()))];
+    this.state.isolation.copyCanaries[String(campaignId)] = {
+      campaignId,
+      emails: unique,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  getCopyCanaries(campaignId: number): string[] {
+    return this.state.isolation.copyCanaries[String(campaignId)]?.emails ?? [];
+  }
+
+  listCopyCanaryEmails(): Set<string> {
+    const out = new Set<string>();
+    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+      for (const email of row.emails) out.add(email.toLowerCase());
+    }
+    return out;
+  }
+
+  isCopyCanary(email: string): boolean {
+    return this.listCopyCanaryEmails().has(email.toLowerCase());
+  }
+
   upsertDomainHistory(record: DomainControlHistoryRecord): void {
     this.state.isolation.domainHistory[record.domain.toLowerCase()] = record;
   }

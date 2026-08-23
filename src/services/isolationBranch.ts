@@ -19,6 +19,7 @@ import type { StateStore } from "../state/store.js";
 import { isExcluded } from "./campaignTopUp.js";
 import type { CopyIsolationService } from "./copyIsolation.js";
 import type { IsolationRigService } from "./isolationRig.js";
+import type { CopyCanaryService } from "./copyCanary.js";
 
 export interface IsolationBranchResult {
   dryRun: boolean;
@@ -39,6 +40,7 @@ export class IsolationBranchService {
     private readonly state: StateStore,
     private readonly copyIsolation: CopyIsolationService,
     private readonly rig: IsolationRigService,
+    private readonly copyCanary?: CopyCanaryService,
   ) {}
 
   async run(opts: { dryRun?: boolean; campaignId?: number } = {}): Promise<IsolationBranchResult> {
@@ -114,9 +116,13 @@ export class IsolationBranchService {
     const campaignInSpam =
       opts.campaignInSpam ?? (await this.campaignLooksSpam(campaignId));
     const rigPrimary = await this.rig.readLatestControl();
+    const copyCanarySplit = this.copyCanary
+      ? await this.copyCanary.readSplit(campaignId)
+      : null;
     const decided = decideIsolationVerdict({
       campaignInSpam,
       senderControls,
+      copyCanary: copyCanarySplit,
       rig:
         decidedNeedsRig(campaignInSpam, senderControls)
           ? { controlPrimary: rigPrimary, copyPrimary: null }
@@ -155,11 +161,17 @@ export class IsolationBranchService {
       this.state.upsertIsolationRun(run);
     }
 
+    const canaryLine = this.copyCanary?.describeSplit(copyCanarySplit);
     const proof = campaignProof({
       verdict: decided.verdict,
       controlVersion: this.state.getIsolation().controlTemplate?.controlVersion,
       senderSummary: `${emails.length} inbox${emails.length === 1 ? "" : "es"} on this campaign`,
-      whyNotTheOther: whyNotTheOtherCause(decided.verdict, decided.reason),
+      whyNotTheOther: [
+        whyNotTheOtherCause(decided.verdict, decided.reason),
+        canaryLine,
+      ]
+        .filter(Boolean)
+        .join(" "),
       next:
         decided.verdict === "COPY"
           ? "I will not edit the live email until Josh or Cayden tap Switch the word."

@@ -649,6 +649,12 @@ export class RemediationService {
     }
 
     // 5) Recover low-inbox (non-blacklisted) senders: remove from ACTIVE campaigns + warmup + HOLD tag
+    // D51 — placement / bounce / HOLD strip no longer pull. Kill + backfill only.
+    if (!this.config.enableLegacyMailboxPulls) {
+      console.log(
+        "[remediation] D51: skip placement/bounce/HOLD pulls (kill-only)",
+      );
+    }
     const threshold = this.config.remediationInboxThreshold;
     const holdDays = this.config.recoveryHoldDays;
     const holdUntilDate = addDaysIsoDate(new Date(), holdDays);
@@ -717,7 +723,8 @@ export class RemediationService {
       }
     }
 
-    const recoverCandidates = accounts.filter((account) => {
+    const recoverCandidates = this.config.enableLegacyMailboxPulls
+      ? accounts.filter((account) => {
       const email = accountEmail(account)?.toLowerCase();
       const domain = accountDomain(account);
       if (!email || !domain) return false;
@@ -728,7 +735,8 @@ export class RemediationService {
       return shouldRotateForPlacement(inboxRateRows.get(email), threshold, {
         scoreSameEspOnly: this.config.scoreSameEspOnly,
       });
-    });
+    })
+      : [];
 
     for (const account of recoverCandidates) {
       const email = accountEmail(account)!;
@@ -933,12 +941,15 @@ export class RemediationService {
 
     // Anything already held but still on an ACTIVE campaign is still sending —
     // re-pull it. Runs after the main loop, which skips held mailboxes.
-    result.heldReconcile = await this.reconcileHeldStillOnCampaigns({
-      accounts,
-      campaignStatus,
-      dryRun: result.dryRun,
-    });
-    result.errors.push(...result.heldReconcile.errors);
+    // D51: HOLD strip is a legacy pull — skip unless explicitly re-enabled.
+    if (this.config.enableLegacyMailboxPulls) {
+      result.heldReconcile = await this.reconcileHeldStillOnCampaigns({
+        accounts,
+        campaignStatus,
+        dryRun: result.dryRun,
+      });
+      result.errors.push(...result.heldReconcile.errors);
+    }
 
     // Backfill HOLD tags for previously recovered inboxes that never got tagged
     await this.backfillHoldTags({

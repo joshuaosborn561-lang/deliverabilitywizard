@@ -47,8 +47,9 @@ reconciler stops a test when its campaign is no longer active.
 blocks. **≤50 senders per test** is a SmartDelivery API limit, not a plan
 quota.
 
-**Launch bar is 85% same-ESP** (promo tab = miss, D46). Live pull stays **80%**
-same-ESP (D32) or bounce over 5% with 50 sends. Do not mix the two.
+**Launch bar is 85% same-ESP** (promo tab = miss, D46). 80% same-ESP and
+5% bounce are **readings only** (D51) — they do not pull a live mailbox.
+The only automatic live pull is Josh killing a mailbox / retiring a domain.
 
 Idle or zero-lead ACTIVE campaigns still get a daily test unless we skip them
 — that matters more with the cap gone.

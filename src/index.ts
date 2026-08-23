@@ -70,6 +70,7 @@ import { DeliveryWatchService } from "./services/deliveryWatch.js";
 import { IsolationBuyService } from "./services/isolationBuy.js";
 import { IsolationExecuteService } from "./services/isolationExecute.js";
 import { DomainLifecycleService } from "./services/domainLifecycle.js";
+import { CopyCanaryService } from "./services/copyCanary.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -300,6 +301,13 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const copyCanary = new CopyCanaryService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -307,6 +315,7 @@ async function main(): Promise<void> {
     state,
     campaignTopUp,
     clientFanOut,
+    copyCanary,
   );
   const heldPlacementTests = new HeldPlacementTestService(
     config,
@@ -345,6 +354,7 @@ async function main(): Promise<void> {
     state,
     copyIsolation,
     isolationRig,
+    copyCanary,
   );
   const podControls = new PodControlService(
     config,
@@ -1153,6 +1163,9 @@ async function main(): Promise<void> {
         enablePoolProvisioner: config.enablePoolProvisioner,
         enableAccountReconnect: config.enableAccountReconnect,
         enableWarmupGate: config.enableWarmupGate,
+        enableLegacyMailboxPulls: config.enableLegacyMailboxPulls,
+        enableCopyCanary: config.enableCopyCanary,
+        copyCanaryPerCampaign: config.copyCanaryPerCampaign,
         campaignMinWarmupDays: config.campaignMinWarmupDays,
         poolWarmupDays: config.poolWarmupDays,
         clientDomainBudgetUsd: config.clientDomainBudgetUsd,
@@ -1611,7 +1624,13 @@ async function main(): Promise<void> {
       `[boot] Account reconnect: ${config.enableAccountReconnect ? `ENABLED (${config.cronAccountReconnect} America/New_York)` : "disabled"}`,
     );
     console.log(
-      `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled"}`,
+      `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled (D51 kill-only pull)"}`,
+    );
+    console.log(
+      `[boot] Live mailbox pull: ${config.enableLegacyMailboxPulls ? "LEGACY (placement/bounce/HOLD)" : "KILL-ONLY (domain retire + backfill)"}`,
+    );
+    console.log(
+      `[boot] Copy canaries: ${config.enableCopyCanary ? `ENABLED (${config.copyCanaryPerCampaign} unwarmed per campaign, campaign copy)` : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(

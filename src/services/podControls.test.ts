@@ -38,6 +38,8 @@ describe("pod controls", () => {
           { id: 77, seq_number: 1, subject: "Quick check-in" },
         ],
         getCampaignEmailAccounts: async () => [],
+        listCampaignLeads: async () => [],
+        importLeads: async () => ({ added_count: 0 }),
         addEmailAccountsToCampaign: async () => undefined,
         removeEmailAccountsFromCampaign: async () => undefined,
         updateCampaignSequences: async () => undefined,

@@ -9,6 +9,11 @@ import { isCopyCanaryFleetEmail } from "../lib/copyCanaryFleet.js";
 import type { ControlTemplate } from "../lib/controlTemplate.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import {
+  emailsFromLeadList,
+  pickShellLeadEmails,
+  shellLeadRecords,
+} from "../lib/shellLeads.js";
+import {
   campaignIdFromCreate,
   isPodControlShellCampaign,
   POD_CONTROL_SHELL_NAME,
@@ -84,7 +89,14 @@ export async function ensurePodControlShell(input: {
     ? 0
     : await syncShellMembers(input, campaign.id);
 
-  input.state.patchIsolation({ shellCampaignId: campaign.id });
+  const leadEmails = input.dryRun
+    ? input.state.getIsolation().shellLeadEmails
+    : await seedShellLeads(input, campaign.id);
+
+  input.state.patchIsolation({
+    shellCampaignId: campaign.id,
+    shellLeadEmails: leadEmails,
+  });
 
   return {
     campaignId: campaign.id,
@@ -203,4 +215,47 @@ async function syncShellMembers(
     await sleep(200);
   }
   return add.length;
+}
+
+/**
+ * D57 — SmartDelivery /spam-test/schedule against the shell fails with
+ * "No leads available for the selected or lower sequence" when the paused
+ * campaign has no leads. Plant a handful of pre-warmed fleet addresses as
+ * recipients only. Never START the shell (D40 / D56).
+ */
+async function seedShellLeads(
+  input: {
+    config: AppConfig;
+    smartlead: SmartleadClient;
+    state: StateStore;
+    pods: Pod[];
+  },
+  campaignId: number,
+): Promise<string[]> {
+  const candidates = input.pods.flatMap((pod) =>
+    pod.mailboxes.map((mailbox) => mailbox.email),
+  );
+  const listed = await input.smartlead.listCampaignLeads(campaignId, {
+    offset: 0,
+    limit: 100,
+  });
+  const existing = emailsFromLeadList(listed);
+  const wanted = pickShellLeadEmails({
+    extraGenericDomains: input.config.extraGenericDomains,
+    candidates,
+    existing: [
+      ...existing,
+      ...input.state.getIsolation().shellLeadEmails,
+    ],
+  });
+  const missing = wanted.filter((email) => !existing.includes(email));
+  if (missing.length) {
+    await input.smartlead.importLeads(campaignId, shellLeadRecords(missing), {
+      ignore_duplicate_leads_in_other_campaign: true,
+    });
+    console.log(
+      `[pod-control-shell] seeded ${missing.length} pre-warmed lead(s) on #${campaignId}`,
+    );
+  }
+  return wanted;
 }

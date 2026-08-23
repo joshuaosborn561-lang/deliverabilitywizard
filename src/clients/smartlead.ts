@@ -256,6 +256,52 @@ export class SmartleadClient {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`);
   }
 
+  listCampaignLeads(
+    campaignId: number,
+    options: { offset?: number; limit?: number } = {},
+  ): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+      query: {
+        offset: options.offset ?? 0,
+        limit: options.limit ?? 100,
+      },
+    });
+  }
+
+  /**
+   * POST /campaigns/{id}/leads — Smartlead `import_leads`.
+   * Updates custom fields on an existing lead rather than duplicating.
+   */
+  importLeads(
+    campaignId: number,
+    leadList: Array<{
+      email: string;
+      first_name?: string;
+      last_name?: string;
+      company_name?: string;
+    }>,
+    settings: {
+      ignore_global_block_list?: boolean;
+      ignore_unsubscribe_list?: boolean;
+      ignore_duplicate_leads_in_other_campaign?: boolean;
+    } = {},
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+        method: "POST",
+        body: {
+          lead_list: leadList,
+          settings: {
+            ignore_global_block_list: settings.ignore_global_block_list ?? false,
+            ignore_unsubscribe_list: settings.ignore_unsubscribe_list ?? false,
+            ignore_duplicate_leads_in_other_campaign:
+              settings.ignore_duplicate_leads_in_other_campaign ?? true,
+          },
+        },
+      }),
+    );
+  }
+
   getDayWiseOverallStats(options: {
     startDate: string;
     endDate: string;

@@ -177,6 +177,8 @@ export interface IsolationState {
   lastPodControlAt: string | null;
   /** D56 — paused known-good shell campaign id. */
   shellCampaignId: number | null;
+  /** D57 — pre-warmed fleet addresses planted as shell leads. */
+  shellLeadEmails: string[];
   lastDeliveryWatchAt: string | null;
   lastRigBaselineAt: string | null;
   domainHistory: Record<string, DomainControlHistoryRecord>;
@@ -198,6 +200,7 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   copyCanaryFleet: null,
   lastPodControlAt: null,
   shellCampaignId: null,
+  shellLeadEmails: [],
   lastDeliveryWatchAt: null,
   lastRigBaselineAt: null,
   domainHistory: {},
@@ -227,6 +230,12 @@ export function normalizeIsolationState(
       typeof raw?.shellCampaignId === "number" && raw.shellCampaignId > 0
         ? raw.shellCampaignId
         : null,
+    shellLeadEmails: Array.isArray(raw?.shellLeadEmails)
+      ? raw.shellLeadEmails
+          .filter((email): email is string => typeof email === "string")
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean)
+      : [],
     lastDeliveryWatchAt: raw?.lastDeliveryWatchAt ?? null,
     lastRigBaselineAt: raw?.lastRigBaselineAt ?? null,
     domainHistory: raw?.domainHistory ?? {},

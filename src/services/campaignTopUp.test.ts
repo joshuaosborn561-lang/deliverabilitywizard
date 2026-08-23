@@ -209,6 +209,50 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(result.unfilled[0]?.shortBy, 49);
   });
 
+  it("keeps the first assignedAt so the generic sit clock does not reset", async () => {
+    const started = "2026-01-01T00:00:00.000Z";
+    const pool: PoolMailboxRecord = {
+      email: "clock@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Clock",
+      lastName: "Sender",
+      status: "assigned",
+      assignedAt: started,
+    };
+    const { state, current } = fakeState(pool);
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Thin", status: "ACTIVE", client_id: 2 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
+        },
+      ],
+      listClients: async () => [{ id: 2, name: "Client B" }],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(result.assigned.length, 1);
+    assert.equal(current().assignedAt, started);
+  });
+
   it("rolls back donor and target membership before retrying a failed move", async () => {
     const pool: PoolMailboxRecord = {
       email: "move@pool.info",

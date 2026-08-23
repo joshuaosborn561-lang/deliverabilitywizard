@@ -473,7 +473,9 @@ export class CampaignTopUpService {
               status: "assigned",
               assignedClientId: clientId,
               assignedClientName: clientName,
-              assignedAt: new Date().toISOString(),
+              // D43 — first live assign starts the sit clock. Same-client
+              // fan-out / top-up must not refresh it or 300 generics never sit.
+              assignedAt: pool.assignedAt ?? new Date().toISOString(),
             });
           }
           placed += 1;

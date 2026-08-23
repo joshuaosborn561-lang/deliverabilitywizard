@@ -1264,3 +1264,57 @@ describe("owner intent — D56 paused pod-control shell", () => {
     );
   });
 });
+
+describe("owner intent — D57 pre-warmed shell leads", () => {
+  it("D57: shell leads come from the pre-warmed fleets; sit clocks do not reset", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const shell = await readFile(
+      new URL("../services/podControlShell.ts", import.meta.url),
+      "utf8",
+    );
+    const leads = await readFile(
+      new URL("../lib/shellLeads.ts", import.meta.url),
+      "utf8",
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const canary = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      shell,
+      /seedShellLeads/,
+      stop(
+        "The paused shell plants a tiny pre-warmed lead list (D57).",
+        "podControlShell.ts no longer seeds leads.",
+      ),
+    );
+    assert.match(
+      leads,
+      /extraGenericDomains/,
+      stop(
+        "Shell leads are picked from EXTRA_GENERIC_DOMAINS only (D57).",
+        "pickShellLeadEmails no longer keys off the pre-warmed fleets.",
+      ),
+    );
+    assert.doesNotMatch(
+      canary,
+      /extraGenericDomains/,
+      stop(
+        "Pre-warmed fleet boxes are not the D54 canary senders (D57).",
+        "copyCanary.ts now treats EXTRA_GENERIC_DOMAINS as the canary fleet.",
+      ),
+    );
+    assert.match(
+      topUp,
+      /assignedAt: pool\.assignedAt \?\? /,
+      stop(
+        "First live assign starts the generic sit clock (D43 / D57).",
+        "Top-up refreshes assignedAt on every place, so generics never sit.",
+      ),
+    );
+  });
+});

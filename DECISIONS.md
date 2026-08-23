@@ -1158,3 +1158,33 @@ the shell never sends to leads.
 **Guards.** `isPodControlShellCampaign` / `isExcluded`; owner-intent D56;
 pod controls refuse a first-ACTIVE fallback.
 
+## D57 — Pre-warmed fleet addresses are shell leads, not canary senders
+
+**Decision.** The paused **Pod control shell** keeps a tiny Smartlead lead
+list — two addresses from each pre-warmed fleet domain
+(`crosslaunchco.com`, `crossscaleco.com`, `cleartechco.com`). Those
+addresses are **recipients** so SmartDelivery `/spam-test/schedule` can
+create standing pod-control tests. The previous create failed with
+"No leads available for the selected or lower sequence" because the shell
+had members and a sequence but zero leads.
+
+They are **not** the D54 canary fleet. Bought canary domains still wait
+for InboxKit inboxes. Pre-warmed boxes stay ordinary generic senders /
+sitters; they do not become unwarmed canary FROM addresses.
+
+Never plant these leads on a live client campaign. Never START the shell
+(D40 / D56). Same-client top-up must not refresh `assignedAt` — that
+clock is the D43 generic sit start, and rewriting it on every fan-out
+kept the whole ~300-box fleet in "Generic sending" forever.
+
+**Why.** Josh (2026-08-23): use some pre-warmed domains as leads to get
+the test sending. Do not wait on new InboxKit canary inboxes for that.
+
+**Tradeoff.** A handful of our own inboxes may receive the known-good
+control email. Accepted: six-ish addresses, paused shell, no live-lead
+blast.
+
+**Guards.** `pickShellLeadEmails` only accepts `EXTRA_GENERIC_DOMAINS`;
+`importLeads` is called from the shell seeder only; owner-intent D57;
+`assignedAt` keeps the first stamp.
+

@@ -27,6 +27,8 @@ describe("ensurePodControlShell", () => {
         ],
         updateCampaignSequences: async () => undefined,
         getCampaignEmailAccounts: async () => [],
+        listCampaignLeads: async () => [],
+        importLeads: async () => ({ added_count: 0 }),
         addEmailAccountsToCampaign: async (_id: number, ids: number[]) => {
           added.push(ids);
         },
@@ -67,6 +69,83 @@ describe("ensurePodControlShell", () => {
     assert.deepEqual(added.flat().sort((a, b) => a - b), [11, 12]);
     assert.equal(statuses.includes("START"), false);
     assert.equal(state.getIsolation().shellCampaignId, 99);
+    assert.deepEqual(state.getIsolation().shellLeadEmails, [
+      "sit@cleartechco.com",
+    ]);
+  });
+
+  it("plants pre-warmed fleet addresses as leads on the paused shell only", async () => {
+    const state = new StateStore(
+      `/tmp/dw-shell-leads-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const config = loadConfig({} as NodeJS.ProcessEnv);
+    const imported: string[] = [];
+    await ensurePodControlShell({
+      config,
+      smartlead: {
+        listCampaigns: async () => [
+          { id: 1, name: "Acme", status: "ACTIVE" },
+          { id: 99, name: POD_CONTROL_SHELL_NAME, status: "PAUSED" },
+        ],
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Quick check-in", email_body: "<div>Hi</div>" },
+        ],
+        updateCampaignSequences: async () => undefined,
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        listCampaignLeads: async () => [],
+        importLeads: async (
+          campaignId: number,
+          leads: Array<{ email: string }>,
+        ) => {
+          assert.equal(campaignId, 99);
+          imported.push(...leads.map((lead) => lead.email));
+        },
+        createCampaign: async () => {
+          throw new Error("should reuse the existing shell");
+        },
+      } as never,
+      state,
+      pods: [
+        {
+          id: "generic:sending",
+          name: "Generic sending",
+          pool: "generic_sending",
+          status: "active",
+          clientId: null,
+          mailboxes: [
+            {
+              accountId: 1,
+              email: "a@crosslaunchco.com",
+              clientId: null,
+              clientName: "Generic",
+            },
+            {
+              accountId: 2,
+              email: "b@crossscaleco.com",
+              clientId: null,
+              clientName: "Generic",
+            },
+            {
+              accountId: 3,
+              email: "c@cleartechco.com",
+              clientId: null,
+              clientName: "Generic",
+            },
+          ],
+        },
+      ],
+      template: defaultControlTemplate(),
+      dryRun: false,
+    });
+    assert.deepEqual(imported.sort(), [
+      "a@crosslaunchco.com",
+      "b@crossscaleco.com",
+      "c@cleartechco.com",
+    ]);
+    assert.deepEqual(state.getIsolation().shellLeadEmails.sort(), imported.sort());
   });
 
   it("does not hang on the first ACTIVE campaign when the shell is missing", async () => {

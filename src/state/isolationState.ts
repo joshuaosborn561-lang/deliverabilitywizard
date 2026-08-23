@@ -110,10 +110,11 @@ export interface CopySuspectRecord {
   evaluatedAt?: string;
 }
 
-/** D51/D54 — dedicated canary fleet emails attached to send live campaign copy. */
+/** D51/D54/D55 — dedicated canary fleet sending campaign copy off-campaign. */
 export interface CopyCanaryRecord {
   campaignId: number;
   emails: string[];
+  testId?: string;
   updatedAt: string;
 }
 

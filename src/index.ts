@@ -1652,7 +1652,7 @@ async function main(): Promise<void> {
       `[boot] Live mailbox pull: ${config.enableLegacyMailboxPulls ? "LEGACY (placement/bounce/HOLD)" : "KILL-ONLY (domain retire + backfill)"}`,
     );
     console.log(
-      `[boot] Copy canaries: ${config.enableCopyCanary ? "ENABLED (dedicated 2-domain fleet, warmup off, campaign copy)" : "disabled"}`,
+      `[boot] Copy canaries: ${config.enableCopyCanary ? "ENABLED (dedicated 2-domain fleet, warmup off, off-campaign copy tests)" : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(

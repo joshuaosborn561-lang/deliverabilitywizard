@@ -81,9 +81,8 @@ those have already caused live pre-warmed senders to be pulled.
 generic) may sit on **every ACTIVE campaign for that same client**, except
 when it is in its off-week rest (D43 qualifies D26). BCP
 mailboxes go on all BCP campaigns; Parlay on all Parlay; etc. (`ClientFanOutService`,
-D26). Cross-client membership is still forbidden, except the dedicated
-D54 canary fleet, which may sit on every ACTIVE campaign as research
-instrumentation and is not staffable supply.
+D26). Cross-client membership is still forbidden. The dedicated D54/D55
+canary fleet is not staffable supply and stays **off** live campaigns.
 
 Generics may staff **any** client including BCP (D27). On assign, signature /
 from-name / client id are set to the receiving client.
@@ -105,10 +104,10 @@ live removal is Josh killing that mailbox / retiring its domain; health
 backfills to 50. Never use the blended / all-ESP SmartDelivery score as a
 rotation signal (D32). Slack still warns at 2% bounce without pulling (D41).
 
-Each ACTIVE campaign keeps the dedicated **D54 canary fleet** (2 domains,
-3 inboxes each, one Google and one Outlook, warmup off) sending the
-campaign sequence so isolation can compare campaign copy on cold vs
-warmed boxes. They are extra to the 50 staffable floor.
+Each ACTIVE campaign gets a SmartDelivery **canary-copy test** from the
+dedicated D54/D55 fleet (2 domains, 3 inboxes each, one Google and one
+Outlook, warmup off). Those six stay off live campaigns. They are extra
+to the 50 staffable floor.
 
 Copy/offer (Outlook buried, Gmail fine) still does not bench senders (D28).
 
@@ -134,7 +133,7 @@ Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 2. Split that client's inboxes into A and B (even split). Off-week half comes OFF live campaigns (warmup stays on). Do not leave resters on a campaign at `MESSAGE_PER_DAY=0`.
 3. Same-client fan-out still applies for *on-week* client inboxes only. A resting mailbox must not be added to every ACTIVE campaign for that client.
 4. Generics do not sit on the same A/B fortnight. They rest after ~14 days of live send, then become supply again after the same sit.
-5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. The 50 floor is warmed supply. Each ACTIVE campaign also keeps the dedicated D54 canary fleet sending campaign copy (warmup off). Pre-warmed fleets skip that wait.
+5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. The 50 floor is warmed supply. Each ACTIVE campaign also gets a D55 canary-copy placement test (warmup off, off the campaign). Pre-warmed fleets skip that wait.
 6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON (except the D54 canary fleet), plain Name / Brand signature.
 7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
 8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only.

@@ -121,7 +121,7 @@ export class CampaignHealthService {
       }
     }
 
-    // D51: a few still-warming generics send the live sequence as copy evidence.
+    // D55: dedicated canaries send campaign copy in placement tests, off campaigns.
     if (this.copyCanary) {
       try {
         const canary: CopyCanaryAttachResult = await this.copyCanary.attach({

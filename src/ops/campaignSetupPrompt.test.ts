@@ -16,7 +16,7 @@ describe("campaignSetupPrompt", () => {
     assert.match(prompt, /unlimited/i);
     assert.match(prompt, /≤50 senders per test/);
     assert.match(prompt, /85%/);
-    assert.match(prompt, /D54 canary fleet/);
+    assert.match(prompt, /D55 canary-copy/);
     assert.doesNotMatch(prompt, /launch canary/i);
     assert.doesNotMatch(prompt, /Quota is 120/);
     assert.match(prompt, /never edits the live sequence/i);

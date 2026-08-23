@@ -925,17 +925,27 @@ export class StateStore {
     return Object.values(this.state.isolation.copySuspects);
   }
 
-  setCopyCanaries(campaignId: number, emails: string[]): void {
+  setCopyCanaries(
+    campaignId: number,
+    emails: string[],
+    testId?: string,
+  ): void {
     const unique = [...new Set(emails.map((email) => email.toLowerCase()))];
+    const existing = this.state.isolation.copyCanaries[String(campaignId)];
     this.state.isolation.copyCanaries[String(campaignId)] = {
       campaignId,
       emails: unique,
+      testId: testId ?? existing?.testId,
       updatedAt: new Date().toISOString(),
     };
   }
 
   getCopyCanaries(campaignId: number): string[] {
     return this.state.isolation.copyCanaries[String(campaignId)]?.emails ?? [];
+  }
+
+  getCopyCanaryTestId(campaignId: number): string | undefined {
+    return this.state.isolation.copyCanaries[String(campaignId)]?.testId;
   }
 
   listCopyCanaryEmails(): Set<string> {

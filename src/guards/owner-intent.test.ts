@@ -1176,3 +1176,37 @@ describe("owner intent — D54 dedicated canary fleet", () => {
     );
   });
 });
+
+describe("owner intent — D55 canaries off campaigns", () => {
+  it("D55: canaries send campaign copy in tests and never join a campaign", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      src,
+      /addEmailAccountsToCampaign/,
+      stop(
+        "Canaries stay off live campaigns (D55).",
+        "copyCanary.ts is adding canaries to campaigns again.",
+      ),
+    );
+    assert.match(
+      src,
+      /removeEmailAccountsFromCampaign/,
+      stop(
+        "A canary already on a campaign gets pulled off (D55).",
+        "copyCanary.ts no longer detaches canaries from campaigns.",
+      ),
+    );
+    assert.match(
+      src,
+      /canaryCopyTestName|createAutomatedPlacement/,
+      stop(
+        "Canaries run campaign copy as placement tests (D55).",
+        "copyCanary.ts no longer schedules a canary-copy test.",
+      ),
+    );
+  });
+});

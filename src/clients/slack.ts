@@ -1110,7 +1110,7 @@ export class SlackClient {
       details.kind === "buy_domains"
         ? "Cayden cannot approve a purchase. Josh: tap the button or open Railway → /ops."
         : details.kind === "buy_canary_fleet"
-          ? "Cayden cannot approve a purchase. Josh: tap to buy two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy."
+          ? "Cayden cannot approve a purchase. Josh: tap to buy two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns."
           : details.kind === "retire_domain"
             ? "Josh: tap to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
             : "Josh or Cayden: tap to switch the live email. I will change only that one word.",

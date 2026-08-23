@@ -1098,3 +1098,34 @@ Cross-client attach is an explicit D26 exception for this fleet only.
 `COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN` 3; `buy_canary_fleet` owner-only;
 warmup never enabled for fleet emails; owner-intent D54.
 
+---
+
+## D55 — Canaries send campaign copy off live campaigns
+
+**Decision.** The D54 fleet sends the **campaign sequence in SmartDelivery
+placement tests**. It does **not** sit on Smartlead campaigns and does
+not send to real leads. If a canary is on a campaign, pull it off.
+
+One recurring `Canary copy: #{id}` test per ACTIVE campaign, senders =
+the six fleet inboxes, body = that campaign’s live sequence. Isolation
+reads unwarmed from that test and warmed from the campaign’s standing
+test. The test reconciler stops a canary test when its campaign is no
+longer ACTIVE.
+
+This supersedes D54’s D26 exception (cross-client campaign membership).
+That exception is no longer needed because they are not campaign
+members.
+
+Sending IPs are not added to Slack / campaign / placement reports. Ask
+for the list when you want it.
+
+**Why.** Josh (2026-08-23): do not put the canaries on campaigns; they
+should run the campaign copy but stay off campaigns. Sending IPs are
+wanted as a list, not in reports.
+
+**Tradeoff.** Copy evidence comes from seed inboxes, not live lead send.
+Accepted: that is the point of a research fleet.
+
+**Guards.** `copyCanary.ts` never calls `addEmailAccountsToCampaign`;
+owner-intent D55.
+

@@ -162,7 +162,7 @@ export class IsolationExecuteService {
         `Bought the unwarmed canary fleet: ${result.domains.join(", ") || "two new domains"}.`,
         `Google: ${result.googleDomain ?? "pending"}. Outlook: ${result.microsoftDomain ?? "pending"}.`,
         result.mailboxesOrdered
-          ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered. Warmup stays off. They send live campaign copy. They are not spare supply.`
+          ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered. Warmup stays off. They send campaign copy in placement tests and stay off live campaigns.`
           : undefined,
         result.awaitingNameservers
           ? "Nameservers are still catching up. I will finish the mailbox order myself — no second tap."

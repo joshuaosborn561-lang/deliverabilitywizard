@@ -60,12 +60,12 @@ export async function ensurePodControlShell(input: {
     created = true;
   }
 
-  if (isActiveCampaign(campaign)) {
-    if (input.dryRun) {
-      throw new Error(
-        `Pod control shell #${campaign.id} is ACTIVE — refuse to use a live campaign.`,
-      );
-    }
+  if (isActiveCampaign(campaign) && input.dryRun) {
+    throw new Error(
+      `Pod control shell #${campaign.id} is ACTIVE — refuse to use a live campaign.`,
+    );
+  }
+  if (!input.dryRun && String(campaign.status ?? "").toUpperCase() !== "PAUSED") {
     await input.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
     campaign = { ...campaign, status: "PAUSED" };
   }
@@ -134,15 +134,9 @@ function sequencesForControl(
       {
         id: 0,
         seq_number: 1,
+        seq_delay_details: { delayInDays: 0, delay_in_days: 0 },
         subject: template.subject,
         email_body: template.bodyHtml,
-        sequence_variants: [
-          {
-            subject: template.subject,
-            email_body: template.bodyHtml,
-            variant_label: "A",
-          },
-        ],
       },
     ];
   }
@@ -150,17 +144,14 @@ function sequencesForControl(
   return existing.map((sequence) => {
     if (sequence !== target && sequence.id !== target.id) return sequence;
     return {
-      ...sequence,
+      id: sequence.id,
+      seq_number: sequence.seq_number,
+      seq_delay_details: sequence.seq_delay_details ?? {
+        delayInDays: 0,
+        delay_in_days: 0,
+      },
       subject: template.subject,
       email_body: template.bodyHtml,
-      sequence_variants: [
-        {
-          ...(sequence.sequence_variants?.[0] ?? sequence.variants?.[0] ?? {}),
-          subject: template.subject,
-          email_body: template.bodyHtml,
-          variant_label: "A",
-        },
-      ],
     };
   });
 }

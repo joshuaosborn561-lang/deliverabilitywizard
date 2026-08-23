@@ -144,6 +144,7 @@ export class CampaignTopUpService {
         !isStaffableSender(account, {
           held,
           resting,
+          copyCanary: this.state.isCopyCanary(email),
           inboxRate: heldRate,
           inboxThreshold,
         })

@@ -86,6 +86,10 @@ export class GenericSendRestService {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
+      if (this.state.isCopyCanary(email)) {
+        result.skipped.push(`${email}: copy canary`);
+        continue;
+      }
       result.examined += 1;
 
       if (this.state.getHeldInbox(email) || activeHoldUntilDate(tagNames(account))) {

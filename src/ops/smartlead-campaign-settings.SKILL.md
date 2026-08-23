@@ -117,10 +117,10 @@ A mailbox may not send live campaign mail until it has served its warmup time.
 |---|---|
 | Fresh, non-prewarmed InboxKit mailboxes | **21 days** |
 | crosslaunchco.com / crossscaleco.com / cleartechco.com | **none** — pre-warmed, live immediately |
-| Other pool generics (InboxKit import) | **14 days** from import, not from Smartlead's warmup clock |
+| Other pool generics (InboxKit import) | **21 days** from import, not from Smartlead's warmup clock |
 
-Pre-warmed fleets skip both the 21-day fresh wait **and** the 14-day pool
-wait. Do not pull them for "under-warmed" off Smartlead's warmup start date.
+Pre-warmed fleets skip the 21-day wait. Do not pull them for "under-warmed"
+off Smartlead's warmup start date.
 
 **The warmup age gate runs before the placement test, not after.** Testing an
 under-age fleet produces a number that means nothing.
@@ -348,8 +348,8 @@ Nothing goes ACTIVE until every line passes.
 1. **50 or more staffable senders**, ~30% Google and ~30% Microsoft, after
    excluding held (proven-weak only), client off-week rest, and generic sit.
 2. **Zero resting mailboxes attached.** Read back. No `MESSAGE_PER_DAY=0`.
-3. **Every attached mailbox clears warmup** (21 days fresh; pre-warmed fleets
-   waived; other pool generics 14 days from import).
+3. **Every attached mailbox clears warmup** (21 days from InboxKit import;
+   pre-warmed fleets waived).
 4. **Recurring SmartDelivery schedule** at `every_days: 1`.
 5. **Launch placement ≥85% same-ESP, promo = miss**, full real sender set,
    after warmup. Failed test is diagnosed and relaunched on survivors, not

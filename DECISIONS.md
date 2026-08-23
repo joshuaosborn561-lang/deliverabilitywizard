@@ -976,3 +976,81 @@ Josh's Slack user ids (`SLACK_JOSH_USER_ID`) and Cayden's (`SLACK_CAYDEN_USER_ID
 
 **Guards.** Owner-intent D49; `canDecideIsolationAction`; domain rollup needs multiple fleet inbox fails; campaign placement does not open a retire.
 
+---
+
+## D50 — Live-send warmup is 21 days from InboxKit import
+
+**Decision.** A mailbox owes **21 days** from InboxKit import before it may
+send campaign copy or be handed out as pool supply. `POOL_WARMUP_DAYS` and
+`MIN_CAMPAIGN_WARMUP_DAYS` default to **21**. `freshInboxWarmupDays` stays
+**21**. Pre-warmed fleets (`EXTRA_GENERIC_DOMAINS` /
+`EXTRA_GENERIC_MAILBOXES`) stay exempt and may send immediately.
+
+This supersedes the **duration** in D1 and D41 (those said pool / campaign-min
+stay 14). It does **not** reverse D1's clock: warmup is still owed from the
+InboxKit import stamp (`warmedAt`), never from Smartlead's
+`warmup_details.created_at`. The warmup gate prefers that pool stamp when
+one exists.
+
+Unchanged:
+- Recovery hold after a bounce / placement pull stays **14 days** (D6)
+- Generic send / sit rotation stays **~14 days** (D43)
+- Warmup stays on for every mailbox
+
+**Why.** Josh (2026-08-23): unwarmed mailboxes were still able to sit on
+ACTIVE campaigns and send the campaign sequence. Fourteen days was not
+enough; make the live-send clock 21 across the pool and the gate.
+
+**Tradeoff.** Newly bought non-prewarmed mailboxes stay off live send for
+an extra week. Accepted: campaign copy on a cold box is worse than a
+thinner spare pile.
+
+**Guards.** `poolWarmupDays` / `campaignMinWarmupDays` default 21;
+`warmupClockStartedAt` prefers pool `warmedAt`; owner-intent D50.
+
+---
+
+## D51 — Kill-only pull; unwarmed campaign-copy canaries
+
+**Decision.** Placement below 80% same-ESP, bounce above 5% after 50 sends,
+under-warmed, and HOLD-UNTIL strip **do not pull** a mailbox off an ACTIVE
+campaign. The only automatic live removal is Josh **killing that mailbox /
+retiring its domain** (`retire_domain`). Health then backfills to 50
+staffable on its own.
+
+D5's 80% / 5% numbers stay as Slack / isolation **readings**, not pull
+triggers. D32 still forbids blended scores as a rotation signal (there is
+no metric rotation). D50's 21-day import clock stays the definition of
+warmed vs unwarmed; it is no longer a gate that strips campaign copy.
+`ENABLE_WARMUP_GATE`, `ENABLE_BOUNCE_ROTATION`, and
+`ENABLE_LEGACY_MAILBOX_PULLS` default **off**.
+
+Keep a small set of **purposely unwarmed** pool generics on each ACTIVE
+campaign sending the **campaign sequence** (not the known-good control).
+Default **3 per campaign**, extra to the 50 staffable floor, not counted
+as staffable, not sat by the generic send clock, not pre-warmed fleets.
+Isolation reads their campaign-copy placement against warmed peers:
+
+- Unwarmed lands campaign copy while warmed peers fail → the copy is not
+  the problem (inboxes / infra).
+- Unwarmed and warmed both bury campaign copy, known-good lands → COPY.
+- Unwarmed buries, warmed lands → warmup / age, not a word hunt.
+
+Client A/B rest and generic send-rest (D43) stay. Cross-client top-up
+donor moves stay. Manual ops rotation stays. Isolation-domain mailboxes
+still never attach.
+
+**Why.** Josh (2026-08-23): legacy pulls (placement, bounce, warmup gate)
+are the old rules. Only pull when killing a mailbox and backfilling. Want
+some cold boxes sending campaign copy so copy-vs-inboxes has a third
+reading.
+
+**Tradeoff.** A weak sender can stay on a live campaign until its domain
+is retired. Accepted: isolation + rest + kill is the system; metric-driven
+benching was the old one. A thin warming pile may leave a campaign short
+of 3 canaries.
+
+**Guards.** `enableWarmupGate` / `enableBounceRotation` /
+`enableLegacyMailboxPulls` default false; `copyCanaryPerCampaign` default 3;
+owner-intent D51.
+

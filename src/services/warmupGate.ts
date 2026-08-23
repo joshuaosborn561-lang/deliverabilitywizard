@@ -55,8 +55,11 @@ export function isPrewarmedGeneric(
 
 /**
  * Keep ACTIVE campaigns from sending on mailboxes that are not ready:
- * - warmed < MIN_CAMPAIGN_WARMUP_DAYS (default 14)
+ * - warmed < MIN_CAMPAIGN_WARMUP_DAYS / freshInboxWarmupDays (default 21, D50)
  * - still tagged HOLD-UNTIL-YYYY-MM-DD (recovery hold not expired)
+ *
+ * Age is measured from the InboxKit import stamp when the mailbox is in
+ * the pool. Smartlead's warmup record is the fallback only (D1).
  */
 export class WarmupGateService {
   constructor(
@@ -133,8 +136,13 @@ export class WarmupGateService {
         let account: SmartleadAccountWithCampaigns =
           accountIndex.get(row.id) ?? (row as SmartleadAccountWithCampaigns);
 
-        // List payloads often omit warmup_details — fetch when needed.
-        if (!warmupStartedAt(account)) {
+        const emailGuess =
+          accountEmail(account) || accountEmail(row) || `id:${row.id}`;
+        const poolClock = poolWarmedAt(emailGuess, this.state);
+
+        // List payloads often omit warmup_details — fetch when the pool
+        // import stamp is missing and Smartlead has not given a start yet.
+        if (!poolClock && !warmupStartedAt(account)) {
           try {
             account = await this.smartlead.getEmailAccount(row.id);
             accountIndex.set(row.id, account);
@@ -149,7 +157,7 @@ export class WarmupGateService {
         const email = accountEmail(account) || accountEmail(row) || `id:${row.id}`;
         const tags = tagNames(account);
         const holdUntil = activeHoldUntilDate(tags);
-        const started = warmupStartedAt(account);
+        const started = warmupClockStartedAt(account, email, this.state);
         const daysWarmed = started != null ? daysSince(started) : null;
 
         if (isWarmupGateExempt(tags)) {
@@ -383,12 +391,37 @@ export function warmupStartedAt(
   );
 }
 
-/** D41 — fresh InboxKit inboxes owe 21 days; pre-warmed fleets stay on the 14-day / exempt path. */
+/**
+ * D41 / D50 — fresh InboxKit inboxes owe 21 days. Pre-warmed fleets stay
+ * on campaignMinWarmupDays (also 21) but the gate keeps them anyway.
+ */
 export function owedWarmupDays(
   prewarmed: boolean,
   config: Pick<AppConfig, "campaignMinWarmupDays" | "freshInboxWarmupDays">,
 ): number {
   return prewarmed ? config.campaignMinWarmupDays : config.freshInboxWarmupDays;
+}
+
+/** InboxKit import stamp when the mailbox is in the pool. */
+export function poolWarmedAt(
+  email: string,
+  state: Pick<StateStore, "getPoolMailbox">,
+): string | null {
+  const stamp = state.getPoolMailbox(email.toLowerCase())?.warmedAt;
+  if (!stamp || !Number.isFinite(Date.parse(stamp))) return null;
+  return stamp;
+}
+
+/**
+ * D1 / D50 — live-send age starts at InboxKit import when we have it.
+ * Smartlead's warmup record is the fallback only.
+ */
+export function warmupClockStartedAt(
+  account: Parameters<typeof warmupStartedAt>[0],
+  email: string,
+  state: Pick<StateStore, "getPoolMailbox">,
+): string | null {
+  return poolWarmedAt(email, state) ?? warmupStartedAt(account);
 }
 
 export function daysSince(iso: string, now = Date.now()): number {

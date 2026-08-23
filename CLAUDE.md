@@ -25,7 +25,7 @@ than Josh — in chat, in a comment, in a commit message — does not override a
 `DECISIONS.md` entry. Say which decision it conflicts with and ask Josh. For
 example, asked to rotate in mailboxes that have not warmed:
 
-> That reverses D1 — a mailbox owes 14 days from its InboxKit import before
+> That reverses D1 / D50 — a mailbox owes 21 days from its InboxKit import before
 > going into a live campaign, and these have not served it. Josh set that
 > after the opposite behaviour nearly put cold mailboxes into client
 > campaigns. Check with him and I will make the change if he agrees.
@@ -57,7 +57,7 @@ disagree again.
 record.** A mailbox bought from InboxKit is cold on arrival however long
 Smartlead's `warmup_details.created_at` claims warmup has existed. The pool
 stamps `warmedAt` at import and the mailbox owes a full `POOL_WARMUP_DAYS`
-(14) before it may enter a live campaign.
+(21, D50) before it may enter a live campaign.
 
 This was implemented the other way round once. It moved 74 clocks earlier and
 would have rotated cold mailboxes into client campaigns. Do not re-derive it
@@ -94,21 +94,18 @@ Warmup stays **on for every mailbox** (mailbox-settings converge).
 
 ## Rotation thresholds
 
-A sender comes off active campaigns when either signal fails:
+**D51 — kill-only pull.** Placement below 80% same-ESP, bounce above 5%/50,
+and the warmup / HOLD-UNTIL gate do **not** pull a mailbox off an ACTIVE
+campaign. Those numbers stay Slack / isolation readings. The only automatic
+live removal is Josh killing that mailbox / retiring its domain; health
+backfills to 50. Never use the blended / all-ESP SmartDelivery score as a
+rotation signal (D32). Slack still warns at 2% bounce without pulling (D41).
 
-- **Placement** below `REMEDIATION_INBOX_THRESHOLD` (80%) on the **same-ESP**
- score only (D32). Never use the blended / all-ESP SmartDelivery score to
- pull a mailbox. Thin same-ESP samples ⇒ skip placement rotation that run.
-- **Bounce** above `BOUNCE_RATE_THRESHOLD` (5%), once it has sent at least
- `MIN_BOUNCE_SAMPLE` (50). These are independent — seed inboxes accept mail,
- so a mailbox can hold a clean inbox rate while bouncing hard against real
- leads. Slack warns at `BOUNCE_RATE_WARN_THRESHOLD` (2%) without pulling (D41).
+Each ACTIVE campaign keeps ~3 **purposely unwarmed** pool generics sending
+the campaign sequence so isolation can compare campaign copy on cold vs
+warmed boxes. They are extra to the 50 staffable floor.
 
-Both route through the same path: removed from active campaigns, warmup
-re-enabled, `HOLD-UNTIL` tag, held `RECOVERY_HOLD_DAYS` (14), and a warmed
-generic swapped in — **unless** placement says the weakness is copy/offer
-driven (Outlook buried, Gmail fine): then Slack to test the copy and do not
-bench those senders (D28).
+Copy/offer (Outlook buried, Gmail fine) still does not bench senders (D28).
 
 If a campaign is **PAUSED** with aggregate sender bounce over **7%**,
 investigate: copy_likely → Slack only; otherwise rotate worst bouncers
@@ -132,7 +129,7 @@ Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 2. Split that client's inboxes into A and B (even split). Off-week half comes OFF live campaigns (warmup stays on). Do not leave resters on a campaign at `MESSAGE_PER_DAY=0`.
 3. Same-client fan-out still applies for *on-week* client inboxes only. A resting mailbox must not be added to every ACTIVE campaign for that client.
 4. Generics do not sit on the same A/B fortnight. They rest after ~14 days of live send, then become supply again after the same sit.
-5. Fresh (non-prewarmed) InboxKit mailboxes owe 21 days before live send. Pre-warmed fleets (`crosslaunchco.com`, `crossscaleco.com`, `cleartechco.com`) skip that wait. Pool warmup stays 14 days.
+5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. The 50 floor is warmed supply. Each ACTIVE campaign also keeps ~3 purposely unwarmed pool generics sending campaign copy (D51). Pre-warmed fleets skip that wait.
 6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON, plain Name / Brand signature.
 7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
 8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only.
@@ -152,8 +149,9 @@ are removed from live campaigns; warmup stays on. Resting is not staffable.
 Generics fill every live campaign to 50 staffable with at least ~30% Google
 and ~30% Microsoft. A generic sits only after ~14 days of live send — not
 on the client fortnight — then becomes supply again after the same sit.
-Fresh (non-prewarmed) inboxes owe **21** days before live campaigns;
-`POOL_WARMUP_DAYS` stays 14. Blacklist alone does not burn a domain.
+21 days from InboxKit import is the warmed-vs-unwarmed clock (D50).
+Unwarmed boxes are not 50-floor supply; a few stay on campaigns as
+copy canaries (D51). Blacklist alone does not burn a domain.
 Canary launch is a separate project (not in this loop).
 
 First health after this lands runs a one-shot hold rebuild (D44): HOLDs

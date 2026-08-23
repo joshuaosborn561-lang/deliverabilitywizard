@@ -109,6 +109,13 @@ export interface CopySuspectRecord {
   evaluatedAt?: string;
 }
 
+/** D51 — unwarmed mailboxes attached to send live campaign copy. */
+export interface CopyCanaryRecord {
+  campaignId: number;
+  emails: string[];
+  updatedAt: string;
+}
+
 export type IsolationActionKind =
   | "retire_domain"
   | "buy_domains"
@@ -162,6 +169,7 @@ export interface IsolationState {
   variants: Record<string, IsolationVariantRecord>;
   suppressedTerms: Record<string, SuppressedTerm>;
   copySuspects: Record<string, CopySuspectRecord>;
+  copyCanaries: Record<string, CopyCanaryRecord>;
   lastPodControlAt: string | null;
   lastDeliveryWatchAt: string | null;
   lastRigBaselineAt: string | null;
@@ -180,6 +188,7 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   variants: {},
   suppressedTerms: {},
   copySuspects: {},
+  copyCanaries: {},
   lastPodControlAt: null,
   lastDeliveryWatchAt: null,
   lastRigBaselineAt: null,
@@ -202,6 +211,7 @@ export function normalizeIsolationState(
     variants: raw?.variants ?? {},
     suppressedTerms: raw?.suppressedTerms ?? {},
     copySuspects: raw?.copySuspects ?? {},
+    copyCanaries: raw?.copyCanaries ?? {},
     controlTemplate: raw?.controlTemplate ?? null,
     lastPodControlAt: raw?.lastPodControlAt ?? null,
     lastDeliveryWatchAt: raw?.lastDeliveryWatchAt ?? null,

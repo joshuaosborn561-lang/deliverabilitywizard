@@ -93,6 +93,7 @@ function fakeState(
     },
     getHeldInbox: () => undefined,
     getRestingInbox: () => undefined,
+    isCopyCanary: () => false,
     hasPendingResume: () => false,
     listPendingResumes: () => [],
     save: async () => undefined,

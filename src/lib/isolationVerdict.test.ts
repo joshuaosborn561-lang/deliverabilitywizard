@@ -48,6 +48,41 @@ describe("isolation verdict", () => {
     assert.equal(result.startCopyTeardown, false);
   });
 
+  it("unwarmed landing campaign copy while warmed fail is INFRA", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["PRIMARY", "PRIMARY"],
+      copyCanary: {
+        unwarmedLanded: true,
+        warmedLanded: false,
+        unwarmedTested: 3,
+        warmedTested: 40,
+        unwarmedInbox: 3,
+        warmedInbox: 8,
+      },
+    });
+    assert.equal(result.verdict, "INFRA");
+    assert.equal(result.startCopyTeardown, false);
+    assert.equal(failedControlIsNeverCopy(result), true);
+  });
+
+  it("cold fail + warmed land is not a word hunt", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["PRIMARY"],
+      copyCanary: {
+        unwarmedLanded: false,
+        warmedLanded: true,
+        unwarmedTested: 3,
+        warmedTested: 40,
+        unwarmedInbox: 0,
+        warmedInbox: 38,
+      },
+    });
+    assert.equal(result.verdict, "INCONCLUSIVE");
+    assert.equal(result.startCopyTeardown, false);
+  });
+
   it("insufficient control is inconclusive", () => {
     const result = decideIsolationVerdict({
       campaignInSpam: true,

@@ -136,7 +136,7 @@ export class IsolationExecuteService {
       [
         `Bought ${result.domains.join(", ") || "the replacement domain"}.`,
         result.mailboxesOrdered
-          ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered. They owe two weeks of warmup before live send.`
+          ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered. They owe 21 days of warmup before live send.`
           : undefined,
         result.awaitingNameservers
           ? "Nameservers are still catching up. I will finish the mailbox order myself — no second tap."

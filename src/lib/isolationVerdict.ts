@@ -1,3 +1,4 @@
+import { interpretCopyCanary, type CopyCanarySplit } from "./copyCanary.js";
 import { campaignSenderControl, type MailboxControlPlacement } from "./mailboxControlTag.js";
 
 /**
@@ -19,6 +20,11 @@ export interface IsolationVerdictInput {
     controlPrimary: boolean | null;
     copyPrimary: boolean | null;
   };
+  /**
+   * D51 — campaign-copy placement on purpose-unwarmed boxes vs warmed peers.
+   * Only consulted when the pod already has a control reading.
+   */
+  copyCanary?: CopyCanarySplit | null;
 }
 
 export interface IsolationVerdictResult {
@@ -79,12 +85,37 @@ export function decideIsolationVerdict(
     };
   }
 
-  // campaignInSpam && control === CLEAN → copy, unless the rig contradicts.
+  // campaignInSpam && control === CLEAN → copy, unless canaries or the rig say otherwise.
+  const canary = input.copyCanary
+    ? interpretCopyCanary(input.copyCanary)
+    : { lean: "NONE" as const, reason: "" };
+
+  if (canary.lean === "INFRA") {
+    return {
+      verdict: "INFRA",
+      control,
+      reason: canary.reason,
+      startCopyTeardown: false,
+      pullInfraDiagnostics: true,
+    };
+  }
+  if (canary.lean === "WARMUP") {
+    return {
+      verdict: "INCONCLUSIVE",
+      control,
+      reason: canary.reason,
+      startCopyTeardown: false,
+      pullInfraDiagnostics: false,
+    };
+  }
+
   const fromPod: IsolationVerdictResult = {
     verdict: "COPY",
     control,
     reason:
-      "The standing inbox test for these senders landed in the inbox. The campaign copy is the problem.",
+      canary.lean === "COPY"
+        ? canary.reason
+        : "The standing inbox test for these senders landed in the inbox. The campaign copy is the problem.",
     startCopyTeardown: true,
     pullInfraDiagnostics: false,
   };

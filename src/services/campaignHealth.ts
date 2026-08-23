@@ -15,6 +15,7 @@ import {
   type TopUpResult,
 } from "./campaignTopUp.js";
 import type { ClientFanOutService } from "./clientFanOut.js";
+import type { CopyCanaryAttachResult, CopyCanaryService } from "./copyCanary.js";
 
 /**
  * Sole mutator brain for campaign staffing (D25).
@@ -42,6 +43,7 @@ export interface CampaignHealthResult {
   snapshots: CampaignHealthSnapshot[];
   topUp: TopUpResult | null;
   fanOutAttached: number;
+  copyCanaryAttached: number;
   resumed: Array<{ campaignId: number; name: string; staffable: number }>;
   stillShort: Array<{
     campaignId: number;
@@ -61,6 +63,7 @@ export class CampaignHealthService {
     private readonly state: StateStore,
     private readonly topUp: CampaignTopUpService,
     private readonly fanOut?: ClientFanOutService,
+    private readonly copyCanary?: CopyCanaryService,
   ) {}
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignHealthResult> {
@@ -72,6 +75,7 @@ export class CampaignHealthService {
       snapshots: [],
       topUp: null,
       fanOutAttached: 0,
+      copyCanaryAttached: 0,
       resumed: [],
       stillShort: [],
       errors: [],
@@ -114,6 +118,20 @@ export class CampaignHealthService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`fan-out: ${message}`);
+      }
+    }
+
+    // D51: a few still-warming generics send the live sequence as copy evidence.
+    if (this.copyCanary) {
+      try {
+        const canary: CopyCanaryAttachResult = await this.copyCanary.attach({
+          dryRun,
+        });
+        result.copyCanaryAttached = canary.attached.length;
+        result.errors.push(...canary.errors.slice(0, 20));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`copy-canary: ${message}`);
       }
     }
 
@@ -191,10 +209,12 @@ export class CampaignHealthService {
       }
       const heldRow = this.state.getHeldInbox(email);
       const resting = Boolean(this.state.getRestingInbox(email));
+      const copyCanary = this.state.isCopyCanary(email);
       if (
         !isStaffableSender(account, {
           held: Boolean(heldRow),
           resting,
+          copyCanary,
           inboxRate: heldRow?.inboxRate,
           inboxThreshold: threshold,
         })

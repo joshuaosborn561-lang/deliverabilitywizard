@@ -214,7 +214,23 @@ const ConfigSchema = z.object({
     .default(7),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
-  enableBounceRotation: boolFromEnv(true),
+  /**
+   * D51 — bounce >5%/50 is a Slack/investigate reading, not a live pull.
+   * Default off. Placement pull is already behind enableRemediation (false).
+   */
+  enableBounceRotation: boolFromEnv(false),
+  /**
+   * D51 — master for placement / bounce / HOLD-UNTIL removals from ACTIVE
+   * campaigns. Off: the only automatic live pull is Josh killing a mailbox
+   * (domain retire) and health backfilling.
+   */
+  enableLegacyMailboxPulls: boolFromEnv(false),
+  /**
+   * D51 — keep this many still-warming pool generics on each ACTIVE campaign
+   * sending the live sequence (extra to the 50 staffable floor).
+   */
+  enableCopyCanary: boolFromEnv(true),
+  copyCanaryPerCampaign: z.coerce.number().int().min(0).max(10).default(3),
   /**
    * Pre-warmed generic mailboxes that live outside the .info pool plan, matched
    * against Smartlead by email address or by from_name (e.g. "Harmony Norris").
@@ -245,18 +261,22 @@ const ConfigSchema = z.object({
     ),
   /** Sub in warmed generics while originals recover (requires pool inventory in state). */
   enableRecoveryPool: boolFromEnv(false),
-  /** Days of Smartlead-only warmup before a generic is free for swaps. */
-  poolWarmupDays: z.coerce.number().int().positive().default(14),
   /**
-   * Pull mailboxes off ACTIVE campaigns until they have warmed this many days.
-   * Also strips active HOLD-UNTIL-* tagged accounts from ACTIVE campaigns.
+   * Days from InboxKit import before a generic is free for live send / swaps.
+   * Clock is `warmedAt` at import, not Smartlead's warmup record (D1).
+   * Duration is 21 days (D50; superseded D1's 14).
    */
-  enableWarmupGate: boolFromEnv(true),
-  campaignMinWarmupDays: z.coerce.number().int().positive().default(14),
+  poolWarmupDays: z.coerce.number().int().positive().default(21),
+  /**
+   * D51 — under-warmed / HOLD-UNTIL strip is off. 21 days is the
+   * warmed-vs-unwarmed clock (D50), not a live pull.
+   */
+  enableWarmupGate: boolFromEnv(false),
+  campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
   /**
    * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
-   * a live campaign. Pre-warmed fleets stay on campaignMinWarmupDays / exempt.
-   * Do not change poolWarmupDays or campaignMinWarmupDays defaults (D1).
+   * a live campaign. Pre-warmed fleets stay exempt. D50 aligned the pool
+   * and campaign-min clocks to the same 21 days.
    */
   freshInboxWarmupDays: z.coerce.number().int().positive().default(21),
   /** Porkbun domain spend cap per client per UTC month (USD). */
@@ -456,15 +476,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
+    enableLegacyMailboxPulls: env.ENABLE_LEGACY_MAILBOX_PULLS,
+    enableCopyCanary: env.ENABLE_COPY_CANARY,
+    copyCanaryPerCampaign: env.COPY_CANARY_PER_CAMPAIGN ?? "3",
     extraGenericMailboxes:
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     extraGenericDomains:
       env.EXTRA_GENERIC_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
-    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
+    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
-    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "14",
+    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "21",
     freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
     clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",

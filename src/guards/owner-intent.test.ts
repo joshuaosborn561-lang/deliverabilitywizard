@@ -1319,6 +1319,69 @@ describe("owner intent — D65 retired domains stay off", () => {
   });
 });
 
+describe("owner intent — D66 client-tied domains", () => {
+  it("D66: client domains stay tied; generics lose client_id when they stop sending", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { genericClientIdWhenIdle } = await import("../lib/clientOwnership.js");
+    assert.equal(
+      genericClientIdWhenIdle(),
+      null,
+      stop(
+        "A generic that is not sending carries no client_id (D66).",
+        "genericClientIdWhenIdle no longer returns null.",
+      ),
+    );
+    const rest = await readFile(
+      new URL("../services/genericSendRest.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      rest,
+      /genericIdentityClearFields/,
+      stop(
+        "Generic send-rest must take client_id off when the box sits (D66).",
+        "genericSendRest.ts no longer clears generic identity on bench.",
+      ),
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      topUp,
+      /genericIdentityClearFields/,
+      stop(
+        "Pulling a generic off live campaigns must clear client_id (D66).",
+        "campaignTopUp.ts no longer clears generic identity on rotate-out.",
+      ),
+    );
+    const recovery = await readFile(
+      new URL("../services/recoveryPool.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      recovery,
+      /client_id:\s*null/,
+      stop(
+        "Restoring a recovery swap must take the generic off the client (D66).",
+        "recoveryPool.ts no longer clears client_id on restore.",
+      ),
+    );
+    const floor = await readFile(
+      new URL("../lib/clientStaffFloor.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      floor,
+      /isWarmedForClientFloor/,
+      stop(
+        "Tying a cold client replacement must not move the live floor (D66).",
+        "countClientInboxesByKey no longer skips unwarmed client inboxes.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D60 canary buy once", () => {
   it("D60: do not ask again after the fleet is bought or waiting", async () => {
     const { canaryFleetBuyAlreadyOpen } = await import(

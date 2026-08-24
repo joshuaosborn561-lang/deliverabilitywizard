@@ -148,6 +148,7 @@ export class RecoveryPoolService {
             await this.smartlead.updateEmailAccount(swap.poolAccountId, {
               signature: `${firstName} ${lastName}`,
               from_name: `${firstName} ${lastName}`,
+              client_id: null,
             });
           } catch (error) {
             const message =

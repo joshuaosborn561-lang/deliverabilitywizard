@@ -7,7 +7,12 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import {
+  genericIdentityClearFields,
+  genericStillOnLiveCampaigns,
+} from "../lib/clientOwnership.js";
 import { sleep } from "../lib/http.js";
+import { parsePersonName } from "../lib/poolSignature.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
@@ -180,6 +185,21 @@ export class GenericSendRestService {
             removedFromCampaigns: removed,
             lastSameEspInbox: null,
           });
+          const remainingLive = onCampaigns.filter((id) => !removed.includes(id));
+          if (!genericStillOnLiveCampaigns(remainingLive, campaignById)) {
+            const person = parsePersonName(account.from_name);
+            try {
+              await this.smartlead.updateEmailAccount(
+                account.id,
+                genericIdentityClearFields(person.firstName, person.lastName),
+              );
+              await sleep(120);
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              result.errors.push(`${email} clear client_id: ${message}`);
+            }
+          }
         }
         result.benched.push({ email, campaignIds: removed });
       }

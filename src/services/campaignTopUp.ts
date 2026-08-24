@@ -10,6 +10,9 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import {
+  genericIdentityClearFields,
+} from "../lib/clientOwnership.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import {
   allowsGenericStaff,
@@ -19,6 +22,7 @@ import {
 import { chunkArray, sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
+  parsePersonName,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
@@ -702,18 +706,50 @@ export class CampaignTopUpService {
           stillLive.add(email);
         }
       }
+      const accountByEmail = new Map(
+        input.accounts
+          .map((account) => {
+            const email = accountEmail(account)?.toLowerCase();
+            return email ? ([email, account] as const) : null;
+          })
+          .filter((row): row is readonly [string, SmartleadAccountWithCampaigns] =>
+            Boolean(row),
+          ),
+      );
+      const cleared = new Set<string>();
       for (const row of input.result.pulledGenerics) {
-        if (stillLive.has(row.email.toLowerCase())) continue;
-        const pool = this.state.getPoolMailbox(row.email);
-        if (!pool) continue;
-        this.state.upsertPoolMailbox({
-          ...pool,
-          status: pool.status === "assigned" ? "available" : pool.status,
-          assignedClientId: undefined,
-          assignedClientName: undefined,
-          assignedAt: undefined,
-        });
-        this.state.clearGenericSendStartedAt(row.email);
+        const email = row.email.toLowerCase();
+        if (stillLive.has(email)) continue;
+        const pool = this.state.getPoolMailbox(email);
+        if (pool) {
+          this.state.upsertPoolMailbox({
+            ...pool,
+            status: pool.status === "assigned" ? "available" : pool.status,
+            assignedClientId: undefined,
+            assignedClientName: undefined,
+            assignedAt: undefined,
+          });
+        }
+        this.state.clearGenericSendStartedAt(email);
+        if (cleared.has(email)) continue;
+        cleared.add(email);
+        const account = accountByEmail.get(email);
+        if (!account?.id) continue;
+        const person = parsePersonName(
+          account.from_name ||
+            (pool ? `${pool.firstName} ${pool.lastName}` : undefined),
+        );
+        try {
+          await this.smartlead.updateEmailAccount(
+            account.id,
+            genericIdentityClearFields(person.firstName, person.lastName),
+          );
+          await sleep(120);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          input.result.errors.push(`${email} clear client_id: ${message}`);
+        }
       }
     }
 

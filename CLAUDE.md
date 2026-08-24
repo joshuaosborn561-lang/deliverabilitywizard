@@ -85,7 +85,10 @@ D26). Cross-client membership is still forbidden. The dedicated D54/D55
 canary fleet is not staffable supply and stays **off** live campaigns.
 
 Generics may staff **any** client including BCP (D27). On assign, signature /
-from-name / client id are set to the receiving client.
+from-name / client id are set to the receiving client. Client sending
+domains stay on that client's Smartlead `client_id` even when sitting or
+held. Generics keep a `client_id` only while they are sending for that
+client; rotate-out clears it (D66).
 
 **Cross-client top-up is still a move** (remove from the other client, add to
 the receiver). **Same-client** top-up/fan-out is additive — keep the mailbox

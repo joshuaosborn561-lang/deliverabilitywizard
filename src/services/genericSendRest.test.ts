@@ -60,6 +60,7 @@ describe("GenericSendRestService", () => {
         removed.push(campaignId);
         void ids;
       },
+      updateEmailAccount: async () => undefined,
       addEmailAccountsToCampaign: async () => undefined,
     } as unknown as SmartleadClient;
 

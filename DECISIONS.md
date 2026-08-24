@@ -1368,3 +1368,37 @@ is worse.
 **Guards.** `isRetiredSendingDomain`; fan-out / rest / top-up skip
 retired domains; owner-intent D65.
 
+## D66 — Client domains stay tied; generics only while sending
+
+**Decision.** Every client sending domain is tied to exactly one
+Smartlead / SalesGlider client and lives in that client's InboxKit
+workspace. `client_id` stays on those mailboxes when they sit, rest,
+hold, or retire.
+
+Generics (the recovery pool, `EXTRA_GENERIC_DOMAINS` fleets, and the
+canary / isolation boxes) are **not** permanently tied. While a generic
+is sending for a client, set `client_id` / signature / from-name to that
+client. When it rotates out of that client's live campaigns, clear
+`client_id` and the branded signature.
+
+This supersedes the D65 line that withheld `client_id` on a BCP
+replacement until warm. Ownership is set as soon as the mailbox exists
+in Smartlead. The live floor still ignores retired domains and inboxes
+younger than the 21-day warmup clock, so tying a cold replacement does
+not move the half-inbox floor.
+
+**Why.** Josh (2026-08-24): "make that a standing rule that domains need
+to be tied to a client, except generics except when they are sending for
+one and then they are taken off when they rotate out." Live mess:
+`hubmeetconnect.com` generics kept leftover `client_id`s including BCP
+`542838`.
+
+**Tradeoff.** An idle generic with a leftover `client_id` used to look
+like a client inbox. Clearing it is the point. Floor still uses warmed
+client inventory only. InboxKit workspace moves stay manual — the audit
+flags a wrong workspace and does not change nameservers.
+
+**Guards.** Generic rotate-out / rest / restore clear `client_id`;
+client domains keep it; floor skips retired and unwarmed; owner-intent
+D66.
+

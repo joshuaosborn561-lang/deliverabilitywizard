@@ -82,6 +82,7 @@ import { DomainLifecycleService } from "./services/domainLifecycle.js";
 import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
+import { ClientOwnershipService } from "./services/clientOwnershipAudit.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -353,6 +354,13 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const clientOwnership = new ClientOwnershipService(
+    config,
+    smartlead,
+    inboxkit,
+    slack,
+    state,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -361,6 +369,7 @@ async function main(): Promise<void> {
     campaignTopUp,
     clientFanOut,
     copyCanary,
+    clientOwnership,
   );
   const heldPlacementTests = new HeldPlacementTestService(
     config,
@@ -777,6 +786,12 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[campaign-audit] failed", error);
       }
+      let ownershipAuditResult: unknown = null;
+      try {
+        ownershipAuditResult = await clientOwnership.auditInboxKit();
+      } catch (error) {
+        console.warn("[ownership] InboxKit audit failed", error);
+      }
       // D52 — remaining leads. Campaign audit watches senders, not this number.
       let leadRunoutResult: unknown = null;
       if (config.enableLeadRunout) {
@@ -861,6 +876,7 @@ async function main(): Promise<void> {
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
+        ownership: ownershipAuditResult,
         leadRunout: leadRunoutResult,
         sendingInfra: sendingInfraResult,
         bounceInvestigate: bounceInvestigateResult,

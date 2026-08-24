@@ -8,6 +8,8 @@ import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isClientInbox } from "./clientInbox.js";
+import { isWarmedForClientFloor, sendingDomainOf } from "./clientOwnership.js";
+import { isRetiredSendingDomain } from "./domainControl.js";
 
 /**
  * D58 — live staffable floor is half that client's own inboxes.
@@ -40,18 +42,28 @@ export function countClientInboxesByKey(
   accounts: SmartleadAccountWithCampaigns[],
   campaigns: SmartleadCampaign[],
   clients: SmartleadClientRecord[],
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
-  state: Pick<StateStore, "getPoolMailbox">,
+  config: Pick<
+    AppConfig,
+    "extraGenericMailboxes" | "extraGenericDomains" | "campaignMinWarmupDays"
+  >,
+  state: Pick<StateStore, "getPoolMailbox"> & {
+    getDomainHistory?: (domain: string) => { status?: string } | undefined;
+  },
+  now = new Date(),
 ): Map<string, number> {
   const campaignClientById = new Map(
     campaigns.map((campaign) => [campaign.id, campaign.client_id]),
   );
   const clientsById = new Map(clients.map((client) => [client.id, client]));
   const counts = new Map<string, number>();
+  const minDays = config.campaignMinWarmupDays ?? 0;
   for (const account of accounts) {
     const email = accountEmail(account);
     if (!email) continue;
     if (!isClientInbox(account, email, config, state)) continue;
+    const domain = sendingDomainOf(email);
+    if (isRetiredSendingDomain(domain, state.getDomainHistory?.(domain))) continue;
+    if (!isWarmedForClientFloor(account.created_at, minDays, now)) continue;
     const resolved = resolveAccountClient(account, campaignClientById, clientsById);
     const key = clientCountKey(resolved.clientId);
     counts.set(key, (counts.get(key) ?? 0) + 1);

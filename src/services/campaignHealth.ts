@@ -22,6 +22,7 @@ import {
 } from "./campaignTopUp.js";
 import type { ClientFanOutService } from "./clientFanOut.js";
 import type { CopyCanaryAttachResult, CopyCanaryService } from "./copyCanary.js";
+import type { ClientOwnershipService } from "./clientOwnershipAudit.js";
 
 /**
  * Sole mutator brain for campaign staffing (D25).
@@ -71,6 +72,7 @@ export class CampaignHealthService {
     private readonly topUp: CampaignTopUpService,
     private readonly fanOut?: ClientFanOutService,
     private readonly copyCanary?: CopyCanaryService,
+    private readonly ownership?: ClientOwnershipService,
   ) {}
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignHealthResult> {
@@ -155,6 +157,20 @@ export class CampaignHealthService {
     }
 
     result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
+    if (this.ownership) {
+      try {
+        const ownership = await this.ownership.reconcileSmartlead({
+          dryRun,
+          accounts,
+          campaigns,
+          clients,
+        });
+        result.errors.push(...ownership.errors.slice(0, 20));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`ownership: ${message}`);
+      }
+    }
     await this.resumeStaffed(result, campaigns, dryRun);
 
     const shortAfter = result.snapshots.filter(

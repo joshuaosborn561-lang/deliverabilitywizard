@@ -76,4 +76,46 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       2,
     );
   });
+
+  it("does not let a cold or retired client domain move the floor (D66)", () => {
+    const now = new Date("2026-08-24T00:00:00Z");
+    const counts = countClientInboxesByKey(
+      [
+        {
+          id: 1,
+          from_email: "old@boldercyperpartnerbiz.info",
+          client_id: 9,
+          created_at: "2026-01-01T00:00:00Z",
+        },
+        {
+          id: 2,
+          from_email: "new@tryboldercyperpartner.info",
+          client_id: 9,
+          created_at: "2026-08-24T00:00:00Z",
+        },
+        {
+          id: 3,
+          from_email: "dead@boldercyperpartnerhqs.info",
+          client_id: 9,
+          created_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      [{ id: 1, name: "BCP", status: "ACTIVE", client_id: 9 }],
+      [{ id: 9, name: "Mike Trpkosh" }],
+      {
+        extraGenericMailboxes: [],
+        extraGenericDomains: [],
+        campaignMinWarmupDays: 21,
+      },
+      {
+        getPoolMailbox: () => undefined,
+        getDomainHistory: (domain) =>
+          domain === "boldercyperpartnerhqs.info"
+            ? { status: "retired" }
+            : undefined,
+      },
+      now,
+    );
+    assert.equal(counts.get(clientCountKey(9)), 1);
+  });
 });

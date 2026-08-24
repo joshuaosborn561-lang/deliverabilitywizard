@@ -335,6 +335,7 @@ describe("CampaignTopUpService safety", () => {
     const { state } = fakeState(pool);
     const removed: number[][] = [];
     let addCalls = 0;
+    const cleared: Array<{ id: number; client_id: unknown }> = [];
     const smartlead = {
       listCampaigns: async () => [
         { id: 2, name: "Vasco - Service", status: "ACTIVE", client_id: 9 },
@@ -369,7 +370,9 @@ describe("CampaignTopUpService safety", () => {
         removed.push(ids);
         void campaignId;
       },
-      updateEmailAccount: async () => undefined,
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        cleared.push({ id, client_id: fields.client_id });
+      },
     } as unknown as SmartleadClient;
     const service = new CampaignTopUpService(
       loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
@@ -383,5 +386,6 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(addCalls, 0);
     assert.equal(result.pulledGenerics[0]?.email, pool.email);
     assert.equal(result.assigned.length, 0);
+    assert.deepEqual(cleared, [{ id: 10, client_id: null }]);
   });
 });

@@ -5,8 +5,13 @@ import {
   accountEmail,
   campaignIdsOf,
   type SmartleadAccountWithCampaigns,
+  type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import {
+  countClientInboxesByKey,
+  staffFloorForCampaign,
+} from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 import {
@@ -33,6 +38,7 @@ export interface CampaignHealthSnapshot {
   status: string;
   membership: number;
   staffable: number;
+  floor: number;
   needed: number;
   pendingResume: boolean;
 }
@@ -68,10 +74,9 @@ export class CampaignHealthService {
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignHealthResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
-    const floor = this.config.minCampaignSenders;
     const result: CampaignHealthResult = {
       dryRun,
-      floor,
+      floor: this.config.minCampaignSenders,
       snapshots: [],
       topUp: null,
       fanOutAttached: 0,
@@ -82,15 +87,17 @@ export class CampaignHealthService {
     };
 
     console.log(
-      `[health] Starting campaign health (${dryRun ? "DRY RUN" : "LIVE"}, floor=${floor} staffable)`,
+      `[health] Starting campaign health (${dryRun ? "DRY RUN" : "LIVE"}, D58 half-client-inbox floors; generics on Goliath only)`,
     );
 
     let campaigns: SmartleadCampaign[] = [];
     let accounts: SmartleadAccountWithCampaigns[] = [];
+    let clients: SmartleadClientRecord[] = [];
     try {
-      [campaigns, accounts] = await Promise.all([
+      [campaigns, accounts, clients] = await Promise.all([
         this.smartlead.listCampaigns(),
         this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
+        this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
       ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -100,7 +107,7 @@ export class CampaignHealthService {
       return result;
     }
 
-    result.snapshots = this.buildSnapshots(campaigns, accounts, floor);
+    result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
 
     try {
       result.topUp = await this.topUp.run({ dryRun });
@@ -146,7 +153,7 @@ export class CampaignHealthService {
       result.errors.push(`re-inventory: ${message}`);
     }
 
-    result.snapshots = this.buildSnapshots(campaigns, accounts, floor);
+    result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
     await this.resumeStaffed(result, campaigns, dryRun);
 
     const shortAfter = result.snapshots.filter(
@@ -176,14 +183,14 @@ export class CampaignHealthService {
     );
     for (const s of [...activeSnaps].sort((a, b) => b.needed - a.needed)) {
       console.log(
-        `[health]   #${s.campaignId} ${s.campaignName} — staffable ${s.staffable}/${floor} (membership ${s.membership})${s.needed ? ` short ${s.needed}` : ""}${s.pendingResume ? " pending-resume" : ""}`,
+        `[health]   #${s.campaignId} ${s.campaignName} — staffable ${s.staffable}/${s.floor} (membership ${s.membership})${s.needed ? ` short ${s.needed}` : ""}${s.pendingResume ? " pending-resume" : ""}`,
       );
     }
     for (const s of result.snapshots.filter(
       (row) => row.pendingResume && row.status !== "ACTIVE",
     )) {
       console.log(
-        `[health]   #${s.campaignId} ${s.campaignName} — PAUSED pending-resume staffable ${s.staffable}/${floor}`,
+        `[health]   #${s.campaignId} ${s.campaignName} — PAUSED pending-resume staffable ${s.staffable}/${s.floor}`,
       );
     }
 
@@ -194,11 +201,18 @@ export class CampaignHealthService {
   private buildSnapshots(
     campaigns: SmartleadCampaign[],
     accounts: SmartleadAccountWithCampaigns[],
-    floor: number,
+    clients: SmartleadClientRecord[],
   ): CampaignHealthSnapshot[] {
     const membership = new Map<number, number>();
     const staffable = new Map<number, number>();
     const threshold = this.config.remediationInboxThreshold;
+    const clientInboxCounts = countClientInboxesByKey(
+      accounts,
+      campaigns,
+      clients,
+      this.config,
+      this.state,
+    );
 
     for (const account of accounts) {
       const email = accountEmail(account);
@@ -238,12 +252,14 @@ export class CampaignHealthService {
       .map((c) => {
         const status = String(c.status ?? "").toUpperCase();
         const staff = staffable.get(c.id) ?? 0;
+        const floor = staffFloorForCampaign(c, clientInboxCounts);
         return {
           campaignId: c.id,
           campaignName: String(c.name ?? c.id),
           status,
           membership: membership.get(c.id) ?? 0,
           staffable: staff,
+          floor,
           needed: Math.max(0, floor - staff),
           pendingResume: this.state.hasPendingResume(c.id),
         };
@@ -276,7 +292,7 @@ export class CampaignHealthService {
         this.state.clearPendingResume(pending.campaignId);
         continue;
       }
-      if (staffable < result.floor) continue;
+      if (staffable < (snap?.floor ?? result.floor)) continue;
       if (status === "ACTIVE") {
         // Already live — drop the stale resume marker.
         this.state.clearPendingResume(pending.campaignId);
@@ -322,7 +338,8 @@ export class CampaignHealthService {
       !assigned &&
       !result.resumed.length &&
       !result.stillShort.length &&
-      !(topUp?.released.length ?? 0)
+      !(topUp?.released.length ?? 0) &&
+      !(topUp?.pulledGenerics.length ?? 0)
     ) {
       return;
     }
@@ -335,7 +352,7 @@ export class CampaignHealthService {
 
     const lines = [
       `${result.dryRun ? "Preview — " : ""}Campaign staffing`,
-      `Every live campaign should have ${result.floor} inboxes that can actually send.`,
+      "Each client's floor is half its own inboxes. Spare inboxes stay on Goliath only.",
     ];
     for (const [name, n] of byCampaign) {
       lines.push(`• ${name} — added ${n} spare${n === 1 ? "" : "s"}`);
@@ -348,6 +365,11 @@ export class CampaignHealthService {
     for (const u of result.stillShort) {
       lines.push(
         `• ${u.name} — still short ${u.shortBy} sending inbox${u.shortBy === 1 ? "" : "es"} (${u.status}). Not enough warmed spares yet.`,
+      );
+    }
+    if (topUp?.pulledGenerics.length) {
+      lines.push(
+        `Took ${topUp.pulledGenerics.length} spare membership${topUp.pulledGenerics.length === 1 ? "" : "s"} off every campaign that is not Goliath.`,
       );
     }
     if (topUp?.released.length) {

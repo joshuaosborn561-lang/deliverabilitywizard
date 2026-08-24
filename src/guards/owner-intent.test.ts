@@ -1264,3 +1264,79 @@ describe("owner intent — D56 paused pod-control shell", () => {
     );
   });
 });
+
+describe("owner intent — D58 Goliath-only generics", () => {
+  it("D58: floor is half the client's inboxes; generics stay on Goliath", async () => {
+    const { clientInboxStaffFloor, allowsGenericStaff } = await import(
+      "../lib/clientStaffFloor.js"
+    );
+    assert.equal(
+      clientInboxStaffFloor(80),
+      40,
+      stop(
+        "Vasco's 80 client inboxes mean a 40-sender floor (D58).",
+        `Half-inbox floor is now ${clientInboxStaffFloor(80)}.`,
+      ),
+    );
+    assert.equal(
+      allowsGenericStaff({ name: "Goliath Displacement" }, "Goliath", ["goliath"]),
+      true,
+      stop(
+        "Goliath may still receive generics (D58).",
+        "allowsGenericStaff no longer matches Goliath.",
+      ),
+    );
+    assert.equal(
+      allowsGenericStaff({ name: "Vasco - Service" }, "Vasco Warranty", [
+        "goliath",
+      ]),
+      false,
+      stop(
+        "Non-Goliath campaigns are client-inbox only (D58).",
+        "allowsGenericStaff now treats Vasco as generic-eligible.",
+      ),
+    );
+    assert.deepEqual(
+      defaults.genericStaffNamePatterns,
+      ["goliath"],
+      stop(
+        "Only Goliath is on the generic-staff allowlist by default (D58).",
+        `GENERIC_STAFF_NAME_PATTERNS is now ${defaults.genericStaffNamePatterns.join(",")}.`,
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const fanOut = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      topUp,
+      /pullNonGoliathGenerics/,
+      stop(
+        "Top-up pulls generics off every campaign that is not Goliath (D58).",
+        "campaignTopUp.ts no longer pulls non-Goliath generics.",
+      ),
+    );
+    assert.match(
+      topUp,
+      /D58 client-inbox only/,
+      stop(
+        "Top-up will not restaff non-Goliath campaigns with generics (D58).",
+        "campaignTopUp.ts assigns generics to non-Goliath campaigns again.",
+      ),
+    );
+    assert.match(
+      fanOut,
+      /D58 generics stay on Goliath only/,
+      stop(
+        "Fan-out must not put generics back on a non-Goliath client (D58).",
+        "clientFanOut.ts no longer skips generics for non-Goliath groups.",
+      ),
+    );
+  });
+});

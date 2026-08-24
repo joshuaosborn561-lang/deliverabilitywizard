@@ -57,4 +57,51 @@ describe("ClientFanOutService", () => {
     assert.deepEqual(adds, [[2, [100, 101]]]);
     assert.ok(result.attached.every((a) => a.campaignId === 2));
   });
+
+  it("does not fan generics onto a non-Goliath client (D58)", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Vasco A", status: "ACTIVE", client_id: 9 },
+        { id: 2, name: "Vasco B", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 100,
+          from_email: "spare@crosslaunchco.com",
+          campaign_ids: [1],
+          client_id: 9,
+        },
+        {
+          id: 101,
+          from_email: "rep@vasco.com",
+          campaign_ids: [1],
+          client_id: 9,
+        },
+      ],
+      listClients: async () => [{ id: 9, name: "Vasco Warranty" }],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        getHeldInbox: () => undefined,
+        getRestingInbox: () => undefined,
+      } as unknown as StateStore,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(adds, [[2, [101]]]);
+    assert.ok(result.skipped.some((row) => row.includes("spare@crosslaunchco.com")));
+  });
 });

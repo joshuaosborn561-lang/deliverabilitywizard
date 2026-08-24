@@ -7,6 +7,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { nameHayMatches } from "../lib/clientWipe.js";
 import { sleep } from "../lib/http.js";
@@ -154,6 +155,13 @@ export class ClientRestService {
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
+      const domain = email.split("@")[1]?.toLowerCase();
+      if (
+        isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
+      ) {
+        result.skipped.push(`${email}: retired domain`);
+        continue;
+      }
       if (isGenericMailbox(account, email, this.config, this.state)) continue;
       const restHay = `${email} ${campaignIdsOf(account)
         .map((id) => campaignById.get(id)?.name ?? "")

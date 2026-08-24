@@ -29,6 +29,15 @@ export interface DomainHistoryPoint {
   testedEmails: string[];
 }
 
+/** True when Josh retired this sending domain — it must stay off live campaigns. */
+export function isRetiredSendingDomain(
+  domain: string | undefined,
+  history: { status?: string } | undefined,
+): boolean {
+  if (!domain) return false;
+  return history?.status === "retired";
+}
+
 export function isFleetDomain(
   domain: string,
   extraGenericDomains: string[],

@@ -1268,6 +1268,57 @@ describe("owner intent — D64 staffing Slack is end of day", () => {
   });
 });
 
+describe("owner intent — D65 retired domains stay off", () => {
+  it("D65: fan-out, rest, and top-up skip retired sending domains", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { isRetiredSendingDomain } = await import("../lib/domainControl.js");
+    assert.equal(
+      isRetiredSendingDomain("hubmeetconnect.com", { status: "retired" }),
+      true,
+      stop(
+        "A retired domain stays off live campaigns (D65).",
+        "isRetiredSendingDomain no longer treats status=retired as off-limits.",
+      ),
+    );
+    const fanout = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      fanout,
+      /isRetiredSendingDomain/,
+      stop(
+        "Fan-out must not put retired-domain inboxes back on campaigns (D65).",
+        "clientFanOut.ts no longer checks isRetiredSendingDomain.",
+      ),
+    );
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      rest,
+      /isRetiredSendingDomain/,
+      stop(
+        "Rest restore must not put retired-domain inboxes back (D65).",
+        "clientRest.ts no longer checks isRetiredSendingDomain.",
+      ),
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      topUp,
+      /isRetiredSendingDomain/,
+      stop(
+        "Top-up must not staff from a retired domain (D65).",
+        "campaignTopUp.ts no longer checks isRetiredSendingDomain.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D60 canary buy once", () => {
   it("D60: do not ask again after the fleet is bought or waiting", async () => {
     const { canaryFleetBuyAlreadyOpen } = await import(

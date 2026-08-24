@@ -43,6 +43,7 @@ describe("ClientFanOutService", () => {
       getPoolMailbox: () => undefined,
       getHeldInbox: () => undefined,
       getRestingInbox: () => undefined,
+      getDomainHistory: () => undefined,
     } as unknown as StateStore;
 
     const service = new ClientFanOutService(
@@ -97,6 +98,7 @@ describe("ClientFanOutService", () => {
         getPoolMailbox: () => undefined,
         getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
       } as unknown as StateStore,
     );
 

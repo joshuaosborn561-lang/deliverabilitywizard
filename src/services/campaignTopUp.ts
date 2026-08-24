@@ -10,6 +10,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import {
   allowsGenericStaff,
   countClientInboxesByKey,
@@ -414,11 +415,16 @@ export class CampaignTopUpService {
           platformOrder,
           (email) => {
             const key = email.toLowerCase();
+            const domain = key.split("@")[1];
             return (
               !activeSwapPoolEmails.has(key) &&
               !selectedThisRun.has(key) &&
               !(campaignsByEmail.get(key) ?? []).includes(campaign.id) &&
-              isReassignable(key, campaign)
+              isReassignable(key, campaign) &&
+              !isRetiredSendingDomain(
+                domain,
+                this.state.getDomainHistory(domain),
+              )
             );
           },
         );

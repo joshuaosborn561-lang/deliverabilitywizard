@@ -1346,3 +1346,25 @@ so. Health is still putting on-week boxes back every 15 minutes.
 **Guards.** Health does not Slack when the only news is still-short;
 day brief `endOfDay` includes the staffing picture; owner-intent D64.
 
+## D65 — Retired domains stay off live campaigns
+
+**Decision.** Once Josh retires a sending domain, every inbox on that
+domain stays off ACTIVE campaigns. Fan-out, rest restore, and generic
+top-up must not put them back. Replacements are new domains; they owe
+21 days from InboxKit import and stay off campaigns until warm.
+`client_id` is not set on a BCP replacement until it is warm, so the
+live floor does not move.
+
+**Why.** Josh (2026-08-24) authorized retiring
+`boldercyperpartnerhqs.info` and `hubmeetconnect.com` after same-ESP
+known-good Gmail→Gmail scores of 0% (8 seeds, peers 100%). Health
+fan-out put Sandy and Ted back on live BCP campaigns within minutes
+because retire only pulled membership.
+
+**Tradeoff.** A retired inbox cannot be reused without Josh un-retiring
+the domain. Accepted: putting a 0% same-ESP domain back on client send
+is worse.
+
+**Guards.** `isRetiredSendingDomain`; fan-out / rest / top-up skip
+retired domains; owner-intent D65.
+

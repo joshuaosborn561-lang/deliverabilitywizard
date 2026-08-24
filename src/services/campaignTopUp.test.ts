@@ -101,6 +101,7 @@ function fakeState(
     getHeldInbox: () => undefined,
     getRestingInbox: () => undefined,
     getPoolMailbox: () => undefined,
+    getDomainHistory: () => undefined,
     clearGenericSendStartedAt: () => undefined,
     isCopyCanary: () => false,
     hasPendingResume: () => false,

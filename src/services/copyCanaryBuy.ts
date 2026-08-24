@@ -8,6 +8,7 @@ import {
   COPY_CANARY_FLEET_DOMAIN_COUNT,
   COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN,
   COPY_CANARY_FLEET_SIZE,
+  domainsFromCanaryBuyActions,
   platformForCanaryDomainIndex,
   type CopyCanaryFleetRecord,
 } from "../lib/copyCanaryFleet.js";
@@ -48,10 +49,18 @@ export class CopyCanaryBuyService {
       actionId: action.id,
     });
     const decidedBy = action.decidedBy ?? "Josh";
+    const already = domainsFromCanaryBuyActions(
+      this.store.listIsolationActions(),
+    );
+    const fleetDomains = this.store.getCopyCanaryFleet()?.domains ?? [];
     const domains =
       Array.isArray(action.detail.domains) && action.detail.domains.length
         ? (action.detail.domains as string[])
-        : await this.purchaseDomains(decidedBy, action);
+        : fleetDomains.length
+          ? fleetDomains
+          : already?.domains.length
+            ? already.domains
+            : await this.purchaseDomains(decidedBy, action);
 
     const googleDomain = domains[0]?.toLowerCase();
     const microsoftDomain = domains[1]?.toLowerCase();

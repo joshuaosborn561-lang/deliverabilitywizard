@@ -1114,6 +1114,48 @@ describe("owner intent — D51 kill-only pull", () => {
   });
 });
 
+describe("owner intent — D60 canary buy once", () => {
+  it("D60: do not ask again after the fleet is bought or waiting", async () => {
+    const { canaryFleetBuyAlreadyOpen } = await import(
+      "../lib/copyCanaryFleet.js"
+    );
+    assert.equal(
+      canaryFleetBuyAlreadyOpen(
+        { status: "awaiting_mailboxes", domains: ["a.info"], emails: [], updatedAt: "" },
+        [],
+      ),
+      true,
+      stop(
+        "A bought canary fleet waiting on mailboxes is not a new ask (D60).",
+        "Empty emails now look like the fleet was never bought.",
+      ),
+    );
+    assert.equal(
+      canaryFleetBuyAlreadyOpen(null, [
+        { kind: "buy_canary_fleet", status: "executed" },
+      ]),
+      true,
+      stop(
+        "An executed canary buy blocks a second Slack prompt (D60).",
+        "Executed canary buys can be asked again.",
+      ),
+    );
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      src,
+      /reconcileFleetPurchase|shouldSkipFleetBuy/,
+      stop(
+        "Health restores the bought fleet and does not ask again (D60).",
+        "copyCanary.ts no longer skips a second canary-fleet ask.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D54 dedicated canary fleet", () => {
   it("D54: two domains, three inboxes each, Google + Outlook, warmup off, Josh-only spend", async () => {
     const { COPY_CANARY_FLEET_DOMAIN_COUNT, COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN } =

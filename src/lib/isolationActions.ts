@@ -29,7 +29,10 @@ function samePending(
   existing: IsolationActionRecord,
   next: IsolationActionRecord,
 ): boolean {
-  if (existing.kind !== next.kind || existing.status !== "pending") return false;
+  if (existing.kind !== next.kind) return false;
+  if (next.kind !== "buy_canary_fleet" && existing.status !== "pending") {
+    return false;
+  }
   if (next.kind === "swap_copy") {
     return (
       Number(existing.detail.campaignId) === Number(next.detail.campaignId) &&
@@ -37,7 +40,13 @@ function samePending(
         String(next.detail.element ?? "").toLowerCase()
     );
   }
-  if (next.kind === "buy_canary_fleet") return true;
+  if (next.kind === "buy_canary_fleet") {
+    return (
+      existing.status === "pending" ||
+      existing.status === "approved" ||
+      existing.status === "executed"
+    );
+  }
   return (
     String(existing.detail.domain ?? "").toLowerCase() ===
     String(next.detail.domain ?? "").toLowerCase()
@@ -77,10 +86,20 @@ export async function remindPendingIsolationActions(input: {
   slack: SlackClient;
 }): Promise<number> {
   const pending = input.store.pendingIsolationActions();
+  const boughtCanary = input.store
+    .listIsolationActions()
+    .some(
+      (row) =>
+        row.kind === "buy_canary_fleet" &&
+        (row.status === "approved" || row.status === "executed"),
+    );
+  let posted = 0;
   for (const action of pending) {
+    if (action.kind === "buy_canary_fleet" && boughtCanary) continue;
     await notifyIsolationActionRecord(input.slack, action);
+    posted += 1;
   }
-  return pending.length;
+  return posted;
 }
 
 export function suggestedCopySwap(element: string): string {

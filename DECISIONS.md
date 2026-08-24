@@ -1158,3 +1158,30 @@ the shell never sends to leads.
 **Guards.** `isPodControlShellCampaign` / `isExcluded`; owner-intent D56;
 pod controls refuse a first-ACTIVE fallback.
 
+## D58 — Generics only on Goliath; floor is half the client's inboxes
+
+**Decision.** Pull every generic off every campaign except **Goliath**.
+Goliath may keep and still receive generics. Everyone else is staffed
+from that client's own inboxes only.
+
+The live staffable floor is **half of that client's total client
+inboxes** (A+B, sitting included), not the old global 50 (D7). Vasco
+has 80 client inboxes → 40 per campaign. Odd counts round down.
+
+D26 fan-out still puts client inboxes on every ACTIVE campaign for that
+client. Fan-out must not put generics back on a non-Goliath campaign.
+The paused pod-control shell is not a live campaign and keeps its
+members (D56).
+
+**Why.** Josh (2026-08-24): 300 generics sending was too high. Keep them
+on Goliath only and drop the floor to half of each client's own boxes.
+
+**Tradeoff.** Non-Goliath campaigns shrink to the on-week client cohort
+plus any leftover client boxes. Shortfalls Slack; they are not filled
+with pool generics.
+
+**Guards.** `clientInboxStaffFloor(80) === 40`; `allowsGenericStaff`
+matches Goliath; top-up pulls and will not restaff non-Goliath;
+owner-intent D58. The D7 default of 50 stays in config as a leftover
+number and is not the live floor.
+

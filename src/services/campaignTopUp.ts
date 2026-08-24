@@ -9,7 +9,13 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { sleep } from "../lib/http.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
+import {
+  allowsGenericStaff,
+  countClientInboxesByKey,
+  staffFloorForCampaign,
+} from "../lib/clientStaffFloor.js";
+import { chunkArray, sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
   poolEspFromSmartleadType,
@@ -49,6 +55,8 @@ export interface TopUpResult {
   skipped: string[];
   /** Senders removed from a campaign they were not branded for. */
   released: Array<{ campaignId: number; email: string }>;
+  /** D58 — generics taken off every campaign that is not Goliath. */
+  pulledGenerics: Array<{ campaignId: number; email: string }>;
   errors: string[];
 }
 
@@ -103,13 +111,9 @@ export class CampaignTopUpService {
       unfilled: [],
       skipped: [],
       released: [],
+      pulledGenerics: [],
       errors: [],
     };
-
-    if (!this.config.enableCampaignTopUp) {
-      console.log("[top-up] Disabled (ENABLE_CAMPAIGN_TOP_UP=false)");
-      return result;
-    }
 
     const [campaigns, accounts, clients] = await Promise.all([
       this.smartlead.listCampaigns(),
@@ -158,7 +162,33 @@ export class CampaignTopUpService {
       }
     }
 
-    const floor = this.config.minCampaignSenders;
+    const clientInboxCounts = countClientInboxesByKey(
+      accounts as SmartleadAccountWithCampaigns[],
+      campaigns as SmartleadCampaign[],
+      clients,
+      this.config,
+      this.state,
+    );
+    const floorByCampaign = new Map<number, number>(
+      (campaigns as SmartleadCampaign[]).map((campaign) => [
+        campaign.id,
+        staffFloorForCampaign(campaign, clientInboxCounts),
+      ]),
+    );
+    const campaignAllowsGenerics = (campaign: SmartleadCampaign | undefined): boolean => {
+      if (!campaign) return false;
+      const clientName =
+        typeof campaign.client_id === "number"
+          ? clientDisplayName(clientsById.get(campaign.client_id) ?? {
+              id: campaign.client_id,
+            })
+          : "";
+      return allowsGenericStaff(
+        campaign,
+        clientName,
+        this.config.genericStaffNamePatterns,
+      );
+    };
     const excluded = this.config.topUpExcludeCampaigns;
     const excludedCampaignIds = new Set(
       (campaigns as SmartleadCampaign[])
@@ -187,6 +217,23 @@ export class CampaignTopUpService {
       if (email) campaignsByEmail.set(email, campaignIdsOf(account));
     }
 
+    await this.pullNonGoliathGenerics({
+      dryRun,
+      campaigns: campaigns as SmartleadCampaign[],
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      campaignById,
+      campaignAllowsGenerics,
+      campaignsByEmail,
+      projected,
+      result,
+    });
+
+    if (!this.config.enableCampaignTopUp) {
+      console.log("[top-up] Disabled (ENABLE_CAMPAIGN_TOP_UP=false) after D58 pull");
+      if (!dryRun) await this.state.save();
+      return result;
+    }
+
     const sameClient = (
       a: SmartleadCampaign | undefined,
       b: SmartleadCampaign | undefined,
@@ -206,8 +253,11 @@ export class CampaignTopUpService {
     ): boolean => {
       const from = campaignsByEmail.get(email.toLowerCase()) ?? [];
       return from.every((id) => {
-        if (sameClient(campaignById.get(id), target)) return true;
-        return (projected.get(id) ?? 0) - 1 >= floor;
+        const donor = campaignById.get(id);
+        if (sameClient(donor, target)) return true;
+        // D58 — non-Goliath campaigns must lose generics anyway.
+        if (!campaignAllowsGenerics(donor)) return true;
+        return (projected.get(id) ?? 0) - 1 >= (floorByCampaign.get(id) ?? 0);
       });
     };
 
@@ -224,7 +274,7 @@ export class CampaignTopUpService {
         campaign: c,
         senders: staffableCounts.get(c.id) ?? 0,
       }))
-      .filter((row) => row.senders < floor)
+      .filter((row) => row.senders < (floorByCampaign.get(row.campaign.id) ?? 0))
       // Neediest first, so a shallow pool helps the worst campaign.
       .sort((a, b) => a.senders - b.senders);
 
@@ -296,20 +346,35 @@ export class CampaignTopUpService {
       .filter((c) => isManagedCampaign(c))
       .filter((c) => !isExcluded(c, excluded))
       .map((c) => ({ campaign: c, senders: projected.get(c.id) ?? 0 }))
-      .filter((row) => row.senders < floor)
+      .filter((row) => row.senders < (floorByCampaign.get(row.campaign.id) ?? 0))
       .sort((a, b) => a.senders - b.senders);
     needy.length = 0;
     needy.push(...needyAfter);
 
     if (!needy.length) {
       console.log(
-        `[top-up] All managed campaigns at or above ${floor} staffable senders`,
+        "[top-up] All managed campaigns at or above their D58 client-inbox floor",
       );
       return result;
     }
 
     const selectedThisRun = new Set<string>();
     for (const { campaign, senders } of needy) {
+      const floor = floorByCampaign.get(campaign.id) ?? 0;
+      if (!campaignAllowsGenerics(campaign)) {
+        const shortBy = Math.max(0, floor - senders);
+        if (shortBy > 0) {
+          result.unfilled.push({
+            campaignId: campaign.id,
+            name: String(campaign.name ?? campaign.id),
+            shortBy,
+          });
+        }
+        result.skipped.push(
+          `${campaign.id} ${campaign.name ?? ""} (D58 client-inbox only)`.trim(),
+        );
+        continue;
+      }
       const clientId =
         typeof campaign.client_id === "number" ? campaign.client_id : null;
       const clientName = clientId
@@ -542,5 +607,105 @@ export class CampaignTopUpService {
     // one staffing alert. Top-up still logs locally for Railway diagnostics.
 
     return result;
+  }
+
+  /**
+   * D58 — generics come off every campaign that is not Goliath. The paused
+   * pod-control shell is left alone (D56).
+   */
+  private async pullNonGoliathGenerics(input: {
+    dryRun: boolean;
+    campaigns: SmartleadCampaign[];
+    accounts: SmartleadAccountWithCampaigns[];
+    campaignById: Map<number, SmartleadCampaign>;
+    campaignAllowsGenerics: (campaign: SmartleadCampaign | undefined) => boolean;
+    campaignsByEmail: Map<string, number[]>;
+    projected: Map<number, number>;
+    result: TopUpResult;
+  }): Promise<void> {
+    const byCampaign = new Map<number, Array<{ accountId: number; email: string }>>();
+    for (const account of input.accounts) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (!email || !account.id) continue;
+      if (this.state.isCopyCanary(email)) continue;
+      if (!isGenericMailbox(account, email, this.config, this.state)) continue;
+      const remaining: number[] = [];
+      for (const campaignId of campaignIdsOf(account)) {
+        const campaign = input.campaignById.get(campaignId);
+        if (!campaign || isPodControlShellCampaign(campaign)) {
+          remaining.push(campaignId);
+          continue;
+        }
+        if (input.campaignAllowsGenerics(campaign)) {
+          remaining.push(campaignId);
+          continue;
+        }
+        const list = byCampaign.get(campaignId) ?? [];
+        list.push({ accountId: account.id, email });
+        byCampaign.set(campaignId, list);
+      }
+      input.campaignsByEmail.set(email, remaining);
+    }
+
+    for (const [campaignId, rows] of byCampaign) {
+      for (const batch of chunkArray(rows, 25)) {
+        try {
+          if (!input.dryRun) {
+            await this.smartlead.removeEmailAccountsFromCampaign(
+              campaignId,
+              batch.map((row) => row.accountId),
+            );
+            await sleep(200);
+          }
+          for (const row of batch) {
+            input.projected.set(
+              campaignId,
+              Math.max(0, (input.projected.get(campaignId) ?? 1) - 1),
+            );
+            input.result.pulledGenerics.push({
+              campaignId,
+              email: row.email,
+            });
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          input.result.errors.push(`pull generics #${campaignId}: ${message}`);
+        }
+      }
+    }
+
+    if (!input.dryRun) {
+      const stillLive = new Set<string>();
+      for (const [email, ids] of input.campaignsByEmail) {
+        if (
+          ids.some((id) => {
+            const campaign = input.campaignById.get(id);
+            if (!campaign || isPodControlShellCampaign(campaign)) return false;
+            return String(campaign.status ?? "").toUpperCase() === "ACTIVE";
+          })
+        ) {
+          stillLive.add(email);
+        }
+      }
+      for (const row of input.result.pulledGenerics) {
+        if (stillLive.has(row.email.toLowerCase())) continue;
+        const pool = this.state.getPoolMailbox(row.email);
+        if (!pool) continue;
+        this.state.upsertPoolMailbox({
+          ...pool,
+          status: pool.status === "assigned" ? "available" : pool.status,
+          assignedClientId: undefined,
+          assignedClientName: undefined,
+          assignedAt: undefined,
+        });
+        this.state.clearGenericSendStartedAt(row.email);
+      }
+    }
+
+    if (input.result.pulledGenerics.length) {
+      console.log(
+        `[top-up] D58 pulled ${input.result.pulledGenerics.length} generic membership(s) off non-Goliath campaigns`,
+      );
+    }
   }
 }

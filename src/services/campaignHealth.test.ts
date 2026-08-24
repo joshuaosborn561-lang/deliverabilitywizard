@@ -29,6 +29,8 @@ describe("CampaignHealthService", () => {
       findReassignablePoolMailbox: () => undefined,
       getHeldInbox: () => undefined,
       getRestingInbox: () => undefined,
+      getPoolMailbox: () => undefined,
+      clearGenericSendStartedAt: () => undefined,
       isCopyCanary: () => false,
       hasPendingResume: (id: number) => pending.has(id),
       listPendingResumes: () => [...pending.values()],
@@ -92,6 +94,8 @@ describe("CampaignHealthService", () => {
       findReassignablePoolMailbox: () => undefined,
       getHeldInbox: () => undefined,
       getRestingInbox: () => undefined,
+      getPoolMailbox: () => undefined,
+      clearGenericSendStartedAt: () => undefined,
       isCopyCanary: () => false,
       hasPendingResume: () => false,
       listPendingResumes: () => [],
@@ -109,6 +113,7 @@ describe("CampaignHealthService", () => {
         Array.from({ length: 50 }, (_, index) => ({
           id: index + 1,
           from_email: `dead-${index}@x.com`,
+          client_id: 1,
           type: "GMAIL",
           is_smtp_success: false,
           is_imap_success: false,
@@ -134,8 +139,9 @@ describe("CampaignHealthService", () => {
     const result = await health.run({ dryRun: true });
     assert.equal(result.snapshots[0]?.membership, 50);
     assert.equal(result.snapshots[0]?.staffable, 0);
-    assert.equal(result.snapshots[0]?.needed, 50);
-    assert.equal(result.stillShort[0]?.shortBy, 50);
+    assert.equal(result.snapshots[0]?.floor, 25);
+    assert.equal(result.snapshots[0]?.needed, 25);
+    assert.equal(result.stillShort[0]?.shortBy, 25);
   });
 
   it("does not auto-START a STOPPED campaign even with pendingResume (D40)", async () => {
@@ -155,6 +161,8 @@ describe("CampaignHealthService", () => {
       findReassignablePoolMailbox: () => undefined,
       getHeldInbox: () => undefined,
       getRestingInbox: () => undefined,
+      getPoolMailbox: () => undefined,
+      clearGenericSendStartedAt: () => undefined,
       isCopyCanary: () => false,
       hasPendingResume: (id: number) => pending.has(id),
       listPendingResumes: () => [...pending.values()],

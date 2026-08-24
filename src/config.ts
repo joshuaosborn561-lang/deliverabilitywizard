@@ -95,6 +95,19 @@ const ConfigSchema = z.object({
   /** Pull a sender off campaigns above this bounce rate (percent). */
   /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
+  /**
+   * D58 — name fragments (campaign or client) that may still receive
+   * generics. Everyone else is client-inbox only.
+   */
+  genericStaffNamePatterns: z
+    .string()
+    .default("goliath")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   enableCampaignTopUp: boolFromEnv(true),
   /**
    * Fast staffing loop: reconnect → mailbox settings → refill/unpause.
@@ -445,6 +458,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
+    genericStaffNamePatterns: env.GENERIC_STAFF_NAME_PATTERNS ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,

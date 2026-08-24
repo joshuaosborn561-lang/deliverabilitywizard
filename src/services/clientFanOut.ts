@@ -4,12 +4,15 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
   campaignIdsOf,
+  clientDisplayName,
   resolveAccountClient,
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
+import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
 import { sleep } from "../lib/http.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
@@ -96,6 +99,19 @@ export class ClientFanOutService {
       const campaignName = new Map(
         groupCampaigns.map((c) => [c.id, String(c.name ?? c.id)]),
       );
+      const groupAllowsGenerics = groupCampaigns.some((campaign) => {
+        const clientName =
+          typeof campaign.client_id === "number"
+            ? clientDisplayName(
+                clientsById.get(campaign.client_id) ?? { id: campaign.client_id },
+              )
+            : "";
+        return allowsGenericStaff(
+          campaign,
+          clientName,
+          this.config.genericStaffNamePatterns,
+        );
+      });
 
       // campaignId → pending account attachments (batched Smartlead writes)
       const pendingByCampaign = new Map<
@@ -122,6 +138,14 @@ export class ClientFanOutService {
         }
         if (activeHoldUntilDate(tagNames(account))) {
           result.skipped.push(`${email}: HOLD-UNTIL tag`);
+          continue;
+        }
+
+        if (
+          !groupAllowsGenerics &&
+          isGenericMailbox(account, email, this.config, this.state)
+        ) {
+          result.skipped.push(`${email}: D58 generics stay on Goliath only`);
           continue;
         }
 

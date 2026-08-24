@@ -1284,3 +1284,25 @@ hit `/ops`. Accepted: a second buy prompt is how we almost bought twice.
 **Guards.** `canaryFleetBuyAlreadyOpen`; attach restores domains from the
 executed action; owner-intent D60.
 
+## D61 — Vasco to 40; wipe GXA / MSRS / Nieto
+
+**Decision.** Vasco keeps **40** client inboxes — the same Google /
+Microsoft mix it has now. Prefer boxes already on live campaigns. The
+other Vasco inboxes come off Smartlead and InboxKit. Vasco does **not**
+A/B-sit after this; all 40 send. The live floor for Vasco is 40, not 20.
+
+GXA, MSRS, and Nieto inboxes are wiped from Smartlead and InboxKit —
+accounts deleted, matching InboxKit mailboxes cancelled, domains purged
+when nothing else still uses them. Pool generics, pre-warmed fleets, and
+the canary fleet are not touched.
+
+**Why.** Josh (2026-08-24): Vasco's TAM is too small for 80. GXA, MSRS,
+and Nieto should be totally gone from InboxKit and Smartlead.
+
+**Tradeoff.** Destructive and one-shot. A mis-named client would be
+skipped rather than guessed. Retry if InboxKit errors; 404s on already
+deleted Smartlead accounts are not errors.
+
+**Guards.** `vascoKeepCount === 40`; wipe patterns gxa/msrs/nieto;
+`ClientWipeService`; Vasco is a full-send client; owner-intent D61.
+

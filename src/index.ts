@@ -48,6 +48,7 @@ import { ClientRestService } from "./services/clientRest.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
 import { RestBaselineRebuildService } from "./services/restBaselineRebuild.js";
 import { UnhealthyResetService } from "./services/unhealthyReset.js";
+import { ClientWipeService } from "./services/clientWipe.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -331,6 +332,20 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const wipeInboxkit = config.inboxkitApiKey
+    ? new InboxKitClient(
+        config.inboxkitApiKey,
+        undefined,
+        config.genericPoolWorkspaceId || undefined,
+      )
+    : null;
+  const clientWipe = new ClientWipeService(
+    config,
+    smartlead,
+    wipeInboxkit,
+    slack,
+    state,
+  );
   const copyCanary = new CopyCanaryService(
     config,
     smartlead,
@@ -510,6 +525,7 @@ async function main(): Promise<void> {
 
   const runRestGates = async () => {
     let unhealthy: unknown = null;
+    let wipe: unknown = null;
     let restBaseline: unknown = null;
     let restResult: unknown = null;
     let genericRest: unknown = null;
@@ -518,6 +534,13 @@ async function main(): Promise<void> {
         unhealthy = await unhealthyReset.run();
       } catch (error) {
         console.warn("[health] unhealthy reset failed", error);
+      }
+    }
+    if (config.enableClientWipe) {
+      try {
+        wipe = await clientWipe.run();
+      } catch (error) {
+        console.warn("[health] client wipe failed", error);
       }
     }
     if (config.enableRestBaselineRebuild) {
@@ -541,7 +564,7 @@ async function main(): Promise<void> {
         console.warn("[health] generic send rest failed", error);
       }
     }
-    return { unhealthyReset: unhealthy, restBaseline, clientRest: restResult, genericRest };
+    return { unhealthyReset: unhealthy, clientWipe: wipe, restBaseline, clientRest: restResult, genericRest };
   };
 
   const runCampaignTopUp = async () => {
@@ -633,6 +656,7 @@ async function main(): Promise<void> {
 
       return {
         unhealthyReset: rest.unhealthyReset,
+        clientWipe: rest.clientWipe,
         restBaseline: rest.restBaseline,
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
@@ -1553,6 +1577,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.json({ ok: true, mode: "unhealthy-reset", result });
         return;
       }
+      if (mode === "client-wipe" || mode === "vasco-trim") {
+        assertRuntimeSecrets(config);
+        const result = await clientWipe.run();
+        res.json({ ok: true, mode: "client-wipe", result });
+        return;
+      }
       if (
         mode === "rest-baseline" ||
         mode === "hold-rebuild" ||
@@ -1963,6 +1993,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Sending infra census: ${config.enableSendingInfraCensus ? "ENABLED (placement-report IPs, Slack once)" : "disabled"}`,
+    );
+    console.log(
+      `[boot] Client wipe (D61): ${config.enableClientWipe ? `ENABLED (Vasco keep ${config.vascoKeepCount}; wipe ${config.wipeClientPatterns.join("/") || "none"})` : "disabled"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

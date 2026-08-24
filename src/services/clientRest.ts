@@ -8,6 +8,7 @@ import {
 } from "../clients/smartlead.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { nameHayMatches } from "../lib/clientWipe.js";
 import { sleep } from "../lib/http.js";
 import {
   assignClientCohorts,
@@ -133,6 +134,13 @@ export class ClientRestService {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (isGenericMailbox(account, email, this.config, this.state)) continue;
+      const restHay = `${email} ${campaignIdsOf(account)
+        .map((id) => campaignById.get(id)?.name ?? "")
+        .join(" ")}`;
+      if (nameHayMatches(restHay, this.config.fullSendClientPatterns)) {
+        result.skipped.push(`${email}: full-send client`);
+        continue;
+      }
       const groupKey = clientRestGroupKey(account, email, campaignClientById);
       if (!groupKey) {
         result.skipped.push(`${email}: no client group`);

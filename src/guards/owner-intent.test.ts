@@ -1114,6 +1114,64 @@ describe("owner intent — D51 kill-only pull", () => {
   });
 });
 
+describe("owner intent — D61 Vasco trim and client wipe", () => {
+  it("D61: Vasco keeps 40 and GXA/MSRS/Nieto are wipe targets", async () => {
+    assert.equal(
+      defaults.vascoKeepCount,
+      40,
+      stop(
+        "Vasco keeps 40 inboxes (D61).",
+        `VASCO_KEEP_COUNT is now ${defaults.vascoKeepCount}.`,
+      ),
+    );
+    assert.deepEqual(
+      defaults.wipeClientPatterns,
+      ["gxa", "msrs", "nieto"],
+      stop(
+        "GXA, MSRS, and Nieto are the wipe list (D61).",
+        `WIPE_CLIENT_PATTERNS is now ${defaults.wipeClientPatterns.join(",")}.`,
+      ),
+    );
+    assert.deepEqual(
+      defaults.fullSendClientPatterns,
+      ["vasco"],
+      stop(
+        "Vasco sends all remaining inboxes — no A/B sit (D61).",
+        `FULL_SEND_CLIENT_PATTERNS is now ${defaults.fullSendClientPatterns.join(",")}.`,
+      ),
+    );
+    assert.equal(
+      defaults.enableClientWipe,
+      true,
+      stop(
+        "The Vasco trim / client wipe defaults on (D61).",
+        "ENABLE_CLIENT_WIPE now defaults off.",
+      ),
+    );
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../services/clientWipe.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      src,
+      /deleteEmailAccount/,
+      stop(
+        "Wipe deletes Smartlead accounts (D61).",
+        "clientWipe.ts no longer deletes Smartlead accounts.",
+      ),
+    );
+    assert.match(
+      src,
+      /purgeDomain|cancelMailboxes/,
+      stop(
+        "Wipe cancels InboxKit mailboxes and purges empty domains (D61).",
+        "clientWipe.ts no longer touches InboxKit.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D60 canary buy once", () => {
   it("D60: do not ask again after the fleet is bought or waiting", async () => {
     const { canaryFleetBuyAlreadyOpen } = await import(

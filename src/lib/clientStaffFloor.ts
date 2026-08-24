@@ -60,10 +60,15 @@ export function countClientInboxesByKey(
 }
 
 export function staffFloorForCampaign(
-  campaign: { client_id?: number | null },
+  campaign: { name?: string | null; client_id?: number | null },
   clientInboxCounts: Map<string, number>,
+  clientName?: string | null,
+  fullSendPatterns: string[] = [],
 ): number {
-  return clientInboxStaffFloor(
-    clientInboxCounts.get(clientCountKey(campaign.client_id)) ?? 0,
-  );
+  const count =
+    clientInboxCounts.get(clientCountKey(campaign.client_id)) ?? 0;
+  if (fullSendPatterns.length && allowsGenericStaff(campaign, clientName, fullSendPatterns)) {
+    return count;
+  }
+  return clientInboxStaffFloor(count);
 }

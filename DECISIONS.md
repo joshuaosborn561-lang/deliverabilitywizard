@@ -1211,3 +1211,56 @@ Accepted: the new system has to earn those marks again.
 wipes holds; on-week restore targets every live client campaign;
 owner-intent D59.
 
+## D52 — Tell Josh when a campaign is running out of leads
+
+**Decision.** Watch remaining leads on every ACTIVE campaign. Slack at
+**half consumed**, **three quarters**, and **done**. Say it in plain
+English with leads left and recent send rate so the remaining days are
+obvious. Never import leads or extend a campaign. Tell Josh and wait.
+
+A campaign that is **working** (reply / positive-reply data already on
+hand) and running low is urgent. A campaign that is **not getting
+replies** and running low is not urgent — say do not top it up; that
+would throw good leads after a campaign that is not working.
+
+Campaign audit watches **sender headcount and placement-test cover**.
+Send volume watches **today's sent count**. Neither watches remaining
+leads. Do not add this number to those two reports — one watcher, one
+Slack.
+
+**Why.** Josh (2026-08-23): a working campaign that quietly empties is
+the most expensive failure. Warmup and list-building take time, so
+finding out the day it empties is already too late.
+
+**Tradeoff.** One statistics + analytics call per ACTIVE campaign on the
+monitor pass. Accepted: the alternative is discovering an empty list by
+hand.
+
+**Guards.** `enableLeadRunout` default true; `formatRunoutMessage` never
+imports; owner-intent D52.
+
+---
+
+## D53 — Sending-infrastructure census from placement reports
+
+**Decision.** Before spending on an add-on that claims a reply lift from
+"better sending IPs", read what our mailboxes actually send from. Use
+SmartDelivery IP analytics, rDNS, and IP blacklist on the placement
+tests we already run. Do not buy a new data source.
+
+For each sending IP: address, geography, who owns the range, whether it
+is listed. Slack a straight summary: reputable ranges in the right
+region, or not. Good → drop the add-on. Bad → bigger than the add-on;
+say so immediately. Never spend from this path.
+
+**Why.** Josh (2026-08-23): the same vendor has complaints about serving
+traffic from IP ranges that do not match where customers sell. If we are
+already on good infrastructure the add-on buys nothing.
+
+**Tradeoff.** First census after deploy posts once. A bad reading pages
+again at most weekly. Parser is defensive because SmartDelivery payload
+shapes vary.
+
+**Guards.** `enableSendingInfraCensus` default true; owner-intent D53;
+no spend from the census service.
+

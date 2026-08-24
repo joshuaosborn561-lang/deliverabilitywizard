@@ -79,6 +79,8 @@ import { CopyCanaryBuyService } from "./services/copyCanaryBuy.js";
 import { IsolationExecuteService } from "./services/isolationExecute.js";
 import { DomainLifecycleService } from "./services/domainLifecycle.js";
 import { CopyCanaryService } from "./services/copyCanary.js";
+import { LeadRunoutService } from "./services/leadRunout.js";
+import { SendingInfraService } from "./services/sendingInfra.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -284,6 +286,13 @@ async function main(): Promise<void> {
     return reconcileInFlight;
   };
 
+  const leadRunout = new LeadRunoutService(config, smartlead, slack, state);
+  const sendingInfra = new SendingInfraService(
+    config,
+    smartDelivery,
+    slack,
+    state,
+  );
   const dnsAudit = new DnsAuditService(smartlead, slack, state);
   const mailboxSettings = new MailboxSettingsService(
     config,
@@ -744,6 +753,24 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[campaign-audit] failed", error);
       }
+      // D52 — remaining leads. Campaign audit watches senders, not this number.
+      let leadRunoutResult: unknown = null;
+      if (config.enableLeadRunout) {
+        try {
+          leadRunoutResult = await leadRunout.run();
+        } catch (error) {
+          console.warn("[lead-runout] failed", error);
+        }
+      }
+      // D53 — sending IPs from placement reports we already pull.
+      let sendingInfraResult: unknown = null;
+      if (config.enableSendingInfraCensus) {
+        try {
+          sendingInfraResult = await sendingInfra.run();
+        } catch (error) {
+          console.warn("[sending-infra] failed", error);
+        }
+      }
       // D29: PAUSED campaigns with high aggregate sender bounce → investigate
       // (skip sender rotation when placement says the copy is the cause).
       let bounceInvestigateResult: unknown = null;
@@ -810,6 +837,8 @@ async function main(): Promise<void> {
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
+        leadRunout: leadRunoutResult,
+        sendingInfra: sendingInfraResult,
         bounceInvestigate: bounceInvestigateResult,
         podControls: podControlResult,
         isolationRig: isolationRigResult,
@@ -1431,6 +1460,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         enableLegacyMailboxPulls: config.enableLegacyMailboxPulls,
         enableCopyCanary: config.enableCopyCanary,
         copyCanaryPerCampaign: config.copyCanaryPerCampaign,
+        enableLeadRunout: config.enableLeadRunout,
+        enableSendingInfraCensus: config.enableSendingInfraCensus,
         campaignMinWarmupDays: config.campaignMinWarmupDays,
         poolWarmupDays: config.poolWarmupDays,
         clientDomainBudgetUsd: config.clientDomainBudgetUsd,
@@ -1926,6 +1957,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
+    );
+    console.log(
+      `[boot] Lead runout: ${config.enableLeadRunout ? "ENABLED (half / three-quarters / done, Slack only, no import)" : "disabled"}`,
+    );
+    console.log(
+      `[boot] Sending infra census: ${config.enableSendingInfraCensus ? "ENABLED (placement-report IPs, Slack once)" : "disabled"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

@@ -161,6 +161,15 @@ const ConfigSchema = z.object({
   enableCopyIsolation: boolFromEnv(true),
   /** Daily replies + out-of-office collapse watch. */
   enableDeliveryWatch: boolFromEnv(true),
+  /**
+   * D52 — Slack when an ACTIVE campaign is halfway / three-quarters /
+   * out of leads. Never imports. Campaign audit does not watch this number.
+   */
+  enableLeadRunout: boolFromEnv(true),
+  /**
+   * D53 — one census of sending IPs from placement reports we already pull.
+   */
+  enableSendingInfraCensus: boolFromEnv(true),
   isolationDomain: z.string().default(""),
   isolationMailboxIds: z
     .string()
@@ -479,6 +488,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableIsolationBranch: env.ENABLE_ISOLATION_BRANCH,
     enableCopyIsolation: env.ENABLE_COPY_ISOLATION,
     enableDeliveryWatch: env.ENABLE_DELIVERY_WATCH,
+    enableLeadRunout: env.ENABLE_LEAD_RUNOUT,
+    enableSendingInfraCensus: env.ENABLE_SENDING_INFRA_CENSUS,
     isolationDomain: env.ISOLATION_DOMAIN ?? "",
     isolationMailboxIds: env.ISOLATION_MAILBOX_IDS ?? "",
     isolationMailboxEmails: env.ISOLATION_MAILBOX_EMAILS ?? "",

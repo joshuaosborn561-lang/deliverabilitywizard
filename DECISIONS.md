@@ -1185,3 +1185,29 @@ matches Goliath; top-up pulls and will not restaff non-Goliath;
 owner-intent D58. The D7 default of 50 stays in config as a leftover
 number and is not the live floor.
 
+## D59 — Wipe leftover unhealthy marks; B-pod is the sending half
+
+**Decision.** Every leftover “unhealthy” mark is deleted. That includes
+`heldInboxes`, HOLD-UNTIL tags, mailbox-control kill/watch tags, held
+placement-test records, inbox-remediation dedupe keys, active recovery
+swaps, and old same-ESP scores on client rest records.
+
+Nothing is unhealthy until the **new** rules mark it (D51 kill-only
+readings, D58 Goliath-only generics). D43 A/B sit is not a hold: this
+fortnight **B sends**, A sits. Every on-week client inbox goes on every
+ACTIVE campaign for that client — half of that client’s own inboxes,
+which is also the D58 floor.
+
+Client rest must not skip or veto a B-pod box because of an old hold or
+an old placement score.
+
+**Why.** Josh (2026-08-24): BCP and Parlay looked short because boxes
+were still marked unhealthy from the old rules. Start clean.
+
+**Tradeoff.** Real same-ESP fails that D44 kept are released too.
+Accepted: the new system has to earn those marks again.
+
+**Guards.** `shouldVetoRestRestore` is always false; `UnhealthyResetService`
+wipes holds; on-week restore targets every live client campaign;
+owner-intent D59.
+

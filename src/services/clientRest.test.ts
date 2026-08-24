@@ -13,8 +13,8 @@ describe("shouldVetoRestRestore", () => {
     assert.equal(shouldVetoRestRestore(undefined, 80), false);
   });
 
-  it("vetoes a known-bad same-ESP inbox", () => {
-    assert.equal(shouldVetoRestRestore(40, 80), true);
+  it("never vetoes on an old same-ESP reading (D59)", () => {
+    assert.equal(shouldVetoRestRestore(40, 80), false);
     assert.equal(shouldVetoRestRestore(90, 80), false);
   });
 });
@@ -83,7 +83,7 @@ describe("ClientRestService", () => {
     assert.ok(removed.length >= 1);
   });
 
-  it("does not restore a rester with a known-bad same-ESP score", async () => {
+  it("restores an on-week rester even with an old same-ESP miss (D59)", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "a@client.info";
     assert.equal(assignClientCohorts([onEmail, "z@client.info"]).get(onEmail), "A");
@@ -140,9 +140,9 @@ describe("ClientRestService", () => {
     );
 
     const result = await service.run({ dryRun: false, now });
-    assert.equal(adds.length, 0);
-    assert.ok(result.vetoed.some((v) => v.email === onEmail));
-    assert.ok(state.getRestingInbox(onEmail), "veto must leave the rest record");
+    assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
+    assert.equal(result.vetoed.length, 0);
+    assert.equal(state.getRestingInbox(onEmail), undefined);
   });
 
   it("does not A/B-rest a pool generic (D43)", async () => {

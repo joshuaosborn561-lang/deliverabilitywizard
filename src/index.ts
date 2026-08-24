@@ -47,6 +47,7 @@ import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { ClientRestService } from "./services/clientRest.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
 import { RestBaselineRebuildService } from "./services/restBaselineRebuild.js";
+import { UnhealthyResetService } from "./services/unhealthyReset.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -315,6 +316,12 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const unhealthyReset = new UnhealthyResetService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const copyCanary = new CopyCanaryService(
     config,
     smartlead,
@@ -493,9 +500,17 @@ async function main(): Promise<void> {
   };
 
   const runRestGates = async () => {
+    let unhealthy: unknown = null;
     let restBaseline: unknown = null;
     let restResult: unknown = null;
     let genericRest: unknown = null;
+    if (config.enableUnhealthyReset) {
+      try {
+        unhealthy = await unhealthyReset.run();
+      } catch (error) {
+        console.warn("[health] unhealthy reset failed", error);
+      }
+    }
     if (config.enableRestBaselineRebuild) {
       try {
         restBaseline = await restBaselineRebuild.run();
@@ -517,7 +532,7 @@ async function main(): Promise<void> {
         console.warn("[health] generic send rest failed", error);
       }
     }
-    return { restBaseline, clientRest: restResult, genericRest };
+    return { unhealthyReset: unhealthy, restBaseline, clientRest: restResult, genericRest };
   };
 
   const runCampaignTopUp = async () => {
@@ -608,6 +623,7 @@ async function main(): Promise<void> {
       }
 
       return {
+        unhealthyReset: rest.unhealthyReset,
         restBaseline: rest.restBaseline,
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
@@ -1494,6 +1510,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await clientRest.run();
         res.json({ ok: true, mode: "client-rest", result });
+        return;
+      }
+      if (
+        mode === "unhealthy-reset" ||
+        mode === "clear-holds" ||
+        mode === "start-clean"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await unhealthyReset.run();
+        res.json({ ok: true, mode: "unhealthy-reset", result });
         return;
       }
       if (

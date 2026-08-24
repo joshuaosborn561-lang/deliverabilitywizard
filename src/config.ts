@@ -139,6 +139,11 @@ const ConfigSchema = z.object({
    */
   enableRestBaselineRebuild: boolFromEnv(true),
   /**
+   * D59 — one-shot: wipe every leftover unhealthy mark (holds, HOLD-UNTIL,
+   * kill tags, rest veto scores) so D43/D58 can staff from a clean slate.
+   */
+  enableUnhealthyReset: boolFromEnv(true),
+  /**
    * D48 — standing per-pod control tests (fixed control email, per-sender
    * read). Tests are unlimited (D45); this does not wait for seed approval.
    */
@@ -467,6 +472,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
     enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
+    enableUnhealthyReset: env.ENABLE_UNHEALTHY_RESET,
     enablePodControls: env.ENABLE_POD_CONTROLS,
     podControlShellCampaignId: env.POD_CONTROL_SHELL_CAMPAIGN_ID ?? "0",
     enableIsolationRig: env.ENABLE_ISOLATION_RIG,

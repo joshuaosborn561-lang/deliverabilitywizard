@@ -921,17 +921,18 @@ async function main(): Promise<void> {
 
   // Client day brief (sent / bounce% / spam% + resting vs active) posts at
   // fixed local times. America/New_York so the times track EST/EDT.
-  for (const expression of sendVolumeSchedules) {
+  sendVolumeSchedules.forEach((expression, index) => {
+    const endOfDay = index === sendVolumeSchedules.length - 1;
     cron.schedule(
       expression,
       () => {
-        void clientDayBrief.run().catch((error) => {
+        void clientDayBrief.run({ endOfDay }).catch((error) => {
           console.error("[client-day] Unhandled cron error", error);
         });
       },
       { timezone: "America/New_York" },
     );
-  }
+  });
 
   if (config.enableDeliveryWatch) {
     cron.schedule(
@@ -1601,7 +1602,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
       if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
         assertRuntimeSecrets(config);
-        const result = await clientDayBrief.run();
+        const result = await clientDayBrief.run({ endOfDay: true });
         res.json({ ok: true, mode: "client-day", result });
         return;
       }

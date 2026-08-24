@@ -24,6 +24,16 @@ describe("staffingSlackLines", () => {
     assert.deepEqual(slackJargonHits(text), []);
   });
 
+  it("end-of-day copy stays plain English", () => {
+    const text = [
+      "Staffing (end of day)",
+      "Spare inboxes are not the shortage. They stay on Goliath.",
+      "These campaigns are missing this client's own inboxes that should be sending this week:",
+      "• BCP PE Firms — 22 sending, 22 of this client's inboxes that should be on are not.",
+    ].join("\n");
+    assert.deepEqual(slackJargonHits(text), []);
+  });
+
   it("stable-keys the same short set", () => {
     assert.equal(
       staffingShortAlertKey([

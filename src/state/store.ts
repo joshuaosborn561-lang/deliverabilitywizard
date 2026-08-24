@@ -129,6 +129,14 @@ export interface PendingResumeRecord {
   reason: string;
 }
 
+export interface StaffingShortRecord {
+  campaignId: number;
+  name: string;
+  staffable: number;
+  shortBy: number;
+  status: string;
+}
+
 export interface AppState {
   version: 1;
   lastScanAt: string | null;
@@ -138,6 +146,8 @@ export interface AppState {
   lastWarmupGateAt: string | null;
   lastHealthAt: string | null;
   lastMailboxSettingsAt: string | null;
+  /** Latest health short list — posted on the end-of-day brief (D64). */
+  lastStaffingShort: StaffingShortRecord[];
   testedCampaigns: Record<string, TestedCampaignRecord>;
   /** Dedupe keys for Slack alerts already sent */
   alertedKeys: Record<string, string>;
@@ -279,6 +289,7 @@ const EMPTY_STATE: AppState = {
   lastWarmupGateAt: null,
   lastHealthAt: null,
   lastMailboxSettingsAt: null,
+  lastStaffingShort: [],
   testedCampaigns: {},
   alertedKeys: {},
   remediatedKeys: {},
@@ -339,6 +350,9 @@ export class StateStore {
         pendingResumes: parsed.pendingResumes ?? {},
         lastHealthAt: parsed.lastHealthAt ?? null,
         lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
+        lastStaffingShort: Array.isArray(parsed.lastStaffingShort)
+          ? parsed.lastStaffingShort
+          : [],
         restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
         unhealthyResetAt: parsed.unhealthyResetAt ?? null,
         clientWipeAt: parsed.clientWipeAt ?? null,
@@ -876,6 +890,14 @@ export class StateStore {
 
   setLastHealthAt(iso: string): void {
     this.state.lastHealthAt = iso;
+  }
+
+  setLastStaffingShort(rows: StaffingShortRecord[]): void {
+    this.state.lastStaffingShort = rows.map((row) => ({ ...row }));
+  }
+
+  listLastStaffingShort(): StaffingShortRecord[] {
+    return this.state.lastStaffingShort.map((row) => ({ ...row }));
   }
 
   setLastMailboxSettingsAt(iso: string): void {

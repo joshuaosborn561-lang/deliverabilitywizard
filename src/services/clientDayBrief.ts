@@ -63,7 +63,9 @@ export class ClientDayBriefService {
     private readonly state: StateStore,
   ) {}
 
-  async run(options: { alert?: boolean } = {}): Promise<ClientDayBriefResult> {
+  async run(
+    options: { alert?: boolean; endOfDay?: boolean } = {},
+  ): Promise<ClientDayBriefResult> {
     const date = businessDate();
     const errors: string[] = [];
 
@@ -245,7 +247,13 @@ export class ClientDayBriefService {
     );
 
     if (options.alert !== false) {
-      await this.slack.notifyClientDayBrief(result);
+      await this.slack.notifyClientDayBrief({
+        ...result,
+        endOfDay: options.endOfDay === true,
+        staffingShorts: options.endOfDay
+          ? this.state.listLastStaffingShort()
+          : undefined,
+      });
     }
     return result;
   }

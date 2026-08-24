@@ -14,11 +14,7 @@ import {
 } from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
-import {
-  STAFFING_SHORT_COOLDOWN_MS,
-  staffingShortAlertKey,
-  staffingSlackLines,
-} from "../lib/staffingSlack.js";
+import { staffingSlackLines } from "../lib/staffingSlack.js";
 import {
   CampaignTopUpService,
   isExcluded,
@@ -177,6 +173,7 @@ export class CampaignHealthService {
       shortBy: s.needed,
       status: s.status,
     }));
+    this.state.setLastStaffingShort(result.stillShort);
 
     this.state.setLastHealthAt(new Date().toISOString());
     if (!dryRun) await this.state.save();
@@ -363,29 +360,21 @@ export class CampaignHealthService {
       result.resumed.length ||
       (topUp?.released.length ?? 0) ||
       (topUp?.pulledGenerics.length ?? 0);
-    const shortKey = staffingShortAlertKey(result.stillShort);
-    if (
-      !action &&
-      result.stillShort.length &&
-      this.state.hasRecentAlert(shortKey, STAFFING_SHORT_COOLDOWN_MS)
-    ) {
-      return;
-    }
+    // D64 — "still short" waits for the end-of-day brief. Health only
+    // Slacks when it actually moved something.
+    if (!action) return;
 
     const lines = staffingSlackLines({
       dryRun: result.dryRun,
       assigned: topUp?.assigned,
       resumed: result.resumed,
-      stillShort: result.stillShort,
+      stillShort: [],
       pulledGenerics: topUp?.pulledGenerics.length ?? 0,
       released: topUp?.released.length ?? 0,
     });
 
     try {
       await this.slack.send(lines.join("\n"));
-      if (result.stillShort.length && !result.dryRun) {
-        this.state.markAlert(shortKey);
-      }
     } catch (error) {
       console.warn("[health] Slack notify failed", error);
     }

@@ -1230,6 +1230,44 @@ describe("owner intent — D63 shorts are not a generic shortage", () => {
   });
 });
 
+describe("owner intent — D64 staffing Slack is end of day", () => {
+  it("D64: health does not Slack a still-short-only pass", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const health = await readFile(
+      new URL("../services/campaignHealth.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      health,
+      /stillShort: \[\]/,
+      stop(
+        "Health Slack on the 15-minute loop is actions only (D64).",
+        "campaignHealth.ts still Slacks the still-short list mid-day.",
+      ),
+    );
+    assert.match(
+      health,
+      /if \(!action\) return/,
+      stop(
+        "A still-short-only health pass stays quiet (D64).",
+        "Health still Slacks when it did not move anything.",
+      ),
+    );
+    const brief = await readFile(
+      new URL("../services/clientDayBrief.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      brief,
+      /endOfDay/,
+      stop(
+        "The client day brief posts staffing at end of day (D64).",
+        "clientDayBrief.ts no longer takes an end-of-day staffing pass.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D60 canary buy once", () => {
   it("D60: do not ask again after the fleet is bought or waiting", async () => {
     const { canaryFleetBuyAlreadyOpen } = await import(

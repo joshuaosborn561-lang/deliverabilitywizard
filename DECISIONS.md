@@ -1264,3 +1264,23 @@ shapes vary.
 **Guards.** `enableSendingInfraCensus` default true; owner-intent D53;
 no spend from the census service.
 
+## D60 — Ask once for the canary fleet; then wait
+
+**Decision.** Slack **Buy the unwarmed canary fleet** once. After Josh
+taps, or while nameservers / InboxKit / Smartlead export are still
+catching up, do not ask again. Do not open a second pending buy. Do not
+wipe the domains already bought. A second tap is “already done.”
+
+Empty inboxes are not “not bought.” They mean wait. Health resumes the
+mailbox wait. Deploy remind does not re-post that button once a buy is
+approved or executed.
+
+**Why.** Josh (2026-08-24): the wizard kept prompting to buy the fleet
+after the domains were already purchased.
+
+**Tradeoff.** If the first Slack is missed, Josh has to ask in chat or
+hit `/ops`. Accepted: a second buy prompt is how we almost bought twice.
+
+**Guards.** `canaryFleetBuyAlreadyOpen`; attach restores domains from the
+executed action; owner-intent D60.
+

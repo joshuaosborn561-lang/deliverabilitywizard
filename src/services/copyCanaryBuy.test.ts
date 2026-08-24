@@ -163,4 +163,61 @@ describe("CopyCanaryBuyService", () => {
       result.domains[1],
     );
   });
+
+  it("does not buy a second pair when domains are already on an executed action (D60)", async () => {
+    const state = new StateStore(
+      `/tmp/canary-buy-once-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const prior = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy the unwarmed canary fleet",
+      proof: "proof",
+      detail: {
+        domains: ["getcrosslaunchco.info", "crosslaunchcoget.info"],
+        phase: "awaiting_mailboxes",
+      },
+    });
+    state.upsertIsolationAction({ ...prior, status: "executed" });
+    let created = 0;
+    const service = new CopyCanaryBuyService(
+      loadConfig({ DRY_RUN: "true" }),
+      {
+        connectNameservers: async () => [],
+        listDomains: async () => [],
+        buyMailboxes: async () => {
+          throw new Error("should not buy mailboxes");
+        },
+        listAllMailboxes: async () => [],
+      } as unknown as InboxKitClient,
+      {
+        checkDomainThrottled: async () => ({ available: true, price: "9.99" }),
+        createDomain: async () => {
+          created += 1;
+        },
+      } as unknown as PorkbunClient,
+      {
+        listAllEmailAccounts: async () => [],
+        configureWarmup: async () => undefined,
+      } as unknown as SmartleadClient,
+      state,
+      {
+        recordOwnerApproved: async () => ({ id: "no" }),
+        consume: async () => undefined,
+      } as unknown as SpendGateway,
+    );
+    const again = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy the unwarmed canary fleet",
+      proof: "again",
+      detail: {},
+    });
+    again.status = "approved";
+    const result = await service.run(again);
+    assert.equal(created, 0);
+    assert.deepEqual(result.domains, [
+      "getcrosslaunchco.info",
+      "crosslaunchcoget.info",
+    ]);
+  });
 });

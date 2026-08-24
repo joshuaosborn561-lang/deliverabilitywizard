@@ -4,6 +4,7 @@ import { loadConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
+import { buildIsolationAction } from "../lib/isolationActions.js";
 import { StateStore } from "../state/store.js";
 import { CopyCanaryService } from "./copyCanary.js";
 
@@ -175,6 +176,63 @@ describe("CopyCanaryService", () => {
     assert.equal(result.buyRequested, true);
     assert.deepEqual(requested, ["buy_canary_fleet"]);
     assert.equal(state.getCopyCanaryFleet()?.status, "pending");
+  });
+
+  it("does not ask again after the fleet is already bought (D60)", async () => {
+    const state = new StateStore(
+      `/tmp/copy-canary-bought-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const executed = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy the unwarmed canary fleet",
+      proof: "proof",
+      detail: {
+        domains: ["getcrosslaunchco.info", "crosslaunchcoget.info"],
+        phase: "awaiting_mailboxes",
+      },
+    });
+    state.upsertIsolationAction({
+      ...executed,
+      status: "executed",
+      decidedBy: "Josh",
+    });
+    const leftover = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy the unwarmed canary fleet",
+      proof: "again",
+      detail: {},
+    });
+    state.upsertIsolationAction(leftover);
+    state.setCopyCanaryFleet({
+      status: "pending",
+      domains: [],
+      emails: [],
+      actionId: leftover.id,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const requested: string[] = [];
+    const service = new CopyCanaryService(
+      loadConfig({ ENABLE_COPY_CANARY: "true" }),
+      {
+        listCampaigns: async () => [],
+        listAllEmailAccounts: async () => [],
+      } as unknown as SmartleadClient,
+      null,
+      slackStub(requested),
+      state,
+    );
+
+    const result = await service.attach({ dryRun: false });
+    assert.equal(result.buyRequested, false);
+    assert.deepEqual(requested, []);
+    assert.deepEqual(state.getCopyCanaryFleet()?.domains, [
+      "getcrosslaunchco.info",
+      "crosslaunchcoget.info",
+    ]);
+    assert.equal(state.getCopyCanaryFleet()?.status, "awaiting_mailboxes");
+    assert.equal(state.getIsolationAction(leftover.id)?.status, "denied");
   });
 
   it("does not use a pre-warmed fleet mailbox as a canary sender", async () => {

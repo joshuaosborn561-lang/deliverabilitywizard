@@ -66,4 +66,37 @@ describe("isolation Slack reminds", () => {
     assert.equal(store.pendingIsolationActions().length, 1);
     assert.equal(store.pendingIsolationActions()[0]?.id, action.id);
   });
+
+  it("does not request or remind a canary buy after one is executed (D60)", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const executed = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy canary fleet",
+      proof: "Bought.",
+      detail: { domains: ["getcrosslaunchco.info"] },
+    });
+    store.upsertIsolationAction({ ...executed, status: "executed" });
+    const leftover = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy canary fleet",
+      proof: "Again.",
+      detail: {},
+    });
+    store.upsertIsolationAction(leftover);
+    const second = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_canary_fleet",
+        title: "Buy canary fleet",
+        proof: "Still.",
+        detail: {},
+      }),
+    });
+    assert.equal(second, null);
+    const count = await remindPendingIsolationActions({ store, slack });
+    assert.equal(count, 0);
+    assert.deepEqual(notified, []);
+  });
 });

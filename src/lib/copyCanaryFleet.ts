@@ -66,3 +66,51 @@ export function isCopyCanaryFleetDomain(
   const lower = domain.toLowerCase();
   return fleet.domains.some((row) => row.toLowerCase() === lower);
 }
+
+/** D60 — already asked, already bought, or waiting on nameservers. */
+export function canaryFleetBuyAlreadyOpen(
+  fleet: CopyCanaryFleetRecord | null | undefined,
+  actions: Array<{
+    kind: string;
+    status: string;
+    detail?: Record<string, unknown>;
+  }>,
+): boolean {
+  if (fleet?.domains.length || fleet?.emails.length) return true;
+  if (fleet && fleet.status !== "missing") return true;
+  return actions.some(
+    (row) =>
+      row.kind === "buy_canary_fleet" &&
+      (row.status === "pending" ||
+        row.status === "approved" ||
+        row.status === "executed"),
+  );
+}
+
+export function domainsFromCanaryBuyActions(
+  actions: Array<{
+    id?: string;
+    kind: string;
+    status: string;
+    detail?: Record<string, unknown>;
+  }>,
+): { actionId: string; domains: string[]; emails: string[] } | null {
+  const rows = [...actions].reverse();
+  for (const row of rows) {
+    if (row.kind !== "buy_canary_fleet") continue;
+    if (row.status !== "executed" && row.status !== "approved") continue;
+    const domains = Array.isArray(row.detail?.domains)
+      ? (row.detail!.domains as unknown[])
+          .map((value) => String(value).toLowerCase())
+          .filter(Boolean)
+      : [];
+    if (!domains.length) continue;
+    const emails = Array.isArray(row.detail?.emails)
+      ? (row.detail!.emails as unknown[])
+          .map((value) => String(value).toLowerCase())
+          .filter(Boolean)
+      : [];
+    return { actionId: row.id ?? "", domains, emails };
+  }
+  return null;
+}

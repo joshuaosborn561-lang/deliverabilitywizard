@@ -22,6 +22,10 @@ import {
   type CopyCanarySplit,
 } from "../lib/copyCanary.js";
 import {
+  canaryFleetBuyAlreadyOpen,
+  domainsFromCanaryBuyActions,
+} from "../lib/copyCanaryFleet.js";
+import {
   buildIsolationAction,
   requestIsolationAction,
 } from "../lib/isolationActions.js";
@@ -86,11 +90,16 @@ export class CopyCanaryService {
       return result;
     }
 
+    this.reconcileFleetPurchase();
     const fleet = this.state.getCopyCanaryFleet();
     const fleetEmails = fleet?.emails ?? [];
     if (!fleetEmails.length) {
-      result.buyRequested = await this.requestFleetBuy();
-      result.skipped.push("canary fleet not bought yet");
+      if (this.shouldSkipFleetBuy()) {
+        result.skipped.push("canary fleet already bought — waiting on mailboxes");
+      } else {
+        result.buyRequested = await this.requestFleetBuy();
+        result.skipped.push("canary fleet not bought yet");
+      }
       await this.state.save();
       return result;
     }
@@ -463,7 +472,46 @@ export class CopyCanaryService {
     }
   }
 
+  private reconcileFleetPurchase(): void {
+    const actions = this.state.listIsolationActions();
+    const bought = domainsFromCanaryBuyActions(actions);
+    if (!bought) return;
+    const fleet = this.state.getCopyCanaryFleet();
+    if (!fleet?.domains.length) {
+      const emails = fleet?.emails.length ? fleet.emails : bought.emails;
+      this.state.setCopyCanaryFleet({
+        status: emails.length ? "awaiting_export" : "awaiting_mailboxes",
+        domains: bought.domains,
+        googleDomain: bought.domains[0],
+        microsoftDomain: bought.domains[1],
+        emails,
+        actionId: bought.actionId || fleet?.actionId,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    for (const extra of actions) {
+      if (extra.kind !== "buy_canary_fleet") continue;
+      if (extra.status !== "pending") continue;
+      if (extra.id === bought.actionId) continue;
+      this.state.upsertIsolationAction({
+        ...extra,
+        status: "denied",
+        decidedAt: new Date().toISOString(),
+        decidedBy: "system",
+        error: "Already bought. Waiting on mailboxes. No second purchase.",
+      });
+    }
+  }
+
+  private shouldSkipFleetBuy(): boolean {
+    return canaryFleetBuyAlreadyOpen(
+      this.state.getCopyCanaryFleet(),
+      this.state.listIsolationActions(),
+    );
+  }
+
   private async requestFleetBuy(): Promise<boolean> {
+    if (this.shouldSkipFleetBuy()) return false;
     const opened = await requestIsolationAction({
       store: this.state,
       slack: this.slack,
@@ -480,10 +528,13 @@ export class CopyCanaryService {
       }),
     });
     if (!opened) return false;
+    const fleet = this.state.getCopyCanaryFleet();
     this.state.setCopyCanaryFleet({
       status: "pending",
-      domains: [],
-      emails: [],
+      domains: fleet?.domains ?? [],
+      emails: fleet?.emails ?? [],
+      googleDomain: fleet?.googleDomain,
+      microsoftDomain: fleet?.microsoftDomain,
       actionId: opened.id,
       updatedAt: new Date().toISOString(),
     });

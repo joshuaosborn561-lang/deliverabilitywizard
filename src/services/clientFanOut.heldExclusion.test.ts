@@ -63,6 +63,8 @@ function fixture(opts: {
     getHeldInbox: (email: string) =>
       heldSet.has(email.toLowerCase()) ? heldRecord(email) : undefined,
     getRestingInbox: () => undefined,
+    getDomainHistory: (domain?: string) =>
+      domain === "retired.info" ? { status: "retired" } : undefined,
   } as unknown as StateStore;
 
   const service = new ClientFanOutService(
@@ -106,6 +108,54 @@ describe("ClientFanOutService held exclusion", () => {
     assert.ok(!addedIds.includes(100), "tag-held mailbox must not fan out");
     assert.ok(addedIds.includes(101));
     assert.ok(result.skipped.some((s) => s.includes("HOLD-UNTIL")));
+  });
+
+  it("never fans out a mailbox on a retired domain", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "BCP PE", status: "ACTIVE", client_id: 9 },
+        { id: 2, name: "BCP Logistics", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 200,
+          from_email: "gone@retired.info",
+          campaign_ids: [1],
+          client_id: 9,
+          tags: [],
+        },
+        {
+          id: 201,
+          from_email: "healthy@boldercyperpartnerbiz.info",
+          campaign_ids: [1],
+          client_id: 9,
+          tags: [],
+        },
+      ],
+      listClients: async () => [{ id: 9, name: "BCP" }],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        getHeldInbox: () => undefined,
+        getRestingInbox: () => undefined,
+        getDomainHistory: (domain?: string) =>
+          domain === "retired.info" ? { status: "retired" } : undefined,
+      } as unknown as StateStore,
+    );
+    const result = await service.run({ dryRun: false });
+    const addedIds = adds.flatMap(([, ids]) => ids);
+    assert.ok(!addedIds.includes(200), "retired-domain mailbox must stay off");
+    assert.ok(addedIds.includes(201));
+    assert.ok(result.skipped.some((s) => s.includes("retired domain")));
   });
 
   it("still fans out when a HOLD-UNTIL tag has expired", async () => {

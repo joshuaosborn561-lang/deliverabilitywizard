@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   buyAheadCount,
+  isRetiredSendingDomain,
   judgeDomainCycle,
   nextConsecutiveFails,
 } from "./domainControl.js";
@@ -71,5 +72,17 @@ describe("domain control rollup", () => {
       ["crosslaunchco.com"],
     );
     assert.equal(verdict.domainFailed, true);
+  });
+
+  it("treats a retired domain as off-limits for live send", () => {
+    assert.equal(
+      isRetiredSendingDomain("boldercyperpartnerhqs.info", { status: "retired" }),
+      true,
+    );
+    assert.equal(
+      isRetiredSendingDomain("boldercyperpartnerhqs.info", { status: "watch" }),
+      false,
+    );
+    assert.equal(isRetiredSendingDomain("boldercyperpartnerhqs.info", undefined), false);
   });
 });

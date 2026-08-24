@@ -11,6 +11,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
 import { sleep } from "../lib/http.js";
@@ -128,6 +129,13 @@ export class ClientFanOutService {
         // without this check fan-out re-attaches it to every ACTIVE campaign
         // for the client on the next 15-minute health pass, so held senders
         // keep reappearing on live campaigns. Top-up already filters on this.
+        const domain = email.split("@")[1]?.toLowerCase();
+        if (
+          isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
+        ) {
+          result.skipped.push(`${email}: retired domain`);
+          continue;
+        }
         if (this.state.getHeldInbox(email)) {
           result.skipped.push(`${email}: held`);
           continue;

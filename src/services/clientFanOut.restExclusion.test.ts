@@ -50,6 +50,7 @@ describe("ClientFanOutService rest exclusion", () => {
     const state = {
       getPoolMailbox: () => undefined,
       getHeldInbox: () => undefined,
+      getDomainHistory: () => undefined,
       getRestingInbox: (email: string) =>
         email.toLowerCase() === "rest@boldercyperpartnerbiz.info"
           ? restRecord(email)

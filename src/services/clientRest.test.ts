@@ -5,7 +5,33 @@ import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { assignClientCohorts, isOffWeek } from "../lib/restCohort.js";
 import { StateStore } from "../state/store.js";
-import { ClientRestService, shouldVetoRestRestore } from "./clientRest.js";
+import {
+  ClientRestService,
+  isExcludedOnlyMembership,
+  shouldVetoRestRestore,
+} from "./clientRest.js";
+
+describe("isExcludedOnlyMembership", () => {
+  it("does not treat a leftover campaign id as excluded (D63)", () => {
+    const byId = new Map([
+      [1, { id: 1, name: "Live BCP" }],
+    ]);
+    assert.equal(
+      isExcludedOnlyMembership([9999], byId, ["msrs"]),
+      false,
+    );
+    assert.equal(
+      isExcludedOnlyMembership([1, 9999], byId, ["msrs"]),
+      false,
+    );
+    assert.equal(
+      isExcludedOnlyMembership([40], new Map([[40, { id: 40, name: "MSRS2" }]]), [
+        "msrs",
+      ]),
+      true,
+    );
+  });
+});
 
 describe("shouldVetoRestRestore", () => {
   it("allows the first swap when there is no same-ESP score", () => {
@@ -255,5 +281,58 @@ describe("ClientRestService", () => {
     );
     assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
     assert.ok(adds.some((row) => row[0] === 2 && row[1].includes(20)));
+  });
+
+  it("restores an on-week inbox that only has a leftover campaign id (D63)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const idle = "a@client.info";
+    assert.equal(assignClientCohorts([idle, "z@client.info"]).get(idle), "A");
+
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-ghost-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Live", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: idle,
+          client_id: 9,
+          campaign_ids: [9999],
+        },
+        {
+          id: 21,
+          from_email: "z@client.info",
+          client_id: 9,
+          campaign_ids: [1],
+        },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.ok(
+      result.restored.some((row) => row.email === idle),
+      "ghost campaign id must not skip restore",
+    );
+    assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
   });
 });

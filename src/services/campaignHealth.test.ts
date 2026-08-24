@@ -41,6 +41,8 @@ describe("CampaignHealthService", () => {
       setLastHealthAt: () => undefined,
       save: async () => undefined,
       upsertPoolMailbox: () => undefined,
+      hasRecentAlert: () => false,
+      markAlert: () => undefined,
     } as unknown as StateStore;
 
     const staffed = Array.from({ length: 50 }, (_, index) => ({
@@ -103,6 +105,8 @@ describe("CampaignHealthService", () => {
       setLastHealthAt: () => undefined,
       save: async () => undefined,
       upsertPoolMailbox: () => undefined,
+      hasRecentAlert: () => false,
+      markAlert: () => undefined,
     } as unknown as StateStore;
 
     const smartlead = {
@@ -173,6 +177,8 @@ describe("CampaignHealthService", () => {
       setLastHealthAt: () => undefined,
       save: async () => undefined,
       upsertPoolMailbox: () => undefined,
+      hasRecentAlert: () => false,
+      markAlert: () => undefined,
     } as unknown as StateStore;
 
     const staffed = Array.from({ length: 50 }, (_, index) => ({

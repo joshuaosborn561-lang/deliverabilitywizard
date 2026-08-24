@@ -144,8 +144,8 @@ const ConfigSchema = z.object({
    */
   enableUnhealthyReset: boolFromEnv(true),
   /**
-   * D61 — one-shot: Vasco down to 40 (same mix, all send). Wipe GXA / MSRS
-   * / Nieto from Smartlead and InboxKit.
+   * D61 — one-shot: Vasco down to 40 (same mix). Wipe GXA / MSRS / Nieto
+   * from Smartlead and InboxKit. D62 — those 40 use the half-floor (20).
    */
   enableClientWipe: boolFromEnv(true),
   vascoKeepCount: z.coerce.number().int().min(0).default(40),
@@ -158,10 +158,13 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
-  /** Clients that send every remaining inbox — no A/B sit. Floor is the full count. */
+  /**
+   * Clients that send every remaining inbox — no A/B sit. Floor is the
+   * full count. Empty by default (D62): Vasco sits at half of 40 = 20.
+   */
   fullSendClientPatterns: z
     .string()
-    .default("vasco")
+    .default("")
     .transform((s) =>
       s
         .split(",")
@@ -510,7 +513,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableClientWipe: env.ENABLE_CLIENT_WIPE,
     vascoKeepCount: env.VASCO_KEEP_COUNT ?? "40",
     wipeClientPatterns: env.WIPE_CLIENT_PATTERNS ?? "gxa,msrs,nieto",
-    fullSendClientPatterns: env.FULL_SEND_CLIENT_PATTERNS ?? "vasco",
+    fullSendClientPatterns: env.FULL_SEND_CLIENT_PATTERNS ?? "",
     enablePodControls: env.ENABLE_POD_CONTROLS,
     podControlShellCampaignId: env.POD_CONTROL_SHELL_CAMPAIGN_ID ?? "0",
     enableIsolationRig: env.ENABLE_ISOLATION_RIG,

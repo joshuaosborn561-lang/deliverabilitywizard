@@ -1,6 +1,6 @@
 /**
- * D61 — Vasco keeps 40 inboxes (same mix, all send). GXA / MSRS / Nieto
- * inboxes are wiped from Smartlead and InboxKit.
+ * D61 — Vasco keeps 40 inboxes (same mix). GXA / MSRS / Nieto inboxes
+ * are wiped from Smartlead and InboxKit. D62 — live floor is 20.
  */
 
 export const VASCO_KEEP_COUNT = 40;

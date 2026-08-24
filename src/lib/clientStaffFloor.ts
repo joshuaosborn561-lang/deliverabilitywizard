@@ -11,7 +11,7 @@ import { isClientInbox } from "./clientInbox.js";
 
 /**
  * D58 — live staffable floor is half that client's own inboxes.
- * Vasco 80 → 40. Odd counts round down (Goliath 25 → 12).
+ * Odd counts round down (Goliath 25 → 12). After D61/D62, Vasco 40 → 20.
  */
 export function clientInboxStaffFloor(clientInboxCount: number): number {
   if (!Number.isFinite(clientInboxCount) || clientInboxCount <= 0) return 0;

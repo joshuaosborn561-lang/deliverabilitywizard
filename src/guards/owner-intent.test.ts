@@ -1132,14 +1132,6 @@ describe("owner intent — D61 Vasco trim and client wipe", () => {
         `WIPE_CLIENT_PATTERNS is now ${defaults.wipeClientPatterns.join(",")}.`,
       ),
     );
-    assert.deepEqual(
-      defaults.fullSendClientPatterns,
-      ["vasco"],
-      stop(
-        "Vasco sends all remaining inboxes — no A/B sit (D61).",
-        `FULL_SEND_CLIENT_PATTERNS is now ${defaults.fullSendClientPatterns.join(",")}.`,
-      ),
-    );
     assert.equal(
       defaults.enableClientWipe,
       true,
@@ -1167,6 +1159,44 @@ describe("owner intent — D61 Vasco trim and client wipe", () => {
       stop(
         "Wipe cancels InboxKit mailboxes and purges empty domains (D61).",
         "clientWipe.ts no longer touches InboxKit.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D62 Vasco floor 20", () => {
+  it("D62: Vasco uses the half-floor; nobody is full-send by default", async () => {
+    assert.deepEqual(
+      defaults.fullSendClientPatterns,
+      [],
+      stop(
+        "Nobody is a full-send client by default — Vasco sits at half (D62).",
+        `FULL_SEND_CLIENT_PATTERNS is now ${defaults.fullSendClientPatterns.join(",") || "(empty)"}.`,
+      ),
+    );
+    const { clientInboxStaffFloor, staffFloorForCampaign } = await import(
+      "../lib/clientStaffFloor.js"
+    );
+    assert.equal(
+      clientInboxStaffFloor(40),
+      20,
+      stop(
+        "Forty Vasco inboxes mean a 20-sender floor (D62).",
+        `Half-inbox floor of 40 is now ${clientInboxStaffFloor(40)}.`,
+      ),
+    );
+    const counts = new Map([["id:9", 40]]);
+    assert.equal(
+      staffFloorForCampaign(
+        { client_id: 9, name: "Vasco - Service" },
+        counts,
+        "Vasco Warranty",
+        defaults.fullSendClientPatterns,
+      ),
+      20,
+      stop(
+        "Vasco's campaign floor is 20 after the keep-40 trim (D62).",
+        "staffFloorForCampaign is treating Vasco as full-send again.",
       ),
     );
   });

@@ -1306,3 +1306,20 @@ deleted Smartlead accounts are not errors.
 **Guards.** `vascoKeepCount === 40`; wipe patterns gxa/msrs/nieto;
 `ClientWipeService`; Vasco is a full-send client; owner-intent D61.
 
+## D62 — Vasco staff floor is 20
+
+**Decision.** Vasco's live staff floor is **20**, not 40. D61 still
+keeps 40 client inboxes and still wipes GXA / MSRS / Nieto. The "all
+40 send / no A/B sit" part of D61 is superseded: Vasco uses the same
+half-floor as every other client (D58). Forty inboxes → floor 20.
+A/B sit applies again. `FULL_SEND_CLIENT_PATTERNS` defaults empty.
+
+**Why.** Josh (2026-08-24): "No put Vasco floor as 20."
+
+**Tradeoff.** Half the remaining Vasco boxes sit, so live volume is
+lower than D61's full-send. That is the point.
+
+**Guards.** empty `fullSendClientPatterns` default;
+`clientInboxStaffFloor(40) === 20`; Vasco is not a full-send client;
+owner-intent D62.
+

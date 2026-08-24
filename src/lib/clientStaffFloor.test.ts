@@ -12,6 +12,7 @@ describe("clientInboxStaffFloor", () => {
   it("is half the client's own inboxes, rounded down", () => {
     assert.equal(clientInboxStaffFloor(80), 40);
     assert.equal(clientInboxStaffFloor(81), 40);
+    assert.equal(clientInboxStaffFloor(40), 20);
     assert.equal(clientInboxStaffFloor(25), 12);
     assert.equal(clientInboxStaffFloor(1), 0);
     assert.equal(clientInboxStaffFloor(0), 0);

@@ -196,7 +196,7 @@ export class ClientWipeService {
         await this.slack.send(
           [
             "Client inbox cleanup",
-            `Vasco is down to ${result.vascoKept.length} inboxes — same Google / Microsoft mix as before. All of them send; none sit.`,
+            `Vasco is down to ${result.vascoKept.length} inboxes — same Google / Microsoft mix as before. Live floor is 20; the other half sit.`,
             result.vascoDeleted.length
               ? `Removed ${result.vascoDeleted.length} extra Vasco inbox${result.vascoDeleted.length === 1 ? "" : "es"} from Smartlead and InboxKit.`
               : "",

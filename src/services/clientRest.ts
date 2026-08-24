@@ -6,7 +6,7 @@ import {
   campaignIdsOf,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
-import { isBcpOwnedDomain } from "../lib/bcp.js";
+import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { sleep } from "../lib/http.js";
 import {
@@ -36,14 +36,15 @@ export interface ClientRestResult {
   errors: string[];
 }
 
+/**
+ * D59 — leftover same-ESP scores are not unhealth. Rest restore never
+ * vetoes on an old placement reading.
+ */
 export function shouldVetoRestRestore(
-  lastSameEspInbox: number | null | undefined,
-  threshold: number,
+  _lastSameEspInbox: number | null | undefined,
+  _threshold: number,
 ): boolean {
-  if (lastSameEspInbox == null || !Number.isFinite(lastSameEspInbox)) {
-    return false;
-  }
-  return lastSameEspInbox < threshold;
+  return false;
 }
 
 export function clientRestGroupKey(
@@ -258,11 +259,13 @@ export class ClientRestService {
       const parsedId = groupKey.startsWith("id:")
         ? Number(groupKey.slice(3))
         : clientId;
-      const targets = this.restoreTargets(
-        existing?.removedFromCampaigns ?? onCampaigns,
+      // D59 — on-week (B this fortnight) sits on every ACTIVE campaign for
+      // that client, not just the campaigns it happened to be on before a hold.
+      const targets = this.onWeekTargets(
         Number.isFinite(parsedId) ? parsedId : null,
+        groupKey,
+        campaigns as SmartleadCampaign[],
         activeByClient,
-        campaignById,
       );
       const added: number[] = [];
       for (const campaignId of targets) {
@@ -299,22 +302,27 @@ export class ClientRestService {
     return result;
   }
 
-  private restoreTargets(
-    previous: number[],
+  private onWeekTargets(
     clientId: number | null,
+    groupKey: string,
+    campaigns: SmartleadCampaign[],
     activeByClient: Map<number, SmartleadCampaign[]>,
-    campaignById: Map<number, SmartleadCampaign>,
   ): number[] {
-    const fromPrevious = previous.filter((id) => {
-      const campaign = campaignById.get(id);
-      if (!campaign) return false;
-      if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
-      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) return false;
-      return true;
-    });
-    if (fromPrevious.length) return fromPrevious;
-    if (clientId == null) return [];
-    return (activeByClient.get(clientId) ?? []).map((c) => c.id);
+    const fromClient =
+      clientId != null ? (activeByClient.get(clientId) ?? []) : [];
+    const fromBcp =
+      groupKey === "bcp"
+        ? campaigns.filter((campaign) => {
+            if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") {
+              return false;
+            }
+            if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) {
+              return false;
+            }
+            return isBcpCampaignName(String(campaign.name ?? ""));
+          })
+        : [];
+    return [...new Set([...fromClient, ...fromBcp].map((campaign) => campaign.id))];
   }
 
   private async notify(result: ClientRestResult): Promise<void> {

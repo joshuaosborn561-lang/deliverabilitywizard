@@ -1340,3 +1340,60 @@ describe("owner intent — D58 Goliath-only generics", () => {
     );
   });
 });
+
+describe("owner intent — D59 clean slate", () => {
+  it("D59: leftover unhealthy marks do not keep a B-pod box off", async () => {
+    const { shouldVetoRestRestore } = await import("../services/clientRest.js");
+    assert.equal(
+      shouldVetoRestRestore(10, 80),
+      false,
+      stop(
+        "Old same-ESP scores are not unhealth (D59).",
+        "Client rest still vetoes restore on a leftover placement miss.",
+      ),
+    );
+    assert.equal(
+      defaults.enableUnhealthyReset,
+      true,
+      stop(
+        "The one-shot unhealthy wipe defaults on (D59).",
+        "ENABLE_UNHEALTHY_RESET now defaults off.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const reset = await readFile(
+      new URL("../services/unhealthyReset.ts", import.meta.url),
+      "utf8",
+    );
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      reset,
+      /clearAllHeldInboxes/,
+      stop(
+        "The wipe deletes every heldInboxes record (D59).",
+        "unhealthyReset.ts no longer clears all holds.",
+      ),
+    );
+    assert.match(
+      rest,
+      /onWeekTargets/,
+      stop(
+        "On-week client inboxes go on every live campaign for that client (D59).",
+        "clientRest.ts no longer restaffs the full B pod.",
+      ),
+    );
+    assert.match(
+      index,
+      /unhealthyReset\.run/,
+      stop(
+        "Health runs the wipe before rest/top-up (D59).",
+        "index.ts no longer calls UnhealthyResetService.",
+      ),
+    );
+  });
+});

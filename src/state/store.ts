@@ -187,6 +187,11 @@ export interface AppState {
    * not run yet and the next health pass should.
    */
   restBaselineRebuiltAt: string | null;
+  /**
+   * D59 — ISO time the one-shot unhealthy-mark wipe finished. Empty means
+   * the next health pass should still run it.
+   */
+  unhealthyResetAt: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
 }
@@ -289,6 +294,7 @@ const EMPTY_STATE: AppState = {
   bugRemediations: {},
   pendingResumes: {},
   restBaselineRebuiltAt: null,
+  unhealthyResetAt: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
 };
 
@@ -329,6 +335,7 @@ export class StateStore {
         lastHealthAt: parsed.lastHealthAt ?? null,
         lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
         restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
+        unhealthyResetAt: parsed.unhealthyResetAt ?? null,
         isolation: normalizeIsolationState(parsed.isolation),
       };
     } catch (error) {
@@ -404,6 +411,44 @@ export class StateStore {
 
   clearHeldInbox(email: string): void {
     delete this.state.heldInboxes[email.toLowerCase()];
+  }
+
+  clearAllHeldInboxes(): number {
+    const n = Object.keys(this.state.heldInboxes).length;
+    this.state.heldInboxes = {};
+    return n;
+  }
+
+  getUnhealthyResetAt(): string | null {
+    return this.state.unhealthyResetAt;
+  }
+
+  markUnhealthyReset(iso: string): void {
+    this.state.unhealthyResetAt = iso;
+  }
+
+  clearMailboxControls(): number {
+    const n = Object.keys(this.state.isolation.mailboxResults).length;
+    this.state.isolation.mailboxResults = {};
+    return n;
+  }
+
+  clearHeldPlacementTests(): number {
+    const n = Object.keys(this.state.heldPlacementTests).length;
+    this.state.heldPlacementTests = {};
+    return n;
+  }
+
+  /** D59 — old same-ESP scores are not a reason to keep a B-pod box off. */
+  clearClientRestProof(): number {
+    let cleared = 0;
+    for (const row of Object.values(this.state.restingInboxes)) {
+      if (row.kind === "generic") continue;
+      if (row.lastSameEspInbox == null) continue;
+      row.lastSameEspInbox = null;
+      cleared += 1;
+    }
+    return cleared;
   }
 
   getRestBaselineRebuiltAt(): string | null {

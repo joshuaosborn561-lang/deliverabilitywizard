@@ -109,5 +109,40 @@ describe("remediation / placement Slack is client-level (D39)", () => {
     assert.match(sent[0]!, /2\.5% bounce/);
     assert.match(sent[0]!, /18\.0% spam/);
     assert.match(sent[0]!, /66 on \/ 20 off \/ 12 spare \/ 34 held/);
+    assert.doesNotMatch(sent[0]!, /Staffing \(end of day\)/);
+  });
+
+  it("end-of-day brief includes staffing shorts (D64)", async () => {
+    const { client, sent } = capture();
+    await client.notifyClientDayBrief({
+      date: "2026-08-24",
+      totalSent: 10,
+      rows: [
+        {
+          clientName: "BCP",
+          sent: 10,
+          bouncePercent: 1,
+          spamPercent: 0,
+          activeInboxes: 22,
+          heldInboxes: 0,
+          restingInboxes: 22,
+          genericSpare: 0,
+        },
+      ],
+      errors: [],
+      endOfDay: true,
+      staffingShorts: [
+        {
+          name: "BCP PE Firms (No Team)",
+          staffable: 22,
+          shortBy: 22,
+          status: "ACTIVE",
+        },
+      ],
+    });
+    assert.match(sent[0]!, /Staffing \(end of day\)/);
+    assert.match(sent[0]!, /Spare inboxes are not the shortage/);
+    assert.match(sent[0]!, /BCP PE Firms/);
+    assert.doesNotMatch(sent[0]!, /not enough warmed spares/i);
   });
 });

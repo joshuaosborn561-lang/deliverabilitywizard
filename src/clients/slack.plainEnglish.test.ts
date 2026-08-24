@@ -109,6 +109,15 @@ describe("Slack copy is plain English (D47)", () => {
         },
       ],
       errors: [],
+      endOfDay: true,
+      staffingShorts: [
+        {
+          name: "BCP PE Firms",
+          staffable: 22,
+          shortBy: 22,
+          status: "ACTIVE",
+        },
+      ],
     });
     await client.notifyTestReconcile({
       dryRun: false,

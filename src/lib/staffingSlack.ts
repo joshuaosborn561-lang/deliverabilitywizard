@@ -3,6 +3,7 @@
  * on a client-inbox-only campaign.
  */
 
+/** @deprecated D64 — shorts go on the end-of-day brief, not a 12h cooldown. */
 export const STAFFING_SHORT_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 export function staffingShortAlertKey(

@@ -143,6 +143,14 @@ export class SlackClient {
       genericSpare?: number;
     }>;
     errors: string[];
+    /** D64 — staffing picture only on the end-of-day brief. */
+    endOfDay?: boolean;
+    staffingShorts?: Array<{
+      name: string;
+      staffable: number;
+      shortBy: number;
+      status: string;
+    }>;
   }): Promise<void> {
     const lines = [
       `*Client day — ${summary.date}*`,
@@ -188,6 +196,26 @@ export class SlackClient {
         "Could not read some clients:",
         ...seriousErrors.slice(0, 5).map((e) => `• ${e}`),
       );
+    }
+
+    if (summary.endOfDay) {
+      const shorts = summary.staffingShorts ?? [];
+      lines.push("");
+      if (shorts.length) {
+        lines.push(
+          "Staffing (end of day)",
+          "Spare inboxes are not the shortage. They stay on Goliath.",
+          "These campaigns are missing this client's own inboxes that should be sending this week:",
+          ...shorts.map(
+            (row) =>
+              `• ${row.name} — ${row.staffable} sending, ${row.shortBy} of this client's inboxes that should be on are not.`,
+          ),
+        );
+      } else {
+        lines.push(
+          "Staffing (end of day) — every live campaign has this client's sending-half on it.",
+        );
+      }
     }
 
     await this.send(lines.join("\n"));

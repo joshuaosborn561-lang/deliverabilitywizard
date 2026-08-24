@@ -1327,5 +1327,22 @@ restored every health pass; we just stop paging the same wrong reason.
 
 **Guards.** Slack copy has no "not enough warmed spares";
 `isExcludedOnlyMembership` ignores unknown campaign ids; owner-intent
-D63.
+D63. The twelve-hour Slack cadence is superseded by D64.
+
+## D64 — Staffing Slack is end of day
+
+**Decision.** Routine campaign-staffing Slack is **once at end of day**,
+on the last client-day brief (America/New_York). The 15-minute health
+loop still restaffs; it does **not** Slack “still short.” Spend, DNS,
+isolation, lead-runout, and a real staffing *action* (added a spare,
+resumed a protective pause) may still Slack when they happen.
+
+**Why.** Josh (2026-08-24): "stop spamming me updates every 10 minutes.
+those should be end of day updates."
+
+**Tradeoff.** A thin campaign can sit all afternoon before Slack says
+so. Health is still putting on-week boxes back every 15 minutes.
+
+**Guards.** Health does not Slack when the only news is still-short;
+day brief `endOfDay` includes the staffing picture; owner-intent D64.
 

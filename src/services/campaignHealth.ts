@@ -252,7 +252,16 @@ export class CampaignHealthService {
       .map((c) => {
         const status = String(c.status ?? "").toUpperCase();
         const staff = staffable.get(c.id) ?? 0;
-        const floor = staffFloorForCampaign(c, clientInboxCounts);
+        const clientName =
+          typeof c.client_id === "number"
+            ? clients.find((row) => row.id === c.client_id)?.name
+            : null;
+        const floor = staffFloorForCampaign(
+          c,
+          clientInboxCounts,
+          clientName,
+          this.config.fullSendClientPatterns,
+        );
         return {
           campaignId: c.id,
           campaignName: String(c.name ?? c.id),

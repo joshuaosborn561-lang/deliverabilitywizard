@@ -192,6 +192,10 @@ export interface AppState {
    * the next health pass should still run it.
    */
   unhealthyResetAt: string | null;
+  /**
+   * D61 — ISO time Vasco trim + GXA/MSRS/Nieto wipe finished.
+   */
+  clientWipeAt: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
 }
@@ -295,6 +299,7 @@ const EMPTY_STATE: AppState = {
   pendingResumes: {},
   restBaselineRebuiltAt: null,
   unhealthyResetAt: null,
+  clientWipeAt: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
 };
 
@@ -336,6 +341,7 @@ export class StateStore {
         lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
         restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
         unhealthyResetAt: parsed.unhealthyResetAt ?? null,
+        clientWipeAt: parsed.clientWipeAt ?? null,
         isolation: normalizeIsolationState(parsed.isolation),
       };
     } catch (error) {
@@ -425,6 +431,14 @@ export class StateStore {
 
   markUnhealthyReset(iso: string): void {
     this.state.unhealthyResetAt = iso;
+  }
+
+  getClientWipeAt(): string | null {
+    return this.state.clientWipeAt;
+  }
+
+  markClientWipe(iso: string): void {
+    this.state.clientWipeAt = iso;
   }
 
   clearMailboxControls(): number {

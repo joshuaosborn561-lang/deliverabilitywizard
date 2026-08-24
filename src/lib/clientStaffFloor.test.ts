@@ -63,8 +63,17 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
     );
     assert.equal(counts.get(clientCountKey(9)), 2);
     assert.equal(
-      staffFloorForCampaign({ client_id: 9 }, counts),
+      staffFloorForCampaign({ client_id: 9, name: "Vasco - Service" }, counts),
       1,
+    );
+    assert.equal(
+      staffFloorForCampaign(
+        { client_id: 9, name: "Vasco - Service" },
+        counts,
+        "Vasco Warranty",
+        ["vasco"],
+      ),
+      2,
     );
   });
 });

@@ -172,7 +172,16 @@ export class CampaignTopUpService {
     const floorByCampaign = new Map<number, number>(
       (campaigns as SmartleadCampaign[]).map((campaign) => [
         campaign.id,
-        staffFloorForCampaign(campaign, clientInboxCounts),
+        staffFloorForCampaign(
+          campaign,
+          clientInboxCounts,
+          typeof campaign.client_id === "number"
+            ? clientDisplayName(clientsById.get(campaign.client_id) ?? {
+                id: campaign.client_id,
+              })
+            : "",
+          this.config.fullSendClientPatterns,
+        ),
       ]),
     );
     const campaignAllowsGenerics = (campaign: SmartleadCampaign | undefined): boolean => {

@@ -144,6 +144,31 @@ const ConfigSchema = z.object({
    */
   enableUnhealthyReset: boolFromEnv(true),
   /**
+   * D61 — one-shot: Vasco down to 40 (same mix, all send). Wipe GXA / MSRS
+   * / Nieto from Smartlead and InboxKit.
+   */
+  enableClientWipe: boolFromEnv(true),
+  vascoKeepCount: z.coerce.number().int().min(0).default(40),
+  wipeClientPatterns: z
+    .string()
+    .default("gxa,msrs,nieto")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /** Clients that send every remaining inbox — no A/B sit. Floor is the full count. */
+  fullSendClientPatterns: z
+    .string()
+    .default("vasco")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
    * D48 — standing per-pod control tests (fixed control email, per-sender
    * read). Tests are unlimited (D45); this does not wait for seed approval.
    */
@@ -482,6 +507,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
     enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
     enableUnhealthyReset: env.ENABLE_UNHEALTHY_RESET,
+    enableClientWipe: env.ENABLE_CLIENT_WIPE,
+    vascoKeepCount: env.VASCO_KEEP_COUNT ?? "40",
+    wipeClientPatterns: env.WIPE_CLIENT_PATTERNS ?? "gxa,msrs,nieto",
+    fullSendClientPatterns: env.FULL_SEND_CLIENT_PATTERNS ?? "vasco",
     enablePodControls: env.ENABLE_POD_CONTROLS,
     podControlShellCampaignId: env.POD_CONTROL_SHELL_CAMPAIGN_ID ?? "0",
     enableIsolationRig: env.ENABLE_ISOLATION_RIG,

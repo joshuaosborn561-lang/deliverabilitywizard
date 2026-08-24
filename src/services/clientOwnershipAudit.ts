@@ -132,7 +132,7 @@ export class ClientOwnershipService {
         try {
           if (!dryRun) {
             await this.smartlead.updateEmailAccount(account.id, fields);
-            await sleep(120);
+            await sleep(350);
           }
           result.applied.push(fix);
         } catch (error) {
@@ -169,7 +169,7 @@ export class ClientOwnershipService {
           await this.smartlead.updateEmailAccount(account.id, {
             client_id: expected.id,
           });
-          await sleep(120);
+          await sleep(350);
         }
         result.applied.push(fix);
       } catch (error) {

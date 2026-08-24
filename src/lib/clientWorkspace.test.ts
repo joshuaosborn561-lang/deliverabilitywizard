@@ -9,8 +9,10 @@ import {
 
 const clients = [
   { id: 542838, name: "Mike Trpkosh (Bolder Cyber Partners)" },
-  { id: 1, name: "Goliath Cybersecurity (Dave Ackley)" },
-  { id: 2, name: "Vasco Warranty" },
+  { id: 1, name: "Dave Ackley" },
+  { id: 2, name: "Carlos Vasquez" },
+  { id: 418275, name: "TJ Johnson" },
+  { id: 418274, name: "Randy Haba" },
 ];
 
 describe("client workspace map (D66)", () => {
@@ -26,7 +28,9 @@ describe("client workspace map (D66)", () => {
   });
 
   it("matches Smartlead clients by name", () => {
-    assert.equal(matchSmartleadClient(clients, /goliath/i)?.id, 1);
-    assert.equal(matchSmartleadClient(clients, /vasco/i)?.id, 2);
+    assert.equal(expectedClientForDomain("goliathcyber.info", clients)?.id, 1);
+    assert.equal(expectedClientForDomain("hubvascowarranty.info", clients)?.id, 2);
+    assert.equal(expectedClientForDomain("useculturefits.info", clients)?.id, 418275);
+    assert.equal(expectedClientForDomain("nowparlay.info", clients)?.id, 418274);
   });
 });

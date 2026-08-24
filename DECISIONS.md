@@ -1306,3 +1306,26 @@ deleted Smartlead accounts are not errors.
 **Guards.** `vascoKeepCount === 40`; wipe patterns gxa/msrs/nieto;
 `ClientWipeService`; Vasco is a full-send client; owner-intent D61.
 
+## D63 — Campaigns are not short of generics
+
+**Decision.** Do not tell anyone a campaign is short because there are
+not enough warmed spares. Non-Goliath campaigns are client-inbox only
+(D58). The generic pile is large and stays on Goliath. Slack must say
+the campaign is missing this client's own on-week inboxes, or stay
+quiet. A leftover / unknown campaign id on an inbox is not "excluded"
+— those inboxes still rest and restore onto the client's live
+campaigns. The same unchanged short Slack goes out at most once per
+twelve hours.
+
+**Why.** Josh (2026-08-24): "you keep telling me campaigns are short on
+senders but its because we dont have enough generics which i dont
+believe." Live count: 238 available pool generics, 60 on Goliath, BCP
+sending 22 of 44 on-week client boxes. The lie was the Slack line.
+
+**Tradeoff.** Slack is quieter. Missing on-week client boxes still get
+restored every health pass; we just stop paging the same wrong reason.
+
+**Guards.** Slack copy has no "not enough warmed spares";
+`isExcludedOnlyMembership` ignores unknown campaign ids; owner-intent
+D63.
+

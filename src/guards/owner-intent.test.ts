@@ -1172,6 +1172,64 @@ describe("owner intent — D61 Vasco trim and client wipe", () => {
   });
 });
 
+describe("owner intent — D63 shorts are not a generic shortage", () => {
+  it("D63: Slack does not blame missing spares; leftover campaign ids are not excluded", async () => {
+    const { staffingSlackLines } = await import("../lib/staffingSlack.js");
+    const text = staffingSlackLines({
+      stillShort: [
+        {
+          name: "BCP PE Firms (No Team)",
+          staffable: 22,
+          shortBy: 22,
+          status: "ACTIVE",
+        },
+      ],
+    }).join("\n");
+    assert.match(
+      text,
+      /Spare inboxes are not the shortage/,
+      stop(
+        "Thin client campaigns are missing that client's own inboxes (D63).",
+        "Staffing Slack no longer says spare inboxes are not the shortage.",
+      ),
+    );
+    assert.equal(
+      /not enough warmed spares/i.test(text),
+      false,
+      stop(
+        "Do not tell Josh we are short of warmed spares (D63).",
+        "Staffing Slack blames a generic shortage again.",
+      ),
+    );
+    const { readFile } = await import("node:fs/promises");
+    const health = await readFile(
+      new URL("../services/campaignHealth.ts", import.meta.url),
+      "utf8",
+    );
+    assert.equal(
+      /not enough warmed spares/i.test(health),
+      false,
+      stop(
+        "Health Slack must not say we lack warmed spares (D63).",
+        "campaignHealth.ts still blames a generic shortage.",
+      ),
+    );
+    const { isExcludedOnlyMembership } = await import(
+      "../services/clientRest.js"
+    );
+    assert.equal(
+      isExcludedOnlyMembership([9999], new Map([[1, { id: 1, name: "Live" }]]), [
+        "msrs",
+      ]),
+      false,
+      stop(
+        "A leftover campaign id is not an exclusion (D63).",
+        "isExcludedOnlyMembership now skips inboxes that only have ghost campaign ids.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D60 canary buy once", () => {
   it("D60: do not ask again after the fleet is bought or waiting", async () => {
     const { canaryFleetBuyAlreadyOpen } = await import(

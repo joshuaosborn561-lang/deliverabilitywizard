@@ -15,6 +15,11 @@ import {
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 import {
+  STAFFING_SHORT_COOLDOWN_MS,
+  staffingShortAlertKey,
+  staffingSlackLines,
+} from "../lib/staffingSlack.js";
+import {
   CampaignTopUpService,
   isExcluded,
   type TopUpResult,
@@ -353,42 +358,34 @@ export class CampaignHealthService {
       return;
     }
 
-    const byCampaign = new Map<string, number>();
-    for (const a of topUp?.assigned ?? []) {
-      const key = `#${a.campaignId} ${a.campaignName}`;
-      byCampaign.set(key, (byCampaign.get(key) ?? 0) + 1);
+    const action =
+      assigned ||
+      result.resumed.length ||
+      (topUp?.released.length ?? 0) ||
+      (topUp?.pulledGenerics.length ?? 0);
+    const shortKey = staffingShortAlertKey(result.stillShort);
+    if (
+      !action &&
+      result.stillShort.length &&
+      this.state.hasRecentAlert(shortKey, STAFFING_SHORT_COOLDOWN_MS)
+    ) {
+      return;
     }
 
-    const lines = [
-      `${result.dryRun ? "Preview — " : ""}Campaign staffing`,
-      "Each client's floor is half its own inboxes. Spare inboxes stay on Goliath only.",
-    ];
-    for (const [name, n] of byCampaign) {
-      lines.push(`• ${name} — added ${n} spare${n === 1 ? "" : "s"}`);
-    }
-    for (const r of result.resumed) {
-      lines.push(
-        `• ${r.name} — turned back on (${r.staffable} sending inboxes). This was a pause we took to protect it, not a pause someone made by hand.`,
-      );
-    }
-    for (const u of result.stillShort) {
-      lines.push(
-        `• ${u.name} — still short ${u.shortBy} sending inbox${u.shortBy === 1 ? "" : "es"} (${u.status}). Not enough warmed spares yet.`,
-      );
-    }
-    if (topUp?.pulledGenerics.length) {
-      lines.push(
-        `Took ${topUp.pulledGenerics.length} spare membership${topUp.pulledGenerics.length === 1 ? "" : "s"} off every campaign that is not Goliath.`,
-      );
-    }
-    if (topUp?.released.length) {
-      lines.push(
-        `Took ${topUp.released.length} spare${topUp.released.length === 1 ? "" : "s"} off campaigns they didn’t belong on.`,
-      );
-    }
+    const lines = staffingSlackLines({
+      dryRun: result.dryRun,
+      assigned: topUp?.assigned,
+      resumed: result.resumed,
+      stillShort: result.stillShort,
+      pulledGenerics: topUp?.pulledGenerics.length ?? 0,
+      released: topUp?.released.length ?? 0,
+    });
 
     try {
       await this.slack.send(lines.join("\n"));
+      if (result.stillShort.length && !result.dryRun) {
+        this.state.markAlert(shortKey);
+      }
     } catch (error) {
       console.warn("[health] Slack notify failed", error);
     }

@@ -48,6 +48,27 @@ export function shouldVetoRestRestore(
   return false;
 }
 
+/**
+ * True only when every *known* campaign this inbox is on is excluded.
+ * Unknown / leftover campaign ids do not count as excluded (D63) — those
+ * inboxes still belong in the A/B rest loop.
+ */
+export function isExcludedOnlyMembership(
+  campaignIds: number[],
+  campaignById: Map<number, { id: number; name?: string | null }>,
+  excluded: string[],
+): boolean {
+  const known = campaignIds
+    .map((id) => campaignById.get(id))
+    .filter((campaign): campaign is { id: number; name?: string | null } =>
+      Boolean(campaign),
+    );
+  return (
+    known.length > 0 &&
+    known.every((campaign) => isExcluded(campaign, excluded))
+  );
+}
+
 export function clientRestGroupKey(
   account: SmartleadAccountWithCampaigns,
   email: string,
@@ -147,15 +168,11 @@ export class ClientRestService {
         continue;
       }
       const onCampaigns = campaignIdsOf(account);
-      const onlyExcluded =
-        onCampaigns.length > 0 &&
-        onCampaigns.every((id) => {
-          const campaign = campaignById.get(id);
-          return (
-            !campaign ||
-            isExcluded(campaign, this.config.topUpExcludeCampaigns)
-          );
-        });
+      const onlyExcluded = isExcludedOnlyMembership(
+        onCampaigns,
+        campaignById,
+        this.config.topUpExcludeCampaigns,
+      );
       if (onlyExcluded) {
         result.skipped.push(`${email}: excluded campaign`);
         continue;

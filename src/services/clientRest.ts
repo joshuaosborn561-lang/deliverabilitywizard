@@ -55,12 +55,12 @@ export function shouldVetoRestRestore(
  */
 export function isExcludedOnlyMembership(
   campaignIds: number[],
-  campaignById: Map<number, { id?: number; name?: string | null }>,
+  campaignById: Map<number, { id: number; name?: string | null }>,
   excluded: string[],
 ): boolean {
   const known = campaignIds
     .map((id) => campaignById.get(id))
-    .filter((campaign): campaign is { id?: number; name?: string | null } =>
+    .filter((campaign): campaign is { id: number; name?: string | null } =>
       Boolean(campaign),
     );
   return (

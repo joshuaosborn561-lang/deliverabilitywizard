@@ -68,6 +68,7 @@ export class ClientOwnershipService {
     accounts?: SmartleadAccountWithCampaigns[];
     campaigns?: SmartleadCampaign[];
     clients?: SmartleadClientRecord[];
+    extraUntiedDomains?: string[];
   } = {}): Promise<ClientOwnershipAuditResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: ClientOwnershipAuditResult = {
@@ -108,6 +109,7 @@ export class ClientOwnershipService {
       const generic = isGenericForOwnership(account, email, this.config, this.state, {
         copyCanaryDomains: canaryDomains,
         isolationDomain: this.config.isolationDomain,
+        extraUntiedDomains: opts.extraUntiedDomains,
       });
 
       if (generic) {
@@ -187,8 +189,8 @@ export class ClientOwnershipService {
     dryRun?: boolean;
   } = {}): Promise<ClientOwnershipAuditResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
-    const result = await this.reconcileSmartlead({ dryRun });
     if (!this.inboxkit) {
+      const result = await this.reconcileSmartlead({ dryRun });
       result.errors.push("InboxKit is not configured — workspace audit skipped");
       return result;
     }
@@ -207,30 +209,53 @@ export class ClientOwnershipService {
     try {
       workspaces = await this.inboxkit.listWorkspaces();
     } catch (error) {
+      const result = await this.reconcileSmartlead({ dryRun });
       result.errors.push(
         `list workspaces: ${error instanceof Error ? error.message : String(error)}`,
       );
       return result;
     }
 
+    const genericWorkspaceDomains: string[] = [];
+    const listed: Array<{
+      workspaceId: string;
+      workspaceName?: string;
+      domains: string[];
+    }> = [];
+    const listErrors: string[] = [];
+
     for (const workspace of workspaces) {
       const workspaceId = workspace.uid || workspace.id;
       if (!workspaceId) continue;
       const workspaceName = workspace.name;
       const workspaceRule = matchRuleByWorkspaceName(workspaceName);
-      let domains: Array<{ name?: string; domain?: string }> = [];
+      let rows: Array<{ name?: string; domain?: string }> = [];
       try {
-        domains = await this.inboxkit.listDomains(workspaceId, { limit: 200 });
+        rows = await this.inboxkit.listDomains(workspaceId, { limit: 200 });
       } catch (error) {
-        result.errors.push(
+        listErrors.push(
           `${workspaceName ?? workspaceId}: ${error instanceof Error ? error.message : String(error)}`,
         );
         continue;
       }
+      const domains = rows
+        .map((row) => (row.name || row.domain || "").toLowerCase())
+        .filter(Boolean);
+      listed.push({ workspaceId, workspaceName, domains });
+      if (workspaceRule?.kind === "generic") {
+        genericWorkspaceDomains.push(...domains);
+      }
+    }
 
-      for (const row of domains) {
-        const domain = (row.name || row.domain || "").toLowerCase();
-        if (!domain) continue;
+    const result = await this.reconcileSmartlead({
+      dryRun,
+      extraUntiedDomains: genericWorkspaceDomains,
+    });
+    result.errors.push(...listErrors);
+
+    for (const workspace of listed) {
+      const workspaceRule = matchRuleByWorkspaceName(workspace.workspaceName);
+      for (const domain of workspace.domains) {
         result.examinedDomains += 1;
         const domainRule = matchRuleByDomain(domain);
         const expectedClient = expectedClientForDomain(domain, clients);
@@ -242,8 +267,8 @@ export class ClientOwnershipService {
         if (domainRule?.kind === "wiped" || workspaceRule?.kind === "wiped") {
           result.workspaceFindings.push({
             domain,
-            workspaceId,
-            workspaceName,
+            workspaceId: workspace.workspaceId,
+            workspaceName: workspace.workspaceName,
             expectedKind: "wiped",
             issue: "Domain is on a wiped-client workspace (GXA / MSRS / Nieto) — do not reuse",
           });
@@ -253,8 +278,8 @@ export class ClientOwnershipService {
         if (domainRule?.kind === "client" && workspaceRule?.kind === "generic") {
           result.workspaceFindings.push({
             domain,
-            workspaceId,
-            workspaceName,
+            workspaceId: workspace.workspaceId,
+            workspaceName: workspace.workspaceName,
             expectedKind: "client",
             expectedClient: expectedClient?.name,
             issue: `Client domain sits in the generic pool workspace — move to ${domainRule.key}`,
@@ -262,12 +287,12 @@ export class ClientOwnershipService {
         } else if (
           !domainRule &&
           workspaceRule?.kind === "client" &&
-          this.isKnownGenericDomain(domain)
+          this.isKnownGenericDomain(domain, genericWorkspaceDomains)
         ) {
           result.workspaceFindings.push({
             domain,
-            workspaceId,
-            workspaceName,
+            workspaceId: workspace.workspaceId,
+            workspaceName: workspace.workspaceName,
             expectedKind: "generic",
             issue: "Generic / fleet domain sits in a client InboxKit workspace",
           });
@@ -278,8 +303,8 @@ export class ClientOwnershipService {
         ) {
           result.workspaceFindings.push({
             domain,
-            workspaceId,
-            workspaceName,
+            workspaceId: workspace.workspaceId,
+            workspaceName: workspace.workspaceName,
             expectedKind: "client",
             expectedClient: expectedClient?.name,
             issue: `${domain} looks like ${domainRule.key} but lives in ${workspaceRule.key}`,
@@ -305,8 +330,14 @@ export class ClientOwnershipService {
     return result;
   }
 
-  private isKnownGenericDomain(domain: string): boolean {
+  private isKnownGenericDomain(
+    domain: string,
+    genericWorkspaceDomains: string[] = [],
+  ): boolean {
     if (this.config.extraGenericDomains.some((row) => row.toLowerCase() === domain)) {
+      return true;
+    }
+    if (genericWorkspaceDomains.some((row) => row.toLowerCase() === domain)) {
       return true;
     }
     if (this.state.getCopyCanaryFleet()?.domains.some((row) => row.toLowerCase() === domain)) {

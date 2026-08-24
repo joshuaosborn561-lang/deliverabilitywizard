@@ -47,11 +47,13 @@ export function isUntiedInfrastructureDomain(
   opts: {
     copyCanaryDomains?: string[];
     isolationDomain?: string;
+    extraUntiedDomains?: string[];
   } = {},
 ): boolean {
   const d = domain.trim().toLowerCase();
   if (!d) return false;
   if (extraGenericDomains.some((row) => row.toLowerCase() === d)) return true;
+  if (opts.extraUntiedDomains?.some((row) => row.toLowerCase() === d)) return true;
   if (opts.copyCanaryDomains?.some((row) => row.toLowerCase() === d)) return true;
   if (isCopyCanaryFleetDomain(d, { domains: opts.copyCanaryDomains ?? [], emails: [], status: "ready", updatedAt: "" })) {
     return true;
@@ -65,7 +67,11 @@ export function isGenericForOwnership(
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
-  opts: { copyCanaryDomains?: string[]; isolationDomain?: string } = {},
+  opts: {
+    copyCanaryDomains?: string[];
+    isolationDomain?: string;
+    extraUntiedDomains?: string[];
+  } = {},
 ): boolean {
   if (isGenericMailbox(account, email, config, state)) return true;
   return isUntiedInfrastructureDomain(sendingDomainOf(email), config.extraGenericDomains, opts);

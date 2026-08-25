@@ -444,12 +444,12 @@ function isolationKindLabel(kind) {
   if (kind === "buy_domains") return "Buy replacements";
   if (kind === "buy_canary_fleet") return "Buy canary fleet";
   if (kind === "retire_domain") return "Retire domain";
-  if (kind === "swap_copy") return "Switch the word";
+  if (kind === "swap_copy") return "Make the changes";
   return kind;
 }
 
 function isolationApproveLabel(kind) {
-  if (kind === "swap_copy") return "Switch the word";
+  if (kind === "swap_copy") return "Make the changes";
   if (kind === "buy_domains") return "Buy replacements";
   if (kind === "buy_canary_fleet") return "Buy canary fleet";
   return "Retire this domain";

@@ -209,6 +209,11 @@ export class CampaignBounceInvestigateService {
       };
 
       if (copyDefer) {
+        this.state.markCopySuspect({
+          campaignId: campaign.id,
+          campaignName: finding.campaignName,
+          at: new Date().toISOString(),
+        });
         result.findings.push(finding);
         continue;
       }
@@ -252,20 +257,15 @@ export class CampaignBounceInvestigateService {
       result.findings.push(finding);
     }
 
-    if (result.findings.length) {
+    const slackFindings = result.findings.filter((f) => !f.copyDefer);
+    if (slackFindings.length) {
       const lines = [
         `${dryRun ? "Preview — " : ""}Paused campaign — high bounce (over ${threshold}%):`,
       ];
-      for (const f of result.findings) {
-        if (f.copyDefer) {
-          lines.push(
-            `• ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — this looks like the copy or offer, so we left the inboxes on. ${f.copyReason ?? "Test or fix the email copy."}`,
-          );
-        } else {
-          lines.push(
-            `• ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — swapped out ${f.rotated.length} worst inbox${f.rotated.length === 1 ? "" : "es"}. Campaign stays paused until someone turns it back on.`,
-          );
-        }
+      for (const f of slackFindings) {
+        lines.push(
+          `• ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — swapped out ${f.rotated.length} worst inbox${f.rotated.length === 1 ? "" : "es"}. Campaign stays paused until someone turns it back on.`,
+        );
       }
       try {
         await this.slack.send(lines.join("\n"));

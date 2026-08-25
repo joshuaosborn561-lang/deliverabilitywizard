@@ -948,7 +948,7 @@ describe("owner intent — D49 isolation autonomy", () => {
       true,
       stop(
         "Josh or Cayden can approve a one-word copy swap (D49).",
-        "Cayden can no longer tap Switch the word.",
+        "Cayden can no longer tap Make the changes.",
       ),
     );
     assert.equal(
@@ -999,10 +999,10 @@ describe("owner intent — D49 isolation autonomy", () => {
     );
     assert.match(
       prompt,
-      /until Josh or Cayden tap Switch the word/i,
+      /until Josh or Cayden tap Make the changes/i,
       stop(
         "Live copy changes only after Josh or Cayden approve (D49).",
-        "campaignSetupPrompt no longer names the Slack tap.",
+        "campaignSetupPrompt no longer names the Make the changes tap.",
       ),
     );
   });
@@ -1263,6 +1263,67 @@ describe("owner intent — D64 staffing Slack is end of day", () => {
       stop(
         "The client day brief posts staffing at end of day (D64).",
         "clientDayBrief.ts no longer takes an end-of-day staffing pass.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D69 copy Slack is the word and a one-click edit", () => {
+  it("D69: do not Slack a copy guess; Slack the word and Make the changes", async () => {
+    const rem = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/remediation.ts", import.meta.url), "utf8"),
+    );
+    assert.equal(
+      /Low inbox looks like/.test(rem),
+      false,
+      stop(
+        "Do not Slack a copy/offer guess (D69).",
+        "remediation.ts still Slacks the copy-signal guess.",
+      ),
+    );
+    assert.match(
+      rem,
+      /markCopySuspect/,
+      stop(
+        "Copy suspects still start the canary + word hunt (D69).",
+        "remediation.ts no longer marks copy suspects.",
+      ),
+    );
+    const bounce = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/campaignBounceInvestigate.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.equal(
+      /this looks like the copy or offer/.test(bounce),
+      false,
+      stop(
+        "Paused-bounce copy defer is not a Slack guess (D69).",
+        "campaignBounceInvestigate.ts still Slacks a copy guess.",
+      ),
+    );
+    const { copySwapProof } = await import("../lib/isolationProof.js");
+    const proof = copySwapProof({
+      campaignName: "BCP Healthcare Over-1k (No Team)",
+      element: "free",
+      swap: "complimentary",
+      controlLanded: true,
+    });
+    assert.match(
+      proof,
+      /It was the word \*free\*/,
+      stop(
+        "The Slack names the word (D69).",
+        "copySwapProof no longer says it was this word.",
+      ),
+    );
+    assert.match(
+      proof,
+      /Make the changes\?/,
+      stop(
+        "The Slack asks to make the changes (D69).",
+        "copySwapProof no longer asks Make the changes?",
       ),
     );
   });

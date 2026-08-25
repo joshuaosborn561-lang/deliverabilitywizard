@@ -163,10 +163,6 @@ export class CopyIsolationService {
       updatedAt: new Date().toISOString(),
     });
     await this.state.save();
-    await this.slack.notifyCopyIsolation({
-      campaignName: run.campaignName ?? `Campaign ${run.campaignId}`,
-      waiting: true,
-    });
     return result;
   }
 
@@ -253,12 +249,12 @@ export class CopyIsolationService {
       return result;
     }
 
-    await this.slack.notifyCopyIsolation({
-      campaignName: run.campaignName ?? `Campaign ${run.campaignId}`,
-      recovered: result.recovered,
-      unchanged: result.unchanged,
-      noneRecovered: !result.recovered.length && !pending,
-    });
+    if (!result.recovered.length && !pending) {
+      await this.slack.notifyCopyIsolation({
+        campaignName: run.campaignName ?? `Campaign ${run.campaignId}`,
+        noneRecovered: true,
+      });
+    }
     const winner = result.recovered[0];
     if (winner) {
       const swap = suggestedCopySwap(winner.element);
@@ -273,7 +269,7 @@ export class CopyIsolationService {
         slack: this.slack,
         action: buildIsolationAction({
           kind: "swap_copy",
-          title: `Switch “${winner.element}” on ${run.campaignName ?? run.campaignId}`,
+          title: `It was “${winner.element}” on ${run.campaignName ?? run.campaignId}`,
           proof,
           detail: {
             campaignId: run.campaignId,

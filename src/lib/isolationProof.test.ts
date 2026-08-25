@@ -10,7 +10,7 @@ describe("isolation proof", () => {
       senderSummary: "12 inboxes on this campaign",
       whyNotTheOther:
         "Why not the inboxes: the same inboxes landed the known-good email.",
-      next: "I will not edit the live email until someone taps Switch the word.",
+      next: "I will not edit the live email until someone taps Make the changes.",
     });
     assert.match(text, /known-good email/);
     assert.match(text, /Why not the inboxes/);
@@ -24,7 +24,8 @@ describe("isolation proof", () => {
       swap: "complimentary",
       controlLanded: true,
     });
+    assert.match(text, /It was the word \*free\*/);
     assert.match(text, /complimentary/);
-    assert.match(text, /Approve in Slack/);
+    assert.match(text, /Make the changes\?/);
   });
 });

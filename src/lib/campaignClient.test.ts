@@ -31,4 +31,11 @@ describe("matchClientForCampaign (D77)", () => {
   it("does not guess when no client matches", () => {
     assert.equal(matchClientForCampaign("Pod control shell", clients), null);
   });
+
+  it("does not treat a generic word like tech as Parlay", () => {
+    assert.equal(
+      matchClientForCampaign("Nieto Sports or Airpods Offer/Proprietary Tech", clients),
+      null,
+    );
+  });
 });

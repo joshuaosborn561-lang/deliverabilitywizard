@@ -14,12 +14,24 @@ export function clientMatchNeedles(client: SmartleadClientRecord): string[] {
     client.logo ?? "",
     client.name ?? "",
   ];
+  const generic = new Set([
+    "tech",
+    "offer",
+    "sports",
+    "group",
+    "other",
+    "with",
+    "team",
+    "firms",
+    "airpods",
+    "tickets",
+  ]);
   const needles = new Set<string>();
   for (const piece of pieces) {
     const normalized = normalizeBrand(piece);
     if (!normalized) continue;
-    if (normalized.length >= 3) needles.add(normalized);
-    for (const token of normalized.split(" ").filter((row) => row.length >= 4)) {
+    if (normalized.length >= 5) needles.add(normalized);
+    for (const token of normalized.split(" ").filter((row) => row.length >= 5 && !generic.has(row))) {
       needles.add(token);
     }
     const initials = normalized
@@ -27,7 +39,7 @@ export function clientMatchNeedles(client: SmartleadClientRecord): string[] {
       .filter((row) => row.length)
       .map((row) => row[0])
       .join("");
-    if (initials.length >= 3) needles.add(initials);
+    if (initials.length >= 3 && !generic.has(initials)) needles.add(initials);
   }
   return [...needles];
 }

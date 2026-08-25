@@ -40,13 +40,14 @@ function lifetimeStart(campaign: SmartleadCampaign): string {
 
 function mergeSendBounce(...payloads: unknown[]): {
   sent: number;
+  bounces: number;
   bounceRate: number;
 } {
-  let best = { sent: 0, bounceRate: 0 };
+  let best = { sent: 0, bounces: 0, bounceRate: 0 };
   for (const payload of payloads) {
     const row = statsFromAnalytics(payload);
     if (row.sent > best.sent) {
-      best = { sent: row.sent, bounceRate: row.bounceRate };
+      best = { sent: row.sent, bounces: row.bounces, bounceRate: row.bounceRate };
     }
   }
   return best;
@@ -54,9 +55,9 @@ function mergeSendBounce(...payloads: unknown[]): {
 
 /**
  * D80 — pause ACTIVE campaigns on our send-volume bounce bands.
- * Does not START anyone (D40). Does not record pendingResumes — a bounce
- * pause stays paused until a human starts it. After a successful scan,
- * Smartlead bounce_autopause_threshold is converged to 100 (off).
+ * Does not START anyone (D40). A bounce pause stays paused until a human
+ * starts it. After a successful scan, Smartlead bounce_autopause_threshold
+ * is converged to 100 (off).
  */
 export class CampaignBounceAutostopService {
   constructor(
@@ -115,7 +116,7 @@ export class CampaignBounceAutostopService {
           midPercent: this.config.bounceAutostopMidPercent,
           highPercent: this.config.bounceAutostopHighPercent,
         };
-        const { sent, bounceRate } = mergeSendBounce(analytics, statistics);
+        const { sent, bounces, bounceRate } = mergeSendBounce(analytics, statistics);
         const threshold = campaignBounceAutostopThreshold(sent, bands);
         if (threshold == null) {
           result.skipped += 1;
@@ -124,7 +125,7 @@ export class CampaignBounceAutostopService {
           );
           continue;
         }
-        if (!shouldAutostopCampaignForBounce(sent, bounceRate, bands)) {
+        if (!shouldAutostopCampaignForBounce(sent, bounceRate, bands, bounces)) {
           result.skipped += 1;
           continue;
         }

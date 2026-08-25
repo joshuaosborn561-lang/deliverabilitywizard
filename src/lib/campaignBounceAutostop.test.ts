@@ -23,7 +23,7 @@ describe("campaignBounceAutostopThreshold (D80)", () => {
   it("is 7% from 500 sends up", () => {
     assert.equal(campaignBounceAutostopThreshold(500), 7);
     assert.equal(campaignBounceAutostopThreshold(10_000), 7);
-    assert.equal(shouldAutostopCampaignForBounce(500, 7), false);
-    assert.equal(shouldAutostopCampaignForBounce(500, 7.1), true);
+    assert.equal(shouldAutostopCampaignForBounce(500, 7, undefined, 35), false);
+    assert.equal(shouldAutostopCampaignForBounce(500, 7.1, undefined, 36), true);
   });
 });

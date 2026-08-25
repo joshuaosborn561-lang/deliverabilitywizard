@@ -41,8 +41,13 @@ export function shouldAutostopCampaignForBounce(
   sent: number,
   bounceRate: number,
   bands: BounceAutostopBands = DEFAULT_BOUNCE_AUTOSTOP_BANDS,
+  bounces?: number,
 ): boolean {
   const threshold = campaignBounceAutostopThreshold(sent, bands);
   if (threshold == null) return false;
+  // Counts beat float percent: 35/500 is exactly 7% and must not pause.
+  if (bounces != null && sent > 0) {
+    return bounces * 100 > threshold * sent;
+  }
   return bounceRate > threshold;
 }

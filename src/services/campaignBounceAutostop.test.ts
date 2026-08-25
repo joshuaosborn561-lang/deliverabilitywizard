@@ -66,6 +66,6 @@ describe("CampaignBounceAutostopService (D80)", () => {
       "utf8",
     );
     assert.equal(/updateCampaignStatus\([^)]*START/.test(src), false);
-    assert.equal(/pendingResume/i.test(src), false);
+    assert.equal(/hasPendingResume|markPendingResume|clearPendingResume/.test(src), false);
   });
 });

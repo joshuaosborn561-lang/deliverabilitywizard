@@ -174,7 +174,7 @@ export class IsolationBranchService {
         .join(" "),
       next:
         decided.verdict === "COPY"
-          ? "I will not edit the live email until Josh or Cayden tap Switch the word."
+          ? "I will not edit the live email until Josh or Cayden tap Make the changes."
           : decided.verdict === "INFRA"
             ? "I will not rewrite the email. Domain retire or a replacement buy still waits for Josh."
             : "I will keep testing. A campaign in spam is a flag, not a domain death sentence.",
@@ -182,7 +182,9 @@ export class IsolationBranchService {
     run.notes = proof;
     this.state.upsertIsolationRun(run);
 
-    if (!opts.silent) {
+    // D69 — a COPY guess is not Slack-worthy. Canaries + word hunt post
+    // once, with the word and a one-click edit.
+    if (!opts.silent && decided.verdict !== "COPY") {
       await this.slack.notifyIsolationVerdict({
         campaignName: campaign.name,
         clientName: campaign.name,

@@ -38,11 +38,14 @@ export function copySwapProof(input: {
   swap: string;
   controlLanded: boolean;
 }): string {
+  const edit = input.swap.trim()
+    ? input.swap.trim()
+    : "delete that word";
   return [
-    `Campaign: ${input.campaignName}.`,
-    `Known-good email from the same inboxes ${input.controlLanded ? "landed in the inbox" : "did not land"} — so this is not “the inboxes are dead.”`,
-    `Word hunt: taking out *${input.element}* is what recovered. Suggested swap: *${input.swap}*.`,
-    "I have not edited the live email. Approve in Slack and I will make that one change.",
+    `It was the word *${input.element}*.`,
+    `Suggested edit: *${edit}*.`,
+    "Make the changes?",
+    `Known-good email from the same inboxes ${input.controlLanded ? "landed" : "did not land"} — this is the copy, not dead inboxes. I have not edited the live email.`,
   ].join("\n");
 }
 

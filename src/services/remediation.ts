@@ -702,24 +702,15 @@ export class RemediationService {
       }
     }
     if (copyDeferByCampaign.size) {
-      for (const id of copyDeferByCampaign.keys()) {
+      for (const [id, reason] of copyDeferByCampaign.entries()) {
         this.state.markCopySuspect({
           campaignId: id,
           campaignName: campaignNameById.get(id),
           at: new Date().toISOString(),
         });
-      }
-      const lines = [
-        "Low inbox looks like *copy/offer* filtering (not a single mailbox). Holding sender rotation — test/fix the campaign copy:",
-        ...[...copyDeferByCampaign.entries()].map(
-          ([id, reason]) =>
-            `• #${id} ${campaignNameById.get(id) ?? id}: ${reason}`,
-        ),
-      ];
-      try {
-        await this.slack.send(lines.join("\n"));
-      } catch (error) {
-        console.warn("[remediation] copy-signal Slack failed", error);
+        console.log(
+          `[remediation] copy-suspect #${id} ${campaignNameById.get(id) ?? id} — ${reason} (D69: canary confirm + word hunt; no Slack until one-click edit)`,
+        );
       }
     }
 

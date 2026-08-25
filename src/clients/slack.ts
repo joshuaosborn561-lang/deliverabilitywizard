@@ -996,7 +996,7 @@ export class SlackClient {
     let verdictLine: string;
     if (details.verdict === "COPY") {
       verdictLine = details.teardownStarted
-        ? "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes. The word hunt is already running. I will not edit the live email until you tap Switch the word."
+        ? "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes. The word hunt is already running. I will not edit the live email until you tap Make the changes."
         : "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes.";
     } else if (details.verdict === "INFRA") {
       verdictLine =
@@ -1130,7 +1130,7 @@ export class SlackClient {
   }): Promise<void> {
     const approveLabel =
       details.kind === "swap_copy"
-        ? "Switch the word"
+        ? "Make the changes"
         : details.kind === "buy_domains"
           ? "Buy replacements"
           : details.kind === "buy_canary_fleet"
@@ -1146,7 +1146,7 @@ export class SlackClient {
           ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
           : details.kind === "retire_domain"
             ? "Josh: tap the button (opens a confirm page) to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
-            : "Josh or Cayden: tap the button (opens a confirm page) to switch the live email. I will change only that one word.",
+            : "Josh or Cayden: tap Make the changes (opens a confirm page). I will apply that one suggested edit and nothing else.",
     ].join("\n");
     const approveValue = isolationActionValue(
       details.kind,

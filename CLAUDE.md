@@ -110,12 +110,15 @@ Outlook, warmup off). Those six stay off live campaigns. They are extra
 to the 50 staffable floor.
 
 Copy/offer (Outlook buried, Gmail fine) still does not bench senders (D28).
+Do **not** Slack that guess. Confirm with canaries, run word-deletion
+tests, then Slack one button: it was this word, suggested edit, make
+the changes? (D69).
 
 If a campaign is **PAUSED** with aggregate sender bounce over **7%**,
-investigate: copy_likely → Slack only; otherwise rotate worst bouncers
-(D29). Do **not** auto-`START` — a manual pause stays paused (D40). Only
-protective pauses recorded in `pendingResumes` may be resumed by health,
-and never when the campaign is **STOPPED**.
+investigate: copy_likely → same canary + word hunt (D69); otherwise
+rotate worst bouncers (D29). Do **not** auto-`START` — a manual pause
+stays paused (D40). Only protective pauses recorded in `pendingResumes`
+may be resumed by health, and never when the campaign is **STOPPED**.
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
 from the pool — connected SMTP/IMAP, not held, and not resting. Disconnected membership

@@ -1368,3 +1368,24 @@ is worse.
 **Guards.** `isRetiredSendingDomain`; fan-out / rest / top-up skip
 retired domains; owner-intent D65.
 
+## D69 — Copy Slack is the word and a one-click edit
+
+**Decision.** Do not Slack a placement-split guess that "it's the
+copy/offer." Mark the campaign copy-suspect, confirm with canaries,
+run the word-deletion tests, then Slack once: it was this word, here
+is the suggested edit, make the changes? The button applies that one
+edit. Missing isolation rig or a hunt that recovers nothing may still
+Slack — those are blockers, not guesses.
+
+**Why.** Josh (2026-08-25) pasted the BCP Healthcare Over-1k Slack
+("Outlook/Microsoft is mostly spam while Gmail is healthier — usually
+the copy/offer") and said it is not helpful. The hunt already existed;
+the guess fired first and the button waited.
+
+**Tradeoff.** Josh will not see a copy alert until the word hunt
+finishes. Accepted: a guess without a word is noise.
+
+**Guards.** Remediation / bounce-investigate do not Slack copy_likely
+reasons; isolation is silent on COPY until the swap button; owner-intent
+D69.
+

@@ -1457,3 +1457,31 @@ bug, not a signature guess.
 foreign second line; campaign-audit SIG-MISMATCH; gap enforce
 rewrites foreign sigs; owner-intent D74.
 
+## D75 — One inbox, one client, hard cleanup every health pass
+
+**Decision.** An inbox may sit on every campaign for **one** client
+and on the paused pod-control shell. It may not sit on another
+client's campaigns at the same time. Health pulls those foreign
+memberships every 15 minutes, then sets the signature to the owner
+client's brand.
+
+Owner is `mailbox.client_id`. The shell does not count. Isolation
+and canary-fleet mailboxes are skipped. Same-client fan-out (D26)
+is unchanged.
+
+This supersedes D74's "two-client membership is logged, not
+rewritten."
+
+**Why.** Josh (2026-08-25): change the leftover Peterson signature
+on the Goliath send, and "hard rule of an inbox can only be
+assocoated wiht one clients cmpaigns at a time." D26 already said
+that; nothing stripped existing cross-client memberships, so a
+generic could send Goliath with a Peterson line.
+
+**Tradeoff.** Pulling a mailbox off the wrong client can thin that
+campaign until top-up refills. Accepted: the wrong-brand send is
+worse.
+
+**Guards.** `foreignCampaignIds`; `OneClientMembershipService`;
+owner-intent D75.
+

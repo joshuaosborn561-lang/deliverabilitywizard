@@ -40,6 +40,7 @@ import { CampaignAuditService } from "./services/campaignAudit.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
+import { OneClientMembershipService } from "./services/oneClientMembership.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
@@ -353,6 +354,11 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const oneClientMembership = new OneClientMembershipService(
+    config,
+    smartlead,
+    state,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -607,6 +613,13 @@ async function main(): Promise<void> {
     healthInFlight = (async () => {
       const rest = await runRestGates();
 
+      let oneClientResult: unknown = null;
+      try {
+        oneClientResult = await oneClientMembership.run();
+      } catch (error) {
+        console.warn("[health] one-client membership failed", error);
+      }
+
       let healthResult: unknown = null;
       try {
         healthResult = await campaignHealth.run();
@@ -660,6 +673,7 @@ async function main(): Promise<void> {
         restBaseline: rest.restBaseline,
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
+        oneClient: oneClientResult,
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
@@ -1539,6 +1553,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await campaignAudit.run(config.minCampaignSenders);
         res.json({ ok: true, mode: "campaign-audit", result });
+        return;
+      }
+      if (mode === "one-client" || mode === "one-client-membership") {
+        assertRuntimeSecrets(config);
+        const result = await oneClientMembership.run();
+        res.json({ ok: true, mode: "one-client", result });
         return;
       }
       if (mode === "fan-out" || mode === "client-fanout") {

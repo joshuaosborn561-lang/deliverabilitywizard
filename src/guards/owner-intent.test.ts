@@ -1934,3 +1934,58 @@ describe("owner intent — D74 QA catches a foreign-client signature", () => {
     );
   });
 });
+
+describe("owner intent — D75 one inbox one client", () => {
+  it("D75: foreign campaign memberships are pulled every health pass", async () => {
+    const { foreignCampaignIds, ownerClientId } = await import(
+      "../lib/oneClient.js"
+    );
+    assert.deepEqual(
+      foreignCampaignIds(548611, [
+        { campaignId: 1, clientId: 548611, shell: false },
+        { campaignId: 2, clientId: 99, shell: false },
+        { campaignId: 9, clientId: 99, shell: true },
+      ]),
+      [2],
+      stop(
+        "An inbox may not sit on another client's campaign (D75).",
+        "foreignCampaignIds no longer pulls the Peterson campaign.",
+      ),
+    );
+    assert.equal(
+      ownerClientId(548611, [
+        { campaignId: 2, clientId: 99, shell: false },
+      ]),
+      548611,
+      stop(
+        "Mailbox client_id is the owner (D75).",
+        "ownerClientId no longer trusts mailbox.client_id.",
+      ),
+    );
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      src,
+      /removeEmailAccountsFromCampaign/,
+      stop(
+        "Health pulls the foreign membership (D75).",
+        "oneClientMembership.ts no longer removes cross-client campaigns.",
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /oneClientMembership\.run/,
+      stop(
+        "The 15-minute health loop runs the one-client cleanup (D75).",
+        "index.ts no longer calls oneClientMembership.run.",
+      ),
+    );
+  });
+});

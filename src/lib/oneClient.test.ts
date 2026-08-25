@@ -34,4 +34,25 @@ describe("one client per inbox (D75)", () => {
       null,
     );
   });
+
+  it("gives a leftover-tagged generic to Goliath (D76)", () => {
+    assert.equal(
+      ownerClientId(
+        548610,
+        [
+          { campaignId: 1, clientId: 548611, shell: false },
+          { campaignId: 2, clientId: 548610, shell: false },
+        ],
+        { generic: true, genericOwnerId: 548611 },
+      ),
+      548611,
+    );
+    assert.equal(
+      ownerClientId(null, [
+        { campaignId: 2, clientId: 548610, shell: false },
+        { campaignId: 3, clientId: 99, shell: false },
+      ], { generic: true, genericOwnerId: 548611 }),
+      548611,
+    );
+  });
 });

@@ -1,7 +1,19 @@
 import type { AppConfig } from "../config.js";
+import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
+import { emailDomainOf } from "./isolationDomain.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
+
+const POOL_PLAN_DOMAINS = new Set(
+  GENERIC_POOL_PLAN.domains.map((row) => row.domain.trim().toLowerCase()),
+);
+
+/** True when the sending domain is in the InboxKit generic-pool plan. */
+export function isGenericPoolDomain(domain: string | undefined): boolean {
+  if (!domain) return false;
+  return POOL_PLAN_DOMAINS.has(domain.trim().toLowerCase());
+}
 
 /**
  * A client inbox belongs to a Smartlead client and is not a pool generic
@@ -41,6 +53,7 @@ export function isGenericMailbox(
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
+  if (isGenericPoolDomain(emailDomainOf(normalized))) return true;
   if (state.getPoolMailbox(normalized)) return true;
   return isPrewarmedGeneric(account, normalized, config, state);
 }

@@ -1989,3 +1989,57 @@ describe("owner intent — D75 one inbox one client", () => {
     );
   });
 });
+
+describe("owner intent — D76 generics belong to Goliath", () => {
+  it("D76: a leftover Peterson client_id does not own a pool generic", async () => {
+    const { ownerClientId } = await import("../lib/oneClient.js");
+    assert.equal(
+      ownerClientId(
+        548610,
+        [{ campaignId: 2, clientId: 548610, shell: false }],
+        { generic: true, genericOwnerId: 548611 },
+      ),
+      548611,
+      stop(
+        "Pool generics belong to Goliath even with a leftover client_id (D76).",
+        "ownerClientId still treats mailbox.client_id as owner for generics.",
+      ),
+    );
+    const { isGenericMailbox } = await import("../lib/clientInbox.js");
+    assert.equal(
+      isGenericMailbox(
+        { client_id: 548610, from_name: "Aarav Sanchez" },
+        "aaravsanchez@getoutreachdesk.info",
+        { extraGenericMailboxes: [], extraGenericDomains: [] },
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+      stop(
+        "Pool-plan domains are generic without the local pool file (D76).",
+        "getoutreachdesk.info is no longer treated as a generic.",
+      ),
+    );
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      src,
+      /addEmailAccountsToCampaign/,
+      stop(
+        "A stranded generic is put back on ACTIVE Goliath campaigns (D76).",
+        "oneClientMembership.ts no longer restores generics onto Goliath.",
+      ),
+    );
+    assert.match(
+      src,
+      /genericOwnerId/,
+      stop(
+        "Health uses Goliath as the generic owner (D76).",
+        "oneClientMembership.ts no longer passes genericOwnerId.",
+      ),
+    );
+  });
+});

@@ -1485,3 +1485,35 @@ worse.
 **Guards.** `foreignCampaignIds`; `OneClientMembershipService`;
 owner-intent D75.
 
+---
+
+## D76 — Generics belong to Goliath even with a leftover client_id
+
+**Decision.** A pool or extra-fleet generic is owned by Goliath
+(D58) even when `mailbox.client_id` still names another client, or
+is empty. Health treats Goliath as the owner: pulls every other
+client's campaigns, sets `client_id` + signature to Goliath, and if
+the generic is sitting on a foreign client with no Goliath
+campaign, puts it back on every **ACTIVE** Goliath campaign
+(stopped L1–L4 and the shell stay untouched).
+
+Pool-plan domains (`getoutreachdesk.info` and the rest of
+`GENERIC_POOL_PLAN`) count as generic without needing the local
+pool file.
+
+This supersedes D75's "Owner is `mailbox.client_id`" for generics
+only. Real client inboxes still use `mailbox.client_id`.
+
+**Why.** Josh (2026-08-25): change the leftover Peterson signature,
+and one inbox / one client's campaigns. Aarav Sanchez at
+`getoutreachdesk.info` is a pool generic that still had Peterson's
+`client_id`. Treating that id as owner pulled the box off Goliath
+instead of rewriting the sig.
+
+**Tradeoff.** A generic that was parked on another client before
+D58 comes back to Goliath. Accepted: D58 already forbids
+non-Goliath generic staff.
+
+**Guards.** `ownerClientId` generic override; `isGenericPoolDomain`;
+`OneClientMembershipService` restore; owner-intent D76.
+

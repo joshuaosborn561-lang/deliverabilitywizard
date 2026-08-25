@@ -12,6 +12,8 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
+import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
@@ -21,17 +23,31 @@ import { signatureHay } from "../lib/signatureQa.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 
+const WRITE_BATCH = 25;
+const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 400;
+
 export interface OneClientMembershipResult {
   dryRun: boolean;
   examined: number;
   pulled: Array<{ email: string; campaignId: number }>;
+  restored: Array<{ email: string; campaignId: number }>;
   signaturesSet: number;
   skipped: string[];
   errors: string[];
 }
 
+interface AccountPlan {
+  email: string;
+  accountId: number;
+  owner: number;
+  pull: number[];
+  restore: number[];
+  signature?: string;
+}
+
 /**
- * D75 — every health pass: an inbox may only sit on one client's campaigns.
+ * D75 / D76 — every health pass: an inbox may only sit on one client's
+ * campaigns. Generics belong to Goliath even with a leftover client_id.
  * The paused pod-control shell does not count. Signature is rewritten to
  * the owner client's brand when a leftover line is another client.
  */
@@ -48,6 +64,7 @@ export class OneClientMembershipService {
       dryRun,
       examined: 0,
       pulled: [],
+      restored: [],
       signaturesSet: 0,
       skipped: [],
       errors: [],
@@ -62,6 +79,7 @@ export class OneClientMembershipService {
       (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
     );
     const brandByClientId = new Map<number, string>();
+    const clientsById = new Map(clients.map((client) => [client.id, client]));
     for (const client of clients) {
       brandByClientId.set(
         client.id,
@@ -73,6 +91,21 @@ export class OneClientMembershipService {
       emails: isolationEmailsOf(this.config.isolationMailboxEmails),
       domain: this.config.isolationDomain || undefined,
     };
+    const genericOwnerId = genericStaffClientId(
+      campaigns as SmartleadCampaign[],
+      clientsById,
+      this.config.genericStaffNamePatterns,
+    );
+    const activeOwnerCampaignIds = (campaigns as SmartleadCampaign[])
+      .filter(
+        (campaign) =>
+          campaign.client_id === genericOwnerId &&
+          String(campaign.status ?? "").toUpperCase() === "ACTIVE" &&
+          !isPodControlShellCampaign(campaign),
+      )
+      .map((campaign) => campaign.id);
+
+    const plans: AccountPlan[] = [];
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -92,66 +125,174 @@ export class OneClientMembershipService {
       if (!memberships.length) continue;
       result.examined += 1;
 
-      const owner = ownerClientId(account.client_id, memberships);
+      const generic = isGenericMailbox(account, email, this.config, this.state);
+      const owner = ownerClientId(account.client_id, memberships, {
+        generic,
+        genericOwnerId,
+      });
       if (owner == null) {
         result.skipped.push(`${email}: no single owner client`);
         continue;
       }
 
       const pull = foreignCampaignIds(owner, memberships);
-      for (const campaignId of pull) {
-        try {
-          if (!dryRun) {
-            await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
-              account.id,
-            ]);
-            await sleep(150);
-          }
-          result.pulled.push({ email, campaignId });
-          console.log(
-            `[one-client] ${email} off #${campaignId} (owner client ${owner})`,
-          );
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          result.errors.push(`${email} remove #${campaignId}: ${message}`);
-        }
-      }
+      const onOwner = memberships.some(
+        (row) => !row.shell && row.clientId === owner,
+      );
+      const restore =
+        generic && !onOwner && pull.length
+          ? activeOwnerCampaignIds.filter(
+              (id) => !memberships.some((row) => row.campaignId === id),
+            )
+          : [];
 
       const clientBrand = brandByClientId.get(owner) ?? "";
-      if (!clientBrand) continue;
       const hay = signatureHay({
         fromName: account.from_name,
         signature: account.signature,
       });
-      const foreign = findForeignBrand(hay, clientBrand, allBrands);
-      const desired = desiredMailboxSignature({
-        fromName: account.from_name,
-        signature: account.signature,
-        clientBrand,
-        otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
+      const foreign = clientBrand
+        ? findForeignBrand(hay, clientBrand, allBrands)
+        : null;
+      const desired = clientBrand
+        ? desiredMailboxSignature({
+            fromName: account.from_name,
+            signature: account.signature,
+            clientBrand,
+            otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
+          })
+        : null;
+      const leftoverClient =
+        generic &&
+        typeof genericOwnerId === "number" &&
+        account.client_id !== genericOwnerId;
+      const needsSignature =
+        Boolean(desired) &&
+        (account.signature ?? "") !== desired &&
+        (Boolean(foreign) || leftoverClient);
+
+      if (!pull.length && !restore.length && !needsSignature) continue;
+      plans.push({
+        email,
+        accountId: account.id,
+        owner,
+        pull,
+        restore,
+        signature: needsSignature && desired ? desired : undefined,
       });
-      if (!foreign || !desired || (account.signature ?? "") === desired) continue;
+    }
+
+    const removals = new Map<number, Array<{ email: string; accountId: number }>>();
+    const restores = new Map<number, Array<{ email: string; accountId: number }>>();
+    for (const plan of plans) {
+      for (const campaignId of plan.restore) {
+        const list = restores.get(campaignId) ?? [];
+        list.push({ email: plan.email, accountId: plan.accountId });
+        restores.set(campaignId, list);
+      }
+      for (const campaignId of plan.pull) {
+        const list = removals.get(campaignId) ?? [];
+        list.push({ email: plan.email, accountId: plan.accountId });
+        removals.set(campaignId, list);
+      }
+    }
+
+    // Restore onto the owner first so a generic is not left campaign-less.
+    for (const [campaignId, rows] of restores) {
+      for (const batch of chunk(rows, WRITE_BATCH)) {
+        try {
+          if (!dryRun) {
+            await this.smartlead.addEmailAccountsToCampaign(
+              campaignId,
+              batch.map((row) => row.accountId),
+            );
+            await sleep(WRITE_GAP_MS);
+          }
+          for (const row of batch) {
+            result.restored.push({ email: row.email, campaignId });
+            console.log(
+              `[one-client] ${row.email} onto #${campaignId} (Goliath restore)`,
+            );
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`add #${campaignId}: ${message}`);
+        }
+      }
+    }
+
+    for (const [campaignId, rows] of removals) {
+      for (const batch of chunk(rows, WRITE_BATCH)) {
+        try {
+          if (!dryRun) {
+            await this.smartlead.removeEmailAccountsFromCampaign(
+              campaignId,
+              batch.map((row) => row.accountId),
+            );
+            await sleep(WRITE_GAP_MS);
+          }
+          for (const row of batch) {
+            result.pulled.push({ email: row.email, campaignId });
+            console.log(
+              `[one-client] ${row.email} off #${campaignId}`,
+            );
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`remove #${campaignId}: ${message}`);
+        }
+      }
+    }
+
+    for (const plan of plans) {
+      if (!plan.signature) continue;
       try {
         if (!dryRun) {
-          await this.smartlead.updateEmailAccount(account.id, {
-            signature: desired,
-            client_id: owner,
+          await this.smartlead.updateEmailAccount(plan.accountId, {
+            signature: plan.signature,
+            client_id: plan.owner,
           });
-          await sleep(150);
+          await sleep(WRITE_GAP_MS);
         }
         result.signaturesSet += 1;
-        console.log(
-          `[one-client] ${email} signature → ${clientBrand}`,
-        );
+        console.log(`[one-client] ${plan.email} signature → client ${plan.owner}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        result.errors.push(`${email} signature: ${message}`);
+        result.errors.push(`${plan.email} signature: ${message}`);
       }
     }
 
     console.log(
-      `[one-client] examined=${result.examined} pulled=${result.pulled.length} signatures=${result.signaturesSet} errors=${result.errors.length}`,
+      `[one-client] examined=${result.examined} pulled=${result.pulled.length} restored=${result.restored.length} signatures=${result.signaturesSet} errors=${result.errors.length}`,
     );
     return result;
   }
+}
+
+function genericStaffClientId(
+  campaigns: SmartleadCampaign[],
+  clientsById: Map<number, SmartleadClientRecord>,
+  patterns: string[],
+): number | null {
+  for (const campaign of campaigns) {
+    if (typeof campaign.client_id !== "number") continue;
+    if (isPodControlShellCampaign(campaign)) continue;
+    const client = clientsById.get(campaign.client_id);
+    if (
+      allowsGenericStaff(
+        campaign,
+        client ? clientDisplayName(client) : "",
+        patterns,
+      )
+    ) {
+      return campaign.client_id;
+    }
+  }
+  return null;
+}
+
+function chunk<T>(rows: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
 }

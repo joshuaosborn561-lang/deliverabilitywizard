@@ -12,7 +12,17 @@ export interface MembershipRow {
 export function ownerClientId(
   mailboxClientId: number | null | undefined,
   memberships: MembershipRow[],
+  opts?: { generic?: boolean; genericOwnerId?: number | null },
 ): number | null {
+  // D76 — pool / extra-fleet generics belong to Goliath even when a leftover
+  // client_id still names Peterson or the field is empty.
+  if (
+    opts?.generic &&
+    typeof opts.genericOwnerId === "number" &&
+    Number.isFinite(opts.genericOwnerId)
+  ) {
+    return opts.genericOwnerId;
+  }
   if (typeof mailboxClientId === "number" && Number.isFinite(mailboxClientId)) {
     return mailboxClientId;
   }

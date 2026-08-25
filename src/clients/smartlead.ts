@@ -257,9 +257,10 @@ export class SmartleadClient {
   }
 
   /**
-   * POST /campaigns/{id}/settings. Callers must merge GET first and rewrite
-   * GET-only track flags (`DONT_EMAIL_OPEN` → `DONT_TRACK_EMAIL_OPEN`) or
-   * a partial body can blank tracking / OOO. See campaignSettingsWriteBody.
+   * POST /campaigns/{id}/settings. There is no GET on this path (404).
+   * A threshold-only body leaves tracking / OOO intact. If posting
+   * track_settings, rewrite GET-only flags (`DONT_EMAIL_OPEN` →
+   * `DONT_TRACK_EMAIL_OPEN`). See campaignSettingsWriteBody.
    */
   updateCampaignSettings(
     campaignId: number,

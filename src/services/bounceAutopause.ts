@@ -1,11 +1,7 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
-import {
-  campaignSettingsWriteBody,
-  desiredBounceAutopausePercent,
-  readBounceAutopausePercent,
-} from "../lib/bounceAutopause.js";
+import { desiredBounceAutopausePercent } from "../lib/bounceAutopause.js";
 import { isExcluded } from "./campaignTopUp.js";
 
 /**
@@ -19,7 +15,6 @@ export interface BounceAutopauseResult {
   dryRun: boolean;
   scanned: number;
   matched: number;
-  alreadySet: number;
   updated: number;
   errors: string[];
 }
@@ -36,7 +31,6 @@ export class BounceAutopauseService {
       dryRun,
       scanned: 0,
       matched: 0,
-      alreadySet: 0,
       updated: 0,
       errors: [],
     };
@@ -56,17 +50,11 @@ export class BounceAutopauseService {
       result.matched += 1;
 
       try {
-        const settings = await this.smartlead.getCampaignSettings(campaign.id);
-        const have = readBounceAutopausePercent(settings);
-        if (have === desired) {
-          result.alreadySet += 1;
-          continue;
-        }
-        const body = campaignSettingsWriteBody(settings, {
-          bounce_autopause_threshold: String(desired),
-        });
+        // GET /campaigns/{id}/settings 404s. Campaign GET does not echo the
+        // threshold. A threshold-only POST leaves tracking / OOO intact.
+        const body = { bounce_autopause_threshold: String(desired) };
         console.log(
-          `[bounce-autopause] ${campaign.name} #${campaign.id} ${have ?? "?"}% → ${desired}%${dryRun ? " (dry-run)" : ""}`,
+          `[bounce-autopause] ${campaign.name} #${campaign.id} → ${desired}%${dryRun ? " (dry-run)" : ""}`,
         );
         if (!dryRun) {
           await this.smartlead.updateCampaignSettings(campaign.id, body);
@@ -84,7 +72,7 @@ export class BounceAutopauseService {
     }
 
     console.log(
-      `[bounce-autopause] scanned=${result.scanned} under1k=${result.matched} already=${result.alreadySet} updated=${result.updated} errors=${result.errors.length}`,
+      `[bounce-autopause] scanned=${result.scanned} under1k=${result.matched} updated=${result.updated} errors=${result.errors.length}`,
     );
     return result;
   }

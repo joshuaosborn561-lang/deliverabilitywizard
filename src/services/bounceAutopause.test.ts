@@ -7,13 +7,10 @@ import { BounceAutopauseService } from "./bounceAutopause.js";
 
 function client(opts: {
   campaigns: Array<{ id: number; name: string; status?: string }>;
-  settings?: Record<number, unknown>;
   onUpdate?: (id: number, body: Record<string, unknown>) => void;
 }): SmartleadClient {
   return {
     listCampaigns: async () => opts.campaigns,
-    getCampaignSettings: async (id: number) =>
-      opts.settings?.[id] ?? { bounce_autopause_threshold: "7" },
     updateCampaignSettings: async (id: number, body: Record<string, unknown>) => {
       opts.onUpdate?.(id, body);
     },
@@ -32,10 +29,6 @@ describe("BounceAutopauseService", () => {
           { id: 3763802, name: "BCP Healthcare Over-1k (No Team)", status: "ACTIVE" },
           { id: 3815448, name: "Goliath Displacement L 501-1000", status: "ACTIVE" },
         ],
-        settings: {
-          3763800: { bounce_autopause_threshold: "7" },
-          3763799: { bounce_autopause_threshold: "20" },
-        },
         onUpdate: (id, body) => {
           wrote.push({ id, threshold: body.bounce_autopause_threshold });
         },
@@ -44,9 +37,11 @@ describe("BounceAutopauseService", () => {
 
     const result = await service.run({ dryRun: false });
     assert.equal(result.matched, 2);
-    assert.equal(result.alreadySet, 1);
-    assert.equal(result.updated, 1);
-    assert.deepEqual(wrote, [{ id: 3763800, threshold: "20" }]);
+    assert.equal(result.updated, 2);
+    assert.deepEqual(wrote, [
+      { id: 3763800, threshold: "20" },
+      { id: 3763799, threshold: "20" },
+    ]);
   });
 
   it("does not write in dry-run", async () => {

@@ -41,6 +41,38 @@ describe("UnpauseAfterSigQaService", () => {
     assert.ok(result.blocked.some((row) => row.includes("shell")));
   });
 
+  it("does not start a paused non-POC campaign even when signatures match (D82)", async () => {
+    const statuses: Array<[number, string]> = [];
+    const service = new UnpauseAfterSigQaService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 4, name: "Vasco - Service - Nissan", status: "PAUSED", client_id: 20 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "pat@vasco.com",
+            from_name: "Pat",
+            signature: "Pat\nVasco Warranty",
+            client_id: 20,
+            campaign_ids: [4],
+          },
+        ],
+        listClients: async () => [
+          { id: 20, name: "Vasco Warranty", logo: "Vasco Warranty" },
+        ],
+        updateCampaignStatus: async (id: number, status: string) => {
+          statuses.push([id, status]);
+        },
+      } as unknown as SmartleadClient,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statuses, []);
+    assert.ok(result.blocked.some((row) => row.includes("not a POC")));
+  });
+
   it("does not start when a leftover Peterson signature is still on the campaign", async () => {
     const statuses: Array<[number, string]> = [];
     const service = new UnpauseAfterSigQaService(

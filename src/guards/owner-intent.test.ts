@@ -1134,9 +1134,9 @@ describe("owner intent — D61 Vasco trim and client wipe", () => {
     );
     assert.deepEqual(
       defaults.fullSendClientPatterns,
-      ["vasco"],
+      [],
       stop(
-        "Vasco sends all remaining inboxes — no A/B sit (D61).",
+        "No client is a full-send exception (D82). D61's Vasco trim stays historical.",
         `FULL_SEND_CLIENT_PATTERNS is now ${defaults.fullSendClientPatterns.join(",")}.`,
       ),
     );
@@ -1485,6 +1485,41 @@ describe("owner intent — D54 dedicated canary fleet", () => {
   });
 });
 
+describe("owner intent — D83 canary warmup stays off on the 15m pass", () => {
+  it("D83: the health gap pass turns canary-fleet warmup off", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      settings,
+      /needsWarmupOff/,
+      stop(
+        "Mailbox settings turns canary warmup off (D83).",
+        "mailboxSettings.ts no longer disables canary warmup.",
+      ),
+    );
+    assert.match(
+      settings,
+      /warmup_enabled: false/,
+      stop(
+        "Canary warmup writes false, not true (D83).",
+        "mailboxSettings.ts no longer writes warmup_enabled false.",
+      ),
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /D83/,
+      stop(
+        "The 15-minute health loop is where canary warmup-off lives (D83).",
+        "index.ts no longer mentions D83 on the health gap pass.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D55 canaries off campaigns", () => {
   it("D55: canaries send campaign copy in tests and never join a campaign", async () => {
     const { readFile } = await import("node:fs/promises");
@@ -1573,43 +1608,29 @@ describe("owner intent — D56 paused pod-control shell", () => {
   });
 });
 
-describe("owner intent — D58 Goliath-only generics", () => {
-  it("D58: floor is half the client's inboxes; generics stay on Goliath", async () => {
-    const { clientInboxStaffFloor, allowsGenericStaff } = await import(
+describe("owner intent — D58 half-client floor", () => {
+  it("D58/D82: floor is half the client's inboxes; no named-client exception", async () => {
+    const { clientInboxStaffFloor, staffFloorForCampaign } = await import(
       "../lib/clientStaffFloor.js"
     );
     assert.equal(
       clientInboxStaffFloor(80),
       40,
       stop(
-        "Vasco's 80 client inboxes mean a 40-sender floor (D58).",
+        "80 client inboxes mean a 40-sender floor (D58).",
         `Half-inbox floor is now ${clientInboxStaffFloor(80)}.`,
       ),
     );
     assert.equal(
-      allowsGenericStaff({ name: "Goliath Displacement" }, "Goliath", ["goliath"]),
-      true,
-      stop(
-        "Goliath may still receive generics (D58).",
-        "allowsGenericStaff no longer matches Goliath.",
+      staffFloorForCampaign(
+        { client_id: 9, name: "Vasco - Service" },
+        new Map([["id:9", 40]]),
+        "Vasco Warranty",
       ),
-    );
-    assert.equal(
-      allowsGenericStaff({ name: "Vasco - Service" }, "Vasco Warranty", [
-        "goliath",
-      ]),
-      false,
+      20,
       stop(
-        "Non-Goliath campaigns are client-inbox only (D58).",
-        "allowsGenericStaff now treats Vasco as generic-eligible.",
-      ),
-    );
-    assert.deepEqual(
-      defaults.genericStaffNamePatterns,
-      ["goliath"],
-      stop(
-        "Only Goliath is on the generic-staff allowlist by default (D58).",
-        `GENERIC_STAFF_NAME_PATTERNS is now ${defaults.genericStaffNamePatterns.join(",")}.`,
+        "Vasco uses the same half-floor as everyone else (D82).",
+        "staffFloorForCampaign still special-cases Vasco.",
       ),
     );
 
@@ -1624,26 +1645,26 @@ describe("owner intent — D58 Goliath-only generics", () => {
     );
     assert.match(
       topUp,
-      /pullNonGoliathGenerics/,
+      /campaignMayTakeGenerics/,
       stop(
-        "Top-up pulls generics off every campaign that is not Goliath (D58).",
-        "campaignTopUp.ts no longer pulls non-Goliath generics.",
+        "Top-up uses POC or Slack approve for generics (D81/D82).",
+        "campaignTopUp.ts no longer uses campaignMayTakeGenerics.",
       ),
     );
     assert.match(
       topUp,
-      /D58 client-inbox only/,
+      /client-inbox only/,
       stop(
-        "Top-up will not restaff non-Goliath campaigns with generics (D58).",
-        "campaignTopUp.ts assigns generics to non-Goliath campaigns again.",
+        "Top-up will not restaff unapproved campaigns with generics (D82).",
+        "campaignTopUp.ts assigns generics without the POC/Slack gate.",
       ),
     );
     assert.match(
       fanOut,
-      /D58 generics stay on Goliath only/,
+      /campaignMayTakeGenerics/,
       stop(
-        "Fan-out must not put generics back on a non-Goliath client (D58).",
-        "clientFanOut.ts no longer skips generics for non-Goliath groups.",
+        "Fan-out uses the same POC or Slack-approve rule (D82).",
+        "clientFanOut.ts still special-cases Goliath generics.",
       ),
     );
   });
@@ -2292,6 +2313,88 @@ describe("owner intent — D79 no per-sender bounce pull", () => {
       stop(
         "Legacy mailbox pulls stay off (D51/D79).",
         "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D82 one rule for every client", () => {
+  it("D82: no Vasco exception; POC/Slack generics; two canary checks; shell is not a hide", async () => {
+    assert.deepEqual(
+      defaults.fullSendClientPatterns,
+      [],
+      stop(
+        "Nobody skips A/B rest or takes a full-count floor (D82).",
+        `FULL_SEND_CLIENT_PATTERNS is now ${defaults.fullSendClientPatterns.join(",")}.`,
+      ),
+    );
+    const { CAMPAIGN_CHECK_KINDS, isFirstCheckBlocking } = await import(
+      "../lib/campaignCheck.js"
+    );
+    assert.ok(
+      CAMPAIGN_CHECK_KINDS.includes("inbox_missing_known_good"),
+      stop(
+        "Hourly check requires each serving inbox on a known-good canary (D82).",
+        "inbox_missing_known_good is gone from campaign checks.",
+      ),
+    );
+    assert.equal(
+      isFirstCheckBlocking("inbox_missing_known_good"),
+      false,
+      stop(
+        "Missing known-good canaries do not fail the first-check (D81/D82).",
+        "inbox_missing_known_good now blocks first-check.",
+      ),
+    );
+    const { isExcludedOnlyMembership } = await import(
+      "../services/clientRest.js"
+    );
+    assert.equal(
+      isExcludedOnlyMembership(
+        [3841904],
+        new Map([[3841904, { id: 3841904, name: "Pod control shell" }]]),
+        [],
+      ),
+      false,
+      stop(
+        "An inbox only on the paused shell is still in the rest loop (D72/D82).",
+        "isExcludedOnlyMembership still treats the shell as excluded-only.",
+      ),
+    );
+    const unpause = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      unpause,
+      /isPocClient/,
+      stop(
+        "QA unpause is any POC, not the word Goliath (D82).",
+        "unpauseAfterSigQa.ts still gates on Goliath by name.",
+      ),
+    );
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/campaignCheck.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      check,
+      /livingKnownGoodEmails/,
+      stop(
+        "Campaign check reads living known-good canary coverage (D82).",
+        "campaignCheck.ts no longer checks per-inbox known-good canaries.",
+      ),
+    );
+    assert.match(
+      check,
+      /hasLivingUnwarmedCopyCanary/,
+      stop(
+        "Campaign check requires the unwarmed campaign-copy canary (D82).",
+        "campaignCheck.ts no longer checks the unwarmed copy canary.",
       ),
     );
   });

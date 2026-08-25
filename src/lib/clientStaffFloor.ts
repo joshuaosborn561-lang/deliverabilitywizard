@@ -10,8 +10,8 @@ import type { SmartleadCampaign } from "../types/index.js";
 import { isClientInbox } from "./clientInbox.js";
 
 /**
- * D58 — live staffable floor is half that client's own inboxes.
- * Vasco 80 → 40. Odd counts round down (Goliath 25 → 12).
+ * D58 / D82 — live staffable floor is half that client's own inboxes.
+ * Odd counts round down. No named-client exception (Vasco is not special).
  */
 export function clientInboxStaffFloor(clientInboxCount: number): number {
   if (!Number.isFinite(clientInboxCount) || clientInboxCount <= 0) return 0;
@@ -62,13 +62,9 @@ export function countClientInboxesByKey(
 export function staffFloorForCampaign(
   campaign: { name?: string | null; client_id?: number | null },
   clientInboxCounts: Map<string, number>,
-  clientName?: string | null,
-  fullSendPatterns: string[] = [],
+  _clientName?: string | null,
 ): number {
   const count =
     clientInboxCounts.get(clientCountKey(campaign.client_id)) ?? 0;
-  if (fullSendPatterns.length && allowsGenericStaff(campaign, clientName, fullSendPatterns)) {
-    return count;
-  }
   return clientInboxStaffFloor(count);
 }

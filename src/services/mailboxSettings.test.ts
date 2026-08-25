@@ -275,5 +275,66 @@ describe("MailboxSettingsService", () => {
     const result = await service.run({ dryRun: false, mode: "full" });
     assert.equal(warmupWrites, 0);
     assert.equal(result.warmupEnabled, 0);
+    assert.equal(result.warmupDisabled, 0);
+  });
+
+  it("turns warmup off on the canary fleet during the 15-minute gap pass (D83)", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-canary-off-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["canary-g.info"],
+      emails: ["g1@canary-g.info"],
+      googleDomain: "canary-g.info",
+      updatedAt: new Date().toISOString(),
+    });
+    const warmup: Array<{ id: number; enabled: boolean }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 3,
+          from_email: "g1@canary-g.info",
+          from_name: "Gale Canary",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Gale Canary\nCanary",
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 4,
+          from_email: "keeper@client.info",
+          from_name: "Keep Warm",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Keep Warm\nClient",
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [],
+      listCampaigns: async () => [],
+      updateEmailAccount: async () => {
+        throw new Error("gap pass should not rewrite matching volume/gap");
+      },
+      configureWarmup: async (id: number, settings: { warmup_enabled: boolean }) => {
+        warmup.push({ id, enabled: settings.warmup_enabled });
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.deepEqual(warmup, [{ id: 3, enabled: false }]);
+    assert.equal(result.warmupDisabled, 1);
+    assert.equal(result.warmupEnabled, 0);
   });
 });

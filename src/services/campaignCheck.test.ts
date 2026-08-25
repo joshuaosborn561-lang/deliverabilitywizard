@@ -30,6 +30,7 @@ describe("campaign check first-pass helpers", () => {
         { kind: "understaffed", detail: "short 10" },
         { kind: "missing_canary", detail: "no canary" },
         { kind: "no_placement_test", detail: "no test" },
+        { kind: "inbox_missing_known_good", detail: "inbox" },
       ]),
       true,
     );
@@ -201,6 +202,93 @@ describe("CampaignCheckService", () => {
     const hourly = await service.run({ mode: "hourly" });
     assert.equal(hourly.swept, 1);
     assert.equal(sequenceReads, 1, "hourly must not re-read sequences");
+    assert.ok(
+      hourly.findings[0]?.findings.some(
+        (finding) => finding.kind === "inbox_missing_known_good",
+      ),
+      "hourly must flag a serving inbox that is not on a known-good canary",
+    );
+  });
+
+  it("D82: hourly passes when the serving inbox is on a known-good canary and copy is on the unwarmed fleet", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPodControl({
+      id: "client:548611:B:0",
+      podId: "client:548611:B",
+      controlVersion: "v1",
+      spamTestId: "pc-1",
+      emails: ["aarav@client.com"],
+      createdAt: "2026-08-25T00:00:00.000Z",
+    });
+    const sl = {
+      listCampaigns: async () => [
+        {
+          id: 3815448,
+          name: "Goliath Displacement L 501-1000 ITDir",
+          status: "ACTIVE",
+          client_id: 548611,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 22,
+          from_email: "aarav@client.com",
+          from_name: "Aarav Sanchez",
+          signature: "Aarav Sanchez\nGoliath Cybersecurity",
+          client_id: 548611,
+          campaign_ids: [3815448],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [goliath, peterson],
+      getCampaignSequences: async () => [
+        {
+          seq_number: 1,
+          email_body: "<div>Hi</div><div>%signature%</div>",
+        },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      sl,
+      delivery([
+        {
+          id: "t-canary",
+          test_name: "Canary copy: #3815448 Goliath Displacement L",
+          status: "active",
+          every_days: 1,
+          campaign_id: 3815448,
+        },
+        {
+          id: "t-place",
+          test_name: "Goliath Displacement L",
+          status: "active",
+          every_days: 1,
+          campaign_id: 3815448,
+        },
+        {
+          id: "pc-1",
+          test_name: "Pod control: client:548611:B",
+          status: "active",
+          every_days: 1,
+        },
+      ]),
+      state,
+    );
+
+    const first = await service.run({ mode: "first" });
+    assert.equal(first.firstPassed, 1);
+    const hourly = await service.run({ mode: "hourly" });
+    assert.equal(
+      hourly.findings[0]?.findings.some(
+        (finding) =>
+          finding.kind === "inbox_missing_known_good" ||
+          finding.kind === "missing_canary",
+      ),
+      false,
+    );
   });
 
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {

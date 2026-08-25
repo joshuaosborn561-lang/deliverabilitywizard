@@ -57,7 +57,7 @@ export interface TopUpResult {
   skipped: string[];
   /** Senders removed from a campaign they were not branded for. */
   released: Array<{ campaignId: number; email: string }>;
-  /** D58 — generics taken off every campaign that is not Goliath. */
+  /** Generics taken off every campaign that is not POC or Slack-approved. */
   pulledGenerics: Array<{ campaignId: number; email: string }>;
   errors: string[];
 }
@@ -182,7 +182,6 @@ export class CampaignTopUpService {
                 id: campaign.client_id,
               })
             : "",
-          this.config.fullSendClientPatterns,
         ),
       ]),
     );
@@ -369,7 +368,7 @@ export class CampaignTopUpService {
 
     if (!needy.length) {
       console.log(
-        "[top-up] All managed campaigns at or above their D58 client-inbox floor",
+        "[top-up] All managed campaigns at or above their half-client-inbox floor",
       );
       return result;
     }
@@ -387,7 +386,7 @@ export class CampaignTopUpService {
           });
         }
         result.skipped.push(
-          `${campaign.id} ${campaign.name ?? ""} (D58 client-inbox only)`.trim(),
+          `${campaign.id} ${campaign.name ?? ""} (client-inbox only)`.trim(),
         );
         continue;
       }
@@ -725,7 +724,7 @@ export class CampaignTopUpService {
 
     if (input.result.pulledGenerics.length) {
       console.log(
-        `[top-up] D58 pulled ${input.result.pulledGenerics.length} generic membership(s) off non-Goliath campaigns`,
+        `[top-up] pulled ${input.result.pulledGenerics.length} generic membership(s) off campaigns that are not POC or Slack-approved`,
       );
     }
   }

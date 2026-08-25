@@ -18,6 +18,7 @@ import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import {
+  mailboxWarmupIsOn,
   needsMinTimeGap,
   readMessagePerDay,
   readMinTimeGapMins,
@@ -33,8 +34,10 @@ import type { StateStore } from "../state/store.js";
  * by InboxKit arrives on whatever default it happened to get. Nothing
  * reconciled them, so the fleet drifted.
  *
- * Gap + daily volume (D24/D30) run on every health pass. Signatures/warmup
- * stay on the slower full converge so a fleet rewrite cannot starve staffing.
+ * Gap + daily volume (D24/D30) run on every health pass. Canary-fleet
+ * warmup-off (D83) runs on that same pass. Signatures and everyone-else
+ * warmup stay on the slower full converge so a fleet rewrite cannot
+ * starve staffing.
  */
 
 export type MailboxSettingsMode = "gap" | "full";
@@ -47,6 +50,8 @@ export interface MailboxSettingsResult {
   minGapSet: number;
   signatureSet: number;
   warmupEnabled: number;
+  /** D83 — unwarmed canary fleet had warmup turned off. */
+  warmupDisabled: number;
   errors: string[];
 }
 
@@ -81,6 +86,7 @@ export class MailboxSettingsService {
       minGapSet: 0,
       signatureSet: 0,
       warmupEnabled: 0,
+      warmupDisabled: 0,
       errors: [],
     };
 
@@ -115,7 +121,9 @@ export class MailboxSettingsService {
 
     console.log(
       `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to ${target}/day, min gap ${targetGap}m` +
-        (mode === "full" ? ", signatures/warmup" : " (gap+volume; foreign-brand sigs)"),
+        (mode === "full"
+          ? ", signatures/warmup"
+          : " (gap+volume; foreign-brand sigs; canary warmup off)"),
     );
 
     let consecutiveFailures = 0;
@@ -133,6 +141,10 @@ export class MailboxSettingsService {
       let needsSignature = false;
       let desiredSig: string | null = null;
       let needsWarmup = false;
+      let needsWarmupOff = false;
+      const canary = this.store?.isCopyCanary(email) ?? false;
+      const warmupOn = mailboxWarmupIsOn(account);
+      if (canary && warmupOn) needsWarmupOff = true;
 
       const clientBrand = sendingBrandForAccount(
         account,
@@ -157,18 +169,21 @@ export class MailboxSettingsService {
         needsSignature =
           desiredSig != null && (account.signature ?? "") !== desiredSig;
 
-        const warmup = (account as { warmup_details?: { status?: string } | null })
-          .warmup_details;
-        const skipWarmup = this.store?.isCopyCanary(email) ?? false;
-        needsWarmup =
-          !skipWarmup &&
-          (!warmup || String(warmup.status ?? "").toUpperCase() !== "ACTIVE");
+        needsWarmup = !canary && !warmupOn;
       } else if (foreign && desiredSig && (account.signature ?? "") !== desiredSig) {
         // D74 — do not wait six hours to pull a Peterson line off a Goliath send.
         needsSignature = true;
       }
 
-      if (!needsLimit && !needsGap && !needsSignature && !needsWarmup) continue;
+      if (
+        !needsLimit &&
+        !needsGap &&
+        !needsSignature &&
+        !needsWarmup &&
+        !needsWarmupOff
+      ) {
+        continue;
+      }
 
       try {
         if (!dryRun && (needsLimit || needsGap || needsSignature)) {
@@ -186,6 +201,17 @@ export class MailboxSettingsService {
         if (needsLimit) result.sendLimitSet += 1;
         if (needsGap) result.minGapSet += 1;
         if (needsSignature) result.signatureSet += 1;
+
+        if (!dryRun && needsWarmupOff) {
+          await this.smartlead.configureWarmup(account.id, {
+            warmup_enabled: false,
+            total_warmup_per_day: this.config.warmupTotalPerDay,
+            daily_rampup: this.config.warmupDailyRampup,
+            reply_rate_percentage: this.config.warmupReplyRatePercentage,
+          });
+          await sleep(150);
+        }
+        if (needsWarmupOff) result.warmupDisabled += 1;
 
         if (mode === "full" && !dryRun && needsWarmup) {
           await this.smartlead.configureWarmup(account.id, {
@@ -214,7 +240,7 @@ export class MailboxSettingsService {
     }
 
     console.log(
-      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→${target}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s), ${result.errors.length} error(s)`,
+      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→${target}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) on, ${result.warmupDisabled} canary warmup(s) off, ${result.errors.length} error(s)`,
     );
     for (const e of result.errors.slice(0, 10)) {
       console.log(`[mailbox-settings]   error: ${e}`);

@@ -1683,3 +1683,69 @@ test do not fail the first-check.
 **Guards.** `enableCampaignCheck` / `pocClientNamePatterns`;
 `CampaignCheckService`; `campaignMayTakeGenerics`; owner-intent D81.
 
+## D82 — One rule for every client; two canaries
+
+**Decision.** Named-client exceptions from last week are dead. Vasco is
+not a full-send client. The live floor is **half that client's inboxes**
+for everyone, including Vasco (40 inboxes → 20). Client A/B rest applies
+to Vasco. `fullSendClientPatterns` defaults empty and is not a staffing
+rule. The one-shot Vasco trim to 40 and the GXA / MSRS / Nieto wipe
+(D61) stay historical.
+
+Generics: **POC** (`pocClientNamePatterns`) or Josh Slack-approved.
+Fan-out, one-client restore, top-up, and the campaign checker all use
+that. Unpause after signature QA is any **POC**, not the word Goliath.
+Goliath remains the current POC.
+
+The leftover floor of 50 is not used. Campaign audit and health use
+`staffFloorForCampaign` (always half). Smartlead bounce auto-pause stays
+off; leftover Under-1k / 20% knobs are not a write rule.
+
+Hourly campaign check:
+
+- Each **serving inbox** is on a living **known-good** canary (pod-control
+  test).
+- Each **ACTIVE campaign** has its **copy** on the **unwarmed fleet**
+  canary (`Canary copy: #id`).
+
+The paused shell is not "excluded-only" for rest. An on-week inbox that
+sits only on the shell is restored to that client's live campaigns.
+
+This supersedes D58's Goliath-only generics, D61's Vasco full-send /
+floor-40 exception, D77's Goliath-only unpause, and D51's leftover
+"3 canaries on the campaign" as a living rule (D54/D55 fleet is the
+unwarmed senders).
+
+**Why.** Josh (2026-08-25): Vasco is old special-case — if it conflicts
+with the rewrite, it goes. Do all of it. Each sending inbox on a
+known-good copy canary; each campaign's copy on unwarmed senders
+canary.
+
+**Tradeoff.** Vasco now sits half its 40 boxes. A campaign can look
+short against 20 instead of 40. Missing known-good coverage will show
+on the hourly sweep until pod-control tests exist for those inboxes.
+
+**Guards.** empty `fullSendClientPatterns`; `staffFloorForCampaign` has
+no full-send override; `campaignMayTakeGenerics` / `isPocClient` in
+fan-out, one-client, unpause; `inbox_missing_known_good` +
+`hasLivingUnwarmedCopyCanary`; `isExcludedOnlyMembership` ignores the
+shell; owner-intent D82.
+
+## D83 — Unwarmed canary fleet never has warmup on
+
+**Decision.** The dedicated copy-canary fleet stays **warmup off**. The
+15-minute health gap pass turns it off when Smartlead shows it on. Full
+mailbox-settings must never turn warmup on for those inboxes. This is
+the same loop as volume + 10-minute gap (D35), not the 6-hour full
+converge.
+
+**Why.** Josh (2026-08-25): "those unwarmed inboxes never have warmup
+on — make it part of the 15 minute pass."
+
+**Tradeoff.** Six extra warmup writes on a pass only when a canary
+drifted on. Accepted: they are research boxes; warmup on them ruins the
+unwarmed reading.
+
+**Guards.** `mailboxSettings` gap mode `configureWarmup(..., false)` for
+`isCopyCanary`; owner-intent D83.
+

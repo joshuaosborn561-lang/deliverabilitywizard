@@ -262,7 +262,6 @@ export class CampaignHealthService {
           c,
           clientInboxCounts,
           clientName,
-          this.config.fullSendClientPatterns,
         );
         return {
           campaignId: c.id,

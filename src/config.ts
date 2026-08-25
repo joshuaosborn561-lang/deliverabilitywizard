@@ -177,10 +177,13 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
-  /** Clients that send every remaining inbox — no A/B sit. Floor is the full count. */
+  /**
+   * Leftover D61 full-send list. D82: nobody is a full-send exception.
+   * Client wipe still finds Vasco via its own default patterns when empty.
+   */
   fullSendClientPatterns: z
     .string()
-    .default("vasco")
+    .default("")
     .transform((s) =>
       s
         .split(",")
@@ -555,7 +558,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableClientWipe: env.ENABLE_CLIENT_WIPE,
     vascoKeepCount: env.VASCO_KEEP_COUNT ?? "40",
     wipeClientPatterns: env.WIPE_CLIENT_PATTERNS ?? "gxa,msrs,nieto",
-    fullSendClientPatterns: env.FULL_SEND_CLIENT_PATTERNS ?? "vasco",
+    fullSendClientPatterns: env.FULL_SEND_CLIENT_PATTERNS ?? "",
     enablePodControls: env.ENABLE_POD_CONTROLS,
     podControlShellCampaignId: env.POD_CONTROL_SHELL_CAMPAIGN_ID ?? "0",
     enableIsolationRig: env.ENABLE_ISOLATION_RIG,

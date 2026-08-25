@@ -12,7 +12,7 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
-import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
+import { isPocClient } from "../lib/pocClient.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { signatureHay } from "../lib/signatureQa.js";
@@ -30,8 +30,9 @@ export interface UnpauseAfterSigQaResult {
 }
 
 /**
- * D77 — after senders on a PAUSED campaign match that campaign's assigned
- * client, START it. Shell, STOPPED, DRAFTED, and excluded campaigns stay down.
+ * D77 / D82 — after senders on a PAUSED **POC** campaign match that
+ * campaign's assigned client, START it. Shell, STOPPED, DRAFTED, excluded,
+ * and non-POC pauses stay down. Goliath is the current POC, not a name gate.
  */
 export class UnpauseAfterSigQaService {
   constructor(
@@ -83,14 +84,8 @@ export class UnpauseAfterSigQaService {
       const clientName = clientDisplayName(
         clients.find((client) => client.id === campaign.client_id),
       );
-      if (
-        !allowsGenericStaff(
-          campaign,
-          clientName,
-          this.config.genericStaffNamePatterns,
-        )
-      ) {
-        result.blocked.push(`#${campaign.id} ${name}: not a Goliath campaign`);
+      if (!isPocClient(`${name} ${clientName}`, this.config.pocClientNamePatterns)) {
+        result.blocked.push(`#${campaign.id} ${name}: not a POC campaign`);
         continue;
       }
       const expected = brandByClientId.get(campaign.client_id) ?? "";

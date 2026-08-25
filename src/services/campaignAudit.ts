@@ -20,6 +20,10 @@ import {
   sequenceCopyHay,
   signatureHay,
 } from "../lib/signatureQa.js";
+import {
+  countClientInboxesByKey,
+  staffFloorForCampaign,
+} from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -41,7 +45,9 @@ export interface CampaignAuditRow {
   senders: number;
   /** Connected + inboxing senders that count toward the D25 floor. */
   staffable: number;
-  /** Staffable senders still needed to reach the configured floor. */
+  /** Half this client's inboxes (D58 / D82). */
+  floor: number;
+  /** Staffable senders still needed to reach that floor. */
   shortBy: number;
   hasTest: boolean;
   /** Sending domains in use, commonest first — a campaign's brand identity. */
@@ -92,7 +98,7 @@ export class CampaignAuditService {
     private readonly state: StateStore,
   ) {}
 
-  async run(minSenders: number): Promise<CampaignAuditResult> {
+  async run(_legacyMinSenders?: number): Promise<CampaignAuditResult> {
     const [campaigns, accounts, clients] = await Promise.all([
       this.smartlead.listCampaigns(),
       this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
@@ -156,18 +162,33 @@ export class CampaignAuditService {
       console.warn("[campaign-audit] could not list tests", error);
     }
 
+    const clientInboxCounts = countClientInboxesByKey(
+      accounts as SmartleadAccountWithCampaigns[],
+      campaigns as SmartleadCampaign[],
+      clients,
+      this.config,
+      this.state,
+    );
+
     const rows: CampaignAuditRow[] = campaigns
       .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+      .filter((c) => !isPodControlShellCampaign(c))
       .map((c) => {
         const senders = senderCounts.get(c.id) ?? 0;
         const staffable = staffableCounts.get(c.id) ?? 0;
+        const clientName =
+          typeof c.client_id === "number"
+            ? clientDisplayName(clients.find((row) => row.id === c.client_id))
+            : "";
+        const floor = staffFloorForCampaign(c, clientInboxCounts, clientName);
         return {
           id: c.id,
           name: String(c.name ?? `campaign ${c.id}`),
           status: String(c.status ?? ""),
           senders,
           staffable,
-          shortBy: Math.max(0, minSenders - staffable),
+          floor,
+          shortBy: Math.max(0, floor - staffable),
           hasTest: tested.has(String(c.id)),
           domains: [...(domainsByCampaign.get(c.id) ?? new Map())]
             .map(([domain, count]) => ({ domain, count }))
@@ -213,7 +234,7 @@ export class CampaignAuditService {
     };
 
     console.log(
-      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under ${minSenders} staffable (short ${result.totalShortfall} total); ${signatureIssues.length} signature QA miss(es)`,
+      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their half-client floor (short ${result.totalShortfall} total); ${signatureIssues.length} signature QA miss(es)`,
     );
     for (const r of rows) {
       const brands = r.domains
@@ -221,7 +242,7 @@ export class CampaignAuditService {
         .map((d) => `${d.domain}:${d.count}`)
         .join(" ");
       console.log(
-        `[campaign-audit]   #${r.id} ${r.name} — staffable ${r.staffable}/${minSenders} (membership ${r.senders})${r.shortBy ? ` short ${r.shortBy}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
+        `[campaign-audit]   #${r.id} ${r.name} — staffable ${r.staffable}/${r.floor} (membership ${r.senders})${r.shortBy ? ` short ${r.shortBy}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
       );
     }
     const idle = [...idleByDomain.entries()].sort((a, b) => b[1] - a[1]);

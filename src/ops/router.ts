@@ -262,6 +262,9 @@ export function createOpsRouter(opts: {
           bounceThreshold: opts.config.bounceRateThreshold,
           bounceWarnThreshold: opts.config.bounceRateWarnThreshold,
           bounceMinSample: opts.config.minBounceSample,
+          bounceAutostop: opts.config.enableCampaignBounceAutostop
+            ? `${opts.config.bounceAutostopMidPercent}% after ${opts.config.bounceAutostopMinSent} / ${opts.config.bounceAutostopHighPercent}% after ${opts.config.bounceAutostopHighVolumeSent}`
+            : "off",
           clientRest: opts.config.enableClientRest,
           genericSendRestDays: opts.config.genericSendRestDays,
           espMixMinPercent: opts.config.campaignEspMixMinPercent,

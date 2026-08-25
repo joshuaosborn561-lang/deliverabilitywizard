@@ -1,6 +1,5 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
-import { desiredBounceAutopausePercent } from "../lib/bounceAutopause.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { sleep } from "../lib/http.js";
 
@@ -14,9 +13,9 @@ export interface BounceAutopauseResult {
 }
 
 /**
- * D78 — every campaign's Smartlead bounce auto-pause is 20% (Under-1k /
- * Goliath) or 7% (Over-1k and everyone else). Never 5%. Does not START
- * campaigns (D40 / D77 own resume).
+ * D80 — Smartlead bounce auto-pause stays off (100). Does not START
+ * campaigns. Prefer CampaignBounceAutostopService, which pauses on our
+ * bands then calls this converge so a 5/7/20 leftover cannot linger.
  */
 export class BounceAutopauseService {
   constructor(
@@ -38,7 +37,7 @@ export class BounceAutopauseService {
 
     for (const campaign of campaigns) {
       if (isPodControlShellCampaign(campaign)) continue;
-      const desired = desiredBounceAutopausePercent(String(campaign.name ?? ""));
+      const desired = this.config.smartleadBounceAutopauseOffPercent;
       try {
         console.log(
           `[bounce-autopause] ${campaign.name} #${campaign.id} → ${desired}%${dryRun ? " (dry-run)" : ""}`,

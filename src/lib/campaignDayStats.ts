@@ -25,9 +25,9 @@ export interface CampaignDayStats {
 export function statsFromAnalytics(raw: unknown): CampaignDayStats {
   const row =
     raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const sent = pickNumber(row, ["sent_count", "sent", "total_sent"]) ?? 0;
+  const sent = pickNumber(row, ["sent_count", "sent", "total_sent", "emails_sent", "unique_sent_count"]) ?? 0;
   const replies = pickNumber(row, ["reply_count", "replies", "positive_reply_count"]) ?? 0;
-  const bounces = pickNumber(row, ["bounce_count", "bounces"]) ?? 0;
+  const bounces = pickNumber(row, ["bounce_count", "bounces", "bounced_count", "total_bounced"]) ?? 0;
   const ooo = pickNumber(row, [
     "ooo_count",
     "out_of_office_count",

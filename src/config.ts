@@ -270,11 +270,27 @@ const ConfigSchema = z.object({
     .max(100)
     .default(7),
   /**
-   * D78 — Smartlead bounce auto-pause on Under-1k and Goliath campaigns.
-   * Over-1k and everyone else stay at 7%. Never 5%.
+   * Leftover D78 env. D80 does not write Smartlead 20/7 from campaign names.
+   * Kept so a Railway leftover does not crash boot.
    */
   under1kBounceAutopausePercent: z.coerce.number().min(1).max(100).default(20),
+  /**
+   * D80 — after our autostop has scanned, write Smartlead
+   * bounce_autopause_threshold to 100 (off). Not a rule to turn it on.
+   */
   enableBounceAutopauseConverge: boolFromEnv(true),
+  smartleadBounceAutopauseOffPercent: z.coerce
+    .number()
+    .min(1)
+    .max(100)
+    .default(100),
+  /** D80 — our campaign bounce pause. Smartlead's own autopause stays off. */
+  enableCampaignBounceAutostop: boolFromEnv(true),
+  cronBounceAutostop: z.string().default("*/10 * * * *"),
+  bounceAutostopMinSent: z.coerce.number().int().min(0).default(100),
+  bounceAutostopHighVolumeSent: z.coerce.number().int().min(0).default(500),
+  bounceAutostopMidPercent: z.coerce.number().min(0).max(100).default(20),
+  bounceAutostopHighPercent: z.coerce.number().min(0).max(100).default(7),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
   /**
@@ -549,6 +565,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     under1kBounceAutopausePercent:
       env.UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT ?? "20",
     enableBounceAutopauseConverge: env.ENABLE_BOUNCE_AUTOPAUSE_CONVERGE,
+    smartleadBounceAutopauseOffPercent:
+      env.SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT ?? "100",
+    enableCampaignBounceAutostop: env.ENABLE_CAMPAIGN_BOUNCE_AUTOSTOP,
+    cronBounceAutostop: env.CRON_BOUNCE_AUTOSTOP ?? "*/10 * * * *",
+    bounceAutostopMinSent: env.BOUNCE_AUTOSTOP_MIN_SENT ?? "100",
+    bounceAutostopHighVolumeSent: env.BOUNCE_AUTOSTOP_HIGH_VOLUME_SENT ?? "500",
+    bounceAutostopMidPercent: env.BOUNCE_AUTOSTOP_MID_PERCENT ?? "20",
+    bounceAutostopHighPercent: env.BOUNCE_AUTOSTOP_HIGH_PERCENT ?? "7",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
     enableLegacyMailboxPulls: env.ENABLE_LEGACY_MAILBOX_PULLS,

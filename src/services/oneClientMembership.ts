@@ -139,8 +139,19 @@ export class OneClientMembershipService {
       const onOwner = memberships.some(
         (row) => !row.shell && row.clientId === owner,
       );
+      const leftoverTagged =
+        generic &&
+        typeof genericOwnerId === "number" &&
+        typeof account.client_id === "number" &&
+        account.client_id !== genericOwnerId;
+      const needsGoliathIdentity =
+        generic &&
+        typeof genericOwnerId === "number" &&
+        account.client_id !== genericOwnerId;
+      // Shell-only leftover-tagged generics (Aarav after the first pass)
+      // must go back on live Goliath, not sit on the paused shell.
       const restore =
-        generic && !onOwner && pull.length
+        generic && !onOwner && (pull.length > 0 || leftoverTagged)
           ? activeOwnerCampaignIds.filter(
               (id) => !memberships.some((row) => row.campaignId === id),
             )
@@ -162,14 +173,10 @@ export class OneClientMembershipService {
             otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
           })
         : null;
-      const leftoverClient =
-        generic &&
-        typeof genericOwnerId === "number" &&
-        account.client_id !== genericOwnerId;
       const needsSignature =
         Boolean(desired) &&
         (account.signature ?? "") !== desired &&
-        (Boolean(foreign) || leftoverClient);
+        (Boolean(foreign) || needsGoliathIdentity);
 
       if (!pull.length && !restore.length && !needsSignature) continue;
       plans.push({

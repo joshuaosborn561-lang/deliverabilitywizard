@@ -110,4 +110,75 @@ describe("OneClientMembershipService", () => {
     assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
     assert.equal(updates[0]?.fields.client_id, 548611);
   });
+
+  it("puts a shell-only leftover-tagged generic back on live Goliath (D76)", async () => {
+    const added: Array<[number, number[]]> = [];
+    const removed: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        { id: 1, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+        { id: 8, name: "Goliath L1 AirPods", status: "STOPPED", client_id: 548611 },
+        { id: 9, name: "Pod control shell", status: "PAUSED", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "aaravsanchez@getoutreachdesk.info",
+          from_name: "Aarav Sanchez",
+          signature: "Aarav Sanchez\nRoofs by Peterson",
+          client_id: 548610,
+          campaign_ids: [9],
+        },
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 548610, name: "Peterson", logo: "Roofs by Peterson" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        added.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (campaignId: number, ids: number[]) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(added, [[1, [11]]]);
+    assert.deepEqual(removed, []);
+    assert.equal(result.restored[0]?.campaignId, 1);
+    assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
+  });
+
+  it("does not dump a shell-only extra with no client_id onto Goliath", async () => {
+    const added: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        { id: 1, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+        { id: 9, name: "Pod control shell", status: "PAUSED", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 22,
+          from_email: "hnorris@crosslaunchco.com",
+          from_name: "Harmony Norris",
+          signature: "Harmony Norris\nGoliath Cybersecurity",
+          campaign_ids: [9],
+        },
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        added.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(added, []);
+    assert.equal(result.restored.length, 0);
+  });
 });

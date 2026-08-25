@@ -5,8 +5,18 @@ import type { SmartleadEmailAccount } from "../types/index.js";
 import { emailDomainOf } from "./isolationDomain.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
 
+const droppedPoolDomains =
+  (
+    GENERIC_POOL_PLAN as {
+      expansion?: { droppedDomains?: string[] };
+    }
+  ).expansion?.droppedDomains ?? [];
+
 const POOL_PLAN_DOMAINS = new Set(
-  GENERIC_POOL_PLAN.domains.map((row) => row.domain.trim().toLowerCase()),
+  [
+    ...GENERIC_POOL_PLAN.domains.map((row) => row.domain),
+    ...droppedPoolDomains,
+  ].map((domain) => domain.trim().toLowerCase()),
 );
 
 /** True when the sending domain is in the InboxKit generic-pool plan. */

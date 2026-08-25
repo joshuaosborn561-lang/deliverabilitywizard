@@ -123,7 +123,8 @@ export type IsolationActionKind =
   | "buy_domains"
   | "buy_canary_fleet"
   | "swap_copy"
-  | "generic_backfill";
+  | "generic_backfill"
+  | "add_signature_tag";
 
 export type IsolationActionStatus =
   | "pending"

@@ -15,7 +15,9 @@ import {
 } from "../clients/smartdelivery.js";
 import { sleep } from "../lib/http.js";
 import { isClientInbox } from "../lib/clientInbox.js";
+import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { businessDate } from "./sendVolume.js";
+import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { overallSplit } from "./resultMonitor.js";
 import type { StateStore } from "../state/store.js";
 
@@ -246,6 +248,20 @@ export class ClientDayBriefService {
       `[client-day] ${date}: ${result.totalSent} sent across ${rows.length} client(s)${errors.length ? `; ${errors.length} error(s)` : ""}`,
     );
 
+    // D85 — untagged campaigns block signature QA and the tagger cannot
+    // guess (D77). The EOD brief is their daily human surface.
+    const untagged = campaigns
+      .filter(
+        (campaign) =>
+          typeof campaign.client_id !== "number" &&
+          !isPodControlShellCampaign(campaign) &&
+          !isTerminalCampaignStatus(campaign.status),
+      )
+      .map((campaign) => ({
+        id: campaign.id,
+        name: String(campaign.name ?? campaign.id),
+      }));
+
     if (options.alert !== false) {
       await this.slack.notifyClientDayBrief({
         ...result,
@@ -253,6 +269,10 @@ export class ClientDayBriefService {
         staffingShorts: options.endOfDay
           ? this.state.listLastStaffingShort()
           : undefined,
+        untaggedCampaigns: options.endOfDay ? untagged : undefined,
+        canaryFleetDownSince: options.endOfDay
+          ? this.state.getCanaryFleetDown()?.since ?? null
+          : null,
       });
     }
     return result;

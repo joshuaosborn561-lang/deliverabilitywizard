@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { findForeignBrand } from "./clientBrand.js";
-import { missingSignatureTag, signatureHay } from "./signatureQa.js";
+import {
+  appendSignatureTag,
+  missingSignatureTag,
+  signatureHay,
+} from "./signatureQa.js";
 
 describe("signature QA (D74)", () => {
   it("flags a Peterson brand on a Goliath hay", () => {
@@ -45,5 +49,60 @@ describe("signature QA (D74)", () => {
       missingSignatureTag("<div>open to it?</div><div>%signature%</div>"),
       false,
     );
+  });
+});
+
+describe("one-click signature fix (D85)", () => {
+  it("appends the tag to the variant missing it and changes nothing else", () => {
+    const body = "<div>Sean, that offer's still open</div>";
+    const { sequences, changed } = appendSignatureTag([
+      {
+        id: 1,
+        seq_number: 1,
+        sequence_variants: [
+          { id: 11, variant_label: "A", subject: "hey", email_body: body },
+          {
+            id: 12,
+            variant_label: "B",
+            subject: "hey",
+            email_body: "<div>open?</div><div>%signature%</div>",
+          },
+        ],
+      },
+    ]);
+    assert.deepEqual(changed, ["step 1 A"]);
+    assert.equal(
+      sequences[0]!.sequence_variants![0]!.email_body,
+      `${body}<br><br>%signature%`,
+    );
+    // The B variant already carries the tag — byte-for-byte untouched.
+    assert.equal(
+      sequences[0]!.sequence_variants![1]!.email_body,
+      "<div>open?</div><div>%signature%</div>",
+    );
+    // Subjects are never edited.
+    assert.equal(sequences[0]!.sequence_variants![0]!.subject, "hey");
+  });
+
+  it("fixes a bare sequence body and skips empty ones", () => {
+    const { sequences, changed } = appendSignatureTag([
+      { id: 1, seq_number: 1, email_body: "<div>quick one</div>" },
+      { id: 2, seq_number: 2, email_body: "" },
+    ]);
+    assert.deepEqual(changed, ["step 1"]);
+    assert.equal(
+      sequences[0]!.email_body,
+      "<div>quick one</div><br><br>%signature%",
+    );
+    assert.equal(sequences[1]!.email_body, "");
+  });
+
+  it("is append-only: the original copy survives verbatim", () => {
+    const body = "<p>Line one</p><p>Aarav Sanchez, Goliath</p>";
+    const { sequences } = appendSignatureTag([
+      { id: 1, seq_number: 3, email_body: body },
+    ]);
+    assert.ok(sequences[0]!.email_body!.startsWith(body));
+    assert.ok(sequences[0]!.email_body!.endsWith("%signature%"));
   });
 });

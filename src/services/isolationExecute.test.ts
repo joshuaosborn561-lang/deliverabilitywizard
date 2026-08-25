@@ -111,6 +111,98 @@ describe("IsolationExecuteService", () => {
     assert.match(result.message, /getcrosslaunchco\.info/);
   });
 
+  it("an approved signature ask appends the tag and writes nothing else (D85)", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-exec-sig-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "%signature% missing on Acme",
+      proof: "step 1 A is missing %signature%",
+      detail: { campaignId: 42, campaignName: "Acme" },
+    });
+    state.upsertIsolationAction(action);
+    const body = "<div>Sean, that offer's still open</div>";
+    let written: unknown = null;
+    const svc = new IsolationExecuteService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        getCampaignSequences: async () => [
+          {
+            id: 1,
+            seq_number: 1,
+            sequence_variants: [
+              { id: 11, variant_label: "A", subject: "hey", email_body: body },
+            ],
+          },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: unknown) => {
+          written = sequences;
+        },
+      } as never,
+      { send: async () => undefined } as never,
+      state,
+      { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    // Operator tier: Cayden may approve a copy-safe signature append.
+    const result = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(state.getIsolationAction(action.id)?.status, "executed");
+    const sequences = written as Array<{
+      sequence_variants: Array<{ email_body: string; subject: string }>;
+    }>;
+    assert.ok(sequences);
+    assert.equal(
+      sequences[0]!.sequence_variants[0]!.email_body,
+      `${body}<br><br>%signature%`,
+    );
+    assert.equal(sequences[0]!.sequence_variants[0]!.subject, "hey");
+  });
+
+  it("a signature ask on already-tagged copy writes nothing", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-exec-sig-noop-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "%signature% missing on Acme",
+      proof: "stale finding",
+      detail: { campaignId: 43, campaignName: "Acme" },
+    });
+    state.upsertIsolationAction(action);
+    let wrote = false;
+    const svc = new IsolationExecuteService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        getCampaignSequences: async () => [
+          {
+            id: 1,
+            seq_number: 1,
+            email_body: "<div>open?</div><div>%signature%</div>",
+          },
+        ],
+        updateCampaignSequences: async () => {
+          wrote = true;
+        },
+      } as never,
+      { send: async () => undefined } as never,
+      state,
+      { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const result = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(wrote, false);
+    assert.equal(state.getIsolationAction(action.id)?.status, "executed");
+  });
+
   it("Josh or Cayden can deny a word swap without editing copy", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-deny-${process.pid}-${Date.now()}.json`,

@@ -48,7 +48,6 @@ import { ClientFanOutService } from "./services/clientFanOut.js";
 import { OneClientMembershipService } from "./services/oneClientMembership.js";
 import { CampaignClientTagService } from "./services/campaignClientTag.js";
 import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
-import { BounceAutopauseService } from "./services/bounceAutopause.js";
 import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
 import { parseSchedules } from "./services/sendVolume.js";
@@ -371,7 +370,9 @@ async function main(): Promise<void> {
   );
   const campaignClientTag = new CampaignClientTagService(config, smartlead);
   const unpauseAfterSigQa = new UnpauseAfterSigQaService(config, smartlead);
-  const bounceAutopause = new BounceAutopauseService(config, smartlead);
+  // D85 — the standalone BounceAutopauseService is retired. Autostop owns the
+  // Smartlead autopause write (write-on-drift, D84); a second blind writer
+  // was how the key starved into 429s.
   const campaignBounceAutostop = new CampaignBounceAutostopService(
     config,
     smartlead,
@@ -594,6 +595,12 @@ async function main(): Promise<void> {
       .map(([kind, n]) => `${kind}=${n}`)
       .join(" ");
     console.log(`[canon] open findings: ${summary || "none"}`);
+    const fleetDown = state.getCanaryFleetDown();
+    if (fleetDown) {
+      console.warn(
+        `[canon] canary fleet DOWN since ${fleetDown.since} (${fleetDown.fleetSize} known email(s), 0 connected) — placement measurement is blind`,
+      );
+    }
     const now = Date.now();
     for (const [name, row] of Object.entries(state.listStageHealth())) {
       const lastOk = row.lastOkAt ? Date.parse(row.lastOkAt) : null;
@@ -1207,6 +1214,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (kind === "retire_domain") return "Retire this domain";
     if (kind === "swap_copy") return "Make the changes";
     if (kind === "generic_backfill") return "Allow generics";
+    if (kind === "add_signature_tag") return "Add %signature%";
     return kind;
   };
 
@@ -1578,6 +1586,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       ok: true,
       service: "deliverabilitywizard",
       canonFindings,
+      canaryFleetDown: s.canaryFleetDown ?? null,
       stages,
       secretsConfigured: secretsReady,
       remediationEnabled: config.enableRemediation,
@@ -1753,11 +1762,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
       if (mode === "bounce-autostop" || mode === "bounce-autopause" || mode === "bounce-threshold") {
         assertRuntimeSecrets(config);
-        if (mode === "bounce-autopause" || mode === "bounce-threshold") {
-          const result = await bounceAutopause.run();
-          res.json({ ok: true, mode: "bounce-autopause", result });
-          return;
-        }
+        // D85 — one bounce writer. The old aliases run the same autostop
+        // (its converge already keeps Smartlead autopause off, D80/D84).
         const result = await runBounceAutostop();
         res.json({ ok: true, mode: "bounce-autostop", result });
         return;

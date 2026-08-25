@@ -1804,3 +1804,59 @@ terminal statuses and does not rewrite converged campaigns;
 `removeCampaignCheck` on terminal; `stageHealth` on `/health`;
 owner-intent D84.
 
+---
+
+## D85 — Every standing finding gets an owner; one bounce writer; one fleet fact
+
+**Decision.** A finding the sweep reports forever with no path to zero is
+treated as a bug in the sweep. Specifically:
+
+- **`missing_signature_tag` gets a one-tap fixer.** The checker posts an
+  *Add %signature%* Slack ask (`add_signature_tag`, approvable by Josh or
+  Cayden like a word swap). Approval appends `%signature%` to the steps
+  missing it via `appendSignatureTag` — append-only by construction; the
+  rest of the copy is written back byte-for-byte, subjects untouched.
+  Re-asks are throttled: never while pending, not within 24h of an
+  execute, not within 7 days of a deny.
+- **`missing_client_tag` the tagger cannot close is escalated, not
+  silently skipped.** D77 forbids guessing a client from the name, so
+  campaigns with no unique match are named on the end-of-day brief until
+  a human tags them in Smartlead.
+- **A dead unwarmed-canary fleet is ONE fact.** Zero connected fleet
+  mailboxes used to produce `canary_inactive` + `missing_canary` on every
+  ACTIVE campaign (48+48 findings for one root cause). It is now a single
+  fleet-level record (`canaryFleetDown` in state, on `/health`, one
+  `[canon]` warn, one EOD line). Per-campaign canary checks resume
+  automatically the moment the fleet has a connected mailbox. This does
+  not weaken D82 — the two-canary rule is enforced identically whenever a
+  canary can actually exist.
+- **The standalone `BounceAutopauseService` is retired.** The D80/D84
+  autostop loop is the only Smartlead autopause writer (write-on-drift).
+  The old `/run?mode=bounce-autopause` aliases run the autostop.
+- **One-off production scripts are archived** (`scripts/archive/`), not
+  left lying around as an alternative to the sweep.
+
+Also fixed here: the EOD brief accepted `staffingShorts` but never
+rendered them — the D64 staffing picture was silently dropped from Slack.
+It renders now, in plain English.
+
+**Why.** Josh (2026-08-25), after the D84 rebuild: "Do what you think is
+best" on the keep-vs-teardown evaluation, whose verdict was: keep the
+meeting machine, close the findings that stop sends, cut the duplicate
+writers. The live scoreboard showed 13 `missing_signature_tag` findings
+holding six campaigns in first-check jail with no one assigned, 3
+campaigns unmatchable by the tagger and skipped in silence, and 96 canary
+findings that were one unplugged fleet.
+
+**Tradeoff.** The signature fixer can put `%signature%` at the end of a
+body where a human might have placed it mid-copy — accepted, since the
+alternative was campaigns silently not sending; the tag placement can be
+hand-tuned later without re-blocking QA. Fleet-down means per-campaign
+canary state is not tracked during the outage — accepted, it was
+untrackable anyway with zero canaries.
+
+**Guards.** `appendSignatureTag` is append-only; campaign check asks
+`add_signature_tag` on the finding; fleet-down produces no per-campaign
+canary findings and sets `canaryFleetDown`; `services/bounceAutopause`
+does not exist and index routes the old aliases to autostop; the EOD
+brief renders untagged campaigns and staffing shorts; owner-intent D85.

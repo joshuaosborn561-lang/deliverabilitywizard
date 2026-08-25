@@ -92,7 +92,6 @@ const ConfigSchema = z.object({
   minSameEspSamples: z.coerce.number().int().positive().default(3),
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
-  /** Pull a sender off campaigns above this bounce rate (percent). */
   /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
   /**
@@ -254,15 +253,16 @@ const ConfigSchema = z.object({
     .string()
     .default("")
     .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
+  /** Leftover D5 reading. D79 retired the per-sender pull; do not treat this as live. */
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
   /**
-   * D41 — Slack/investigate warn below the 5% pull. Does not rotate.
-   * D5's bounceRateThreshold stays the sender-pull line.
+   * D41 — Slack/investigate warn. Does not rotate.
+   * D79 retired D5's per-sender 5%/50 pull; this 5% is a leftover reading.
    */
   bounceRateWarnThreshold: z.coerce.number().min(0).max(100).default(2),
   /**
    * Aggregate sender bounce on a PAUSED campaign that triggers investigation
-   * (D29). Separate from per-sender rotation (bounceRateThreshold).
+   * (D29). Not a live per-sender pull (D79).
    */
   campaignBounceInvestigateThreshold: z.coerce
     .number()
@@ -278,8 +278,8 @@ const ConfigSchema = z.object({
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
   /**
-   * D51 — bounce >5%/50 is a Slack/investigate reading, not a live pull.
-   * Default off. Placement pull is already behind enableRemediation (false).
+   * D51 / D79 — there is no per-sender bounce pull. Default off.
+   * Placement pull is already behind enableRemediation (false).
    */
   enableBounceRotation: boolFromEnv(false),
   /**

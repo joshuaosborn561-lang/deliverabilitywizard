@@ -596,7 +596,7 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 
-  it("D41: bounce warn is 2%; pull stays 5%; paused investigate stays 7%", () => {
+  it("D41/D79: bounce warn is 2%; no per-sender pull; paused investigate stays 7%", () => {
     assert.equal(
       defaults.bounceRateWarnThreshold,
       2,
@@ -606,11 +606,11 @@ describe("owner intent — D41 beanstalk rotation", () => {
       ),
     );
     assert.equal(
-      defaults.bounceRateThreshold,
-      5,
+      defaults.enableBounceRotation,
+      false,
       stop(
-        "Senders above 5% bounce are still rotated out (D5).",
-        `Bounce pull is now ${defaults.bounceRateThreshold}%.`,
+        "D5's per-sender 5%/50 pull is retired (D79).",
+        "ENABLE_BOUNCE_ROTATION now defaults on.",
       ),
     );
     assert.equal(
@@ -2162,6 +2162,27 @@ describe("owner intent — D78 campaign bounce auto-pause", () => {
       stop(
         "Health converges campaign bounce auto-pause (D78).",
         "index.ts no longer calls bounceAutopause.run.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D79 no per-sender bounce pull", () => {
+  it("D79: D5's 5%/50 pull stays off; campaign auto-pause is the bounce control", () => {
+    assert.equal(
+      defaults.enableBounceRotation,
+      false,
+      stop(
+        "There is no per-sender bounce pull (D79).",
+        "ENABLE_BOUNCE_ROTATION now defaults on.",
+      ),
+    );
+    assert.equal(
+      defaults.enableLegacyMailboxPulls,
+      false,
+      stop(
+        "Legacy mailbox pulls stay off (D51/D79).",
+        "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
       ),
     );
   });

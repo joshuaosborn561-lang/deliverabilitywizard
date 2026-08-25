@@ -97,12 +97,15 @@ enabled.
 
 ## Rotation thresholds
 
-**D51 — kill-only pull.** Placement below 80% same-ESP, bounce above 5%/50,
-and the warmup / HOLD-UNTIL gate do **not** pull a mailbox off an ACTIVE
-campaign. Those numbers stay isolation readings and logs. The only automatic
-live removal is Josh killing that mailbox / retiring its domain; health
-backfills to 50. Never use the blended / all-ESP SmartDelivery score as a
-rotation signal (D32). Bounce at 2% is a log, not a Slack (D71).
+**D51 / D79 — kill-only pull.** Placement below 80% same-ESP and the warmup
+/ HOLD-UNTIL gate do **not** pull a mailbox off an ACTIVE campaign. There
+is no per-sender bounce pull — D5's 5% after 50 sends is retired. Those
+numbers stay isolation readings and logs. Live bounce control is Smartlead
+campaign auto-pause: 20% Under-1k and Goliath, 7% everyone else (D78).
+The only automatic live removal is Josh killing that mailbox / retiring
+its domain; health backfills to 50. Never use the blended / all-ESP
+SmartDelivery score as a rotation signal (D32). Bounce at 2% is a log,
+not a Slack (D71).
 
 Each ACTIVE campaign gets a SmartDelivery **canary-copy test** from the
 dedicated D54/D55 fleet (2 domains, 3 inboxes each, one Google and one

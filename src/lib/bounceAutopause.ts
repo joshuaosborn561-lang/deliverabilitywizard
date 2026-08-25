@@ -5,6 +5,9 @@
  * Never leave Smartlead's 5% default — that paused a Goliath campaign
  * that should have stayed up.
  *
+ * D79 — this is the live bounce control. There is no per-sender 5%/50
+ * pull underneath.
+ *
  * Under-1k / Over-1k are name matches only. Do not infer them from
  * company-size bands like 501-1000.
  */

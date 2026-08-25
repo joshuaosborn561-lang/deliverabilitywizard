@@ -1571,3 +1571,36 @@ that band is large enough that 7% is a real problem.
 **Guards.** `desiredBounceAutopausePercent`; `BounceAutopauseService`;
 owner-intent D78.
 
+---
+
+## D79 — No per-sender bounce pull
+
+**Decision.** D5's per-sender pull (bounce above 5% after 50 sends) is
+retired. Do not keep it as a standing live rule. D51 already defaulted
+`ENABLE_BOUNCE_ROTATION` off; D78's leftover sentence "Per-sender pull
+stays 5% after 50 sends (D5)" is superseded here.
+
+Bounce control on live campaigns is Smartlead `bounce_autopause_threshold`
+(D78): **20%** Under-1k and Goliath, **7%** everyone else. That pauses
+the campaign; it does not bench one mailbox.
+
+Unchanged:
+- D29 paused-campaign investigate at 7% (may rotate worst bouncers on an
+  already-PAUSED campaign)
+- D51 kill-only: the only automatic live removal is Josh killing a mailbox
+- `enableBounceRotation` / `enableLegacyMailboxPulls` stay **false**
+- 5% remains a leftover reading on the disabled path, not a pull trigger
+- The 50-send sample floor still applies where a bounce rate is treated
+  as evidence (D29)
+
+**Why.** Josh (2026-08-25): "delete this rule that is legacy Per-sender
+pull stays 5% after 50 sends." Campaign auto-pause is the bounce rule
+now. Leaving D5 written as live made the 20/7 campaign write look like
+it still had a second pull underneath.
+
+**Tradeoff.** A single mailbox can bounce hard on a live campaign until
+the campaign hits 7% or 20% aggregate. Accepted: D51 already stopped
+benching on that signal, and the leftover rule was the confusing one.
+
+**Guards.** `enableBounceRotation` false; owner-intent D79.
+

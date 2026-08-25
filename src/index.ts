@@ -668,8 +668,9 @@ async function main(): Promise<void> {
         }
       }
 
-      // D30/D35: gap + daily volume every health pass. Full signature/warmup
-      // converge stays throttled so it cannot starve the 15-minute staffing loop.
+      // D30/D35/D83: gap + daily volume + canary warmup-off every health pass.
+      // Full signature/everyone-else warmup stays throttled so it cannot
+      // starve the 15-minute staffing loop.
       let mailboxGapResult: unknown = null;
       let mailboxSettingsResult: unknown = null;
       if (config.enforceMailboxSettings) {

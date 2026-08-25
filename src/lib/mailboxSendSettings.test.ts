@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  mailboxWarmupIsOn,
   needsMinTimeGap,
   readMinTimeGapMins,
 } from "./mailboxSendSettings.js";
@@ -20,5 +21,12 @@ describe("mailboxSendSettings", () => {
       needsMinTimeGap({ time_to_wait_in_mins: "10" } as never, 10),
       false,
     );
+  });
+
+  it("treats ACTIVE warmup_details as on", () => {
+    assert.equal(mailboxWarmupIsOn({ warmup_details: { status: "ACTIVE" } }), true);
+    assert.equal(mailboxWarmupIsOn({ warmup_details: { status: "paused" } }), false);
+    assert.equal(mailboxWarmupIsOn({ warmup_details: null }), false);
+    assert.equal(mailboxWarmupIsOn({}), false);
   });
 });

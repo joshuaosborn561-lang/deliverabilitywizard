@@ -93,7 +93,7 @@ on the other campaigns for that client.
 
 Warmup stays **on for every mailbox** (mailbox-settings converge), except
 the dedicated D54 canary fleet — those six boxes never have warmup
-enabled.
+enabled. The 15-minute gap pass turns it back off if it drifted on (D83).
 
 ## Rotation thresholds
 

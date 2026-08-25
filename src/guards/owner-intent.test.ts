@@ -1485,6 +1485,41 @@ describe("owner intent — D54 dedicated canary fleet", () => {
   });
 });
 
+describe("owner intent — D83 canary warmup stays off on the 15m pass", () => {
+  it("D83: the health gap pass turns canary-fleet warmup off", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      settings,
+      /needsWarmupOff/,
+      stop(
+        "Mailbox settings turns canary warmup off (D83).",
+        "mailboxSettings.ts no longer disables canary warmup.",
+      ),
+    );
+    assert.match(
+      settings,
+      /warmup_enabled: false/,
+      stop(
+        "Canary warmup writes false, not true (D83).",
+        "mailboxSettings.ts no longer writes warmup_enabled false.",
+      ),
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /D83/,
+      stop(
+        "The 15-minute health loop is where canary warmup-off lives (D83).",
+        "index.ts no longer mentions D83 on the health gap pass.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D55 canaries off campaigns", () => {
   it("D55: canaries send campaign copy in tests and never join a campaign", async () => {
     const { readFile } = await import("node:fs/promises");

@@ -1731,3 +1731,21 @@ fan-out, one-client, unpause; `inbox_missing_known_good` +
 `hasLivingUnwarmedCopyCanary`; `isExcludedOnlyMembership` ignores the
 shell; owner-intent D82.
 
+## D83 — Unwarmed canary fleet never has warmup on
+
+**Decision.** The dedicated copy-canary fleet stays **warmup off**. The
+15-minute health gap pass turns it off when Smartlead shows it on. Full
+mailbox-settings must never turn warmup on for those inboxes. This is
+the same loop as volume + 10-minute gap (D35), not the 6-hour full
+converge.
+
+**Why.** Josh (2026-08-25): "those unwarmed inboxes never have warmup
+on — make it part of the 15 minute pass."
+
+**Tradeoff.** Six extra warmup writes on a pass only when a canary
+drifted on. Accepted: they are research boxes; warmup on them ruins the
+unwarmed reading.
+
+**Guards.** `mailboxSettings` gap mode `configureWarmup(..., false)` for
+`isCopyCanary`; owner-intent D83.
+

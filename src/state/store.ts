@@ -23,6 +23,7 @@ import {
   type DomainControlHistoryRecord,
 } from "./isolationState.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
+import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -208,6 +209,8 @@ export interface AppState {
   clientWipeAt: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
+  /** D80 — first-seen campaign audit + hourly sweep records. */
+  campaignChecks: Record<string, CampaignCheckRecord>;
 }
 
 export interface BugRemediationRecord {
@@ -312,6 +315,7 @@ const EMPTY_STATE: AppState = {
   unhealthyResetAt: null,
   clientWipeAt: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
+  campaignChecks: {},
 };
 
 export class StateStore {
@@ -357,6 +361,7 @@ export class StateStore {
         unhealthyResetAt: parsed.unhealthyResetAt ?? null,
         clientWipeAt: parsed.clientWipeAt ?? null,
         isolation: normalizeIsolationState(parsed.isolation),
+        campaignChecks: parsed.campaignChecks ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -902,6 +907,18 @@ export class StateStore {
 
   setLastMailboxSettingsAt(iso: string): void {
     this.state.lastMailboxSettingsAt = iso;
+  }
+
+  getCampaignCheck(campaignId: number): CampaignCheckRecord | undefined {
+    return this.state.campaignChecks[String(campaignId)];
+  }
+
+  upsertCampaignCheck(record: CampaignCheckRecord): void {
+    this.state.campaignChecks[String(record.campaignId)] = record;
+  }
+
+  listCampaignChecks(): CampaignCheckRecord[] {
+    return Object.values(this.state.campaignChecks);
   }
 
   markPendingResume(record: PendingResumeRecord): void {

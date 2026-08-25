@@ -114,6 +114,12 @@ const ConfigSchema = z.object({
    */
   enableCampaignHealth: boolFromEnv(true),
   /**
+   * D80 — first-seen campaign audit + hourly sweep (pods, sigs, tags).
+   * Does not Slack, START, import leads, or spend.
+   */
+  enableCampaignCheck: boolFromEnv(true),
+  cronCampaignCheck: z.string().default("0 * * * *"),
+  /**
    * D39 — separate SmartDelivery tests for held/pulled mailboxes (off campaigns).
    */
   enableHeldPlacementTests: boolFromEnv(true),
@@ -506,6 +512,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     genericStaffNamePatterns: env.GENERIC_STAFF_NAME_PATTERNS ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
+    enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,
+    cronCampaignCheck: env.CRON_CAMPAIGN_CHECK ?? "0 * * * *",
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
     enableClientRest: env.ENABLE_CLIENT_REST,
     enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,

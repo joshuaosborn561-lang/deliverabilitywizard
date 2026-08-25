@@ -131,6 +131,19 @@ every 15m; Measure on the slower monitor.
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
 
+## Campaign checks (D80)
+
+A new campaign id gets a **first-check** on the next health pass (15 minutes)
+against the standing rules: client tag, bounce auto-pause 20/7, mailbox
+signatures, `%signature%` in the sequence, no foreign brand in copy,
+one-client membership, generics only on Goliath, pod-control shell stays
+paused. It stays on that first-check until it passes.
+
+After it passes, an **hourly sweep** watches pod/shell, mailbox signatures,
+client tag, one-client, generics, and — on ACTIVE campaigns — staffing and
+a placement test. Logs are `[campaign-check]`. This does not Slack (D71),
+START a campaign, import leads, spend, or pull a mailbox.
+
 ## When setting up a campaign
 
 Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):

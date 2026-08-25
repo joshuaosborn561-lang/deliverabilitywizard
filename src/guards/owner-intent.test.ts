@@ -2167,6 +2167,65 @@ describe("owner intent — D78 campaign bounce auto-pause", () => {
   });
 });
 
+describe("owner intent — D80 new-campaign audit + hourly sweep", () => {
+  it("D80: first-seen check is on; hourly cron is on the hour; it does not Slack or START", async () => {
+    assert.equal(
+      defaults.enableCampaignCheck,
+      true,
+      stop(
+        "New campaigns are first-checked, then swept hourly (D80).",
+        "ENABLE_CAMPAIGN_CHECK now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.cronCampaignCheck,
+      "0 * * * *",
+      stop(
+        "Campaign sweeps run every hour (D80).",
+        `Campaign-check cron is now ${defaults.cronCampaignCheck}.`,
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /campaignCheck\.run\(\{\s*mode:\s*"first"/,
+      stop(
+        "Health first-checks a newly seen campaign (D80).",
+        "index.ts no longer calls campaignCheck.run first mode.",
+      ),
+    );
+    assert.match(
+      index,
+      /cronCampaignCheck/,
+      stop(
+        "The hourly campaign sweep is scheduled (D80).",
+        "index.ts no longer schedules cronCampaignCheck.",
+      ),
+    );
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      check,
+      /updateCampaignStatus/,
+      stop(
+        "The campaign checker does not START or PAUSE a campaign (D40/D80).",
+        "campaignCheck.ts now writes campaign status.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
+      /slack\./i,
+      stop(
+        "Campaign checks stay in logs (D71/D80).",
+        "campaignCheck.ts now Slacks.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D79 no per-sender bounce pull", () => {
   it("D79: D5's 5%/50 pull stays off; campaign auto-pause is the bounce control", () => {
     assert.equal(

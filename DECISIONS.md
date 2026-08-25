@@ -1604,3 +1604,38 @@ benching on that signal, and the leftover rule was the confusing one.
 
 **Guards.** `enableBounceRotation` false; owner-intent D79.
 
+---
+
+## D80 — First-seen campaign audit, then hourly sweeps
+
+**Decision.** When a campaign id is new to us, run a first-check against
+the standing rules (client tag, bounce auto-pause 20/7, signatures,
+`%signature%` in the sequence, no foreign brand in copy, one-client
+membership, generics only on Goliath, pod-control shell stays paused).
+It stays on that first-check until it passes. After it passes, an
+hourly sweep watches the living bits: pod/shell, mailbox signatures,
+client tag, one-client, generics, and — on ACTIVE campaigns — staffing
+and a placement test.
+
+Health (15 minutes) discovers new campaigns and retries a failed first
+check after the identity writes (client tag, bounce converge, one-client,
+sig rewrite). `CRON_CAMPAIGN_CHECK` (`0 * * * *`) is the hourly sweep.
+
+This does **not** Slack (D71). It does **not** START a campaign, import
+leads, spend, write DNS, edit sequence copy, or pull a mailbox. Goliath
+unpause after a clean signature QA stays D77. Shell stays paused (D56).
+
+**Why.** Josh (2026-08-25): "when you see a new campaign please audit it
+against our rules. make this a recurring thing that happens whenever
+you see a new campaign. after it passes the first check, you can just
+check it as normal... those check sweeps should happen every hour
+checking for pods, sigs, etc." Replyhandler is not the owner of this.
+
+**Tradeoff.** A brand-new ACTIVE campaign can send for up to 15 minutes
+before the first-check sees it. Accepted: that is the health cadence.
+Staffing / missing-test on the hourly sweep do not fail the first-check,
+so a thin new campaign can still move to the normal watch.
+
+**Guards.** `enableCampaignCheck` / `cronCampaignCheck`;
+`CampaignCheckService`; owner-intent D80.
+

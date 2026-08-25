@@ -373,10 +373,7 @@ export class CampaignHealthService {
       released: topUp?.released.length ?? 0,
     });
 
-    try {
-      await this.slack.send(lines.join("\n"));
-    } catch (error) {
-      console.warn("[health] Slack notify failed", error);
-    }
+    // D71 — staffing movements stay in the log. Slack is not a restaff ticker.
+    console.log(`[health] slack-quiet ${lines.join(" / ")}`);
   }
 }

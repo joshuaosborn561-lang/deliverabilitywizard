@@ -99,10 +99,10 @@ enabled.
 
 **D51 — kill-only pull.** Placement below 80% same-ESP, bounce above 5%/50,
 and the warmup / HOLD-UNTIL gate do **not** pull a mailbox off an ACTIVE
-campaign. Those numbers stay Slack / isolation readings. The only automatic
+campaign. Those numbers stay isolation readings and logs. The only automatic
 live removal is Josh killing that mailbox / retiring its domain; health
 backfills to 50. Never use the blended / all-ESP SmartDelivery score as a
-rotation signal (D32). Slack still warns at 2% bounce without pulling (D41).
+rotation signal (D32). Bounce at 2% is a log, not a Slack (D71).
 
 Each ACTIVE campaign gets a SmartDelivery **canary-copy test** from the
 dedicated D54/D55 fleet (2 domains, 3 inboxes each, one Google and one
@@ -141,13 +141,13 @@ Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
 8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only.
 9. Do not spend, purge, or bypass warmup/holds from chat. Approvals stay on.
-10. After launch: health (15m) will rest, top-up, and fan-out. Watch Slack on / off / generic-spare piles and `[client-rest]` / `[health]` logs.
+10. After launch: health (15m) will rest, top-up, and fan-out in the background. Slack only pages a burned domain, an isolated word, or the EOD send/spam scoreboard (D71). Watch `[client-rest]` / `[health]` logs for the rest.
 
 ## Held mailbox placement tests (D39)
 
 Mailboxes pulled off campaigns (HOLD) get **separate** SmartDelivery recurring
-tests — not re-attached to live campaigns. Slack day briefs are per-client
-(sent / bounce% / spam% + on / off / generic-spare / held counts), not per-mailbox lists.
+tests — not re-attached to live campaigns. The Slack day brief is once at
+end of day: per-client sent and spam (D71).
 
 ## Sender rest (D43)
 
@@ -220,9 +220,11 @@ confirmed one-mailbox rotation when every runtime precondition passes. Spending,
 approval decisions, destructive teardown, safety-policy changes, bulk
 remediation and deployment remain unavailable to the operator.
 
-**Slack that people read is plain English (D47).** No D-numbers, `same-ESP`,
-`staffable`, `fan-out`, hold-tag names, or env vars. Say what happened and
-what to do. Logs may stay technical.
+**Slack is only three things (D71).** A burned domain with receipts and
+a cancel/replace button; an isolated spam word with Make the changes;
+and one end-of-day client scoreboard (sends + spam). Health, rest, DNS,
+lead-runout, staffing, and “you are on pod B” stay in logs. Slack that
+people read is still plain English (D47).
 
 ## Campaign move safety
 
@@ -242,8 +244,7 @@ The audit is **advisory and does not write DNS**. Pool zones live in InboxKit's
 Cloudflare account; the only lever that rebuilds one changes nameservers on
 domains that are actively sending.
 
-An unchanged critical domain/issue combination alerts at most once every seven
-days. A different issue remains immediately alertable.
+DNS findings stay in logs (D71). They do not Slack.
 
 ## Warmup exemption mechanisms
 
@@ -260,9 +261,9 @@ Pick one deliberately. They have not been consolidated.
 ## Lead runout and sending IPs
 
 Campaign audit watches **sender headcount**. Send volume watches **today's
-sent count**. Remaining leads are a third number (D52): Slack at half,
-three quarters, and done, with leads left and recent send rate. Never
-import. A working campaign running low is urgent; a silent campaign
+sent count**. Remaining leads are a third number (D52): log at half,
+three quarters, and done. Never import. Do not Slack runout (D71). A
+working campaign running low is urgent in `/ops`; a silent campaign
 running low is "do not top up."
 
 Sending IPs come from placement reports we already pull (D53). Do not

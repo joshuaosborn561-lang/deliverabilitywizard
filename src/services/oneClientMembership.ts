@@ -23,6 +23,12 @@ import { sleep } from "../lib/http.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import {
+  dropMembership,
+  fetchInventory,
+  recordMembership,
+  type InventorySnapshot,
+} from "./inventory.js";
 
 const WRITE_BATCH = 25;
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 400;
@@ -59,7 +65,9 @@ export class OneClientMembershipService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<OneClientMembershipResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<OneClientMembershipResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: OneClientMembershipResult = {
       dryRun,
@@ -71,11 +79,8 @@ export class OneClientMembershipService {
       errors: [],
     };
 
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+    const { campaigns, accounts, clients } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
     );
@@ -198,6 +203,11 @@ export class OneClientMembershipService {
       });
     }
 
+    const accountById = new Map(
+      (accounts as SmartleadAccountWithCampaigns[])
+        .filter((account) => typeof account.id === "number")
+        .map((account) => [account.id, account]),
+    );
     const removals = new Map<number, Array<{ email: string; accountId: number }>>();
     const restores = new Map<number, Array<{ email: string; accountId: number }>>();
     for (const plan of plans) {
@@ -223,6 +233,10 @@ export class OneClientMembershipService {
               batch.map((row) => row.accountId),
             );
             await sleep(WRITE_GAP_MS);
+            for (const row of batch) {
+              const account = accountById.get(row.accountId);
+              if (account) recordMembership(account, campaignId);
+            }
           }
           for (const row of batch) {
             result.restored.push({ email: row.email, campaignId });
@@ -246,6 +260,10 @@ export class OneClientMembershipService {
               batch.map((row) => row.accountId),
             );
             await sleep(WRITE_GAP_MS);
+            for (const row of batch) {
+              const account = accountById.get(row.accountId);
+              if (account) dropMembership(account, campaignId);
+            }
           }
           for (const row of batch) {
             result.pulled.push({ email: row.email, campaignId });

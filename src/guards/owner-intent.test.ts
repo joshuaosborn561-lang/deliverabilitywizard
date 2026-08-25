@@ -2399,3 +2399,100 @@ describe("owner intent — D82 one rule for every client", () => {
     );
   });
 });
+
+describe("owner intent — D84 canon sweep", () => {
+  it("D84: one inventory per pass; fan-out staffs detached client inboxes; drift-only converge; watchdog", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const index = await read("../index.ts");
+    assert.match(
+      index,
+      /fetchInventory\(smartlead\)/,
+      stop(
+        "The health pass fetches Smartlead inventory once and shares it (D84).",
+        "index.ts no longer builds one shared inventory per pass.",
+      ),
+    );
+    assert.match(
+      index,
+      /recordStageOk|stageHealth/,
+      stop(
+        "Every health stage records success/failure for the watchdog (D84).",
+        "index.ts no longer records stage health.",
+      ),
+    );
+    assert.match(
+      index,
+      /canonFindings/,
+      stop(
+        "/health exposes the canon scoreboard (D84).",
+        "index.ts no longer reports canonFindings.",
+      ),
+    );
+
+    const fanOut = await read("../services/clientFanOut.ts");
+    assert.doesNotMatch(
+      fanOut,
+      /if \(!touchesGroup && !isBcpInventory\) continue/,
+      stop(
+        "A detached client inbox is still fanned onto its client's campaigns (D84).",
+        "clientFanOut.ts regained the touches-the-group gate for client inboxes — this is what left TechEvo and Peterson at 1 sender.",
+      ),
+    );
+    assert.match(
+      fanOut,
+      /if \(generic && !touchesGroup && !isBcpInventory\) continue/,
+      stop(
+        "Idle generics stay top-up supply, not fan-out supply (D84).",
+        "clientFanOut.ts no longer gates idle generics out of fan-out.",
+      ),
+    );
+    assert.doesNotMatch(
+      fanOut,
+      /groupCampaigns\.length < 2/,
+      stop(
+        "A single-campaign client still gets fan-out staffing (D84).",
+        "clientFanOut.ts skips single-campaign groups again.",
+      ),
+    );
+
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /isTerminalCampaignStatus/,
+      stop(
+        "COMPLETED/STOPPED campaigns are never converged (D84).",
+        "campaignBounceAutostop.ts writes terminal campaigns again.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /getAutopauseOffAt/,
+      stop(
+        "Bounce autopause converge is write-on-drift, not ~600 writes/hour (D84).",
+        "campaignBounceAutostop.ts lost the converged-campaign cache.",
+      ),
+    );
+
+    const check = await read("../services/campaignCheck.ts");
+    assert.match(
+      check,
+      /removeCampaignCheck/,
+      stop(
+        "Terminal campaigns leave the sweep and the scoreboard (D84).",
+        "campaignCheck.ts keeps stale findings for COMPLETED/STOPPED campaigns.",
+      ),
+    );
+    assert.match(
+      check,
+      /FIRST_CHECK_RETRY_MS/,
+      stop(
+        "A blocked first-check backs off to hourly re-inspection (D84).",
+        "campaignCheck.ts re-reads sequences for blocked campaigns every 15 minutes again.",
+      ),
+    );
+  });
+});

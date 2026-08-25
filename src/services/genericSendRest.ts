@@ -9,6 +9,7 @@ import {
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
@@ -48,7 +49,9 @@ export class GenericSendRestService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean; now?: Date } = {}): Promise<GenericSendRestResult> {
+  async run(
+    opts: { dryRun?: boolean; now?: Date; inventory?: InventorySnapshot } = {},
+  ): Promise<GenericSendRestResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const now = opts.now ?? new Date();
     const result: GenericSendRestResult = {
@@ -66,10 +69,8 @@ export class GenericSendRestService {
       return result;
     }
 
-    const [campaigns, accounts] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-    ]);
+    const { campaigns, accounts } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );

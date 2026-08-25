@@ -17,6 +17,11 @@ import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
+import {
+  fetchInventory,
+  recordMembership,
+  type InventorySnapshot,
+} from "./inventory.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -61,7 +66,9 @@ export class ClientFanOutService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<ClientFanOutResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<ClientFanOutResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: ClientFanOutResult = {
       dryRun,
@@ -71,11 +78,8 @@ export class ClientFanOutService {
       errors: [],
     };
 
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+    const { campaigns, accounts, clients } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
 
     const clientsById = new Map(clients.map((c) => [c.id, c]));
     const campaignClientById = new Map(
@@ -95,7 +99,10 @@ export class ClientFanOutService {
     result.groups = activeByGroup.size;
 
     for (const [groupKey, groupCampaigns] of activeByGroup) {
-      if (groupCampaigns.length < 2) continue;
+      // A single-campaign group still fans out: a client inbox attached to
+      // nothing (wiped, shell-stranded, freshly imported) must reach that
+      // one live campaign. The old `length < 2` skip left whole clients at
+      // one sender per campaign.
       const groupIds = new Set(groupCampaigns.map((c) => c.id));
       const campaignName = new Map(
         groupCampaigns.map((c) => [c.id, String(c.name ?? c.id)]),
@@ -122,7 +129,11 @@ export class ClientFanOutService {
       // campaignId → pending account attachments (batched Smartlead writes)
       const pendingByCampaign = new Map<
         number,
-        Array<{ accountId: number; email: string }>
+        Array<{
+          accountId: number;
+          email: string;
+          account: SmartleadAccountWithCampaigns;
+        }>
       >();
 
       for (const account of accounts as SmartleadAccountWithCampaigns[]) {
@@ -166,13 +177,18 @@ export class ClientFanOutService {
         if (!belongs) continue;
 
         const on = new Set(campaignIdsOf(account));
-        // Only fan out mailboxes that already serve at least one campaign in
-        // the group (or are BCP-owned inventory for the BCP group). Idle
-        // generics stay for top-up; idle BCP domains are handled here too.
+        // D84 — a client-owned inbox belongs on every ACTIVE campaign for its
+        // client even when it currently sits on zero of them (shell-stranded,
+        // wiped, freshly imported). The old touches-the-group gate kept whole
+        // fleets off their campaigns forever: only a mailbox already on one
+        // group campaign could spread, so a detached inbox had no way back
+        // (TechEvo and Peterson ran at 1 sender per campaign because of it).
+        // Generics stay gated: an idle pool generic is top-up supply, not
+        // fan-out supply, unless it already serves this group.
         const touchesGroup = [...on].some((id) => groupIds.has(id));
         const isBcpInventory =
           groupKey === "bcp" && isBcpOwnedDomain(email.split("@")[1] ?? "");
-        if (!touchesGroup && !isBcpInventory) continue;
+        if (generic && !touchesGroup && !isBcpInventory) continue;
 
         for (const campaign of groupCampaigns) {
           if (on.has(campaign.id)) continue;
@@ -183,7 +199,7 @@ export class ClientFanOutService {
             continue;
           }
           const list = pendingByCampaign.get(campaign.id) ?? [];
-          list.push({ accountId: account.id, email });
+          list.push({ accountId: account.id, email, account });
           pendingByCampaign.set(campaign.id, list);
         }
       }
@@ -217,6 +233,7 @@ export class ClientFanOutService {
               }
             }
             for (const row of chunk) {
+              recordMembership(row.account, campaignId);
               result.attached.push({
                 email: row.email,
                 accountId: row.accountId,
@@ -255,6 +272,7 @@ export class ClientFanOutService {
                     );
                   }
                 }
+                recordMembership(row.account, campaignId);
                 result.attached.push({
                   email: row.email,
                   accountId: row.accountId,

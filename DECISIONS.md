@@ -1749,3 +1749,58 @@ unwarmed reading.
 **Guards.** `mailboxSettings` gap mode `configureWarmup(..., false)` for
 `isCopyCanary`; owner-intent D83.
 
+## D84 — Canon sweep: one snapshot, fixers on findings, watchdog
+
+**Decision.** The 15-minute loop is one **canon sweep**, not eight
+services each refetching Smartlead:
+
+- **One inventory per pass** (`fetchInventory`): campaigns + accounts +
+  clients fetched once and shared by rest gates, client tag, one-client,
+  first-check, health/top-up/fan-out, and mailbox gap. Mutating stages
+  keep the snapshot truthful in place (`recordMembership` /
+  `dropMembership`), not by refetching mid-pass.
+- **A client inbox is always fanned out.** An inbox whose resolved
+  client is X belongs on every ACTIVE campaign for X even when it
+  currently sits on zero of them (shell-stranded, wiped, freshly
+  imported) and even when X has only one ACTIVE campaign. Held /
+  resting / retired / HOLD-UNTIL still skip. Idle generics stay top-up
+  supply, not fan-out supply.
+- **Write-on-drift for Smartlead bounce autopause.** COMPLETED/STOPPED
+  campaigns are never touched. A campaign is written off (100) once and
+  cached (`smartleadAutopauseOff`); a 6-hour read-verify sweep catches
+  UI-side drift. One analytics read per ACTIVE campaign, statistics
+  only as fallback.
+- **Terminal campaigns leave the sweep.** COMPLETED/STOPPED campaign
+  check records are archived so the scoreboard shows living reality.
+- **Blocked first-checks back off.** A campaign stuck on a blocking
+  copy finding re-inspects hourly, not every 15 minutes.
+- **Missing placement coverage is fixed on the pass that finds it**
+  (`no_placement_test` → scan kick, throttled hourly), not only at the
+  daily 9:00 scan.
+- **Watchdog.** Every stage records lastOkAt / consecutiveFailures /
+  duration in state (`stageHealth`); `/health` exposes `stages` and a
+  `canonFindings` count by kind; overdue stages log `[watchdog]` lines.
+  A silent 429 death is a visible fact, not a swallowed console.warn.
+
+**Why.** Josh (2026-08-25): the misses are systemic — "every time a new
+campaign comes online you do a QA and every 15 you're monitoring for
+all rules to be followed. You're not doing that right now. You think
+you are, but you're not. Full audit, tear whatever down and rebuild."
+Production evidence: the checker had found `understaffed 0/40`
+(Peterson) and `0/19` (TechEvo) plus 49 campaigns with dead canary
+coverage, written to state nobody read, while fan-out refused to staff
+any inbox that wasn't already on a campaign, and bounce-autostop's ~600
+blind writes/hour starved every other loop into 429s.
+
+**Tradeoff.** A shared snapshot can be minutes stale within a pass for
+memberships mutated by stages that lack the account object (rare paths
+keep their own refetch). Smartlead-side manual autopause edits are
+caught within 6 hours instead of 10 minutes. Accepted: the old loop
+"caught" them instantly in theory and never finished in practice.
+
+**Guards.** `fetchInventory` / `recordMembership`; fan-out attaches a
+zero-membership client inbox and skips idle generics; converge skips
+terminal statuses and does not rewrite converged campaigns;
+`removeCampaignCheck` on terminal; `stageHealth` on `/health`;
+owner-intent D84.
+

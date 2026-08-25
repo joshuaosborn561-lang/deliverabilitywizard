@@ -25,6 +25,7 @@ import {
 } from "../lib/mailboxSendSettings.js";
 import { totalDailySendCeiling } from "../lib/sendCeiling.js";
 import type { StateStore } from "../state/store.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
 /**
  * Hold every mailbox at the agreed sending settings.
@@ -68,13 +69,17 @@ export class MailboxSettingsService {
 
   /** D30/D24 only — safe to run every health cron. */
   async runGapEnforce(
-    opts: { dryRun?: boolean } = {},
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
   ): Promise<MailboxSettingsResult> {
     return this.run({ ...opts, mode: "gap" });
   }
 
   async run(
-    opts: { dryRun?: boolean; mode?: MailboxSettingsMode } = {},
+    opts: {
+      dryRun?: boolean;
+      mode?: MailboxSettingsMode;
+      inventory?: InventorySnapshot;
+    } = {},
   ): Promise<MailboxSettingsResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const mode: MailboxSettingsMode = opts.mode ?? "full";
@@ -98,13 +103,8 @@ export class MailboxSettingsService {
     // UI: "Message Per Day (Warmups not included)" — write MESSAGE_PER_DAY (D24).
     const target = totalDailySendCeiling(this.config);
     const targetGap = this.config.mailboxMinTimeGapMins;
-    const [accounts, clients, campaigns] = await Promise.all([
-      this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: true,
-      }) as Promise<SmartleadAccountWithCampaigns[]>,
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-      this.smartlead.listCampaigns().catch(() => [] as SmartleadCampaign[]),
-    ]);
+    const { accounts, clients, campaigns } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
     result.scanned = accounts.length;
 
     const brandByClientId = new Map<number, string>();

@@ -68,4 +68,60 @@ describe("CampaignBounceAutostopService (D80)", () => {
     assert.equal(/updateCampaignStatus\([^)]*START/.test(src), false);
     assert.equal(/hasPendingResume|markPendingResume|clearPendingResume/.test(src), false);
   });
+
+  it("D84: converge skips COMPLETED/STOPPED and writes each campaign once, not every 10 minutes", async () => {
+    const settings: Array<{ id: number }> = [];
+    const settingsReads: number[] = [];
+    const autopauseOff = new Map<string, string>();
+    const state = {
+      getAutopauseOffAt: (id: number) => autopauseOff.get(String(id)),
+      markAutopauseOff: (id: number) => {
+        autopauseOff.set(String(id), new Date().toISOString());
+      },
+      clearAutopauseOff: (id: number) => {
+        autopauseOff.delete(String(id));
+      },
+      getLastAutopauseVerifyAt: () => new Date().toISOString(),
+      setLastAutopauseVerifyAt: () => undefined,
+    } as never;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Live", status: "ACTIVE" },
+        { id: 2, name: "Old", status: "COMPLETED" },
+        { id: 3, name: "Killed", status: "STOPPED" },
+        { id: 4, name: "Paused", status: "PAUSED" },
+      ],
+      getCampaignAnalyticsByDate: async () => ({ sent_count: 10, bounce_count: 0 }),
+      getCampaignStatistics: async () => ({}),
+      getCampaignSettings: async (id: number) => {
+        settingsReads.push(id);
+        return { bounce_autopause_threshold: "100" };
+      },
+      updateCampaignStatus: async () => undefined,
+      updateCampaignSettings: async (id: number) => {
+        settings.push({ id });
+      },
+    } as never;
+
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      smartlead,
+      state,
+    );
+
+    await service.run({ dryRun: false });
+    assert.deepEqual(
+      settings.map((row) => row.id).sort((a, b) => a - b),
+      [1, 4],
+      "only living campaigns get the off write; COMPLETED/STOPPED are never touched",
+    );
+
+    settings.length = 0;
+    await service.run({ dryRun: false });
+    assert.deepEqual(
+      settings,
+      [],
+      "an already-converged campaign is not rewritten every pass (write-on-drift)",
+    );
+  });
 });

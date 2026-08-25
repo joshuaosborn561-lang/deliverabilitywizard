@@ -18,6 +18,7 @@ import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import { sleep } from "../lib/http.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 400;
 
@@ -40,7 +41,9 @@ export class UnpauseAfterSigQaService {
     private readonly smartlead: SmartleadClient,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<UnpauseAfterSigQaResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<UnpauseAfterSigQaResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: UnpauseAfterSigQaResult = {
       dryRun,
@@ -50,11 +53,8 @@ export class UnpauseAfterSigQaService {
       errors: [],
     };
 
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+    const { campaigns, accounts, clients } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
       brandByClientId.set(

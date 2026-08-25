@@ -40,6 +40,14 @@ function samePending(
         String(next.detail.element ?? "").toLowerCase()
     );
   }
+  if (next.kind === "generic_backfill") {
+    return (
+      Number(existing.detail.campaignId) === Number(next.detail.campaignId) &&
+      (existing.status === "pending" ||
+        existing.status === "approved" ||
+        existing.status === "executed")
+    );
+  }
   if (next.kind === "buy_canary_fleet") {
     return (
       existing.status === "pending" ||
@@ -76,7 +84,8 @@ export async function notifyIsolationActionRecord(
     proof: action.proof,
     actionId: action.id,
     kind: action.kind,
-    who: action.kind === "swap_copy" ? "Josh or Cayden" : "Josh",
+    who:
+      action.kind === "swap_copy" ? "Josh or Cayden" : "Josh",
   });
 }
 

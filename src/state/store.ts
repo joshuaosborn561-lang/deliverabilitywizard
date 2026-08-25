@@ -23,6 +23,8 @@ import {
   type DomainControlHistoryRecord,
 } from "./isolationState.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
+import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
+import type { GenericBackfillApproval } from "../lib/genericBackfill.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -208,6 +210,10 @@ export interface AppState {
   clientWipeAt: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
+  /** D81 — first-seen campaign audit + hourly sweep records. */
+  campaignChecks: Record<string, CampaignCheckRecord>;
+  /** D81 — Josh Slack-approved generic backfill, per campaign. */
+  genericBackfillApprovals: Record<string, GenericBackfillApproval>;
 }
 
 export interface BugRemediationRecord {
@@ -312,6 +318,8 @@ const EMPTY_STATE: AppState = {
   unhealthyResetAt: null,
   clientWipeAt: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
+  campaignChecks: {},
+  genericBackfillApprovals: {},
 };
 
 export class StateStore {
@@ -357,6 +365,8 @@ export class StateStore {
         unhealthyResetAt: parsed.unhealthyResetAt ?? null,
         clientWipeAt: parsed.clientWipeAt ?? null,
         isolation: normalizeIsolationState(parsed.isolation),
+        campaignChecks: parsed.campaignChecks ?? {},
+        genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -902,6 +912,32 @@ export class StateStore {
 
   setLastMailboxSettingsAt(iso: string): void {
     this.state.lastMailboxSettingsAt = iso;
+  }
+
+  getCampaignCheck(campaignId: number): CampaignCheckRecord | undefined {
+    return this.state.campaignChecks[String(campaignId)];
+  }
+
+  upsertCampaignCheck(record: CampaignCheckRecord): void {
+    this.state.campaignChecks[String(record.campaignId)] = record;
+  }
+
+  listCampaignChecks(): CampaignCheckRecord[] {
+    return Object.values(this.state.campaignChecks);
+  }
+
+  approveGenericBackfill(record: GenericBackfillApproval): void {
+    this.state.genericBackfillApprovals[String(record.campaignId)] = record;
+  }
+
+  getGenericBackfillApproval(
+    campaignId: number,
+  ): GenericBackfillApproval | undefined {
+    return this.state.genericBackfillApprovals[String(campaignId)];
+  }
+
+  listGenericBackfillApprovals(): Record<string, GenericBackfillApproval> {
+    return this.state.genericBackfillApprovals;
   }
 
   markPendingResume(record: PendingResumeRecord): void {

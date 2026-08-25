@@ -37,6 +37,7 @@ import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
+import { CampaignCheckService } from "./services/campaignCheck.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
@@ -473,6 +474,13 @@ async function main(): Promise<void> {
     smartDelivery,
     state,
   );
+  const campaignCheck = new CampaignCheckService(
+    config,
+    smartlead,
+    smartDelivery,
+    state,
+    slack,
+  );
   const clientDayBrief = new ClientDayBriefService(
     config,
     smartlead,
@@ -634,6 +642,15 @@ async function main(): Promise<void> {
         console.warn("[health] one-client membership failed", error);
       }
 
+      let campaignCheckResult: unknown = null;
+      if (config.enableCampaignCheck) {
+        try {
+          campaignCheckResult = await campaignCheck.run({ mode: "first" });
+        } catch (error) {
+          console.warn("[health] campaign-check first pass failed", error);
+        }
+      }
+
       let healthResult: unknown = null;
       try {
         healthResult = await campaignHealth.run();
@@ -688,6 +705,7 @@ async function main(): Promise<void> {
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
         oneClient: oneClientResult,
+        campaignCheck: campaignCheckResult,
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
@@ -928,6 +946,11 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronHealth)) {
     throw new Error(`Invalid CRON_HEALTH expression: ${config.cronHealth}`);
   }
+  if (!cron.validate(config.cronCampaignCheck)) {
+    throw new Error(
+      `Invalid CRON_CAMPAIGN_CHECK expression: ${config.cronCampaignCheck}`,
+    );
+  }
   if (!cron.validate(config.cronBounceAutostop)) {
     throw new Error(
       `Invalid CRON_BOUNCE_AUTOSTOP expression: ${config.cronBounceAutostop}`,
@@ -994,6 +1017,15 @@ async function main(): Promise<void> {
       },
       { timezone: "America/New_York" },
     );
+  }
+
+  if (config.enableCampaignCheck) {
+    cron.schedule(config.cronCampaignCheck, () => {
+      void campaignCheck.run({ mode: "hourly" }).catch((error) => {
+        console.error("[campaign-check] Unhandled cron error", error);
+        feedBugRemediator("campaign-check-cron", error);
+      });
+    });
   }
 
   if (config.enableCampaignHealth) {
@@ -1117,6 +1149,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (kind === "buy_domains") return "Buy replacements";
     if (kind === "retire_domain") return "Retire this domain";
     if (kind === "swap_copy") return "Make the changes";
+    if (kind === "generic_backfill") return "Allow generics";
     return kind;
   };
 
@@ -1479,6 +1512,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       cronMonitor: config.cronMonitor,
       enableCampaignHealth: config.enableCampaignHealth,
       cronHealth: config.cronHealth,
+      enableCampaignCheck: config.enableCampaignCheck,
+      cronCampaignCheck: config.cronCampaignCheck,
+      campaignCheckCount: Object.keys(s.campaignChecks ?? {}).length,
       enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
       cronBounceAutostop: config.cronBounceAutostop,
       pendingResumes: Object.keys(s.pendingResumes ?? {}).length,
@@ -1522,6 +1558,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         cronScan: config.cronScan,
         cronMonitor: config.cronMonitor,
         cronHealth: config.cronHealth,
+        cronCampaignCheck: config.cronCampaignCheck,
+        enableCampaignCheck: config.enableCampaignCheck,
         enableCampaignHealth: config.enableCampaignHealth,
         enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
         cronBounceAutostop: config.cronBounceAutostop,
@@ -1607,6 +1645,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await campaignAudit.run(config.minCampaignSenders);
         res.json({ ok: true, mode: "campaign-audit", result });
+        return;
+      }
+      if (mode === "campaign-check" || mode === "new-campaign-check") {
+        assertRuntimeSecrets(config);
+        const result = await campaignCheck.run({ mode: "all" });
+        res.json({ ok: true, mode: "campaign-check", result });
         return;
       }
       if (mode === "one-client" || mode === "one-client-membership") {
@@ -2045,6 +2089,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     console.log(`[boot] Monitor cron: ${config.cronMonitor} (measure/remediate/DNS)`);
     console.log(
       `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; D58 half-client-inbox floor; auto-resume protective pauses)` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
     );
     console.log(
       `[boot] Campaign bounce autostop (D80): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; skip <${config.bounceAutostopMinSent} sends; ${config.bounceAutostopMidPercent}% until ${config.bounceAutostopHighVolumeSent}; ${config.bounceAutostopHighPercent}% after; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%)` : "disabled"}`,

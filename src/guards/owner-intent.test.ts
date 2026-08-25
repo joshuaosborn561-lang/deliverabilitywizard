@@ -1837,6 +1837,14 @@ describe("owner intent — D71 Slack is deliverability flags plus EOD", () => {
       ),
     );
     assert.equal(
+      slackAllowed("generic_backfill"),
+      true,
+      stop(
+        "Josh Slack-approves generic backfill (D81).",
+        "generic_backfill is not a Slack allow kind.",
+      ),
+    );
+    assert.equal(
       slackKindForIsolationAction("buy_canary_fleet"),
       null,
       stop(
@@ -2196,6 +2204,73 @@ describe("owner intent — D80 campaign bounce autostop", () => {
       stop(
         "Health must not converge Smartlead autopause on (D80).",
         "Health still calls bounceAutopause.run as the live bounce rule.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D81 new-campaign audit + hourly sweep", () => {
+  it("D81: first-seen check is on; hourly cron is on the hour; Goliath is POC; no bounce pause", async () => {
+    assert.equal(
+      defaults.enableCampaignCheck,
+      true,
+      stop(
+        "New campaigns are first-checked, then swept hourly (D81).",
+        "ENABLE_CAMPAIGN_CHECK now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.cronCampaignCheck,
+      "0 * * * *",
+      stop(
+        "Campaign sweeps run every hour (D81).",
+        `Campaign-check cron is now ${defaults.cronCampaignCheck}.`,
+      ),
+    );
+    assert.deepEqual(
+      defaults.pocClientNamePatterns,
+      ["goliath"],
+      stop(
+        "Goliath is the POC client (D81).",
+        `POC patterns are now ${defaults.pocClientNamePatterns.join(",")}.`,
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /campaignCheck\.run\(\{\s*mode:\s*"first"/,
+      stop(
+        "Health first-checks a newly seen campaign (D81).",
+        "index.ts no longer calls campaignCheck.run first mode.",
+      ),
+    );
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      check,
+      /updateCampaignStatus/,
+      stop(
+        "The campaign checker does not START or PAUSE a campaign (D40/D81).",
+        "campaignCheck.ts now writes campaign status.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
+      /bounce_autopause|desiredBounceAutopausePercent|getCampaignSettings/,
+      stop(
+        "This checker does not read Smartlead bounce auto-pause (D81 / Cayden D80).",
+        "campaignCheck.ts still watches bounce_autopause_threshold.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
+      /generic_on_non_goliath|allowsGenericStaff/,
+      stop(
+        "Generics are POC or Slack-approved, not a Goliath-only name list (D81).",
+        "campaignCheck.ts still special-cases Goliath generics.",
       ),
     );
   });

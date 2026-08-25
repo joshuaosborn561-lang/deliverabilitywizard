@@ -95,8 +95,21 @@ const ConfigSchema = z.object({
   /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
   /**
-   * D58 — name fragments (campaign or client) that may still receive
-   * generics. Everyone else is client-inbox only.
+   * D81 — POC clients (Goliath today) may receive generics without a
+   * per-campaign Slack tap. Everyone else needs Josh's Slack approve.
+   */
+  pocClientNamePatterns: z
+    .string()
+    .default("goliath")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * Leftover D58 name list. D81 uses pocClientNamePatterns + Slack
+   * approval. Kept so existing env does not surprise us.
    */
   genericStaffNamePatterns: z
     .string()
@@ -113,6 +126,13 @@ const ConfigSchema = z.object({
    * Measure (placement/remediation/DNS) stays on the slower monitor cron.
    */
   enableCampaignHealth: boolFromEnv(true),
+  /**
+   * D81 — first-seen campaign audit + hourly sweep (pods, sigs, canaries).
+   * Does not START, import leads, or spend. Slack only to ask Josh to
+   * approve generic backfill.
+   */
+  enableCampaignCheck: boolFromEnv(true),
+  cronCampaignCheck: z.string().default("0 * * * *"),
   /**
    * D39 — separate SmartDelivery tests for held/pulled mailboxes (off campaigns).
    */
@@ -519,9 +539,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
+    pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath",
     genericStaffNamePatterns: env.GENERIC_STAFF_NAME_PATTERNS ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
+    enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,
+    cronCampaignCheck: env.CRON_CAMPAIGN_CHECK ?? "0 * * * *",
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
     enableClientRest: env.ENABLE_CLIENT_REST,
     enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,

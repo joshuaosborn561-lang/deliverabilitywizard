@@ -1640,3 +1640,46 @@ on `main` and has completed one autostop pass. Accepted. A campaign at
 **Guards.** `shouldAutostopCampaignForBounce`; `CampaignBounceAutostopService`;
 `desiredBounceAutopausePercent` returns 100; owner-intent D80.
 
+---
+
+## D81 — First-seen campaign audit, then hourly sweeps
+
+**Decision.** When a campaign id is new to us, run a first-check against
+the standing rules (client tag, signatures, `%signature%` in the
+sequence, no foreign brand in copy, one-client membership, pod-control
+shell stays paused, generics only if the client is a **POC** or Josh
+Slack-approved a backfill). It stays on that first-check until it
+passes. After it passes, an hourly sweep watches the living bits:
+pod/shell, mailbox signatures, client tag, one-client, **active canaries
+for each serving inbox and campaign**, and the staffable floor.
+
+The live floor is **half of that client's inboxes** (D58). There is no
+Goliath-only bounce, Goliath-only generic list, or Smartlead bounce
+auto-pause check here. **Goliath is a POC client** (`pocClientNamePatterns`).
+Generics may backfill **any** campaign after Josh taps Allow generics
+in Slack. Bounce pause is **D80** — this checker does
+not read or write `bounce_autopause_threshold`.
+
+Health (15 minutes) discovers new campaigns and retries a failed first
+check after the identity writes. `CRON_CAMPAIGN_CHECK` (`0 * * * *`) is
+the hourly sweep.
+
+This does **not** START a campaign, import leads, spend, write DNS,
+edit sequence copy, or pull a mailbox. Slack is only the generic-backfill
+button (extends D71). Shell stays paused (D56).
+
+**Why.** Josh (2026-08-25): first-check new campaigns, then hourly
+pods/sigs. Then: "too many Goliath specific rules, those need to be
+gone. Bounce auto pause is gone. Generics can backfill any campaign
+after I approve in slack. Also need to check if canaries are active
+for each serving inbox and campaign. Floor is just half of per client
+senders. For Goliath it's marked as a POC client. Redo that pr and
+reconcile it w cayden."
+
+**Tradeoff.** A brand-new ACTIVE campaign can send for up to 15 minutes
+before the first-check sees it. Staffing / missing canary / missing
+test do not fail the first-check.
+
+**Guards.** `enableCampaignCheck` / `pocClientNamePatterns`;
+`CampaignCheckService`; `campaignMayTakeGenerics`; owner-intent D81.
+

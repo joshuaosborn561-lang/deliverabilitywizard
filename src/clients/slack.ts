@@ -175,6 +175,10 @@ export class SlackClient {
       shortBy: number;
       status: string;
     }>;
+    /** D85 — campaigns the tagger cannot match to a client (D77 forbids guessing). */
+    untaggedCampaigns?: Array<{ id: number; name: string }>;
+    /** D85 — set when the unwarmed canary fleet has zero connected mailboxes. */
+    canaryFleetDownSince?: string | null;
   }): Promise<void> {
     const lines = [
       `*Client day — ${summary.date}*`,
@@ -198,6 +202,43 @@ export class SlackClient {
     }
     if (summary.rows.length > 25) {
       lines.push(`• …and ${summary.rows.length - 25} more clients`);
+    }
+
+    // D64 — the staffing picture belongs on the EOD brief. (The field was
+    // plumbed through but never rendered until D85 — a silently dropped line.)
+    const shorts = (summary.staffingShorts ?? []).filter((s) => s.shortBy > 0);
+    if (shorts.length) {
+      lines.push(
+        "",
+        `Still short of senders at end of day (${shorts.length}):`,
+        ...shorts
+          .slice(0, 10)
+          .map(
+            (s) =>
+              `• ${s.name} — ${s.staffable} sending, ${s.shortBy} more needed (${s.status})`,
+          ),
+      );
+      if (shorts.length > 10) lines.push(`• …and ${shorts.length - 10} more`);
+    }
+
+    // D85 — campaigns with no client tag sit blocked at QA and I cannot
+    // guess the client (D77). Naming them daily is the escalation.
+    const untagged = summary.untaggedCampaigns ?? [];
+    if (untagged.length) {
+      lines.push(
+        "",
+        `No client tag (${untagged.length}) — QA stays blocked until someone tags them in Smartlead (campaign → client):`,
+        ...untagged.slice(0, 10).map((c) => `• ${c.name} (#${c.id})`),
+      );
+      if (untagged.length > 10) lines.push(`• …and ${untagged.length - 10} more`);
+    }
+
+    // D85 — one line for the fleet, not 48 findings.
+    if (summary.canaryFleetDownSince) {
+      lines.push(
+        "",
+        `Unwarmed canary fleet has zero connected mailboxes (since ${summary.canaryFleetDownSince.slice(0, 10)}). Placement measurement is blind — reconnect the fleet in Smartlead or approve a fleet buy.`,
+      );
     }
 
     const seriousErrors = summary.errors
@@ -1123,12 +1164,15 @@ export class SlackClient {
       | "buy_domains"
       | "buy_canary_fleet"
       | "swap_copy"
-      | "generic_backfill";
+      | "generic_backfill"
+      | "add_signature_tag";
     who: string;
   }): Promise<void> {
     const approveLabel =
       details.kind === "swap_copy"
         ? "Make the changes"
+        : details.kind === "add_signature_tag"
+          ? "Add %signature%"
         : details.kind === "buy_domains"
           ? "Buy replacements"
           : details.kind === "buy_canary_fleet"
@@ -1146,6 +1190,8 @@ export class SlackClient {
           ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
           : details.kind === "generic_backfill"
             ? "Josh: tap Allow generics (opens a confirm page) to let pool generics backfill this campaign. Cayden cannot approve this."
+          : details.kind === "add_signature_tag"
+            ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
           : details.kind === "retire_domain"
             ? "Josh: tap the button (opens a confirm page) to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
             : "Josh or Cayden: tap Make the changes (opens a confirm page). I will apply that one suggested edit and nothing else.",

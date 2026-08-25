@@ -20,7 +20,10 @@ export function buildIsolationAction(input: {
     title: input.title,
     proof: input.proof,
     detail: input.detail,
-    allowed: input.kind === "swap_copy" ? "owner_or_operator" : "owner",
+    allowed:
+      input.kind === "swap_copy" || input.kind === "add_signature_tag"
+        ? "owner_or_operator"
+        : "owner",
     requestedAt: now,
   };
 }
@@ -30,7 +33,13 @@ function samePending(
   next: IsolationActionRecord,
 ): boolean {
   if (existing.kind !== next.kind) return false;
-  if (next.kind !== "buy_canary_fleet" && existing.status !== "pending") {
+  // buy_canary_fleet and add_signature_tag look at non-pending history
+  // (already bought / recently executed / recently denied) in their branches.
+  if (
+    next.kind !== "buy_canary_fleet" &&
+    next.kind !== "add_signature_tag" &&
+    existing.status !== "pending"
+  ) {
     return false;
   }
   if (next.kind === "swap_copy") {
@@ -47,6 +56,26 @@ function samePending(
         existing.status === "approved" ||
         existing.status === "executed")
     );
+  }
+  if (next.kind === "add_signature_tag") {
+    if (Number(existing.detail.campaignId) !== Number(next.detail.campaignId)) {
+      return false;
+    }
+    if (existing.status === "pending" || existing.status === "approved") {
+      return true;
+    }
+    // Executed: give the hourly sweep a day to see the tag before a fresh
+    // ask is allowed (new copy without the tag is a new problem).
+    if (existing.status === "executed") {
+      const at = Date.parse(existing.executedAt ?? existing.requestedAt);
+      return Number.isFinite(at) && Date.now() - at < 24 * 60 * 60 * 1000;
+    }
+    // Denied: do not nag hourly — one re-ask a week.
+    if (existing.status === "denied") {
+      const at = Date.parse(existing.decidedAt ?? existing.requestedAt);
+      return Number.isFinite(at) && Date.now() - at < 7 * 24 * 60 * 60 * 1000;
+    }
+    return false;
   }
   if (next.kind === "buy_canary_fleet") {
     return (

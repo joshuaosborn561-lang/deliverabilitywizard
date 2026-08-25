@@ -67,6 +67,99 @@ describe("isolation Slack reminds", () => {
     assert.equal(store.pendingIsolationActions()[0]?.id, action.id);
   });
 
+  it("dedupes a pending signature ask per campaign, not across campaigns (D85)", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const ask = (campaignId: number) =>
+      buildIsolationAction({
+        kind: "add_signature_tag",
+        title: `%signature% missing on #${campaignId}`,
+        proof: "step 1 A is missing %signature%",
+        detail: { campaignId },
+      });
+    const first = await requestIsolationAction({ store, slack, action: ask(1) });
+    const repeat = await requestIsolationAction({ store, slack, action: ask(1) });
+    const other = await requestIsolationAction({ store, slack, action: ask(2) });
+    assert.ok(first);
+    assert.equal(repeat, null);
+    assert.ok(other);
+    assert.equal(notified.length, 2);
+  });
+
+  it("does not re-ask for a signature fix right after execute or deny (D85)", async () => {
+    const store = tempStore();
+    const { slack } = slackCapture();
+    const executed = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "done",
+      proof: "done",
+      detail: { campaignId: 5 },
+    });
+    store.upsertIsolationAction({
+      ...executed,
+      status: "executed",
+      executedAt: new Date().toISOString(),
+    });
+    const afterExecute = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "add_signature_tag",
+        title: "again",
+        proof: "again",
+        detail: { campaignId: 5 },
+      }),
+    });
+    assert.equal(afterExecute, null);
+
+    const denied = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "no",
+      proof: "no",
+      detail: { campaignId: 6 },
+    });
+    store.upsertIsolationAction({
+      ...denied,
+      status: "denied",
+      decidedAt: new Date().toISOString(),
+    });
+    const afterDeny = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "add_signature_tag",
+        title: "retry",
+        proof: "retry",
+        detail: { campaignId: 6 },
+      }),
+    });
+    assert.equal(afterDeny, null);
+
+    // An old executed record (new copy shipped later) allows a fresh ask.
+    const stale = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "old",
+      proof: "old",
+      detail: { campaignId: 7 },
+    });
+    store.upsertIsolationAction({
+      ...stale,
+      status: "executed",
+      executedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    const fresh = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "add_signature_tag",
+        title: "new copy",
+        proof: "new copy",
+        detail: { campaignId: 7 },
+      }),
+    });
+    assert.ok(fresh);
+  });
+
   it("does not request or remind a canary buy after one is executed (D60)", async () => {
     const store = tempStore();
     const { slack, notified } = slackCapture();

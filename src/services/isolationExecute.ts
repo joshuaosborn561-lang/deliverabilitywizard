@@ -9,6 +9,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadSequence } from "../types/index.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
+import { appendSignatureTag } from "../lib/signatureQa.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import { slackKindForIsolationAction } from "../lib/slackAllow.js";
@@ -58,8 +59,8 @@ export class IsolationExecuteService {
       return {
         ok: false,
         message:
-          action.kind === "swap_copy"
-            ? "Josh or Cayden can switch the word."
+          action.kind === "swap_copy" || action.kind === "add_signature_tag"
+            ? "Josh or Cayden can approve this copy edit."
             : "Only Josh can approve retiring a domain or buying replacements / the canary fleet.",
       };
     }
@@ -87,6 +88,8 @@ export class IsolationExecuteService {
     try {
       if (approved.kind === "retire_domain") await this.retire(approved);
       else if (approved.kind === "swap_copy") await this.swapCopy(approved);
+      else if (approved.kind === "add_signature_tag")
+        await this.addSignatureTag(approved);
       else if (approved.kind === "buy_canary_fleet")
         await this.buyCanaryFleet(approved);
       else if (approved.kind === "generic_backfill")
@@ -222,6 +225,32 @@ export class IsolationExecuteService {
     await this.announce(
       "swap_copy",
       `Switched the word on *${action.detail.campaignName ?? campaignId}*: ${find} → ${swap || "(removed)"}. That is the only change I made.`,
+    );
+  }
+
+  /**
+   * D85 — append `%signature%` to every step/variant body missing it.
+   * Append-only by construction (appendSignatureTag); the rest of the copy
+   * is written back byte-for-byte.
+   */
+  private async addSignatureTag(action: IsolationActionRecord): Promise<void> {
+    const campaignId = Number(action.detail.campaignId);
+    if (!Number.isFinite(campaignId) || campaignId <= 0) {
+      throw new Error("Missing campaign");
+    }
+    const sequences = await this.smartlead.getCampaignSequences(campaignId);
+    const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
+    if (!changed.length) {
+      await this.announce(
+        "add_signature_tag",
+        `*${action.detail.campaignName ?? campaignId}* already carries %signature% on every step — nothing to write.`,
+      );
+      return;
+    }
+    await this.smartlead.updateCampaignSequences(campaignId, next);
+    await this.announce(
+      "add_signature_tag",
+      `Added %signature% to ${changed.join(", ")} on *${action.detail.campaignName ?? campaignId}*. Appended the tag only — no other copy changed. The next sweep unblocks the campaign.`,
     );
   }
 

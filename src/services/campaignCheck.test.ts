@@ -328,6 +328,126 @@ describe("CampaignCheckService", () => {
     );
   });
 
+  it("D85: a dead canary fleet is one fact, not a finding per campaign", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    // Fleet is known but none of its mailboxes are connected in Smartlead.
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["getcrosslaunchco.info"],
+      emails: ["canary@getcrosslaunchco.info"],
+      updatedAt: "2026-08-25T00:00:00.000Z",
+    });
+    const sl = {
+      listCampaigns: async () => [
+        { id: 1, name: "Goliath A", status: "ACTIVE", client_id: 548611 },
+        { id: 2, name: "Goliath B", status: "ACTIVE", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new CampaignCheckService(loadConfig({}), sl, delivery(), state);
+
+    await service.run({ mode: "first" });
+    const hourly = await service.run({ mode: "hourly" });
+    for (const row of hourly.findings) {
+      assert.equal(
+        row.findings.some(
+          (finding) =>
+            finding.kind === "missing_canary" || finding.kind === "canary_inactive",
+        ),
+        false,
+        "fleet-down must not spam per-campaign canary findings",
+      );
+    }
+    assert.ok(
+      state.getCanaryFleetDown(),
+      "fleet-down must be recorded once as a fleet-level fact",
+    );
+  });
+
+  it("D85: per-campaign canary checks resume the moment the fleet is connected", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.setCanaryFleetDown({ since: "2026-08-20T00:00:00.000Z", fleetSize: 1 });
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["getcrosslaunchco.info"],
+      emails: ["canary@getcrosslaunchco.info"],
+      updatedAt: "2026-08-25T00:00:00.000Z",
+    });
+    const sl = {
+      listCampaigns: async () => [
+        { id: 1, name: "Goliath A", status: "ACTIVE", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 9,
+          from_email: "canary@getcrosslaunchco.info",
+          from_name: "Canary",
+          campaign_ids: [],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new CampaignCheckService(loadConfig({}), sl, delivery(), state);
+
+    await service.run({ mode: "first" });
+    const hourly = await service.run({ mode: "hourly" });
+    assert.equal(state.getCanaryFleetDown(), null, "fleet-down fact must clear");
+    assert.ok(
+      hourly.findings[0]?.findings.some(
+        (finding) => finding.kind === "missing_canary",
+      ),
+      "a campaign without a canary test is a finding again once the fleet is up",
+    );
+  });
+
+  it("D85: missing %signature% posts a one-tap fix ask", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const asked: Array<{ kind: string; actionId: string }> = [];
+    const slack = {
+      notifyIsolationAction: async (details: { kind: string; actionId: string }) => {
+        asked.push({ kind: details.kind, actionId: details.actionId });
+      },
+    } as never;
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 77, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [goliath],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+        ],
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      slack,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.equal(result.firstPassed, 0, "missing tag still blocks first-check");
+    assert.equal(asked.length, 1);
+    assert.equal(asked[0]?.kind, "add_signature_tag");
+    const action = state
+      .listIsolationActions()
+      .find((row) => row.kind === "add_signature_tag");
+    assert.ok(action);
+    assert.equal(Number(action?.detail.campaignId), 77);
+  });
+
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {
     const make = async (status: string) => {
       const store = new StateStore(stateFile());

@@ -173,6 +173,25 @@ duration). `/health` returns `canonFindings` (open findings by kind) and
 `stages`; `[watchdog]` logs any stage overdue or failing. Check those
 before trusting that "the loop is running".
 
+## Findings have owners (D85)
+
+A finding the sweep keeps reporting with no path to zero is a bug in the
+sweep, not a fact of life:
+
+- **Missing `%signature%`** posts a one-tap *Add %signature%* Slack ask
+  (Josh or Cayden). Approval appends the tag to the steps missing it —
+  append-only, nothing else in the copy changes.
+- **Untagged campaigns** the tagger cannot uniquely match (D77 forbids
+  guessing) are named on the end-of-day brief until a human tags them in
+  Smartlead.
+- **A dead unwarmed-canary fleet** (zero connected mailboxes) is ONE
+  fleet-level fact (`canaryFleetDown` on `/health`, one `[canon]` line,
+  one EOD line) — never a finding per campaign. Per-campaign canary
+  checks resume automatically once the fleet has a connected mailbox.
+- The standalone Smartlead autopause converge service is retired; the
+  bounce autostop loop owns that write (write-on-drift). Do not add a
+  second writer.
+
 ## When setting up a campaign
 
 Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):

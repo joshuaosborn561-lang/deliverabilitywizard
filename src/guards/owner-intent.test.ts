@@ -2496,3 +2496,114 @@ describe("owner intent — D84 canon sweep", () => {
     );
   });
 });
+
+describe("owner intent — D85 findings have owners", () => {
+  it("D85: signature one-tap fixer; untagged escalation; one fleet fact; one bounce writer", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    // The fixer is append-only: original copy survives verbatim, subjects
+    // are never touched, tagged bodies are left byte-for-byte.
+    const { appendSignatureTag } = await import("../lib/signatureQa.js");
+    const body = "<p>Sean, that offer's still open</p>";
+    const fixed = appendSignatureTag([
+      { id: 1, seq_number: 1, subject: "hey", email_body: body },
+      {
+        id: 2,
+        seq_number: 2,
+        subject: "hey",
+        email_body: "<p>open?</p><p>%signature%</p>",
+      },
+    ]);
+    assert.equal(
+      fixed.sequences[0]?.email_body,
+      `${body}<br><br>%signature%`,
+      stop(
+        "The signature fixer appends the tag and nothing else (D85).",
+        "appendSignatureTag no longer preserves the original body verbatim.",
+      ),
+    );
+    assert.equal(
+      fixed.sequences[1]?.email_body,
+      "<p>open?</p><p>%signature%</p>",
+      stop(
+        "A body that already has %signature% is untouched (D85).",
+        "appendSignatureTag rewrote an already-tagged body.",
+      ),
+    );
+    assert.equal(
+      fixed.sequences[0]?.subject,
+      "hey",
+      stop(
+        "The signature fixer never edits subjects (D85).",
+        "appendSignatureTag changed a subject line.",
+      ),
+    );
+
+    const check = await read("../services/campaignCheck.ts");
+    assert.match(
+      check,
+      /add_signature_tag/,
+      stop(
+        "missing %signature% posts a one-tap fix ask (D85).",
+        "campaignCheck.ts no longer asks add_signature_tag — the finding is ownerless again.",
+      ),
+    );
+    assert.match(
+      check,
+      /setCanaryFleetDown/,
+      stop(
+        "A dead canary fleet is one fleet-level fact, not a finding per campaign (D85).",
+        "campaignCheck.ts no longer records canaryFleetDown.",
+      ),
+    );
+
+    const index = await read("../index.ts");
+    assert.doesNotMatch(
+      index,
+      /services\/bounceAutopause/,
+      stop(
+        "One Smartlead autopause writer: the autostop loop (D80/D84/D85).",
+        "index.ts wires the standalone BounceAutopauseService again — two blind writers is how the key starved into 429s.",
+      ),
+    );
+    assert.match(
+      index,
+      /canaryFleetDown/,
+      stop(
+        "/health exposes the fleet-down fact (D85).",
+        "index.ts no longer reports canaryFleetDown.",
+      ),
+    );
+
+    // Untagged campaigns are escalated on the EOD brief, never guessed (D77).
+    const brief = await read("../services/clientDayBrief.ts");
+    assert.match(
+      brief,
+      /untaggedCampaigns/,
+      stop(
+        "Campaigns the tagger cannot match are named on the EOD brief (D85).",
+        "clientDayBrief.ts dropped the untagged-campaign escalation — they go back to silent QA jail.",
+      ),
+    );
+    const slackSrc = await read("../clients/slack.ts");
+    assert.match(
+      slackSrc,
+      /untaggedCampaigns/,
+      stop(
+        "The EOD brief renders the untagged-campaign list (D85).",
+        "slack.ts accepts untaggedCampaigns but never renders it.",
+      ),
+    );
+    assert.match(
+      slackSrc,
+      /staffingShorts ?\?\? \[\]/,
+      stop(
+        "The EOD staffing picture is rendered, not silently dropped (D64/D85).",
+        "slack.ts accepts staffingShorts but never renders it again.",
+      ),
+    );
+  });
+});

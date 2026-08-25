@@ -226,6 +226,18 @@ export interface AppState {
   lastAutopauseVerifyAt: string | null;
   /** D84 — per-stage watchdog: last success / failure per named loop. */
   stageHealth: Record<string, StageHealthRecord>;
+  /**
+   * D85 — zero connected unwarmed-canary mailboxes, reported once instead of
+   * as a finding on every ACTIVE campaign. Null when the fleet has at least
+   * one connected mailbox.
+   */
+  canaryFleetDown: CanaryFleetDownRecord | null;
+}
+
+/** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
+export interface CanaryFleetDownRecord {
+  since: string;
+  fleetSize: number;
 }
 
 /** D84 — watchdog record for one named stage of a scheduled loop. */
@@ -344,6 +356,7 @@ const EMPTY_STATE: AppState = {
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
   stageHealth: {},
+  canaryFleetDown: null,
 };
 
 export class StateStore {
@@ -394,6 +407,7 @@ export class StateStore {
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
         stageHealth: parsed.stageHealth ?? {},
+        canaryFleetDown: parsed.canaryFleetDown ?? null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1004,6 +1018,19 @@ export class StateStore {
 
   listStageHealth(): Record<string, StageHealthRecord> {
     return this.state.stageHealth;
+  }
+
+  /** D85 — one fleet-level fact instead of a finding per campaign. */
+  getCanaryFleetDown(): CanaryFleetDownRecord | null {
+    return this.state.canaryFleetDown;
+  }
+
+  setCanaryFleetDown(record: CanaryFleetDownRecord): void {
+    this.state.canaryFleetDown = record;
+  }
+
+  clearCanaryFleetDown(): void {
+    this.state.canaryFleetDown = null;
   }
 
   approveGenericBackfill(record: GenericBackfillApproval): void {

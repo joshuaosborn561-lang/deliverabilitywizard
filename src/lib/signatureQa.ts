@@ -49,3 +49,46 @@ export function missingSignatureTag(html: string): boolean {
   if (!html.replace(/<[^>]+>/g, " ").trim()) return false;
   return !/%signature%/i.test(html);
 }
+
+/**
+ * D85 — the one-click signature fix. Appends `%signature%` to every step /
+ * variant body that has copy but no tag. Appends only; never rewrites,
+ * reorders, or touches subjects. Empty bodies and bodies that already carry
+ * the tag are left exactly as they were.
+ */
+export function appendSignatureTag(sequences: SmartleadSequence[]): {
+  sequences: SmartleadSequence[];
+  changed: string[];
+} {
+  const changed: string[] = [];
+  const fixBody = (body: string | undefined, label: string): string | undefined => {
+    const text = String(body ?? "");
+    if (!missingSignatureTag(text)) return body;
+    changed.push(label);
+    return `${text}<br><br>%signature%`;
+  };
+  const next = sequences.map((sequence) => {
+    const out: SmartleadSequence = { ...sequence };
+    if (sequence.sequence_variants?.length) {
+      out.sequence_variants = sequence.sequence_variants.map((variant, index) => ({
+        ...variant,
+        email_body: fixBody(
+          variant.email_body,
+          `step ${sequence.seq_number} ${variant.variant_label ?? String.fromCharCode(65 + index)}`,
+        ),
+      }));
+    }
+    if (sequence.variants?.length) {
+      out.variants = sequence.variants.map((variant, index) => ({
+        ...variant,
+        email_body: fixBody(
+          variant.email_body,
+          `step ${sequence.seq_number} ${variant.variant_label ?? String.fromCharCode(65 + index)}`,
+        ),
+      }));
+    }
+    out.email_body = fixBody(sequence.email_body, `step ${sequence.seq_number}`);
+    return out;
+  });
+  return { sequences: next, changed };
+}

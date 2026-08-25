@@ -164,6 +164,29 @@ export class CampaignCheckService {
       },
     ).length;
 
+    // D85 — zero connected canary mailboxes is ONE fleet-level fact, not a
+    // per-campaign finding on every ACTIVE campaign. 48x "canary_inactive"
+    // told nobody anything 1x did not, and drowned the findings that have
+    // per-campaign fixes. The per-campaign canary checks resume untouched
+    // the moment the fleet has a connected mailbox.
+    const fleetDown = connectedCanaries === 0;
+    if (fleetDown) {
+      if (!this.state.getCanaryFleetDown()) {
+        this.state.setCanaryFleetDown({
+          since: new Date().toISOString(),
+          fleetSize: fleetEmails.length,
+        });
+      }
+      console.warn(
+        `[campaign-check] canary fleet DOWN — ${fleetEmails.length} known email(s), 0 connected. Placement measurement is blind until the fleet is connected or bought.`,
+      );
+    } else if (this.state.getCanaryFleetDown()) {
+      this.state.clearCanaryFleetDown();
+      console.log(
+        `[campaign-check] canary fleet back — ${connectedCanaries} connected`,
+      );
+    }
+
     const now = new Date().toISOString();
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
@@ -222,6 +245,7 @@ export class CampaignCheckService {
         clientInboxCounts,
         connectedCanaries,
         fleetSize: fleetEmails.length,
+        fleetDown,
         depth: kind,
       });
       const passed = firstCheckPassed(findings);
@@ -261,6 +285,7 @@ export class CampaignCheckService {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
       }
       await this.maybeAskGenericBackfill(campaign, name, findings);
+      await this.maybeAskSignatureFix(campaign, name, findings);
     }
 
     await this.state.save();
@@ -289,6 +314,33 @@ export class CampaignCheckService {
     });
   }
 
+  /**
+   * D85 — missing %signature% blocks first-check, so it must have an owner.
+   * One tap appends the tag to the steps missing it; nothing else changes.
+   */
+  private async maybeAskSignatureFix(
+    campaign: SmartleadCampaign,
+    name: string,
+    findings: CampaignFinding[],
+  ): Promise<void> {
+    if (!this.slack) return;
+    const missing = findings.filter(
+      (finding) => finding.kind === "missing_signature_tag",
+    );
+    if (!missing.length) return;
+    const steps = missing.map((finding) => finding.detail).join("; ");
+    await requestIsolationAction({
+      store: this.state,
+      slack: this.slack,
+      action: buildIsolationAction({
+        kind: "add_signature_tag",
+        title: `%signature% missing on ${name}`,
+        proof: `#${campaign.id} ${name} is blocked at QA: ${steps}. Tap Add %signature% and I will append the tag to those steps — the copy itself is untouched.`,
+        detail: { campaignId: campaign.id, campaignName: name },
+      }),
+    });
+  }
+
   private async inspect(input: {
     campaign: SmartleadCampaign;
     campaigns: Map<number, SmartleadCampaign>;
@@ -302,6 +354,7 @@ export class CampaignCheckService {
     clientInboxCounts: Map<string, number>;
     connectedCanaries: number;
     fleetSize: number;
+    fleetDown: boolean;
     depth: "first" | "hourly";
   }): Promise<CampaignFinding[]> {
     const findings: CampaignFinding[] = [];
@@ -476,8 +529,12 @@ export class CampaignCheckService {
         }
       }
 
+      // D85 — with zero connected canary mailboxes, every campaign fails
+      // these for the same fleet-level reason. That fact lives once on the
+      // scoreboard (canaryFleetDown), not 48 times here.
       const storedCanaryId = this.state.getCopyCanaryTestId(campaign.id);
       if (
+        !input.fleetDown &&
         !hasLivingUnwarmedCopyCanary(
           campaign.id,
           input.listedTests,
@@ -490,12 +547,9 @@ export class CampaignCheckService {
             "campaign copy is not on the unwarmed senders canary (Canary copy test)",
         });
       }
-      if (input.fleetSize > 0 && input.connectedCanaries === 0) {
-        findings.push({
-          kind: "canary_inactive",
-          detail: "unwarmed canary fleet mailboxes are not connected in Smartlead",
-        });
-      }
+      // canary_inactive stays a valid kind for stored records, but the live
+      // condition (zero connected fleet mailboxes) IS the fleet-down fact —
+      // it is reported once above, never per campaign.
     }
 
     return findings;

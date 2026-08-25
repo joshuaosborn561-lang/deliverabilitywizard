@@ -5,6 +5,11 @@ import {
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
 import { slackActionHref } from "../lib/slackActionLink.js";
+import {
+  slackAllowed,
+  slackKindForIsolationAction,
+  type SlackAllowKind,
+} from "../lib/slackAllow.js";
 import { isolationActionValue } from "../lib/slackSignature.js";
 
 export interface SlackCredentials {
@@ -35,7 +40,22 @@ export function readSlackBotToken(creds: SlackCredentials): string {
 export class SlackClient {
   constructor(private readonly creds: SlackCredentials) {}
 
-  async send(text: string, blocks?: unknown[]): Promise<void> {
+  /**
+   * D71 — only burned-domain replace, isolated-word replace, the EOD
+   * send/spam scoreboard, and the reply after Josh taps a button.
+   * Unclassified calls log and do not post.
+   */
+  async send(
+    text: string,
+    blocks?: unknown[],
+    kind?: SlackAllowKind,
+  ): Promise<void> {
+    if (!slackAllowed(kind)) {
+      console.log(
+        `[slack-quiet] dropped ${kind ?? "unclassified"}: ${text.replace(/\n/g, " ").slice(0, 200)}`,
+      );
+      return;
+    }
     if (readSlackBotToken(this.creds)) {
       await this.sendViaBot(text, blocks);
       return;
@@ -47,6 +67,10 @@ export class SlackClient {
     throw new Error(
       "Slack is not configured. Set SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN (+ SLACK_CHANNEL_ID).",
     );
+  }
+
+  async notifyActionResult(text: string): Promise<void> {
+    await this.send(text, undefined, "action_result");
   }
 
   private async sendViaWebhook(text: string, blocks?: unknown[]): Promise<void> {
@@ -158,29 +182,18 @@ export class SlackClient {
       "",
     ];
 
+    if (!summary.endOfDay) {
+      console.log(
+        `[slack-quiet] midday client-day ${summary.date} ${summary.totalSent} sent`,
+      );
+      return;
+    }
+
     for (const row of summary.rows.slice(0, 25)) {
-      const bounce =
-        row.bouncePercent == null ? "—" : `${row.bouncePercent.toFixed(1)}%`;
       const spam =
         row.spamPercent == null ? "—" : `${row.spamPercent.toFixed(1)}%`;
-      const restBits: string[] = [];
-      if (
-        row.activeInboxes ||
-        row.heldInboxes ||
-        row.restingInboxes ||
-        row.genericSpare
-      ) {
-        const piles = [
-          `${row.activeInboxes} on`,
-          `${row.restingInboxes ?? 0} off`,
-          `${row.genericSpare ?? 0} spare`,
-        ];
-        if (row.heldInboxes) piles.push(`${row.heldInboxes} held`);
-        restBits.push(piles.join(" / "));
-      }
       lines.push(
-        `• *${row.clientName}* — ${row.sent.toLocaleString("en-US")} sent · ${bounce} bounce · ${spam} spam` +
-          (restBits.length ? ` · ${restBits.join("")}` : ""),
+        `• *${row.clientName}* — ${row.sent.toLocaleString("en-US")} sent · ${spam} spam`,
       );
     }
     if (summary.rows.length > 25) {
@@ -198,27 +211,7 @@ export class SlackClient {
       );
     }
 
-    if (summary.endOfDay) {
-      const shorts = summary.staffingShorts ?? [];
-      lines.push("");
-      if (shorts.length) {
-        lines.push(
-          "Staffing (end of day)",
-          "Spare inboxes are not the shortage. They stay on Goliath.",
-          "These campaigns are missing this client's own inboxes that should be sending this week:",
-          ...shorts.map(
-            (row) =>
-              `• ${row.name} — ${row.staffable} sending, ${row.shortBy} of this client's inboxes that should be on are not.`,
-          ),
-        );
-      } else {
-        lines.push(
-          "Staffing (end of day) — every live campaign has this client's sending-half on it.",
-        );
-      }
-    }
-
-    await this.send(lines.join("\n"));
+    await this.send(lines.join("\n"), undefined, "eod_summary");
   }
 
   /**
@@ -1174,6 +1167,13 @@ export class SlackClient {
             decision: "deny",
           })
         : undefined;
+    const kind = slackKindForIsolationAction(details.kind);
+    if (!kind) {
+      console.log(
+        `[slack-quiet] dropped isolation ${details.kind}: ${details.title}`,
+      );
+      return;
+    }
     await this.send(text, [
       {
         type: "section",
@@ -1199,7 +1199,7 @@ export class SlackClient {
           },
         ],
       },
-    ]);
+    ], kind);
   }
 
   async notifyLeadRunout(details: { text: string }): Promise<void> {

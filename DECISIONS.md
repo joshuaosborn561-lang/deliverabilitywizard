@@ -1389,3 +1389,38 @@ finishes. Accepted: a guess without a word is noise.
 reasons; isolation is silent on COPY until the swap button; owner-intent
 D69.
 
+## D71 — Slack is burned domain, isolated word, and EOD sends/spam
+
+**Decision.** Slack posts only three things:
+
+1. A **burned domain** with receipts and a button to cancel / replace
+   (`retire_domain` / `buy_domains`).
+2. A **spam word or phrase** that isolation actually recovered, with
+   Make the changes (`swap_copy`).
+3. The **end-of-day client scoreboard**: each client, total sends, spam
+   rate. Once. America/New_York last send-volume slot.
+
+Health, rest, fan-out, top-up, reconnect, DNS, lead-runout, placement
+guesses, pod/cohort chatter, midday briefs, and staffing ticks stay in
+logs and `/ops`. The 15-minute loop still restaffs. It does not talk.
+
+This supersedes D64's Slack exceptions (spend / DNS / lead-runout /
+staffing-action may Slack) and D69's "missing rig may still Slack."
+The hunt still runs; it only Slacks when it has the word and the
+button. Spend stays on `/approvals` (D4). Button tap results may Slack
+so Josh sees the retire / swap / buy finished.
+
+**Why.** Josh (2026-08-25): "i literally only want these things coming
+into slack... the updates i keep getting every 15 minutes are
+worthless. this is supposed to run in the background and flag me when
+there is a deliverability issue, not to let me know im on pod b for
+the 80th time." Client rest was Slacking "group B is sending" every
+time health restored an on-week box.
+
+**Tradeoff.** A thin campaign, a DNS miss, or a canary-fleet buy ask
+will not page Slack. Accepted: those are `/ops` and logs.
+
+**Guards.** `slackAllowed` is only burned_domain / copy_word /
+eod_summary / action_result; client-rest does not Slack the fortnight;
+EOD brief has sent + spam and no staffing; owner-intent D71.
+

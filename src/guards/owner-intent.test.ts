@@ -1798,3 +1798,82 @@ describe("owner intent — D53 sending infra", () => {
     assert.doesNotMatch(good, /D\d+/);
   });
 });
+
+describe("owner intent — D71 Slack is deliverability flags plus EOD", () => {
+  it("D71: Slack allowlist is burned domain, isolated word, EOD, button result", async () => {
+    const { slackAllowed, slackKindForIsolationAction } = await import(
+      "../lib/slackAllow.js"
+    );
+    assert.equal(
+      slackAllowed(),
+      false,
+      stop(
+        "Unclassified Slack stays in the log (D71).",
+        "slackAllowed() is now true with no kind.",
+      ),
+    );
+    assert.equal(
+      slackAllowed("eod_summary"),
+      true,
+      stop(
+        "The end-of-day send/spam scoreboard still Slacks (D71).",
+        "eod_summary is no longer allowed.",
+      ),
+    );
+    assert.equal(
+      slackKindForIsolationAction("retire_domain"),
+      "burned_domain",
+      stop(
+        "A burned domain still Slacks the retire / replace button (D71).",
+        "retire_domain is no longer a Slack allow kind.",
+      ),
+    );
+    assert.equal(
+      slackKindForIsolationAction("swap_copy"),
+      "copy_word",
+      stop(
+        "An isolated word still Slacks Make the changes (D71).",
+        "swap_copy is no longer a Slack allow kind.",
+      ),
+    );
+    assert.equal(
+      slackKindForIsolationAction("buy_canary_fleet"),
+      null,
+      stop(
+        "Canary-fleet buy asks stay off Slack (D71).",
+        "buy_canary_fleet is Slack-allowed again.",
+      ),
+    );
+
+    const rest = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/clientRest.ts", import.meta.url), "utf8"),
+    );
+    assert.equal(
+      /This fortnight, group/.test(rest),
+      false,
+      stop(
+        "Do not Slack who is on this fortnight (D71).",
+        "clientRest.ts still composes the pod/cohort Slack.",
+      ),
+    );
+    const brief = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../clients/slack.ts", import.meta.url), "utf8"),
+    );
+    assert.equal(
+      /Staffing \(end of day\)/.test(brief),
+      false,
+      stop(
+        "The EOD Slack is sends and spam, not staffing (D71).",
+        "slack.ts still Slacks the staffing picture.",
+      ),
+    );
+    assert.match(
+      brief,
+      /eod_summary/,
+      stop(
+        "The EOD scoreboard still has an allow kind (D71).",
+        "slack.ts no longer posts eod_summary.",
+      ),
+    );
+  });
+});

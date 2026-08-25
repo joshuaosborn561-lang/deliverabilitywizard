@@ -1274,7 +1274,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
               });
               return;
             }
-            await slack.send(text);
+            await slack.notifyActionResult(text);
           })
           .catch((error) => {
             console.error("[slack-interactions] decide failed", error);
@@ -1990,10 +1990,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
     );
     console.log(
-      `[boot] Lead runout: ${config.enableLeadRunout ? "ENABLED (half / three-quarters / done, Slack only, no import)" : "disabled"}`,
+      "[boot] Slack (D71): burned-domain replace, isolated-word replace, EOD sends/spam only",
     );
     console.log(
-      `[boot] Sending infra census: ${config.enableSendingInfraCensus ? "ENABLED (placement-report IPs, Slack once)" : "disabled"}`,
+      `[boot] Lead runout: ${config.enableLeadRunout ? "ENABLED (half / three-quarters / done, logs only, no import)" : "disabled"}`,
+    );
+    console.log(
+      `[boot] Sending infra census: ${config.enableSendingInfraCensus ? "ENABLED (placement-report IPs, logs only)" : "disabled"}`,
     );
     console.log(
       `[boot] Client wipe (D61): ${config.enableClientWipe ? `ENABLED (Vasco keep ${config.vascoKeepCount}; wipe ${config.wipeClientPatterns.join("/") || "none"})` : "disabled"}`,

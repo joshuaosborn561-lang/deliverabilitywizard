@@ -329,8 +329,12 @@ export class ClientRestService {
       `[client-rest] onWeek=${result.onWeekCohort} examined=${result.examined} benched=${result.benched.length} restored=${result.restored.length} vetoed=${result.vetoed.length} errors=${result.errors.length}`,
     );
 
+    // D71 — rest movements stay in the log. Slack does not say who is on
+    // this fortnight.
     if (result.benched.length || result.restored.length || result.vetoed.length) {
-      await this.notify(result);
+      console.log(
+        `[client-rest] slack-quiet onWeek=${result.onWeekCohort} benched=${result.benched.length} restored=${result.restored.length}`,
+      );
     }
     return result;
   }
@@ -356,25 +360,5 @@ export class ClientRestService {
           })
         : [];
     return [...new Set([...fromClient, ...fromBcp].map((campaign) => campaign.id))];
-  }
-
-  private async notify(result: ClientRestResult): Promise<void> {
-    const lines = [
-      `${result.dryRun ? "Preview — " : ""}Client inbox rotation`,
-      `This fortnight, group ${result.onWeekCohort} is sending and group ${result.onWeekCohort === "A" ? "B" : "A"} is sitting.`,
-      `${result.benched.length} client inbox${result.benched.length === 1 ? "" : "es"} came off live campaigns.`,
-      `${result.restored.length} came back on.`,
-      `Warmup stayed on for everyone sitting.`,
-    ];
-    if (result.vetoed.length) {
-      lines.push(
-        `${result.vetoed.length} stayed off — ${result.vetoed.length === 1 ? "it" : "they"} already failed an inbox test.`,
-      );
-    }
-    try {
-      await this.slack.send(lines.join("\n"));
-    } catch (error) {
-      console.warn("[client-rest] Slack notify failed", error);
-    }
   }
 }

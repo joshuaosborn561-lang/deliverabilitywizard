@@ -11,6 +11,7 @@ import type { SmartleadSequence } from "../types/index.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
+import { slackKindForIsolationAction } from "../lib/slackAllow.js";
 import type { IsolationBuyService } from "./isolationBuy.js";
 import type { CopyCanaryBuyService } from "./copyCanaryBuy.js";
 
@@ -70,7 +71,8 @@ export class IsolationExecuteService {
         decidedBy: actor.name,
       });
       await this.state.save();
-      await this.slack.send(
+      await this.announce(
+        action.kind,
         `${action.title}\n${actor.name} said not now. I left everything as-is.`,
       );
       return { ok: true, message: "Okay — I left it alone." };
@@ -103,7 +105,8 @@ export class IsolationExecuteService {
         error: message,
       });
       await this.state.save();
-      await this.slack.send(
+      await this.announce(
+        action.kind,
         `${action.title}\nI tried after ${actor.name} approved and hit: ${message}`,
       );
       return { ok: false, message };
@@ -144,7 +147,8 @@ export class IsolationExecuteService {
         retiredAt: new Date().toISOString(),
       });
     }
-    await this.slack.send(
+    await this.announce(
+      "retire_domain",
       [
         `Retired *${domain}*.`,
         `Pulled ${onDomain.length} inbox${onDomain.length === 1 ? "" : "es"} off live campaigns (${removed} membership${removed === 1 ? "" : "s"}).`,
@@ -156,7 +160,8 @@ export class IsolationExecuteService {
 
   private async buyDomains(action: IsolationActionRecord): Promise<void> {
     const result = await this.buy.run(action);
-    await this.slack.send(
+    await this.announce(
+      "buy_domains",
       [
         `Bought ${result.domains.join(", ") || "the replacement domain"}.`,
         result.mailboxesOrdered
@@ -212,9 +217,23 @@ export class IsolationExecuteService {
         sequence.id === current.id ? next : sequence,
       ),
     );
-    await this.slack.send(
+    await this.announce(
+      "swap_copy",
       `Switched the word on *${action.detail.campaignName ?? campaignId}*: ${find} → ${swap || "(removed)"}. That is the only change I made.`,
     );
+  }
+
+  private async announce(
+    kind: IsolationActionRecord["kind"],
+    text: string,
+  ): Promise<void> {
+    if (!slackKindForIsolationAction(kind)) {
+      console.log(
+        `[slack-quiet] ${kind}: ${text.replace(/\n/g, " ").slice(0, 160)}`,
+      );
+      return;
+    }
+    await this.slack.send(text, undefined, "action_result");
   }
 }
 

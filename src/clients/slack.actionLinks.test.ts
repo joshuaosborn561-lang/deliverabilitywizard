@@ -4,7 +4,7 @@ import { SlackClient } from "./slack.js";
 import { verifySlackActionLink } from "../lib/slackActionLink.js";
 
 describe("isolation Slack URL buttons", () => {
-  it("puts a signed confirm-page URL on Buy canary fleet", async () => {
+  it("puts a signed confirm-page URL on retire / replace", async () => {
     const client = new SlackClient({
       channelLabel: "#test",
       actionLinkSecret: "secret",
@@ -17,10 +17,10 @@ describe("isolation Slack URL buttons", () => {
       };
 
     await client.notifyIsolationAction({
-      title: "Buy the unwarmed canary fleet",
-      proof: "The fleet is not bought yet.",
-      actionId: "buy_canary_fleet-1-abc",
-      kind: "buy_canary_fleet",
+      title: "Retire hubmeetconnect.com",
+      proof: "Same-ESP Gmail→Gmail 0% on 8 seeds.",
+      actionId: "retire_domain-1-abc",
+      kind: "retire_domain",
       who: "Josh",
     });
 
@@ -29,7 +29,7 @@ describe("isolation Slack URL buttons", () => {
     )[1]?.elements;
     const approve = actions?.[0];
     assert.ok(approve?.url);
-    assert.equal(approve.text?.text, "Buy canary fleet");
+    assert.equal(approve.text?.text, "Retire this domain");
     const url = new URL(approve.url);
     assert.equal(url.origin, "https://example.test");
     assert.equal(url.pathname, "/slack/action");

@@ -105,14 +105,15 @@ skip under 100 campaign sends, **20%** from 100–499, **7%** from 500 up,
 every 10 minutes (D80). Do **not** turn Smartlead `bounce_autopause_threshold`
 on; converge it to 100 (off) after autostop has scanned. The only automatic
 live mailbox removal is Josh killing that mailbox / retiring
-its domain; health backfills to 50. Never use the blended / all-ESP
+its domain; health backfills to the half-client floor. Never use the blended / all-ESP
 SmartDelivery score as a rotation signal (D32). Bounce at 2% is a log,
 not a Slack (D71).
 
-Each ACTIVE campaign gets a SmartDelivery **canary-copy test** from the
-dedicated D54/D55 fleet (2 domains, 3 inboxes each, one Google and one
+Each sending inbox must be on a living **known-good** canary (pod-control
+test). Each ACTIVE campaign gets a SmartDelivery **canary-copy test** from
+the dedicated D54/D55 fleet (2 domains, 3 inboxes each, one Google and one
 Outlook, warmup off). Those six stay off live campaigns. They are extra
-to the 50 staffable floor.
+to the half-client staffable floor.
 
 Copy/offer (Outlook buried, Gmail fine) still does not bench senders (D28).
 Do **not** Slack that guess. Confirm with canaries, run word-deletion
@@ -125,8 +126,8 @@ rotate worst bouncers (D29). Do **not** auto-`START` — a manual pause
 stays paused (D40). Only protective pauses recorded in `pendingResumes`
 may be resumed by health, and never when the campaign is **STOPPED**.
 
-Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
-from the pool — connected SMTP/IMAP, not held, and not resting. Disconnected membership
+Campaigns are topped up to **half that client's inboxes** (staffable
+senders: connected SMTP/IMAP, not held, and not resting). Disconnected membership
 does not count (D25). Health also runs same-client fan-out and client rest (D43). `CRON_HEALTH`
 every 15m; bounce autostop every 10m (D80); Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
@@ -153,11 +154,11 @@ START a campaign, import leads, spend, or pull a mailbox.
 
 Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 
-1. Staffing floor is 50 *staffable* senders (connected SMTP/IMAP, not held, not resting). Generics fill the gap. Keep at least ~30% Google and ~30% Microsoft. Do not buy a third client-domain set.
+1. Staffing floor is half that client's own inboxes (connected SMTP/IMAP, not held, not resting). Vasco is not special. Generics fill only a POC or a Josh Slack-approved campaign. Keep at least ~30% Google and ~30% Microsoft. Do not buy a third client-domain set.
 2. Split that client's inboxes into A and B (even split). Off-week half comes OFF live campaigns (warmup stays on). Do not leave resters on a campaign at `MESSAGE_PER_DAY=0`.
 3. Same-client fan-out still applies for *on-week* client inboxes only. A resting mailbox must not be added to every ACTIVE campaign for that client.
 4. Generics do not sit on the same A/B fortnight. They rest after ~14 days of live send, then become supply again after the same sit.
-5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. The 50 floor is warmed supply. Each ACTIVE campaign also gets a D55 canary-copy placement test (warmup off, off the campaign). Pre-warmed fleets skip that wait.
+5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. Pool supply is warmed only. Each sending inbox must be on a living known-good copy canary. Each ACTIVE campaign must have its copy on the unwarmed fleet canary. Pre-warmed fleets skip that wait.
 6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON (except the D54 canary fleet), plain Name / Brand signature.
 7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
 8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only. Bounce autostop (D80) pauses are not pendingResumes; leave Smartlead bounce auto-pause off.
@@ -174,12 +175,12 @@ end of day: per-client sent and spam (D71).
 
 Client inboxes are split **A/B per client** (even, stable). Off-week they
 are removed from live campaigns; warmup stays on. Resting is not staffable.
-Generics fill every live campaign to 50 staffable with at least ~30% Google
+Generics fill a POC (or Slack-approved) campaign with at least ~30% Google
 and ~30% Microsoft. A generic sits only after ~14 days of live send — not
 on the client fortnight — then becomes supply again after the same sit.
 21 days from InboxKit import is the warmed-vs-unwarmed clock (D50).
-Unwarmed boxes are not 50-floor supply; a few stay on campaigns as
-copy canaries (D51). Blacklist alone does not burn a domain.
+Unwarmed boxes are not floor supply; the dedicated fleet sends campaign
+copy off live campaigns (D54/D55). Blacklist alone does not burn a domain.
 Canary launch is a separate project (not in this loop).
 
 First health after this lands runs a one-shot hold rebuild (D44): HOLDs

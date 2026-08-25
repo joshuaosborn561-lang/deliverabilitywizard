@@ -1,10 +1,11 @@
 /**
- * D81 — first-seen campaign audit, then hourly sweeps.
+ * D81 / D82 — first-seen campaign audit, then hourly sweeps.
  *
  * First check is identity / safety. Hourly watches pods, signatures,
  * canaries, and the half-client floor. Bounce auto-pause is not this
  * checker (Cayden's D80). Goliath is a POC client, not a special rule
- * pile.
+ * pile. Every serving inbox needs a known-good canary; every campaign
+ * needs its copy on the unwarmed fleet canary.
  */
 
 export const CAMPAIGN_CHECK_KINDS = [
@@ -18,6 +19,7 @@ export const CAMPAIGN_CHECK_KINDS = [
   "generic_unapproved",
   "missing_canary",
   "canary_inactive",
+  "inbox_missing_known_good",
   "understaffed",
   "no_placement_test",
 ] as const;

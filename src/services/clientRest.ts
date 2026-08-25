@@ -9,7 +9,7 @@ import {
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { nameHayMatches } from "../lib/clientWipe.js";
+import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { sleep } from "../lib/http.js";
 import {
   assignClientCohorts,
@@ -63,7 +63,8 @@ export function isExcludedOnlyMembership(
     .map((id) => campaignById.get(id))
     .filter((campaign): campaign is { id: number; name?: string | null } =>
       Boolean(campaign),
-    );
+    )
+    .filter((campaign) => !isPodControlShellCampaign(campaign));
   return (
     known.length > 0 &&
     known.every((campaign) => isExcluded(campaign, excluded))
@@ -163,13 +164,6 @@ export class ClientRestService {
         continue;
       }
       if (isGenericMailbox(account, email, this.config, this.state)) continue;
-      const restHay = `${email} ${campaignIdsOf(account)
-        .map((id) => campaignById.get(id)?.name ?? "")
-        .join(" ")}`;
-      if (nameHayMatches(restHay, this.config.fullSendClientPatterns)) {
-        result.skipped.push(`${email}: full-send client`);
-        continue;
-      }
       const groupKey = clientRestGroupKey(account, email, campaignClientById);
       if (!groupKey) {
         result.skipped.push(`${email}: no client group`);

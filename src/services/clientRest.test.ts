@@ -31,6 +31,21 @@ describe("isExcludedOnlyMembership", () => {
       true,
     );
   });
+
+  it("does not treat the pod-control shell as the only excluded home (D72/D82)", () => {
+    const byId = new Map([
+      [1, { id: 1, name: "Live BCP" }],
+      [3841904, { id: 3841904, name: "Pod control shell" }],
+    ]);
+    assert.equal(
+      isExcludedOnlyMembership([3841904], byId, []),
+      false,
+    );
+    assert.equal(
+      isExcludedOnlyMembership([1, 3841904], byId, []),
+      false,
+    );
+  });
 });
 
 describe("shouldVetoRestRestore", () => {
@@ -332,6 +347,60 @@ describe("ClientRestService", () => {
     assert.ok(
       result.restored.some((row) => row.email === idle),
       "ghost campaign id must not skip restore",
+    );
+    assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
+  });
+
+  it("restores an on-week inbox that is only on the pod-control shell (D72)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const idle = "a@client.info";
+    assert.equal(assignClientCohorts([idle, "z@client.info"]).get(idle), "A");
+
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-shell-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Live", status: "ACTIVE", client_id: 9 },
+        { id: 3841904, name: "Pod control shell", status: "PAUSED" },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: idle,
+          client_id: 9,
+          campaign_ids: [3841904],
+        },
+        {
+          id: 21,
+          from_email: "z@client.info",
+          client_id: 9,
+          campaign_ids: [1],
+        },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.ok(
+      result.restored.some((row) => row.email === idle),
+      "shell-only on-week inbox must be restored to live campaigns",
     );
     assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
   });

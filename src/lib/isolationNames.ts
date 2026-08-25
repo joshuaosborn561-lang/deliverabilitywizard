@@ -39,6 +39,10 @@ export function isCanaryCopyTestName(name: string | undefined): boolean {
   return String(name ?? "").startsWith(CANARY_COPY_TEST_PREFIX);
 }
 
+export function isPodControlTestName(name: string | undefined): boolean {
+  return String(name ?? "").startsWith(POD_CONTROL_TEST_PREFIX);
+}
+
 export function podControlTestName(podName: string, chunk: number, chunks: number): string {
   const suffix = chunks > 1 ? ` (${chunk}/${chunks})` : "";
   return `${POD_CONTROL_TEST_PREFIX} ${podName}${suffix}`.slice(0, 120);

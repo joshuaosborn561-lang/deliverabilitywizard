@@ -13,7 +13,8 @@ import {
   findForeignBrand,
 } from "../lib/clientBrand.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
+import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
+import { pocClientId } from "../lib/pocClient.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
@@ -91,11 +92,11 @@ export class OneClientMembershipService {
       emails: isolationEmailsOf(this.config.isolationMailboxEmails),
       domain: this.config.isolationDomain || undefined,
     };
-    const genericOwnerId = genericStaffClientId(
-      campaigns as SmartleadCampaign[],
-      clientsById,
-      this.config.genericStaffNamePatterns,
-    );
+    const genericOwnerId = pocClientId(clients, this.config.pocClientNamePatterns);
+    const approvals =
+      typeof this.state.listGenericBackfillApprovals === "function"
+        ? this.state.listGenericBackfillApprovals()
+        : {};
     const activeOwnerCampaignIds = (campaigns as SmartleadCampaign[])
       .filter((campaign) => {
         if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
@@ -104,10 +105,11 @@ export class OneClientMembershipService {
           typeof campaign.client_id === "number"
             ? clientsById.get(campaign.client_id)
             : undefined;
-        return allowsGenericStaff(
+        return campaignMayTakeGenerics(
           campaign,
           client ? clientDisplayName(client) : "",
-          this.config.genericStaffNamePatterns,
+          this.config.pocClientNamePatterns,
+          approvals,
         );
       })
       .map((campaign) => campaign.id);
@@ -281,28 +283,6 @@ export class OneClientMembershipService {
     );
     return result;
   }
-}
-
-function genericStaffClientId(
-  campaigns: SmartleadCampaign[],
-  clientsById: Map<number, SmartleadClientRecord>,
-  patterns: string[],
-): number | null {
-  for (const campaign of campaigns) {
-    if (typeof campaign.client_id !== "number") continue;
-    if (isPodControlShellCampaign(campaign)) continue;
-    const client = clientsById.get(campaign.client_id);
-    if (
-      allowsGenericStaff(
-        campaign,
-        client ? clientDisplayName(client) : "",
-        patterns,
-      )
-    ) {
-      return campaign.client_id;
-    }
-  }
-  return null;
 }
 
 function chunk<T>(rows: T[], size: number): T[][] {

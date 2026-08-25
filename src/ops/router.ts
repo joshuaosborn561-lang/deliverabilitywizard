@@ -253,7 +253,7 @@ export function createOpsRouter(opts: {
           message: state.poolProvision.lastMessage,
         },
         policy: {
-          campaignSenderFloor: opts.config.minCampaignSenders,
+          campaignSenderFloor: "half that client's inboxes",
           mailboxDailyCap: opts.config.messagePerDay,
           warmupDays: opts.config.poolWarmupDays,
           freshInboxWarmupDays: opts.config.freshInboxWarmupDays,

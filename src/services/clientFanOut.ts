@@ -13,7 +13,7 @@ import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
+import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
@@ -100,19 +100,24 @@ export class ClientFanOutService {
       const campaignName = new Map(
         groupCampaigns.map((c) => [c.id, String(c.name ?? c.id)]),
       );
-      const groupAllowsGenerics = groupCampaigns.some((campaign) => {
+      const approvals =
+        typeof this.state.listGenericBackfillApprovals === "function"
+          ? this.state.listGenericBackfillApprovals()
+          : {};
+      const campaignAllowsGenerics = (campaign: SmartleadCampaign): boolean => {
         const clientName =
           typeof campaign.client_id === "number"
             ? clientDisplayName(
                 clientsById.get(campaign.client_id) ?? { id: campaign.client_id },
               )
             : "";
-        return allowsGenericStaff(
+        return campaignMayTakeGenerics(
           campaign,
           clientName,
-          this.config.genericStaffNamePatterns,
+          this.config.pocClientNamePatterns,
+          approvals,
         );
-      });
+      };
 
       // campaignId → pending account attachments (batched Smartlead writes)
       const pendingByCampaign = new Map<
@@ -149,13 +154,7 @@ export class ClientFanOutService {
           continue;
         }
 
-        if (
-          !groupAllowsGenerics &&
-          isGenericMailbox(account, email, this.config, this.state)
-        ) {
-          result.skipped.push(`${email}: D58 generics stay on Goliath only`);
-          continue;
-        }
+        const generic = isGenericMailbox(account, email, this.config, this.state);
 
         const belongs = this.accountBelongsToGroup(
           account,
@@ -177,6 +176,12 @@ export class ClientFanOutService {
 
         for (const campaign of groupCampaigns) {
           if (on.has(campaign.id)) continue;
+          if (generic && !campaignAllowsGenerics(campaign)) {
+            result.skipped.push(
+              `${email}: generics need POC or Slack approve on #${campaign.id}`,
+            );
+            continue;
+          }
           const list = pendingByCampaign.get(campaign.id) ?? [];
           list.push({ accountId: account.id, email });
           pendingByCampaign.set(campaign.id, list);

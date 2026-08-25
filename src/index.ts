@@ -2106,7 +2106,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
-      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (D58 half-client-inbox floor; generics on ${config.genericStaffNamePatterns.join("/") || "nobody"}${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (half-client-inbox floor; generics on POC ${config.pocClientNamePatterns.join("/") || "nobody"} or Slack approve${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
     );
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,

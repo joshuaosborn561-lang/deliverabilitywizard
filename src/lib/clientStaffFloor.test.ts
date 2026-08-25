@@ -71,9 +71,9 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
         { client_id: 9, name: "Vasco - Service" },
         counts,
         "Vasco Warranty",
-        ["vasco"],
       ),
-      2,
+      1,
+      "Vasco is not a full-send exception — floor is still half",
     );
   });
 });

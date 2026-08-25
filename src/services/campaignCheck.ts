@@ -1,13 +1,7 @@
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
-import {
-  campaignIdOf,
-  isAutomatedTest,
-  isTestStoppable,
-  normalizeTestList,
-  testIdOf,
-} from "../clients/smartdelivery.js";
+import { normalizeTestList } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
@@ -34,9 +28,9 @@ import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
 import { requestIsolationAction, buildIsolationAction } from "../lib/isolationActions.js";
 import {
-  campaignIdFromCanaryTestName,
-  isCanaryCopyTestName,
-} from "../lib/isolationNames.js";
+  hasLivingUnwarmedCopyCanary,
+  livingKnownGoodEmails,
+} from "../lib/canaryCoverage.js";
 import {
   foreignCampaignIds,
   ownerClientId,
@@ -78,22 +72,6 @@ export interface CampaignCheckResult {
     passed: boolean;
     findings: CampaignFinding[];
   }>;
-}
-
-function livingCanaryCampaignIds(tests: SpamTestSummary[]): Set<number> {
-  const out = new Set<number>();
-  for (const test of tests) {
-    if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
-    const named = campaignIdFromCanaryTestName(test.test_name);
-    if (named) {
-      out.add(named);
-      continue;
-    }
-    if (!isCanaryCopyTestName(test.test_name)) continue;
-    const cid = Number(campaignIdOf(test));
-    if (Number.isFinite(cid) && cid > 0) out.add(cid);
-  }
-  return out;
 }
 
 /**
@@ -149,8 +127,8 @@ export class CampaignCheckService {
     );
 
     let tested = new Set<string>();
-    let canaryCampaigns = new Set<number>();
     let listedTests: SpamTestSummary[] = [];
+    let knownGoodEmails = new Set<string>();
     try {
       listedTests = normalizeTestList(await this.smartDelivery.listTests({}));
       const enriched = await this.smartDelivery.enrichCampaignIds(listedTests);
@@ -158,7 +136,11 @@ export class CampaignCheckService {
         enriched,
         this.state.get().testedCampaigns,
       );
-      canaryCampaigns = livingCanaryCampaignIds(enriched);
+      listedTests = enriched;
+      knownGoodEmails = livingKnownGoodEmails(
+        listedTests,
+        this.state.listPodControls(),
+      );
     } catch (error) {
       console.warn("[campaign-check] could not list tests", error);
     }
@@ -206,8 +188,8 @@ export class CampaignCheckService {
         brandByClientId,
         allBrands,
         tested,
-        canaryCampaigns,
         listedTests,
+        knownGoodEmails,
         clientInboxCounts,
         connectedCanaries,
         fleetSize: fleetEmails.length,
@@ -286,8 +268,8 @@ export class CampaignCheckService {
     brandByClientId: Map<number, string>;
     allBrands: string[];
     tested: Set<string>;
-    canaryCampaigns: Set<number>;
     listedTests: SpamTestSummary[];
+    knownGoodEmails: Set<string>;
     clientInboxCounts: Map<string, number>;
     connectedCanaries: number;
     fleetSize: number;
@@ -453,25 +435,36 @@ export class CampaignCheckService {
         });
       }
 
-      const storedCanaryId = this.state.getCopyCanaryTestId(campaign.id);
-      const storedLiving =
-        Boolean(storedCanaryId) &&
-        input.listedTests.some(
-          (test) =>
-            testIdOf(test) === storedCanaryId &&
-            isAutomatedTest(test) &&
-            isTestStoppable(test),
+      if (input.depth === "hourly") {
+        const missingKnownGood = serving.filter(
+          (email) => !input.knownGoodEmails.has(email),
         );
-      if (!input.canaryCampaigns.has(campaign.id) && !storedLiving) {
+        if (missingKnownGood.length) {
+          findings.push({
+            kind: "inbox_missing_known_good",
+            detail: `${missingKnownGood.length} serving inbox(es) not on a known-good copy canary: ${missingKnownGood.slice(0, 3).join(", ")}`,
+          });
+        }
+      }
+
+      const storedCanaryId = this.state.getCopyCanaryTestId(campaign.id);
+      if (
+        !hasLivingUnwarmedCopyCanary(
+          campaign.id,
+          input.listedTests,
+          storedCanaryId,
+        )
+      ) {
         findings.push({
           kind: "missing_canary",
-          detail: `${serving.length} serving inbox(es) have no active canary-copy test`,
+          detail:
+            "campaign copy is not on the unwarmed senders canary (Canary copy test)",
         });
       }
       if (input.fleetSize > 0 && input.connectedCanaries === 0) {
         findings.push({
           kind: "canary_inactive",
-          detail: "canary fleet mailboxes are not connected in Smartlead",
+          detail: "unwarmed canary fleet mailboxes are not connected in Smartlead",
         });
       }
     }

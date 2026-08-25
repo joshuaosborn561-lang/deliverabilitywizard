@@ -1,15 +1,10 @@
 /**
- * D67 / D73 / D78 — Smartlead campaign bounce auto-pause.
+ * Smartlead campaign settings helpers.
  *
- * Under-1k lists and Goliath hold 20%. Over-1k and everyone else hold 7%.
- * Never leave Smartlead's 5% default — that paused a Goliath campaign
- * that should have stayed up.
- *
- * D79 — this is the live bounce control. There is no per-sender 5%/50
- * pull underneath.
- *
- * Under-1k / Over-1k are name matches only. Do not infer them from
- * company-size bands like 501-1000.
+ * D80 — do not turn Smartlead bounce auto-pause on. Writes use 100 (off).
+ * Live pause is CampaignBounceAutostopService (100/20 then 500/7).
+ * Name-band helpers remain for old campaign titles; they are not a
+ * write rule.
  */
 
 const UNDER_1K = /under[-_\s]?1k\b/i;
@@ -48,11 +43,9 @@ export function isGoliathCampaign(name: string): boolean {
   return /goliath/i.test(name);
 }
 
-/** Smartlead bounce auto-pause percent. Always 20 or 7 — never 5. */
-export function desiredBounceAutopausePercent(name: string): number {
-  if (isOver1kCampaign(name)) return 7;
-  if (isUnder1kCampaign(name) || isGoliathCampaign(name)) return 20;
-  return 7;
+/** D80 — Smartlead autopause stays off. Name bands are not a write rule. */
+export function desiredBounceAutopausePercent(_name?: string): number {
+  return 100;
 }
 
 export function unwrapCampaignSettings(settings: unknown): Record<string, unknown> {

@@ -9,7 +9,12 @@ Two people drive this repo: **Josh** owns product calls (`DECISIONS.md`);
 
 ## How senders rotate
 
-Health runs every **15 minutes**. That is the live loop.
+Health runs every **15 minutes**. That is the staffing loop.
+
+**Campaign bounce (D80).** A separate job every **10 minutes** pauses an
+ACTIVE campaign only after **100** lifetime sends: **20%** bounce from
+100–499, **7%** from 500 up. Smartlead's own bounce auto-pause stays
+**off**. A bounce pause is not auto-resumed.
 
 **Client inboxes (D43).** Each client is split evenly A/B. The off-week half
 comes **off** live campaigns; warmup stays on. Resting boxes are not staffable
@@ -145,6 +150,7 @@ Copy `.env.example`. Required: `SMARTLEAD_API_KEY` and Slack
 | `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull on same-ESP inbox below this % |
 | `MIN_CAMPAIGN_SENDERS` | `50` | Staffable-sender floor |
 | `CRON_HEALTH` | `*/15 * * * *` | Rest / sit / top-up / fan-out |
+| `CRON_BOUNCE_AUTOSTOP` | `*/10 * * * *` | Campaign bounce pause (100/20 then 500/7) |
 | `CRON_MONITOR` | `0 */6 * * *` | Placement / DNS / Slack brief |
 | `CRON_SCAN` | `0 9 * * 1,4` | New-campaign test create |
 | `ENABLE_CLIENT_REST` | `true` | Per-client A/B fortnight |

@@ -241,7 +241,7 @@ Use `Smartlead:update_campaign_ai_bounce_settings` (or the batch tool).
 
 | Setting | API field | Value |
 |---|---|---|
-| Bounce auto-pause threshold | `bounce_autopause_threshold` | `"7"` (string) |
+| Bounce auto-pause threshold | `bounce_autopause_threshold` | `"100"` (off — D80) |
 | Active AI categories | `ai_categorisation_options` | `[6, 1, 3]` |
 | Restart OOO when lead returns | `out_of_office_detection_settings.autoCategorizeOOO` | `true` |
 | Ignore OOO from reply % | `ignoreOOOasReply` | **`true`** |
@@ -258,9 +258,10 @@ Copy field names exactly (British s / American z, snake / camel).
 
 `autoCategorizeOOO` and `autoReactivateOOO` are mutually exclusive.
 
-Smartlead auto-pauses the campaign at 7% bounce. **Do not auto-START it
-back.** That is a human call. Health may investigate (D29) but will not
-resume a manual pause (D40).
+Smartlead bounce auto-pause stays **off** (`100`). The wizard pauses
+campaigns itself after 100 sends (20% until 500, then 7%). **Do not
+auto-START** a bounce pause. Health may investigate (D29) but will not
+resume a bounce pause or a manual pause (D40).
 
 ## 7. Mailbox setup ... `Smartlead:link_mailboxes`
 

@@ -1604,3 +1604,39 @@ benching on that signal, and the leftover rule was the confusing one.
 
 **Guards.** `enableBounceRotation` false; owner-intent D79.
 
+---
+
+## D80 — Campaign bounce autostop is ours; Smartlead autopause stays off
+
+**Decision.** The wizard pauses ACTIVE campaigns on lifetime campaign
+sends (analytics), not Smartlead's `bounce_autopause_threshold`:
+
+- **Under 100 sends:** do not pause. The rate is noise.
+- **100–499 sends:** pause above **20%**
+- **500+ sends:** pause above **7%**
+
+Poll every **10 minutes** (`CRON_BOUNCE_AUTOSTOP`). Do not record
+`pendingResumes` — a bounce pause stays paused until a human STARTs it
+(D40). Do not Slack (D71).
+
+After a successful autostop scan, write Smartlead
+`bounce_autopause_threshold` to **100** (off) on every campaign. Do
+**not** converge Smartlead to 20/7 (D78) or 5. Name-band Under-1k /
+Goliath / Over-1k is not a write rule anymore.
+
+This supersedes D78's live Smartlead converge and D79's sentence that
+campaign auto-pause is Smartlead's 20/7. D29 investigate on already
+PAUSED campaigns is unchanged.
+
+**Why.** Cayden (2026-08-25) for Josh: campaigns were pausing on ~10
+sends because Smartlead weights a couple of bounces as a high percent.
+Josh to approve via PR. Ten sends is not a bounce sample; 100 is the
+floor, then 20% until 500, then 7%.
+
+**Tradeoff.** Smartlead can still pause a campaign until this code is
+on `main` and has completed one autostop pass. Accepted. A campaign at
+499 sends still uses the looser 20% line.
+
+**Guards.** `shouldAutostopCampaignForBounce`; `CampaignBounceAutostopService`;
+`desiredBounceAutopausePercent` returns 100; owner-intent D80.
+

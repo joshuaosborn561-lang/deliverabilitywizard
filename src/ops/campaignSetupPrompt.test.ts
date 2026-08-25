@@ -10,7 +10,7 @@ describe("campaignSetupPrompt", () => {
     assert.match(prompt, /30% Google/);
     assert.match(prompt, /14 days of live send/);
     assert.match(prompt, /21 days/);
-    assert.match(prompt, /do not auto-START/i);
+    assert.match(prompt, /Bounce autostop \(D80\)/);
     assert.match(prompt, /MESSAGE_PER_DAY=0/);
     assert.match(prompt, /rebuilds unproven HOLDs/);
     assert.match(prompt, /unlimited/i);

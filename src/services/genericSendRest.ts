@@ -6,7 +6,8 @@ import {
   campaignIdsOf,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
-import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isGenericMailbox, isRestEligibleMailbox } from "../lib/clientInbox.js";
+import { pocHayForAccount } from "../lib/poc.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -86,6 +87,16 @@ export class GenericSendRestService {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
+      const hay = pocHayForAccount(
+        account,
+        email,
+        campaignIdsOf(account),
+        campaigns as SmartleadCampaign[],
+      );
+      if (isRestEligibleMailbox(account, email, this.config, this.state, hay)) {
+        result.skipped.push(`${email}: POC A/B rest`);
+        continue;
+      }
       if (this.state.isCopyCanary(email)) {
         result.skipped.push(`${email}: copy canary`);
         continue;

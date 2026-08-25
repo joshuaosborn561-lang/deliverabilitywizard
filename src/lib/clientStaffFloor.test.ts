@@ -62,18 +62,75 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       { getPoolMailbox: () => undefined },
     );
     assert.equal(counts.get(clientCountKey(9)), 2);
+  });
+
+  it("counts POC generics toward that client's floor (D70)", () => {
+    const counts = countClientInboxesByKey(
+      [
+        {
+          id: 1,
+          from_email: "a@crosslaunchco.com",
+          client_id: 11,
+          campaign_ids: [80],
+        },
+        {
+          id: 2,
+          from_email: "b@crosslaunchco.com",
+          client_id: 11,
+          campaign_ids: [80],
+        },
+        {
+          id: 3,
+          from_email: "c@crosslaunchco.com",
+          client_id: 11,
+          campaign_ids: [80],
+        },
+      ],
+      [{ id: 80, name: "Goliath Displacement L", status: "ACTIVE", client_id: 11 }],
+      [{ id: 11, name: "Dave Ackley" }],
+      {
+        extraGenericMailboxes: [],
+        extraGenericDomains: ["crosslaunchco.com"],
+        pocClientPatterns: ["goliath"],
+      },
+      { getPoolMailbox: () => undefined },
+    );
+    assert.equal(counts.get(clientCountKey(11)), 3);
     assert.equal(
-      staffFloorForCampaign({ client_id: 9, name: "Vasco - Service" }, counts),
+      staffFloorForCampaign({ client_id: 11, name: "Goliath Displacement L" }, counts),
       1,
     );
+  });
+
+  it("counts a sitting POC generic toward the floor (D70)", () => {
+    const counts = countClientInboxesByKey(
+      [
+        {
+          id: 1,
+          from_email: "sit@crosslaunchco.com",
+          client_id: 11,
+          campaign_ids: [],
+        },
+        {
+          id: 2,
+          from_email: "live@crosslaunchco.com",
+          client_id: 11,
+          campaign_ids: [80],
+        },
+      ],
+      [{ id: 80, name: "Goliath Displacement L", status: "ACTIVE", client_id: 11 }],
+      [{ id: 11, name: "Dave Ackley" }],
+      {
+        extraGenericMailboxes: [],
+        extraGenericDomains: ["crosslaunchco.com"],
+        pocClientPatterns: ["goliath"],
+      },
+      { getPoolMailbox: () => undefined },
+    );
+    assert.equal(counts.get(clientCountKey(11)), 2);
     assert.equal(
-      staffFloorForCampaign(
-        { client_id: 9, name: "Vasco - Service" },
-        counts,
-        "Vasco Warranty",
-        ["vasco"],
-      ),
-      2,
+      staffFloorForCampaign({ client_id: 11, name: "Goliath Displacement L" }, counts),
+      1,
     );
   });
 });

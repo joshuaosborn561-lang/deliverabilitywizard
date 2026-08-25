@@ -227,6 +227,111 @@ describe("ClientRestService", () => {
     assert.equal(state.getRestingInbox("generic@pool.info"), undefined);
   });
 
+  it("A/B-rests a generic on a POC campaign (D70)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // B off
+    const emails = ["a@crosslaunchco.com", "z@crosslaunchco.com"];
+    const off = emails.filter(
+      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
+    );
+    assert.ok(off.length >= 1);
+
+    const removed: number[] = [];
+    const state = new StateStore(
+      `/tmp/client-rest-poc-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Goliath Displacement L", status: "ACTIVE", client_id: 11 },
+      ],
+      listAllEmailAccounts: async () =>
+        emails.map((from_email, index) => ({
+          id: 20 + index,
+          from_email,
+          client_id: 11,
+          campaign_ids: [1],
+        })),
+      removeEmailAccountsFromCampaign: async (
+        _campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(...ids);
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const result = await new ClientRestService(
+      loadConfig({
+        ENABLE_CLIENT_REST: "true",
+        DRY_RUN: "false",
+        EXTRA_GENERIC_DOMAINS: "crosslaunchco.com",
+        POC_CLIENT_PATTERNS: "goliath",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    ).run({ dryRun: false, now });
+
+    assert.ok(result.benched.some((row) => off.includes(row.email)));
+    assert.ok(removed.length >= 1);
+  });
+
+  it("restores a sitting POC generic from client_id with no campaigns (D70)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const sitting = "a@crosslaunchco.com";
+    const live = "z@crosslaunchco.com";
+    assert.equal(assignClientCohorts([sitting, live]).get(sitting), "A");
+
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-poc-sit-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const result = await new ClientRestService(
+      loadConfig({
+        ENABLE_CLIENT_REST: "true",
+        DRY_RUN: "false",
+        EXTRA_GENERIC_DOMAINS: "crosslaunchco.com",
+        POC_CLIENT_PATTERNS: "goliath",
+      }),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Goliath Displacement L", status: "ACTIVE", client_id: 11 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 20,
+            from_email: sitting,
+            client_id: 11,
+            campaign_ids: [],
+          },
+          {
+            id: 21,
+            from_email: live,
+            client_id: 11,
+            campaign_ids: [1],
+          },
+        ],
+        addEmailAccountsToCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          adds.push([campaignId, [...ids]]);
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    ).run({ dryRun: false, now });
+
+    assert.ok(
+      result.restored.some((row) => row.email === sitting),
+      "sitting POC generic must restore from client_id",
+    );
+    assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
+  });
+
   it("puts an on-week idle client back on the client's live campaigns (D44)", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const idle = "a@client.info";

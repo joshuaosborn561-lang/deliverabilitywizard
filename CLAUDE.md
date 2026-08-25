@@ -84,7 +84,10 @@ mailboxes go on all BCP campaigns; Parlay on all Parlay; etc. (`ClientFanOutServ
 D26). Cross-client membership is still forbidden. The dedicated D54/D55
 canary fleet is not staffable supply and stays **off** live campaigns.
 
-Generics may staff **any** client including BCP (D27). On assign, signature /
+Generics staff **POC clients** (D70; Goliath is the first). A POC sends
+on generic domains, so those assigned generics A/B with that client.
+Unassigned pool generics still use the 14-day send clock (D43).
+Everyone else is client-inbox only (D58). On assign, signature /
 from-name / client id are set to the receiving client.
 
 **Cross-client top-up is still a move** (remove from the other client, add to

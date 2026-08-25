@@ -108,5 +108,15 @@ describe("isRestEligibleMailbox", () => {
       ),
       false,
     );
+    assert.equal(
+      isRestEligibleMailbox(
+        { client_id: 11, from_name: "Harmony Norris" },
+        "harmony@crosslaunchco.com",
+        { ...fleet, pocClientPatterns: ["goliath"] },
+        { getPoolMailbox: () => undefined },
+        "harmony@crosslaunchco.com Goliath Displacement L",
+      ),
+      true,
+    );
   });
 });

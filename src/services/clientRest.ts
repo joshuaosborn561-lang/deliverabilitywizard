@@ -8,7 +8,8 @@ import {
 } from "../clients/smartlead.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
-import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isGenericMailbox, isRestEligibleMailbox } from "../lib/clientInbox.js";
+import { pocHayForAccount } from "../lib/poc.js";
 import { nameHayMatches } from "../lib/clientWipe.js";
 import { sleep } from "../lib/http.js";
 import {
@@ -24,7 +25,8 @@ import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 
 /**
  * D43 — per-client A/B rest. Half of that client's inboxes sit for two
- * weeks (off live campaigns, warmup on). Generics are not in this loop.
+ * weeks (off live campaigns, warmup on). Unassigned pool generics are
+ * not in this loop. D70 — generics assigned to a POC client are.
  */
 
 export interface ClientRestResult {
@@ -162,15 +164,23 @@ export class ClientRestService {
         result.skipped.push(`${email}: retired domain`);
         continue;
       }
-      if (isGenericMailbox(account, email, this.config, this.state)) continue;
-      const restHay = `${email} ${campaignIdsOf(account)
-        .map((id) => campaignById.get(id)?.name ?? "")
-        .join(" ")}`;
+      const groupKey = clientRestGroupKey(account, email, campaignClientById);
+      const restHay = pocHayForAccount(
+        account,
+        email,
+        campaignIdsOf(account),
+        campaigns as SmartleadCampaign[],
+      );
+      if (
+        isGenericMailbox(account, email, this.config, this.state) &&
+        !isRestEligibleMailbox(account, email, this.config, this.state, restHay)
+      ) {
+        continue;
+      }
       if (nameHayMatches(restHay, this.config.fullSendClientPatterns)) {
         result.skipped.push(`${email}: full-send client`);
         continue;
       }
-      const groupKey = clientRestGroupKey(account, email, campaignClientById);
       if (!groupKey) {
         result.skipped.push(`${email}: no client group`);
         continue;

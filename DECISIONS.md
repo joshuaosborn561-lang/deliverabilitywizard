@@ -1389,3 +1389,30 @@ finishes. Accepted: a guess without a word is noise.
 reasons; isolation is silent on COPY until the swap button; owner-intent
 D69.
 
+## D70 — POC clients send on generic domains and A/B those generics
+
+**Decision.** A **POC** client sends on generic domains (Goliath is the
+first). Generics **assigned to that client** A/B with it — same fortnight
+as the client's own boxes, same floor (half the rest-eligible fleet).
+Unassigned pool generics still use the 14-day send clock (D43). Adding a
+client to `POC_CLIENT_PATTERNS` both allows generic staff and puts those
+assigned generics on A/B. Match campaign names (Goliath's Smartlead
+client is "Dave Ackley").
+
+This supersedes D43 **for POC-assigned generics only**. It does not put
+unassigned pool generics, or generics on a non-POC client, onto A/B.
+
+**Why.** Josh (2026-08-25): Goliath is weird because it is a generic
+domain sending. Treat it as POC; any client that gets a POC will have a
+generic domain like Goliath. Live, the same 91 generics sat on every
+Goliath campaign and never A/B-sat, because D43 rest skips generics.
+
+**Tradeoff.** A POC's off-week half sits, so Monday volume on that
+client drops unless the on-week half has due leads. Accepted: the
+alternative is every assigned generic sending every fortnight with no
+rest.
+
+**Guards.** `isRestEligibleMailbox` is true for a Goliath generic with
+POC hay and false without; `pocClientPatterns` defaults to `goliath`;
+owner-intent D70.
+

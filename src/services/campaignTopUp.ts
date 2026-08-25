@@ -16,6 +16,7 @@ import {
   countClientInboxesByKey,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
+import { pocStaffPatterns } from "../lib/poc.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
@@ -196,7 +197,10 @@ export class CampaignTopUpService {
       return allowsGenericStaff(
         campaign,
         clientName,
-        this.config.genericStaffNamePatterns,
+        pocStaffPatterns(
+          this.config.genericStaffNamePatterns,
+          this.config.pocClientPatterns,
+        ),
       );
     };
     const excluded = this.config.topUpExcludeCampaigns;

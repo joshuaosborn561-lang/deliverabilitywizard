@@ -108,6 +108,19 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
+  /**
+   * D70 — POC clients send on generic domains (Goliath first). Assigned
+   * generics A/B with that client. Same name-fragment match as campaigns.
+   */
+  pocClientPatterns: z
+    .string()
+    .default("goliath")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   enableCampaignTopUp: boolFromEnv(true),
   /**
    * Fast staffing loop: reconnect → mailbox settings → refill/unpause.
@@ -498,6 +511,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     genericStaffNamePatterns: env.GENERIC_STAFF_NAME_PATTERNS ?? "goliath",
+    pocClientPatterns: env.POC_CLIENT_PATTERNS ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,

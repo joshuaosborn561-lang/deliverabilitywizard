@@ -1,5 +1,6 @@
 import {
   accountEmail,
+  campaignIdsOf,
   resolveAccountClient,
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
@@ -7,7 +8,8 @@ import {
 import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { isClientInbox } from "./clientInbox.js";
+import { isRestEligibleMailbox } from "./clientInbox.js";
+import { pocHayForAccount } from "./poc.js";
 
 /**
  * D58 — live staffable floor is half that client's own inboxes.
@@ -40,7 +42,9 @@ export function countClientInboxesByKey(
   accounts: SmartleadAccountWithCampaigns[],
   campaigns: SmartleadCampaign[],
   clients: SmartleadClientRecord[],
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
+  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains"> & {
+    pocClientPatterns?: string[];
+  },
   state: Pick<StateStore, "getPoolMailbox">,
 ): Map<string, number> {
   const campaignClientById = new Map(
@@ -51,8 +55,15 @@ export function countClientInboxesByKey(
   for (const account of accounts) {
     const email = accountEmail(account);
     if (!email) continue;
-    if (!isClientInbox(account, email, config, state)) continue;
     const resolved = resolveAccountClient(account, campaignClientById, clientsById);
+    const hay = pocHayForAccount(
+      account,
+      email,
+      campaignIdsOf(account),
+      campaigns,
+      clients,
+    );
+    if (!isRestEligibleMailbox(account, email, config, state, hay)) continue;
     const key = clientCountKey(resolved.clientId);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }

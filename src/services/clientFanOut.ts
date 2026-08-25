@@ -14,6 +14,7 @@ import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
+import { pocStaffPatterns } from "../lib/poc.js";
 import { sleep } from "../lib/http.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
@@ -110,7 +111,10 @@ export class ClientFanOutService {
         return allowsGenericStaff(
           campaign,
           clientName,
-          this.config.genericStaffNamePatterns,
+          pocStaffPatterns(
+            this.config.genericStaffNamePatterns,
+            this.config.pocClientPatterns,
+          ),
         );
       });
 

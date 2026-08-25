@@ -1798,3 +1798,62 @@ describe("owner intent — D53 sending infra", () => {
     assert.doesNotMatch(good, /D\d+/);
   });
 });
+
+describe("owner intent — D70 POC generics A/B", () => {
+  it("D70: assigned POC generics A/B; unassigned pool generics do not", async () => {
+    assert.deepEqual(
+      defaults.pocClientPatterns,
+      ["goliath"],
+      stop(
+        "Goliath is the first POC client (D70).",
+        `POC_CLIENT_PATTERNS is now ${defaults.pocClientPatterns.join(",")}.`,
+      ),
+    );
+    const { isRestEligibleMailbox } = await import("../lib/clientInbox.js");
+    const fleet = {
+      extraGenericMailboxes: ["harmony norris"],
+      extraGenericDomains: [
+        "crosslaunchco.com",
+        "crossscaleco.com",
+        "cleartechco.com",
+      ],
+      pocClientPatterns: ["goliath"],
+    };
+    assert.equal(
+      isRestEligibleMailbox(
+        { client_id: 11, from_name: "Harmony Norris" },
+        "harmony@crosslaunchco.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+        "harmony@crosslaunchco.com Goliath Displacement L",
+      ),
+      true,
+      stop(
+        "Generics assigned to a POC client A/B with that client (D70).",
+        "A Goliath generic is not rest-eligible.",
+      ),
+    );
+    assert.equal(
+      isRestEligibleMailbox(
+        { client_id: 11, from_name: "Harmony Norris" },
+        "harmony@crosslaunchco.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      stop(
+        "Unassigned / hay-less generics stay on the send clock (D43/D70).",
+        "A fleet generic is rest-eligible without POC hay.",
+      ),
+    );
+    const { pocStaffPatterns } = await import("../lib/poc.js");
+    assert.deepEqual(
+      pocStaffPatterns(["goliath"], ["goliath", "acme"]),
+      ["goliath", "acme"],
+      stop(
+        "A new POC client is generic-staff eligible (D70).",
+        "pocStaffPatterns no longer merges the POC list.",
+      ),
+    );
+  });
+});

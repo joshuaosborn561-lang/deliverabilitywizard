@@ -86,4 +86,53 @@ describe("GenericSendRestService", () => {
     assert.equal(state.getRestingInbox("warm@pool.info")?.kind, "generic");
     assert.ok(removed.includes(1));
   });
+
+  it("does not send-clock a generic assigned to a POC client (D70)", async () => {
+    const state = new StateStore(
+      `/tmp/generic-rest-poc-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      firstName: "Spare",
+      lastName: "Pool",
+      platform: "GOOGLE",
+      status: "assigned",
+      smartleadAccountId: 7,
+    });
+
+    const result = await new GenericSendRestService(
+      loadConfig({
+        ENABLE_GENERIC_SEND_REST: "true",
+        DRY_RUN: "false",
+        EXTRA_GENERIC_DOMAINS: "crosslaunchco.com",
+        POC_CLIENT_PATTERNS: "goliath",
+      }),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Goliath Displacement L", status: "ACTIVE", client_id: 11 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 7,
+            from_email: "spare@crosslaunchco.com",
+            client_id: 11,
+            campaign_ids: [1],
+          },
+        ],
+        removeEmailAccountsFromCampaign: async () => undefined,
+        addEmailAccountsToCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    ).run({ dryRun: false, now: new Date("2026-01-16T00:00:00Z") });
+
+    assert.equal(result.clocksStarted, 0);
+    assert.equal(result.benched.length, 0);
+    assert.ok(
+      result.skipped.some((row) => row.includes("POC A/B rest")),
+      "POC generic must stay on A/B, not the send clock",
+    );
+  });
 });

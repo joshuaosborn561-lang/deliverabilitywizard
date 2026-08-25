@@ -2,6 +2,7 @@ import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
+import { isPocHay } from "./poc.js";
 
 /**
  * A client inbox belongs to a Smartlead client and is not a pool generic
@@ -23,14 +24,22 @@ export function isClientInbox(
   return false;
 }
 
-/** A/B rest is client inboxes only (D43). Generics use the send clock. */
+/**
+ * A/B rest: client-domain inboxes (D43), plus generics assigned to a POC
+ * client (D70). Unassigned pool generics still use the send clock.
+ */
 export function isRestEligibleMailbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
   email: string,
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
+  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains"> & {
+    pocClientPatterns?: string[];
+  },
   state: Pick<StateStore, "getPoolMailbox">,
+  hay = "",
 ): boolean {
-  return isClientInbox(account, email, config, state);
+  if (isClientInbox(account, email, config, state)) return true;
+  if (!isGenericMailbox(account, email, config, state)) return false;
+  return isPocHay(hay, config.pocClientPatterns ?? []);
 }
 
 export function isGenericMailbox(

@@ -6,7 +6,8 @@ describe("campaignSetupPrompt", () => {
   it("tells Claude the D43 campaign-setup rails", () => {
     const prompt = campaignSetupPrompt();
     assert.match(prompt, /50 \*staffable\*/);
-    assert.match(prompt, /Split that client's inboxes into A and B/);
+    assert.match(prompt, /POD-A or POD-B/);
+    assert.match(prompt, /on-week/);
     assert.match(prompt, /30% Google/);
     assert.match(prompt, /14 days of live send/);
     assert.match(prompt, /21 days/);

@@ -84,6 +84,11 @@ mailboxes go on all BCP campaigns; Parlay on all Parlay; etc. (`ClientFanOutServ
 D26). Cross-client membership is still forbidden. The dedicated D54/D55
 canary fleet is not staffable supply and stays **off** live campaigns.
 
+**D68 — client mailboxes carry `POD-A` or `POD-B`.** That Smartlead tag
+is the rest pool. Generics are not tagged. Staff a new campaign from the
+on-week pod only (except Vasco, which sends both). Do not re-split by
+email.
+
 Generics may staff **any** client including BCP (D27). On assign, signature /
 from-name / client id are set to the receiving client.
 
@@ -116,6 +121,12 @@ investigate: copy_likely → Slack only; otherwise rotate worst bouncers
 (D29). Do **not** auto-`START` — a manual pause stays paused (D40). Only
 protective pauses recorded in `pendingResumes` may be resumed by health,
 and never when the campaign is **STOPPED**.
+
+**D67 — Under-1k Smartlead auto-pause is 20%.** Campaigns whose name
+matches Under-1k (`/under[-_\s]?1k\b/i`) get `bounce_autopause_threshold`
+20, not the fleet default 7. Do not apply that to Over-1k or Goliath
+band names (50-200 / 201-500 / 501-1000). D29's 7% investigate line
+does not change.
 
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
 from the pool — connected SMTP/IMAP, not held, and not resting. Disconnected membership

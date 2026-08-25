@@ -11,10 +11,11 @@ import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { nameHayMatches } from "../lib/clientWipe.js";
 import { sleep } from "../lib/http.js";
+import { podTagFromAccount } from "../lib/podTags.js";
 import {
-  assignClientCohorts,
   isOffWeek,
   onWeekCohort,
+  resolveClientCohorts,
   type RestCohort,
 } from "../lib/restCohort.js";
 import type { StateStore } from "../state/store.js";
@@ -150,7 +151,10 @@ export class ClientRestService {
       email: string;
       groupKey: string;
     }> = [];
-    const byGroup = new Map<string, string[]>();
+    const byGroup = new Map<
+      string,
+      Array<{ email: string; tagged: RestCohort | null }>
+    >();
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -187,13 +191,13 @@ export class ClientRestService {
       }
       candidates.push({ account, email, groupKey });
       const list = byGroup.get(groupKey) ?? [];
-      list.push(email);
+      list.push({ email, tagged: podTagFromAccount(account) });
       byGroup.set(groupKey, list);
     }
 
     const cohortByEmail = new Map<string, RestCohort>();
-    for (const [, emails] of byGroup) {
-      for (const [email, cohort] of assignClientCohorts(emails)) {
+    for (const [, rows] of byGroup) {
+      for (const [email, cohort] of resolveClientCohorts(rows)) {
         cohortByEmail.set(email, cohort);
       }
     }

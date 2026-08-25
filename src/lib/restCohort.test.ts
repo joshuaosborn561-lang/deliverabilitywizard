@@ -5,6 +5,7 @@ import {
   isOffWeek,
   isoWeekNumberNy,
   onWeekCohort,
+  resolveClientCohorts,
   restFortnightBlock,
 } from "./restCohort.js";
 
@@ -24,6 +25,26 @@ describe("restCohort", () => {
     assert.equal(first.get("z@client.info"), "B");
     assert.equal(first.get("a@client.info"), second.get("a@client.info"));
     assert.equal(first.get("z@client.info"), second.get("z@client.info"));
+  });
+
+  it("keeps an existing POD tag when resolving cohorts (D68)", () => {
+    const resolved = resolveClientCohorts([
+      { email: "a@client.info", tagged: "B" },
+      { email: "b@client.info", tagged: null },
+      { email: "m@client.info", tagged: null },
+      { email: "z@client.info", tagged: null },
+    ]);
+    assert.equal(resolved.get("a@client.info"), "B");
+    assert.equal(resolved.get("b@client.info"), "A");
+    assert.equal(resolved.get("m@client.info"), "A");
+    assert.equal(resolved.get("z@client.info"), "B");
+  });
+
+  it("matches assignClientCohorts when nobody is tagged yet", () => {
+    const emails = ["z@client.info", "a@client.info", "m@client.info", "b@client.info"];
+    const computed = assignClientCohorts(emails);
+    const resolved = resolveClientCohorts(emails.map((email) => ({ email, tagged: null })));
+    assert.deepEqual([...resolved.entries()].sort(), [...computed.entries()].sort());
   });
 
   it("puts a single inbox on A so it stays on in block 0", () => {

@@ -1319,6 +1319,146 @@ describe("owner intent — D65 retired domains stay off", () => {
   });
 });
 
+describe("owner intent — D67 Under-1k bounce auto-pause is 20%", () => {
+  it("D67: Under-1k campaigns auto-pause at 20%; D29 stays 7%", async () => {
+    const { isUnder1kCampaign, desiredBounceAutopausePercent } = await import(
+      "../lib/bounceAutopause.js"
+    );
+    assert.equal(
+      defaults.under1kBounceAutopausePercent,
+      20,
+      stop(
+        "Under-1k Smartlead auto-pause is 20% (D67).",
+        `Under-1k auto-pause is now ${defaults.under1kBounceAutopausePercent}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignBounceInvestigateThreshold,
+      7,
+      stop(
+        "Paused-campaign investigate stays 7% (D29).",
+        `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      isUnder1kCampaign("BCP Healthcare Under-1k (No Team)"),
+      true,
+      stop(
+        "Under-1k is a campaign-name match (D67).",
+        "isUnder1kCampaign no longer matches BCP Healthcare Under-1k.",
+      ),
+    );
+    assert.equal(
+      isUnder1kCampaign("BCP Healthcare Over-1k (No Team)"),
+      false,
+      stop(
+        "Over-1k stays on the 7% fleet default (D67).",
+        "isUnder1kCampaign now treats Over-1k as Under-1k.",
+      ),
+    );
+    assert.equal(
+      isUnder1kCampaign("Goliath Displacement L 501-1000"),
+      false,
+      stop(
+        "Goliath band names are not Under-1k (D67).",
+        "isUnder1kCampaign now matches 501-1000.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("BCP Logistics Under-1k (With Team)", 20),
+      20,
+      stop(
+        "Under-1k desired auto-pause is 20% (D67).",
+        "desiredBounceAutopausePercent no longer returns 20 for Under-1k.",
+      ),
+    );
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/bounceAutopause.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      src,
+      /bounce_autopause_threshold/,
+      stop(
+        "Monitor converges Under-1k bounce auto-pause (D67).",
+        "bounceAutopause.ts no longer writes bounce_autopause_threshold.",
+      ),
+    );
+    assert.equal(
+      /updateCampaignStatus\([^)]*START/.test(src),
+      false,
+      stop(
+        "Manual pause/stop must not be auto-resumed (D40).",
+        "BounceAutopauseService still calls updateCampaignStatus(..., START).",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D68 client mailboxes carry a POD-A or POD-B tag", () => {
+  it("D68: client mailboxes are tagged; generics are not; rest honors the tag", async () => {
+    const { POD_A_TAG, POD_B_TAG, onWeekPodTag, podTagFromNames } = await import(
+      "../lib/podTags.js"
+    );
+    const { resolveClientCohorts } = await import("../lib/restCohort.js");
+    assert.equal(
+      defaults.enablePodTagConverge,
+      true,
+      stop(
+        "Client mailboxes are stamped POD-A / POD-B (D68).",
+        "Pod-tag converge now defaults to off.",
+      ),
+    );
+    assert.equal(POD_A_TAG, "POD-A");
+    assert.equal(POD_B_TAG, "POD-B");
+    assert.equal(
+      podTagFromNames(["POD-A"]),
+      "A",
+      stop(
+        "POD-A is the A rest pool (D68).",
+        "podTagFromNames no longer reads POD-A.",
+      ),
+    );
+    assert.equal(
+      resolveClientCohorts([{ email: "a@x.info", tagged: "B" }]).get("a@x.info"),
+      "B",
+      stop(
+        "An existing POD tag is sticky (D68).",
+        "resolveClientCohorts no longer keeps a tagged-B inbox on B.",
+      ),
+    );
+    assert.equal(
+      onWeekPodTag(new Date("2026-01-01T17:00:00Z")),
+      "POD-A",
+      stop(
+        "Staff a new campaign from the on-week pod tag (D68).",
+        "onWeekPodTag no longer returns POD-A in block 0.",
+      ),
+    );
+    const service = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/podTags.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      service,
+      /isGenericMailbox/,
+      stop(
+        "Generics are not POD-tagged (D68).",
+        "podTags.ts no longer skips generics.",
+      ),
+    );
+    const rest = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/clientRest.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      rest,
+      /resolveClientCohorts/,
+      stop(
+        "Rest honors the POD tag (D68).",
+        "clientRest.ts no longer uses resolveClientCohorts.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D60 canary buy once", () => {
   it("D60: do not ask again after the fleet is bought or waiting", async () => {
     const { canaryFleetBuyAlreadyOpen } = await import(

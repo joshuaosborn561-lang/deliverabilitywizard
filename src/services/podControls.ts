@@ -24,6 +24,7 @@ import {
   isolationSchedulePayload,
 } from "../lib/isolationPlacement.js";
 import { isIsolationEmail, normalizeIsolationDomain } from "../lib/isolationDomain.js";
+import { podTagFromAccount } from "../lib/podTags.js";
 import { buildPods, emailsForPod, type Pod } from "../lib/pods.js";
 import {
   placementFromInboxRate,
@@ -258,6 +259,7 @@ export class PodControlService {
             fromName: account.from_name,
             onActiveCampaign,
             resting: resting.has(email),
+            pod: podTagFromAccount(account),
           },
         ];
       }),

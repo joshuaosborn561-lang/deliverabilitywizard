@@ -50,13 +50,19 @@ rest is D43.
 
 ### Client rest (A/B per client)
 
-That client's inboxes are split **evenly A/B** (stable sort by email). 2 weeks
-on / 2 weeks off, New York ISO fortnights. Off-week half is **removed from
-live campaigns**. Warmup stays on. Parking a box at `MESSAGE_PER_DAY=0` is not
-rest — unlink it.
+That client's inboxes are tagged **`POD-A` or `POD-B`** in Smartlead (D68).
+The tag *is* the pool. Generics never get these tags. 2 weeks on / 2 weeks
+off, New York ISO fortnights (block 0 → A on / B off; then reverse).
+Off-week half is **removed from live campaigns**. Warmup stays on. Parking
+a box at `MESSAGE_PER_DAY=0` is not rest — unlink it.
 
-The cycle is run by the health job, not this skill. When standing up a
-campaign, **off-week boxes are not attachable and do not count toward the 50.**
+When standing up a campaign, attach only the **on-week** pod. Read the
+Smartlead tag — do not re-split by email. This fortnight's tag is `POD-A`
+when the NY ISO fortnight block is 0, `POD-B` when it is 1
+(`onWeekPodTag()`). Off-week tagged boxes are not attachable and do not
+count toward the 50. Full-send clients (Vasco) use both pods.
+
+The cycle is run by the health job, not this skill.
 
 Two ways the count goes wrong:
 
@@ -241,7 +247,7 @@ Use `Smartlead:update_campaign_ai_bounce_settings` (or the batch tool).
 
 | Setting | API field | Value |
 |---|---|---|
-| Bounce auto-pause threshold | `bounce_autopause_threshold` | `"7"` (string) |
+| Bounce auto-pause threshold | `bounce_autopause_threshold` | `"7"` (string) fleet default; `"20"` on **Under-1k** names (D67) |
 | Active AI categories | `ai_categorisation_options` | `[6, 1, 3]` |
 | Restart OOO when lead returns | `out_of_office_detection_settings.autoCategorizeOOO` | `true` |
 | Ignore OOO from reply % | `ignoreOOOasReply` | **`true`** |
@@ -258,14 +264,21 @@ Copy field names exactly (British s / American z, snake / camel).
 
 `autoCategorizeOOO` and `autoReactivateOOO` are mutually exclusive.
 
-Smartlead auto-pauses the campaign at 7% bounce. **Do not auto-START it
-back.** That is a human call. Health may investigate (D29) but will not
-resume a manual pause (D40).
+Smartlead auto-pauses the campaign at 7% bounce, except **Under-1k**
+campaigns (`/under[-_\s]?1k\b/i` in the name — BCP Healthcare/Logistics
+Under-1k). Those use **20%** (D67). Do not apply 20% to Over-1k or
+Goliath band names (50-200 / 201-500 / 501-1000). The monitor converges
+Under-1k; leave everyone else alone.
+
+**Do not auto-START it back.** That is a human call. Health may
+investigate a paused campaign over 7% aggregate bounce (D29) but will
+not resume a manual pause (D40).
 
 ## 7. Mailbox setup ... `Smartlead:link_mailboxes`
 
-Attach **all on-week staffable client inboxes**, plus **non-sitting**
-generics to reach 50 with ~30% each ESP.
+Attach **on-week `POD-A` or `POD-B` staffable client inboxes** (the
+tag currently on-week — do not re-split by email), plus **non-sitting**
+generics to reach 50 with ~30% each ESP. Vasco uses both pods.
 
 Every mailbox needs a signature. Before linking:
 

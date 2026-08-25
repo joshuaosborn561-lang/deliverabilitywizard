@@ -1368,3 +1368,47 @@ is worse.
 **Guards.** `isRetiredSendingDomain`; fan-out / rest / top-up skip
 retired domains; owner-intent D65.
 
+## D67 — Under-1k bounce auto-pause is 20%
+
+**Decision.** Campaigns whose name matches Under-1k
+(`/under[-_\\s]?1k\\b/i`) use Smartlead `bounce_autopause_threshold`
+20, not the fleet default 7. The monitor converges those campaigns
+when the setting is missing or still 7. Over-1k and Goliath band
+names (50-200 / 201-500 / 501-1000) stay on 7. D29's 7% paused-
+campaign investigate line does not change. Do not auto-START a
+paused campaign (D40).
+
+**Why.** Josh (2026-08-25): "any campaign under 1k bump the bounce
+rate to 20% on campaign auto pause." Small-TAM Under-1k lists trip
+the 7% Smartlead pause on ordinary variance.
+
+**Tradeoff.** An Under-1k campaign can bounce harder before Smartlead
+pauses it. Accepted: pausing a short list at 7% cuts send before the
+rate is real. Per-sender bounce pull (5%/50) and D29 investigate stay
+where they are.
+
+**Guards.** `isUnder1kCampaign`; `BounceAutopauseService`; owner-intent
+D67.
+
+## D68 — Client mailboxes carry a POD-A or POD-B tag
+
+**Decision.** Every client mailbox is tagged in Smartlead `POD-A` or
+`POD-B`. Generics are not tagged (and a leftover pod tag is stripped).
+The tag is the rest pool: same per-client even split as D43, sticky
+once stamped so a new inbox does not flip existing boxes. Rest honors
+the tag. When standing up a campaign, attach the **on-week** pod
+(`onWeekPodTag()` — A this fortnight, B the next) plus non-sitting
+generics to the 50. Full-send clients (Vasco) still send both pods.
+Do not invent a third pool.
+
+**Why.** Josh (2026-08-25): tag all mailboxes A or B pod (ignore
+generics) so Claude knows which pool is on and which inboxes to staff
+a new campaign with. The computed A/B cut lived only in code; Smartlead
+did not show it.
+
+**Tradeoff.** First converge writes a tag on every client mailbox.
+Accepted: that is how an agent (or a human in Smartlead) sees the pool
+without reading this repo.
+
+**Guards.** `PodTagService`; `resolveClientCohorts`; owner-intent D68.
+

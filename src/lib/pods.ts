@@ -1,5 +1,9 @@
 import { isGenericMailbox } from "./clientInbox.js";
-import { assignClientCohorts, isOffWeek, type RestCohort } from "./restCohort.js";
+import {
+  isOffWeek,
+  resolveClientCohorts,
+  type RestCohort,
+} from "./restCohort.js";
 import { isIsolationEmail, type IsolationDenylist } from "./isolationDomain.js";
 import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
@@ -32,6 +36,8 @@ export interface PodAccountInput {
   fromName?: string;
   onActiveCampaign: boolean;
   resting: boolean;
+  /** D68 — existing Smartlead POD-A / POD-B tag, when present. */
+  pod?: RestCohort | null;
 }
 
 export function clientPodId(clientId: number | string, cohort: RestCohort): string {
@@ -90,8 +96,12 @@ export function buildPods(input: {
   const pods: Pod[] = [];
 
   for (const [clientKey, accounts] of byClient) {
-    const emails = accounts.map((account) => account.email);
-    const cohorts = assignClientCohorts(emails);
+    const cohorts = resolveClientCohorts(
+      accounts.map((account) => ({
+        email: account.email,
+        tagged: account.pod ?? null,
+      })),
+    );
     const grouped: Record<RestCohort, PodMailbox[]> = { A: [], B: [] };
     for (const account of accounts) {
       const cohort = cohorts.get(account.email.trim().toLowerCase());

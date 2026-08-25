@@ -41,10 +41,12 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
+import { BounceAutopauseService } from "./services/bounceAutopause.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { ClientRestService } from "./services/clientRest.js";
+import { PodTagService } from "./services/podTags.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
 import { RestBaselineRebuildService } from "./services/restBaselineRebuild.js";
 import { UnhealthyResetService } from "./services/unhealthyReset.js";
@@ -314,6 +316,7 @@ async function main(): Promise<void> {
     state,
   );
   const clientRest = new ClientRestService(config, smartlead, slack, state);
+  const podTags = new PodTagService(config, smartlead, state);
   const genericSendRest = new GenericSendRestService(
     config,
     smartlead,
@@ -376,6 +379,7 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const bounceAutopause = new BounceAutopauseService(config, smartlead);
   const isolationRig = new IsolationRigService(
     config,
     smartlead,
@@ -528,6 +532,7 @@ async function main(): Promise<void> {
     let wipe: unknown = null;
     let restBaseline: unknown = null;
     let restResult: unknown = null;
+    let podTagResult: unknown = null;
     let genericRest: unknown = null;
     if (config.enableUnhealthyReset) {
       try {
@@ -557,6 +562,13 @@ async function main(): Promise<void> {
         console.warn("[health] client rest failed", error);
       }
     }
+    if (config.enablePodTagConverge) {
+      try {
+        podTagResult = await podTags.run();
+      } catch (error) {
+        console.warn("[health] pod tags failed", error);
+      }
+    }
     if (config.enableGenericSendRest) {
       try {
         genericRest = await genericSendRest.run();
@@ -564,7 +576,14 @@ async function main(): Promise<void> {
         console.warn("[health] generic send rest failed", error);
       }
     }
-    return { unhealthyReset: unhealthy, clientWipe: wipe, restBaseline, clientRest: restResult, genericRest };
+    return {
+      unhealthyReset: unhealthy,
+      clientWipe: wipe,
+      restBaseline,
+      clientRest: restResult,
+      podTags: podTagResult,
+      genericRest,
+    };
   };
 
   const runCampaignTopUp = async () => {
@@ -795,6 +814,13 @@ async function main(): Promise<void> {
           console.warn("[sending-infra] failed", error);
         }
       }
+      // D67: Under-1k campaigns hold Smartlead bounce auto-pause at 20%.
+      let bounceAutopauseResult: unknown = null;
+      try {
+        bounceAutopauseResult = await bounceAutopause.run();
+      } catch (error) {
+        console.warn("[bounce-autopause] failed", error);
+      }
       // D29: PAUSED campaigns with high aggregate sender bounce → investigate
       // (skip sender rotation when placement says the copy is the cause).
       let bounceInvestigateResult: unknown = null;
@@ -863,6 +889,7 @@ async function main(): Promise<void> {
         campaignAudit: campaignAuditResult,
         leadRunout: leadRunoutResult,
         sendingInfra: sendingInfraResult,
+        bounceAutopause: bounceAutopauseResult,
         bounceInvestigate: bounceInvestigateResult,
         podControls: podControlResult,
         isolationRig: isolationRigResult,
@@ -1568,6 +1595,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.json({ ok: true, mode: "client-rest", result });
         return;
       }
+      if (mode === "pod-tags" || mode === "ab-pod-tags") {
+        assertRuntimeSecrets(config);
+        const result = await podTags.run();
+        res.json({ ok: true, mode: "pod-tags", result });
+        return;
+      }
       if (
         mode === "unhealthy-reset" ||
         mode === "clear-holds" ||
@@ -1604,6 +1637,15 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await clientDayBrief.run({ endOfDay: true });
         res.json({ ok: true, mode: "client-day", result });
+        return;
+      }
+      if (
+        mode === "bounce-autopause" ||
+        mode === "under-1k-bounce-autopause"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await bounceAutopause.run();
+        res.json({ ok: true, mode: "bounce-autopause", result });
         return;
       }
       if (
@@ -1956,6 +1998,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}; hold rebuild (D44) ${config.enableRestBaselineRebuild ? (state.getRestBaselineRebuiltAt() ? `done ${state.getRestBaselineRebuiltAt()}` : "PENDING first health") : "disabled"}`,
     );
     console.log(
+      `[boot] Pod tags (D68): ${config.enablePodTagConverge ? "ENABLED (client mailboxes POD-A / POD-B; generics skipped)" : "disabled"}`,
+    );
+    console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
@@ -1997,6 +2042,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Client wipe (D61): ${config.enableClientWipe ? `ENABLED (Vasco keep ${config.vascoKeepCount}; wipe ${config.wipeClientPatterns.join("/") || "none"})` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Under-1k bounce auto-pause (D67): ${config.enableBounceAutopauseConverge ? `ENABLED (${config.under1kBounceAutopausePercent}%; D29 investigate stays ${config.campaignBounceInvestigateThreshold}%)` : "disabled"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

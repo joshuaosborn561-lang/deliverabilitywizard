@@ -32,6 +32,33 @@ describe("SmartleadClient.addEmailAccountsToCampaign", () => {
   });
 });
 
+describe("SmartleadClient.updateCampaignSettings", () => {
+  it("POSTs the settings body to campaigns/{id}/settings", async () => {
+    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({
+        url: String(input),
+        method: init?.method,
+        body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      });
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new SmartleadClient("test-key");
+    await client.updateCampaignSettings(3763800, {
+      bounce_autopause_threshold: "20",
+    });
+
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].method, "POST");
+    assert.match(calls[0].url, /campaigns\/3763800\/settings/);
+    assert.deepEqual(calls[0].body, { bounce_autopause_threshold: "20" });
+  });
+});
+
 describe("SmartleadClient.updateCampaignStatus", () => {
   it("sends POST — Smartlead's live status endpoint 404s on PATCH", async () => {
     const calls: Array<{ url: string; method?: string; body?: unknown }> = [];

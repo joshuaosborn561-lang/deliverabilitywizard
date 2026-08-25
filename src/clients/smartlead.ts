@@ -256,6 +256,23 @@ export class SmartleadClient {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`);
   }
 
+  /**
+   * POST /campaigns/{id}/settings. Callers must merge GET first and rewrite
+   * GET-only track flags (`DONT_EMAIL_OPEN` → `DONT_TRACK_EMAIL_OPEN`) or
+   * a partial body can blank tracking / OOO. See campaignSettingsWriteBody.
+   */
+  updateCampaignSettings(
+    campaignId: number,
+    settings: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`, {
+        method: "POST",
+        body: settings,
+      }),
+    );
+  }
+
   getDayWiseOverallStats(options: {
     startDate: string;
     endDate: string;
@@ -439,23 +456,21 @@ export class SmartleadClient {
   }
 
   /**
-   * Ensure a HOLD-UNTIL-YYYY-MM-DD tag exists and return its id.
+   * Ensure a named Smartlead tag exists and return its id.
    */
-  async ensureHoldUntilTag(holdUntilIsoDate: string): Promise<{
-    id: number;
-    name: string;
-  }> {
-    const name = `HOLD-UNTIL-${holdUntilIsoDate}`;
+  async ensureTag(
+    name: string,
+    color = "#FF8A65",
+  ): Promise<{ id: number; name: string }> {
     const existing = await this.listTags();
     const match = existing.find(
       (t) => t.name.trim().toUpperCase() === name.toUpperCase(),
     );
     if (match) return { id: match.id, name: match.name };
 
-    const created = await this.createTag(name, "#FF8A65");
+    const created = await this.createTag(name, color);
     const id = created.data?.id;
     if (!id) {
-      // Race: another process may have created it
       const again = await this.listTags();
       const retry = again.find(
         (t) => t.name.trim().toUpperCase() === name.toUpperCase(),
@@ -464,6 +479,16 @@ export class SmartleadClient {
       throw new Error(`Failed to create Smartlead tag ${name}`);
     }
     return { id, name };
+  }
+
+  /**
+   * Ensure a HOLD-UNTIL-YYYY-MM-DD tag exists and return its id.
+   */
+  async ensureHoldUntilTag(holdUntilIsoDate: string): Promise<{
+    id: number;
+    name: string;
+  }> {
+    return this.ensureTag(`HOLD-UNTIL-${holdUntilIsoDate}`, "#FF8A65");
   }
 }
 

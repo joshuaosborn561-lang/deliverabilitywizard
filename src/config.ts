@@ -123,6 +123,11 @@ const ConfigSchema = z.object({
    */
   enableClientRest: boolFromEnv(true),
   /**
+   * D68 — stamp client mailboxes with Smartlead POD-A / POD-B tags.
+   * Generics are never tagged.
+   */
+  enablePodTagConverge: boolFromEnv(true),
+  /**
    * D41/D43 — separate SmartDelivery tests for resting (off-week) client inboxes.
    */
   enableRestPlacementTests: boolFromEnv(true),
@@ -269,6 +274,13 @@ const ConfigSchema = z.object({
     .min(0)
     .max(100)
     .default(7),
+  /**
+   * D67 — Smartlead `bounce_autopause_threshold` on Under-1k campaigns.
+   * Fleet default stays 7%; only names matching Under-1k are converged.
+   */
+  under1kBounceAutopausePercent: z.coerce.number().min(1).max(100).default(20),
+  /** Converge Under-1k bounce auto-pause on the monitor pass. */
+  enableBounceAutopauseConverge: boolFromEnv(true),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
   /**
@@ -502,6 +514,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
     enableClientRest: env.ENABLE_CLIENT_REST,
+    enablePodTagConverge: env.ENABLE_POD_TAG_CONVERGE,
     enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
@@ -540,6 +553,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bounceRateWarnThreshold: env.BOUNCE_RATE_WARN_THRESHOLD ?? "2",
     campaignBounceInvestigateThreshold:
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
+    under1kBounceAutopausePercent:
+      env.UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT ?? "20",
+    enableBounceAutopauseConverge: env.ENABLE_BOUNCE_AUTOPAUSE_CONVERGE,
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
     enableLegacyMailboxPulls: env.ENABLE_LEGACY_MAILBOX_PULLS,

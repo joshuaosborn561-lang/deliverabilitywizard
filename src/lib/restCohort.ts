@@ -25,6 +25,43 @@ export function assignClientCohorts(emails: string[]): Map<string, RestCohort> {
   return out;
 }
 
+/**
+ * D68 — prefer a mailbox's existing POD-A / POD-B tag so the pool does
+ * not flip when a new inbox lands. Untagged boxes fill toward an even
+ * split (same ceil-to-A cut as assignClientCohorts). No tags ⇒ identical
+ * to assignClientCohorts.
+ */
+export function resolveClientCohorts(
+  rows: Array<{ email: string; tagged?: RestCohort | null }>,
+): Map<string, RestCohort> {
+  const unique = new Map<string, RestCohort | null>();
+  for (const row of rows) {
+    const email = row.email.trim().toLowerCase();
+    if (!email) continue;
+    if (!unique.has(email)) {
+      unique.set(email, row.tagged === "A" || row.tagged === "B" ? row.tagged : null);
+    }
+  }
+  const tagged = [...unique.entries()].filter(
+    (entry): entry is [string, RestCohort] => entry[1] === "A" || entry[1] === "B",
+  );
+  if (!tagged.length) return assignClientCohorts([...unique.keys()]);
+
+  const out = new Map<string, RestCohort>(tagged);
+  const untagged = [...unique.keys()].filter((email) => !out.has(email)).sort();
+  const targetA = Math.ceil(unique.size / 2);
+  let aCount = [...out.values()].filter((cohort) => cohort === "A").length;
+  for (const email of untagged) {
+    if (aCount < targetA) {
+      out.set(email, "A");
+      aCount += 1;
+    } else {
+      out.set(email, "B");
+    }
+  }
+  return out;
+}
+
 export function nyYmd(now: Date = new Date()): {
   year: number;
   month: number;

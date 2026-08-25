@@ -109,6 +109,57 @@ describe("ClientRestService", () => {
     assert.ok(removed.length >= 1);
   });
 
+  it("honors an existing POD-B tag even when sort would put it on A (D68)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // B off
+    const taggedB = "a@client.info";
+    assert.equal(assignClientCohorts([taggedB, "z@client.info"]).get(taggedB), "A");
+
+    const removed: number[] = [];
+    const state = new StateStore(
+      `/tmp/client-rest-podtag-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Live", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: taggedB,
+          client_id: 9,
+          campaign_ids: [1],
+          tags: [{ tag_name: "POD-B" }],
+        },
+        {
+          id: 11,
+          from_email: "z@client.info",
+          client_id: 9,
+          campaign_ids: [1],
+          tags: [{ tag_name: "POD-A" }],
+        },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        _campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(...ids);
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const result = await new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    ).run({ dryRun: false, now });
+
+    assert.ok(result.benched.some((row) => row.email === taggedB));
+    assert.ok(removed.includes(10));
+    assert.equal(removed.includes(11), false);
+  });
+
   it("restores an on-week rester even with an old same-ESP miss (D59)", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "a@client.info";

@@ -8,7 +8,7 @@ export function campaignSetupPrompt(): string {
     "Campaign setup rules (D43) — follow these when creating or staffing a campaign:",
     "",
     "1. Staffing floor is 50 *staffable* senders (connected SMTP/IMAP, not held, not resting). Generics fill the gap. Keep at least ~30% Google and ~30% Microsoft. Do not buy a third client-domain set.",
-    "2. Split that client's inboxes into A and B (even split). 2 weeks on / 2 weeks off. Off-week half comes OFF live campaigns (warmup stays on). Do not leave resters on a campaign at MESSAGE_PER_DAY=0.",
+    "2. Client inboxes are tagged POD-A or POD-B in Smartlead (D68). 2 weeks on / 2 weeks off. Staff a new campaign from the *on-week* pod only (POD-A this fortnight, POD-B the next). Generics have no pod tag. Vasco sends both pods. Off-week half comes OFF live campaigns (warmup stays on). Do not leave resters on a campaign at MESSAGE_PER_DAY=0. Do not re-split by email — the tag is the pool.",
     "3. Same-client fan-out still applies for *on-week* client inboxes only. A resting mailbox must not be added to every ACTIVE campaign for that client.",
     "4. Generics do not sit on the same A/B fortnight. They rest after ~14 days of live send, then become supply again after the same sit. Staggered — do not drop half the spare tire the morning clients sit.",
     "5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. Pool supply for the 50 floor is warmed only. Each ACTIVE campaign also gets a D55 canary-copy placement test from the dedicated fleet (2 domains × 3 inboxes, Google + Outlook, warmup off, off the campaign). Pre-warmed fleets skip that wait.",

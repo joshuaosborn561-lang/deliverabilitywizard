@@ -354,12 +354,12 @@ Nothing goes ACTIVE until every line passes.
 5. **Launch placement ≥85% same-ESP, promo = miss**, full real sender set,
    after warmup. Failed test is diagnosed and relaunched on survivors, not
    waived.
-6. Signatures set; 30/day, 10 minute gap, warmup on.
+6. Signatures set to Name / **this campaign's** brand; 30/day, 10 minute gap, warmup on. A leftover brand from another client is a hard fail.
 
 **Campaign**
 
 7. Merge tag gate passed (`check_merge_tags.py` exit 0, multi-offset sample).
-8. `%signature%` on every variant and every step.
+8. `%signature%` on every variant and every step. No other client's brand hardcoded in the body.
 9. `client_id` on the **campaign** and on the mailboxes.
 10. Suppression and domain block list applied, scoped to that `client_id`.
 11. Cross-campaign dedupe verified against full exports.

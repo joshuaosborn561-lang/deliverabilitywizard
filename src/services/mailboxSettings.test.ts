@@ -36,6 +36,7 @@ describe("MailboxSettingsService", () => {
         { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
         { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
       ],
+      listCampaigns: async () => [],
       updateEmailAccount: async () => {
         writes += 1;
       },
@@ -81,6 +82,7 @@ describe("MailboxSettingsService", () => {
       listClients: async () => [
         { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
       ],
+      listCampaigns: async () => [],
       updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
         updates.push({ id, fields });
       },
@@ -118,6 +120,53 @@ describe("MailboxSettingsService", () => {
     assert.match(slackMessages.join("\n"), /10 minutes/);
   });
 
+  it("gap enforce rewrites a foreign-client signature on a live campaign (D74)", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "aarav@pool.info",
+          from_name: "Aarav Sanchez",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Aarav Sanchez\nRoofs by Peterson",
+          client_id: 548611,
+          campaign_ids: [3815447],
+        },
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 99, name: "Peterson", logo: "Roofs by Peterson" },
+      ],
+      listCampaigns: async () => [
+        { id: 3815447, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run in gap mode");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.signatureSet, 1);
+    assert.deepEqual(updates[0]?.fields, {
+      signature: "Aarav Sanchez\nGoliath Cybersecurity",
+    });
+  });
+
   it("writes 30/day, 10m gap, and plain two-line signatures when drifted", async () => {
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const smartlead = {
@@ -147,6 +196,7 @@ describe("MailboxSettingsService", () => {
         { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
         { id: 446286, name: "Randy Gaines", logo: "MSRS" },
       ],
+      listCampaigns: async () => [],
       updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
         updates.push({ id, fields });
       },
@@ -205,6 +255,7 @@ describe("MailboxSettingsService", () => {
         },
       ],
       listClients: async () => [],
+      listCampaigns: async () => [],
       updateEmailAccount: async () => undefined,
       configureWarmup: async () => {
         warmupWrites += 1;

@@ -2043,3 +2043,67 @@ describe("owner intent — D76 generics belong to Goliath", () => {
     );
   });
 });
+
+describe("owner intent — D77 client tag and QA unpause", () => {
+  it("D77: campaigns get a client tag; Goliath unpauses only after sigs match", async () => {
+    const { matchClientForCampaign } = await import("../lib/campaignClient.js");
+    assert.equal(
+      matchClientForCampaign("Goliath Displacement M", [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 99, name: "Peterson", logo: "Roofs by Peterson" },
+      ])?.id,
+      548611,
+      stop(
+        "A campaign name maps to exactly one client tag (D77).",
+        "matchClientForCampaign no longer assigns Goliath.",
+      ),
+    );
+    const tagSrc = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/campaignClientTag.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      tagSrc,
+      /setCampaignClientId/,
+      stop(
+        "Health writes the campaign client tag (D77).",
+        "campaignClientTag.ts no longer assigns client_id.",
+      ),
+    );
+    const unpause = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      unpause,
+      /updateCampaignStatus\(campaign\.id, "START"\)/,
+      stop(
+        "A passing signature QA STARTs the paused Goliath campaign (D77).",
+        "unpauseAfterSigQa.ts no longer STARTs after a clean QA.",
+      ),
+    );
+    assert.match(
+      unpause,
+      /isPodControlShellCampaign/,
+      stop(
+        "The pod-control shell stays paused (D56 / D77).",
+        "unpauseAfterSigQa.ts no longer skips the shell.",
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /unpauseAfterSigQa\.run/,
+      stop(
+        "The 15-minute health loop unpauses after signature QA (D77).",
+        "index.ts no longer calls unpauseAfterSigQa.run.",
+      ),
+    );
+  });
+});

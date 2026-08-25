@@ -41,6 +41,8 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { OneClientMembershipService } from "./services/oneClientMembership.js";
+import { CampaignClientTagService } from "./services/campaignClientTag.js";
+import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
@@ -359,6 +361,8 @@ async function main(): Promise<void> {
     smartlead,
     state,
   );
+  const campaignClientTag = new CampaignClientTagService(config, smartlead);
+  const unpauseAfterSigQa = new UnpauseAfterSigQaService(config, smartlead);
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -615,7 +619,9 @@ async function main(): Promise<void> {
 
       let oneClientResult: unknown = null;
       try {
+        await campaignClientTag.run();
         oneClientResult = await oneClientMembership.run();
+        await unpauseAfterSigQa.run();
       } catch (error) {
         console.warn("[health] one-client membership failed", error);
       }
@@ -1559,6 +1565,18 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await oneClientMembership.run();
         res.json({ ok: true, mode: "one-client", result });
+        return;
+      }
+      if (mode === "client-tag" || mode === "campaign-client-tag") {
+        assertRuntimeSecrets(config);
+        const result = await campaignClientTag.run();
+        res.json({ ok: true, mode: "client-tag", result });
+        return;
+      }
+      if (mode === "qa-unpause" || mode === "unpause-after-sig-qa") {
+        assertRuntimeSecrets(config);
+        const result = await unpauseAfterSigQa.run();
+        res.json({ ok: true, mode: "qa-unpause", result });
         return;
       }
       if (mode === "fan-out" || mode === "client-fanout") {

@@ -1517,3 +1517,28 @@ non-Goliath generic staff.
 **Guards.** `ownerClientId` generic override; `isGenericPoolDomain`;
 `OneClientMembershipService` restore; owner-intent D76.
 
+---
+
+## D77 — Campaigns carry a client tag; unpause after signature QA
+
+**Decision.** Every campaign is assigned a Smartlead client
+(`client_id` — the client tag). Health fills a missing tag from a
+unique name match. Signature QA matches senders to that assigned
+client, not a guess from the campaign title.
+
+After a passing QA (no leftover other-client brand on any sender),
+a **PAUSED Goliath** campaign is STARTed. The pod-control shell,
+STOPPED L1–L4, DRAFTED campaigns, and non-Goliath manual pauses
+stay down (D40 / D56).
+
+**Why.** Josh (2026-08-25): after a QA pass knows sigs match the
+client, unpause. "Client matching should be easy — every campaign
+gets a client tag assigned."
+
+**Tradeoff.** A Goliath campaign Josh paused by hand will come back
+once signatures are clean. Accepted: the leftover Peterson send was
+the reason those were down. STOPPED still means operator takeover.
+
+**Guards.** `matchClientForCampaign`; `CampaignClientTagService`;
+`UnpauseAfterSigQaService`; owner-intent D77.
+

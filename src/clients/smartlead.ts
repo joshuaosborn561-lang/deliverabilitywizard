@@ -256,6 +256,22 @@ export class SmartleadClient {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`);
   }
 
+  /**
+   * POST /campaigns/{id}/settings. There is no GET on this path (404).
+   * A threshold-only body leaves tracking / OOO intact.
+   */
+  updateCampaignSettings(
+    campaignId: number,
+    settings: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`, {
+        method: "POST",
+        body: settings,
+      }),
+    );
+  }
+
   getDayWiseOverallStats(options: {
     startDate: string;
     endDate: string;

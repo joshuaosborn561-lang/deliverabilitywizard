@@ -1424,3 +1424,48 @@ will not page Slack. Accepted: those are `/ops` and logs.
 eod_summary / action_result; client-rest does not Slack the fortnight;
 EOD brief has sent + spam and no staffing; owner-intent D71.
 
+## D67 — Under-1k bounce auto-pause is 20%
+
+**Decision.** Campaigns whose name matches Under-1k
+(`/under[-_\\s]?1k\\b/i`) use Smartlead `bounce_autopause_threshold`
+20, not the fleet default 7. The monitor converges those campaigns
+when the setting is missing or still 7. Over-1k stays on 7. D29's 7%
+paused-campaign investigate line does not change. Do not auto-START a
+paused campaign (D40).
+
+**Why.** Josh (2026-08-25): "any campaign under 1k bump the bounce
+rate to 20% on campaign auto pause." Small-TAM Under-1k lists trip
+the 7% Smartlead pause on ordinary variance.
+
+**Tradeoff.** An Under-1k campaign can bounce harder before Smartlead
+pauses it. Accepted: pausing a short list at 7% cuts send before the
+rate is real. Per-sender bounce pull (5%/50) and D29 investigate stay
+where they are.
+
+**Guards.** `isUnder1kCampaign`; `BounceAutopauseService`; owner-intent
+D67. Goliath band names were left at 7 here; D73 moves Goliath to 20.
+
+## D73 — Goliath bounce auto-pause is 20%
+
+**Decision.** Every Goliath campaign uses Smartlead
+`bounce_autopause_threshold` 20, same as Under-1k (D67). Company-size
+bands in the name (50-200 / 201-500 / 501-1000) are not list size and
+do not keep Goliath on 7. The monitor converges Goliath the same way
+it converges Under-1k. D29 investigate stays 7%. Do not auto-START
+paused or stopped Goliath campaigns (D40).
+
+This supersedes D67's "Goliath band names stay on 7."
+
+**Why.** Josh (2026-08-25): "unpause al golaiht make sure new bounce
+rules are applied." Displacement M `#3815447` was the only paused
+Goliath campaign. It had 82 bounces on 599 sends (13.7%). Leaving
+auto-pause at 7% would have stopped it again as soon as Smartlead
+rechecked. The eight older L1–L4 AirPods/Tickets campaigns are
+STOPPED and stay stopped.
+
+**Tradeoff.** Goliath can bounce to 20% before Smartlead pauses the
+campaign. Per-sender 5%/50 pull (D5) and D29 investigate stay.
+
+**Guards.** `isGoliathCampaign`; `desiredBounceAutopausePercent`
+returns 20 for Goliath names; owner-intent D73.
+

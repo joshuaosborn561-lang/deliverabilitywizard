@@ -1877,3 +1877,118 @@ describe("owner intent — D71 Slack is deliverability flags plus EOD", () => {
     );
   });
 });
+
+describe("owner intent — D67 Under-1k bounce auto-pause is 20%", () => {
+  it("D67: Under-1k campaigns auto-pause at 20%; D29 stays 7%", async () => {
+    const { isUnder1kCampaign, desiredBounceAutopausePercent } = await import(
+      "../lib/bounceAutopause.js"
+    );
+    assert.equal(
+      defaults.under1kBounceAutopausePercent,
+      20,
+      stop(
+        "Under-1k Smartlead auto-pause is 20% (D67).",
+        `Under-1k auto-pause is now ${defaults.under1kBounceAutopausePercent}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.campaignBounceInvestigateThreshold,
+      7,
+      stop(
+        "Paused-campaign investigate stays 7% (D29).",
+        `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
+      ),
+    );
+    assert.equal(
+      isUnder1kCampaign("BCP Healthcare Under-1k (No Team)"),
+      true,
+      stop(
+        "Under-1k is a campaign-name match (D67).",
+        "isUnder1kCampaign no longer matches BCP Healthcare Under-1k.",
+      ),
+    );
+    assert.equal(
+      isUnder1kCampaign("BCP Healthcare Over-1k (No Team)"),
+      false,
+      stop(
+        "Over-1k stays on the 7% fleet default (D67).",
+        "isUnder1kCampaign now treats Over-1k as Under-1k.",
+      ),
+    );
+    assert.equal(
+      isUnder1kCampaign("Goliath Displacement L 501-1000"),
+      false,
+      stop(
+        "Goliath band names are not Under-1k (D67).",
+        "isUnder1kCampaign now matches 501-1000.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("BCP Logistics Under-1k (With Team)", 20),
+      20,
+      stop(
+        "Under-1k desired auto-pause is 20% (D67).",
+        "desiredBounceAutopausePercent no longer returns 20 for Under-1k.",
+      ),
+    );
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/bounceAutopause.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      src,
+      /bounce_autopause_threshold/,
+      stop(
+        "Monitor converges Under-1k bounce auto-pause (D67).",
+        "bounceAutopause.ts no longer writes bounce_autopause_threshold.",
+      ),
+    );
+    assert.equal(
+      /updateCampaignStatus\([^)]*START/.test(src),
+      false,
+      stop(
+        "Manual pause/stop must not be auto-resumed (D40).",
+        "BounceAutopauseService still calls updateCampaignStatus(..., START).",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D73 Goliath bounce auto-pause is 20%", () => {
+  it("D73: Goliath campaigns auto-pause at 20%, same as Under-1k", async () => {
+    const { isGoliathCampaign, desiredBounceAutopausePercent } = await import(
+      "../lib/bounceAutopause.js"
+    );
+    assert.equal(
+      isGoliathCampaign("Goliath Displacement M 201-500 CIO"),
+      true,
+      stop(
+        "Goliath names get the 20% auto-pause (D73).",
+        "isGoliathCampaign no longer matches Displacement M.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Goliath Displacement M 201-500 CIO", 20),
+      20,
+      stop(
+        "Goliath desired auto-pause is 20% (D73).",
+        "desiredBounceAutopausePercent no longer returns 20 for Goliath.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Goliath Displacement L 501-1000 ITDir", 20),
+      20,
+      stop(
+        "Goliath company-size bands still get 20% (D73).",
+        "desiredBounceAutopausePercent treats 501-1000 Goliath as leave-alone.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Parlay Sports", 20),
+      null,
+      stop(
+        "Non-Goliath / non-Under-1k stays on the 7% fleet default (D73).",
+        "desiredBounceAutopausePercent now rewrites Parlay.",
+      ),
+    );
+  });
+});

@@ -41,6 +41,7 @@ import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
+import { BounceAutopauseService } from "./services/bounceAutopause.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
@@ -376,6 +377,7 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const bounceAutopause = new BounceAutopauseService(config, smartlead);
   const isolationRig = new IsolationRigService(
     config,
     smartlead,
@@ -797,6 +799,15 @@ async function main(): Promise<void> {
       }
       // D29: PAUSED campaigns with high aggregate sender bounce → investigate
       // (skip sender rotation when placement says the copy is the cause).
+      // D67 / D73: Under-1k and Goliath hold Smartlead bounce auto-pause at 20%.
+      let bounceAutopauseResult: unknown = null;
+      try {
+        bounceAutopauseResult = await bounceAutopause.run();
+      } catch (error) {
+        console.warn("[bounce-autopause] failed", error);
+      }
+      // D29: PAUSED campaigns with high aggregate sender bounce → investigate
+      // (skip sender rotation when placement says the copy is the cause).
       let bounceInvestigateResult: unknown = null;
       try {
         bounceInvestigateResult = await bounceInvestigate.run();
@@ -863,6 +874,7 @@ async function main(): Promise<void> {
         campaignAudit: campaignAuditResult,
         leadRunout: leadRunoutResult,
         sendingInfra: sendingInfraResult,
+        bounceAutopause: bounceAutopauseResult,
         bounceInvestigate: bounceInvestigateResult,
         podControls: podControlResult,
         isolationRig: isolationRigResult,
@@ -1607,6 +1619,15 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         return;
       }
       if (
+        mode === "bounce-autopause" ||
+        mode === "bounce-auto-pause"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await bounceAutopause.run();
+        res.json({ ok: true, mode: "bounce-autopause", result });
+        return;
+      }
+      if (
         mode === "bounce-investigate" ||
         mode === "campaign-bounce-investigate"
       ) {
@@ -2000,6 +2021,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Client wipe (D61): ${config.enableClientWipe ? `ENABLED (Vasco keep ${config.vascoKeepCount}; wipe ${config.wipeClientPatterns.join("/") || "none"})` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Under-1k / Goliath bounce auto-pause (D67/D73): ${config.enableBounceAutopauseConverge ? `ENABLED (${config.under1kBounceAutopausePercent}%; D29 investigate stays ${config.campaignBounceInvestigateThreshold}%)` : "disabled"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

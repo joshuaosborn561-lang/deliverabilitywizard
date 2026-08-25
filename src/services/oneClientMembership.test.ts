@@ -118,6 +118,7 @@ describe("OneClientMembershipService", () => {
     const service = serviceWith({
       listCampaigns: async () => [
         { id: 1, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+        { id: 4, name: "Goliath Education Receipts", status: "ACTIVE" },
         { id: 8, name: "Goliath L1 AirPods", status: "STOPPED", client_id: 548611 },
         { id: 9, name: "Pod control shell", status: "PAUSED", client_id: 548611 },
       ],
@@ -147,9 +148,15 @@ describe("OneClientMembershipService", () => {
     });
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(added, [[1, [11]]]);
+    assert.deepEqual(added, [
+      [1, [11]],
+      [4, [11]],
+    ]);
     assert.deepEqual(removed, []);
-    assert.equal(result.restored[0]?.campaignId, 1);
+    assert.deepEqual(
+      result.restored.map((row) => row.campaignId).sort(),
+      [1, 4],
+    );
     assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
   });
 

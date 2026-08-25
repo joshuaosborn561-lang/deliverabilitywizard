@@ -97,12 +97,19 @@ export class OneClientMembershipService {
       this.config.genericStaffNamePatterns,
     );
     const activeOwnerCampaignIds = (campaigns as SmartleadCampaign[])
-      .filter(
-        (campaign) =>
-          campaign.client_id === genericOwnerId &&
-          String(campaign.status ?? "").toUpperCase() === "ACTIVE" &&
-          !isPodControlShellCampaign(campaign),
-      )
+      .filter((campaign) => {
+        if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
+        if (isPodControlShellCampaign(campaign)) return false;
+        const client =
+          typeof campaign.client_id === "number"
+            ? clientsById.get(campaign.client_id)
+            : undefined;
+        return allowsGenericStaff(
+          campaign,
+          client ? clientDisplayName(client) : "",
+          this.config.genericStaffNamePatterns,
+        );
+      })
       .map((campaign) => campaign.id);
 
     const plans: AccountPlan[] = [];

@@ -5,6 +5,7 @@ import { matchClientForCampaign } from "../lib/campaignClient.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { sleep } from "../lib/http.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import type { InventorySnapshot } from "./inventory.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 250;
 
@@ -26,7 +27,9 @@ export class CampaignClientTagService {
     private readonly smartlead: SmartleadClient,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<CampaignClientTagResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<CampaignClientTagResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: CampaignClientTagResult = {
       dryRun,
@@ -36,10 +39,14 @@ export class CampaignClientTagService {
       errors: [],
     };
 
-    const [campaigns, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+    const campaigns =
+      opts.inventory?.campaigns ??
+      ((await this.smartlead.listCampaigns()) as SmartleadCampaign[]);
+    const clients =
+      opts.inventory?.clients ??
+      (await this.smartlead
+        .listClients()
+        .catch(() => [] as SmartleadClientRecord[]));
 
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
@@ -59,6 +66,8 @@ export class CampaignClientTagService {
         if (!dryRun) {
           await this.smartlead.setCampaignClientId(campaign.id, match.id);
           await sleep(WRITE_GAP_MS);
+          // Later stages in the same pass share this snapshot object.
+          campaign.client_id = match.id;
         }
         result.assigned.push({
           campaignId: campaign.id,

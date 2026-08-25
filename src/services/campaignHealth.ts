@@ -22,6 +22,7 @@ import {
 } from "./campaignTopUp.js";
 import type { ClientFanOutService } from "./clientFanOut.js";
 import type { CopyCanaryAttachResult, CopyCanaryService } from "./copyCanary.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
 /**
  * Sole mutator brain for campaign staffing (D25).
@@ -73,7 +74,9 @@ export class CampaignHealthService {
     private readonly copyCanary?: CopyCanaryService,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<CampaignHealthResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<CampaignHealthResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: CampaignHealthResult = {
       dryRun,
@@ -94,12 +97,12 @@ export class CampaignHealthService {
     let campaigns: SmartleadCampaign[] = [];
     let accounts: SmartleadAccountWithCampaigns[] = [];
     let clients: SmartleadClientRecord[] = [];
+    let inventory = opts.inventory ?? null;
     try {
-      [campaigns, accounts, clients] = await Promise.all([
-        this.smartlead.listCampaigns(),
-        this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-        this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-      ]);
+      inventory = inventory ?? (await fetchInventory(this.smartlead));
+      campaigns = inventory.campaigns;
+      accounts = inventory.accounts;
+      clients = inventory.clients;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`inventory: ${message}`);
@@ -111,7 +114,7 @@ export class CampaignHealthService {
     result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
 
     try {
-      result.topUp = await this.topUp.run({ dryRun });
+      result.topUp = await this.topUp.run({ dryRun, inventory: inventory ?? undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`top-up: ${message}`);
@@ -120,7 +123,10 @@ export class CampaignHealthService {
     // D26: every mailbox for a client onto every ACTIVE campaign for that client.
     if (this.fanOut) {
       try {
-        const fan = await this.fanOut.run({ dryRun });
+        const fan = await this.fanOut.run({
+          dryRun,
+          inventory: inventory ?? undefined,
+        });
         result.fanOutAttached = fan.attached.length;
         result.errors.push(...fan.errors.slice(0, 20));
       } catch (error) {
@@ -143,16 +149,9 @@ export class CampaignHealthService {
       }
     }
 
-    // Re-read membership after top-up/fan-out so resume decisions use live Smartlead.
-    try {
-      accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: true,
-      });
-      campaigns = await this.smartlead.listCampaigns();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`re-inventory: ${message}`);
-    }
+    // Top-up and fan-out keep the shared snapshot truthful in place
+    // (recordMembership), so resume decisions below reuse it instead of
+    // re-fetching the whole account book a second time per pass.
 
     result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
     await this.resumeStaffed(result, campaigns, dryRun);

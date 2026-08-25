@@ -214,6 +214,27 @@ export interface AppState {
   campaignChecks: Record<string, CampaignCheckRecord>;
   /** D81 — Josh Slack-approved generic backfill, per campaign. */
   genericBackfillApprovals: Record<string, GenericBackfillApproval>;
+  /**
+   * D84 — campaign ids whose Smartlead bounce_autopause_threshold we already
+   * wrote to 100 (off). The 10-minute loop writes only campaigns missing
+   * here; a slower verify pass reconciles drift. Before this cache the loop
+   * rewrote every campaign (including COMPLETED ones from 2025) every 10
+   * minutes — ~600 writes/hour that starved the whole key into 429s.
+   */
+  smartleadAutopauseOff: Record<string, string>;
+  /** D84 — ISO time of the last read-verify sweep of bounce autopause. */
+  lastAutopauseVerifyAt: string | null;
+  /** D84 — per-stage watchdog: last success / failure per named loop. */
+  stageHealth: Record<string, StageHealthRecord>;
+}
+
+/** D84 — watchdog record for one named stage of a scheduled loop. */
+export interface StageHealthRecord {
+  lastOkAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  lastDurationMs: number | null;
+  consecutiveFailures: number;
 }
 
 export interface BugRemediationRecord {
@@ -320,6 +341,9 @@ const EMPTY_STATE: AppState = {
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
   campaignChecks: {},
   genericBackfillApprovals: {},
+  smartleadAutopauseOff: {},
+  lastAutopauseVerifyAt: null,
+  stageHealth: {},
 };
 
 export class StateStore {
@@ -367,6 +391,9 @@ export class StateStore {
         isolation: normalizeIsolationState(parsed.isolation),
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
+        smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
+        lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
+        stageHealth: parsed.stageHealth ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -924,6 +951,59 @@ export class StateStore {
 
   listCampaignChecks(): CampaignCheckRecord[] {
     return Object.values(this.state.campaignChecks);
+  }
+
+  removeCampaignCheck(campaignId: number): void {
+    delete this.state.campaignChecks[String(campaignId)];
+  }
+
+  /** D84 — bounce autopause already written off for this campaign. */
+  getAutopauseOffAt(campaignId: number): string | undefined {
+    return this.state.smartleadAutopauseOff[String(campaignId)];
+  }
+
+  markAutopauseOff(campaignId: number): void {
+    this.state.smartleadAutopauseOff[String(campaignId)] =
+      new Date().toISOString();
+  }
+
+  clearAutopauseOff(campaignId: number): void {
+    delete this.state.smartleadAutopauseOff[String(campaignId)];
+  }
+
+  getLastAutopauseVerifyAt(): string | null {
+    return this.state.lastAutopauseVerifyAt;
+  }
+
+  setLastAutopauseVerifyAt(iso: string): void {
+    this.state.lastAutopauseVerifyAt = iso;
+  }
+
+  /** D84 — watchdog bookkeeping for one named stage. */
+  recordStageOk(name: string, durationMs: number): void {
+    const existing = this.state.stageHealth[name];
+    this.state.stageHealth[name] = {
+      lastOkAt: new Date().toISOString(),
+      lastErrorAt: existing?.lastErrorAt ?? null,
+      lastError: existing?.lastError ?? null,
+      lastDurationMs: durationMs,
+      consecutiveFailures: 0,
+    };
+  }
+
+  recordStageError(name: string, error: string): void {
+    const existing = this.state.stageHealth[name];
+    this.state.stageHealth[name] = {
+      lastOkAt: existing?.lastOkAt ?? null,
+      lastErrorAt: new Date().toISOString(),
+      lastError: error.slice(0, 500),
+      lastDurationMs: existing?.lastDurationMs ?? null,
+      consecutiveFailures: (existing?.consecutiveFailures ?? 0) + 1,
+    };
+  }
+
+  listStageHealth(): Record<string, StageHealthRecord> {
+    return this.state.stageHealth;
   }
 
   approveGenericBackfill(record: GenericBackfillApproval): void {

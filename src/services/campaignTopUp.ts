@@ -25,6 +25,12 @@ import {
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
+import {
+  dropMembership,
+  fetchInventory,
+  recordMembership,
+  type InventorySnapshot,
+} from "./inventory.js";
 
 /**
  * Bring every active (and pending-resume) campaign up to a minimum *staffable*
@@ -105,7 +111,9 @@ export class CampaignTopUpService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<TopUpResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<TopUpResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: TopUpResult = {
       dryRun,
@@ -117,11 +125,21 @@ export class CampaignTopUpService {
       errors: [],
     };
 
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+    const { campaigns, accounts, clients } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
+    const accountById = new Map(
+      (accounts as SmartleadAccountWithCampaigns[])
+        .filter((account) => typeof account.id === "number")
+        .map((account) => [account.id, account]),
+    );
+    const noteAdd = (accountId: number, campaignId: number): void => {
+      const account = accountById.get(accountId);
+      if (account) recordMembership(account, campaignId);
+    };
+    const noteRemove = (accountId: number, campaignId: number): void => {
+      const account = accountById.get(accountId);
+      if (account) dropMembership(account, campaignId);
+    };
 
     const clientsById = new Map(clients.map((c) => [c.id, c]));
     const campaignById = new Map(
@@ -339,6 +357,7 @@ export class CampaignTopUpService {
               row.smartleadAccountId,
             ]);
             await sleep(250);
+            noteRemove(row.smartleadAccountId, id);
           }
           projected.set(id, (projected.get(id) ?? 1) - 1);
           remaining.delete(id);
@@ -465,6 +484,7 @@ export class CampaignTopUpService {
                 pool.smartleadAccountId,
               ]);
               targetAdded = true;
+              noteAdd(pool.smartleadAccountId, campaign.id);
               await sleep(250);
 
               for (const donorId of crossClientDonors) {
@@ -472,6 +492,7 @@ export class CampaignTopUpService {
                   pool.smartleadAccountId,
                 ]);
                 removedDonors.push(donorId);
+                noteRemove(pool.smartleadAccountId, donorId);
                 await sleep(250);
               }
 
@@ -497,6 +518,7 @@ export class CampaignTopUpService {
                     campaign.id,
                     [pool.smartleadAccountId],
                   );
+                  noteRemove(pool.smartleadAccountId, campaign.id);
                 } catch (error) {
                   rollbackErrors.push(
                     `remove target: ${error instanceof Error ? error.message : String(error)}`,
@@ -508,6 +530,7 @@ export class CampaignTopUpService {
                   await this.smartlead.addEmailAccountsToCampaign(donorId, [
                     pool.smartleadAccountId,
                   ]);
+                  noteAdd(pool.smartleadAccountId, donorId);
                 } catch (error) {
                   rollbackErrors.push(
                     `restore donor ${donorId}: ${error instanceof Error ? error.message : String(error)}`,

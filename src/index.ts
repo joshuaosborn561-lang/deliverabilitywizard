@@ -31,6 +31,10 @@ import {
   writeSlackBotTokenFile,
 } from "./lib/slackOauth.js";
 import { StateStore, type PoolProvisionPhase } from "./state/store.js";
+import {
+  fetchInventory,
+  type InventorySnapshot,
+} from "./services/inventory.js";
 import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
@@ -195,7 +199,7 @@ async function main(): Promise<void> {
     campaigns: unknown;
   }> | null = null;
 
-  const runScan = async (trigger: "cron" | "manual") => {
+  const runScan = async (trigger: "cron" | "manual" | "canon-sweep") => {
     assertRuntimeSecrets(config);
     if (scanInFlight) {
       console.log("[scan] Already running — skipping overlapping trigger");
@@ -371,6 +375,7 @@ async function main(): Promise<void> {
   const campaignBounceAutostop = new CampaignBounceAutostopService(
     config,
     smartlead,
+    state,
   );
   const campaignHealth = new CampaignHealthService(
     config,
@@ -549,47 +554,73 @@ async function main(): Promise<void> {
     });
   };
 
-  const runRestGates = async () => {
-    let unhealthy: unknown = null;
-    let wipe: unknown = null;
-    let restBaseline: unknown = null;
-    let restResult: unknown = null;
-    let genericRest: unknown = null;
-    if (config.enableUnhealthyReset) {
-      try {
-        unhealthy = await unhealthyReset.run();
-      } catch (error) {
-        console.warn("[health] unhealthy reset failed", error);
+  /**
+   * D84 — watchdog. Every scheduled stage runs through here so a failure is
+   * recorded (per-stage lastOkAt / consecutiveFailures in state, surfaced on
+   * /health) instead of vanishing into a console.warn. Production ran for
+   * days with fan-out and campaign-audit dying on 429s and nothing said so.
+   */
+  const stage = async <T>(
+    name: string,
+    fn: () => Promise<T>,
+  ): Promise<T | null> => {
+    const startedAt = Date.now();
+    try {
+      const out = await fn();
+      state.recordStageOk(name, Date.now() - startedAt);
+      return out;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      state.recordStageError(name, message);
+      console.warn(`[watchdog] stage ${name} FAILED: ${message}`);
+      feedBugRemediator(`stage-${name}`, error);
+      return null;
+    }
+  };
+
+  /** Stages that have not succeeded in this long get a loud log line. */
+  const STAGE_OVERDUE_MS = 45 * 60 * 1000;
+
+  const logCanonScoreboard = (): void => {
+    const counts = new Map<string, number>();
+    for (const record of state.listCampaignChecks()) {
+      for (const finding of record.findings ?? []) {
+        const kind = finding.split(":")[0] ?? "unknown";
+        counts.set(kind, (counts.get(kind) ?? 0) + 1);
       }
     }
-    if (config.enableClientWipe) {
-      try {
-        wipe = await clientWipe.run();
-      } catch (error) {
-        console.warn("[health] client wipe failed", error);
+    const summary = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([kind, n]) => `${kind}=${n}`)
+      .join(" ");
+    console.log(`[canon] open findings: ${summary || "none"}`);
+    const now = Date.now();
+    for (const [name, row] of Object.entries(state.listStageHealth())) {
+      const lastOk = row.lastOkAt ? Date.parse(row.lastOkAt) : null;
+      if (lastOk == null || now - lastOk > STAGE_OVERDUE_MS) {
+        console.warn(
+          `[watchdog] stage ${name} OVERDUE — last ok ${row.lastOkAt ?? "never"}; failures=${row.consecutiveFailures}; lastError=${row.lastError ?? "none"}`,
+        );
       }
     }
-    if (config.enableRestBaselineRebuild) {
-      try {
-        restBaseline = await restBaselineRebuild.run();
-      } catch (error) {
-        console.warn("[health] rest baseline rebuild failed", error);
-      }
-    }
-    if (config.enableClientRest) {
-      try {
-        restResult = await clientRest.run();
-      } catch (error) {
-        console.warn("[health] client rest failed", error);
-      }
-    }
-    if (config.enableGenericSendRest) {
-      try {
-        genericRest = await genericSendRest.run();
-      } catch (error) {
-        console.warn("[health] generic send rest failed", error);
-      }
-    }
+  };
+
+  const runRestGates = async (inventory?: InventorySnapshot) => {
+    const unhealthy = config.enableUnhealthyReset
+      ? await stage("unhealthy-reset", () => unhealthyReset.run())
+      : null;
+    const wipe = config.enableClientWipe
+      ? await stage("client-wipe", () => clientWipe.run())
+      : null;
+    const restBaseline = config.enableRestBaselineRebuild
+      ? await stage("rest-baseline", () => restBaselineRebuild.run())
+      : null;
+    const restResult = config.enableClientRest
+      ? await stage("client-rest", () => clientRest.run({ inventory }))
+      : null;
+    const genericRest = config.enableGenericSendRest
+      ? await stage("generic-rest", () => genericSendRest.run({ inventory }))
+      : null;
     return { unhealthyReset: unhealthy, clientWipe: wipe, restBaseline, clientRest: restResult, genericRest };
   };
 
@@ -631,41 +662,59 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     healthInFlight = (async () => {
-      const rest = await runRestGates();
+      const passStart = Date.now();
 
-      let oneClientResult: unknown = null;
-      try {
-        await campaignClientTag.run();
-        oneClientResult = await oneClientMembership.run();
-        await unpauseAfterSigQa.run();
-      } catch (error) {
-        console.warn("[health] one-client membership failed", error);
+      // D84 — one Smartlead inventory per pass. Every stage below shares it;
+      // mutating stages keep it truthful in place (recordMembership). Before
+      // this, ~8 stages each refetched the full account book and the pass
+      // starved itself into 429s.
+      const inventory = await stage("inventory", () => fetchInventory(smartlead));
+      if (!inventory) {
+        console.warn("[health] inventory fetch failed — skipping this pass");
+        await state.save();
+        return { skipped: true as const, reason: "inventory-failed" };
       }
+
+      const rest = await runRestGates(inventory);
+
+      await stage("client-tag", () => campaignClientTag.run({ inventory }));
+      const oneClientResult = await stage("one-client", () =>
+        oneClientMembership.run({ inventory }),
+      );
+      await stage("qa-unpause", () => unpauseAfterSigQa.run({ inventory }));
 
       let campaignCheckResult: unknown = null;
       if (config.enableCampaignCheck) {
-        try {
-          campaignCheckResult = await campaignCheck.run({ mode: "first" });
-        } catch (error) {
-          console.warn("[health] campaign-check first pass failed", error);
-        }
+        campaignCheckResult = await stage("campaign-check-first", () =>
+          campaignCheck.run({ mode: "first", inventory }),
+        );
       }
 
-      let healthResult: unknown = null;
-      try {
-        healthResult = await campaignHealth.run();
-      } catch (error) {
-        console.warn("[health] campaign health failed", error);
-        throw error;
+      const healthResult = await stage("campaign-health", () =>
+        campaignHealth.run({ inventory }),
+      );
+
+      // D84 — placement coverage is fixed when it is found missing, not only
+      // at the daily 9:00 scan. One failed morning run used to mean 24h of
+      // ACTIVE campaigns with no recurring test.
+      if (config.autoPlacementTests) {
+        const missingTest = state
+          .listCampaignChecks()
+          .some((record) =>
+            (record.findings ?? []).some((f) => f.startsWith("no_placement_test")),
+          );
+        const lastScanAt = state.get().lastScanAt;
+        const scanAgeMs = lastScanAt
+          ? Date.now() - Date.parse(lastScanAt)
+          : Number.POSITIVE_INFINITY;
+        if (missingTest && scanAgeMs >= 55 * 60 * 1000) {
+          await stage("scan-backfill", () => runScan("canon-sweep"));
+        }
       }
 
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
-        try {
-          reconnectResult = await runReconnect();
-        } catch (error) {
-          console.warn("[health] reconnect failed", error);
-        }
+        reconnectResult = await stage("reconnect", () => runReconnect());
       }
 
       // D30/D35/D83: gap + daily volume + canary warmup-off every health pass.
@@ -674,23 +723,20 @@ async function main(): Promise<void> {
       let mailboxGapResult: unknown = null;
       let mailboxSettingsResult: unknown = null;
       if (config.enforceMailboxSettings) {
-        try {
-          mailboxGapResult = await mailboxSettings.runGapEnforce();
-        } catch (error) {
-          console.warn("[health] mailbox gap enforce failed", error);
-        }
+        mailboxGapResult = await stage("mailbox-gap", () =>
+          mailboxSettings.runGapEnforce({ inventory }),
+        );
 
         const lastSettingsAt = state.get().lastMailboxSettingsAt;
         const settingsAgeMs = lastSettingsAt
           ? Date.now() - Date.parse(lastSettingsAt)
           : Number.POSITIVE_INFINITY;
         if (settingsAgeMs >= MAILBOX_SETTINGS_EVERY_MS) {
-          try {
-            mailboxSettingsResult = await mailboxSettings.run({ mode: "full" });
+          mailboxSettingsResult = await stage("mailbox-settings-full", () =>
+            mailboxSettings.run({ mode: "full", inventory }),
+          );
+          if (mailboxSettingsResult) {
             state.setLastMailboxSettingsAt(new Date().toISOString());
-            await state.save();
-          } catch (error) {
-            console.warn("[health] mailbox-settings failed", error);
           }
         } else {
           console.log(
@@ -698,6 +744,16 @@ async function main(): Promise<void> {
           );
         }
       }
+
+      logCanonScoreboard();
+      const passMs = Date.now() - passStart;
+      if (passMs > 15 * 60 * 1000) {
+        console.warn(
+          `[watchdog] health pass took ${(passMs / 60000).toFixed(1)} min — longer than its 15m cadence`,
+        );
+      }
+      state.recordStageOk("health-pass", passMs);
+      await state.save();
 
       return {
         unhealthyReset: rest.unhealthyReset,
@@ -1497,9 +1553,32 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
 
   app.get("/health", (_req, res) => {
     const s = state.get();
+    // D84 — the canon scoreboard: open findings by kind (living campaigns
+    // only) and per-stage watchdog, so "is the sweep actually running" is a
+    // curl instead of a Smartlead eyeball.
+    const canonFindings: Record<string, number> = {};
+    for (const record of Object.values(s.campaignChecks ?? {})) {
+      for (const finding of record.findings ?? []) {
+        const kind = finding.split(":")[0] ?? "unknown";
+        canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
+      }
+    }
+    const stages: Record<
+      string,
+      { lastOkAt: string | null; consecutiveFailures: number; lastError: string | null }
+    > = {};
+    for (const [name, row] of Object.entries(s.stageHealth ?? {})) {
+      stages[name] = {
+        lastOkAt: row.lastOkAt,
+        consecutiveFailures: row.consecutiveFailures,
+        lastError: row.consecutiveFailures > 0 ? row.lastError : null,
+      };
+    }
     res.json({
       ok: true,
       service: "deliverabilitywizard",
+      canonFindings,
+      stages,
       secretsConfigured: secretsReady,
       remediationEnabled: config.enableRemediation,
       inboxkitConfigured: Boolean(config.inboxkitApiKey),

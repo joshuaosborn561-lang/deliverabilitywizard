@@ -6,12 +6,22 @@ import {
   campaignBounceAutostopThreshold,
   shouldAutostopCampaignForBounce,
 } from "../lib/campaignBounceAutostop.js";
+import { readBounceAutopausePercent } from "../lib/bounceAutopause.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { sleep } from "../lib/http.js";
+import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 350;
 const ANALYTICS_START = "2020-01-01";
+/** Read-verify the off threshold this often; the 10m loop only fills gaps. */
+const AUTOPAUSE_VERIFY_EVERY_MS = 6 * 60 * 60 * 1000;
+
+/** COMPLETED / STOPPED campaigns never send again — stop touching them. */
+export function isTerminalCampaignStatus(status: unknown): boolean {
+  const s = String(status ?? "").toUpperCase();
+  return s === "COMPLETED" || s === "STOPPED";
+}
 
 export interface BounceAutostopPause {
   campaignId: number;
@@ -63,6 +73,7 @@ export class CampaignBounceAutostopService {
   constructor(
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
+    private readonly state?: StateStore,
   ) {}
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignBounceAutostopResult> {
@@ -100,16 +111,18 @@ export class CampaignBounceAutostopService {
     for (const campaign of active) {
       result.scanned += 1;
       try {
-        const [analytics, statistics] = await Promise.all([
-          this.smartlead
-            .getCampaignAnalyticsByDate(
-              campaign.id,
-              lifetimeStart(campaign),
-              end,
-            )
-            .catch(() => null),
-          this.smartlead.getCampaignStatistics(campaign.id).catch(() => null),
-        ]);
+        // One read per campaign; statistics only as a fallback when the
+        // analytics endpoint gave nothing. The old parallel double-read cost
+        // ~576 requests/hour on its own.
+        const analytics = await this.smartlead
+          .getCampaignAnalyticsByDate(campaign.id, lifetimeStart(campaign), end)
+          .catch(() => null);
+        const statistics =
+          statsFromAnalytics(analytics).sent > 0
+            ? null
+            : await this.smartlead
+                .getCampaignStatistics(campaign.id)
+                .catch(() => null);
         const bands = {
           minSent: this.config.bounceAutostopMinSent,
           highVolumeSent: this.config.bounceAutostopHighVolumeSent,
@@ -161,6 +174,12 @@ export class CampaignBounceAutostopService {
     return result;
   }
 
+  /**
+   * D84 — converge on drift, not on schedule. The 10-minute loop writes only
+   * campaigns we have never converged (new ids). Every 6h one read-verify
+   * sweep checks living campaigns and rewrites only actual drift, so a
+   * UI-side change still gets caught without ~600 blind writes/hour.
+   */
   private async disableSmartleadAutopause(
     campaigns: SmartleadCampaign[],
     dryRun: boolean,
@@ -170,25 +189,54 @@ export class CampaignBounceAutostopService {
       this.config.smartleadBounceAutopauseOffPercent ??
         SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT,
     );
-    for (const campaign of campaigns) {
-      if (isPodControlShellCampaign(campaign, this.config.podControlShellCampaignId)) {
-        continue;
-      }
+    const offNumber = Number(off);
+    const living = campaigns.filter(
+      (campaign) =>
+        !isPodControlShellCampaign(campaign, this.config.podControlShellCampaignId) &&
+        !isTerminalCampaignStatus(campaign.status),
+    );
+
+    const lastVerify = this.state?.getLastAutopauseVerifyAt();
+    const verifyDue =
+      !lastVerify ||
+      Date.now() - Date.parse(lastVerify) >= AUTOPAUSE_VERIFY_EVERY_MS;
+
+    for (const campaign of living) {
+      const alreadyOff = this.state?.getAutopauseOffAt(campaign.id);
+      if (alreadyOff && !verifyDue) continue;
       try {
-        console.log(
-          `[bounce-autostop] Smartlead autopause off ${campaign.name} #${campaign.id} → ${off}%${dryRun ? " (dry-run)" : ""}`,
-        );
+        if (alreadyOff && verifyDue) {
+          // Read-verify: rewrite only when Smartlead shows drift.
+          const settings = await this.smartlead
+            .getCampaignSettings(campaign.id)
+            .catch(() => null);
+          await sleep(120);
+          const current = readBounceAutopausePercent(settings);
+          if (current == null || current === offNumber) continue;
+          console.log(
+            `[bounce-autostop] drift on #${campaign.id} ${campaign.name}: autopause ${current}% → ${off}%${dryRun ? " (dry-run)" : ""}`,
+          );
+        } else {
+          console.log(
+            `[bounce-autostop] Smartlead autopause off ${campaign.name} #${campaign.id} → ${off}%${dryRun ? " (dry-run)" : ""}`,
+          );
+        }
         if (!dryRun) {
           await this.smartlead.updateCampaignSettings(campaign.id, {
             bounce_autopause_threshold: off,
           });
           await sleep(WRITE_GAP_MS);
+          this.state?.markAutopauseOff(campaign.id);
         }
         result.smartleadDisabled += 1;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`disable #${campaign.id}: ${message}`);
       }
+    }
+
+    if (verifyDue && !dryRun) {
+      this.state?.setLastAutopauseVerifyAt(new Date().toISOString());
     }
   }
 }

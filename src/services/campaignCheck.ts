@@ -50,9 +50,19 @@ import { isConnectedAccount, isStaffableSender } from "../lib/staffableSender.js
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import type { SpamTestSummary } from "../types/index.js";
+import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { isExcluded } from "./campaignTopUp.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 80;
+
+/**
+ * A campaign stuck on a blocking first-check finding (bad copy needing a
+ * human) is re-inspected hourly, not every 15 minutes. Pre-#109 production
+ * had ~10 forever-blocked campaigns re-reading their sequences on every
+ * health pass — pure rate-limit burn with an unchanged answer.
+ */
+const FIRST_CHECK_RETRY_MS = process.env.NODE_TEST_CONTEXT ? 0 : 55 * 60 * 1000;
 
 export type CampaignCheckMode = "first" | "hourly" | "all";
 
@@ -88,7 +98,9 @@ export class CampaignCheckService {
     private readonly slack?: SlackClient,
   ) {}
 
-  async run(opts: { mode?: CampaignCheckMode } = {}): Promise<CampaignCheckResult> {
+  async run(
+    opts: { mode?: CampaignCheckMode; inventory?: InventorySnapshot } = {},
+  ): Promise<CampaignCheckResult> {
     const mode = opts.mode ?? "all";
     const result: CampaignCheckResult = {
       mode,
@@ -102,11 +114,8 @@ export class CampaignCheckService {
       findings: [],
     };
 
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+    const { campaigns, accounts, clients } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
       brandByClientId.set(
@@ -159,6 +168,17 @@ export class CampaignCheckService {
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
       const name = String(campaign.name ?? campaign.id);
+
+      // COMPLETED / STOPPED campaigns never send again. Keeping their stale
+      // findings alive polluted the scoreboard (2025 campaigns "missing
+      // %signature%") and burned hourly inspections on dead ids.
+      if (isTerminalCampaignStatus(campaign.status)) {
+        if (this.state.getCampaignCheck(campaign.id)) {
+          this.state.removeCampaignCheck(campaign.id);
+        }
+        continue;
+      }
+
       const existing = this.state.getCampaignCheck(campaign.id);
       if (!existing) {
         result.firstSeen += 1;
@@ -175,7 +195,16 @@ export class CampaignCheckService {
       }
       const record = this.state.getCampaignCheck(campaign.id)!;
       const needsFirst = !record.firstPassedAt;
-      const runFirst = needsFirst && (mode === "first" || mode === "all" || mode === "hourly");
+      // Backoff: a blocked first check with a recent inspection waits for
+      // FIRST_CHECK_RETRY_MS before re-reading sequences.
+      const recentlyChecked = Boolean(
+        record.firstCheckAt &&
+          Date.now() - Date.parse(record.firstCheckAt) < FIRST_CHECK_RETRY_MS,
+      );
+      const runFirst =
+        needsFirst &&
+        (mode === "first" || mode === "all" || mode === "hourly") &&
+        (!recentlyChecked || mode !== "first");
       const runHourly = Boolean(record.firstPassedAt) && (mode === "hourly" || mode === "all");
       if (!runFirst && !runHourly) continue;
 

@@ -155,7 +155,9 @@ export class CampaignScanner {
     private readonly state: StateStore,
   ) {}
 
-  async run(options: { trigger: "cron" | "manual" } = { trigger: "cron" }): Promise<ScanResult> {
+  async run(
+    options: { trigger: "cron" | "manual" | "canon-sweep" } = { trigger: "cron" },
+  ): Promise<ScanResult> {
     const result: ScanResult = {
       scanned: 0,
       eligible: 0,

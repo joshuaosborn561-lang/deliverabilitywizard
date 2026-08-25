@@ -291,6 +291,43 @@ describe("CampaignCheckService", () => {
     );
   });
 
+  it("D84: COMPLETED/STOPPED campaigns leave the sweep and their findings are archived", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 3739316,
+      name: "Cold Call Followup",
+      firstSeenAt: "2026-08-20T00:00:00.000Z",
+      firstCheckAt: "2026-08-20T00:00:00.000Z",
+      firstPassedAt: null,
+      lastSweepAt: null,
+      lastKind: "first",
+      findings: ["missing_signature_tag: step 1 A is missing %signature%"],
+    });
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 3739316, name: "Cold Call Followup", status: "COMPLETED", client_id: 345263 },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [goliath],
+        getCampaignSequences: async () => {
+          throw new Error("terminal campaigns must not be inspected");
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "all" });
+    assert.equal(
+      state.getCampaignCheck(3739316),
+      undefined,
+      "terminal campaigns must not keep stale findings on the scoreboard",
+    );
+  });
+
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {
     const make = async (status: string) => {
       const store = new StateStore(stateFile());

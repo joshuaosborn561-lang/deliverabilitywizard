@@ -150,6 +150,29 @@ campaign**, and the floor (**half that client's inboxes**). Logs are
 `[campaign-check]`. Slack is only the Allow generics button. This does not
 START a campaign, import leads, spend, or pull a mailbox.
 
+## Canon sweep (D84)
+
+The 15-minute health pass fetches Smartlead inventory **once**
+(`fetchInventory`) and every stage shares it; mutating stages keep the
+snapshot truthful in place (`recordMembership`/`dropMembership`). Do not
+add a stage that refetches the account book — eight per-stage refetches
+plus blind converge writes are what starved production into 429s while
+the checker's findings sat unread.
+
+Fan-out staffs **any client-owned inbox onto every ACTIVE campaign for
+its client**, including inboxes currently on zero campaigns and clients
+with a single campaign. Idle generics stay top-up supply. Bounce
+autopause converge is **write-on-drift** (cached per campaign, 6-hour
+read-verify) and never touches COMPLETED/STOPPED campaigns. Terminal
+campaigns leave the campaign-check scoreboard. A blocked first-check
+re-inspects hourly, not every 15 minutes. Missing placement coverage
+kicks a scan on the pass that finds it.
+
+Every stage records `stageHealth` (lastOkAt / consecutiveFailures /
+duration). `/health` returns `canonFindings` (open findings by kind) and
+`stages`; `[watchdog]` logs any stage overdue or failing. Check those
+before trusting that "the loop is running".
+
 ## When setting up a campaign
 
 Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):

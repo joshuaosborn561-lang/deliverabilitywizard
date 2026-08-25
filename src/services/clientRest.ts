@@ -20,6 +20,12 @@ import {
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
+import {
+  dropMembership,
+  fetchInventory,
+  recordMembership,
+  type InventorySnapshot,
+} from "./inventory.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 
 /**
@@ -98,7 +104,9 @@ export class ClientRestService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean; now?: Date } = {}): Promise<ClientRestResult> {
+  async run(
+    opts: { dryRun?: boolean; now?: Date; inventory?: InventorySnapshot } = {},
+  ): Promise<ClientRestResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const now = opts.now ?? new Date();
     const result: ClientRestResult = {
@@ -117,10 +125,8 @@ export class ClientRestService {
       return result;
     }
 
-    const [campaigns, accounts] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-    ]);
+    const { campaigns, accounts } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
 
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
@@ -231,6 +237,7 @@ export class ClientRestService {
                 account.id,
               ]);
               await sleep(150);
+              dropMembership(account, campaignId);
             }
             membership.set(campaignId, remaining - 1);
             removed.push(campaignId);
@@ -303,6 +310,7 @@ export class ClientRestService {
               account.id,
             ]);
             await sleep(150);
+            recordMembership(account, campaignId);
           }
           added.push(campaignId);
         } catch (error) {

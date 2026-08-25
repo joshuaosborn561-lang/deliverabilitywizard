@@ -128,7 +128,8 @@ export function shouldRotateForBounces(
 
 /**
  * D41 — warn (Slack / investigate) above ~2% but do not pull.
- * Rotation stays on bounceRateThreshold (5%, D5).
+ * D79 retired D5's per-sender 5%/50 pull. shouldRotateForBounces is
+ * still used by D29 on already-PAUSED campaigns (7%).
  */
 export function shouldWarnForBounces(
   stat: SenderBounceStats,

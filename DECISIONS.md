@@ -1457,3 +1457,150 @@ bug, not a signature guess.
 foreign second line; campaign-audit SIG-MISMATCH; gap enforce
 rewrites foreign sigs; owner-intent D74.
 
+## D75 — One inbox, one client, hard cleanup every health pass
+
+**Decision.** An inbox may sit on every campaign for **one** client
+and on the paused pod-control shell. It may not sit on another
+client's campaigns at the same time. Health pulls those foreign
+memberships every 15 minutes, then sets the signature to the owner
+client's brand.
+
+Owner is `mailbox.client_id`. The shell does not count. Isolation
+and canary-fleet mailboxes are skipped. Same-client fan-out (D26)
+is unchanged.
+
+This supersedes D74's "two-client membership is logged, not
+rewritten."
+
+**Why.** Josh (2026-08-25): change the leftover Peterson signature
+on the Goliath send, and "hard rule of an inbox can only be
+assocoated wiht one clients cmpaigns at a time." D26 already said
+that; nothing stripped existing cross-client memberships, so a
+generic could send Goliath with a Peterson line.
+
+**Tradeoff.** Pulling a mailbox off the wrong client can thin that
+campaign until top-up refills. Accepted: the wrong-brand send is
+worse.
+
+**Guards.** `foreignCampaignIds`; `OneClientMembershipService`;
+owner-intent D75.
+
+---
+
+## D76 — Generics belong to Goliath even with a leftover client_id
+
+**Decision.** A pool or extra-fleet generic is owned by Goliath
+(D58) even when `mailbox.client_id` still names another client, or
+is empty. Health treats Goliath as the owner: pulls every other
+client's campaigns, sets `client_id` + signature to Goliath, and if
+the generic is sitting on a foreign client with no Goliath
+campaign, puts it back on every **ACTIVE** Goliath campaign
+(stopped L1–L4 and the shell stay untouched).
+
+Pool-plan domains (`getoutreachdesk.info` and the rest of
+`GENERIC_POOL_PLAN`) count as generic without needing the local
+pool file.
+
+This supersedes D75's "Owner is `mailbox.client_id`" for generics
+only. Real client inboxes still use `mailbox.client_id`.
+
+**Why.** Josh (2026-08-25): change the leftover Peterson signature,
+and one inbox / one client's campaigns. Aarav Sanchez at
+`getoutreachdesk.info` is a pool generic that still had Peterson's
+`client_id`. Treating that id as owner pulled the box off Goliath
+instead of rewriting the sig.
+
+**Tradeoff.** A generic that was parked on another client before
+D58 comes back to Goliath. Accepted: D58 already forbids
+non-Goliath generic staff.
+
+**Guards.** `ownerClientId` generic override; `isGenericPoolDomain`;
+`OneClientMembershipService` restore; owner-intent D76.
+
+---
+
+## D77 — Campaigns carry a client tag; unpause after signature QA
+
+**Decision.** Every campaign is assigned a Smartlead client
+(`client_id` — the client tag). Health fills a missing tag from a
+unique name match. Signature QA matches senders to that assigned
+client, not a guess from the campaign title.
+
+After a passing QA (no leftover other-client brand on any sender),
+a **PAUSED Goliath** campaign is STARTed. The pod-control shell,
+STOPPED L1–L4, DRAFTED campaigns, and non-Goliath manual pauses
+stay down (D40 / D56).
+
+**Why.** Josh (2026-08-25): after a QA pass knows sigs match the
+client, unpause. "Client matching should be easy — every campaign
+gets a client tag assigned."
+
+**Tradeoff.** A Goliath campaign Josh paused by hand will come back
+once signatures are clean. Accepted: the leftover Peterson send was
+the reason those were down. STOPPED still means operator takeover.
+
+**Guards.** `matchClientForCampaign`; `CampaignClientTagService`;
+`UnpauseAfterSigQaService`; owner-intent D77.
+
+---
+
+## D78 — Campaign bounce auto-pause is 20% under 1k, 7% over 1k
+
+**Decision.** Smartlead `bounce_autopause_threshold` is:
+
+- **20%** on Under-1k name matches and every Goliath campaign
+- **7%** on Over-1k name matches and every other campaign
+
+Never leave Smartlead's **5%** default. Health converges this every
+15 minutes. Per-sender pull stays 5% after 50 sends (D5) — that
+removes a mailbox, it does not pause the campaign. D29 investigate
+stays 7%.
+
+Under-1k / Over-1k are **name matches only**. Do not infer them from
+company-size bands like 501-1000. Goliath Displacement / Education
+are 20% (D73).
+
+**Why.** Josh (2026-08-25): a Goliath campaign paused because it
+was over 5%. "The rules should be 7% if over 1k and 20% if under.
+Make sure campaigns are enforcing those rules and unpause that
+Goliath one."
+
+**Tradeoff.** A 6–7% Over-1k list still auto-pauses. Accepted:
+that band is large enough that 7% is a real problem.
+
+**Guards.** `desiredBounceAutopausePercent`; `BounceAutopauseService`;
+owner-intent D78.
+
+---
+
+## D79 — No per-sender bounce pull
+
+**Decision.** D5's per-sender pull (bounce above 5% after 50 sends) is
+retired. Do not keep it as a standing live rule. D51 already defaulted
+`ENABLE_BOUNCE_ROTATION` off; D78's leftover sentence "Per-sender pull
+stays 5% after 50 sends (D5)" is superseded here.
+
+Bounce control on live campaigns is Smartlead `bounce_autopause_threshold`
+(D78): **20%** Under-1k and Goliath, **7%** everyone else. That pauses
+the campaign; it does not bench one mailbox.
+
+Unchanged:
+- D29 paused-campaign investigate at 7% (may rotate worst bouncers on an
+  already-PAUSED campaign)
+- D51 kill-only: the only automatic live removal is Josh killing a mailbox
+- `enableBounceRotation` / `enableLegacyMailboxPulls` stay **false**
+- 5% remains a leftover reading on the disabled path, not a pull trigger
+- The 50-send sample floor still applies where a bounce rate is treated
+  as evidence (D29)
+
+**Why.** Josh (2026-08-25): "delete this rule that is legacy Per-sender
+pull stays 5% after 50 sends." Campaign auto-pause is the bounce rule
+now. Leaving D5 written as live made the 20/7 campaign write look like
+it still had a second pull underneath.
+
+**Tradeoff.** A single mailbox can bounce hard on a live campaign until
+the campaign hits 7% or 20% aggregate. Accepted: D51 already stopped
+benching on that signal, and the leftover rule was the confusing one.
+
+**Guards.** `enableBounceRotation` false; owner-intent D79.
+

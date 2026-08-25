@@ -26,10 +26,9 @@ clients rest.
 (connected SMTP/IMAP, not held, not resting) with at least **~30% Google and
 ~30% Microsoft**. Generics may staff any client, including BCP.
 
-**Holds (D44).** First health after deploy rebuilds the hold pile once: keep
-only **same-ESP** fails below 80%. Unproven HOLDs go back into D43. Going
-forward, only proven-weak senders are pulled — same-ESP inbox below 80%, or
-bounce above 5% with at least 50 sends. Copy/offer (Outlook buried, Gmail fine)
+**Holds (D44 / D51 / D79).** First health after deploy rebuilds the hold pile
+once: keep only **same-ESP** fails below 80%. Unproven HOLDs go back into D43.
+There is no per-sender bounce pull. Copy/offer (Outlook buried, Gmail fine)
 is Slack only; those senders stay up.
 
 **Left alone.** MSRS, HVAC, and Roofers (`TOP_UP_EXCLUDE_CAMPAIGNS`, exact

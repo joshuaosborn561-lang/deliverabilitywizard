@@ -36,6 +36,39 @@ describe("isClientInbox", () => {
     );
   });
 
+  it("rejects a dropped pool-plan domain as a generic (D76)", () => {
+    assert.equal(
+      isGenericMailbox(
+        { from_name: "Claire Shah" },
+        "claireshah@outreachdeskbox.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
+  });
+
+  it("rejects a pool-plan domain even with a leftover client_id (D76)", () => {
+    assert.equal(
+      isClientInbox(
+        { client_id: 548610, from_name: "Aarav Sanchez" },
+        "aaravsanchez@getoutreachdesk.info",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+    );
+    assert.equal(
+      isGenericMailbox(
+        { client_id: 548610, from_name: "Aarav Sanchez" },
+        "aaravsanchez@getoutreachdesk.info",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
+  });
+
   it("rejects pool generics", () => {
     assert.equal(
       isClientInbox(

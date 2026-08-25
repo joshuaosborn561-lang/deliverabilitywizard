@@ -596,7 +596,7 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 
-  it("D41: bounce warn is 2%; pull stays 5%; paused investigate stays 7%", () => {
+  it("D41/D79: bounce warn is 2%; no per-sender pull; paused investigate stays 7%", () => {
     assert.equal(
       defaults.bounceRateWarnThreshold,
       2,
@@ -606,11 +606,11 @@ describe("owner intent — D41 beanstalk rotation", () => {
       ),
     );
     assert.equal(
-      defaults.bounceRateThreshold,
-      5,
+      defaults.enableBounceRotation,
+      false,
       stop(
-        "Senders above 5% bounce are still rotated out (D5).",
-        `Bounce pull is now ${defaults.bounceRateThreshold}%.`,
+        "D5's per-sender 5%/50 pull is retired (D79).",
+        "ENABLE_BOUNCE_ROTATION now defaults on.",
       ),
     );
     assert.equal(
@@ -1930,6 +1930,259 @@ describe("owner intent — D74 QA catches a foreign-client signature", () => {
       stop(
         "Health rewrites a foreign signature on the gap pass (D74).",
         "mailboxSettings.ts no longer rewrites foreign brands in gap mode.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D75 one inbox one client", () => {
+  it("D75: foreign campaign memberships are pulled every health pass", async () => {
+    const { foreignCampaignIds, ownerClientId } = await import(
+      "../lib/oneClient.js"
+    );
+    assert.deepEqual(
+      foreignCampaignIds(548611, [
+        { campaignId: 1, clientId: 548611, shell: false },
+        { campaignId: 2, clientId: 99, shell: false },
+        { campaignId: 9, clientId: 99, shell: true },
+      ]),
+      [2],
+      stop(
+        "An inbox may not sit on another client's campaign (D75).",
+        "foreignCampaignIds no longer pulls the Peterson campaign.",
+      ),
+    );
+    assert.equal(
+      ownerClientId(548611, [
+        { campaignId: 2, clientId: 99, shell: false },
+      ]),
+      548611,
+      stop(
+        "Mailbox client_id is the owner (D75).",
+        "ownerClientId no longer trusts mailbox.client_id.",
+      ),
+    );
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      src,
+      /removeEmailAccountsFromCampaign/,
+      stop(
+        "Health pulls the foreign membership (D75).",
+        "oneClientMembership.ts no longer removes cross-client campaigns.",
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /oneClientMembership\.run/,
+      stop(
+        "The 15-minute health loop runs the one-client cleanup (D75).",
+        "index.ts no longer calls oneClientMembership.run.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D76 generics belong to Goliath", () => {
+  it("D76: a leftover Peterson client_id does not own a pool generic", async () => {
+    const { ownerClientId } = await import("../lib/oneClient.js");
+    assert.equal(
+      ownerClientId(
+        548610,
+        [{ campaignId: 2, clientId: 548610, shell: false }],
+        { generic: true, genericOwnerId: 548611 },
+      ),
+      548611,
+      stop(
+        "Pool generics belong to Goliath even with a leftover client_id (D76).",
+        "ownerClientId still treats mailbox.client_id as owner for generics.",
+      ),
+    );
+    const { isGenericMailbox } = await import("../lib/clientInbox.js");
+    assert.equal(
+      isGenericMailbox(
+        { client_id: 548610, from_name: "Aarav Sanchez" },
+        "aaravsanchez@getoutreachdesk.info",
+        { extraGenericMailboxes: [], extraGenericDomains: [] },
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+      stop(
+        "Pool-plan domains are generic without the local pool file (D76).",
+        "getoutreachdesk.info is no longer treated as a generic.",
+      ),
+    );
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      src,
+      /addEmailAccountsToCampaign/,
+      stop(
+        "A stranded generic is put back on ACTIVE Goliath campaigns (D76).",
+        "oneClientMembership.ts no longer restores generics onto Goliath.",
+      ),
+    );
+    assert.match(
+      src,
+      /genericOwnerId/,
+      stop(
+        "Health uses Goliath as the generic owner (D76).",
+        "oneClientMembership.ts no longer passes genericOwnerId.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D77 client tag and QA unpause", () => {
+  it("D77: campaigns get a client tag; Goliath unpauses only after sigs match", async () => {
+    const { matchClientForCampaign } = await import("../lib/campaignClient.js");
+    assert.equal(
+      matchClientForCampaign("Goliath Displacement M", [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 99, name: "Peterson", logo: "Roofs by Peterson" },
+      ])?.id,
+      548611,
+      stop(
+        "A campaign name maps to exactly one client tag (D77).",
+        "matchClientForCampaign no longer assigns Goliath.",
+      ),
+    );
+    const tagSrc = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/campaignClientTag.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      tagSrc,
+      /setCampaignClientId/,
+      stop(
+        "Health writes the campaign client tag (D77).",
+        "campaignClientTag.ts no longer assigns client_id.",
+      ),
+    );
+    const unpause = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      unpause,
+      /updateCampaignStatus\(campaign\.id, "START"\)/,
+      stop(
+        "A passing signature QA STARTs the paused Goliath campaign (D77).",
+        "unpauseAfterSigQa.ts no longer STARTs after a clean QA.",
+      ),
+    );
+    assert.match(
+      unpause,
+      /isPodControlShellCampaign/,
+      stop(
+        "The pod-control shell stays paused (D56 / D77).",
+        "unpauseAfterSigQa.ts no longer skips the shell.",
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /unpauseAfterSigQa\.run/,
+      stop(
+        "The 15-minute health loop unpauses after signature QA (D77).",
+        "index.ts no longer calls unpauseAfterSigQa.run.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D78 campaign bounce auto-pause", () => {
+  it("D78: Under-1k and Goliath are 20%; Over-1k and everyone else are 7%; never 5%", async () => {
+    const { desiredBounceAutopausePercent } = await import(
+      "../lib/bounceAutopause.js"
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("BCP Healthcare Under-1k (No Team)"),
+      20,
+      stop(
+        "Under-1k bounce auto-pause is 20% (D78).",
+        "desiredBounceAutopausePercent no longer returns 20 for Under-1k.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("BCP Healthcare Over-1k (No Team)"),
+      7,
+      stop(
+        "Over-1k bounce auto-pause is 7% (D78).",
+        "desiredBounceAutopausePercent no longer returns 7 for Over-1k.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Goliath Displacement L 501-1000"),
+      20,
+      stop(
+        "Goliath bounce auto-pause is 20% (D73/D78).",
+        "Goliath Displacement L is no longer 20%.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Vasco - Service"),
+      7,
+      stop(
+        "Everyone else is 7%, never 5% (D78).",
+        "Fleet default bounce auto-pause is no longer 7%.",
+      ),
+    );
+    assert.equal(
+      defaults.under1kBounceAutopausePercent,
+      20,
+      stop(
+        "UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT defaults to 20 (D78).",
+        `Default is now ${defaults.under1kBounceAutopausePercent}.`,
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /bounceAutopause\.run/,
+      stop(
+        "Health converges campaign bounce auto-pause (D78).",
+        "index.ts no longer calls bounceAutopause.run.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D79 no per-sender bounce pull", () => {
+  it("D79: D5's 5%/50 pull stays off; campaign auto-pause is the bounce control", () => {
+    assert.equal(
+      defaults.enableBounceRotation,
+      false,
+      stop(
+        "There is no per-sender bounce pull (D79).",
+        "ENABLE_BOUNCE_ROTATION now defaults on.",
+      ),
+    );
+    assert.equal(
+      defaults.enableLegacyMailboxPulls,
+      false,
+      stop(
+        "Legacy mailbox pulls stay off (D51/D79).",
+        "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
       ),
     );
   });

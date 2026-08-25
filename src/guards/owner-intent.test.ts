@@ -1877,3 +1877,43 @@ describe("owner intent — D71 Slack is deliverability flags plus EOD", () => {
     );
   });
 });
+
+describe("owner intent — D72 shell membership does not strand restore", () => {
+  it("D72: sitting on the pod-control shell is not excluded-only", async () => {
+    const { isExcludedOnlyMembership } = await import(
+      "../services/clientRest.js"
+    );
+    const { POD_CONTROL_SHELL_NAME } = await import(
+      "../lib/podControlShell.js"
+    );
+    const byId = new Map([
+      [1, { id: 1, name: "TechEvo New England Red Sox" }],
+      [99, { id: 99, name: POD_CONTROL_SHELL_NAME }],
+      [40, { id: 40, name: "MSRS2" }],
+    ]);
+    assert.equal(
+      isExcludedOnlyMembership([99], byId, ["msrs"]),
+      false,
+      stop(
+        "The paused shell does not skip A/B restore (D72).",
+        "isExcludedOnlyMembership treats shell-only membership as excluded.",
+      ),
+    );
+    assert.equal(
+      isExcludedOnlyMembership([1, 99], byId, ["msrs"]),
+      false,
+      stop(
+        "Live + shell still restores (D72).",
+        "isExcludedOnlyMembership now skips a live campaign because of the shell.",
+      ),
+    );
+    assert.equal(
+      isExcludedOnlyMembership([40, 99], byId, ["msrs"]),
+      true,
+      stop(
+        "A real excluded campaign plus the shell is still excluded (D72).",
+        "isExcludedOnlyMembership no longer treats MSRS + shell as excluded-only.",
+      ),
+    );
+  });
+});

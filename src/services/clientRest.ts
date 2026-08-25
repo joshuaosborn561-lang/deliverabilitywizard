@@ -18,6 +18,7 @@ import {
   type RestCohort,
 } from "../lib/restCohort.js";
 import type { StateStore } from "../state/store.js";
+import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
@@ -50,9 +51,10 @@ export function shouldVetoRestRestore(
 }
 
 /**
- * True only when every *known* campaign this inbox is on is excluded.
- * Unknown / leftover campaign ids do not count as excluded (D63) — those
- * inboxes still belong in the A/B rest loop.
+ * True only when every *known live* campaign this inbox is on is excluded.
+ * Unknown / leftover campaign ids do not count as excluded (D63).
+ * The paused pod-control shell is not a live campaign (D56 / D72) — sitting
+ * on it alone must not skip A/B restore onto the client's ACTIVE campaigns.
  */
 export function isExcludedOnlyMembership(
   campaignIds: number[],
@@ -63,7 +65,8 @@ export function isExcludedOnlyMembership(
     .map((id) => campaignById.get(id))
     .filter((campaign): campaign is { id: number; name?: string | null } =>
       Boolean(campaign),
-    );
+    )
+    .filter((campaign) => !isPodControlShellCampaign(campaign));
   return (
     known.length > 0 &&
     known.every((campaign) => isExcluded(campaign, excluded))

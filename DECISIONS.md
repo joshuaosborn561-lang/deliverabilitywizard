@@ -1424,3 +1424,29 @@ will not page Slack. Accepted: those are `/ops` and logs.
 eod_summary / action_result; client-rest does not Slack the fortnight;
 EOD brief has sent + spam and no staffing; owner-intent D71.
 
+## D72 — The pod-control shell does not strand A/B restore
+
+**Decision.** An inbox whose only membership is the paused **Pod
+control shell** (D56) is not "excluded-only." Rest still puts that
+client's **on-week** half back on every ACTIVE campaign for that
+client (D59). Off-week sitters stay on the shell only. The shell
+itself stays paused and is never a top-up / fan-out target.
+
+Unknown leftover campaign ids stay ignored (D63). A real excluded
+live campaign (MSRS / HVAC / Roofers) plus the shell is still
+excluded-only.
+
+**Why.** Josh (2026-08-25): "techevo should not only have 1 inbox,
+what happened ot the pods??" TechEvo had 39 inboxes, all tagged
+POD-A / POD-B. Eighteen on-week B boxes sat only on the paused
+shell because `isExcludedOnlyMembership` treated the shell as an
+excluded campaign and skipped restore. Tony Prohaska was the only
+sender on TechEvo New England Red Sox.
+
+**Tradeoff.** After a rest pass, on-week senders sit on live +
+shell. That is what D56 already asked for.
+
+**Guards.** `isExcludedOnlyMembership` ignores the shell;
+`clientRest.test.ts` restores a shell-only on-week inbox onto the
+live campaign and never onto the shell; owner-intent D72.
+

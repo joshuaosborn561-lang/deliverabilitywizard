@@ -473,6 +473,7 @@ async function main(): Promise<void> {
     smartlead,
     smartDelivery,
     state,
+    slack,
   );
   const clientDayBrief = new ClientDayBriefService(
     config,
@@ -1109,6 +1110,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (kind === "buy_domains") return "Buy replacements";
     if (kind === "retire_domain") return "Retire this domain";
     if (kind === "swap_copy") return "Make the changes";
+    if (kind === "generic_backfill") return "Allow generics";
     return kind;
   };
 
@@ -2041,7 +2043,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; D58 half-client-inbox floor; auto-resume protective pauses)` : "disabled"}`,
     );
     console.log(
-      `[boot] Campaign check (D80): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
+      `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
     );
     console.log(
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,

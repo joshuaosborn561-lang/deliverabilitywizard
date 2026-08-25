@@ -13,7 +13,12 @@ export function slackRoleOf(
 }
 
 export function canDecideIsolationAction(
-  kind: "retire_domain" | "buy_domains" | "buy_canary_fleet" | "swap_copy",
+  kind:
+    | "retire_domain"
+    | "buy_domains"
+    | "buy_canary_fleet"
+    | "swap_copy"
+    | "generic_backfill",
   role: IsolationActorRole | "owner" | "operator",
 ): boolean {
   if (kind === "swap_copy") return role === "owner" || role === "operator";

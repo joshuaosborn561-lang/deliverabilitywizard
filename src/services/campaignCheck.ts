@@ -1,6 +1,13 @@
 import type { AppConfig } from "../config.js";
+import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
-import { normalizeTestList } from "../clients/smartdelivery.js";
+import {
+  campaignIdOf,
+  isAutomatedTest,
+  isTestStoppable,
+  normalizeTestList,
+  testIdOf,
+} from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
@@ -9,10 +16,6 @@ import {
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
-import {
-  desiredBounceAutopausePercent,
-  readBounceAutopausePercent,
-} from "../lib/bounceAutopause.js";
 import { matchClientForCampaign } from "../lib/campaignClient.js";
 import {
   firstCheckPassed,
@@ -22,15 +25,25 @@ import {
   type CampaignFinding,
 } from "../lib/campaignCheck.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { allowsGenericStaff } from "../lib/clientStaffFloor.js";
+import {
+  countClientInboxesByKey,
+  staffFloorForCampaign,
+} from "../lib/clientStaffFloor.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
+import { requestIsolationAction, buildIsolationAction } from "../lib/isolationActions.js";
+import {
+  campaignIdFromCanaryTestName,
+  isCanaryCopyTestName,
+} from "../lib/isolationNames.js";
 import {
   foreignCampaignIds,
   ownerClientId,
   type MembershipRow,
 } from "../lib/oneClient.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
+import { isPocClient } from "../lib/pocClient.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import {
   clientBrandList,
@@ -39,9 +52,10 @@ import {
   sequenceCopyHay,
   signatureHay,
 } from "../lib/signatureQa.js";
-import { isStaffableSender } from "../lib/staffableSender.js";
+import { isConnectedAccount, isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import type { SpamTestSummary } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 80;
@@ -66,9 +80,26 @@ export interface CampaignCheckResult {
   }>;
 }
 
+function livingCanaryCampaignIds(tests: SpamTestSummary[]): Set<number> {
+  const out = new Set<number>();
+  for (const test of tests) {
+    if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
+    const named = campaignIdFromCanaryTestName(test.test_name);
+    if (named) {
+      out.add(named);
+      continue;
+    }
+    if (!isCanaryCopyTestName(test.test_name)) continue;
+    const cid = Number(campaignIdOf(test));
+    if (Number.isFinite(cid) && cid > 0) out.add(cid);
+  }
+  return out;
+}
+
 /**
- * D80 — when a campaign id is new, run the first-check. After it passes,
- * hourly sweeps watch pod/shell, signatures, client tag, and staffing.
+ * D81 — when a campaign id is new, run the first-check. After it passes,
+ * hourly sweeps watch pod/shell, signatures, canaries, and the half-client
+ * floor. Bounce auto-pause is not this checker.
  */
 export class CampaignCheckService {
   constructor(
@@ -76,6 +107,7 @@ export class CampaignCheckService {
     private readonly smartlead: SmartleadClient,
     private readonly smartDelivery: SmartDeliveryClient,
     private readonly state: StateStore,
+    private readonly slack?: SlackClient,
   ) {}
 
   async run(opts: { mode?: CampaignCheckMode } = {}): Promise<CampaignCheckResult> {
@@ -108,20 +140,38 @@ export class CampaignCheckService {
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
     );
+    const clientInboxCounts = countClientInboxesByKey(
+      accounts as SmartleadAccountWithCampaigns[],
+      campaigns as SmartleadCampaign[],
+      clients,
+      this.config,
+      this.state,
+    );
 
     let tested = new Set<string>();
-    if (mode === "hourly" || mode === "all") {
-      try {
-        const listed = normalizeTestList(await this.smartDelivery.listTests({}));
-        const enriched = await this.smartDelivery.enrichCampaignIds(listed);
-        tested = testedCampaignCoverage(
-          enriched,
-          this.state.get().testedCampaigns,
-        );
-      } catch (error) {
-        console.warn("[campaign-check] could not list tests", error);
-      }
+    let canaryCampaigns = new Set<number>();
+    let listedTests: SpamTestSummary[] = [];
+    try {
+      listedTests = normalizeTestList(await this.smartDelivery.listTests({}));
+      const enriched = await this.smartDelivery.enrichCampaignIds(listedTests);
+      tested = testedCampaignCoverage(
+        enriched,
+        this.state.get().testedCampaigns,
+      );
+      canaryCampaigns = livingCanaryCampaignIds(enriched);
+    } catch (error) {
+      console.warn("[campaign-check] could not list tests", error);
     }
+
+    const fleetEmails = (this.state.getCopyCanaryFleet()?.emails ?? []).map((email) =>
+      email.toLowerCase(),
+    );
+    const connectedCanaries = (accounts as SmartleadAccountWithCampaigns[]).filter(
+      (account) => {
+        const email = accountEmail(account)?.toLowerCase();
+        return Boolean(email && fleetEmails.includes(email) && isConnectedAccount(account));
+      },
+    ).length;
 
     const now = new Date().toISOString();
     for (const campaign of campaigns as SmartleadCampaign[]) {
@@ -156,6 +206,11 @@ export class CampaignCheckService {
         brandByClientId,
         allBrands,
         tested,
+        canaryCampaigns,
+        listedTests,
+        clientInboxCounts,
+        connectedCanaries,
+        fleetSize: fleetEmails.length,
         depth: kind,
       });
       const passed = firstCheckPassed(findings);
@@ -194,6 +249,7 @@ export class CampaignCheckService {
       if (!findings.length) {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
       }
+      await this.maybeAskGenericBackfill(campaign, name, findings);
     }
 
     await this.state.save();
@@ -201,6 +257,25 @@ export class CampaignCheckService {
       `[campaign-check] mode=${mode} examined=${result.examined} firstSeen=${result.firstSeen} firstChecked=${result.firstChecked} firstPassed=${result.firstPassed} swept=${result.swept} blocked=${result.blocked.length}`,
     );
     return result;
+  }
+
+  private async maybeAskGenericBackfill(
+    campaign: SmartleadCampaign,
+    name: string,
+    findings: CampaignFinding[],
+  ): Promise<void> {
+    if (!this.slack) return;
+    if (!findings.some((finding) => finding.kind === "generic_unapproved")) return;
+    await requestIsolationAction({
+      store: this.state,
+      slack: this.slack,
+      action: buildIsolationAction({
+        kind: "generic_backfill",
+        title: `Generics on ${name}`,
+        proof: `Pool generics are attached to #${campaign.id} ${name}. Floor stays half this client's inboxes. Tap Allow generics if they should stay.`,
+        detail: { campaignId: campaign.id, campaignName: name },
+      }),
+    });
   }
 
   private async inspect(input: {
@@ -211,6 +286,11 @@ export class CampaignCheckService {
     brandByClientId: Map<number, string>;
     allBrands: string[];
     tested: Set<string>;
+    canaryCampaigns: Set<number>;
+    listedTests: SpamTestSummary[];
+    clientInboxCounts: Map<string, number>;
+    connectedCanaries: number;
+    fleetSize: number;
     depth: "first" | "hourly";
   }): Promise<CampaignFinding[]> {
     const findings: CampaignFinding[] = [];
@@ -252,35 +332,20 @@ export class CampaignCheckService {
       typeof campaign.client_id === "number"
         ? input.brandByClientId.get(campaign.client_id) ?? ""
         : "";
-    const allowsGenerics = allowsGenericStaff(
+    const mayTakeGenerics = campaignMayTakeGenerics(
       campaign,
       clientName,
-      this.config.genericStaffNamePatterns,
+      this.config.pocClientNamePatterns,
+      this.state.listGenericBackfillApprovals(),
     );
-
-    if (input.depth === "first") {
-      try {
-        const settings = await this.smartlead.getCampaignSettings(campaign.id);
-        await sleep(WRITE_GAP_MS);
-        const actual = readBounceAutopausePercent(settings);
-        const desired = desiredBounceAutopausePercent(name);
-        if (actual !== desired) {
-          findings.push({
-            kind: "bounce_autopause",
-            detail: `bounce auto-pause is ${actual ?? "unset"}, want ${desired}%`,
-          });
-        }
-      } catch (error) {
-        console.warn(
-          `[campaign-check] could not read settings for #${campaign.id}`,
-          error,
-        );
-      }
-    }
+    const pocOwner = input.clients.find((client) =>
+      isPocClient(clientDisplayName(client), this.config.pocClientNamePatterns),
+    );
 
     const attached = input.accounts.filter((account) =>
       campaignIdsOf(account).includes(campaign.id),
     );
+    const serving: string[] = [];
     for (const account of attached) {
       const email = accountEmail(account);
       if (!email) continue;
@@ -303,10 +368,10 @@ export class CampaignCheckService {
         this.config,
         this.state,
       );
-      if (generic && !allowsGenerics) {
+      if (generic && !mayTakeGenerics) {
         findings.push({
-          kind: "generic_on_non_goliath",
-          detail: `${email} is a generic on a campaign that may not take generics`,
+          kind: "generic_unapproved",
+          detail: `${email} is a generic — needs Josh Slack approve (POC clients are pre-allowed)`,
         });
       }
       const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
@@ -317,12 +382,9 @@ export class CampaignCheckService {
           shell: other ? isPodControlShellCampaign(other) : false,
         };
       });
-      const goliath = input.clients.find((client) =>
-        /goliath/i.test(clientDisplayName(client)),
-      );
       const owner = ownerClientId(account.client_id, memberships, {
         generic,
-        genericOwnerId: generic ? (goliath?.id ?? null) : null,
+        genericOwnerId: generic ? (pocOwner?.id ?? null) : null,
       });
       const foreign = foreignCampaignIds(owner, memberships);
       if (foreign.length) {
@@ -330,6 +392,15 @@ export class CampaignCheckService {
           kind: "cross_client_membership",
           detail: `${email} also sits on ${foreign.map((id) => `#${id}`).join(", ")}`,
         });
+      }
+      if (
+        isStaffableSender(account, {
+          held: Boolean(this.state.getHeldInbox(email.toLowerCase())),
+          resting: Boolean(this.state.getRestingInbox(email.toLowerCase())),
+          inboxThreshold: this.config.remediationInboxThreshold,
+        })
+      ) {
+        serving.push(email.toLowerCase());
       }
     }
 
@@ -362,27 +433,45 @@ export class CampaignCheckService {
       }
     }
 
-    if (input.depth === "hourly" && status === "ACTIVE" && !excluded) {
-      const staffable = attached.filter((account) => {
-        const email = accountEmail(account)?.toLowerCase();
-        if (!email) return false;
-        return isStaffableSender(account, {
-          held: Boolean(this.state.getHeldInbox(email)),
-          resting: Boolean(this.state.getRestingInbox(email)),
-          inboxThreshold: this.config.remediationInboxThreshold,
-        });
-      }).length;
-      const shortBy = Math.max(0, this.config.minCampaignSenders - staffable);
-      if (shortBy > 0) {
+    if (status === "ACTIVE" && !excluded) {
+      const floor = staffFloorForCampaign(
+        campaign,
+        input.clientInboxCounts,
+        clientName,
+      );
+      const shortBy = Math.max(0, floor - serving.length);
+      if (input.depth === "hourly" && shortBy > 0) {
         findings.push({
           kind: "understaffed",
-          detail: `staffable ${staffable}/${this.config.minCampaignSenders} (short ${shortBy})`,
+          detail: `staffable ${serving.length}/${floor} (half this client's inboxes)`,
         });
       }
-      if (!input.tested.has(String(campaign.id))) {
+      if (input.depth === "hourly" && !input.tested.has(String(campaign.id))) {
         findings.push({
           kind: "no_placement_test",
-          detail: "no recurring SmartDelivery test",
+          detail: "no recurring SmartDelivery test for serving inboxes",
+        });
+      }
+
+      const storedCanaryId = this.state.getCopyCanaryTestId(campaign.id);
+      const storedLiving =
+        Boolean(storedCanaryId) &&
+        input.listedTests.some(
+          (test) =>
+            testIdOf(test) === storedCanaryId &&
+            isAutomatedTest(test) &&
+            isTestStoppable(test),
+        );
+      if (!input.canaryCampaigns.has(campaign.id) && !storedLiving) {
+        findings.push({
+          kind: "missing_canary",
+          detail: `${serving.length} serving inbox(es) have no active canary-copy test`,
+        });
+      }
+      if (input.fleetSize > 0 && input.connectedCanaries === 0) {
+        findings.push({
+          kind: "canary_inactive",
+          detail: "canary fleet mailboxes are not connected in Smartlead",
         });
       }
     }

@@ -131,17 +131,20 @@ every 15m; Measure on the slower monitor.
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
 
-## Campaign checks (D80)
+## Campaign checks (D81)
 
 A new campaign id gets a **first-check** on the next health pass (15 minutes)
-against the standing rules: client tag, bounce auto-pause 20/7, mailbox
-signatures, `%signature%` in the sequence, no foreign brand in copy,
-one-client membership, generics only on Goliath, pod-control shell stays
-paused. It stays on that first-check until it passes.
+against the standing rules: client tag, mailbox signatures, `%signature%`
+in the sequence, no foreign brand in copy, one-client membership,
+pod-control shell stays paused, generics only on a **POC** client or after
+Josh Slack-approves a backfill. Goliath is marked POC. Bounce auto-pause
+is not this checker (Cayden's D80). It stays on that first-check until it
+passes.
 
 After it passes, an **hourly sweep** watches pod/shell, mailbox signatures,
-client tag, one-client, generics, and — on ACTIVE campaigns — staffing and
-a placement test. Logs are `[campaign-check]`. This does not Slack (D71),
+client tag, one-client, **active canaries for each serving inbox and
+campaign**, and the floor (**half that client's inboxes**). Logs are
+`[campaign-check]`. Slack is only the Allow generics button. This does not
 START a campaign, import leads, spend, or pull a mailbox.
 
 ## When setting up a campaign

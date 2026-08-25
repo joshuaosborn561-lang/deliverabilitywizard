@@ -16,6 +16,7 @@ import {
   countClientInboxesByKey,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
+import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
@@ -193,10 +194,15 @@ export class CampaignTopUpService {
               id: campaign.client_id,
             })
           : "";
-      return allowsGenericStaff(
+      const approvals =
+        typeof this.state.listGenericBackfillApprovals === "function"
+          ? this.state.listGenericBackfillApprovals()
+          : {};
+      return campaignMayTakeGenerics(
         campaign,
         clientName,
-        this.config.genericStaffNamePatterns,
+        this.config.pocClientNamePatterns,
+        approvals,
       );
     };
     const excluded = this.config.topUpExcludeCampaigns;

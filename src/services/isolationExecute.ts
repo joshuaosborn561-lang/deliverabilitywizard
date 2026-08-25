@@ -89,6 +89,8 @@ export class IsolationExecuteService {
       else if (approved.kind === "swap_copy") await this.swapCopy(approved);
       else if (approved.kind === "buy_canary_fleet")
         await this.buyCanaryFleet(approved);
+      else if (approved.kind === "generic_backfill")
+        await this.approveGenericBackfill(approved, actor.name);
       else await this.buyDomains(approved);
       this.state.upsertIsolationAction({
         ...this.state.getIsolationAction(actionId)!,
@@ -220,6 +222,25 @@ export class IsolationExecuteService {
     await this.announce(
       "swap_copy",
       `Switched the word on *${action.detail.campaignName ?? campaignId}*: ${find} → ${swap || "(removed)"}. That is the only change I made.`,
+    );
+  }
+
+  private async approveGenericBackfill(
+    action: IsolationActionRecord,
+    actor: string,
+  ): Promise<void> {
+    const campaignId = Number(action.detail.campaignId);
+    if (!Number.isFinite(campaignId) || campaignId <= 0) {
+      throw new Error("Missing campaign");
+    }
+    this.state.approveGenericBackfill({
+      campaignId,
+      approvedAt: new Date().toISOString(),
+      approvedBy: actor,
+    });
+    await this.announce(
+      "generic_backfill",
+      `Generics may backfill *${action.detail.campaignName ?? campaignId}*. Floor stays half that client's inboxes.`,
     );
   }
 

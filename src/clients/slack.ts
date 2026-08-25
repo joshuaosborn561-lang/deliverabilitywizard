@@ -1118,7 +1118,12 @@ export class SlackClient {
     title: string;
     proof: string;
     actionId: string;
-    kind: "retire_domain" | "buy_domains" | "buy_canary_fleet" | "swap_copy";
+    kind:
+      | "retire_domain"
+      | "buy_domains"
+      | "buy_canary_fleet"
+      | "swap_copy"
+      | "generic_backfill";
     who: string;
   }): Promise<void> {
     const approveLabel =
@@ -1128,7 +1133,9 @@ export class SlackClient {
           ? "Buy replacements"
           : details.kind === "buy_canary_fleet"
             ? "Buy canary fleet"
-            : "Retire this domain";
+            : details.kind === "generic_backfill"
+              ? "Allow generics"
+              : "Retire this domain";
     const text = [
       `*${details.title}*`,
       details.proof,
@@ -1137,6 +1144,8 @@ export class SlackClient {
         ? "Cayden cannot approve a purchase. Josh: tap the button (opens a confirm page) or open Railway → /ops."
         : details.kind === "buy_canary_fleet"
           ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
+          : details.kind === "generic_backfill"
+            ? "Josh: tap Allow generics (opens a confirm page) to let pool generics backfill this campaign. Cayden cannot approve this."
           : details.kind === "retire_domain"
             ? "Josh: tap the button (opens a confirm page) to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
             : "Josh or Cayden: tap Make the changes (opens a confirm page). I will apply that one suggested edit and nothing else.",

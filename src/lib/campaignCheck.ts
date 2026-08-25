@@ -1,22 +1,23 @@
 /**
- * D80 — first-seen campaign audit, then hourly sweeps.
+ * D81 — first-seen campaign audit, then hourly sweeps.
  *
- * First check is the identity / safety pass. Hourly is the standing
- * watch (pod/shell, signatures, client tag, one-client, staffing).
- * Neither Slacks (D71). Neither STARTs a campaign, imports leads,
- * spends, or pulls a mailbox.
+ * First check is identity / safety. Hourly watches pods, signatures,
+ * canaries, and the half-client floor. Bounce auto-pause is not this
+ * checker (Cayden's D80). Goliath is a POC client, not a special rule
+ * pile.
  */
 
 export const CAMPAIGN_CHECK_KINDS = [
   "shell_not_paused",
   "missing_client_tag",
   "client_mismatch",
-  "bounce_autopause",
   "mailbox_sig",
   "missing_signature_tag",
   "foreign_brand_in_copy",
   "cross_client_membership",
-  "generic_on_non_goliath",
+  "generic_unapproved",
+  "missing_canary",
+  "canary_inactive",
   "understaffed",
   "no_placement_test",
 ] as const;
@@ -33,12 +34,11 @@ export const FIRST_CHECK_BLOCKING: ReadonlySet<CampaignCheckKind> = new Set([
   "shell_not_paused",
   "missing_client_tag",
   "client_mismatch",
-  "bounce_autopause",
   "mailbox_sig",
   "missing_signature_tag",
   "foreign_brand_in_copy",
   "cross_client_membership",
-  "generic_on_non_goliath",
+  "generic_unapproved",
 ]);
 
 export function isFirstCheckBlocking(kind: CampaignCheckKind): boolean {

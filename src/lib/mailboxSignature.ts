@@ -7,6 +7,10 @@
  * normalize those back to newlines so every inbox matches the UI format.
  */
 
+import { findForeignBrand } from "./clientBrand.js";
+
+export { brandFromClientDisplayName } from "./clientBrand.js";
+
 export function extractSignatureLines(signature?: string | null): string[] {
   const raw = (signature ?? "").trim();
   if (!raw) return [];
@@ -32,16 +36,23 @@ export function extractSignatureLines(signature?: string | null): string[] {
 
 /**
  * Brand line for signature: prefer an existing second line (so HTML brands
- * like "Mid-South Roof Systems" are preserved), else the Smartlead client logo.
+ * like "Mid-South Roof Systems" are preserved) unless that line is another
+ * known client (D74). Else the Smartlead client logo.
  */
 export function resolveSignatureBrand(opts: {
   signature?: string | null;
   clientBrand?: string | null;
+  otherClientBrands?: string[];
 }): string {
   const lines = extractSignatureLines(opts.signature);
   const fromSig = lines[1]?.trim() ?? "";
-  if (fromSig) return fromSig;
-  return (opts.clientBrand ?? "").trim();
+  const clientBrand = (opts.clientBrand ?? "").trim();
+  if (fromSig) {
+    const foreign = findForeignBrand(fromSig, clientBrand, opts.otherClientBrands ?? []);
+    if (foreign && clientBrand) return clientBrand;
+    return fromSig;
+  }
+  return clientBrand;
 }
 
 /**
@@ -52,6 +63,7 @@ export function desiredMailboxSignature(opts: {
   fromName?: string | null;
   signature?: string | null;
   clientBrand?: string | null;
+  otherClientBrands?: string[];
 }): string | null {
   const name = (opts.fromName ?? "").trim();
   if (!name) return null;
@@ -60,7 +72,3 @@ export function desiredMailboxSignature(opts: {
   return `${name}\n${brand}`;
 }
 
-/** Strip "Logo (Person)" client display names down to the brand/logo. */
-export function brandFromClientDisplayName(clientName: string): string {
-  return clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName.trim();
-}

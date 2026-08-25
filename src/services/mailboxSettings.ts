@@ -3,6 +3,7 @@ import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
+  campaignIdsOf,
   clientDisplayName,
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
@@ -10,8 +11,12 @@ import {
 import { sleep } from "../lib/http.js";
 import {
   brandFromClientDisplayName,
-  desiredMailboxSignature,
-} from "../lib/mailboxSignature.js";
+  clientBrandList,
+  findForeignBrand,
+} from "../lib/clientBrand.js";
+import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
+import { signatureHay } from "../lib/signatureQa.js";
+import type { SmartleadCampaign } from "../types/index.js";
 import {
   needsMinTimeGap,
   readMessagePerDay,
@@ -87,27 +92,30 @@ export class MailboxSettingsService {
     // UI: "Message Per Day (Warmups not included)" — write MESSAGE_PER_DAY (D24).
     const target = totalDailySendCeiling(this.config);
     const targetGap = this.config.mailboxMinTimeGapMins;
-    const accounts = (await this.smartlead.listAllEmailAccounts({
-      fetchCampaigns: false,
-    })) as SmartleadAccountWithCampaigns[];
+    const [accounts, clients, campaigns] = await Promise.all([
+      this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: true,
+      }) as Promise<SmartleadAccountWithCampaigns[]>,
+      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
+      this.smartlead.listCampaigns().catch(() => [] as SmartleadCampaign[]),
+    ]);
     result.scanned = accounts.length;
 
     const brandByClientId = new Map<number, string>();
-    if (mode === "full") {
-      const clients = await this.smartlead
-        .listClients()
-        .catch(() => [] as SmartleadClientRecord[]);
-      for (const client of clients) {
-        brandByClientId.set(
-          client.id,
-          brandFromClientDisplayName(clientDisplayName(client)),
-        );
-      }
+    for (const client of clients) {
+      brandByClientId.set(
+        client.id,
+        brandFromClientDisplayName(clientDisplayName(client)),
+      );
     }
+    const allBrands = clientBrandList(clients);
+    const campaignById = new Map(
+      (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
+    );
 
     console.log(
       `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to ${target}/day, min gap ${targetGap}m` +
-        (mode === "full" ? ", signatures/warmup" : " (gap+volume only)"),
+        (mode === "full" ? ", signatures/warmup" : " (gap+volume; foreign-brand sigs)"),
     );
 
     let consecutiveFailures = 0;
@@ -126,18 +134,26 @@ export class MailboxSettingsService {
       let desiredSig: string | null = null;
       let needsWarmup = false;
 
+      const clientBrand = sendingBrandForAccount(
+        account,
+        campaignById,
+        brandByClientId,
+      );
+      const otherBrands = allBrands.filter((brand) => brand !== clientBrand);
+      const hay = signatureHay({
+        fromName: account.from_name,
+        signature: account.signature,
+      });
+      const foreign = clientBrand
+        ? findForeignBrand(hay, clientBrand, allBrands)
+        : null;
+      desiredSig = desiredMailboxSignature({
+        fromName: account.from_name,
+        signature: account.signature,
+        clientBrand,
+        otherClientBrands: otherBrands,
+      });
       if (mode === "full") {
-        const clientId =
-          typeof account.client_id === "number" && Number.isFinite(account.client_id)
-            ? account.client_id
-            : null;
-        const clientBrand =
-          clientId != null ? brandByClientId.get(clientId) ?? "" : "";
-        desiredSig = desiredMailboxSignature({
-          fromName: account.from_name,
-          signature: account.signature,
-          clientBrand,
-        });
         needsSignature =
           desiredSig != null && (account.signature ?? "") !== desiredSig;
 
@@ -147,6 +163,9 @@ export class MailboxSettingsService {
         needsWarmup =
           !skipWarmup &&
           (!warmup || String(warmup.status ?? "").toUpperCase() !== "ACTIVE");
+      } else if (foreign && desiredSig && (account.signature ?? "") !== desiredSig) {
+        // D74 — do not wait six hours to pull a Peterson line off a Goliath send.
+        needsSignature = true;
       }
 
       if (!needsLimit && !needsGap && !needsSignature && !needsWarmup) continue;
@@ -240,3 +259,28 @@ export class MailboxSettingsService {
 }
 
 export { readMessagePerDay, readMinTimeGapMins, needsMinTimeGap };
+
+/** Brand the mailbox is actually sending as: live campaign client, else mailbox client. */
+export function sendingBrandForAccount(
+  account: SmartleadAccountWithCampaigns,
+  campaignById: Map<number, SmartleadCampaign>,
+  brandByClientId: Map<number, string>,
+): string {
+  const campaignBrands = new Set<string>();
+  for (const id of campaignIdsOf(account)) {
+    const campaign = campaignById.get(id);
+    if (!campaign) continue;
+    if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
+    const brand =
+      typeof campaign.client_id === "number"
+        ? brandByClientId.get(campaign.client_id)
+        : undefined;
+    if (brand) campaignBrands.add(brand);
+  }
+  if (campaignBrands.size === 1) return [...campaignBrands][0]!;
+  const clientId =
+    typeof account.client_id === "number" && Number.isFinite(account.client_id)
+      ? account.client_id
+      : null;
+  return (clientId != null ? brandByClientId.get(clientId) : undefined) ?? "";
+}

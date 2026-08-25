@@ -50,6 +50,22 @@ describe("mailboxSignature", () => {
     );
   });
 
+  it("rewrites a leftover other-client brand (D74)", () => {
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Aarav Sanchez",
+        signature: "Aarav Sanchez\nRoofs by Peterson",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: [
+          "Roofs by Peterson",
+          "Goliath Cybersecurity",
+          "Bolder Cyber Partners",
+        ],
+      }),
+      "Aarav Sanchez\nGoliath Cybersecurity",
+    );
+  });
+
   it("strips person suffix from client display names", () => {
     assert.equal(
       brandFromClientDisplayName("Bolder Cyber Partners (Mike Trpkosh)"),

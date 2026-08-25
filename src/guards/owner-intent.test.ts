@@ -1877,3 +1877,60 @@ describe("owner intent — D71 Slack is deliverability flags plus EOD", () => {
     );
   });
 });
+
+describe("owner intent — D74 QA catches a foreign-client signature", () => {
+  it("D74: a leftover other-client brand is not a valid signature", async () => {
+    const { desiredMailboxSignature } = await import(
+      "../lib/mailboxSignature.js"
+    );
+    const { findForeignBrand } = await import("../lib/clientBrand.js");
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Aarav Sanchez",
+        signature: "Aarav Sanchez\nRoofs by Peterson",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: ["Roofs by Peterson", "Goliath Cybersecurity"],
+      }),
+      "Aarav Sanchez\nGoliath Cybersecurity",
+      stop(
+        "A Peterson leftover on a Goliath mailbox is rewritten (D74).",
+        "desiredMailboxSignature still preserves a foreign brand line.",
+      ),
+    );
+    assert.equal(
+      findForeignBrand(
+        "Aarav Sanchez\nRoofs by Peterson",
+        "Goliath Cybersecurity",
+        ["Roofs by Peterson", "Goliath Cybersecurity"],
+      ),
+      "Roofs by Peterson",
+      stop(
+        "QA must see Roofs by Peterson on a Goliath send (D74).",
+        "findForeignBrand no longer matches Peterson on Goliath hay.",
+      ),
+    );
+
+    const audit = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignAudit.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      audit,
+      /SIG-MISMATCH/,
+      stop(
+        "Campaign audit is the signature QA scan (D74).",
+        "campaignAudit.ts no longer logs SIG-MISMATCH.",
+      ),
+    );
+    const settings = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/mailboxSettings.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      settings,
+      /foreign-brand sigs/,
+      stop(
+        "Health rewrites a foreign signature on the gap pass (D74).",
+        "mailboxSettings.ts no longer rewrites foreign brands in gap mode.",
+      ),
+    );
+  });
+});

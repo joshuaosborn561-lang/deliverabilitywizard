@@ -1424,3 +1424,36 @@ will not page Slack. Accepted: those are `/ops` and logs.
 eod_summary / action_result; client-rest does not Slack the fortnight;
 EOD brief has sent + spam and no staffing; owner-intent D71.
 
+## D74 — QA must catch a foreign-client signature
+
+**Decision.** A live campaign must not send another client's brand in
+the mailbox signature or in the sequence. Campaign audit is the QA
+scan: it flags a mailbox whose from-name / signature carries a
+different known client, a step missing `%signature%`, or copy that
+hardcodes another client's brand. Health rewrites a foreign-brand
+signature on the 15-minute gap pass — do not wait six hours.
+
+D31 still formats signatures as two-line Name / Brand and still
+preserves a richer *same-client* brand line (Mid-South Roof Systems
+vs MSRS). It does **not** preserve a leftover other-client line.
+The sending brand is the ACTIVE campaign's client, not a stale
+mailbox `client_id`.
+
+This does not Slack (D71). It logs `[campaign-audit] SIG-MISMATCH`.
+
+**Why.** Josh (2026-08-25): a Goliath email went out with
+`Sean, that offer's still open whenever you want it` and the
+signature `Aarav Sanchez / Roofs by Peterson`. "you should have
+caught this in your QA scans, sigs is part of it." Campaign audit
+only counted senders and placement tests. Signature converge
+preferred the existing second line, so a Peterson leftover on a
+Goliath generic was treated as correct.
+
+**Tradeoff.** A mailbox on two clients' ACTIVE campaigns (D26
+forbidden) is logged, not rewritten. Accepted: that is a membership
+bug, not a signature guess.
+
+**Guards.** `findForeignBrand`; `desiredMailboxSignature` drops a
+foreign second line; campaign-audit SIG-MISMATCH; gap enforce
+rewrites foreign sigs; owner-intent D74.
+

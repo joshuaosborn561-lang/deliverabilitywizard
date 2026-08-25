@@ -2107,3 +2107,62 @@ describe("owner intent — D77 client tag and QA unpause", () => {
     );
   });
 });
+
+describe("owner intent — D78 campaign bounce auto-pause", () => {
+  it("D78: Under-1k and Goliath are 20%; Over-1k and everyone else are 7%; never 5%", async () => {
+    const { desiredBounceAutopausePercent } = await import(
+      "../lib/bounceAutopause.js"
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("BCP Healthcare Under-1k (No Team)"),
+      20,
+      stop(
+        "Under-1k bounce auto-pause is 20% (D78).",
+        "desiredBounceAutopausePercent no longer returns 20 for Under-1k.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("BCP Healthcare Over-1k (No Team)"),
+      7,
+      stop(
+        "Over-1k bounce auto-pause is 7% (D78).",
+        "desiredBounceAutopausePercent no longer returns 7 for Over-1k.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Goliath Displacement L 501-1000"),
+      20,
+      stop(
+        "Goliath bounce auto-pause is 20% (D73/D78).",
+        "Goliath Displacement L is no longer 20%.",
+      ),
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Vasco - Service"),
+      7,
+      stop(
+        "Everyone else is 7%, never 5% (D78).",
+        "Fleet default bounce auto-pause is no longer 7%.",
+      ),
+    );
+    assert.equal(
+      defaults.under1kBounceAutopausePercent,
+      20,
+      stop(
+        "UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT defaults to 20 (D78).",
+        `Default is now ${defaults.under1kBounceAutopausePercent}.`,
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /bounceAutopause\.run/,
+      stop(
+        "Health converges campaign bounce auto-pause (D78).",
+        "index.ts no longer calls bounceAutopause.run.",
+      ),
+    );
+  });
+});

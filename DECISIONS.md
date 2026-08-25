@@ -1542,3 +1542,32 @@ the reason those were down. STOPPED still means operator takeover.
 **Guards.** `matchClientForCampaign`; `CampaignClientTagService`;
 `UnpauseAfterSigQaService`; owner-intent D77.
 
+---
+
+## D78 — Campaign bounce auto-pause is 20% under 1k, 7% over 1k
+
+**Decision.** Smartlead `bounce_autopause_threshold` is:
+
+- **20%** on Under-1k name matches and every Goliath campaign
+- **7%** on Over-1k name matches and every other campaign
+
+Never leave Smartlead's **5%** default. Health converges this every
+15 minutes. Per-sender pull stays 5% after 50 sends (D5) — that
+removes a mailbox, it does not pause the campaign. D29 investigate
+stays 7%.
+
+Under-1k / Over-1k are **name matches only**. Do not infer them from
+company-size bands like 501-1000. Goliath Displacement / Education
+are 20% (D73).
+
+**Why.** Josh (2026-08-25): a Goliath campaign paused because it
+was over 5%. "The rules should be 7% if over 1k and 20% if under.
+Make sure campaigns are enforcing those rules and unpause that
+Goliath one."
+
+**Tradeoff.** A 6–7% Over-1k list still auto-pauses. Accepted:
+that band is large enough that 7% is a real problem.
+
+**Guards.** `desiredBounceAutopausePercent`; `BounceAutopauseService`;
+owner-intent D78.
+

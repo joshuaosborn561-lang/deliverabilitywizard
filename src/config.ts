@@ -269,6 +269,12 @@ const ConfigSchema = z.object({
     .min(0)
     .max(100)
     .default(7),
+  /**
+   * D78 — Smartlead bounce auto-pause on Under-1k and Goliath campaigns.
+   * Over-1k and everyone else stay at 7%. Never 5%.
+   */
+  under1kBounceAutopausePercent: z.coerce.number().min(1).max(100).default(20),
+  enableBounceAutopauseConverge: boolFromEnv(true),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
   /**
@@ -540,6 +546,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bounceRateWarnThreshold: env.BOUNCE_RATE_WARN_THRESHOLD ?? "2",
     campaignBounceInvestigateThreshold:
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
+    under1kBounceAutopausePercent:
+      env.UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT ?? "20",
+    enableBounceAutopauseConverge: env.ENABLE_BOUNCE_AUTOPAUSE_CONVERGE,
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
     enableLegacyMailboxPulls: env.ENABLE_LEGACY_MAILBOX_PULLS,

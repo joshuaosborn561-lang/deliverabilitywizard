@@ -256,14 +256,21 @@ export class SmartleadClient {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`);
   }
 
-  /** D77 — assign the Smartlead client tag on a campaign. */
-  setCampaignClientId(campaignId: number, clientId: number): Promise<unknown> {
+  updateCampaignSettings(
+    campaignId: number,
+    settings: Record<string, unknown>,
+  ): Promise<unknown> {
     return this.mutate(() =>
       apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`, {
         method: "POST",
-        body: { client_id: clientId },
+        body: settings,
       }),
     );
+  }
+
+  /** D77 — assign the Smartlead client tag on a campaign. */
+  setCampaignClientId(campaignId: number, clientId: number): Promise<unknown> {
+    return this.updateCampaignSettings(campaignId, { client_id: clientId });
   }
 
   getDayWiseOverallStats(options: {

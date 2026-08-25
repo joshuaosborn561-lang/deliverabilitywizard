@@ -2116,49 +2116,75 @@ describe("owner intent — D77 client tag and QA unpause", () => {
   });
 });
 
-describe("owner intent — D78 campaign bounce auto-pause", () => {
-  it("D78: Under-1k and Goliath are 20%; Over-1k and everyone else are 7%; never 5%", async () => {
+describe("owner intent — D80 campaign bounce autostop", () => {
+  it("D80: skip under 100 sends; 20% from 100–499; 7% from 500; Smartlead stays off", async () => {
+    const { shouldAutostopCampaignForBounce, campaignBounceAutostopThreshold } =
+      await import("../lib/campaignBounceAutostop.js");
+    assert.equal(
+      shouldAutostopCampaignForBounce(10, 40),
+      false,
+      stop(
+        "Do not pause on a tiny send sample (D80).",
+        "Ten sends now trip campaign bounce autostop.",
+      ),
+    );
+    assert.equal(
+      campaignBounceAutostopThreshold(150),
+      20,
+      stop(
+        "100–499 sends use 20% (D80).",
+        `Mid-volume threshold is now ${campaignBounceAutostopThreshold(150)}.`,
+      ),
+    );
+    assert.equal(
+      campaignBounceAutostopThreshold(500),
+      7,
+      stop(
+        "500+ sends use 7% (D80).",
+        `High-volume threshold is now ${campaignBounceAutostopThreshold(500)}.`,
+      ),
+    );
+    assert.equal(
+      defaults.enableCampaignBounceAutostop,
+      true,
+      stop(
+        "Our campaign bounce autostop stays on (D80).",
+        "ENABLE_CAMPAIGN_BOUNCE_AUTOSTOP now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.cronBounceAutostop,
+      "*/10 * * * *",
+      stop(
+        "Bounce autostop polls every 10 minutes (D80).",
+        `Cron is now ${defaults.cronBounceAutostop}.`,
+      ),
+    );
+    assert.equal(
+      defaults.smartleadBounceAutopauseOffPercent,
+      100,
+      stop(
+        "Smartlead bounce autopause stays off at 100 (D80).",
+        `Off percent is now ${defaults.smartleadBounceAutopauseOffPercent}.`,
+      ),
+    );
+    assert.equal(
+      defaults.bounceAutostopMinSent,
+      100,
+      stop(
+        "Autostop needs 100 campaign sends (D80).",
+        `Min sent is now ${defaults.bounceAutostopMinSent}.`,
+      ),
+    );
     const { desiredBounceAutopausePercent } = await import(
       "../lib/bounceAutopause.js"
     );
     assert.equal(
       desiredBounceAutopausePercent("BCP Healthcare Under-1k (No Team)"),
-      20,
+      100,
       stop(
-        "Under-1k bounce auto-pause is 20% (D78).",
-        "desiredBounceAutopausePercent no longer returns 20 for Under-1k.",
-      ),
-    );
-    assert.equal(
-      desiredBounceAutopausePercent("BCP Healthcare Over-1k (No Team)"),
-      7,
-      stop(
-        "Over-1k bounce auto-pause is 7% (D78).",
-        "desiredBounceAutopausePercent no longer returns 7 for Over-1k.",
-      ),
-    );
-    assert.equal(
-      desiredBounceAutopausePercent("Goliath Displacement L 501-1000"),
-      20,
-      stop(
-        "Goliath bounce auto-pause is 20% (D73/D78).",
-        "Goliath Displacement L is no longer 20%.",
-      ),
-    );
-    assert.equal(
-      desiredBounceAutopausePercent("Vasco - Service"),
-      7,
-      stop(
-        "Everyone else is 7%, never 5% (D78).",
-        "Fleet default bounce auto-pause is no longer 7%.",
-      ),
-    );
-    assert.equal(
-      defaults.under1kBounceAutopausePercent,
-      20,
-      stop(
-        "UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT defaults to 20 (D78).",
-        `Default is now ${defaults.under1kBounceAutopausePercent}.`,
+        "Do not turn Smartlead bounce autopause on (D80).",
+        "desiredBounceAutopausePercent still writes a live 20/7 band.",
       ),
     );
     const index = await import("node:fs/promises").then((fs) =>
@@ -2166,10 +2192,18 @@ describe("owner intent — D78 campaign bounce auto-pause", () => {
     );
     assert.match(
       index,
-      /bounceAutopause\.run/,
+      /campaignBounceAutostop\.run/,
       stop(
-        "Health converges campaign bounce auto-pause (D78).",
-        "index.ts no longer calls bounceAutopause.run.",
+        "The 10-minute loop runs our bounce autostop (D80).",
+        "index.ts no longer calls campaignBounceAutostop.run.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /if \(config\.enableBounceAutopauseConverge\) \{\s*await bounceAutopause\.run/,
+      stop(
+        "Health must not converge Smartlead autopause on (D80).",
+        "Health still calls bounceAutopause.run as the live bounce rule.",
       ),
     );
   });

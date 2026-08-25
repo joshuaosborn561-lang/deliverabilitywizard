@@ -9,14 +9,18 @@ import {
   readBounceAutopausePercent,
 } from "./bounceAutopause.js";
 
-describe("desiredBounceAutopausePercent (D78)", () => {
-  it("is 20 on Under-1k and Goliath, 7 on Over-1k and everyone else", () => {
-    assert.equal(desiredBounceAutopausePercent("BCP Healthcare Under-1k (No Team)"), 20);
-    assert.equal(desiredBounceAutopausePercent("BCP Healthcare Over-1k (No Team)"), 7);
-    assert.equal(desiredBounceAutopausePercent("Goliath Displacement L 501-1000"), 20);
-    assert.equal(desiredBounceAutopausePercent("Goliath Displacement M 201-500 CIO"), 20);
-    assert.equal(desiredBounceAutopausePercent("Vasco - Service - Nissan"), 7);
-    assert.equal(desiredBounceAutopausePercent("Peterson - C3 Churches - SPORTS"), 7);
+describe("desiredBounceAutopausePercent (D80)", () => {
+  it("is always 100 — Smartlead autopause stays off", () => {
+    assert.equal(desiredBounceAutopausePercent("BCP Healthcare Under-1k (No Team)"), 100);
+    assert.equal(desiredBounceAutopausePercent("BCP Healthcare Over-1k (No Team)"), 100);
+    assert.equal(desiredBounceAutopausePercent("Goliath Displacement L 501-1000"), 100);
+    assert.equal(desiredBounceAutopausePercent("Vasco - Service - Nissan"), 100);
+  });
+
+  it("still recognises Under-1k / Over-1k names without using them to write", () => {
+    assert.equal(isUnder1kCampaign("BCP Healthcare Under-1k (No Team)"), true);
+    assert.equal(isOver1kCampaign("BCP Healthcare Over-1k (With Team)"), true);
+    assert.equal(isUnder1kCampaign("Goliath Displacement L 501-1000"), false);
   });
 
   it("does not treat 501-1000 as Under-1k", () => {

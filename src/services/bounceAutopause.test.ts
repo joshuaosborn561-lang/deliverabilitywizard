@@ -6,7 +6,7 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import { BounceAutopauseService } from "./bounceAutopause.js";
 
 describe("BounceAutopauseService", () => {
-  it("writes 20 on Goliath / Under-1k and 7 on Over-1k (D78)", async () => {
+  it("writes 100 on every campaign so Smartlead autopause stays off (D80)", async () => {
     const wrote: Array<{ id: number; threshold: unknown }> = [];
     const service = new BounceAutopauseService(
       loadConfig({ DRY_RUN: "false" }),
@@ -27,10 +27,10 @@ describe("BounceAutopauseService", () => {
     const result = await service.run({ dryRun: false });
     assert.equal(result.updated, 4);
     assert.deepEqual(wrote, [
-      { id: 1, threshold: "20" },
-      { id: 2, threshold: "7" },
-      { id: 3, threshold: "20" },
-      { id: 4, threshold: "7" },
+      { id: 1, threshold: "100" },
+      { id: 2, threshold: "100" },
+      { id: 3, threshold: "100" },
+      { id: 4, threshold: "100" },
     ]);
   });
 

@@ -97,12 +97,14 @@ enabled.
 
 ## Rotation thresholds
 
-**D51 / D79 — kill-only pull.** Placement below 80% same-ESP and the warmup
+**D51 / D79 / D80 — kill-only pull.** Placement below 80% same-ESP and the warmup
 / HOLD-UNTIL gate do **not** pull a mailbox off an ACTIVE campaign. There
 is no per-sender bounce pull — D5's 5% after 50 sends is retired. Those
-numbers stay isolation readings and logs. Live bounce control is Smartlead
-campaign auto-pause: 20% Under-1k and Goliath, 7% everyone else (D78).
-The only automatic live removal is Josh killing that mailbox / retiring
+numbers stay isolation readings and logs. Live bounce control is **ours**:
+skip under 100 campaign sends, **20%** from 100–499, **7%** from 500 up,
+every 10 minutes (D80). Do **not** turn Smartlead `bounce_autopause_threshold`
+on; converge it to 100 (off) after autostop has scanned. The only automatic
+live mailbox removal is Josh killing that mailbox / retiring
 its domain; health backfills to 50. Never use the blended / all-ESP
 SmartDelivery score as a rotation signal (D32). Bounce at 2% is a log,
 not a Slack (D71).
@@ -126,7 +128,7 @@ may be resumed by health, and never when the campaign is **STOPPED**.
 Campaigns are topped up to `MIN_CAMPAIGN_SENDERS` (50) **staffable** senders
 from the pool — connected SMTP/IMAP, not held, and not resting. Disconnected membership
 does not count (D25). Health also runs same-client fan-out and client rest (D43). `CRON_HEALTH`
-every 15m; Measure on the slower monitor.
+every 15m; bounce autostop every 10m (D80); Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
@@ -158,7 +160,7 @@ Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. The 50 floor is warmed supply. Each ACTIVE campaign also gets a D55 canary-copy placement test (warmup off, off the campaign). Pre-warmed fleets skip that wait.
 6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON (except the D54 canary fleet), plain Name / Brand signature.
 7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
-8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only.
+8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only. Bounce autostop (D80) pauses are not pendingResumes; leave Smartlead bounce auto-pause off.
 9. Do not spend, purge, or bypass warmup/holds from chat. Approvals stay on.
 10. After launch: health (15m) will rest, top-up, and fan-out in the background. Slack only pages a burned domain, an isolated word, or the EOD send/spam scoreboard (D71). Watch `[client-rest]` / `[health]` logs for the rest.
 

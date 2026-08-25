@@ -45,6 +45,7 @@ import { OneClientMembershipService } from "./services/oneClientMembership.js";
 import { CampaignClientTagService } from "./services/campaignClientTag.js";
 import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
 import { BounceAutopauseService } from "./services/bounceAutopause.js";
+import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop.js";
 import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
@@ -186,6 +187,7 @@ async function main(): Promise<void> {
   let reconcileInFlight: Promise<unknown> | null = null;
   let topUpInFlight: Promise<unknown> | null = null;
   let healthInFlight: Promise<unknown> | null = null;
+  let bounceAutostopInFlight: Promise<unknown> | null = null;
   let manualRotationInFlight: Promise<RotationResult> | null = null;
   let opsCheckInFlight: Promise<{
     monitor: unknown;
@@ -366,6 +368,10 @@ async function main(): Promise<void> {
   const campaignClientTag = new CampaignClientTagService(config, smartlead);
   const unpauseAfterSigQa = new UnpauseAfterSigQaService(config, smartlead);
   const bounceAutopause = new BounceAutopauseService(config, smartlead);
+  const campaignBounceAutostop = new CampaignBounceAutostopService(
+    config,
+    smartlead,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -630,9 +636,6 @@ async function main(): Promise<void> {
       let oneClientResult: unknown = null;
       try {
         await campaignClientTag.run();
-        if (config.enableBounceAutopauseConverge) {
-          await bounceAutopause.run();
-        }
         oneClientResult = await oneClientMembership.run();
         await unpauseAfterSigQa.run();
       } catch (error) {
@@ -712,6 +715,23 @@ async function main(): Promise<void> {
       healthInFlight = null;
     });
     return healthInFlight;
+  };
+
+  const runBounceAutostop = async () => {
+    assertRuntimeSecrets(config);
+    if (!config.enableCampaignBounceAutostop) {
+      return { skipped: true as const, reason: "disabled" };
+    }
+    if (bounceAutostopInFlight) {
+      console.log("[bounce-autostop] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    bounceAutostopInFlight = (async () => {
+      return campaignBounceAutostop.run();
+    })().finally(() => {
+      bounceAutostopInFlight = null;
+    });
+    return bounceAutostopInFlight;
   };
 
   const runManualRotation = async (email: string) => {
@@ -931,6 +951,11 @@ async function main(): Promise<void> {
       `Invalid CRON_CAMPAIGN_CHECK expression: ${config.cronCampaignCheck}`,
     );
   }
+  if (!cron.validate(config.cronBounceAutostop)) {
+    throw new Error(
+      `Invalid CRON_BOUNCE_AUTOSTOP expression: ${config.cronBounceAutostop}`,
+    );
+  }
   if (!cron.validate(config.cronPoolProvision)) {
     throw new Error(
       `Invalid CRON_POOL_PROVISION expression: ${config.cronPoolProvision}`,
@@ -1016,6 +1041,20 @@ async function main(): Promise<void> {
         console.error("[health] Boot kick failed", error);
       });
     }, 45_000);
+  }
+
+  if (config.enableCampaignBounceAutostop) {
+    cron.schedule(config.cronBounceAutostop, () => {
+      void runBounceAutostop().catch((error) => {
+        console.error("[bounce-autostop] Unhandled cron error", error);
+        feedBugRemediator("bounce-autostop-cron", error);
+      });
+    });
+    setTimeout(() => {
+      void runBounceAutostop().catch((error) => {
+        console.error("[bounce-autostop] Boot kick failed", error);
+      });
+    }, 60_000);
   }
 
   if (config.enablePoolProvisioner) {
@@ -1476,6 +1515,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       enableCampaignCheck: config.enableCampaignCheck,
       cronCampaignCheck: config.cronCampaignCheck,
       campaignCheckCount: Object.keys(s.campaignChecks ?? {}).length,
+      enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
+      cronBounceAutostop: config.cronBounceAutostop,
       pendingResumes: Object.keys(s.pendingResumes ?? {}).length,
       lastHealthAt: s.lastHealthAt,
       totalTestQuota: config.totalTestQuota,
@@ -1520,6 +1561,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         cronCampaignCheck: config.cronCampaignCheck,
         enableCampaignCheck: config.enableCampaignCheck,
         enableCampaignHealth: config.enableCampaignHealth,
+        enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
+        cronBounceAutostop: config.cronBounceAutostop,
         enableHeldPlacementTests: config.enableHeldPlacementTests,
         enableClientRest: config.enableClientRest,
         enableRestPlacementTests: config.enableRestPlacementTests,
@@ -1628,10 +1671,15 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.json({ ok: true, mode: "qa-unpause", result });
         return;
       }
-      if (mode === "bounce-autopause" || mode === "bounce-threshold") {
+      if (mode === "bounce-autostop" || mode === "bounce-autopause" || mode === "bounce-threshold") {
         assertRuntimeSecrets(config);
-        const result = await bounceAutopause.run();
-        res.json({ ok: true, mode: "bounce-autopause", result });
+        if (mode === "bounce-autopause" || mode === "bounce-threshold") {
+          const result = await bounceAutopause.run();
+          res.json({ ok: true, mode: "bounce-autopause", result });
+          return;
+        }
+        const result = await runBounceAutostop();
+        res.json({ ok: true, mode: "bounce-autostop", result });
         return;
       }
       if (mode === "fan-out" || mode === "client-fanout") {
@@ -2044,6 +2092,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Campaign bounce autostop (D80): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; skip <${config.bounceAutostopMinSent} sends; ${config.bounceAutostopMidPercent}% until ${config.bounceAutostopHighVolumeSent}; ${config.bounceAutostopHighPercent}% after; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%)` : "disabled"}`,
     );
     console.log(
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,

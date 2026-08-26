@@ -2677,3 +2677,28 @@ next successful list needs, and creating a duplicate test is worse.
 
 **Guards.** listTestsRetrying; seedCanaryShell before the
 list-failed throw; owner-intent D119.
+
+---
+
+## D120 — Unique shell seed email; upload_count alone is not success
+
+**Decision.** Each canary shell seeds
+`canary.instrumentation.{shellCampaignId}@getcrosslaunchco.info`.
+Import success is a lead **on that shell**: `newlyAddedLeads`,
+`existingLeads`, `already_added_to_campaign`, `added_count`, or
+`lead_ids`. `upload_count` alone is not enough.
+
+**Why.** Live 2026-08-26 after #130 (D119): the first shell
+imported `canary.instrumentation@getcrosslaunchco.info`
+(`newlyAddedLeads` id 4420562184). The next 13 calls returned
+`upload_count=1` with only `existingLeadsInOtherCampaigns` —
+Smartlead did not add the same address to the other shells even
+with `ignore_duplicate_leads_in_other_campaign`. D118 treated
+`upload_count=1` as success, skipped GET, and SmartDelivery then
+said "No leads available for the selected or lower sequence".
+
+**Tradeoff.** One unique unused contact per shell. Accepted: the
+campaigns stay paused and never send to them.
+
+**Guards.** canaryShellSeedEmail; shellLeadImportAccepted ignores
+upload_count-only; owner-intent D120.

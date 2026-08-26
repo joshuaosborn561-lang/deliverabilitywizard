@@ -5,7 +5,7 @@ import {
 } from "../clients/smartlead.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import {
-  CANARY_SHELL_SEED_EMAIL,
+  canaryShellSeedEmail,
   canaryShellName,
   isCanaryShellCampaign,
   liveCampaignIdFromCanaryShellName,
@@ -36,7 +36,7 @@ export async function ensureCanaryShell(input: {
   subject: string;
   bodyHtml: string;
   senderAccountIds: number[];
-  /** D118 — optional override; default is the non-sender instrumentation address. */
+  /** D120 — optional override; default is a unique non-sender per shell. */
   seedEmail?: string;
   dryRun?: boolean;
   sequenceNumber?: number;
@@ -85,7 +85,7 @@ export async function ensureCanaryShell(input: {
     await seedShellLead(
       input.smartlead,
       campaign.id,
-      input.seedEmail || CANARY_SHELL_SEED_EMAIL,
+      input.seedEmail || canaryShellSeedEmail(campaign.id),
     );
   }
   if (!input.dryRun && String(campaign.status ?? "").toUpperCase() !== "PAUSED") {

@@ -191,6 +191,10 @@ sweep, not a fact of life:
 - The standalone Smartlead autopause converge service is retired; the
   bounce autostop loop owns that write (write-on-drift). Do not add a
   second writer.
+- **A canary fleet bought by hand in InboxKit is adopted automatically**
+  (D86): registered `copyCanary` (never staffing supply), exported to
+  Smartlead, warmup off. Runs at boot and on the monitor pass while the
+  fleet is not ready. Do not hand-edit state to register canaries.
 
 ## When setting up a campaign
 

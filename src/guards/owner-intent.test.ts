@@ -2607,3 +2607,50 @@ describe("owner intent — D85 findings have owners", () => {
     );
   });
 });
+
+describe("owner intent — D86 hand-bought canary fleet is adopted", () => {
+  it("D86: adoption exists, runs from boot + monitor, and canaries never staff", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const buy = await read("../services/copyCanaryBuy.ts");
+    assert.match(
+      buy,
+      /adoptManualPurchase/,
+      stop(
+        "A fleet Josh buys by hand in InboxKit is adopted, not stranded (D86).",
+        "copyCanaryBuy.ts lost adoptManualPurchase — a manual buy sits unregistered with warmup on again.",
+      ),
+    );
+    assert.match(
+      buy,
+      /copyCanary: true/,
+      stop(
+        "Adopted canaries are flagged copyCanary so they never staff (D86).",
+        "copyCanaryBuy.ts no longer flags fleet rows copyCanary.",
+      ),
+    );
+
+    const index = await read("../index.ts");
+    assert.match(
+      index,
+      /runCanaryAdoption/,
+      stop(
+        "Adoption runs at boot and on the monitor pass (D86).",
+        "index.ts no longer calls the canary adoption pass.",
+      ),
+    );
+
+    const provisioner = await read("../services/poolProvisioner.ts");
+    assert.match(
+      provisioner,
+      /isCopyCanary\(email\)/,
+      stop(
+        "The pool provisioner never turns warmup on for a canary (D83/D86).",
+        "poolProvisioner.ts lost the isCopyCanary skip.",
+      ),
+    );
+  });
+});

@@ -949,6 +949,11 @@ async function main(): Promise<void> {
           } catch (error) {
             console.warn("[copy-canary-buy] resume failed", error);
           }
+          try {
+            await runCanaryAdoption();
+          } catch (error) {
+            console.warn("[copy-canary-adopt] failed", error);
+          }
         } catch (error) {
           console.warn("[pod-controls] failed", error);
         }
@@ -1152,6 +1157,45 @@ async function main(): Promise<void> {
         console.error("[reconnect] Boot kick failed", error);
       });
     }, 20_000);
+  }
+
+  // D86 — a canary fleet Josh bought by hand in InboxKit is adopted, not
+  // stranded. Kick shortly after boot (a deploy restarts the app, so this
+  // runs within ~2 minutes of merging) and again on each monitor pass while
+  // the fleet is not ready. Slack only when something was actually adopted
+  // or adoption needs a human; "nothing found" stays in logs.
+  const runCanaryAdoption = async (): Promise<void> => {
+    const result = await copyCanaryBuy.adoptManualPurchase();
+    if (!result) return;
+    if (result.adopted.length) {
+      await slack.send(
+        [
+          `Found the ${result.adopted.length} unwarmed inbox${result.adopted.length === 1 ? "" : "es"} you bought and registered them as the copy-test canaries:`,
+          ...result.adopted.map((email) => `• ${email}`),
+          "Warmup is off and they will never staff a live campaign.",
+          result.ready
+            ? "They are in Smartlead — campaign copy tests start on the next sweep."
+            : "Smartlead is still importing them; I keep checking and the copy tests start as soon as they land.",
+        ].join("\n"),
+        undefined,
+        "action_result",
+      );
+    } else if (result.reason?.includes("too many")) {
+      await slack.send(
+        `I looked for the unwarmed inboxes you bought but ${result.reason}. Tell me the domain and I will register them.`,
+        undefined,
+        "action_result",
+      );
+    } else if (result.reason) {
+      console.log(`[copy-canary-adopt] nothing adopted: ${result.reason}`);
+    }
+  };
+  if (secretsReady) {
+    setTimeout(() => {
+      void runCanaryAdoption().catch((error) => {
+        console.warn("[copy-canary-adopt] boot kick failed", error);
+      });
+    }, 70_000);
   }
 
   // Old Slack buttons were posted by another bot, so taps never arrived.

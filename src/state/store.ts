@@ -759,6 +759,11 @@ export class StateStore {
     this.state.poolMailboxes[record.email.toLowerCase()] = record;
   }
 
+  /** D86 — drop a stale planned row (never one mapped to a Smartlead account). */
+  removePoolMailbox(email: string): void {
+    delete this.state.poolMailboxes[email.toLowerCase()];
+  }
+
   getPoolMailbox(email: string): PoolMailboxRecord | undefined {
     return this.state.poolMailboxes[email.toLowerCase()];
   }

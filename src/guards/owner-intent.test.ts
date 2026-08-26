@@ -4322,3 +4322,41 @@ describe("owner intent — D139 staffing honors the warmup clock", () => {
     );
   });
 });
+
+describe("owner intent — D140 bounce reasons are read, not guessed", () => {
+  it("D140: a bounce pause classifies the SMTP reasons; a tenant cap alerts once per day", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lib = await readFile(
+      new URL("../lib/bounceReason.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      lib,
+      /5\\\.7\\\.233|tenant external recipient rate limit/,
+      stop(
+        "The classifier knows Microsoft's tenant daily cap (D140).",
+        "bounceReason.ts lost the tenant-rate-limit class.",
+      ),
+    );
+    const loop = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      loop,
+      /classifyRecentBounces/,
+      stop(
+        "A bounce pause reads the actual SMTP reasons before anyone blames the list (D140).",
+        "campaignBounceAutostop.ts pauses blind again.",
+      ),
+    );
+    assert.match(
+      loop,
+      /tenant-limit:\$\{domain\}/,
+      stop(
+        "A tenant hitting its cap alerts Josh once per tenant per day (D140).",
+        "campaignBounceAutostop.ts lost the tenant alert dedupe.",
+      ),
+    );
+  });
+});

@@ -273,3 +273,83 @@ describe("CampaignBounceAutostopService (D90)", () => {
     assert.equal(second.smartleadDisabled, 0);
   });
 });
+
+describe("D140 — a pause reads the SMTP reasons before anyone blames the list", () => {
+  const NDR =
+    "<html>Delivery has failed to these recipients. Remote server returned '550 5.7.233 - Your message can't be sent because your tenant has exceeded its daily limit for sending email to external recipients (tenant external recipient rate limit).'</html>";
+
+  const mkSl = (paused: number[]) =>
+    ({
+      listCampaigns: async () => [{ id: 8, name: "Burst", status: "ACTIVE" }],
+      getCampaignAnalyticsByDate: async () => ({
+        sent_count: 55,
+        bounce_count: 15,
+      }),
+      getCampaignStatistics: async () => ({}),
+      updateCampaignStatus: async (id: number, status: string) => {
+        if (status === "PAUSED") paused.push(id);
+      },
+      getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
+      updateCampaignSettings: async () => undefined,
+      listBouncedSendStats: async () => ({
+        total_stats: "2",
+        data: [
+          { lead_email: "a@target.com" },
+          { lead_email: "b@target.com" },
+        ],
+      }),
+      fetchLeadByEmail: async (email: string) => ({
+        id: email === "a@target.com" ? 111 : 222,
+      }),
+      getLeadMessageHistory: async () => ({
+        history: [
+          { type: "SENT", from: "sender@cleartechco.com" },
+          { type: "REPLY", email_body: NDR },
+        ],
+      }),
+    }) as never;
+
+  it("classifies a tenant-cap pause and Slacks once per tenant per day", async () => {
+    const paused: number[] = [];
+    const sent: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(8, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      mkSl(paused),
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(paused, [8]);
+    const verdict = result.paused[0]?.verdict;
+    assert.equal(verdict?.dominant, "tenant_rate_limit");
+    assert.deepEqual(verdict?.senderDomains, ["cleartechco.com"]);
+    assert.equal(state.getBounceVerdict(8)?.dominant, "tenant_rate_limit");
+    assert.equal(sent.length, 1, "one tenant alert");
+    assert.match(sent[0]!, /cleartechco\.com/);
+    assert.match(sent[0]!, /5\.7\.233/);
+
+    // same day, another pause on the same tenant → no second Slack
+    const paused2: number[] = [];
+    state.setBounceSnapshot(8, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    state.clearBouncePaused(8);
+    const again = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      mkSl(paused2),
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+    );
+    await again.run({ dryRun: false });
+    assert.deepEqual(paused2, [8], "the second pause really happened");
+    assert.equal(sent.length, 1, "the tenant alert dedupes per day");
+  });
+});

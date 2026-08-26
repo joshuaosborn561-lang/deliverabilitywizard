@@ -6,7 +6,18 @@ import { StateStore } from "../state/store.js";
 import {
   FleetSummaryService,
   PlacementResultsService,
+  titleHasCanaryCopyPhrase,
 } from "./opsReporting.js";
+
+describe("titleHasCanaryCopyPhrase", () => {
+  it("matches the canary copy phrase in a test or campaign title", () => {
+    assert.equal(
+      titleHasCanaryCopyPhrase("Canary copy: #3815448 Goliath"),
+      true,
+    );
+    assert.equal(titleHasCanaryCopyPhrase("Auto: Campaign Seven"), false);
+  });
+});
 
 async function stateFixture() {
   const state = new StateStore(
@@ -43,6 +54,7 @@ describe("PlacementResultsService", () => {
           test_name: "Latest",
           status: "COMPLETED",
           created_at: "2026-08-01T00:00:00Z",
+          campaign_id: 7,
           inbox_count: 7,
           tab_count: 1,
           spam_count: 2,
@@ -70,8 +82,14 @@ describe("PlacementResultsService", () => {
             : [],
       }),
     } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
     const service = new PlacementResultsService(
       smartDelivery,
+      smartlead,
       state,
       1_000,
     );
@@ -83,6 +101,80 @@ describe("PlacementResultsService", () => {
     assert.equal(result.rows[0]?.googleInboxPercent, 75);
     assert.equal(result.rows[0]?.microsoftInboxPercent, 100);
     assert.equal(result.rows[0]?.spamPercent, 20);
+  });
+
+  it("D124: hides canary copy tests and non-active campaigns", async () => {
+    const state = await stateFixture();
+    const requested: string[] = [];
+    const smartDelivery = {
+      listTests: async () => [
+        {
+          spam_test_id: 201,
+          test_name: "Canary copy: #7 Campaign Seven",
+          status: "COMPLETED",
+          created_at: "2026-08-26T12:00:00Z",
+          campaign_id: 7,
+          inbox_count: 9,
+          spam_count: 1,
+          adjusted_total_email_count: 10,
+        },
+        {
+          spam_test_id: 202,
+          test_name: "Auto: Canary copy campaign",
+          status: "COMPLETED",
+          created_at: "2026-08-26T11:00:00Z",
+          campaign_id: 8,
+          inbox_count: 8,
+          spam_count: 0,
+          adjusted_total_email_count: 8,
+        },
+        {
+          spam_test_id: 203,
+          test_name: "Auto: Paused live",
+          status: "COMPLETED",
+          created_at: "2026-08-26T10:00:00Z",
+          campaign_id: 9,
+          inbox_count: 7,
+          spam_count: 0,
+          adjusted_total_email_count: 7,
+        },
+        {
+          spam_test_id: 101,
+          test_name: "Auto: Campaign Seven",
+          status: "COMPLETED",
+          created_at: "2026-08-01T00:00:00Z",
+          campaign_id: 7,
+          inbox_count: 7,
+          tab_count: 1,
+          spam_count: 2,
+          adjusted_total_email_count: 10,
+        },
+      ],
+      getProviderwiseReport: async (id: number | string) => {
+        requested.push(String(id));
+        return { status: "COMPLETED", result: [] };
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+        { id: 8, name: "Canary copy: leftover", status: "ACTIVE" },
+        { id: 9, name: "Paused live", status: "PAUSED" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      smartlead,
+      state,
+      1_000,
+    );
+    const result = await service.get();
+    assert.deepEqual(
+      result.rows.map((row) => row.id),
+      ["101"],
+    );
+    assert.deepEqual(requested, ["101"]);
+    assert.equal(result.rows[0]?.campaignName, "Campaign Seven");
   });
 });
 

@@ -2777,3 +2777,25 @@ enrich is blank would both look covered. Accepted: we only
 write a test id onto the campaign we created it for.
 
 **Guards.** livingTestIds + missing campaign_id; owner-intent D123.
+
+---
+
+## D124 — Ops Placement tab is live senders, never Canary copy
+
+**Decision.** The `/ops` Placement results table shows SmartDelivery
+tests for **ACTIVE/START sending campaigns** only. Hide any test
+or campaign whose title contains the phrase "canary copy"
+(case-insensitive). Filter the list **before** the 40-report
+ceiling so canary-copy tests cannot crowd out live senders.
+
+**Why.** Live 2026-08-26: canary-copy schedules are the newest
+tests, so the dashboard's 40-test window was only those
+instrumentation rows. Josh does not want to see them there.
+
+**Tradeoff.** Pod-control, isolation, held/rest, paused, and
+canary-shell tests also drop off this tab. They still run; they
+are just not the employee scoreboard. If Smartlead campaign list
+fails, name-filter still hides canary copy.
+
+**Guards.** titleHasCanaryCopyPhrase; live ACTIVE/START filter;
+slice after filter; owner-intent D124.

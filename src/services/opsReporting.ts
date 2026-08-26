@@ -1,5 +1,6 @@
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import {
+  campaignIdOf,
   normalizeTestList,
   testIdOf,
 } from "../clients/smartdelivery.js";
@@ -8,12 +9,42 @@ import {
   accountEmail,
   campaignIdsOf,
 } from "../clients/smartlead.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import type { StateStore } from "../state/store.js";
 import { sleep } from "../lib/http.js";
 import type {
   ProviderwiseRow,
   SpamTestSummary,
 } from "../types/index.js";
+
+/** D124 — ops Placement tab is live senders, never Canary copy tests. */
+export const CANARY_COPY_TITLE_PHRASE = "canary copy";
+
+export function titleHasCanaryCopyPhrase(
+  ...titles: Array<string | undefined | null>
+): boolean {
+  return titles.some((title) =>
+    String(title ?? "").toLowerCase().includes(CANARY_COPY_TITLE_PHRASE),
+  );
+}
+
+export function isLiveSendingCampaignStatus(
+  status: string | undefined | null,
+): boolean {
+  const value = String(status ?? "").toUpperCase();
+  return value === "ACTIVE" || value === "START";
+}
+
+function resolveCampaignId(
+  mappedId: number | undefined,
+  test: SpamTestSummary,
+): number | undefined {
+  if (mappedId != null && Number.isFinite(mappedId)) return mappedId;
+  const raw = campaignIdOf(test);
+  if (raw == null) return undefined;
+  const id = Number(raw);
+  return Number.isFinite(id) ? id : undefined;
+}
 
 export interface PlacementResultRow {
   id: string;
@@ -106,6 +137,7 @@ export class PlacementResultsService {
 
   constructor(
     private readonly smartDelivery: SmartDeliveryClient,
+    private readonly smartlead: SmartleadClient,
     private readonly state: StateStore,
     private readonly cacheMs = 5 * 60 * 1000,
   ) {}
@@ -131,12 +163,28 @@ export class PlacementResultsService {
   private async load(): Promise<PlacementResults> {
     const errors: string[] = [];
     const raw = await this.smartDelivery.listTests({});
-    const tests = normalizeTestList(raw)
-      .sort((a, b) =>
-        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
-      )
-      // Match the production monitor's rate-limit ceiling.
-      .slice(0, 40);
+    const listed = normalizeTestList(raw).sort((a, b) =>
+      String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
+    );
+
+    const liveById = new Map<number, { name: string }>();
+    let campaignsLoaded = false;
+    try {
+      const campaigns = await this.smartlead.listCampaigns();
+      campaignsLoaded = true;
+      for (const campaign of campaigns) {
+        const id = Number(campaign.id);
+        if (!Number.isFinite(id)) continue;
+        if (!isLiveSendingCampaignStatus(campaign.status)) continue;
+        if (isAnyShellCampaign(campaign)) continue;
+        if (titleHasCanaryCopyPhrase(campaign.name)) continue;
+        liveById.set(id, { name: String(campaign.name ?? "") });
+      }
+    } catch (error) {
+      errors.push(
+        `campaigns: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
 
     const campaignByTest = new Map<
       string,
@@ -151,6 +199,28 @@ export class PlacementResultsService {
       }
     }
 
+    const tests = listed
+      .filter((test) => {
+        if (titleHasCanaryCopyPhrase(test.test_name)) return false;
+        const id = testIdOf(test);
+        const mapped = id ? campaignByTest.get(id) : undefined;
+        const campaignId = resolveCampaignId(mapped?.campaignId, test);
+        if (campaignId == null) return false;
+        if (campaignsLoaded) {
+          const live = liveById.get(campaignId);
+          if (!live) return false;
+          if (titleHasCanaryCopyPhrase(mapped?.campaignName, live.name)) {
+            return false;
+          }
+        } else if (titleHasCanaryCopyPhrase(mapped?.campaignName)) {
+          return false;
+        }
+        return true;
+      })
+      // Match the production monitor's rate-limit ceiling — after the
+      // canary-copy tests are gone, so live senders still get reports.
+      .slice(0, 40);
+
     const rows: PlacementResultRow[] = new Array(tests.length);
     let cursor = 0;
     const worker = async () => {
@@ -160,13 +230,14 @@ export class PlacementResultsService {
         const id = testIdOf(test);
         if (!id) continue;
         const mapped = campaignByTest.get(id);
+        const campaignId = resolveCampaignId(mapped?.campaignId, test);
         const row: PlacementResultRow = {
           id,
           name: String(test.test_name ?? `Test ${id}`),
-          campaignId:
-            mapped?.campaignId ??
-            (test.campaign_id != null ? Number(test.campaign_id) : undefined),
-          campaignName: mapped?.campaignName,
+          campaignId,
+          campaignName:
+            mapped?.campaignName ||
+            (campaignId != null ? liveById.get(campaignId)?.name : undefined),
           status: String(test.status ?? "UNKNOWN"),
           createdAt: test.created_at,
           runNumber: test.current_test_run_no,

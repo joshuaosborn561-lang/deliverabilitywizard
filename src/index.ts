@@ -522,6 +522,7 @@ async function main(): Promise<void> {
   }
   const placementResults = new PlacementResultsService(
     smartDelivery,
+    smartlead,
     state,
   );
   const fleetSummary = new FleetSummaryService(smartlead, state);

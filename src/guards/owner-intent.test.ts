@@ -3924,3 +3924,37 @@ describe("owner intent — D94 reconnect DCD mailboxes", () => {
     );
   });
 });
+
+describe("owner intent — D124 ops Placement is live senders", () => {
+  it("D124: dashboard placement drops canary copy before the 40-test cap", async () => {
+    const reporting = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/opsReporting.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      reporting,
+      /titleHasCanaryCopyPhrase/,
+      stop(
+        "Ops Placement hides titles with canary copy (D124).",
+        "opsReporting.ts lost titleHasCanaryCopyPhrase.",
+      ),
+    );
+    assert.match(
+      reporting,
+      /isLiveSendingCampaignStatus/,
+      stop(
+        "Ops Placement is ACTIVE/START sending campaigns (D124).",
+        "opsReporting.ts no longer gates on live sending status.",
+      ),
+    );
+    const filterThenSlice = reporting.search(
+      /titleHasCanaryCopyPhrase[\s\S]*\.slice\(0, 40\)/,
+    );
+    assert.ok(
+      filterThenSlice >= 0,
+      stop(
+        "Canary copy is filtered before the 40-report ceiling (D124).",
+        "opsReporting.ts no longer filters canary copy before slice(0, 40).",
+      ),
+    );
+  });
+});

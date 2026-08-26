@@ -270,6 +270,20 @@ describe("owner intent", () => {
         "CampaignBounceInvestigateService still calls updateCampaignStatus(..., START).",
       ),
     );
+    const unpause = await import("node:fs/promises").then((fs) =>
+      fs.readFile(
+        new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
+        "utf8",
+      ),
+    );
+    assert.match(
+      unpause,
+      /getBouncePausedAt/,
+      stop(
+        "A bounce-autostop pause is not STARTed by signature QA (D40/D125).",
+        "unpauseAfterSigQa.ts no longer checks bouncePausedAt.",
+      ),
+    );
   });
 
   it("D28: copySignal defers Outlook-buried / Gmail-ok as copy", async () => {
@@ -3920,6 +3934,56 @@ describe("owner intent — D94 reconnect DCD mailboxes", () => {
       stop(
         "A real reconnect is posted as an action result (D94).",
         "notifyReconnect is unclassified again — D71 drops it.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D125 bounce autostop is not unpaused by sig QA", () => {
+  it("D125: qa-unpause skips bouncePausedAt; autostop stamps it", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D125 — Bounce-autostop pauses are not unpaused by signature QA/,
+      stop(
+        "A bounce-autostop pause stays paused (D125).",
+        "DECISIONS.md no longer has D125.",
+      ),
+    );
+    const unpause = await readFile(
+      new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      unpause,
+      /getBouncePausedAt/,
+      stop(
+        "Signature QA does not START a bounce-autostop pause (D125).",
+        "unpauseAfterSigQa.ts lost the bouncePausedAt check.",
+      ),
+    );
+    assert.match(
+      unpause,
+      /shouldPauseCampaignForBounceRate/,
+      stop(
+        "A snapshot still over 10% after 1k is not STARTed (D125).",
+        "unpauseAfterSigQa.ts no longer reads the bounce snapshot.",
+      ),
+    );
+    const autostop = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      autostop,
+      /markBouncePaused/,
+      stop(
+        "Bounce autostop stamps bouncePausedAt on pause (D125).",
+        "campaignBounceAutostop.ts no longer marks the pause.",
       ),
     );
   });

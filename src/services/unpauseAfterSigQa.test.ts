@@ -104,4 +104,87 @@ describe("UnpauseAfterSigQaService", () => {
     assert.deepEqual(statuses, []);
     assert.ok(result.blocked[0]?.includes("sig mismatch"));
   });
+
+  it("does not START a bounce-autostop pause even when signatures match (D125)", async () => {
+    const statuses: Array<[number, string]> = [];
+    const state = {
+      getBouncePausedAt: (id: number) => (id === 1 ? "2026-08-26T15:10:00Z" : undefined),
+      getBounceSnapshot: () => undefined,
+      markBouncePaused: () => undefined,
+    };
+    const service = new UnpauseAfterSigQaService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Goliath L4 Education Tickets", status: "PAUSED", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "aaravsanchez@getoutreachdesk.info",
+            from_name: "Aarav Sanchez",
+            signature: "Aarav Sanchez\nGoliath Cybersecurity",
+            client_id: 548611,
+            campaign_ids: [1],
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+        updateCampaignStatus: async (id: number, status: string) => {
+          statuses.push([id, status]);
+        },
+      } as unknown as SmartleadClient,
+      state as never,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statuses, []);
+    assert.ok(result.blocked.some((row) => row.includes("bounce autostop")));
+  });
+
+  it("does not START when the bounce snapshot is still over 10% after 1k (D125)", async () => {
+    const statuses: Array<[number, string]> = [];
+    const marked: number[] = [];
+    const state = {
+      getBouncePausedAt: () => undefined,
+      getBounceSnapshot: (id: number) =>
+        id === 1
+          ? { bounced: 441, sent: 1413, at: "2026-08-26T15:10:00Z" }
+          : undefined,
+      markBouncePaused: (id: number) => {
+        marked.push(id);
+      },
+    };
+    const service = new UnpauseAfterSigQaService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Goliath L4 Education Tickets", status: "PAUSED", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "aaravsanchez@getoutreachdesk.info",
+            from_name: "Aarav Sanchez",
+            signature: "Aarav Sanchez\nGoliath Cybersecurity",
+            client_id: 548611,
+            campaign_ids: [1],
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+        updateCampaignStatus: async (id: number, status: string) => {
+          statuses.push([id, status]);
+        },
+      } as unknown as SmartleadClient,
+      state as never,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statuses, []);
+    assert.deepEqual(marked, [1]);
+    assert.ok(result.blocked.some((row) => row.includes("still over bounce")));
+  });
 });

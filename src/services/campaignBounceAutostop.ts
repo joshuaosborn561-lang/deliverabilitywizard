@@ -173,6 +173,7 @@ export class CampaignBounceAutostopService {
         );
         if (!dryRun) {
           await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
+          this.state?.markBouncePaused(campaign.id);
         }
         result.paused.push(finding);
         await sleep(WRITE_GAP_MS);

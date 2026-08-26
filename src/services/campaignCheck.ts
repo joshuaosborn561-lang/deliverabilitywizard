@@ -30,7 +30,11 @@ import {
   buildIsolationAction,
   requestIsolationAction,
 } from "../lib/isolationActions.js";
-import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
+import {
+  desiredMailboxSignature,
+  extractSignatureLines,
+  mailboxSignatureMismatch,
+} from "../lib/mailboxSignature.js";
 import {
   hasLivingUnwarmedCopyCanary,
   livingKnownGoodEmails,
@@ -49,7 +53,6 @@ import {
   findForeignBrand,
   missingSignatureTag,
   sequenceCopyHay,
-  signatureHay,
 } from "../lib/signatureQa.js";
 import { isConnectedAccount, isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
@@ -240,8 +243,10 @@ export class CampaignCheckService {
       // first-passed while the scoreboard still shows the hole. A
       // SmartDelivery list failure must not wipe coverage findings we
       // cannot verify — inspect leftover signatures only in that case.
-      const openSigFinding = (record.findings ?? []).some((finding) =>
-        finding.startsWith("missing_signature_tag"),
+      const openSigFinding = (record.findings ?? []).some(
+        (finding) =>
+          finding.startsWith("missing_signature_tag") ||
+          finding.startsWith("mailbox_sig"),
       );
       const openCoverageFinding = (record.findings ?? []).some(
         (finding) =>
@@ -303,14 +308,20 @@ export class CampaignCheckService {
         brand,
         accounts: accounts as SmartleadAccountWithCampaigns[],
         findings,
+        otherClientBrands: allBrands,
       });
       if (sigApplied) {
-        findings = findings.filter(
-          (finding) => finding.kind !== "missing_signature_tag",
-        );
+        if (sigApplied.wroteTag) {
+          findings = findings.filter(
+            (finding) => finding.kind !== "missing_signature_tag",
+          );
+        }
+        if (sigApplied.wroteMailbox) {
+          findings = findings.filter((finding) => finding.kind !== "mailbox_sig");
+        }
         // D95 — tell Josh the first time we write a campaign. A leftover
         // backfill already notified does not ping again every pass.
-        if (!record.sigAutoWrittenAt) {
+        if (sigApplied.wroteTag && !record.sigAutoWrittenAt) {
           sigFixed.push({ name, brand: sigApplied.brand });
         }
       }
@@ -320,7 +331,8 @@ export class CampaignCheckService {
         name,
         lastKind: kind,
         findings: findings.map(formatFinding),
-        sigAutoWrittenAt: sigApplied ? now : record.sigAutoWrittenAt,
+        sigAutoWrittenAt:
+          sigApplied?.wroteTag ? now : record.sigAutoWrittenAt,
       };
       if (kind === "first") {
         next.firstCheckAt = now;
@@ -395,11 +407,10 @@ export class CampaignCheckService {
   }
 
   /**
-   * D92 — missing signature is written, not asked. Appends `%signature%`
-   * (mailbox expands it to First Last / client brand) and sets the
-   * mailbox signature to that two-line pair. Slack once per campaign
-   * the first time we write it (D95) — a leftover backfill does not
-   * re-ping every health / hourly pass.
+   * D31 / D92 / D98 — missing `%signature%` is written, and any mailbox
+   * on the campaign that is not the two-line Name / Brand rule is set
+   * to that pair. Slack once per campaign the first time we append the
+   * tag (D95). A mailbox-only leftover logs; it does not page (D71).
    */
   private async autoApplySignature(input: {
     campaignId: number;
@@ -407,39 +418,56 @@ export class CampaignCheckService {
     brand: string;
     accounts: SmartleadAccountWithCampaigns[];
     findings: CampaignFinding[];
-  }): Promise<{ brand: string } | null> {
-    if (!input.findings.some((finding) => finding.kind === "missing_signature_tag")) {
+    otherClientBrands: string[];
+  }): Promise<{ brand: string; wroteTag: boolean; wroteMailbox: boolean } | null> {
+    const needTag = input.findings.some(
+      (finding) => finding.kind === "missing_signature_tag",
+    );
+    const needMailbox = input.findings.some(
+      (finding) => finding.kind === "mailbox_sig",
+    );
+    if (!needTag && !needMailbox) {
       return null;
     }
     if (this.config.dryRun) {
       console.log(
         `[campaign-check] dry-run signature #${input.campaignId} ${input.name}`,
       );
-      return { brand: input.brand };
+      return { brand: input.brand, wroteTag: needTag, wroteMailbox: needMailbox };
     }
     try {
-      const sequences = await this.smartlead.getCampaignSequences(input.campaignId);
-      const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
-      if (changed.length) {
-        await this.smartlead.updateCampaignSequences(input.campaignId, next);
-        await sleep(WRITE_GAP_MS);
+      let wroteTag = false;
+      if (needTag) {
+        const sequences = await this.smartlead.getCampaignSequences(input.campaignId);
+        const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
+        if (changed.length) {
+          await this.smartlead.updateCampaignSequences(input.campaignId, next);
+          await sleep(WRITE_GAP_MS);
+          wroteTag = true;
+        }
       }
+      let wroteMailbox = false;
       for (const account of input.accounts) {
         if (!campaignIdsOf(account).includes(input.campaignId)) continue;
         const desired = desiredMailboxSignature({
           fromName: account.from_name,
           signature: account.signature,
           clientBrand: input.brand,
+          otherClientBrands: input.otherClientBrands,
         });
-        if (!desired || (account.signature ?? "") === desired) continue;
+        if (!desired) continue;
+        const actual = extractSignatureLines(account.signature).join("\n");
+        const want = extractSignatureLines(desired).join("\n");
+        if (actual === want) continue;
         if (typeof account.id !== "number") continue;
         await this.smartlead.updateEmailAccount(account.id, { signature: desired });
         await sleep(WRITE_GAP_MS);
+        wroteMailbox = true;
       }
       console.log(
-        `[campaign-check] signature written #${input.campaignId} ${input.name} brand=${input.brand || "unknown"}`,
+        `[campaign-check] signature written #${input.campaignId} ${input.name} brand=${input.brand || "unknown"} tag=${wroteTag} mailbox=${wroteMailbox}`,
       );
-      return { brand: input.brand };
+      return { brand: input.brand, wroteTag, wroteMailbox };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(
@@ -523,15 +551,16 @@ export class CampaignCheckService {
       const email = accountEmail(account);
       if (!email) continue;
       if (expected) {
-        const hay = signatureHay({
+        const mismatch = mailboxSignatureMismatch({
           fromName: account.from_name,
           signature: account.signature,
+          clientBrand: expected,
+          otherClientBrands: input.allBrands,
         });
-        const foreign = findForeignBrand(hay, expected, input.allBrands);
-        if (foreign) {
+        if (mismatch) {
           findings.push({
             kind: "mailbox_sig",
-            detail: `${email} carries ${foreign} (expected ${expected})`,
+            detail: `${email} ${mismatch}`,
           });
         }
       }

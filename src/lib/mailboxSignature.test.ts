@@ -4,6 +4,7 @@ import {
   brandFromClientDisplayName,
   desiredMailboxSignature,
   extractSignatureLines,
+  mailboxSignatureMismatch,
 } from "./mailboxSignature.js";
 
 describe("mailboxSignature", () => {
@@ -63,6 +64,46 @@ describe("mailboxSignature", () => {
         ],
       }),
       "Aarav Sanchez\nGoliath Cybersecurity",
+    );
+  });
+
+  it("flags empty, one-line, and foreign signatures against the two-line rule", () => {
+    const brands = ["Goliath Cybersecurity", "Roofs by Peterson"];
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Leila Sanchez",
+        signature: "",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: brands,
+      }),
+      "has no signature (want First Last / client brand)",
+    );
+    assert.match(
+      mailboxSignatureMismatch({
+        fromName: "Leila Sanchez",
+        signature: "Leila Sanchez",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: brands,
+      }) ?? "",
+      /want Leila Sanchez \/ Goliath Cybersecurity/,
+    );
+    assert.match(
+      mailboxSignatureMismatch({
+        fromName: "Aarav Sanchez",
+        signature: "Aarav Sanchez\nRoofs by Peterson",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: brands,
+      }) ?? "",
+      /Roofs by Peterson/,
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Aarav Sanchez",
+        signature: "<div>Aarav Sanchez</div><div>Goliath Cybersecurity</div>",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: brands,
+      }),
+      null,
     );
   });
 

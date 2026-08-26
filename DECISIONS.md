@@ -2777,3 +2777,27 @@ enrich is blank would both look covered. Accepted: we only
 write a test id onto the campaign we created it for.
 
 **Guards.** livingTestIds + missing campaign_id; owner-intent D123.
+
+---
+
+## D125 — Campaign signature audit is the two-line rule, then write
+
+**Decision.** Every living campaign's attached mailboxes are judged
+against the D31 two-line `First Last / {Client Brand}` pair, not only
+against a foreign-client brand. Empty, one-line, extra-line, and
+foreign leftovers are `mailbox_sig` findings and are written on that
+campaign-check pass (health leftover + hourly), the same way missing
+`%signature%` is (D92/D98). HTML that already extracts to those two
+lines is a match. A mailbox-only write logs; it does not Slack (D71).
+Sequence-tag writes still Slack once (D95).
+
+**Why.** Cayden (2026-08-26): audit every campaign signature against
+the standing rules. Production `/health` showed zero `mailbox_sig`
+because empty / one-line signatures were not a finding, so they sat
+until the 6-hour full mailbox-settings converge.
+
+**Tradeoff.** First-check now unblocks after the mailbox write instead
+of staying failed on a leftover Peterson line. Accepted: that is the
+same-pass write D92 already did for the tag.
+
+**Guards.** mailboxSignatureMismatch; leftover mailbox_sig; owner-intent D125.

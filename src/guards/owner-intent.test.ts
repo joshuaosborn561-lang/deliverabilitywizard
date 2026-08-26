@@ -3924,3 +3924,37 @@ describe("owner intent — D94 reconnect DCD mailboxes", () => {
     );
   });
 });
+
+describe("owner intent — D125 campaign signatures are the two-line rule", () => {
+  it("D125: checker judges Name/Brand and writes leftover mailbox_sig", async () => {
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      check,
+      /mailboxSignatureMismatch/,
+      stop(
+        "Campaign-check audits two-line signatures, not only foreign brands (D125).",
+        "campaignCheck.ts no longer uses mailboxSignatureMismatch.",
+      ),
+    );
+    assert.match(
+      check,
+      /finding\.kind === "mailbox_sig"/,
+      stop(
+        "A leftover mailbox_sig is written on the check pass (D125).",
+        "campaignCheck.ts no longer treats mailbox_sig as a writable leftover.",
+      ),
+    );
+    const leftover = check.search(
+      /missing_signature_tag"\)[\s\S]*mailbox_sig/,
+    );
+    assert.ok(
+      leftover >= 0,
+      stop(
+        "Health leftover includes mailbox_sig as well as missing %signature% (D125).",
+        "campaignCheck.ts leftover signature gate is tag-only again.",
+      ),
+    );
+  });
+});

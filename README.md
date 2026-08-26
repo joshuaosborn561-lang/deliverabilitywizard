@@ -121,6 +121,8 @@ one-mailbox rotations when every runtime precondition passes. Spending,
 approval decisions, destructive teardown, safety-policy changes, bulk
 remediation, and production deploy stay with Josh.
 
+Morning and afternoon checklist: [docs/cayden-am-pm.md](docs/cayden-am-pm.md).
+
 Required Railway variables: `OPS_UI_ENABLED`, independent owner/operator
 usernames and tokens, and `OPS_SESSION_SECRET`. Do not reuse `RUN_TOKEN`
 for login.

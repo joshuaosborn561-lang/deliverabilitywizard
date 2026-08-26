@@ -3156,6 +3156,57 @@ describe("owner intent — D99 BCP short is a hole", () => {
   });
 });
 
+describe("owner intent — D101 sequence writes omit created_at", () => {
+  it("D101: sequence POSTs go through sequencesForWrite", async () => {
+    const qa = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/signatureQa.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      qa,
+      /sequencesForWrite/,
+      stop(
+        "Sequence writes strip created_at (D101).",
+        "signatureQa.ts lost sequencesForWrite.",
+      ),
+    );
+    const client = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../clients/smartlead.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      client,
+      /sequencesForWrite\(sequences\)/,
+      stop(
+        "updateCampaignSequences strips read-only timestamps (D101).",
+        "smartlead.ts posts raw getCampaignSequences payloads again.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D100 canary schedule needs campaign_id", () => {
+  it("D100: canary attach sends campaign_id; senders stay off the campaign", async () => {
+    const canary = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      canary,
+      /campaignId:\s*campaign\.id/,
+      stop(
+        "Canary schedule sends campaign_id (D100).",
+        "copyCanary.ts creates a SmartDelivery test without campaign_id.",
+      ),
+    );
+    assert.match(
+      canary,
+      /never adds canaries to campaigns|must not add canaries|These inboxes are not on the live campaign/,
+      stop(
+        "Canary senders stay off live campaigns (D55/D100).",
+        "copyCanary.ts lost the off-campaign guarantee.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D98 find a hole, fix it", () => {
   it("D98: leftover signatures write on health; canary attach resolves providers; list-fail does not invent holes", async () => {
     const check = await import("node:fs/promises").then((fs) =>

@@ -1,8 +1,9 @@
 # Canon — what this system does
 
-Canon as of **D123** (2026-08-26). One page of current truth. When a new
+Canon as of **D127** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
-a decision that is not reflected here is not finished shipping.
+a decision that is not reflected here is not finished shipping (the meta
+guard in `src/guards/meta.test.ts` enforces both).
 
 `DECISIONS.md` is the append-only historical ledger: it records every call
 and every reversal, and most of it is **superseded**. Do not derive behaviour
@@ -20,7 +21,7 @@ Slack speaks only when a human decision is needed or the day is done.
 | Loop | Cadence | Owns |
 |---|---|---|
 | Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → old-client teardown retry (D111) → stage watchdog + `canonCompliant` yes/no (D108) |
-| Bounce loop | 10 min | Pause an ACTIVE campaign at >10% lifetime bounce with ≥1,000 leads emailed, or >10 new bounces inside the 10-minute window (D90). Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift only (D80/D84/D88). Never touches COMPLETED/STOPPED; a bounce pause is not a pendingResume (D40). No Slack. |
+| Bounce loop | 10 min | Pause an ACTIVE campaign at >10% lifetime bounce with ≥1,000 leads emailed, or >10 new bounces inside the 10-minute window (D90). Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift (D80/D84/D88; one forced full-fleet off-write ran under D124). Never touches COMPLETED/STOPPED; a bounce pause is not a pendingResume (D40). No Slack. |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). |
 | Monitor | Slower cadence | Placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
@@ -40,8 +41,10 @@ Slack speaks only when a human decision is needed or the day is done.
 - **Converged every pass**: 30 campaign sends/day (warmups excluded, D24),
   10-minute minimum gap (D30/D35), warmup ON for every mailbox **except the
   canary fleet, which is forced OFF** (D83), plain two-line signature
-  `First Last\n{Client Brand}` (D31); a foreign-client brand in from-name or
-  signature is rewritten on the 15-minute pass, not in 6 hours (D74).
+  `First Last\n{Client Brand}` (D31). On a living campaign, an empty,
+  one-line, extra-line, or foreign-client signature is a `mailbox_sig`
+  finding and is **written on that check pass** (D74/D125) — never left
+  waiting for the 6-hour converge.
 - Disconnected mailboxes are re-authed every health pass; reconnect results
   Slack as action results (D94).
 
@@ -166,9 +169,10 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
 21-day warmup, signatures, gap, volume, placement test, both canaries —
 D108), open `canonFindings` by kind, per-stage `stageHealth` watchdog
 (D84). `/status`, `/run`, `/approvals/*` require `RUN_TOKEN`. `/ops` is the
-employee console (owner/operator roles, audit log); freeform chat goes to
-the Cursor agent which may open PRs but cannot spend, purge, bypass gates,
-or deploy (D18/D20). `main` deploys to Railway on merge; each deploy
+employee console (owner/operator roles, audit log); its Placement tab shows
+tests for ACTIVE sending campaigns only — canary-copy instrumentation is
+hidden (D126). Freeform chat goes to the Cursor agent which may open PRs
+but cannot spend, purge, bypass gates, or deploy (D18/D20). `main` deploys to Railway on merge; each deploy
 restarts the cron cycle (D122).
 
 ## Changing the rules

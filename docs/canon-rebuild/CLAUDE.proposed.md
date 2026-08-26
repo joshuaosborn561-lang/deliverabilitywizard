@@ -1,3 +1,6 @@
+> **APPLIED 2026-08-26** — this draft replaced the root CLAUDE.md in the
+> Phase 0 PR (D127). Kept for the record.
+
 # PROPOSED replacement for CLAUDE.md (Phase 0 of the canon rebuild)
 
 > This file is a draft for Josh to review. It does not take effect until it

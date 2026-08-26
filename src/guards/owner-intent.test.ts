@@ -4057,3 +4057,45 @@ describe("owner intent — D126 ops Placement is live senders", () => {
     );
   });
 });
+
+describe("owner intent — D127 canon rebuild", () => {
+  it("D127: CANON.md is the rules source and CLAUDE.md points at it", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D127 — The canon rebuild/,
+      stop(
+        "Josh delegated the canon rebuild and its standing rules (D127).",
+        "DECISIONS.md no longer has D127.",
+      ),
+    );
+    const claude = await readFile(
+      new URL("../../CLAUDE.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      claude,
+      /CANON\.md/,
+      stop(
+        "Sessions are pointed at CANON.md for the rules (D127).",
+        "CLAUDE.md no longer references CANON.md.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D\d+\*\*/,
+      stop(
+        "CANON.md declares which decision it is current through (D127).",
+        "CANON.md lost its 'Canon as of' declaration.",
+      ),
+    );
+  });
+});

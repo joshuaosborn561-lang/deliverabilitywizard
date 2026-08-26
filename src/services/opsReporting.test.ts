@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { StateStore } from "../state/store.js";
+import type { InventoryBook } from "./inventory.js";
 import {
   FleetSummaryService,
   PlacementResultsService,
@@ -18,6 +19,32 @@ describe("titleHasCanaryCopyPhrase", () => {
     assert.equal(titleHasCanaryCopyPhrase("Auto: Campaign Seven"), false);
   });
 });
+
+/** D132 — a test book reading the same fake client, one attempt, clients optional. */
+function bookOf(sl: unknown): InventoryBook {
+  const client = sl as {
+    listCampaigns?: () => Promise<unknown[]>;
+    listAllEmailAccounts?: (o?: unknown) => Promise<unknown[]>;
+    listClients?: () => Promise<unknown[]>;
+  };
+  return {
+    get: async () => ({
+      campaigns:
+        typeof client.listCampaigns === "function"
+          ? await client.listCampaigns()
+          : [],
+      accounts:
+        typeof client.listAllEmailAccounts === "function"
+          ? await client.listAllEmailAccounts({ fetchCampaigns: true })
+          : [],
+      clients:
+        typeof client.listClients === "function"
+          ? await client.listClients().catch(() => [])
+          : [],
+      fetchedAt: Date.now(),
+    }),
+  } as unknown as InventoryBook;
+}
 
 async function stateFixture() {
   const state = new StateStore(
@@ -89,7 +116,7 @@ describe("PlacementResultsService", () => {
     } as unknown as SmartleadClient;
     const service = new PlacementResultsService(
       smartDelivery,
-      smartlead,
+      bookOf(smartlead),
       state,
       1_000,
     );
@@ -164,7 +191,7 @@ describe("PlacementResultsService", () => {
     } as unknown as SmartleadClient;
     const service = new PlacementResultsService(
       smartDelivery,
-      smartlead,
+      bookOf(smartlead),
       state,
       1_000,
     );
@@ -204,7 +231,7 @@ describe("FleetSummaryService", () => {
         },
       ],
     } as unknown as SmartleadClient;
-    const service = new FleetSummaryService(smartlead, state);
+    const service = new FleetSummaryService(bookOf(smartlead), state);
     const result = await service.get();
 
     assert.equal(result.totalMailboxes, 3);
@@ -229,7 +256,7 @@ describe("FleetSummaryService", () => {
         ];
       },
     } as unknown as SmartleadClient;
-    const service = new FleetSummaryService(smartlead, state);
+    const service = new FleetSummaryService(bookOf(smartlead), state);
     const [first, second] = await Promise.all([
       service.get(true),
       service.get(true),
@@ -262,7 +289,7 @@ describe("FleetSummaryService", () => {
         throw new Error("HTTP 429");
       },
     } as unknown as SmartleadClient;
-    const service = new FleetSummaryService(smartlead, state);
+    const service = new FleetSummaryService(bookOf(smartlead), state);
     const result = await service.get(true);
     assert.equal(result.sendingMailboxes, 420);
     assert.equal(result.mailboxesInRecovery, 1);

@@ -69,7 +69,7 @@ import {
   warmupClockStartedAt,
 } from "./warmupGate.js";
 import { isExcluded } from "./campaignTopUp.js";
-import { fetchInventory, type InventorySnapshot } from "./inventory.js";
+import { type InventoryBook, type InventorySnapshot } from "./inventory.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 80;
 
@@ -112,6 +112,7 @@ export class CampaignCheckService {
     private readonly smartlead: SmartleadClient,
     private readonly smartDelivery: SmartDeliveryClient,
     private readonly state: StateStore,
+    private readonly book: InventoryBook,
     private readonly slack?: SlackClient,
   ) {}
 
@@ -131,8 +132,9 @@ export class CampaignCheckService {
       findings: [],
     };
 
+    // D132 — a check without a handed-down snapshot reads the shared book.
     const { campaigns, accounts, clients } =
-      opts.inventory ?? (await fetchInventory(this.smartlead));
+      opts.inventory ?? (await this.book.get());
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
       brandByClientId.set(

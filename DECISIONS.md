@@ -2301,3 +2301,20 @@ until copy exists. Accepted: that campaign has nothing to test.
 
 **Guards.** copyCanary isolationManualPayload includes sequenceMappingId;
 owner-intent D102.
+---
+
+## D103 — Sequence writes keep only writable fields
+
+**Decision.** Every Smartlead sequence POST keeps only writable keys
+(`id`, `seq_number`, subject/body, delay, variants). GET extras —
+`created_at` (D101) and `email_campaign_id` — are dropped. The
+`%signature%` append is unchanged (D92).
+
+**Why.** Live 2026-08-26 after #120: leftover `%signature%` writes
+cleared `created_at` and then died on `"sequences[0].email_campaign_id"
+is not allowed` (SalesGlider Nurture, Parlay2, Culture Fits, Positive).
+
+**Tradeoff.** An unknown writable field we do not list is dropped.
+Accepted: we add it when a write needs it. Whack-a-mole omit is worse.
+
+**Guards.** sequencesForWrite allowlist; owner-intent D103.

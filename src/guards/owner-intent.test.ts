@@ -3169,6 +3169,14 @@ describe("owner intent — D101 sequence writes omit created_at", () => {
         "signatureQa.ts lost sequencesForWrite.",
       ),
     );
+    assert.match(
+      qa,
+      /email_campaign_id/,
+      stop(
+        "Sequence writes drop email_campaign_id (D103).",
+        "sequencesForWrite no longer omits email_campaign_id.",
+      ),
+    );
     const client = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../clients/smartlead.ts", import.meta.url), "utf8"),
     );
@@ -3178,6 +3186,30 @@ describe("owner intent — D101 sequence writes omit created_at", () => {
       stop(
         "updateCampaignSequences strips read-only timestamps (D101).",
         "smartlead.ts posts raw getCampaignSequences payloads again.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D103 sequence writes keep only writable fields", () => {
+  it("D103: sequencesForWrite allowlists writable keys and drops email_campaign_id", async () => {
+    const qa = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/signatureQa.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      qa,
+      /SEQUENCE_WRITE_KEEP/,
+      stop(
+        "Sequence writes keep only writable fields (D103).",
+        "signatureQa.ts lost the writable allowlist.",
+      ),
+    );
+    assert.match(
+      qa,
+      /email_campaign_id/,
+      stop(
+        "Sequence writes drop email_campaign_id (D103).",
+        "sequencesForWrite no longer omits email_campaign_id.",
       ),
     );
   });

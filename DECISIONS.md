@@ -2454,3 +2454,21 @@ Accepted: the live reject named this key.
 
 **Guards.** sequencesForWrite remaps onto seq_variants and
 skips variants; owner-intent D110.
+---
+
+## D111 — Old-client teardown retries leftovers
+
+**Decision.** Delete remaining Nieto / MSRS / Positive
+campaigns every health pass until none match. The D107
+one-shot skip is gone. Delete-fail still STOP (D107).
+
+**Why.** Live 2026-08-26 after #122: deleted=9 errors=1.
+`#3429333` Nieto Astros was still on the inventory after
+the one-shot stamped `oldClientTeardownAt`, so the next
+pass skipped it.
+
+**Tradeoff.** A campaign that cannot be deleted is retried
+each pass (then STOP). Accepted: Josh wanted them gone.
+
+**Guards.** no one-shot skip while targets remain;
+owner-intent D111.

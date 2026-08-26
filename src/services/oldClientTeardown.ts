@@ -15,8 +15,9 @@ export interface OldClientTeardownResult {
 }
 
 /**
- * D107 — Josh: delete the leftover old-client campaigns (Nieto, MSRS2,
- * Positive) so they leave the canon board.
+ * D107 / D111 — Josh: delete leftover old-client campaigns (Nieto,
+ * MSRS2, Positive) so they leave the canon board. Retry remaining
+ * matches every health pass until none are left.
  */
 export class OldClientTeardownService {
   constructor(
@@ -35,16 +36,18 @@ export class OldClientTeardownService {
       deleted: [],
       errors: [],
     };
-    if (this.state.getOldClientTeardownAt()) {
-      result.skipped = true;
-      return result;
-    }
-
     const campaigns =
       opts.campaigns ?? (await this.smartlead.listCampaigns());
     const targets = campaigns.filter((campaign) =>
       isOldClientCampaign(campaign, this.config.oldClientCampaignIds),
     );
+    // D111 — retry leftovers. The D107 one-shot skipped after the first
+    // pass even when a delete failed (#3429333 Nieto Astros). Keep
+    // trying remaining matches until they are gone.
+    if (!targets.length) {
+      result.skipped = true;
+      return result;
+    }
     for (const campaign of targets) {
       const name = String(campaign.name ?? campaign.id);
       if (isPodControlShellCampaign(campaign)) continue;
@@ -75,6 +78,9 @@ export class OldClientTeardownService {
     if (!dryRun) {
       this.state.setOldClientTeardownAt(new Date().toISOString());
       await this.state.save();
+    }
+    for (const error of result.errors) {
+      console.warn(`[old-client] ${error}`);
     }
     console.log(
       `[old-client] deleted=${result.deleted.length} errors=${result.errors.length}`,

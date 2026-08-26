@@ -11,7 +11,7 @@
  * This map is also the prune list: a persisted stageHealth record whose
  * name is missing here belongs to a stage the code no longer has, and is
  * dropped at boot — a deleted stage must not alarm forever from its ghost
- * record. The owner-intent D131 guard fails the suite if a `stage("…")`
+ * record. The D131 guard (src/guards/canon.test.ts) fails the suite if a `stage("…")`
  * call in index.ts is missing from this map.
  */
 

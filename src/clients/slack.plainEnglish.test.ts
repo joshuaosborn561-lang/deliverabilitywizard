@@ -34,9 +34,7 @@ describe("Slack copy is plain English (D47)", () => {
       testId: "t1",
       threshold: 80,
       providers: [{ name: "G Suite", inboxPercent: 40 }],
-      autoRemediation: true,
       remediationThreshold: 80,
-      holdDays: 14,
       senders: [{ email: "a@x.com", inboxPercent: 40 }],
     });
     await client.notifyWarmupGate({
@@ -50,9 +48,8 @@ describe("Slack copy is plain English (D47)", () => {
           campaignId: 1,
           campaignName: "Acme",
           email: "a@x.com",
-          reason: "hold_until",
+          reason: "under_warmed",
           daysWarmed: 14,
-          holdUntil: "2026-09-01",
         },
         {
           campaignId: 1,

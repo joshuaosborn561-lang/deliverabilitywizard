@@ -66,7 +66,6 @@ type Captured = {
     email: string;
     inboxPercent: number;
     scoredSameEsp?: boolean;
-    willRemediate?: boolean;
   }>;
 };
 
@@ -83,7 +82,6 @@ function fakeSlack(captured: Captured): SlackClient {
 const config = loadConfig({
   SCORE_SAME_ESP_ONLY: "true",
   MIN_SAME_ESP_SAMPLES: "3",
-  ENABLE_REMEDIATION: "true",
   REMEDIATION_INBOX_THRESHOLD: "80",
   DELIVERABILITY_THRESHOLD: "80",
 });
@@ -111,8 +109,6 @@ describe("ResultMonitor same-ESP alert scoring", () => {
     // Same-ESP (Microsoft seeds only) — all three inboxed.
     assert.equal(sender.inboxPercent, 100);
     assert.equal(sender.scoredSameEsp, true);
-    // 100% is above the 80% threshold, so no rotation should be promised.
-    assert.equal(sender.willRemediate, false);
   });
 
   it("falls back to blended scoring when Smartlead types are unavailable", async () => {

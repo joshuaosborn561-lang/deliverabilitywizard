@@ -12,7 +12,9 @@ import { MATCH_THRESHOLD, scoreNameMatch } from "../lib/nameMatch.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 
-export type WarmupGateReason = "under_warmed" | "hold_until";
+// D128 — a leftover HOLD-UNTIL tag is inert residue, never a pull, so the
+// gate's only removal reason is an unfinished warmup.
+export type WarmupGateReason = "under_warmed";
 
 export interface WarmupGateRemoval {
   campaignId: number;
@@ -21,7 +23,6 @@ export interface WarmupGateRemoval {
   email: string;
   reason: WarmupGateReason;
   daysWarmed: number | null;
-  holdUntil?: string;
   tags: string[];
 }
 

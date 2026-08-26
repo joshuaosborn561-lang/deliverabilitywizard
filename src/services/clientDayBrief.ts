@@ -39,7 +39,6 @@ export interface ClientDayRow {
   /** Client inboxes on-week and not held. */
   activeInboxes: number;
   /** Client inboxes currently held / pulled off campaigns. */
-  heldInboxes: number;
   /** D41 — client inboxes in their off-week rest. */
   restingInboxes: number;
   /** Generics currently staffing this client (spare tire). */
@@ -187,7 +186,6 @@ export class ClientDayBriefService {
       errors.push(`placement spam: ${message}`);
     }
 
-    const heldByClient = new Map<number, number>();
     const activeByClient = new Map<number, number>();
     const restingByClient = new Map<number, number>();
     const genericByClient = new Map<number, number>();
@@ -200,9 +198,7 @@ export class ClientDayBriefService {
         if (!email) continue;
         const clientId = account.client_id;
         if (typeof clientId !== "number" || !Number.isFinite(clientId)) continue;
-        if (this.state.getHeldInbox(email)) {
-          heldByClient.set(clientId, (heldByClient.get(clientId) ?? 0) + 1);
-        } else if (this.state.getRestingInbox(email)) {
+        if (this.state.getRestingInbox(email)) {
           restingByClient.set(
             clientId,
             (restingByClient.get(clientId) ?? 0) + 1,
@@ -226,8 +222,6 @@ export class ClientDayBriefService {
 
     const rows: ClientDayRow[] = [...byClient.values()]
       .map((agg) => {
-        const held =
-          agg.clientId != null ? heldByClient.get(agg.clientId) ?? 0 : 0;
         const activeCount =
           agg.clientId != null ? activeByClient.get(agg.clientId) ?? 0 : 0;
         const resting =
@@ -244,7 +238,6 @@ export class ClientDayBriefService {
           spamPercent:
             agg.spamWeight > 0 ? agg.spamWeighted / agg.spamWeight : null,
           activeInboxes: activeCount,
-          heldInboxes: held,
           restingInboxes: resting,
           genericSpare,
         };

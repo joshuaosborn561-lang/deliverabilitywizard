@@ -42,7 +42,6 @@ describe("ClientFanOutService", () => {
     const state = {
       getPoolMailbox: () => undefined,
       isCopyCanary: () => false,
-      getHeldInbox: () => undefined,
       getRestingInbox: () => undefined,
       getDomainHistory: () => undefined,
     } as unknown as StateStore;
@@ -94,7 +93,6 @@ describe("ClientFanOutService", () => {
       {
         getPoolMailbox: () => undefined,
       isCopyCanary: () => false,
-        getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
       } as unknown as StateStore,
@@ -136,7 +134,6 @@ describe("ClientFanOutService", () => {
       {
         getPoolMailbox: () => undefined,
       isCopyCanary: () => false,
-        getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
       } as unknown as StateStore,
@@ -181,7 +178,6 @@ describe("ClientFanOutService", () => {
       {
         getPoolMailbox: () => undefined,
       isCopyCanary: () => false,
-        getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
       } as unknown as StateStore,
@@ -229,7 +225,6 @@ describe("ClientFanOutService", () => {
       {
         getPoolMailbox: () => undefined,
       isCopyCanary: () => false,
-        getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
       } as unknown as StateStore,
@@ -272,7 +267,6 @@ describe("ClientFanOutService", () => {
       {
         getPoolMailbox: () => undefined,
       isCopyCanary: () => false,
-        getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
       } as unknown as StateStore,
@@ -334,7 +328,6 @@ describe("D139 — staffing never hands the gate its next pull", () => {
     const state = {
       getPoolMailbox: () => undefined,
       isCopyCanary: () => false,
-      getHeldInbox: () => undefined,
       getRestingInbox: () => undefined,
       getDomainHistory: () => undefined,
     } as unknown as StateStore;

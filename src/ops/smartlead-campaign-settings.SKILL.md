@@ -12,12 +12,12 @@ Creating a campaign, uploading a sequence, and linking mailboxes is **not
 enough**. Several separate calls must all be made explicitly or the campaign
 silently runs on Smartlead defaults.
 
-**Do not run rest, hold rebuild, top-up, or fan-out from this skill.** That is
-the health job (every 15 minutes). This skill staffs a launch, then gets out
-of the way.
+**Do not run rest, top-up, or fan-out from this skill.** That is the health
+job (every 15 minutes). This skill staffs a launch, then gets out of the way.
 
 **Do not launch canary / partial attachment.** The 85% placement gate replaced
-that. Canary is another project.
+partial-attachment launches. The copy-canary fleet (D54/D71) is a diagnosis
+tool — it never staffs a campaign.
 
 ---
 
@@ -27,8 +27,9 @@ that. Canary is another project.
 and ~30% Microsoft**. Staffable means all of:
 
 - connected SMTP **and** IMAP
-- not held (see holds, below)
+- not carrying an unexpired `HOLD-UNTIL-*` tag (see holds, below)
 - not resting (client off-week **or** generic on its send-clock sit)
+- not a copy-canary box (the canary fleet never staffs, D54/D55)
 - warmup age gate cleared
 
 Client inboxes fill first. **Generics fill the remaining gap** up to 50. A
@@ -40,11 +41,12 @@ Leave these campaigns alone (do not staff, rest, or top-up): Smartlead ids
 
 ### Holds are not rest
 
-A HOLD only counts if same-ESP placement actually failed (under 80%) or bounce
-is over 5% with at least 50 sends. A leftover `HOLD-UNTIL-*` tag with no
-same-ESP proof is **not** a reason to skip the box. Do not treat the hold pile
-as the rotation system. Health rebuilds unproven HOLDs once (D44); after that,
-rest is D43.
+Nothing mints new `HOLD-UNTIL-*` tags any more — pulls are kill-only
+(D51/D130), and there is no hold rebuild. A leftover tag is inert residue
+(D128): while it is unexpired the box does not staff, top up, fan out, or
+count toward the staffing floor (D99); once the date passes it is normal
+supply again. Do not strip a tag early and do not treat the hold pile as a
+rotation system.
 
 `WARMUP-GATE-EXEMPT` is a different tag. Do not strip it.
 
@@ -140,21 +142,21 @@ This replaced launching at partial attachment (canary).
 One **recurring** SmartDelivery schedule per campaign, `every_days: 1`. Not a
 fresh manual test each morning.
 
-**Delivery quota is unlimited.** Do not ration tests. Do not skip the control
-test below. (Railway may still have `TOTAL_TEST_QUOTA=120` until that var is
-cleared after the health PR merges — if a create is blocked, say so; do not
-invent a cap.)
+**Delivery quota is unlimited (D45).** Do not ration tests. Do not skip the
+control test below.
 
 ### Two different bars — do not mix them
 
 | When | Bar | Who |
 |---|---|---|
 | **Pre-launch** (this skill) | **85%** same-ESP, promo tab = miss | You, before ACTIVE |
-| **Live pull** (health / remediation) | **80%** same-ESP | Health job after launch |
+| **Live reading** (monitors) | **80%** same-ESP | Monitor alerts after launch |
 
-Launch at 85. After launch, health pulls a sender only if same-ESP is under
-80 (or bounce is over 5% with 50 sends). Do not pull at 85. Do not launch at
-80.
+Launch at 85. After launch **nothing is pulled automatically** — pulls are
+kill-only (D51/D130). Under 80 the monitors alert, the spam investigation
+answers infrastructure vs copy with the canary fleet (D71), and a genuinely
+burned domain is retired and replaced through the approvals lane (D137). Do
+not pull at 85. Do not launch at 80.
 
 **Gmail Promotions tab counts as a MISS** on the launch test. Score it
 honestly.
@@ -207,7 +209,9 @@ monitoring is the health job.
 
 - Monday–Thursday only. No Friday, no weekends.
 - 9:00–18:00 America/Chicago.
-- `min_time_btw_emails: 10`. Do not use 13 or 20.
+- `min_time_btw_emails: 10`. Do not use 13 or 20. The hourly checker
+  converges any drift back to 10 on sight, campaign and mailbox level
+  (D138) — do not fight it.
 - `max_leads_per_day: 10000` is uncapped at campaign level. Real bound is
   **1,500/day**.
 - Raw endpoint wants `max_new_leads_per_day`. `set_schedule` translates.
@@ -241,7 +245,7 @@ Use `Smartlead:update_campaign_ai_bounce_settings` (or the batch tool).
 
 | Setting | API field | Value |
 |---|---|---|
-| Bounce auto-pause threshold | `bounce_autopause_threshold` | `"100"` (off — D80) |
+| Bounce auto-pause threshold | `bounce_autopause_threshold` | `"100"` (native pause off — the wizard owns bounce pausing, D90/D124) |
 | Active AI categories | `ai_categorisation_options` | `[6, 1, 3]` |
 | Restart OOO when lead returns | `out_of_office_detection_settings.autoCategorizeOOO` | `true` |
 | Ignore OOO from reply % | `ignoreOOOasReply` | **`true`** |
@@ -258,10 +262,12 @@ Copy field names exactly (British s / American z, snake / camel).
 
 `autoCategorizeOOO` and `autoReactivateOOO` are mutually exclusive.
 
-Smartlead bounce auto-pause stays **off** (`100`). The wizard pauses
-campaigns itself after 100 sends (20% until 500, then 7%). **Do not
-auto-START** a bounce pause. Health may investigate (D29) but will not
-resume a bounce pause or a manual pause (D40).
+Smartlead bounce auto-pause stays **off** (`100`). The wizard pauses a
+campaign itself over **10% bounce after 1,000 leads emailed, or more than
+10 new bounces in 10 minutes** (D90), then classifies a sample of the NDRs
+— tenant rate limit vs bad recipients vs content block (D140). **Do not
+auto-START** a bounce pause: only a human STARTs a bounce-paused campaign
+(D40/D128).
 
 ## 7. Mailbox setup ... `Smartlead:link_mailboxes`
 
@@ -347,7 +353,8 @@ Nothing goes ACTIVE until every line passes.
 **Infrastructure**
 
 1. **50 or more staffable senders**, ~30% Google and ~30% Microsoft, after
-   excluding held (proven-weak only), client off-week rest, and generic sit.
+   excluding unexpired HOLD-UNTIL tags, client off-week rest, generic sit,
+   and copy-canary boxes.
 2. **Zero resting mailboxes attached.** Read back. No `MESSAGE_PER_DAY=0`.
 3. **Every attached mailbox clears warmup** (21 days from InboxKit import;
    pre-warmed fleets waived).
@@ -365,7 +372,9 @@ Nothing goes ACTIVE until every line passes.
 10. Suppression and domain block list applied, scoped to that `client_id`.
 11. Cross-campaign dedupe verified against full exports.
 12. Schedule applied and verified by read-back.
-13. AI categorization on, `ignoreOOOasReply: true`, bounce threshold `"7"`.
+13. AI categorization on, `ignoreOOOasReply: true`, native bounce
+    auto-pause off (`bounce_autopause_threshold: "100"` — the wizard owns
+    bounce pausing, D90).
 14. No off-ICP leads (retail, student orgs, school districts).
 15. Every proof claim in the copy is client-approved.
 
@@ -389,22 +398,23 @@ A success response is not verification. Read it back.
 Schedule and general settings: campaign 3479011 (Parlay Sports Offer), live
 API. AI / bounce fields: Josh, after the MCP tools landed.
 
-Fleet staffing, rest, warmup, and the two placement bars: D43 / D44 / D46
-(Aug 2026). Client A/B rest and the generic 14-day send clock are the
-rotation system. HOLDs are only for proven-weak senders. Canary is out of
-this loop. Placement-test quota is unlimited (D45).
+Fleet staffing, rest, warmup, and the two bars: D43 / D46 (Aug 2026).
+Client A/B rest and the generic 14-day send clock are the rotation system.
+The hold-rebuild tier was retired by D130 — leftover HOLD-UNTIL tags are
+inert residue (D128). Placement-test quota is unlimited (D45).
 
-Health owns rest execution, hold rebuild, top-up, fan-out, live 80% / 5%
-pulls, and pause handling. Do not duplicate those here.
+Health owns rest execution, top-up, fan-out, the live monitors, and bounce
+pausing (D90). Do not duplicate those here.
 
-## Isolation (D48)
+## Isolation and the spam investigation (D71 lane)
 
-Standing per-pod control tests (fixed control email) answer inboxes vs copy.
-If copy, the wizard starts a same-day one-variable teardown from the
-low-rep isolation domain — tests are unlimited, do not wait for seed
-approval. **Recommend the change. Do not edit the live sequence.** Isolation
-mailboxes never attach to a campaign. A confirmed trigger is a pre-send
-lint warning, not a launch block.
+Standing per-pod control tests (fixed control email) answer inboxes vs
+copy. On a spam finding the wizard runs the canary/known-good comparison
+itself (D71) and, when the verdict is copy, proposes the fix in Slack: a
+fleet-wide word swap runs only after Josh taps approve (D133), and a
+burned domain gets a retire + replacement ask through approvals (D134/
+D137). Isolation and canary mailboxes never attach to a campaign. A
+confirmed trigger is a pre-send lint warning, not a launch block.
 
 If Josh changes a standard, **update this skill** rather than relying on a
 future session remembering the old number.

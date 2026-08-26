@@ -87,7 +87,10 @@ maintainer-authored changes.
 
 Product decisions recorded in `DECISIONS.md` require Josh to approve a
 reversal. Normal bug fixes, tests and refactors can be reviewed by either
-maintainer.
+maintainer. The current rules live in [CANON.md](CANON.md) — a PR that
+lands a new decision appends the ledger entry, adds its guard, deletes the
+code it retires, and updates CANON.md **in that same PR** (the meta-guards
+fail the suite otherwise).
 
 ## Production and spending
 

@@ -81,7 +81,6 @@ async function serverFixture(opts: { fleetFails?: boolean } = {}) {
           return {
             totalMailboxes: 3,
             sendingMailboxes: 1,
-            mailboxesInRecovery: 1,
             activeCampaigns: 1,
             disconnectedMailboxes: 0,
           };
@@ -143,12 +142,11 @@ describe("ops HTTP boundary", () => {
       });
       assert.equal(dashboard.status, 200);
       const dashboardBody = (await dashboard.json()) as {
-        fleet: { sendingMailboxes: number; mailboxesInRecovery: number };
+        fleet: { sendingMailboxes: number };
         policy: { clientRest: boolean; freshInboxWarmupDays: number };
         campaignSetupPrompt: string;
       };
       assert.equal(dashboardBody.fleet.sendingMailboxes, 1);
-      assert.equal(dashboardBody.fleet.mailboxesInRecovery, 1);
       assert.equal(dashboardBody.policy.clientRest, true);
       assert.equal(dashboardBody.policy.freshInboxWarmupDays, 21);
       assert.match(dashboardBody.campaignSetupPrompt, /2 weeks on \/ 2 weeks off/);
@@ -252,12 +250,11 @@ describe("ops HTTP boundary", () => {
         headers: { cookie: session.cookie },
       });
       const body = (await response.json()) as {
-        fleet: { sendingMailboxes: number | null; mailboxesInRecovery: number };
+        fleet: { sendingMailboxes: number | null };
         fleetError: string;
       };
       assert.equal(response.status, 200);
       assert.equal(body.fleet.sendingMailboxes, null);
-      assert.equal(body.fleet.mailboxesInRecovery, 0);
       assert.match(body.fleetError, /Smartlead unavailable/);
     } finally {
       await fixture.close();

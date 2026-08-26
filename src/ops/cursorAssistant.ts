@@ -37,7 +37,7 @@ function policyPreamble(actor: string, role: OpsRole): string {
     "  approved a spend request. Prefer explaining how to use the approval gateway.",
     "- Never delete/purge domains or mailboxes from chat unless Josh explicitly",
     "  approved that exact destructive action.",
-    "- Never bypass warmup, recovery holds, or spend-approval safety gates.",
+    "- Never bypass warmup, holds, or spend-approval safety gates.",
     "- Never change fleet policy (half-client floor, 30/day cap, per-client A/B rest, 21-day",
     "  fresh warmup, thresholds) without a reviewed PR and Josh's decision",
     "  recorded in DECISIONS.md.",

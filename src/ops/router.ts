@@ -216,7 +216,6 @@ export function createOpsRouter(opts: {
           generatedAt: new Date().toISOString(),
           totalMailboxes: null,
           sendingMailboxes: null,
-          mailboxesInRecovery: Object.keys(state.heldInboxes).length,
           activeCampaigns: null,
           disconnectedMailboxes: null,
           stale: true,
@@ -239,8 +238,6 @@ export function createOpsRouter(opts: {
         pool: {
           total: pool.length,
           byStatus: poolByStatus,
-          activeSwaps: Object.keys(state.activeSwaps).length,
-          heldInboxes: Object.keys(state.heldInboxes).length,
           restingInboxes: Object.keys(state.restingInboxes ?? {}).length,
           phase: state.poolProvision.phase,
           message: state.poolProvision.lastMessage,
@@ -558,7 +555,7 @@ export function createOpsRouter(opts: {
         case "approvals":
           if (session.role !== "owner") {
             const reason =
-              "Only Josh can view or decide spend approvals. Cayden can run checks and safe mailbox rotations.";
+              "Only Josh can view or decide spend approvals. Cayden can run checks and reconnects.";
             await audit(session, "approvals", "denied", undefined, reason);
             respond(`I can't do that.\n\n${reason}`);
             return;

@@ -605,6 +605,8 @@ export class SlackClient {
     accountsChecked: number;
     removed: number;
     skipped: number;
+    /** D139 — the warmup days the gate actually enforces (config, 21). */
+    owedDays?: number;
     pausedCampaigns: number[];
     removals: Array<{
       campaignId: number;
@@ -616,6 +618,7 @@ export class SlackClient {
     }>;
     errors: string[];
   }): Promise<void> {
+    const owedDays = summary.owedDays ?? 21;
     const seriousErrors = summary.errors
       .filter((e) => !isRateLimitNoise(e))
       .map(humanizeAlertError);
@@ -642,7 +645,7 @@ export class SlackClient {
         }
         const days =
           r.daysWarmed == null ? "?" : `${r.daysWarmed.toFixed(0)}`;
-        return `• \`${r.email}\` — only warmed ${days} days (need 14)`;
+        return `• \`${r.email}\` — only warmed ${days} days (need ${owedDays})`;
       });
       const more =
         rows.length > 10 ? `\n• …and ${rows.length - 10} more` : "";
@@ -669,7 +672,7 @@ export class SlackClient {
       [
         `*Pulled not-ready mailboxes off live campaigns*`,
         under.length
-          ? `${under.length} hadn't finished the 14-day warmup.`
+          ? `${under.length} hadn't finished the ${owedDays}-day warmup.`
           : undefined,
         held.length
           ? `${held.length} ${held.length === 1 ? "was" : "were"} still on a 2-week recovery sit after a bad inbox or bounce test.`

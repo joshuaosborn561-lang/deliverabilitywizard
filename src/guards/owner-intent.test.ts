@@ -4268,3 +4268,57 @@ describe("owner intent — D138 the campaign min gap is converged", () => {
     );
   });
 });
+
+describe("owner intent — D139 staffing honors the warmup clock", () => {
+  it("D139: fan-out and top-up refuse inboxes that owe warmup days", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const gate = await readFile(
+      new URL("../services/warmupGate.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      gate,
+      /export function owesWarmup/,
+      stop(
+        "One shared clock decides who owes warmup — the gate's own (D139).",
+        "warmupGate.ts lost the owesWarmup helper.",
+      ),
+    );
+    const fanOut = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      fanOut,
+      /owesWarmup/,
+      stop(
+        "Fan-out must not re-staff the inboxes the gate just pulled (D139).",
+        "clientFanOut.ts fans under-warmed inboxes out again.",
+      ),
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      topUp,
+      /owesWarmup/,
+      stop(
+        "Top-up supply that owes warmup days is not supply (D139).",
+        "campaignTopUp.ts staffs under-warmed pool inboxes again.",
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      slack,
+      /need 14|14-day warmup/,
+      stop(
+        "The pull notice states the real owed days from config (D139).",
+        "slack.ts hardcodes a stale 14-day warmup again.",
+      ),
+    );
+  });
+});

@@ -37,14 +37,14 @@ function fixture(opts: {
     listAllEmailAccounts: async () => [
       {
         id: 100,
-        from_email: "held@boldercyperpartnerbiz.info",
+        from_email: "held@boldercyperpartnerbiz.info", created_at: "2026-06-01T00:00:00Z",
         campaign_ids: [1],
         client_id: 9,
         tags: opts.tags ?? [],
       },
       {
         id: 101,
-        from_email: "healthy@boldercyperpartnerbiz.info",
+        from_email: "healthy@boldercyperpartnerbiz.info", created_at: "2026-06-01T00:00:00Z",
         campaign_ids: [1],
         client_id: 9,
         tags: [],
@@ -60,6 +60,7 @@ function fixture(opts: {
   const heldSet = new Set((opts.heldEmails ?? []).map((e) => e.toLowerCase()));
   const state = {
     getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
     getHeldInbox: (email: string) =>
       heldSet.has(email.toLowerCase()) ? heldRecord(email) : undefined,
     getRestingInbox: () => undefined,
@@ -120,14 +121,14 @@ describe("ClientFanOutService held exclusion", () => {
       listAllEmailAccounts: async () => [
         {
           id: 200,
-          from_email: "gone@retired.info",
+          from_email: "gone@retired.info", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
           tags: [],
         },
         {
           id: 201,
-          from_email: "healthy@boldercyperpartnerbiz.info",
+          from_email: "healthy@boldercyperpartnerbiz.info", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
           tags: [],
@@ -145,6 +146,7 @@ describe("ClientFanOutService held exclusion", () => {
       { send: async () => undefined } as unknown as SlackClient,
       {
         getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
         getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: (domain?: string) =>

@@ -26,6 +26,8 @@ export interface WarmupGateRemoval {
 }
 
 export interface WarmupGateResult {
+  /** D139 — the warmup days this gate enforced (config, 21). */
+  owedDays: number;
   dryRun: boolean;
   campaignsScanned: number;
   accountsChecked: number;
@@ -73,6 +75,7 @@ export class WarmupGateService {
 
   async run(opts: { inventory?: InventorySnapshot } = {}): Promise<WarmupGateResult> {
     const result: WarmupGateResult = {
+      owedDays: this.config.freshInboxWarmupDays,
       dryRun: this.config.dryRun,
       campaignsScanned: 0,
       accountsChecked: 0,
@@ -395,6 +398,36 @@ export function owedWarmupDays(
   config: Pick<AppConfig, "campaignMinWarmupDays" | "freshInboxWarmupDays">,
 ): number {
   return prewarmed ? config.campaignMinWarmupDays : config.freshInboxWarmupDays;
+}
+
+/**
+ * D139 — staffing must not hand the gate its next pull. An inbox that owes
+ * warmup days is not supply: same clock and exemptions as the gate itself
+ * (WARMUP-GATE-EXEMPT tag, pre-warmed fleets, canaries). A mailbox with no
+ * readable clock owes by default — fail closed, exactly like the gate.
+ */
+export function owesWarmup(
+  account: Parameters<typeof warmupStartedAt>[0] & {
+    tags?: Array<{ tag_name?: unknown; name?: unknown }>;
+  },
+  email: string,
+  config: Pick<
+    AppConfig,
+    | "campaignMinWarmupDays"
+    | "freshInboxWarmupDays"
+    | "extraGenericDomains"
+    | "extraGenericMailboxes"
+  >,
+  state: Pick<StateStore, "getPoolMailbox" | "isCopyCanary">,
+): boolean {
+  if (isWarmupGateExempt(tagNames(account as SmartleadEmailAccount))) return false;
+  if (state.isCopyCanary(email)) return false;
+  if (isPrewarmedGeneric(account as SmartleadEmailAccount, email, config, state)) {
+    return false;
+  }
+  const started = warmupClockStartedAt(account, email, state);
+  const days = started != null ? daysSince(started) : null;
+  return days == null || days < owedWarmupDays(false, config);
 }
 
 /** InboxKit import stamp when the mailbox is in the pool. */

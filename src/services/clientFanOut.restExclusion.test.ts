@@ -29,13 +29,13 @@ describe("ClientFanOutService rest exclusion", () => {
       listAllEmailAccounts: async () => [
         {
           id: 100,
-          from_email: "rest@boldercyperpartnerbiz.info",
+          from_email: "rest@boldercyperpartnerbiz.info", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
         },
         {
           id: 101,
-          from_email: "healthy@boldercyperpartnerbiz.info",
+          from_email: "healthy@boldercyperpartnerbiz.info", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
         },
@@ -49,6 +49,7 @@ describe("ClientFanOutService rest exclusion", () => {
 
     const state = {
       getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
       getHeldInbox: () => undefined,
       getDomainHistory: () => undefined,
       getRestingInbox: (email: string) =>

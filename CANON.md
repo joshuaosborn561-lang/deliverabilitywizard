@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D138** (2026-08-26). One page of current truth. When a new
+Canon as of **D139** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -63,7 +63,10 @@ Slack speaks only when a human decision is needed or the day is done.
   exceptions; Vasco is nobody special (D82). The old global 50 floor is dead.
 - **Fan-out**: a client-owned inbox belongs on every ACTIVE campaign for its
   client even if it currently sits on zero campaigns (D84); BCP-owned domains
-  count as BCP even with no `client_id` (D99). Resting inboxes are skipped.
+  count as BCP even with no `client_id` (D99). Resting inboxes are skipped,
+  and so is anything that owes warmup days — staffing never hands the gate
+  its next pull; a fresh import waits out its 21 days even if its campaigns
+  sit under floor meanwhile (D139).
 - **Rest (pods)**: each client's inboxes split into a stable, even A/B. The
   off-week half comes OFF live campaigns (never left on at 0/day); warmup
   stays on; resting is not staffable (D43). The split is visible in

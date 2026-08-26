@@ -2752,3 +2752,28 @@ for 15 minutes is better than no completed pass for an hour.
 **Guards.** no boot health/pool/audit kicks; inventory 429 retry;
 pool and hourly campaign-check skip health; scan logs uncovered
 ids; owner-intent D122.
+
+---
+
+## D123 — State placement marks cover when enrich omits campaign_id
+
+**Decision.** `testedCampaignCoverage` treats a state `testIds`
+mark as coverage when that id is a living stoppable auto test
+and either `campaignIdOf(test)` is this campaign (D121) **or**
+the living test has no campaign_id (enrich missed it). A living
+test whose campaign_id is a different campaign still does not
+cover.
+
+**Why.** Live 2026-08-26 07:19: campaign-check stamped
+`no_placement_test` on `#3847841` / `#3847842` / `#3847848`
+while the scanner reported `eligible: 1` and created a test
+for a different campaign. `enrichCampaignIds` walks ~300 tests
+and swallows 429s, so the two callers see different
+`campaign_id` sets and disagree. The original leftovers
+`#3847844` / `#3847845` did get tests (519653 / 519654).
+
+**Tradeoff.** Two campaigns that stored the same test id while
+enrich is blank would both look covered. Accepted: we only
+write a test id onto the campaign we created it for.
+
+**Guards.** livingTestIds + missing campaign_id; owner-intent D123.

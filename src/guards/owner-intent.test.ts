@@ -3419,6 +3419,30 @@ describe("owner intent — D122 no Smartlead boot kicks except attach", () => {
   });
 });
 
+describe("owner intent — D123 state marks cover when enrich omits campaign_id", () => {
+  it("D123: a living test with no campaign_id still covers the stored campaign", async () => {
+    const coverage = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/placementCoverage.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      coverage,
+      /livingTestIds/,
+      stop(
+        "State marks still count when enrich omits campaign_id (D123).",
+        "testedCampaignCoverage no longer tracks living test ids without a campaign id.",
+      ),
+    );
+    assert.match(
+      coverage,
+      /livingCid === undefined && livingTestIds\.has\(key\)/,
+      stop(
+        "A living test with no campaign_id covers the campaign we stored it on (D123).",
+        "testedCampaignCoverage ignores state marks unless enrich returned a campaign id.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D120 unique shell seed, not upload_count-only", () => {
   it("D120: each shell gets its own seed address; other-campaign skip is not success", async () => {
     const { readFile } = await import("node:fs/promises");

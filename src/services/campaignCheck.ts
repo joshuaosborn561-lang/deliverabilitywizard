@@ -59,6 +59,7 @@ import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import type { SpamTestSummary } from "../types/index.js";
 import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
+import { campaignSettingsWriteBody } from "../lib/bounceAutopause.js";
 import {
   readMessagePerDay,
   readMinTimeGapMins,
@@ -296,6 +297,48 @@ export class CampaignCheckService {
         listedTestsFailed,
         depth: kind,
       });
+      // D138 — the campaign-level minimum gap is converged, not assumed.
+      // Mailbox-level 10m is converged every pass by mailbox-settings; a
+      // hand-made campaign arrives on Smartlead's default and nothing else
+      // guarded this knob (live 2026-08-26: settings clean, but only by
+      // setup discipline). Fix on sight; keep the finding only on failure.
+      if (
+        ["ACTIVE", "START"].includes(
+          String(campaign.status ?? "").toUpperCase(),
+        ) &&
+        !isAnyShellCampaign(campaign)
+      ) {
+        const rawGap = (
+          campaign as { min_time_btwn_emails?: number | string | null }
+        ).min_time_btwn_emails;
+        const gapMins =
+          typeof rawGap === "string" ? Number(rawGap) : rawGap ?? Number.NaN;
+        const gapFloor = this.config.mailboxMinTimeGapMins;
+        if (!(typeof gapMins === "number" && Number.isFinite(gapMins) && gapMins >= gapFloor)) {
+          const detail = `${rawGap ?? "unset"} → ${gapFloor}m`;
+          if (this.config.dryRun) {
+            findings.push({ kind: "campaign_min_gap", detail });
+          } else {
+            try {
+              await this.smartlead.updateCampaignSettings(
+                campaign.id,
+                campaignSettingsWriteBody({}, { min_time_btwn_emails: gapFloor }),
+              );
+              await sleep(WRITE_GAP_MS);
+              console.log(
+                `[campaign-check] ${kind} #${campaign.id} ${name} — campaign min gap ${detail} (D138)`,
+              );
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              findings.push({
+                kind: "campaign_min_gap",
+                detail: `${detail} failed: ${message}`,
+              });
+            }
+          }
+        }
+      }
       const clientId =
         typeof campaign.client_id === "number" ? campaign.client_id : null;
       const matched = matchClientForCampaign(name, clients);

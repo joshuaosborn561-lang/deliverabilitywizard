@@ -4242,3 +4242,29 @@ describe("owner intent — D137 the rig arms through the approval flow", () => {
     );
   });
 });
+
+describe("owner intent — D138 the campaign min gap is converged", () => {
+  it("D138: an ACTIVE campaign below the 10-minute gap is written back on sight", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      check,
+      /min_time_btwn_emails/,
+      stop(
+        "The checker converges campaign-level min_time_btwn_emails to the gap floor (D138).",
+        "campaignCheck.ts stopped guarding the campaign-level gap.",
+      ),
+    );
+    assert.match(
+      check,
+      /campaign_min_gap/,
+      stop(
+        "A failed gap write stays visible as a campaign_min_gap finding (D138).",
+        "campaignCheck.ts hides gap-converge failures.",
+      ),
+    );
+  });
+});

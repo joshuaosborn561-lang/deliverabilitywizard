@@ -153,6 +153,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D135 | Live | POD-A/POD-B tags converged on client mailboxes in Smartlead |
 | D136 | Live | Domain→client advisory audit; EOD escalation, never a guess |
 | D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
+| D138 | Live | Campaign-level min gap converged to the 10-minute floor |
 
 ---
 
@@ -3390,3 +3391,41 @@ the domain.
 unarmed and reads `effectiveIsolationDomain`; execute stamps the state
 domain; the kind is owner-only. Tests: ask-dedupe across
 pending/executed; approve path stamps the domain; operator tap denied.
+
+## D138 — The campaign-level minimum gap is converged, not assumed
+
+**Decision.** The campaign checker converges `min_time_btwn_emails` on
+every ACTIVE (live-sending, non-shell) campaign to at least the standing
+gap floor (`MAILBOX_MIN_TIME_GAP_MINS`, 10) on sight — same
+POST-settings write path the D124 bounce-autopause converge proved out.
+A successful write leaves no finding; a failed write keeps a
+`campaign_min_gap` finding on the scoreboard. PAUSED/DRAFT campaigns are
+left alone.
+
+**Why.** Josh's read on the 2026-08-26 bounce bursts: "that is always a
+min gap problem." Verified in production before building: the
+mailbox-level gap (`minTimeToWaitInMins`) read 10 on all 1,179 mailboxes
+(the 15-minute converge has held it since D30/D35 — 0 drift at the
+21:53Z pass) and a write/read-back probe proved the field persists; the
+campaign-level gap read ≥10 on all 49 ACTIVE campaigns (34@10, 15@20).
+So both knobs were clean **today** — but only the mailbox knob had a
+converge. The campaign knob was clean by setup discipline alone: a
+hand-made campaign inherits Smartlead's default and nothing would have
+fixed it. Now it cannot drift silently in either direction.
+
+**What a 10-minute gap does NOT prevent** (recorded so the next burst is
+read correctly): fan-out (D84) seats one sender on every ACTIVE campaign
+of its client, and Smartlead paces each campaign separately — a sender
+on N ACTIVE campaigns can send up to N emails inside one 10-minute
+window even with both knobs at 10 (bounded by the 30/day mailbox
+ceiling, D24). The 169-bounces-in-10-minutes reading on #3851731 also
+reflects bounce-report batching on a 19% lifetime-bounce list (169 of
+882 sends). Per-sender cross-campaign pacing is not a Smartlead knob;
+if Josh wants the effective per-mailbox gap held at 10 regardless of
+membership count, that is a new decision (cap concurrent ACTIVE
+memberships per sender, or raise the mailbox gap toward N×10) — not
+made here.
+
+**Guards.** owner-intent D138 (converge present, failures visible);
+tests: below-floor ACTIVE written to 10, at/above-floor untouched,
+PAUSED untouched, failed write keeps the finding.

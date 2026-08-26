@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D137** (2026-08-26). One page of current truth. When a new
+Canon as of **D138** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -39,7 +39,11 @@ Slack speaks only when a human decision is needed or the day is done.
   cleartechco.com) and every from-name fleet in `EXTRA_GENERIC_MAILBOXES`
   (D19); and the canary fleet (which never staffs anyway, D54).
 - **Converged every pass**: 30 campaign sends/day (warmups excluded, D24),
-  10-minute minimum gap (D30/D35), warmup ON for every mailbox **except the
+  10-minute minimum gap (D30/D35) — held at BOTH levels: the mailbox field
+  every health pass, and campaign `min_time_btwn_emails` written back to
+  the floor by the checker on sight (D138; a sender on N ACTIVE campaigns
+  still paces per campaign — the fan-out multiplication is a known,
+  deliberate residual, capped by 30/day), warmup ON for every mailbox **except the
   canary fleet, which is forced OFF** (D83), plain two-line signature
   `First Last\n{Client Brand}` (D31). On a living campaign, an empty,
   one-line, extra-line, or foreign-client signature is a `mailbox_sig`

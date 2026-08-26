@@ -7,7 +7,7 @@ for the record of what was done, **not** for reuse.
 Do not run these. Every job they did now has a standing owner:
 
 - Staffing / fan-out / top-up — the 15-minute canon sweep (`runHealth`, D84)
-- Bounce pauses and Smartlead autopause — `CampaignBounceAutostopService` (D80/D84)
+- Bounce pauses and Smartlead autopause — `CampaignBounceAutostopService` (D90; autopause-off converge D84/D124)
 - Signature QA and unpause — `campaignCheck` + `unpauseAfterSigQa` (D74/D77/D85)
 - Lead runout — `LeadRunoutService` (D52)
 

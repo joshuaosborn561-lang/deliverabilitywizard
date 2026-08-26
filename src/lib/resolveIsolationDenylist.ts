@@ -13,8 +13,11 @@ export async function resolveIsolationDenylist(
     "isolationDomain" | "isolationMailboxIds" | "isolationMailboxEmails"
   >,
   smartlead: Pick<SmartleadClient, "listAllEmailAccounts">,
+  fallbackDomain?: string,
 ): Promise<{ accountIds: number[]; emails: string[]; domain?: string }> {
-  const domain = normalizeIsolationDomain(config.isolationDomain);
+  const domain =
+    normalizeIsolationDomain(config.isolationDomain) ||
+    normalizeIsolationDomain(fallbackDomain ?? "");
   const emails = isolationEmailsOf(config.isolationMailboxEmails);
   const ids = new Set(config.isolationMailboxIds);
 

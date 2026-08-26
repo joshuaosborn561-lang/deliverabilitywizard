@@ -51,7 +51,12 @@ export class IsolationBuyService {
   async resume(): Promise<number> {
     let finished = 0;
     for (const action of this.store.listIsolationActions()) {
-      if (action.kind !== "buy_domains") continue;
+      if (
+        action.kind !== "buy_domains" &&
+        action.kind !== "buy_isolation_domain"
+      ) {
+        continue;
+      }
       if (action.status !== "executed" && action.status !== "approved") continue;
       if (action.detail.phase !== "awaiting_mailboxes") continue;
       const domains = Array.isArray(action.detail.domains)

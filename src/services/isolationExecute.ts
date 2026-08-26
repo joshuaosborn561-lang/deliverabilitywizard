@@ -96,6 +96,8 @@ export class IsolationExecuteService {
         await this.addSignatureTag(approved);
       else if (approved.kind === "buy_canary_fleet")
         await this.buyCanaryFleet(approved);
+      else if (approved.kind === "buy_isolation_domain")
+        await this.buyIsolationDomain(approved);
       else if (approved.kind === "generic_backfill")
         await this.approveGenericBackfill(approved, actor.name);
       else await this.buyDomains(approved);
@@ -196,6 +198,45 @@ export class IsolationExecuteService {
           : undefined,
         result.awaitingNameservers
           ? "Nameservers are still catching up. I will finish the mailbox order myself — no second tap."
+          : undefined,
+        action.proof,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  /**
+   * D137 — buy the word-hunt rig's isolation domain through the same
+   * spend-gated pipeline as a replacement buy, then stamp it into state so
+   * the rig arms itself (ISOLATION_DOMAIN in Railway still overrides).
+   */
+  private async buyIsolationDomain(action: IsolationActionRecord): Promise<void> {
+    const result = await this.buy.run(action);
+    const domain = result.domains[0]?.toLowerCase();
+    if (domain) {
+      const existing = this.state.getIsolation().isolationDomain;
+      this.state.patchIsolation({
+        isolationDomain: {
+          mailboxIds: [],
+          emails: [],
+          status: "configured",
+          ...(existing ?? {}),
+          domain,
+        },
+      });
+    }
+    await this.announce(
+      "buy_isolation_domain",
+      [
+        domain
+          ? `Bought *${domain}* as the word-hunt isolation domain.`
+          : "Isolation-domain buy ran.",
+        result.mailboxesOrdered
+          ? `${result.mailboxesOrdered} mailbox(es) ordered — the rig arms itself once they land in Smartlead.`
+          : undefined,
+        result.awaitingNameservers
+          ? "Nameservers are still catching up; I will finish the mailbox order myself — no second tap."
           : undefined,
         action.proof,
       ]

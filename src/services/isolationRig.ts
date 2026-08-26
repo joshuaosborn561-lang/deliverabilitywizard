@@ -6,7 +6,15 @@ import {
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
 import { defaultControlTemplate } from "../lib/controlTemplate.js";
-import { isIsolationEmail, normalizeIsolationDomain } from "../lib/isolationDomain.js";
+import {
+  effectiveIsolationDomain,
+  isIsolationEmail,
+  normalizeIsolationDomain,
+} from "../lib/isolationDomain.js";
+import {
+  buildIsolationAction,
+  requestIsolationAction,
+} from "../lib/isolationActions.js";
 import { RIG_CONTROL_TEST_PREFIX, rigControlTestName } from "../lib/isolationNames.js";
 import {
   controlSequence,
@@ -37,7 +45,11 @@ export class IsolationRigService {
   ) {}
 
   async applyDenylist(): Promise<number[]> {
-    const resolved = await resolveIsolationDenylist(this.config, this.smartlead);
+    const resolved = await resolveIsolationDenylist(
+      this.config,
+      this.smartlead,
+      effectiveIsolationDomain(this.config, this.state),
+    );
     this.smartlead.setIsolationDenylist(resolved.accountIds);
     if (resolved.domain || resolved.emails.length) {
       this.state.patchIsolation({
@@ -68,10 +80,17 @@ export class IsolationRigService {
 
     if (!this.config.enableIsolationRig) return result;
 
-    const domain = normalizeIsolationDomain(this.config.isolationDomain);
+    const domain = effectiveIsolationDomain(this.config, this.state);
     const emails = await this.rigEmails();
     if (!domain || emails.length < 1) {
-      console.log("[isolation-rig] No isolation domain configured — skip");
+      // D137 — an unarmed rig is a one-tap buy away, not a shrug. The ask
+      // dedupes for the lifetime of the rig; Josh's tap is the approval
+      // (D4/D60) and the buy runs the same spend-gated pipeline as a
+      // replacement domain.
+      await this.requestArm(domain);
+      console.log(
+        "[isolation-rig] not armed — the word hunt waits on the isolation-domain buy (D137)",
+      );
       return result;
     }
     result.configured = true;
@@ -150,9 +169,28 @@ export class IsolationRigService {
     }
   }
 
+  /** D137 — one owner ask to buy the rig's isolation domain, ever. */
+  private async requestArm(existingDomain: string): Promise<void> {
+    if (existingDomain) return; // domain known, only mailboxes missing — buy resume handles it
+    await requestIsolationAction({
+      store: this.state,
+      slack: this.slack,
+      action: buildIsolationAction({
+        kind: "buy_isolation_domain",
+        title: "Arm the word-hunt rig: buy its isolation domain",
+        proof: [
+          "The spam-word hunt needs one throwaway domain with a few mailboxes that never touch clients.",
+          `One domain + ${this.config.isolationMailboxesPerBuyDomain} mailbox(es), bought through the normal approval flow — your tap is the approval, single-use, monthly caps apply (D4/D60).`,
+          "Until it exists, copy verdicts stop at the word-hunt step (D93 still separates infra from copy).",
+        ].join("\n"),
+        detail: { quantity: 1, isolationRig: true },
+      }),
+    });
+  }
+
   async rigEmails(): Promise<string[]> {
     const configured = new Set(this.config.isolationMailboxEmails);
-    const domain = normalizeIsolationDomain(this.config.isolationDomain);
+    const domain = effectiveIsolationDomain(this.config, this.state);
     if (!domain && !configured.size) return [];
     const accounts = await this.smartlead.listAllEmailAccounts().catch(() => []);
     const emails: string[] = [];

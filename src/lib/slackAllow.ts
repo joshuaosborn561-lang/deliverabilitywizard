@@ -26,6 +26,7 @@ export function slackKindForIsolationAction(
   kind:
     | "retire_domain"
     | "buy_domains"
+    | "buy_isolation_domain"
     | "buy_canary_fleet"
     | "swap_copy"
     | "generic_backfill"
@@ -33,7 +34,13 @@ export function slackKindForIsolationAction(
 ): SlackAllowKind | null {
   if (kind === "swap_copy") return "copy_word";
   // D97 — leftover Add %signature% asks are not Slack. The checker writes.
-  if (kind === "retire_domain" || kind === "buy_domains") return "burned_domain";
+  if (
+    kind === "retire_domain" ||
+    kind === "buy_domains" ||
+    kind === "buy_isolation_domain"
+  ) {
+    return "burned_domain";
+  }
   if (kind === "generic_backfill") return "generic_backfill";
   return null;
 }

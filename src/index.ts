@@ -1145,6 +1145,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
 
   const isolationKindTitle = (kind: string): string => {
     if (kind === "buy_canary_fleet") return "Buy canary fleet";
+    if (kind === "buy_isolation_domain") return "Buy it and arm the rig";
     if (kind === "buy_domains") return "Buy replacements";
     if (kind === "retire_domain") return "Retire this domain";
     if (kind === "swap_copy") return "Make the changes";

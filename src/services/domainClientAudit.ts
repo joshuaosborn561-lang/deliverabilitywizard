@@ -6,7 +6,7 @@ import {
 } from "../clients/smartlead.js";
 import { isBcpOwnedDomain } from "../lib/bcp.js";
 import { isFleetDomain } from "../lib/domainControl.js";
-import { normalizeIsolationDomain } from "../lib/isolationDomain.js";
+import { effectiveIsolationDomain } from "../lib/isolationDomain.js";
 import type { DomainClientAdvisory } from "../state/store.js";
 import type { StateStore } from "../state/store.js";
 import type { InventoryBook } from "./inventory.js";
@@ -41,9 +41,7 @@ export class DomainClientAuditService {
       campaigns.map((campaign) => [campaign.id, campaign.client_id]),
     );
     const clientsById = new Map(clients.map((client) => [client.id, client]));
-    const isolationDomain = normalizeIsolationDomain(
-      this.config.isolationDomain,
-    );
+    const isolationDomain = effectiveIsolationDomain(this.config, this.state);
 
     const byDomain = new Map<string, SmartleadAccountWithCampaigns[]>();
     for (const account of accounts) {

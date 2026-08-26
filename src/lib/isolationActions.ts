@@ -37,6 +37,7 @@ function samePending(
   // (already bought / recently executed / recently denied) in their branches.
   if (
     next.kind !== "buy_canary_fleet" &&
+    next.kind !== "buy_isolation_domain" &&
     next.kind !== "add_signature_tag" &&
     existing.status !== "pending"
   ) {
@@ -58,7 +59,9 @@ function samePending(
         existing.status === "executed")
     );
   }
-  if (next.kind === "buy_canary_fleet") {
+  if (next.kind === "buy_canary_fleet" || next.kind === "buy_isolation_domain") {
+    // D137 — one isolation-domain buy per lifetime of the rig: a pending,
+    // approved, or executed ask means never asking again.
     return (
       existing.status === "pending" ||
       existing.status === "approved" ||

@@ -44,10 +44,23 @@ export function testedCampaignCoverage(
   testedCampaigns: Record<string, TestedCampaignRecord | undefined>,
 ): Set<string> {
   const covered = campaignsWithActiveAutos(tests);
-  const livingIds = stoppableAutoTestIds(tests);
+  const livingCampaignByTestId = new Map<string, string>();
+  for (const test of tests) {
+    if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
+    const id = testIdOf(test);
+    const cid = campaignIdOf(test);
+    if (id && cid) livingCampaignByTestId.set(String(id), cid);
+  }
   for (const [campaignId, record] of Object.entries(testedCampaigns)) {
     if (!record?.testIds?.length) continue;
-    if (record.testIds.some((id) => livingIds.has(String(id)))) {
+    // D121 — a living test for a *different* campaign does not cover this one.
+    // Live 2026-08-26: scanner skipped #3847844/#3847845 (eligible=0) while
+    // campaign-check still stamped no_placement_test.
+    if (
+      record.testIds.some(
+        (id) => livingCampaignByTestId.get(String(id)) === String(campaignId),
+      )
+    ) {
       covered.add(campaignId);
     }
   }

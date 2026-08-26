@@ -3297,6 +3297,44 @@ describe("owner intent — D114 canary tests hang on a paused shell", () => {
   });
 });
 
+describe("owner intent — D117 seed a real canary inbox then pause", () => {
+  it("D117: fleet seed email is used and the shell is paused after seeding", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canary = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    const shell = await readFile(
+      new URL("../services/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canary,
+      /seedEmail:\s*senderAccounts\[0\]/,
+      stop(
+        "The shell lead is a real canary inbox (D117).",
+        "copyCanary.ts no longer passes a fleet seed email.",
+      ),
+    );
+    assert.match(
+      shell,
+      /seedShellLead[\s\S]*updateCampaignStatus\(campaign\.id, "PAUSED"\)/,
+      stop(
+        "Seed while drafted, then pause (D117).",
+        "canaryShell.ts pauses before seeding again.",
+      ),
+    );
+    assert.match(
+      shell,
+      /added_count/,
+      stop(
+        "A skipped seed is a hard fail (D117).",
+        "canaryShell.ts no longer checks added_count.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D116 missing placement scans on that pass", () => {
   it("D116: no_placement_test kicks scan-backfill without the hourly wait", async () => {
     const index = await import("node:fs/promises").then((fs) =>

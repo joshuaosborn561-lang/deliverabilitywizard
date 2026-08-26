@@ -32,7 +32,9 @@ describe("ensureCanaryShell", () => {
           leads: Array<{ email: string }>,
         ) => {
           seeded.push({ campaignId, email: leads[0]!.email });
+          return { added_count: 1, skipped_count: 0 };
         },
+        getCampaignLeads: async () => ({ total_leads: 0, data: [] }),
         getCampaignEmailAccounts: async () => [],
         addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
           added.push({ campaignId, ids });
@@ -43,6 +45,7 @@ describe("ensureCanaryShell", () => {
       subject: "Quick look",
       bodyHtml: "<div>Campaign copy</div>",
       senderAccountIds: [11, 12],
+      seedEmail: "g1@canary-g.info",
       dryRun: false,
     });
 
@@ -51,7 +54,7 @@ describe("ensureCanaryShell", () => {
     assert.equal(result.created, false);
     assert.deepEqual(written, [{ campaignId: 104, subject: "Quick look" }]);
     assert.deepEqual(seeded, [
-      { campaignId: 104, email: "canary.shell.seed@getcrosslaunchco.info" },
+      { campaignId: 104, email: "g1@canary-g.info" },
     ]);
     assert.deepEqual(added, [{ campaignId: 104, ids: [11, 12] }]);
   });

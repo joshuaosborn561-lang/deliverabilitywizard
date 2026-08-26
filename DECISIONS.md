@@ -2724,3 +2724,56 @@ or canary-shell test to the live campaign and skip creating one.
 until a new test exists. Accepted: leaving those two bare is worse.
 
 **Guards.** livingCampaignByTestId match; owner-intent D121.
+
+---
+
+## D122 — No Smartlead boot kicks except canary attach
+
+**Decision.** The only Smartlead work a deploy may start immediately
+is canary attach at 90s. Do not boot-kick health, pool provision, or
+campaign-audit. Health inventory retries a 429 three times with a
+30s pause. Pool cron and the hourly campaign-check skip while a
+health pass is in flight.
+
+**Why.** Live 2026-08-26 after D121 (`07ab5ac` 06:32:22): attach
+scheduled 52 tests by 06:35:31 (0 "No leads"). Boot campaign-audit
+ran 06:32:49–06:36:41, boot health 429-skipped at 06:36:01, boot
+pool ran 06:41–06:43, and the 06:45 health cron 429-skipped again.
+`health-pass.lastOkAt` stayed `06:02:39`, so the board still showed
+`missing_canary=69` and `no_placement_test=2` after attach had
+already worked. D89 staggered those kicks to avoid a four-inventory
+stampede; they still race attach and poison the next 15-minute cron.
+
+**Tradeoff.** After a deploy, staffing waits for the next
+`CRON_HEALTH` (up to 15 minutes) and pool waits for
+`CRON_POOL_PROVISION` (up to 30 minutes). Accepted: a stale board
+for 15 minutes is better than no completed pass for an hour.
+
+**Guards.** no boot health/pool/audit kicks; inventory 429 retry;
+pool and hourly campaign-check skip health; scan logs uncovered
+ids; owner-intent D122.
+
+---
+
+## D123 — State placement marks cover when enrich omits campaign_id
+
+**Decision.** `testedCampaignCoverage` treats a state `testIds`
+mark as coverage when that id is a living stoppable auto test
+and either `campaignIdOf(test)` is this campaign (D121) **or**
+the living test has no campaign_id (enrich missed it). A living
+test whose campaign_id is a different campaign still does not
+cover.
+
+**Why.** Live 2026-08-26 07:19: campaign-check stamped
+`no_placement_test` on `#3847841` / `#3847842` / `#3847848`
+while the scanner reported `eligible: 1` and created a test
+for a different campaign. `enrichCampaignIds` walks ~300 tests
+and swallows 429s, so the two callers see different
+`campaign_id` sets and disagree. The original leftovers
+`#3847844` / `#3847845` did get tests (519653 / 519654).
+
+**Tradeoff.** Two campaigns that stored the same test id while
+enrich is blank would both look covered. Accepted: we only
+write a test id onto the campaign we created it for.
+
+**Guards.** livingTestIds + missing campaign_id; owner-intent D123.

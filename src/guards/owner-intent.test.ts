@@ -2871,22 +2871,6 @@ describe("owner intent — D89 leftover canon holes", () => {
     );
     assert.match(
       index,
-      /3 \* 60_000/,
-      stop(
-        "Health boot-kicks three minutes after deploy, not immediately (D89).",
-        "index.ts lost the staggered health boot kick.",
-      ),
-    );
-    assert.match(
-      index,
-      /8 \* 60_000/,
-      stop(
-        "Pool boot-kicks eight minutes after deploy (D89).",
-        "index.ts lost the staggered pool boot kick.",
-      ),
-    );
-    assert.match(
-      index,
       /copyCanary\.attach\(\)/,
       stop(
         "Canary attach runs after adopt, not only inside health (D89).",
@@ -3348,6 +3332,112 @@ describe("owner intent — D121 placement state marks match campaign id", () => 
       stop(
         "A living test on another campaign does not cover this one (D121).",
         "testedCampaignCoverage still treats any living testId as coverage.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D122 no Smartlead boot kicks except attach", () => {
+  it("D122: deploy starts attach only; health inventory retries 429", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    const inventory = await readFile(
+      new URL("../services/inventory.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      index,
+      /void runHealth\(\)\.catch\(\(error\) => \{\s*console\.error\("\[health\] Boot kick failed"/,
+      stop(
+        "Health does not boot-kick after deploy (D122).",
+        "index.ts still starts a health pass on a boot timer.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /void runPoolProvision\(\)\.catch\(\(error\) => \{\s*console\.error\("\[pool-provision\] Boot kick failed"/,
+      stop(
+        "Pool does not boot-kick after deploy (D122).",
+        "index.ts still starts pool provision on a boot timer.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /\[boot\] campaign audit failed/,
+      stop(
+        "Campaign-audit does not run at listen (D122).",
+        "index.ts still boots a Smartlead campaign-audit.",
+      ),
+    );
+    assert.match(
+      index,
+      /reason: "health-running"/,
+      stop(
+        "Pool cron yields while a health pass is in flight (D122).",
+        "runPoolProvision no longer skips when healthInFlight is set.",
+      ),
+    );
+    assert.match(
+      index,
+      /Health pass running — skipping overlapping hourly sweep/,
+      stop(
+        "Hourly campaign-check yields while a health pass is in flight (D122).",
+        "The :00 campaign-check cron still overlaps health's inventory.",
+      ),
+    );
+    assert.match(
+      inventory,
+      /isSmartleadRateLimit/,
+      stop(
+        "Inventory retries a Smartlead 429 (D122).",
+        "inventory.ts lost the rate-limit detector.",
+      ),
+    );
+    assert.match(
+      inventory,
+      /INVENTORY_429_ATTEMPTS/,
+      stop(
+        "Inventory retries a 429 three times (D122).",
+        "fetchInventory no longer retries rate limits.",
+      ),
+    );
+    const scanner = await readFile(
+      new URL("../services/campaignScanner.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      scanner,
+      /Uncovered live campaigns=/,
+      stop(
+        "A placement scan names the uncovered live campaigns (D122).",
+        "campaignScanner.ts no longer logs uncovered candidate ids.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D123 state marks cover when enrich omits campaign_id", () => {
+  it("D123: a living test with no campaign_id still covers the stored campaign", async () => {
+    const coverage = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/placementCoverage.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      coverage,
+      /livingTestIds/,
+      stop(
+        "State marks still count when enrich omits campaign_id (D123).",
+        "testedCampaignCoverage no longer tracks living test ids without a campaign id.",
+      ),
+    );
+    assert.match(
+      coverage,
+      /livingCid === undefined && livingTestIds\.has\(key\)/,
+      stop(
+        "A living test with no campaign_id covers the campaign we stored it on (D123).",
+        "testedCampaignCoverage ignores state marks unless enrich returned a campaign id.",
       ),
     );
   });

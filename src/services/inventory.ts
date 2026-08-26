@@ -26,23 +26,55 @@ export interface InventorySnapshot {
   fetchedAt: number;
 }
 
+export const INVENTORY_429_ATTEMPTS = 3;
+export const INVENTORY_429_DELAY_MS = 30_000;
+
+export function isSmartleadRateLimit(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b429\b|rate limit/i.test(message);
+}
+
 export async function fetchInventory(
   smartlead: Pick<SmartleadClient, "listCampaigns" | "listAllEmailAccounts"> &
     Partial<Pick<SmartleadClient, "listClients">>,
+  opts?: {
+    retryDelayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  },
 ): Promise<InventorySnapshot> {
-  const [campaigns, accounts, clients] = await Promise.all([
-    smartlead.listCampaigns(),
-    smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-    typeof smartlead.listClients === "function"
-      ? smartlead.listClients().catch(() => [] as SmartleadClientRecord[])
-      : Promise.resolve([] as SmartleadClientRecord[]),
-  ]);
-  return {
-    campaigns: campaigns as SmartleadCampaign[],
-    accounts: accounts as SmartleadAccountWithCampaigns[],
-    clients,
-    fetchedAt: Date.now(),
-  };
+  const attempts = INVENTORY_429_ATTEMPTS;
+  const delayMs = opts?.retryDelayMs ?? INVENTORY_429_DELAY_MS;
+  const sleep =
+    opts?.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const [campaigns, accounts, clients] = await Promise.all([
+        smartlead.listCampaigns(),
+        smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
+        typeof smartlead.listClients === "function"
+          ? smartlead.listClients().catch(() => [] as SmartleadClientRecord[])
+          : Promise.resolve([] as SmartleadClientRecord[]),
+      ]);
+      return {
+        campaigns: campaigns as SmartleadCampaign[],
+        accounts: accounts as SmartleadAccountWithCampaigns[],
+        clients,
+        fetchedAt: Date.now(),
+      };
+    } catch (error) {
+      lastError = error;
+      if (!isSmartleadRateLimit(error) || attempt === attempts) {
+        throw error;
+      }
+      console.warn(
+        `[inventory] ${error instanceof Error ? error.message : String(error)} — retry ${attempt}/${attempts - 1} in ${delayMs}ms`,
+      );
+      await sleep(delayMs);
+    }
+  }
+  throw lastError;
 }
 
 /** Keep the in-pass snapshot truthful after a successful campaign add. */

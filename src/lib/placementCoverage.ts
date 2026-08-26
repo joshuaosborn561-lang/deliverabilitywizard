@@ -44,6 +44,7 @@ export function testedCampaignCoverage(
   testedCampaigns: Record<string, TestedCampaignRecord | undefined>,
 ): Set<string> {
   const covered = campaignsWithActiveAutos(tests);
+  const livingTestIds = stoppableAutoTestIds(tests);
   const livingCampaignByTestId = new Map<string, string>();
   for (const test of tests) {
     if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
@@ -56,10 +57,20 @@ export function testedCampaignCoverage(
     // D121 — a living test for a *different* campaign does not cover this one.
     // Live 2026-08-26: scanner skipped #3847844/#3847845 (eligible=0) while
     // campaign-check still stamped no_placement_test.
+    // D123 — enrichCampaignIds 429s mid-list (~300 tests). A living id
+    // with no campaign_id still covers the campaign we stored it on, so
+    // check and scan do not disagree. A living id whose campaign_id is
+    // someone else still does not cover.
     if (
-      record.testIds.some(
-        (id) => livingCampaignByTestId.get(String(id)) === String(campaignId),
-      )
+      record.testIds.some((id) => {
+        // D121 — keep this exact match; a sibling's living test is not coverage.
+        if (livingCampaignByTestId.get(String(id)) === String(campaignId)) {
+          return true;
+        }
+        const key = String(id);
+        const livingCid = livingCampaignByTestId.get(key);
+        return livingCid === undefined && livingTestIds.has(key);
+      })
     ) {
       covered.add(campaignId);
     }

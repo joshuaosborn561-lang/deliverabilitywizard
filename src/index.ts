@@ -256,6 +256,12 @@ async function main(): Promise<void> {
       );
       return { skipped: true as const, reason: "manual-rotation-active" };
     }
+    if (healthInFlight) {
+      console.log(
+        "[pool-provision] Health pass running — skipping overlapping trigger",
+      );
+      return { skipped: true as const, reason: "health-running" };
+    }
     if (poolInFlight) {
       console.log("[pool-provision] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
@@ -1110,6 +1116,12 @@ async function main(): Promise<void> {
 
   if (config.enableCampaignCheck) {
     cron.schedule(config.cronCampaignCheck, () => {
+      if (healthInFlight) {
+        console.log(
+          "[campaign-check] Health pass running — skipping overlapping hourly sweep",
+        );
+        return;
+      }
       void campaignCheck.run({ mode: "hourly" }).catch((error) => {
         console.error("[campaign-check] Unhandled cron error", error);
         feedBugRemediator("campaign-check-cron", error);
@@ -1124,13 +1136,10 @@ async function main(): Promise<void> {
         feedBugRemediator("health-cron", error);
       });
     });
-    // D89 — boot kicks are staggered so a deploy does not stampede
-    // Smartlead (four overlapping inventory fetches was the 429).
-    setTimeout(() => {
-      void runHealth().catch((error) => {
-        console.error("[health] Boot kick failed", error);
-      });
-    }, 3 * 60_000);
+    // D122 — no boot health. D89 staggered it three minutes after
+    // listen; attach (90s) plus that kick still 429'd inventory
+    // (live 2026-08-26 D121: attach ended 06:35:31, boot health
+    // skipped 06:36:01). The 15-minute cron is soon enough.
   }
 
   if (config.enableCampaignBounceAutostop) {
@@ -1140,8 +1149,8 @@ async function main(): Promise<void> {
         feedBugRemediator("bounce-autostop-cron", error);
       });
     });
-    // No boot kick — the 10-minute cron is soon enough and the first
-    // minutes after deploy belong to health / canary attach.
+    // No boot kick — the 10-minute cron is soon enough. The first
+    // minutes after deploy belong to canary attach (D122).
   }
 
   if (config.enablePoolProvisioner) {
@@ -1150,11 +1159,9 @@ async function main(): Promise<void> {
         console.error("[pool-provision] Unhandled cron error", error);
       });
     });
-    setTimeout(() => {
-      void runPoolProvision().catch((error) => {
-        console.error("[pool-provision] Boot kick failed", error);
-      });
-    }, 8 * 60_000);
+    // D122 — no boot pool. The eight-minute kick (06:41–06:43)
+    // starved the 06:45 health cron. CRON_POOL_PROVISION every
+    // 30 minutes is enough.
   }
 
   if (config.enableAccountReconnect) {
@@ -2241,17 +2248,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
-    // Read-only campaign audit at boot; staffing mutations are owned by the
-    // health cron (boot kick + CRON_HEALTH) so we do not double-write.
+    // D122 — no boot campaign-audit. It lists campaigns + accounts +
+    // tests + sequences and raced attach (06:32:49–06:36:41 vs attach
+    // 06:34–06:35). Read-only audit stays on the 6-hour monitor.
     if (secretsReady) {
-      void (async () => {
-        try {
-          await manualRotation.recoverStaleReservations();
-          await campaignAudit.run(config.minCampaignSenders);
-        } catch (error) {
-          console.warn("[boot] campaign audit failed", error);
-        }
-      })();
+      void manualRotation.recoverStaleReservations().catch((error) => {
+        console.warn("[boot] stale reservation recover failed", error);
+      });
     }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,

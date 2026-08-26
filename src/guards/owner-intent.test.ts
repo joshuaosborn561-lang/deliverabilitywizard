@@ -3327,6 +3327,44 @@ describe("owner intent — D117 seed a real canary inbox then pause", () => {
   });
 });
 
+describe("owner intent — D120 unique shell seed, not upload_count-only", () => {
+  it("D120: each shell gets its own seed address; other-campaign skip is not success", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lib = await readFile(
+      new URL("../lib/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    const shell = await readFile(
+      new URL("../services/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      lib,
+      /canaryShellSeedEmail/,
+      stop(
+        "Each canary shell seeds a unique instrumentation address (D120).",
+        "canaryShellSeedEmail is gone.",
+      ),
+    );
+    assert.match(
+      lib,
+      /existingLeadsInOtherCampaigns/,
+      stop(
+        "A lead that only exists on another campaign is not success (D120).",
+        "shellLeadImportAccepted no longer mentions existingLeadsInOtherCampaigns.",
+      ),
+    );
+    assert.match(
+      shell,
+      /canaryShellSeedEmail\(campaign\.id\)/,
+      stop(
+        "The default seed is per-shell, not one shared inbox (D120).",
+        "canaryShell.ts still uses one shared CANARY_SHELL_SEED_EMAIL.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D119 seed shells when SmartDelivery list fails", () => {
   it("D119: list is retried; list-fail still seeds the shell and does not schedule", async () => {
     const { readFile } = await import("node:fs/promises");

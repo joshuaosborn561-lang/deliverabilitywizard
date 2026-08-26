@@ -5,25 +5,39 @@ import { isPodControlShellCampaign } from "./podControlShell.js";
 export const CANARY_SHELL_PREFIX = "Canary shell:";
 
 /**
- * D118 — one dummy contact so SmartDelivery will schedule. Must not be a
- * Smartlead sending account (D117's fleet inbox was skipped). Shell stays
- * PAUSED. Not a client list (D52).
+ * D118/D120 — dummy contacts so SmartDelivery will schedule. Must not be a
+ * Smartlead sending account. Each shell gets its own address (D120):
+ * Smartlead will not add the same email to a second campaign even with
+ * ignore_duplicate_leads_in_other_campaign. Shell stays PAUSED. Not a
+ * client list (D52).
  */
 export const CANARY_SHELL_SEED_EMAIL =
   "canary.instrumentation@getcrosslaunchco.info";
 
+export function canaryShellSeedEmail(campaignId: number): string {
+  return `canary.instrumentation.${campaignId}@getcrosslaunchco.info`;
+}
+
+function mapSize(value: unknown): number {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
+  return Object.keys(value as Record<string, unknown>).length;
+}
+
 export function shellLeadImportAccepted(result: unknown): boolean {
   if (!result || typeof result !== "object") return false;
   const row = result as Record<string, unknown>;
-  const counts = [
-    row.added_count,
-    row.upload_count,
-    row.already_added_to_campaign,
-    row.total_leads,
-    row.total,
-  ];
-  if (counts.some((value) => Number(value) > 0)) return true;
-  return Array.isArray(row.lead_ids) && row.lead_ids.length > 0;
+  const leadMap =
+    row.emailToLeadIdMap && typeof row.emailToLeadIdMap === "object"
+      ? (row.emailToLeadIdMap as Record<string, unknown>)
+      : null;
+  if (mapSize(leadMap?.newlyAddedLeads) > 0) return true;
+  if (mapSize(leadMap?.existingLeads) > 0) return true;
+  if (Number(row.already_added_to_campaign) > 0) return true;
+  if (Number(row.added_count) > 0) return true;
+  if (Array.isArray(row.lead_ids) && row.lead_ids.length > 0) return true;
+  // D120 — upload_count=1 with only existingLeadsInOtherCampaigns is not
+  // a lead on this shell. Live 2026-08-26 after #130.
+  return false;
 }
 
 export function shellLeadCount(listed: unknown): number {

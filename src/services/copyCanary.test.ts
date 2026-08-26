@@ -542,7 +542,12 @@ describe("CopyCanaryService", () => {
         leads: Array<{ email: string }>,
       ) => {
         seeded.push(leads[0]!.email);
-        return { upload_count: 1 };
+        return {
+          upload_count: 1,
+          emailToLeadIdMap: {
+            newlyAddedLeads: { [leads[0]!.email]: "1" },
+          },
+        };
       },
     });
 
@@ -565,7 +570,7 @@ describe("CopyCanaryService", () => {
     ).attach({ dryRun: false });
 
     assert.equal(listCalls, 3, "listTests is retried before giving up");
-    assert.deepEqual(seeded, ["canary.instrumentation@getcrosslaunchco.info"]);
+    assert.deepEqual(seeded, ["canary.instrumentation.104@getcrosslaunchco.info"]);
     assert.equal(created, 0, "D98: list failure still must not spawn a test");
     assert.equal(result.testsEnsured, 0);
     assert.equal(

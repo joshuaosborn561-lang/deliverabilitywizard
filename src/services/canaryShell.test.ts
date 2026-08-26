@@ -32,7 +32,16 @@ describe("ensureCanaryShell", () => {
           leads: Array<{ email: string }>,
         ) => {
           seeded.push({ campaignId, email: leads[0]!.email });
-          return { upload_count: 1, already_added_to_campaign: 0, added_count: 0 };
+          return {
+            upload_count: 1,
+            already_added_to_campaign: 0,
+            added_count: 0,
+            emailToLeadIdMap: {
+              newlyAddedLeads: { [leads[0]!.email]: "1" },
+              existingLeads: {},
+              existingLeadsInOtherCampaigns: {},
+            },
+          };
         },
         getCampaignLeads: async () => ({ total_leads: 0, data: [] }),
         getCampaignEmailAccounts: async () => [],
@@ -76,7 +85,12 @@ describe("ensureCanaryShell", () => {
           leads: Array<{ email: string }>,
         ) => {
           seeded.push(leads[0]!.email);
-          return { upload_count: 1 };
+          return {
+            upload_count: 1,
+            emailToLeadIdMap: {
+              newlyAddedLeads: { [leads[0]!.email]: "1" },
+            },
+          };
         },
         getCampaignLeads: async () => ({ total: 0, leads: [] }),
         getCampaignEmailAccounts: async () => [],
@@ -92,7 +106,7 @@ describe("ensureCanaryShell", () => {
       senderAccountIds: [11],
       dryRun: false,
     });
-    assert.deepEqual(seeded, ["canary.instrumentation@getcrosslaunchco.info"]);
+    assert.deepEqual(seeded, ["canary.instrumentation.104@getcrosslaunchco.info"]);
   });
 
   it("D118: fails loud when import and GET both show no leads", async () => {

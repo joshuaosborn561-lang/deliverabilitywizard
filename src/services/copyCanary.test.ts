@@ -17,6 +17,36 @@ function slackStub(requested: Array<string> = []) {
   } as unknown as SlackClient;
 }
 
+function shellSmartlead(extra: Record<string, unknown> = {}) {
+  const createdShells: string[] = [];
+  const added: Array<{ campaignId: number; ids: number[] }> = [];
+  return {
+    createdShells,
+    added,
+    api: {
+      createCampaign: async (name: string) => {
+        createdShells.push(name);
+        return { id: 900 + createdShells.length, name, status: "PAUSED" };
+      },
+      getCampaignSequences: async () => [
+        {
+          id: 77,
+          seq_number: 1,
+          subject: "Quick look",
+          email_body: "<div>Campaign copy</div>",
+        },
+      ],
+      updateCampaignSequences: async () => undefined,
+      updateCampaignStatus: async () => undefined,
+      getCampaignEmailAccounts: async () => [],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        added.push({ campaignId, ids });
+      },
+      ...extra,
+    },
+  };
+}
+
 function seedFleet(state: StateStore): void {
   state.setCopyCanaryFleet({
     status: "ready",
@@ -49,14 +79,13 @@ function seedFleet(state: StateStore): void {
 }
 
 describe("CopyCanaryService", () => {
-  it("schedules campaign-copy tests and never adds canaries to campaigns", async () => {
+  it("schedules campaign-copy tests on paused shells, never live campaigns", async () => {
     const state = new StateStore(
       `/tmp/copy-canary-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
     seedFleet(state);
 
-    const added: number[] = [];
     const removed: Array<{ campaignId: number; ids: number[] }> = [];
     const created: Array<{
       name?: string;
@@ -65,38 +94,27 @@ describe("CopyCanaryService", () => {
       sequenceMappingId?: number;
       sequence?: unknown;
     }> = [];
-    const smartlead = {
+    const shells = shellSmartlead({
       listCampaigns: async () => [
         { id: 4, name: "Live A", status: "ACTIVE", client_id: 2 },
         { id: 5, name: "Live B", status: "ACTIVE", client_id: 9 },
+        { id: 104, name: "Canary shell: #4 Live A", status: "PAUSED" },
+        { id: 105, name: "Canary shell: #5 Live B", status: "PAUSED" },
       ],
       listAllEmailAccounts: async () => [
         {
           id: 11,
           from_email: "g1@canary-g.info",
           type: "GMAIL",
-          campaign_ids: [4],
+          campaign_ids: [4, 104],
         },
         {
           id: 12,
           from_email: "o1@canary-o.info",
           type: "OUTLOOK",
-          campaign_ids: [],
+          campaign_ids: [104],
         },
       ],
-      getCampaignSequences: async () => [
-        {
-          id: 1,
-          subject: "Quick look",
-          email_body: "<div>Campaign copy</div>",
-        },
-      ],
-      addEmailAccountsToCampaign: async (
-        _campaignId: number,
-        ids: number[],
-      ) => {
-        added.push(...ids);
-      },
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
         ids: number[],
@@ -105,7 +123,8 @@ describe("CopyCanaryService", () => {
       },
       updateEmailAccount: async () => undefined,
       configureWarmup: async () => undefined,
-    } as unknown as SmartleadClient;
+    });
+    const smartlead = shells.api as unknown as SmartleadClient;
     const smartDelivery = {
       listTests: async () => [],
       resolveProviderIds: async () => [2, 20],
@@ -143,21 +162,28 @@ describe("CopyCanaryService", () => {
     );
 
     const result = await service.attach({ dryRun: false });
-    assert.deepEqual(added, []);
+    assert.deepEqual(
+      shells.added.map((row) => row.campaignId).sort((a, b) => a - b),
+      [104, 105],
+    );
+    assert.ok(
+      shells.added.every((row) => row.campaignId !== 4 && row.campaignId !== 5),
+      "canaries must not be added to live campaigns (D55/D114)",
+    );
     assert.deepEqual(removed, [{ campaignId: 4, ids: [11] }]);
     assert.equal(created.length, 2);
     assert.ok(created.every((row) => row.name?.startsWith("Canary copy:")));
-    assert.ok(
-      created.every((row) => row.campaignId === undefined),
-      "canary schedule omits campaign_id so off-campaign senders are allowed (D113)",
+    assert.deepEqual(
+      created.map((row) => row.campaignId).sort((a, b) => (a ?? 0) - (b ?? 0)),
+      [104, 105],
     );
     assert.ok(
-      created.every((row) => row.sequenceMappingId === undefined),
-      "canary schedule omits sequence_mapping_id (D113)",
+      created.every((row) => row.sequenceMappingId === 77),
+      "canary schedule sends the shell sequence_mapping_id (D114)",
     );
     assert.ok(
-      created.every((row) => row.sequence != null),
-      "canary schedule sends the campaign-copy sequence body (D113)",
+      created.every((row) => row.sequence == null),
+      "canary schedule omits sequence when the shell mapping is set (D112/D114)",
     );
     assert.deepEqual(created[0]?.senders.sort(), [
       "g1@canary-g.info",
@@ -279,9 +305,10 @@ describe("CopyCanaryService", () => {
     });
 
     const created: string[][] = [];
-    const smartlead = {
+    const shells = shellSmartlead({
       listCampaigns: async () => [
         { id: 5, name: "Live", status: "ACTIVE", client_id: 2 },
+        { id: 105, name: "Canary shell: #5 Live", status: "PAUSED" },
       ],
       listAllEmailAccounts: async () => [
         {
@@ -303,16 +330,17 @@ describe("CopyCanaryService", () => {
           campaign_ids: [],
         },
       ],
-      getCampaignSequences: async () => [
-        { id: 1, subject: "Hi", email_body: "Body" },
-      ],
-      addEmailAccountsToCampaign: async () => {
-        throw new Error("must not add canaries to a campaign");
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        if (campaignId === 5) {
+          throw new Error("must not add canaries to a live campaign");
+        }
+        shells.added.push({ campaignId, ids });
       },
       removeEmailAccountsFromCampaign: async () => undefined,
       updateEmailAccount: async () => undefined,
       configureWarmup: async () => undefined,
-    } as unknown as SmartleadClient;
+    });
+    const smartlead = shells.api as unknown as SmartleadClient;
 
     const service = new CopyCanaryService(
       loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),
@@ -339,42 +367,49 @@ describe("CopyCanaryService", () => {
     assert.ok(!created[0]?.includes("hot@crosslaunchco.com"));
   });
 
-  it("D113: a sequence with no mapping id still schedules off-campaign copy", async () => {
+  it("D114: live copy with no mapping still schedules against the shell mapping", async () => {
     const state = new StateStore(
       `/tmp/copy-canary-nomap-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
     seedFleet(state);
-    const created: Array<{ campaignId?: number; sequence?: unknown }> = [];
-    const smartlead = {
+    const created: Array<{
+      campaignId?: number;
+      sequenceMappingId?: number;
+      sequence?: unknown;
+    }> = [];
+    const shells = shellSmartlead({
       listCampaigns: async () => [
         { id: 5, name: "Live", status: "ACTIVE", client_id: 2 },
+        { id: 105, name: "Canary shell: #5 Live", status: "PAUSED" },
       ],
       listAllEmailAccounts: async () => [
         { id: 11, from_email: "g1@canary-g.info", type: "GMAIL", campaign_ids: [] },
         { id: 12, from_email: "o1@canary-o.info", type: "OUTLOOK", campaign_ids: [] },
       ],
-      getCampaignSequences: async () => [
-        { subject: "Hi", email_body: "Body" },
-      ],
-      addEmailAccountsToCampaign: async () => undefined,
+      getCampaignSequences: async (campaignId: number) => {
+        if (campaignId === 5) return [{ subject: "Hi", email_body: "Body" }];
+        return [{ id: 77, seq_number: 1, subject: "Hi", email_body: "Body" }];
+      },
       removeEmailAccountsFromCampaign: async () => undefined,
       updateEmailAccount: async () => undefined,
       configureWarmup: async () => undefined,
-    } as unknown as SmartleadClient;
+    });
 
     const result = await new CopyCanaryService(
       loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),
-      smartlead,
+      shells.api as unknown as SmartleadClient,
       {
         listTests: async () => [],
         resolveProviderIds: async () => [2, 20],
         createAutomatedPlacement: async (payload: {
           campaign_id?: number;
+          sequence_mapping_id?: number;
           sequence?: unknown;
         }) => {
           created.push({
             campaignId: payload.campaign_id,
+            sequenceMappingId: payload.sequence_mapping_id,
             sequence: payload.sequence,
           });
           return { id: "t-nomap" };
@@ -385,8 +420,9 @@ describe("CopyCanaryService", () => {
     ).attach({ dryRun: false });
 
     assert.equal(result.testsEnsured, 1);
-    assert.equal(created[0]?.campaignId, undefined);
-    assert.ok(created[0]?.sequence);
+    assert.equal(created[0]?.campaignId, 105);
+    assert.equal(created[0]?.sequenceMappingId, 77);
+    assert.equal(created[0]?.sequence, undefined);
   });
 
   it("D98: ensureCopyTest fails loudly when no provider ids resolve", async () => {
@@ -396,22 +432,20 @@ describe("CopyCanaryService", () => {
     await state.load();
     seedFleet(state);
     const created: unknown[] = [];
-    const smartlead = {
+    const shells = shellSmartlead({
       listCampaigns: async () => [
         { id: 5, name: "Live", status: "ACTIVE", client_id: 2 },
+        { id: 105, name: "Canary shell: #5 Live", status: "PAUSED" },
       ],
       listAllEmailAccounts: async () => [
         { id: 11, from_email: "g1@canary-g.info", type: "GMAIL", campaign_ids: [] },
         { id: 12, from_email: "o1@canary-o.info", type: "OUTLOOK", campaign_ids: [] },
       ],
-      getCampaignSequences: async () => [
-        { id: 1, subject: "Hi", email_body: "Body" },
-      ],
-      addEmailAccountsToCampaign: async () => undefined,
       removeEmailAccountsFromCampaign: async () => undefined,
       updateEmailAccount: async () => undefined,
       configureWarmup: async () => undefined,
-    } as unknown as SmartleadClient;
+    });
+    const smartlead = shells.api as unknown as SmartleadClient;
 
     const result = await new CopyCanaryService(
       loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),

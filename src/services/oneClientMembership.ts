@@ -18,7 +18,7 @@ import { pocClientId } from "../lib/pocClient.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { StateStore } from "../state/store.js";
@@ -105,7 +105,7 @@ export class OneClientMembershipService {
     const activeOwnerCampaignIds = (campaigns as SmartleadCampaign[])
       .filter((campaign) => {
         if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
-        if (isPodControlShellCampaign(campaign)) return false;
+        if (isAnyShellCampaign(campaign)) return false;
         const client =
           typeof campaign.client_id === "number"
             ? clientsById.get(campaign.client_id)
@@ -133,7 +133,7 @@ export class OneClientMembershipService {
           campaignId: id,
           clientId:
             typeof campaign?.client_id === "number" ? campaign.client_id : null,
-          shell: campaign ? isPodControlShellCampaign(campaign) : false,
+          shell: campaign ? isAnyShellCampaign(campaign) : false,
         };
       });
       if (!memberships.length) continue;

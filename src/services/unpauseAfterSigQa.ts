@@ -14,7 +14,7 @@ import {
 } from "../lib/clientBrand.js";
 import { isPocClient } from "../lib/pocClient.js";
 import { isExcluded } from "./campaignTopUp.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import { sleep } from "../lib/http.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -69,7 +69,7 @@ export class UnpauseAfterSigQaService {
       if (status !== "PAUSED") continue;
       result.examined += 1;
       const name = String(campaign.name ?? campaign.id);
-      if (isPodControlShellCampaign(campaign)) {
+      if (isAnyShellCampaign(campaign)) {
         result.blocked.push(`#${campaign.id} ${name}: shell stays paused`);
         continue;
       }

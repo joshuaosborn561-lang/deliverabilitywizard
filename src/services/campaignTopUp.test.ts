@@ -37,6 +37,13 @@ describe("isExcluded", () => {
     );
   });
 
+  it("always excludes a paused canary shell (D114)", () => {
+    assert.equal(
+      isExcluded({ id: 88, name: "Canary shell: #3479011 Parlay Sports Offer" }, []),
+      true,
+    );
+  });
+
   it("matches a name fragment case-insensitively", () => {
     assert.equal(isExcluded(msrs, ["msrs"]), true);
     assert.equal(isExcluded(msrs, ["MSRS"]), true);

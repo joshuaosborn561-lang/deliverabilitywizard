@@ -9,7 +9,7 @@ import {
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import {
   assignClientCohorts,
@@ -70,7 +70,7 @@ export function isExcludedOnlyMembership(
     .filter((campaign): campaign is { id: number; name?: string | null } =>
       Boolean(campaign),
     )
-    .filter((campaign) => !isPodControlShellCampaign(campaign));
+    .filter((campaign) => !isAnyShellCampaign(campaign));
   return (
     known.length > 0 &&
     known.every((campaign) => isExcluded(campaign, excluded))

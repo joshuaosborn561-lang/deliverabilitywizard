@@ -2,7 +2,7 @@ import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { clientDisplayName } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { isOldClientCampaign } from "./oldClientTeardown.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -63,7 +63,7 @@ export class MorningActivateService {
       if (!matchesMorningBook(`${name} ${clientName}`, this.config.morningActivatePatterns)) {
         continue;
       }
-      if (isPodControlShellCampaign(campaign)) {
+      if (isAnyShellCampaign(campaign)) {
         result.blocked.push(`#${campaign.id} ${name}: shell stays paused`);
         continue;
       }

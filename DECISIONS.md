@@ -2514,3 +2514,40 @@ cannot join it.
 Accepted: the body is the campaign copy we loaded.
 
 **Guards.** offCampaignSenders; owner-intent D113.
+
+---
+
+## D114 — Canary tests hang on a paused per-campaign shell
+
+**Decision.** Copy-canary SmartDelivery tests hang on a **paused
+Canary shell** per ACTIVE live campaign — the same pattern as the
+pod-control shell (D56). The shell's sequence is that campaign's
+live copy. The dedicated fleet sits on the shell only. The
+schedule POST sends the **shell** `campaign_id` +
+`sequence_mapping_id` and omits `sequence` (D112). The test name
+stays `Canary copy: #{liveId}` so isolation still keys off the
+live campaign.
+
+Canaries still never sit on a **live** client campaign and never
+send to leads (D55). Morning START, top-up, fan-out, bounce, and
+the yes/no board skip canary shells so a name like
+`Canary shell: #3781910 Goliath…` cannot be started.
+
+This supersedes D113's "omit campaign_id" POST. D113's reason
+(do not bind senders to the live campaign) still stands.
+
+**Why.** Live 2026-08-26 after #125: every attach died on
+`"campaign_id" is required`. Sending the live `campaign_id`
+requires those senders to be members
+(`Sender email accounts … not used in the campaign`). Custom
+`sequence` without `campaign_id` is rejected. The schedule API
+needs a campaign the canaries actually sit on, and that cannot
+be a live client campaign.
+
+**Tradeoff.** One extra paused Smartlead campaign per ACTIVE
+campaign. Accepted: that is what the schedule API requires, and
+D56 already proved the shell pattern.
+
+**Guards.** isCanaryShellCampaign / isAnyShellCampaign;
+ensureCanaryShell; copyCanary never adds to a live campaign;
+owner-intent D114.

@@ -3,7 +3,7 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 400;
 
@@ -50,7 +50,7 @@ export class OldClientTeardownService {
     }
     for (const campaign of targets) {
       const name = String(campaign.name ?? campaign.id);
-      if (isPodControlShellCampaign(campaign)) continue;
+      if (isAnyShellCampaign(campaign)) continue;
       try {
         if (!dryRun) {
           await this.smartlead.deleteCampaign(campaign.id);

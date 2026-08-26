@@ -25,6 +25,7 @@ export const CAMPAIGN_CHECK_KINDS = [
   "under_warmed",
   "mailbox_gap",
   "mailbox_volume",
+  "campaign_min_gap",
   "below_launch_bar",
 ] as const;
 

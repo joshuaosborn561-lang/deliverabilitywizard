@@ -919,3 +919,114 @@ describe("CampaignCheckService", () => {
     );
   });
 });
+
+describe("D138 — campaign-level min gap is converged, not assumed", () => {
+  const mkSl = (
+    gap: number | undefined,
+    status: string,
+    writes: Array<[number, Record<string, unknown>]>,
+  ) =>
+    ({
+      listCampaigns: async () => [
+        {
+          id: 900,
+          name: "Goliath Fresh Hand-Made",
+          status,
+          client_id: 548611,
+          min_time_btwn_emails: gap,
+        },
+      ],
+      listAllEmailAccounts: async () => [],
+      listClients: async () => [],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+      updateCampaignSettings: async (
+        id: number,
+        body: Record<string, unknown>,
+      ) => {
+        writes.push([id, body]);
+      },
+    }) as unknown as SmartleadClient;
+
+  it("an ACTIVE campaign below the floor is written back to 10", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: Array<[number, Record<string, unknown>]> = [];
+    const service = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl(3, "ACTIVE", writes),
+      delivery(),
+      state,
+    );
+    const result = await service.run({ mode: "all" });
+    assert.deepEqual(writes, [[900, { min_time_btwn_emails: 10 }]]);
+    const row = result.findings.find((r) => r.campaignId === 900);
+    assert.ok(
+      !(row?.findings ?? []).some((f) => f.kind === "campaign_min_gap"),
+      "a successful converge leaves no finding",
+    );
+  });
+
+  it("a campaign already at or above the floor is left alone", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: Array<[number, Record<string, unknown>]> = [];
+    const service = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl(20, "ACTIVE", writes),
+      delivery(),
+      state,
+    );
+    await service.run({ mode: "all" });
+    assert.deepEqual(writes, []);
+  });
+
+  it("a paused campaign is not written; a failed write keeps the finding", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: Array<[number, Record<string, unknown>]> = [];
+    const paused = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl(3, "PAUSED", writes),
+      delivery(),
+      state,
+    );
+    await paused.run({ mode: "all" });
+    assert.deepEqual(writes, [], "paused campaigns keep their settings");
+
+    const state2 = new StateStore(stateFile());
+    await state2.load();
+    const failing = {
+      listCampaigns: async () => [
+        {
+          id: 901,
+          name: "Goliath Broken Write",
+          status: "ACTIVE",
+          client_id: 548611,
+          min_time_btwn_emails: 1,
+        },
+      ],
+      listAllEmailAccounts: async () => [],
+      listClients: async () => [],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+      updateCampaignSettings: async () => {
+        throw new Error("HTTP 500");
+      },
+    } as unknown as SmartleadClient;
+    const service = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      failing,
+      delivery(),
+      state2,
+    );
+    const result = await service.run({ mode: "all" });
+    const row = result.findings.find((r) => r.campaignId === 901);
+    assert.ok(
+      (row?.findings ?? []).some((f) => f.kind === "campaign_min_gap"),
+      "the hole stays visible when the write fails",
+    );
+  });
+});

@@ -234,4 +234,48 @@ describe("ClientFanOutService", () => {
     assert.deepEqual(adds, [[2, [101]]]);
     assert.ok(result.skipped.some((row) => row.includes("spare@crosslaunchco.com")));
   });
+
+  it("D99: a BCP-owned inbox with no client_id still fans onto tagged BCP campaigns", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "BCP Healthcare Over-1k (No Team)", status: "ACTIVE", client_id: 9 },
+        { id: 2, name: "BCP Logistics Over-1k (No Team)", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 100,
+          from_email: "idle@boldercyperpartnerhub.info",
+          campaign_ids: [],
+          client_id: null,
+        },
+      ],
+      listClients: async () => [{ id: 9, name: "BCP" }],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const result = await new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        getHeldInbox: () => undefined,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+      } as unknown as StateStore,
+    ).run({ dryRun: false });
+
+    assert.deepEqual(
+      adds.map(([id]) => id).sort((a, b) => a - b),
+      [1, 2],
+    );
+    assert.equal(result.attached.length, 2);
+  });
 });

@@ -3121,6 +3121,33 @@ describe("owner intent — D95 signature Slack once per campaign", () => {
   });
 });
 
+describe("owner intent — D99 BCP short is a hole", () => {
+  it("D99: BCP-owned domains fan onto tagged BCP campaigns; held boxes do not inflate the floor", async () => {
+    const fan = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/clientFanOut.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      fan,
+      /groupIsBcp && isBcpOwnedDomain/,
+      stop(
+        "A BCP-owned inbox belongs on BCP campaigns even without client_id (D99).",
+        "clientFanOut.ts no longer treats BCP domains as BCP inventory on id:N groups.",
+      ),
+    );
+    const floor = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/clientStaffFloor.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      floor,
+      /getHeldInbox/,
+      stop(
+        "Held inboxes do not inflate the half-floor (D99).",
+        "countClientInboxesByKey counts HOLD-UNTIL boxes as sitting again.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D98 find a hole, fix it", () => {
   it("D98: leftover signatures write on health; canary attach resolves providers; list-fail does not invent holes", async () => {
     const check = await import("node:fs/promises").then((fs) =>

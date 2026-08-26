@@ -86,6 +86,9 @@ export class CampaignClientTagService {
     console.log(
       `[client-tag] examined=${result.examined} assigned=${result.assigned.length} skipped=${result.skipped.length}`,
     );
+    for (const line of result.skipped.slice(0, 12)) {
+      console.log(`[client-tag] skip ${line}`);
+    }
     return result;
   }
 }

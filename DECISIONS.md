@@ -2777,3 +2777,28 @@ enrich is blank would both look covered. Accepted: we only
 write a test id onto the campaign we created it for.
 
 **Guards.** livingTestIds + missing campaign_id; owner-intent D123.
+
+---
+
+## D124 — Force Smartlead bounce autopause off once
+
+**Decision.** One forced write of Smartlead `bounce_autopause_threshold`
+to **100** (off) on every living campaign (not a shell, not
+COMPLETED/STOPPED). The write GETs current settings and posts them
+back through `campaignSettingsWriteBody` so the Smartlead UI toggle
+actually updates. The force writes even when GET already says 100 —
+the D84 cache and a threshold-only POST have already disagreed with
+the UI. After that pass, D84 write-on-drift resumes. Do not START
+anyone (D40). Do not turn Smartlead autopause on (D80).
+
+**Why.** Josh (2026-08-26): "turn off autobounce in smartlead on all
+campaigns." The 14:40 bounce-autostop pass logged `smartleadOff=0`
+because D84's cache plus the 6-hour verify skipped every campaign.
+Autopause was still on in the Smartlead UI.
+
+**Tradeoff.** One extra GET+POST per living campaign on the force
+pass. Accepted: leaving the UI toggle on pauses campaigns on a
+handful of bounces — the reason D80 turned it off.
+
+**Guards.** `autopauseForceAllAt`; GET-echo via
+`campaignSettingsWriteBody` on autopause writes; owner-intent D124.

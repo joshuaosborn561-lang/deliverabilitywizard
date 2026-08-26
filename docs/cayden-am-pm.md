@@ -13,73 +13,69 @@ You are the eyeballs. The wizard already restaffs, writes leftover signatures, a
 ## Morning
 
 1. **Sending?**
-   - Live book is **ACTIVE**: Goliath, BCP, Peterson, Parlay, TechEvo.
-   - **Canary shells** and **Pod control shell** stay **PAUSED**.
-   - A campaign the wizard paused for bounce stays paused. Do not turn it back on.
+   Are the client campaigns actually on, and are the fake/test ones still off?
+   Live book is **ACTIVE**: Goliath, BCP, Peterson, Parlay, TechEvo. Canary shells and Pod control shell stay **PAUSED**. If the wizard paused one for bounce, leave it.
 
 2. **Staffed?**
-   - Each live campaign has senders on it (connected, not a handful).
-   - Empty or obviously thin → wait one health pass (15 min), then tell Josh.
+   Does each live campaign have enough mailboxes to send, or is it sitting on one or two?
+   Wait one health pass (15 min). Still empty or obviously thin → Josh.
 
 3. **Placement / spam?**
-   - Live campaigns inboxing **~80%+**.
-   - A new campaign does not go live under **85%**.
-   - Promo tab counts as a miss.
+   Are the emails landing in the inbox, or in spam / promo?
+   Live campaigns should be about **80%+** inbox. A new one does not go live under **85%**. Promo tab counts as a miss.
 
 4. **Canaries?**
-   - Each live campaign has a placement test running.
-   - Missing test → tell Josh if it is still missing after an hour.
+   Is there a seed test running so we can see inbox vs spam without guessing?
+   Each live campaign needs one living placement test. Still missing after an hour → Josh.
 
 5. **Signatures / copy?**
-   - From-name and signature are that client’s brand.
-   - No leftover `%signature%` in the email.
-   - No other client’s brand in the body.
+   Does the email look like it came from that client, not someone else?
+   From-name and signature are that client’s brand. No leftover `%signature%`. No other client’s name in the body.
 
 6. **Disconnects?**
-   - Red / disconnected mailboxes: reconnect in `/ops`.
-   - Still red after that → Josh.
+   Are any mailboxes logged out so they cannot send?
+   Reconnect red ones in `/ops`. Still red → Josh.
 
 7. **Slack?**
-   - Tap only a **copy swap** or **Add %signature%** if it is sitting there.
-   - Leave spend / retire / Allow generics for Josh.
+   Is there a button waiting that is yours, or Josh’s?
+   You may tap a **copy swap** or **Add %signature%**. Spend, retire, and Allow generics stay with Josh.
 
 ---
 
 ## Afternoon
 
 1. **EOD Slack**
-   - Read sends and spam % per client.
-   - Spam high on a live campaign → tell Josh. Do not start rotating senders by hand.
+   How much did we send today, and how much landed in spam?
+   Read sends and spam % per client. Spam high and staying high → Josh. Do not rotate senders by hand.
 
 2. **Paused?**
-   - Bounce-paused campaigns stay down.
-   - Something that should still be sending is paused for no bounce reason → tell Josh.
+   Is anything stopped that should still be sending — or is it stopped on purpose because it was bouncing?
+   Bounce-paused stays down. Paused for no bounce reason → Josh.
 
 3. **Drafts with leads?**
-   - A **DRAFT** sitting on a list that already has leads is stuck. Name it to Josh.
+   Is a campaign sitting in draft with a list already loaded, so it will never send?
+   A **DRAFT** with remaining leads is stuck. Name it to Josh.
 
 4. **Tomorrow**
-   - Campaigns that should send in the morning are still staffed.
-   - Anything launching tomorrow is at **85%+** inbox, or it waits.
+   Will the morning book actually be able to send, and is anything new good enough to launch?
+   Still staffed. Launching tomorrow needs **85%+** inbox or it waits.
 
 5. **Same eyeballs as morning**
-   - Shells still paused.
-   - Canaries still running.
-   - Signatures still that client’s brand.
-   - Slack buttons cleared or handed to Josh.
+   Did anything drift since you looked at 7am?
+   Shells still paused. Canaries still running. Signatures still that client. Slack buttons cleared or handed to Josh.
 
 ---
 
 ## What “good” looks like
 
-| Check | Good |
-|---|---|
-| Sending | Live book ACTIVE; shells PAUSED |
-| Staffed | Each live campaign has a real sender list, not 1–2 boxes |
-| Spam | Live ~80%+ inbox; launch 85%+ |
-| Canaries | One living test per live campaign |
-| Sigs | Name + that client’s brand; no `%signature%`; no foreign brand |
-| Bounce | Wizard paused it over 10% after 1k leads, or a bounce burst. Leave it. |
-| You | Reconnect. One confirmed rotation if `/ops` says every check passed. Copy-swap button only. |
+| Check | What it means | Good |
+|---|---|---|
+| Sending | Campaigns that should mail are on; test shells are off | Live book ACTIVE; shells PAUSED |
+| Staffed | Enough connected mailboxes to send | A real list, not 1–2 boxes |
+| Spam | Seed inboxes got the mail in Inbox, not Spam | Live ~80%+; launch 85%+ |
+| Canaries | A daily seed test is watching that campaign | One living test per live campaign |
+| Sigs | The email is signed as that client | Name + brand; no `%signature%`; no foreign brand |
+| Bounce | Too many bad addresses, so we stopped sending | Wizard paused it. Leave it. |
+| You | Fix the small stuff; escalate the rest | Reconnect. Copy-swap button only. |
 
 If it is already green, you are done. Do not keep clicking.

@@ -3297,6 +3297,30 @@ describe("owner intent — D114 canary tests hang on a paused shell", () => {
   });
 });
 
+describe("owner intent — D116 missing placement scans on that pass", () => {
+  it("D116: no_placement_test kicks scan-backfill without the hourly wait", async () => {
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /if \(missingTest\) \{\s*await stage\("scan-backfill"/,
+      stop(
+        "A missing placement test is fixed on that health pass (D116).",
+        "index.ts still waits 55 minutes before scan-backfill.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /missingTest && scanAgeMs >= 55/,
+      stop(
+        "The D84 hourly placement throttle is gone (D116).",
+        "scan-backfill is still gated on a 55-minute clock.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D115 canary shells get a dummy seed lead", () => {
   it("D115: only canary shells import the dummy seed; live campaigns never do", async () => {
     const { readFile } = await import("node:fs/promises");

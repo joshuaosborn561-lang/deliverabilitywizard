@@ -2577,3 +2577,25 @@ the shell is already blocked.
 
 **Guards.** CANARY_SHELL_SEED_EMAIL; seedShellLead;
 owner-intent D115.
+
+---
+
+## D116 — Missing placement tests scan on that health pass
+
+**Decision.** When `no_placement_test` is on the board, the
+health pass runs scan-backfill **on that pass**. The D84
+hourly throttle for this kick is gone. Pod-control cover
+stays hourly (D89).
+
+**Why.** Live 2026-08-26: morning START and the hourly
+checker flagged 20 ACTIVE campaigns with no recurring test
+after the 04:54 scan. The next backfill was gated to ~05:49,
+so the hole sat through two health passes.
+
+**Tradeoff.** A full scan on every 15-minute pass while any
+campaign is uncovered. The scanner skips campaigns that
+already have a living test. Accepted: leaving them bare is
+worse.
+
+**Guards.** missingTest → scan-backfill with no 55-minute
+gate; owner-intent D116.

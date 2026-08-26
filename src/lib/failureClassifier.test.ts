@@ -148,6 +148,25 @@ describe("classifyFailure", () => {
     assert.match(c.summary, /no seed accounts/i);
   });
 
+  it("treats SmartDelivery sender-not-in-campaign as non-remediable noise", () => {
+    // Production fingerprint was collapsing to
+    // unknown:scan:scan-failed-creating-tests-for-campaign-n-sender.
+    const c = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 3701207: Sender email accounts minh.nguyen@useculturefits.info, omar.hassan@proculturefits.info not used in the campaign",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:sender-not-in-campaign");
+    assert.match(c.summary, /membership drift/i);
+
+    const other = classifyFailure(
+      "scan",
+      "Failed creating tests for campaign 999999: Sender email accounts a@x.com not used in the campaign",
+    );
+    assert.equal(other.fingerprint, c.fingerprint);
+  });
+
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",

@@ -86,6 +86,39 @@ export function interleaveSendersByEsp(
   return result;
 }
 
+/**
+ * SmartDelivery: "Sender email accounts a@x.com, b@y.com not used in the
+ * campaign". Returns lowercased emails, or null when the message is not that
+ * shape.
+ */
+export function parseSendersNotUsedInCampaign(
+  message: string,
+): string[] | null {
+  const match = message.match(
+    /sender email accounts?\s+(.+?)\s+not used in the campaign/i,
+  );
+  if (!match?.[1]) return null;
+  const emails = match[1]
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter((email) => email.includes("@"));
+  return emails.length ? emails : null;
+}
+
+/** Drop named senders from batches; drop empty batches. */
+export function dropSendersFromBatches(
+  batches: string[][],
+  dropEmails: Iterable<string>,
+): string[][] {
+  const drop = new Set(
+    [...dropEmails].map((email) => email.trim().toLowerCase()).filter(Boolean),
+  );
+  if (!drop.size) return batches.map((batch) => [...batch]);
+  return batches
+    .map((batch) => batch.filter((email) => !drop.has(email.toLowerCase())))
+    .filter((batch) => batch.length > 0);
+}
+
 /** ISO 8601 timestamp N days from base. */
 export function addDaysIso(base: Date, days: number): string {
   const d = new Date(base.getTime());
@@ -373,42 +406,15 @@ export class CampaignScanner {
       const createdIds: string[] = [];
       try {
         for (let i = 0; i < plan.batches.length; i += 1) {
-          const batch = plan.batches[i]!;
+          let batch = plan.batches[i]!;
           const batchLabel =
             plan.batches.length > 1 ? ` (${i + 1}/${plan.batches.length})` : "";
           const recurring = this.config.autoPlacementTests;
-          const payload = {
-            test_name: `Auto: ${plan.campaign.name || plan.campaign.id}${batchLabel}`.slice(
-              0,
-              120,
-            ),
-            description: [
-              `Auto-created by Deliverability Wizard`,
-              `Campaign ID: ${plan.campaign.id}`,
-              `Sequence #${plan.sequenceNumber} (mapping ${plan.sequenceMappingId})`,
-              `Subject: ${plan.subjectPreview}`,
-              `Senders in this test: ${batch.length}`,
-              recurring
-                ? `Recurring every ${this.config.placementTestEveryDays} day(s) while the campaign is active`
-                : `One-off manual test`,
-            ].join("\n"),
-            // Explicit every time — do not rely on defaults
-            spam_filters: ["spam_assassin"],
-            link_checker: true,
-            campaign_id: plan.campaign.id,
-            sequence_mapping_id: plan.sequenceMappingId,
-            sender_accounts: batch,
-            all_email_sent_without_time_gap: false,
-            min_time_btwn_emails: 5,
-            min_time_unit: "minutes" as const,
-            is_warmup: false,
-            ...(providerIds.length ? { provider_ids: providerIds } : {}),
-          };
 
           if (this.config.dryRun) {
             console.log(
               `[scan] DRY_RUN would create ${recurring ? "recurring" : "manual"} test:`,
-              payload.test_name,
+              `Auto: ${plan.campaign.name || plan.campaign.id}${batchLabel}`.slice(0, 120),
               batch.length,
             );
             createdIds.push(`dry-run-${plan.campaign.id}-${i + 1}`);
@@ -416,30 +422,75 @@ export class CampaignScanner {
             continue;
           }
 
-          const scheduledAt = paddedScheduleDate();
-          const created = recurring
-            ? await this.smartDelivery.createAutomatedPlacement({
-                ...payload,
-                every_days: this.config.placementTestEveryDays,
-                schedule_start_time: scheduledAt.toISOString(),
-                scheduler_cron_value: schedulerCronValue(
-                  this.config.placementTestEveryDays,
-                  scheduledAt,
-                ),
-                test_end_date: addDaysIso(
-                  new Date(),
-                  this.config.placementTestEndDays > 0
-                    ? this.config.placementTestEndDays
-                    : OPEN_ENDED_TEST_DAYS,
-                ),
-                // Confirmed required on this endpoint via a live validation
-                // probe (2026-08-05) — unlike the manual endpoint, this one
-                // rejects the request outright if omitted, so it can't be
-                // left conditional on providerIds ever resolving non-empty.
-                provider_ids: providerIds,
-              })
-            : await this.smartDelivery.createManualPlacement(payload);
-          const id = String(created.id);
+          let created: { id?: string | number } | undefined;
+          for (let attempt = 0; attempt < 2; attempt += 1) {
+            const payload = {
+              test_name: `Auto: ${plan.campaign.name || plan.campaign.id}${batchLabel}`.slice(
+                0,
+                120,
+              ),
+              description: [
+                `Auto-created by Deliverability Wizard`,
+                `Campaign ID: ${plan.campaign.id}`,
+                `Sequence #${plan.sequenceNumber} (mapping ${plan.sequenceMappingId})`,
+                `Subject: ${plan.subjectPreview}`,
+                `Senders in this test: ${batch.length}`,
+                recurring
+                  ? `Recurring every ${this.config.placementTestEveryDays} day(s) while the campaign is active`
+                  : `One-off manual test`,
+              ].join("\n"),
+              spam_filters: ["spam_assassin"],
+              link_checker: true,
+              campaign_id: plan.campaign.id,
+              sequence_mapping_id: plan.sequenceMappingId,
+              sender_accounts: batch,
+              all_email_sent_without_time_gap: false,
+              min_time_btwn_emails: 5,
+              min_time_unit: "minutes" as const,
+              is_warmup: false,
+              ...(providerIds.length ? { provider_ids: providerIds } : {}),
+            };
+
+            try {
+              const scheduledAt = paddedScheduleDate();
+              created = recurring
+                ? await this.smartDelivery.createAutomatedPlacement({
+                    ...payload,
+                    every_days: this.config.placementTestEveryDays,
+                    schedule_start_time: scheduledAt.toISOString(),
+                    scheduler_cron_value: schedulerCronValue(
+                      this.config.placementTestEveryDays,
+                      scheduledAt,
+                    ),
+                    test_end_date: addDaysIso(
+                      new Date(),
+                      this.config.placementTestEndDays > 0
+                        ? this.config.placementTestEndDays
+                        : OPEN_ENDED_TEST_DAYS,
+                    ),
+                    provider_ids: providerIds,
+                  })
+                : await this.smartDelivery.createManualPlacement(payload);
+              break;
+            } catch (error) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              const unused = parseSendersNotUsedInCampaign(message);
+              if (unused && attempt === 0) {
+                const next = dropSendersFromBatches([batch], unused)[0];
+                if (next?.length) {
+                  console.log(
+                    `[scan] Campaign ${plan.campaign.id}: dropping ${unused.length} sender(s) SmartDelivery says are not on the campaign; retrying batch (${batch.length}→${next.length})`,
+                  );
+                  batch = next;
+                  continue;
+                }
+              }
+              throw error;
+            }
+          }
+
+          const id = String(created!.id);
           createdIds.push(id);
           result.created += 1;
           result.createdTestIds.push(id);

@@ -9,11 +9,49 @@ import type { SmartleadCampaign } from "../types/index.js";
 import {
   addDaysIso,
   CampaignScanner,
+  dropSendersFromBatches,
   interleaveSendersByEsp,
   OPEN_ENDED_TEST_DAYS,
+  parseSendersNotUsedInCampaign,
   schedulerCronValue,
   scheduleStartTime,
 } from "./campaignScanner.js";
+
+describe("parseSendersNotUsedInCampaign", () => {
+  it("extracts the rejected addresses from the SmartDelivery error", () => {
+    assert.deepEqual(
+      parseSendersNotUsedInCampaign(
+        "Sender email accounts minh.nguyen@useculturefits.info, omar.hassan@proculturefits.info not used in the campaign",
+      ),
+      [
+        "minh.nguyen@useculturefits.info",
+        "omar.hassan@proculturefits.info",
+      ],
+    );
+  });
+
+  it("returns null for unrelated errors", () => {
+    assert.equal(
+      parseSendersNotUsedInCampaign("No seed accounts found for the provided provider IDs"),
+      null,
+    );
+  });
+});
+
+describe("dropSendersFromBatches", () => {
+  it("removes named senders and empty batches", () => {
+    assert.deepEqual(
+      dropSendersFromBatches(
+        [
+          ["a@x.com", "b@x.com"],
+          ["c@x.com"],
+        ],
+        ["b@x.com", "c@x.com"],
+      ),
+      [["a@x.com"]],
+    );
+  });
+});
 
 describe("scheduleStartTime", () => {
   it("pads forward from now by the given buffer", () => {
@@ -389,6 +427,55 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.equal(createCalls, 1, "must not retry every campaign with the same dead provider IDs");
     assert.equal(result.errors.length, 1);
     assert.match(result.errors[0]!, /No seed accounts found/i);
+  });
+
+  it("drops senders SmartDelivery rejects as not on the campaign and retries once", async () => {
+    const config = loadConfig({});
+    const created: Array<{ sender_accounts?: string[] }> = [];
+    let createCalls = 0;
+
+    const smartlead = {
+      listCampaigns: async () => [campaign(3701207, "ACTIVE")],
+      getCampaignEmailAccounts: async () => [
+        { id: 1, from_email: "minh.nguyen@useculturefits.info" },
+        { id: 2, from_email: "omar.hassan@proculturefits.info" },
+        { id: 3, from_email: "keep@useculturefits.info" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [11],
+      createAutomatedPlacement: async (input: { sender_accounts?: string[] }) => {
+        createCalls += 1;
+        if (createCalls === 1) {
+          throw new Error(
+            "Sender email accounts minh.nguyen@useculturefits.info, omar.hassan@proculturefits.info not used in the campaign",
+          );
+        }
+        created.push(input);
+        return { id: "retry-ok" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(createCalls, 2);
+    assert.equal(result.created, 1);
+    assert.equal(result.errors.length, 0);
+    assert.deepEqual(created[0]?.sender_accounts, ["keep@useculturefits.info"]);
   });
 
   it("does not skip a campaign whose only prior test is a completed manual", async () => {

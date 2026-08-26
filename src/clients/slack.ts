@@ -361,7 +361,7 @@ export class SlackClient {
       lines.push(`Skipped ${summary.skipped}.`);
     }
     const seriousErrors = summary.errors
-      .filter((e) => !isRateLimitNoise(e))
+      .filter((e) => !isBenignOpsNoise(e))
       .map(humanizeAlertError);
     if (seriousErrors.length) {
       lines.push(

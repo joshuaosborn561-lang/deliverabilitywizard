@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D127** (2026-08-26). One page of current truth. When a new
+Canon as of **D128** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -21,7 +21,7 @@ Slack speaks only when a human decision is needed or the day is done.
 | Loop | Cadence | Owns |
 |---|---|---|
 | Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → old-client teardown retry (D111) → stage watchdog + `canonCompliant` yes/no (D108) |
-| Bounce loop | 10 min | Pause an ACTIVE campaign at >10% lifetime bounce with ≥1,000 leads emailed, or >10 new bounces inside the 10-minute window (D90). Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift (D80/D84/D88; one forced full-fleet off-write ran under D124). Never touches COMPLETED/STOPPED; a bounce pause is not a pendingResume (D40). No Slack. |
+| Bounce loop | 10 min | Pause an ACTIVE campaign at >10% lifetime bounce with ≥1,000 leads emailed, or >10 new bounces inside the 10-minute window (D90). Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift (D80/D84/D88; one forced full-fleet off-write ran under D124). Never touches COMPLETED/STOPPED; a bounce pause is stamped so qa-unpause never fights it, and is not a pendingResume (D40/D128). No Slack. |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). |
 | Monitor | Slower cadence | Placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
@@ -73,10 +73,10 @@ Slack speaks only when a human decision is needed or the day is done.
 
 ## Pulls and pauses
 
-- **Kill-only** (D51): placement %, bounce %, blacklists, and holds do NOT
-  pull a mailbox off an ACTIVE campaign. The only removals are Josh killing
-  a mailbox / retiring its domain, and the 21-day warmup gate (D105). Health
-  backfills to the floor afterwards.
+- **Kill-only** (D51): placement %, bounce %, blacklists, and leftover
+  HOLD-UNTIL tags do NOT pull a mailbox off an ACTIVE campaign (D128). The
+  only removals are Josh killing a mailbox / retiring its domain, and the
+  21-day warmup gate (D105). Health backfills to the floor afterwards.
 - 80% same-ESP live / 85% launch (promo tab = miss) are **readings** — the
   launch bar blocks QA-unpause of a new campaign (D46/D106), the live number
   is a log. Never rotate on any of it; never use the blended all-ESP score
@@ -87,7 +87,8 @@ Slack speaks only when a human decision is needed or the day is done.
 - **A manual pause or stop is never auto-resumed** (D40). Only protective
   pauses we recorded in `pendingResumes` may resume, and never a STOPPED
   campaign. QA-unpause may START a PAUSED POC campaign after signature QA
-  passes (D77/D82) and not below the launch bar (D106).
+  passes (D77/D82), never below the 85% launch bar or without a living
+  placement reading, and never one the bounce loop paused (D106/D128).
 
 ## Canary + placement instrumentation
 

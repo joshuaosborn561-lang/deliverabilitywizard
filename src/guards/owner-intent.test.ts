@@ -206,7 +206,7 @@ describe("owner intent", () => {
     );
   });
 
-  it("D7: campaign top-up is on with a 50-sender floor", () => {
+  it("D7 retired by D58/D82/D128: top-up on; no global 50 floor anywhere", async () => {
     assert.equal(
       defaults.enableCampaignTopUp,
       true,
@@ -215,12 +215,18 @@ describe("owner intent", () => {
         "Top-up now defaults off, so a campaign that launches thin stays thin.",
       ),
     );
-    assert.equal(
-      defaults.minCampaignSenders,
-      50,
+    // The floor is HALF that client's inboxes (clientStaffFloor, D58/D82).
+    // minCampaignSenders survives only so a stale Railway var cannot crash
+    // boot; nothing may use it as a staffing number (D128).
+    const health = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignHealth.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      health,
+      /floor: this\.config\.minCampaignSenders/,
       stop(
-        "Active campaigns are held at 50 senders (D7).",
-        `The floor is now ${defaults.minCampaignSenders}, changing live campaign staffing.`,
+        "Campaign health floors come from clientStaffFloor, never the dead 50 (D58/D82/D128).",
+        "campaignHealth.ts uses config.minCampaignSenders as a floor again.",
       ),
     );
   });
@@ -2130,33 +2136,9 @@ describe("owner intent — D77 client tag and QA unpause", () => {
 });
 
 describe("owner intent — D80 campaign bounce autostop", () => {
-  it("D80: skip under 100 sends; 20% from 100–499; 7% from 500; Smartlead stays off", async () => {
-    const { shouldAutostopCampaignForBounce, campaignBounceAutostopThreshold } =
-      await import("../lib/campaignBounceAutostop.js");
-    assert.equal(
-      shouldAutostopCampaignForBounce(10, 40),
-      false,
-      stop(
-        "Do not pause on a tiny send sample (D80).",
-        "Ten sends now trip campaign bounce autostop.",
-      ),
-    );
-    assert.equal(
-      campaignBounceAutostopThreshold(150),
-      20,
-      stop(
-        "100–499 sends use 20% (D80).",
-        `Mid-volume threshold is now ${campaignBounceAutostopThreshold(150)}.`,
-      ),
-    );
-    assert.equal(
-      campaignBounceAutostopThreshold(500),
-      7,
-      stop(
-        "500+ sends use 7% (D80).",
-        `High-volume threshold is now ${campaignBounceAutostopThreshold(500)}.`,
-      ),
-    );
+  it("D80/D88/D90: the 10-minute loop is the only bounce actor; Smartlead stays off", async () => {
+    // The 20/7 bands are retired (D88); the live trips are D90's and are
+    // guarded there. This guard keeps the loop itself and the off-write.
     assert.equal(
       defaults.enableCampaignBounceAutostop,
       true,
@@ -2179,14 +2161,6 @@ describe("owner intent — D80 campaign bounce autostop", () => {
       stop(
         "Smartlead bounce autopause stays off at 100 (D80).",
         `Off percent is now ${defaults.smartleadBounceAutopauseOffPercent}.`,
-      ),
-    );
-    assert.equal(
-      defaults.bounceAutostopMinSent,
-      100,
-      stop(
-        "Autostop needs 100 campaign sends (D80).",
-        `Min sent is now ${defaults.bounceAutostopMinSent}.`,
       ),
     );
     const { desiredBounceAutopausePercent } = await import(
@@ -4095,6 +4069,68 @@ describe("owner intent — D127 canon rebuild", () => {
       stop(
         "CANON.md declares which decision it is current through (D127).",
         "CANON.md lost its 'Canon as of' declaration.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D128 live paths obey the ledger", () => {
+  it("D128: no HOLD pull; qa-unpause gated by the bar and the bounce stamp", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const gate = await readFile(
+      new URL("../services/warmupGate.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      gate,
+      /reason: "hold_until"/,
+      stop(
+        "A HOLD-UNTIL tag is inert residue, never a pull (D51/D59/D128).",
+        "warmupGate.ts removes mailboxes for hold_until again.",
+      ),
+    );
+    const qa = await readFile(
+      new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      qa,
+      /isBouncePaused/,
+      stop(
+        "qa-unpause never STARTs a campaign the D90 bounce loop paused (D128).",
+        "unpauseAfterSigQa.ts no longer consults the bounce-pause stamp.",
+      ),
+    );
+    assert.match(
+      qa,
+      /launchInboxThreshold/,
+      stop(
+        "qa-unpause requires the 85% launch bar before START (D106/D128).",
+        "unpauseAfterSigQa.ts no longer reads the launch bar.",
+      ),
+    );
+    const autostop = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      autostop,
+      /markBouncePaused/,
+      stop(
+        "The bounce loop stamps its pauses so nothing auto-STARTs them (D90/D128).",
+        "campaignBounceAutostop.ts no longer stamps bounce pauses.",
+      ),
+    );
+    const prompt = await readFile(
+      new URL("../ops/campaignSetupPrompt.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      prompt,
+      /D80|20% until 500|100 sends at 20%/,
+      stop(
+        "The agent brief teaches D90, not the retired bands (D128).",
+        "campaignSetupPrompt.ts mentions the 20/7 bands again.",
       ),
     );
   });

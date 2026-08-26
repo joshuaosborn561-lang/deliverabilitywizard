@@ -80,7 +80,10 @@ export class CampaignHealthService {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: CampaignHealthResult = {
       dryRun,
-      floor: this.config.minCampaignSenders,
+      // D58/D82/D128 — there is no global floor; per-campaign floors are half
+      // that client's inboxes and live on each snapshot. 0 here means
+      // "unknown until snapshotted", never a staffing target.
+      floor: 0,
       snapshots: [],
       topUp: null,
       fanOutAttached: 0,
@@ -306,7 +309,16 @@ export class CampaignHealthService {
         this.state.clearPendingResume(pending.campaignId);
         continue;
       }
-      if (staffable < (snap?.floor ?? result.floor)) continue;
+      // D128 — no snapshot means the pass could not compute this client's
+      // half-inbox floor; skip rather than resume against a guessed number
+      // (the old code fell back to the dead 50-sender floor here).
+      if (!snap) {
+        console.log(
+          `[health] Pending-resume #${pending.campaignId} ${name}: no staffing snapshot this pass — not resuming`,
+        );
+        continue;
+      }
+      if (staffable < snap.floor) continue;
       if (status === "ACTIVE") {
         // Already live — drop the stale resume marker.
         this.state.clearPendingResume(pending.campaignId);

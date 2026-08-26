@@ -72,9 +72,10 @@ function mergeSendBounce(...payloads: unknown[]): {
 /**
  * D90 — pause ACTIVE campaigns over 10% bounce after 1k leads emailed, or
  * more than 10 new bounces in the last 10 minutes. Does not START anyone
- * (D40). D88's 20%/7% bands stay retired. After the scan, Smartlead
- * bounce_autopause_threshold is converged to 100 (off). D29 still
- * investigates an already-PAUSED campaign.
+ * (D40). D88's 20%/7% bands stay retired; D91 retired the paused-campaign
+ * hunt. After the scan, Smartlead bounce_autopause_threshold is converged
+ * to 100 (off). A pause is stamped (D128) so qa-unpause never fights it —
+ * only a human STARTs a bounce-paused campaign.
  */
 export class CampaignBounceAutostopService {
   constructor(
@@ -119,6 +120,9 @@ export class CampaignBounceAutostopService {
 
     for (const campaign of active) {
       result.scanned += 1;
+      // ACTIVE means any earlier bounce pause was resolved by a human
+      // START — the stamp has served its purpose (D128).
+      this.state?.clearBouncePaused(campaign.id);
       try {
         const analytics = await this.smartlead
           .getCampaignAnalyticsByDate(campaign.id, lifetimeStart(campaign), end)
@@ -176,6 +180,9 @@ export class CampaignBounceAutostopService {
         );
         if (!dryRun) {
           await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
+          // D128 — stamp the pause so qa-unpause cannot START it back up;
+          // a bounce pause waits for a human (D90/D40).
+          this.state?.markBouncePaused(campaign.id, nowIso);
         }
         result.paused.push(finding);
         await sleep(WRITE_GAP_MS);

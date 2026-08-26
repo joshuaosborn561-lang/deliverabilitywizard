@@ -159,6 +159,8 @@ describe("CampaignBounceAutostopService (D90)", () => {
       },
       getBounceSnapshot: () => undefined,
       setBounceSnapshot: () => undefined,
+      markBouncePaused: () => undefined,
+      clearBouncePaused: () => undefined,
       save: async () => undefined,
     } as never;
     const smartlead = {
@@ -221,6 +223,8 @@ describe("CampaignBounceAutostopService (D90)", () => {
       },
       getBounceSnapshot: () => undefined,
       setBounceSnapshot: () => undefined,
+      markBouncePaused: () => undefined,
+      clearBouncePaused: () => undefined,
       save: async () => undefined,
     } as never;
     const service = new CampaignBounceAutostopService(

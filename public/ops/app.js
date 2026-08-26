@@ -119,13 +119,11 @@ async function loadDashboard(force = false) {
     ["Campaign floor", `${data.policy.campaignSenderFloor} staffable`],
     ["Mailbox cap", `${data.policy.mailboxDailyCap}/day`],
     ["Inbox threshold", `${data.policy.inboxThreshold}% same-ESP`],
-    ["Bounce autostop", data.policy.bounceAutostop || "off"],
-    ["Bounce pull / warn", `${data.policy.bounceThreshold}% pull · ${data.policy.bounceWarnThreshold}% warn`],
+    ["Bounce pause", data.policy.bounceAutostop || "off"],
+    ["Bounce readings", `${data.policy.bounceThreshold}% / ${data.policy.bounceWarnThreshold}% are logs, not pulls`],
     ["Fresh / pool warmup", `${data.policy.freshInboxWarmupDays}d fresh · ${data.policy.warmupDays}d pool`],
     ["Client rest", data.policy.clientRest ? "Per-client A/B · 2 on / 2 off" : "Off"],
     ["Generic sit / ESP mix", `${data.policy.genericSendRestDays}d send · ${data.policy.espMixMinPercent}% each ESP`],
-    ["Hold rebuild", data.policy.restBaselineRebuiltAt ? `Done ${String(data.policy.restBaselineRebuiltAt).slice(0, 10)}` : data.policy.restBaselineRebuild ? "Pending first health" : "Off"],
-    ["Recovery hold", `${data.policy.recoveryHoldDays} days`],
   ];
   $("#policy-grid").replaceChildren(
     ...policies.map(([label, value]) => {

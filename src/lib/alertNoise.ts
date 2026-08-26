@@ -78,6 +78,14 @@ export function isBurnChecklistNoise(message: string): boolean {
   );
 }
 
+/**
+ * SmartDelivery rejected sender_accounts that Smartlead still listed on the
+ * campaign (membership lag). Scan retries next pass; do not page Slack.
+ */
+export function isSenderNotInCampaignNoise(message: string): boolean {
+  return /sender email accounts?.+not used in the campaign/i.test(message);
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
@@ -85,7 +93,8 @@ export function isBenignOpsNoise(message: string): boolean {
     isApprovalGateNoise(message) ||
     isMissingSpamTestNoise(message) ||
     isRetryRemovalNoise(message) ||
-    isBurnChecklistNoise(message)
+    isBurnChecklistNoise(message) ||
+    isSenderNotInCampaignNoise(message)
   );
 }
 
@@ -131,6 +140,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isBurnChecklistNoise(raw)) {
     return "Blacklist alone is not enough to burn that domain — waiting for a same-ESP placement fail or bounce over threshold.";
+  }
+
+  if (isSenderNotInCampaignNoise(raw)) {
+    return "SmartDelivery says some senders are not on that campaign yet (membership lag). We'll retry next scan.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

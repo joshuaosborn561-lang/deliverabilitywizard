@@ -61,7 +61,7 @@ export function classifyOpsMessage(
     return {
       type: "denied",
       reason:
-        "Safety gates cannot be bypassed from the operations console: 14-day warmup/holds and spend approval are owner decisions (D1, D4, D6).",
+        "Safety gates cannot be bypassed from the operations console: the 21-day warmup gate and spend approval are owner decisions (D50/D105, D4).",
     };
   }
 
@@ -73,7 +73,7 @@ export function classifyOpsMessage(
     return {
       type: "denied",
       reason:
-        "The console cannot change fleet policy. Campaign floor 50 and mailbox cap 30/day are owner decisions and require a reviewed code/config change (D7, D11, D17).",
+        "The console cannot change fleet policy. The staffing floor (half each client's inboxes) and the 30/day mailbox cap are owner decisions and require a reviewed code/config change (D82, D11/D24).",
     };
   }
 

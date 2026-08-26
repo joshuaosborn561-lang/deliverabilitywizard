@@ -56,12 +56,12 @@ export function isPrewarmedGeneric(
 }
 
 /**
- * Keep ACTIVE campaigns from sending on mailboxes that are not ready:
- * - warmed < MIN_CAMPAIGN_WARMUP_DAYS / freshInboxWarmupDays (default 21, D50)
- * - still tagged HOLD-UNTIL-YYYY-MM-DD (recovery hold not expired)
+ * Keep ACTIVE campaigns from sending on mailboxes that have not served the
+ * 21-day clock (MIN_CAMPAIGN_WARMUP_DAYS / freshInboxWarmupDays, D50/D105).
  *
  * Age is measured from the InboxKit import stamp when the mailbox is in
- * the pool. Smartlead's warmup record is the fallback only (D1).
+ * the pool. Smartlead's warmup record is the fallback only (D1). HOLD-UNTIL
+ * tags are inert residue and never a pull (D51/D59/D128).
  */
 export class WarmupGateService {
   constructor(
@@ -163,7 +163,6 @@ export class WarmupGateService {
 
         const email = accountEmail(account) || accountEmail(row) || `id:${row.id}`;
         const tags = tagNames(account);
-        const holdUntil = activeHoldUntilDate(tags);
         const started = warmupClockStartedAt(account, email, this.state);
         const daysWarmed = started != null ? daysSince(started) : null;
 
@@ -171,20 +170,9 @@ export class WarmupGateService {
           continue;
         }
 
-        if (holdUntil) {
-          toRemove.push({
-            campaignId: campaign.id,
-            campaignName: campaign.name,
-            accountId: row.id,
-            email,
-            reason: "hold_until",
-            daysWarmed:
-              daysWarmed != null ? Number(daysWarmed.toFixed(1)) : null,
-            holdUntil,
-            tags,
-          });
-          continue;
-        }
+        // D128 — a leftover HOLD-UNTIL tag is not a pull. Pulls are
+        // kill-only (D51) plus this 21-day clock (D105); the hold system
+        // was wiped (D59) and its tags are inert residue.
 
         // Pre-warmed generics are already warm; Smartlead's warmup start date
         // reflects when warmup was last toggled, not their real age, so it must

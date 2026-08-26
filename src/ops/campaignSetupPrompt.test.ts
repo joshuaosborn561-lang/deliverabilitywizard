@@ -11,9 +11,11 @@ describe("campaignSetupPrompt", () => {
     assert.match(prompt, /30% Google/);
     assert.match(prompt, /14 days of live send/);
     assert.match(prompt, /21 days/);
-    assert.match(prompt, /Bounce autostop \(D80\)/);
+    assert.match(prompt, /bounce loop \(D90\)/);
+    assert.match(prompt, /more than 10 new bounces in 10 minutes/);
+    assert.doesNotMatch(prompt, /D80|20% until 500|after 100 sends at 20%/);
     assert.match(prompt, /MESSAGE_PER_DAY=0/);
-    assert.match(prompt, /rebuilds unproven HOLDs/);
+    assert.doesNotMatch(prompt, /rebuilds unproven HOLDs/);
     assert.match(prompt, /unlimited/i);
     assert.match(prompt, /≤50 senders per test/);
     assert.match(prompt, /85%/);

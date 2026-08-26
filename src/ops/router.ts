@@ -263,7 +263,7 @@ export function createOpsRouter(opts: {
           bounceWarnThreshold: opts.config.bounceRateWarnThreshold,
           bounceMinSample: opts.config.minBounceSample,
           bounceAutostop: opts.config.enableCampaignBounceAutostop
-            ? `${opts.config.bounceAutostopMidPercent}% after ${opts.config.bounceAutostopMinSent} / ${opts.config.bounceAutostopHighPercent}% after ${opts.config.bounceAutostopHighVolumeSent}`
+            ? `over ${opts.config.bouncePauseRatePercent}% after ${opts.config.bouncePauseMinLeads.toLocaleString()} leads, or >${opts.config.bounceBurstCount} bounces in 10 min`
             : "off",
           clientRest: opts.config.enableClientRest,
           genericSendRestDays: opts.config.genericSendRestDays,

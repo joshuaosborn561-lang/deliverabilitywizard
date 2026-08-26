@@ -143,6 +143,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D125 | Live |
 | D126 | Live |
 | D127 | Live — the canon rebuild |
+| D128 | Live |
 
 ---
 
@@ -3022,3 +3023,44 @@ what the citations are for.
 
 **Guards.** `src/guards/meta.test.ts` — unique decision numbers, canon
 freshness, index covers the newest decision; owner-intent D127.
+
+---
+
+## D128 — Live paths obey the ledger
+
+**Decision.** Four contradictions the canon audit found running live are
+closed:
+
+1. **The HOLD-UNTIL pull is gone.** The warmup gate pulls only the 21-day
+   clock (D105). A leftover `HOLD-UNTIL-*` Smartlead tag is inert residue
+   (D51 kill-only, D59 wiped holds) — it never removes a mailbox and never
+   pauses a campaign.
+2. **qa-unpause is gated.** It never STARTs a campaign the D90 bounce loop
+   paused (the loop stamps its pauses in `bouncePausedCampaigns`; the stamp
+   clears when a human STARTs the campaign), and never STARTs below the
+   **85% launch bar** (D106): the campaign's living placement reading must
+   clear `LAUNCH_INBOX_THRESHOLD`, promo tab counted as a miss, and no
+   reading means not proven — stays down.
+3. **The dead 50 floor is out of live paths.** Campaign health's
+   pending-resume check uses each snapshot's half-client floor; with no
+   snapshot it skips rather than guessing (the old fallback was
+   `MIN_CAMPAIGN_SENDERS=50`). The knob remains parse-only so a stale
+   Railway var cannot crash boot.
+4. **The ops surfaces tell the truth.** The campaign-setup brief (also
+   injected into the Ops Cursor agent), `/ops` policy strings, and chat
+   denials now state D90's trips, the 21-day gate, and the half-client
+   floor — the retired 20/7 bands, "5% pull", "floor 50", and "14-day
+   warmup/holds" strings are gone.
+
+**Why.** Josh (2026-08-26) delegated the rebuild (D127). The audit showed
+the gate could still pull on a stray tag with no flag, qa-unpause could
+fight a D90 pause on a 15-minute cycle, a missing snapshot resurrected the
+dead 50 floor, and the ops/agent surfaces were re-teaching retired canon.
+
+**Tradeoff.** A POC campaign with clean signatures but no living placement
+reading now waits for the scanner to create one (same pass, D116) before it
+can auto-START. Accepted: launching unproven is what D106 exists to stop.
+
+**Guards.** owner-intent D128 (no hold_until pull; qa-unpause reads the
+stamp and the bar; the brief has no bands); D7 guard rewritten to absence
+form; D80 guard trimmed to the loop + off-write.

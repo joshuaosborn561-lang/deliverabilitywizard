@@ -173,6 +173,11 @@ export class CampaignHealthService {
       status: s.status,
     }));
     this.state.setLastStaffingShort(result.stillShort);
+    for (const row of result.stillShort) {
+      console.log(
+        `[health] short #${row.campaignId} ${row.name} — staffable ${row.staffable} short ${row.shortBy} (fill from same-client / BCP-owned inboxes, not pool generics)`,
+      );
+    }
 
     this.state.setLastHealthAt(new Date().toISOString());
     if (!dryRun) await this.state.save();

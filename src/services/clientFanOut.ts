@@ -104,6 +104,11 @@ export class ClientFanOutService {
       // one live campaign. The old `length < 2` skip left whole clients at
       // one sender per campaign.
       const groupIds = new Set(groupCampaigns.map((c) => c.id));
+      const groupIsBcp =
+        groupKey === "bcp" ||
+        groupCampaigns.some((campaign) =>
+          isBcpCampaignName(String(campaign.name ?? "")),
+        );
       const campaignName = new Map(
         groupCampaigns.map((c) => [c.id, String(c.name ?? c.id)]),
       );
@@ -173,6 +178,7 @@ export class ClientFanOutService {
           groupIds,
           campaignClientById,
           clientsById,
+          groupIsBcp,
         );
         if (!belongs) continue;
 
@@ -187,7 +193,7 @@ export class ClientFanOutService {
         // fan-out supply, unless it already serves this group.
         const touchesGroup = [...on].some((id) => groupIds.has(id));
         const isBcpInventory =
-          groupKey === "bcp" && isBcpOwnedDomain(email.split("@")[1] ?? "");
+          groupIsBcp && isBcpOwnedDomain(email.split("@")[1] ?? "");
         if (generic && !touchesGroup && !isBcpInventory) continue;
 
         for (const campaign of groupCampaigns) {
@@ -296,9 +302,23 @@ export class ClientFanOutService {
       }
     }
 
+    const skipReasons = new Map<string, number>();
+    for (const line of result.skipped) {
+      const reason = line.includes(": ")
+        ? line.slice(line.indexOf(": ") + 2)
+        : line;
+      skipReasons.set(reason, (skipReasons.get(reason) ?? 0) + 1);
+    }
     console.log(
-      `[fan-out] groups=${result.groups} attached=${result.attached.length} errors=${result.errors.length}`,
+      `[fan-out] groups=${result.groups} attached=${result.attached.length} skipped=${result.skipped.length} errors=${result.errors.length}`,
     );
+    if (skipReasons.size) {
+      console.log(
+        `[fan-out] skip reasons: ${[...skipReasons]
+          .map(([reason, n]) => `${reason}=${n}`)
+          .join(" ")}`,
+      );
+    }
     if (result.attached.length) {
       const byCampaign = new Map<string, number>();
       for (const row of result.attached) {
@@ -330,9 +350,14 @@ export class ClientFanOutService {
     groupIds: Set<number>,
     campaignClientById: Map<number, number | null | undefined>,
     clientsById: Map<number, SmartleadClientRecord>,
+    groupIsBcp = false,
   ): boolean {
     const email = accountEmail(account)?.toLowerCase() ?? "";
     const domain = email.split("@")[1] ?? "";
+
+    // D99 — a BCP-owned domain belongs on BCP campaigns even when the
+    // mailbox has no client_id (or the campaigns are tagged id:N).
+    if (groupIsBcp && isBcpOwnedDomain(domain)) return true;
 
     if (groupKey === "bcp") {
       return (

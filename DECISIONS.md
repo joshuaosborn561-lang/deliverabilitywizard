@@ -2180,3 +2180,70 @@ it. Accepted: that write is the same append D92 already does.
 
 **Guards.** slackKind add_signature_tag is null; remind skips and
 dismisses those asks; owner-intent D97.
+---
+
+## D98 — Find a hole, fix it
+
+**Decision.** When production shows a writable hole, fix it in
+that session. Do not stop at a report. Josh (2026-08-26):
+"whenever you find a problem you need to fix it."
+
+The 2026-08-26 sweep holes:
+
+1. Leftover `missing_signature_tag` writes on the next health
+   first-pass. Do not wait 55 minutes or for the hourly inspect.
+   D95 Slack-once still stands.
+2. Canary attach resolves provider ids the same way the scanner
+   does. Empty `provider_ids` is a hard fail and is logged.
+   A stored test is reused when it is still living. A
+   list-tests failure reuses the stored id — it does not spawn
+   a second test.
+3. Placement / known-good / missing-canary findings are not
+   invented when SmartDelivery `listTests` failed. Leftover
+   coverage findings refresh on the health first-pass once the
+   list succeeds, so a stale scoreboard cannot sit for hours.
+4. Scanner logs why zero plans (`live` / `candidates` /
+   `already-tested` / `skipped`), not only "No eligible
+   campaigns".
+
+BCP short of floor is not a hole (D58 / D81). Do not staff BCP
+with pool generics.
+
+**Why.** Josh did not trust the wizard because the scoreboard
+showed holes the loops were not closing.
+
+**Tradeoff.** Health first-pass re-inspects leftover holes, so
+a real missing test means extra sequence reads until the
+scanner fills it. Accepted: that is cheaper than a lying
+scoreboard.
+
+**Guards.** owner-intent D98; campaignCheck leftover write +
+listedTestsFailed; copyCanary resolveProviderIds + living reuse.
+---
+
+## D99 — BCP short is a hole; fill from BCP inboxes, not generics
+
+**Decision.** D98's "BCP short of floor is not a hole" is
+superseded. A BCP campaign below the half-floor is a hole and
+must be closed from **BCP-owned / same-client inboxes**:
+
+- A BCP-owned domain belongs on every ACTIVE BCP campaign even
+  when the mailbox has no `client_id` (fan-out + rest).
+- Held, retired, and copy-canary inboxes do not count toward
+  the half-floor. D58's "A+B sitting" means rest-sitting, not
+  a HOLD-UNTIL bench.
+- Pool generics still need POC or Slack approve (D58 / D81).
+  Do not staff BCP from the generic pile.
+
+Fan-out logs skip reasons so a 44/46 with `attached=0` can be
+read, not guessed.
+
+**Why.** Live 2026-08-26: four BCP campaigns sat 44/46
+membership 44, fan-out attached 0, no skip log. Josh's D98
+call is to fix the hole, not relabel it.
+
+**Tradeoff.** A held BCP inbox no longer inflates the floor.
+Accepted: that box cannot send until the hold lifts.
+
+**Guards.** owner-intent D99; fan-out BCP-domain belong;
+countClientInboxesByKey skips held.

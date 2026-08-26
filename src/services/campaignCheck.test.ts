@@ -130,7 +130,7 @@ describe("CampaignCheckService", () => {
     assert.equal(state.getCampaignCheck(3826693)?.firstPassedAt, null);
   });
 
-  it("D81: a clean campaign passes first check; hourly skips sequences", async () => {
+  it("D81: a clean campaign passes first check; hourly still reads sequences", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     let sequenceReads = 0;
@@ -201,7 +201,11 @@ describe("CampaignCheckService", () => {
 
     const hourly = await service.run({ mode: "hourly" });
     assert.equal(hourly.swept, 1);
-    assert.equal(sequenceReads, 1, "hourly must not re-read sequences");
+    assert.equal(
+      sequenceReads,
+      2,
+      "hourly re-reads sequences so a leftover missing %signature% can be written (D98)",
+    );
     assert.ok(
       hourly.findings[0]?.findings.some(
         (finding) => finding.kind === "inbox_missing_known_good",
@@ -552,6 +556,193 @@ describe("CampaignCheckService", () => {
     await service.run({ mode: "all" });
     assert.equal(wrote.length, 2, "the write still happens if the tag is still missing");
     assert.equal(told.length, 1, "the leftover campaign does not Slack again");
+  });
+
+  it("D98: health first-pass writes a leftover signature without Slack", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 91,
+      name: "SalesGlider Nurture",
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      firstCheckAt: "2026-08-25T00:00:00.000Z",
+      firstPassedAt: "2026-08-25T00:05:00.000Z",
+      lastSweepAt: "2026-08-25T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: ["missing_signature_tag: step 1 A is missing %signature%"],
+      sigAutoWrittenAt: "2026-08-25T00:05:00.000Z",
+    });
+    const told: string[] = [];
+    const wrote: string[] = [];
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 91, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [goliath],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      {
+        notifyActionResult: async (text: string) => {
+          told.push(text);
+        },
+      } as never,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.ok(wrote[0]?.includes("%signature%"), "the leftover tag is written on health");
+    assert.equal(told.length, 0, "D95 — a leftover write stays quiet");
+    assert.equal(
+      (state.getCampaignCheck(91)?.findings ?? []).some((finding) =>
+        finding.startsWith("missing_signature_tag"),
+      ),
+      false,
+    );
+    assert.ok(result.swept >= 1 || result.firstChecked >= 1);
+  });
+
+  it("D98: a failed SmartDelivery list does not invent placement or canary holes", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const sl = {
+      listCampaigns: async () => [
+        {
+          id: 3815448,
+          name: "Goliath Displacement L 501-1000 ITDir",
+          status: "ACTIVE",
+          client_id: 548611,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 22,
+          from_email: "aarav@client.com",
+          from_name: "Aarav Sanchez",
+          signature: "Aarav Sanchez\nGoliath Cybersecurity",
+          client_id: 548611,
+          campaign_ids: [3815448],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => [
+        {
+          seq_number: 1,
+          email_body: "<div>Hi</div><div>%signature%</div>",
+        },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      sl,
+      {
+        listTests: async () => {
+          throw new Error("list failed");
+        },
+        enrichCampaignIds: async (rows: unknown[]) => rows,
+      } as unknown as SmartDeliveryClient,
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    const hourly = await service.run({ mode: "hourly" });
+    const kinds = (hourly.findings[0]?.findings ?? []).map((finding) => finding.kind);
+    assert.equal(kinds.includes("no_placement_test"), false);
+    assert.equal(kinds.includes("missing_canary"), false);
+    assert.equal(kinds.includes("inbox_missing_known_good"), false);
+    assert.equal(
+      (state.getCampaignCheck(3815448)?.findings ?? []).some((finding) =>
+        finding.startsWith("no_placement_test") ||
+        finding.startsWith("missing_canary") ||
+        finding.startsWith("inbox_missing_known_good"),
+      ),
+      false,
+    );
+  });
+
+  it("D98: health first-pass clears a stale no_placement_test when the test exists", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 3815448,
+      name: "Goliath Displacement L 501-1000 ITDir",
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      firstCheckAt: "2026-08-25T00:00:00.000Z",
+      firstPassedAt: "2026-08-25T00:05:00.000Z",
+      lastSweepAt: "2026-08-25T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: ["no_placement_test: no recurring SmartDelivery test for serving inboxes"],
+    });
+    const sl = {
+      listCampaigns: async () => [
+        {
+          id: 3815448,
+          name: "Goliath Displacement L 501-1000 ITDir",
+          status: "ACTIVE",
+          client_id: 548611,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 22,
+          from_email: "aarav@client.com",
+          from_name: "Aarav Sanchez",
+          signature: "Aarav Sanchez\nGoliath Cybersecurity",
+          client_id: 548611,
+          campaign_ids: [3815448],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => [
+        {
+          seq_number: 1,
+          email_body: "<div>Hi</div><div>%signature%</div>",
+        },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      sl,
+      delivery([
+        {
+          id: "t-place",
+          test_name: "Goliath Displacement L",
+          status: "active",
+          every_days: 1,
+          campaign_id: 3815448,
+        },
+        {
+          id: "t-canary",
+          test_name: "Canary copy: #3815448 Goliath Displacement L",
+          status: "active",
+          every_days: 1,
+          campaign_id: 3815448,
+        },
+      ]),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.equal(
+      (state.getCampaignCheck(3815448)?.findings ?? []).some((finding) =>
+        finding.startsWith("no_placement_test"),
+      ),
+      false,
+      "stale placement hole clears once listTests succeeds",
+    );
   });
 
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {

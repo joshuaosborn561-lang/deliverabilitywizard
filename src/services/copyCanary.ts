@@ -10,6 +10,7 @@ import {
 } from "../clients/smartlead.js";
 import {
   campaignIdOf,
+  normalizeTestList,
   parseSenderInboxRates,
   testIdOf,
   type SmartDeliveryClient,
@@ -29,6 +30,7 @@ import {
   buildIsolationAction,
   requestIsolationAction,
 } from "../lib/isolationActions.js";
+import { hasLivingUnwarmedCopyCanary } from "../lib/canaryCoverage.js";
 import {
   canaryCopyTestName,
   campaignIdFromCanaryTestName,
@@ -146,9 +148,37 @@ export class CopyCanaryService {
     });
     const activeIds = new Set(active.map((campaign) => campaign.id));
 
+    let listed: unknown = [];
+    let listFailed = false;
+    let providerIds: number[] = [];
+    if (this.smartDelivery) {
+      try {
+        listed = await this.smartDelivery.listTests({});
+      } catch (error) {
+        listFailed = true;
+        console.warn("[copy-canary] could not list tests", error);
+      }
+      if (!listFailed) {
+        try {
+          providerIds = await this.smartDelivery.resolveProviderIds(
+            this.config.providerIds,
+          );
+        } catch (error) {
+          console.warn("[copy-canary] provider id resolve failed", error);
+        }
+      }
+    }
+
     for (const campaign of active) {
       try {
-        const testId = await this.ensureCopyTest(campaign, picks, dryRun);
+        const testId = await this.ensureCopyTest(
+          campaign,
+          picks,
+          dryRun,
+          listed,
+          listFailed,
+          providerIds,
+        );
         const emails = picks.map((row) => row.email.toLowerCase());
         this.state.setCopyCanaries(campaign.id, emails, testId);
         result.testsEnsured += 1;
@@ -158,6 +188,7 @@ export class CopyCanaryService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`#${campaign.id}: ${message}`);
+        console.warn(`[copy-canary] ensure failed #${campaign.id}: ${message}`);
         this.state.setCopyCanaries(
           campaign.id,
           picks.map((row) => row.email.toLowerCase()),
@@ -344,21 +375,43 @@ export class CopyCanaryService {
     campaign: SmartleadCampaign,
     picks: PoolMailboxRecord[],
     dryRun: boolean,
+    listed: unknown,
+    listFailed: boolean,
+    providerIds: number[],
   ): Promise<string | undefined> {
-    const existing = this.state.getCopyCanaryTestId(campaign.id);
-    if (existing) return existing;
-    if (!this.smartDelivery) return undefined;
+    if (!this.smartDelivery) {
+      throw new Error("SmartDelivery is not configured");
+    }
 
-    const listed = await this.smartDelivery.listTests({}).catch(() => []);
-    const found = listed.find(
+    const existing = this.state.getCopyCanaryTestId(campaign.id);
+    // D98 — a list failure must reuse the stored id, not spawn a second test.
+    if (listFailed) {
+      if (existing) return existing;
+      throw new Error("could not list SmartDelivery tests");
+    }
+    const tests = normalizeTestList(listed);
+    if (
+      existing &&
+      hasLivingUnwarmedCopyCanary(campaign.id, tests, existing)
+    ) {
+      return existing;
+    }
+    const found = tests.find(
       (test) => campaignIdFromCanaryTestName(test.test_name) === campaign.id,
     );
     const foundId = found ? testIdOf(found) : undefined;
-    if (foundId) return foundId;
+    if (foundId && hasLivingUnwarmedCopyCanary(campaign.id, tests, foundId)) {
+      return foundId;
+    }
 
     const copy = await this.loadCampaignCopy(campaign.id);
     if (!copy.subject && !copy.bodyHtml) {
       throw new Error("no campaign copy to test");
+    }
+    if (!providerIds.length) {
+      throw new Error(
+        "no SmartDelivery provider_ids — resolve PROVIDER_IDS or seed providers",
+      );
     }
     const senderAccounts = picks.map((row) => row.email.toLowerCase());
     const payload = isolationManualPayload({
@@ -374,7 +427,7 @@ export class CopyCanaryService {
         copy.subject || "",
         copy.bodyHtml,
       ),
-      providerIds: this.config.providerIds,
+      providerIds,
     });
 
     if (dryRun) return `dry-run-canary-${campaign.id}`;
@@ -395,7 +448,7 @@ export class CopyCanaryService {
             ? this.config.placementTestEndDays
             : OPEN_ENDED_TEST_DAYS,
         ),
-        provider_ids: this.config.providerIds,
+        provider_ids: providerIds,
       });
       return String(created.id);
     }

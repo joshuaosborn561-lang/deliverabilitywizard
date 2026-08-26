@@ -8,6 +8,7 @@ import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isClientInbox } from "./clientInbox.js";
+import { isRetiredSendingDomain } from "./domainControl.js";
 
 /**
  * D58 / D82 — live staffable floor is half that client's own inboxes.
@@ -36,12 +37,18 @@ export function allowsGenericStaff(
   });
 }
 
+type FloorCountState = Pick<StateStore, "getPoolMailbox"> & {
+  getHeldInbox?: StateStore["getHeldInbox"];
+  isCopyCanary?: StateStore["isCopyCanary"];
+  getDomainHistory?: StateStore["getDomainHistory"];
+};
+
 export function countClientInboxesByKey(
   accounts: SmartleadAccountWithCampaigns[],
   campaigns: SmartleadCampaign[],
   clients: SmartleadClientRecord[],
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
-  state: Pick<StateStore, "getPoolMailbox">,
+  state: FloorCountState,
 ): Map<string, number> {
   const campaignClientById = new Map(
     campaigns.map((campaign) => [campaign.id, campaign.client_id]),
@@ -52,6 +59,13 @@ export function countClientInboxesByKey(
     const email = accountEmail(account);
     if (!email) continue;
     if (!isClientInbox(account, email, config, state)) continue;
+    // D99 — held / retired / canary boxes cannot sit or send. They are
+    // not "A+B sitting" (D58) and must not inflate the half-floor.
+    if (state.getHeldInbox?.(email)) continue;
+    if (state.isCopyCanary?.(email)) continue;
+    const domain = email.split("@")[1]?.toLowerCase();
+    const history = domain ? state.getDomainHistory?.(domain) : undefined;
+    if (isRetiredSendingDomain(domain, history)) continue;
     const resolved = resolveAccountClient(account, campaignClientById, clientsById);
     const key = clientCountKey(resolved.clientId);
     counts.set(key, (counts.get(key) ?? 0) + 1);

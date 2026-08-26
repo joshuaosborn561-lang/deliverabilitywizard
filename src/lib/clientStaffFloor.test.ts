@@ -76,4 +76,27 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       "Vasco is not a full-send exception — floor is still half",
     );
   });
+
+  it("D99: held inboxes do not inflate the half-floor", () => {
+    const counts = countClientInboxesByKey(
+      [
+        { id: 1, from_email: "a@bcp.com", client_id: 9 },
+        { id: 2, from_email: "b@bcp.com", client_id: 9 },
+        { id: 3, from_email: "held@bcp.com", client_id: 9 },
+      ],
+      [{ id: 1, name: "BCP Healthcare", status: "ACTIVE", client_id: 9 }],
+      [{ id: 9, name: "BCP" }],
+      { extraGenericMailboxes: [], extraGenericDomains: [] },
+      {
+        getPoolMailbox: () => undefined,
+        getHeldInbox: (email: string) =>
+          email === "held@bcp.com" ? ({ email } as never) : undefined,
+      },
+    );
+    assert.equal(counts.get(clientCountKey(9)), 2);
+    assert.equal(
+      staffFloorForCampaign({ client_id: 9, name: "BCP Healthcare" }, counts),
+      1,
+    );
+  });
 });

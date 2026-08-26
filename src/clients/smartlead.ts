@@ -1,6 +1,7 @@
 import { apiRequest, sleep } from "../lib/http.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
+import { sequencesForWrite } from "../lib/signatureQa.js";
 import type {
   SmartleadCampaign,
   SmartleadEmailAccount,
@@ -189,7 +190,7 @@ export class SmartleadClient {
     return this.mutate(() =>
       apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/sequences`, {
         method: "POST",
-        body: { sequences },
+        body: { sequences: sequencesForWrite(sequences) },
       }),
     );
   }

@@ -92,3 +92,37 @@ export function appendSignatureTag(sequences: SmartleadSequence[]): {
   });
   return { sequences: next, changed };
 }
+
+const SEQUENCE_WRITE_OMIT = new Set([
+  "created_at",
+  "updated_at",
+  "createdAt",
+  "updatedAt",
+]);
+
+/**
+ * D101 — Smartlead POST /sequences rejects read-only timestamps
+ * (`"sequences[0].created_at" is not allowed`). Strip them (and the
+ * same on variants) before every write.
+ */
+export function sequencesForWrite(
+  sequences: SmartleadSequence[],
+): SmartleadSequence[] {
+  return sequences.map((sequence) => omitReadonlySequence(sequence));
+}
+
+function omitReadonlySequence(row: SmartleadSequence): SmartleadSequence {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(row)) {
+    if (SEQUENCE_WRITE_OMIT.has(key)) continue;
+    if (
+      (key === "sequence_variants" || key === "variants") &&
+      Array.isArray(value)
+    ) {
+      out[key] = value.map((variant) => omitReadonlySequence(variant as SmartleadSequence));
+      continue;
+    }
+    out[key] = value;
+  }
+  return out as unknown as SmartleadSequence;
+}

@@ -2265,3 +2265,21 @@ that is how isolation already reads it.
 
 **Guards.** copyCanary isolationManualPayload includes campaignId;
 owner-intent D100.
+---
+
+## D101 — Sequence writes omit created_at
+
+**Decision.** Every Smartlead sequence POST strips `created_at` /
+`updated_at` (step and variants). The API rejects
+`"sequences[0].created_at" is not allowed`. The tag append is
+unchanged (D92).
+
+**Why.** Live 2026-08-26 after #119: leftover `%signature%` writes
+failed on SalesGlider Nurture, Parlay2, Culture Fits, and Positive
+for that reason. The campaigns were inspected; the write bounced.
+
+**Tradeoff.** A future Smartlead field that is also read-only will
+need adding to the omit list. Accepted: we add it when it fails.
+
+**Guards.** sequencesForWrite; updateCampaignSequences uses it;
+owner-intent D101.

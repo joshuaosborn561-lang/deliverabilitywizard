@@ -72,3 +72,33 @@ export function desiredMailboxSignature(opts: {
   return `${name}\n${brand}`;
 }
 
+/**
+ * D31 / D74 — why this mailbox is not the two-line Name / Brand rule.
+ * HTML that already extracts to those two lines is a match.
+ */
+export function mailboxSignatureMismatch(opts: {
+  fromName?: string | null;
+  signature?: string | null;
+  clientBrand?: string | null;
+  otherClientBrands?: string[];
+}): string | null {
+  const desired = desiredMailboxSignature(opts);
+  if (!desired) return null;
+  const actual = extractSignatureLines(opts.signature).join("\n");
+  const want = extractSignatureLines(desired).join("\n");
+  if (actual === want) return null;
+  const foreign = findForeignBrand(
+    [opts.fromName ?? "", actual].filter(Boolean).join("\n"),
+    opts.clientBrand ?? "",
+    opts.otherClientBrands ?? [],
+  );
+  if (foreign) {
+    const expected = (opts.clientBrand ?? "").trim() || "this client's brand";
+    return `carries ${foreign} (expected ${expected})`;
+  }
+  if (!actual) return "has no signature (want First Last / client brand)";
+  const shown = actual.replace(/\n/g, " / ");
+  const target = want.replace(/\n/g, " / ");
+  return `is ${shown} (want ${target})`;
+}
+

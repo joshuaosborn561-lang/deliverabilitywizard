@@ -77,9 +77,10 @@ describe("campaign check first-pass helpers", () => {
 });
 
 describe("CampaignCheckService", () => {
-  it("D81: a new campaign with a foreign signature fails the first check", async () => {
+  it("D81: a new campaign with a foreign signature is rewritten to Name / Brand", async () => {
     const state = new StateStore(stateFile());
     await state.load();
+    const mailboxSigs: string[] = [];
     const service = new CampaignCheckService(
       loadConfig({}),
       {
@@ -110,24 +111,27 @@ describe("CampaignCheckService", () => {
             email_body: "<div>Hi</div><div>%signature%</div>",
           },
         ],
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
       } as unknown as SmartleadClient,
       delivery(),
       state,
     );
 
     const result = await service.run({ mode: "first" });
-    assert.equal(result.firstSeen, 1);
-    assert.equal(result.firstPassed, 0);
-    assert.ok(
+    assert.equal(mailboxSigs[0], "Zuri Hernandez\nGoliath Cybersecurity");
+    assert.equal(result.firstPassed, 1, "same pass unblocks after the mailbox write");
+    assert.equal(
       result.findings[0]?.findings.some((finding) => finding.kind === "mailbox_sig"),
-      "first check must catch Peterson on Goliath",
+      false,
     );
     assert.equal(
       result.findings[0]?.findings.some((finding) => finding.kind === "bounce_autopause"),
       false,
       "bounce auto-pause is not this checker",
     );
-    assert.equal(state.getCampaignCheck(3826693)?.firstPassedAt, null);
+    assert.ok(state.getCampaignCheck(3826693)?.firstPassedAt);
   });
 
   it("D81: a clean campaign passes first check; hourly still reads sequences", async () => {
@@ -412,6 +416,70 @@ describe("CampaignCheckService", () => {
         (finding) => finding.kind === "missing_canary",
       ),
       "a campaign without a canary test is a finding again once the fleet is up",
+    );
+  });
+
+  it("D31: a leftover empty mailbox signature is written without Slack", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 92,
+      name: "Goliath Displacement L",
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      firstCheckAt: "2026-08-25T00:00:00.000Z",
+      firstPassedAt: "2026-08-25T00:05:00.000Z",
+      lastSweepAt: "2026-08-25T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: ["mailbox_sig: leila@goliath.com has no signature"],
+    });
+    const told: string[] = [];
+    const mailboxSigs: string[] = [];
+    const sequencesUpdated: number[] = [];
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 92, name: "Goliath Displacement L", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 9,
+            from_email: "leila@goliath.com",
+            from_name: "Leila Sanchez",
+            signature: "",
+            client_id: 548611,
+            campaign_ids: [92],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [goliath, peterson],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+        ],
+        updateCampaignSequences: async (id: number) => {
+          sequencesUpdated.push(id);
+        },
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      {
+        notifyActionResult: async (text: string) => {
+          told.push(text);
+        },
+      } as never,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.equal(mailboxSigs[0], "Leila Sanchez\nGoliath Cybersecurity");
+    assert.equal(sequencesUpdated.length, 0, "sequence already has %signature%");
+    assert.equal(told.length, 0, "mailbox-only leftover does not Slack (D71)");
+    assert.equal(
+      result.findings[0]?.findings.some((finding) => finding.kind === "mailbox_sig"),
+      false,
     );
   });
 

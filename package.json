@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "pool:status": "tsx scripts/provision-pool-mailboxes.ts --status",
     "pool:wait": "tsx scripts/provision-pool-mailboxes.ts --wait 4",
     "pool:buy": "tsx scripts/provision-pool-mailboxes.ts --buy",

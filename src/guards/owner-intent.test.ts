@@ -3989,3 +3989,113 @@ describe("owner intent — D94 reconnect DCD mailboxes", () => {
     );
   });
 });
+
+describe("owner intent — D125 campaign signatures are the two-line rule", () => {
+  it("D125: checker judges Name/Brand and writes leftover mailbox_sig", async () => {
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      check,
+      /mailboxSignatureMismatch/,
+      stop(
+        "Campaign-check audits two-line signatures, not only foreign brands (D125).",
+        "campaignCheck.ts no longer uses mailboxSignatureMismatch.",
+      ),
+    );
+    assert.match(
+      check,
+      /finding\.kind === "mailbox_sig"/,
+      stop(
+        "A leftover mailbox_sig is written on the check pass (D125).",
+        "campaignCheck.ts no longer treats mailbox_sig as a writable leftover.",
+      ),
+    );
+    const leftover = check.search(
+      /missing_signature_tag"\)[\s\S]*mailbox_sig/,
+    );
+    assert.ok(
+      leftover >= 0,
+      stop(
+        "Health leftover includes mailbox_sig as well as missing %signature% (D125).",
+        "campaignCheck.ts leftover signature gate is tag-only again.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D126 ops Placement is live senders", () => {
+  it("D126: dashboard placement drops canary copy before the 40-test cap", async () => {
+    const reporting = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/opsReporting.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      reporting,
+      /titleHasCanaryCopyPhrase/,
+      stop(
+        "Ops Placement hides titles with canary copy (D126).",
+        "opsReporting.ts lost titleHasCanaryCopyPhrase.",
+      ),
+    );
+    assert.match(
+      reporting,
+      /isLiveSendingCampaignStatus/,
+      stop(
+        "Ops Placement is ACTIVE/START sending campaigns (D126).",
+        "opsReporting.ts no longer gates on live sending status.",
+      ),
+    );
+    const filterThenSlice = reporting.search(
+      /titleHasCanaryCopyPhrase[\s\S]*\.slice\(0, 40\)/,
+    );
+    assert.ok(
+      filterThenSlice >= 0,
+      stop(
+        "Canary copy is filtered before the 40-report ceiling (D126).",
+        "opsReporting.ts no longer filters canary copy before slice(0, 40).",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D127 canon rebuild", () => {
+  it("D127: CANON.md is the rules source and CLAUDE.md points at it", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D127 — The canon rebuild/,
+      stop(
+        "Josh delegated the canon rebuild and its standing rules (D127).",
+        "DECISIONS.md no longer has D127.",
+      ),
+    );
+    const claude = await readFile(
+      new URL("../../CLAUDE.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      claude,
+      /CANON\.md/,
+      stop(
+        "Sessions are pointed at CANON.md for the rules (D127).",
+        "CLAUDE.md no longer references CANON.md.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D\d+\*\*/,
+      stop(
+        "CANON.md declares which decision it is current through (D127).",
+        "CANON.md lost its 'Canon as of' declaration.",
+      ),
+    );
+  });
+});

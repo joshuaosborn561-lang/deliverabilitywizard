@@ -11,6 +11,139 @@ Each entry states the decision, why it was made (including what was tried and
 rejected), the tradeoff accepted, and the guard test that holds it if one
 exists.
 
+## Status index
+
+Maintained with every new entry (the meta-guard checks the newest decision is
+listed). **Do not derive behaviour from this file** — `CANON.md` is the only
+statement of current rules; this ledger is the historical record of why.
+Statuses: **live** (in canon), **superseded** (by the named entry),
+**historical** (a one-shot or cleanup that already ran), **retired-record**
+(the entry itself records a retirement and stays true).
+
+| Decision | Status |
+|---|---|
+| D1 | Live (the import clock) — duration superseded by D50 (21 days) |
+| D2 | Live |
+| D3 | Live — qualified by D26/D27 |
+| D4 | Live |
+| D5 | Superseded by D51/D79 — no per-sender pulls; numbers stay readings |
+| D6 | Superseded by D51/D59 — no benching path remains |
+| D7 | Superseded by D58/D82 — floor is half the client's inboxes |
+| D8 | Superseded by D45 (quota) — recurring tests + ≤50/test stay |
+| D9 | Superseded by D58/D81/D82 — generic staffing is POC/approval-gated |
+| D10 | Live (restates D3) |
+| D11 | Live — reworded by D24 |
+| D12 | Superseded by D26 |
+| D13 | Live |
+| D14 | Live (swap reservations honoured; machinery off by default) |
+| D15 | Live |
+| D16 | Live — DNS Slack itself retired by D71 (logs only) |
+| D17 | Superseded by D58/D82 (floor half) — 30/day stays (D24) |
+| D18 | Live |
+| D19 | Live |
+| D20 | Live |
+| D21 | Live — auto-merge OFF during the canon rebuild (D127) |
+| D22–D23 | Burned numbers — no entry exists |
+| D24 | Live |
+| D25 | Live — floor definition superseded by D58/D82 |
+| D26 | Live — qualified by D43 (resters skip fan-out) |
+| D27 | Live — qualified by D58/D81/D82 (POC or approval) |
+| D28 | Superseded by D69/D93/D96 — no provider-split guesses |
+| D29 | Superseded by D91 |
+| D30 | Live |
+| D31 | Live — extended by D125 |
+| D32 | Live |
+| D33–D34 | Burned numbers — no entry exists |
+| D35 | Live |
+| D36 | Superseded by D93/D96 |
+| D37–D38 | Burned numbers — no entry exists |
+| D39 | Superseded — held tests retired (D51/D59); day brief superseded by D71 |
+| D40 | Live |
+| D41 | Mostly superseded (D43 cohorts, D50 clock, D71 Slack) — burn checklist and DKIM/DMARC advisory live |
+| D42 | Superseded by D43 |
+| D43 | Live |
+| D44 | Historical one-shot (ran 2026-08-21) |
+| D45 | Live |
+| D46 | Live — enforced by D106 |
+| D47 | Live |
+| D48 | Live (rig unarmed until `ISOLATION_DOMAIN` is set) |
+| D49 | Live |
+| D50 | Live |
+| D51 | Live (kill-only) — warmup-gate-off clause superseded by D105 |
+| D52 | Live |
+| D53 | Live |
+| D54 | Live — campaign-membership exception superseded by D55 |
+| D55 | Live |
+| D56 | Live |
+| D57 | Burned number — no entry exists |
+| D58 | Superseded by D82 (POC pattern) — half-client floor lives on there |
+| D59 | Historical one-shot (ran 2026-08-24) |
+| D60 | Live |
+| D61 | Historical one-shot (ran 2026-08-24; destructive) |
+| D62 | Burned number — no entry exists |
+| D63 | Live — 12-hour Slack cadence superseded by D64→D71 |
+| D64 | Superseded by D71 |
+| D65 | Live |
+| D66–D68 | Burned numbers — no entry exists |
+| D69 | Live |
+| D70 | Burned number — no entry exists |
+| D71 | Live |
+| D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
+| D74 | Live — log-only clause superseded by D75 |
+| D75 | Live |
+| D76 | Live |
+| D77 | Live — Goliath-only unpause generalized by D82 |
+| D78 | Superseded by D80→D88 |
+| D79 | Retired-record (no per-sender bounce pull) — live |
+| D80 | Superseded by D88/D90 — the off-write (100) survives |
+| D81 | Live — amended by D82/D122 |
+| D82 | Live |
+| D83 | Live |
+| D84 | Live |
+| D85 | Live — signature-ask clause superseded by D92/D97 |
+| D86 | Live |
+| D87 | Superseded by D92/D97 |
+| D88 | Retired-record (no bounce bands) — live |
+| D89 | Live — signature-ask collapse superseded by D92/D97 |
+| D90 | Live |
+| D91 | Retired-record (no paused-campaign hunt) — live |
+| D92 | Live |
+| D93 | Live |
+| D94 | Live |
+| D95 | Live |
+| D96 | Live |
+| D97 | Live |
+| D98 | Live |
+| D99 | Live |
+| D100 | Superseded by D113→D114 |
+| D101 | Live |
+| D102 | Superseded by D113→D114 |
+| D103 | Live |
+| D104 | Superseded by D110 |
+| D105 | Live |
+| D106 | Live |
+| D107 | Live — one-shot skip superseded by D111 |
+| D108 | Live |
+| D109 | Historical one-shot (ran 2026-08-26) |
+| D110 | Live |
+| D111 | Live |
+| D112 | Live for campaign-bound tests — canary clause superseded by D113/D114 |
+| D113 | Superseded by D114 (its reason survives) |
+| D114 | Live |
+| D115 | Superseded by D117/D118 |
+| D116 | Live |
+| D117 | Superseded by D118 |
+| D118 | Live — qualified by D120 |
+| D119 | Live |
+| D120 | Live |
+| D121 | Live — qualified by D123 |
+| D122 | Live |
+| D123 | Live |
+| D124 | Live (one forced pass, then D84 drift-writes) |
+| D125 | Live |
+| D126 | Live |
+| D127 | Live — the canon rebuild |
+
 ---
 
 ## D1 — Warmup is owed from the InboxKit import, not Smartlead's warmup record
@@ -2802,3 +2935,90 @@ handful of bounces — the reason D80 turned it off.
 
 **Guards.** `autopauseForceAllAt`; GET-echo via
 `campaignSettingsWriteBody` on autopause writes; owner-intent D124.
+
+---
+
+## D125 — Campaign signature audit is the two-line rule, then write
+
+**Decision.** Every living campaign's attached mailboxes are judged
+against the D31 two-line `First Last / {Client Brand}` pair, not only
+against a foreign-client brand. Empty, one-line, extra-line, and
+foreign leftovers are `mailbox_sig` findings and are written on that
+campaign-check pass (health leftover + hourly), the same way missing
+`%signature%` is (D92/D98). HTML that already extracts to those two
+lines is a match. A mailbox-only write logs; it does not Slack (D71).
+Sequence-tag writes still Slack once (D95).
+
+**Why.** Cayden (2026-08-26): audit every campaign signature against
+the standing rules. Production `/health` showed zero `mailbox_sig`
+because empty / one-line signatures were not a finding, so they sat
+until the 6-hour full mailbox-settings converge.
+
+**Tradeoff.** First-check now unblocks after the mailbox write instead
+of staying failed on a leftover Peterson line. Accepted: that is the
+same-pass write D92 already did for the tag.
+
+**Guards.** mailboxSignatureMismatch; leftover mailbox_sig; owner-intent D125.
+
+---
+
+## D126 — Ops Placement tab is live senders, never Canary copy
+
+**Decision.** The `/ops` Placement results table shows SmartDelivery
+tests for **ACTIVE/START sending campaigns** only. Hide any test
+or campaign whose title contains the phrase "canary copy"
+(case-insensitive). Filter the list **before** the 40-report
+ceiling so canary-copy tests cannot crowd out live senders.
+
+**Why.** Live 2026-08-26: canary-copy schedules are the newest
+tests, so the dashboard's 40-test window was only those
+instrumentation rows. Josh does not want to see them there.
+
+**Tradeoff.** Pod-control, isolation, held/rest, paused, and
+canary-shell tests also drop off this tab. They still run; they
+are just not the employee scoreboard. If Smartlead campaign list
+fails, name-filter still hides canary copy.
+
+**Guards.** titleHasCanaryCopyPhrase; live ACTIVE/START filter;
+slice after filter; owner-intent D126.
+---
+
+## D127 — The canon rebuild: one rules source, subtraction over flags
+
+**Decision.** Josh delegated the rebuild decisions (2026-08-26: "you make
+decisions on 1-9, you know my intent now and the goal of this operation,
+to create sustainability. do it all"). Standing rules from that call:
+
+1. **`CANON.md` is the only statement of current behaviour.** It is updated
+   in the same PR as any new decision; the meta-guard fails when it falls
+   behind the ledger. `CLAUDE.md` becomes a short session contract pointing
+   at it. `DECISIONS.md` stays the append-only history, gains this status
+   index, and is never read to derive behaviour.
+2. **A superseding decision deletes the code it retires in the same PR.**
+   Dead rules are removed, not flag-parked.
+3. **Decision numbers are unique** across `main` and open PRs; the
+   meta-guard fails the suite on a duplicate `## D<n>` header. (PR #135's
+   D124 was renumbered D126 to resolve the collision with PR #137.)
+4. Retired decisions keep **absence guards**; live decisions keep presence
+   guards. The guard suite must never hold both sides of an argument.
+5. The teardown runs in phases (audit: `docs/canon-rebuild/AUDIT-2026-08-26.md`),
+   one revertible PR per phase, each soaked against the live board before
+   the next. The bug remediator's auto-merge is **off** for the duration.
+6. Planned with Josh's sign-off, landing with their own numbers: fleet-wide
+   word swap, retire-implies-backfill, Smartlead pod tags, the domain→client
+   advisory checker, and arming the isolation rig via the D4 approval flow.
+   Cayden's AM/PM manual QA pass stays informal (not canon) per Josh.
+
+**Why.** Five days of parallel agents produced 90+ decisions, three
+contradictions running live, retired machinery one env var from firing,
+and a ledger where dead rules outweigh live ones — the system kept
+"losing the plot" because everything an agent reads disagrees with
+something else it reads.
+
+**Tradeoff.** History gets one structural addition (this index) — entries
+themselves stay untouched. Sessions that only read CANON.md lose the
+war-story context unless they follow the citations; accepted, that is
+what the citations are for.
+
+**Guards.** `src/guards/meta.test.ts` — unique decision numbers, canon
+freshness, index covers the newest decision; owner-intent D127.

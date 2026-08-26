@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D136** (2026-08-26). One page of current truth. When a new
+Canon as of **D137** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -129,6 +129,9 @@ Slack speaks only when a human decision is needed or the day is done.
   - Unwarmed canaries land the copy while live senders fail → infra.
   - Campaign copy fails an ESP, known-good fine everywhere, unwarmed canaries
     also fail that copy → **word hunt** (deletion tests on the isolation rig).
+    An unarmed rig asks Josh once to buy its isolation domain — the tap is
+    the approval, the buy is spend-gated, and the bought domain arms the
+    rig from state (`ISOLATION_DOMAIN` still overrides) (D137).
   - No unwarmed reading yet → wait. Do not hunt.
 - The hunt runs autonomously; Slack fires **once** when it has the word:
   receipts, the suggested edit, one *Make the changes* button (D69) — and

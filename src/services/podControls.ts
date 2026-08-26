@@ -27,7 +27,8 @@ import {
   isolationManualPayload,
   isolationSchedulePayload,
 } from "../lib/isolationPlacement.js";
-import { isIsolationEmail, normalizeIsolationDomain } from "../lib/isolationDomain.js";
+import { isIsolationEmail, effectiveIsolationDomain,
+  normalizeIsolationDomain } from "../lib/isolationDomain.js";
 import { buildPods, emailsForPod, type Pod } from "../lib/pods.js";
 import {
   placementFromInboxRate,
@@ -554,7 +555,7 @@ export async function loadPods(input: {
   );
   const isolation = {
     emails: new Set(input.config.isolationMailboxEmails),
-    domain: normalizeIsolationDomain(input.config.isolationDomain),
+    domain: effectiveIsolationDomain(input.config, input.state),
   };
 
   return buildPods({

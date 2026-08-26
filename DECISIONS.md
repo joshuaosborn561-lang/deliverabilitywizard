@@ -152,6 +152,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D134 | Live | A domain-retire tap approves generic backfill for the campaigns it cut |
 | D135 | Live | POD-A/POD-B tags converged on client mailboxes in Smartlead |
 | D136 | Live | Domain→client advisory audit; EOD escalation, never a guess |
+| D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
 
 ---
 
@@ -3357,3 +3358,35 @@ everything maps.
 **Guards.** owner-intent D136: the audit contains no client writes and
 persists advisories; behavioral tests cover split/unmapped/skips and
 that a clean pass clears stale advisories.
+
+## D137 — The word-hunt rig arms itself through the approval flow
+
+**Decision.** When the isolation rig is enabled but has no isolation
+domain (no `ISOLATION_DOMAIN` in Railway and no state record), it posts
+**one** owner-only Slack ask — "Arm the word-hunt rig: buy its isolation
+domain" — through the standard isolation-action flow. Josh's tap is the
+approval (D4/D60): the buy runs the exact spend-gated pipeline a
+replacement-domain buy uses (`IsolationBuyService`: Porkbun price check,
+single-use spend approval + consume, InboxKit nameservers and mailbox
+order, nameserver-wait resume), then stamps the bought domain into
+`state.isolation.isolationDomain`. The rig, the denylist, pod assembly,
+and the domain audit all read `effectiveIsolationDomain` — config wins
+when set, else the state record. The ask dedupes for the lifetime of the
+rig: any prior answer — pending, approved, executed, or denied — means
+never asking again (Josh reverses a deny by saying so, not by being
+re-asked every pass).
+
+**Why.** `ISOLATION_DOMAIN` was never set in Railway, so the word hunt
+(D93's copy→word step) has been silently unarmed — verdicts could say
+"word hunt" and then nothing happened. An unarmed rig should be one tap
+away, not a config spelunk.
+
+**Tradeoff.** One more Slack ask (once, ever). Real money stays behind
+the tap + spend gateway caps. Mailboxes reach Smartlead the same way
+replacement-buy mailboxes do; the rig arms itself when they appear on
+the domain.
+
+**Guards.** owner-intent D137: rig requests `buy_isolation_domain` when
+unarmed and reads `effectiveIsolationDomain`; execute stamps the state
+domain; the kind is owner-only. Tests: ask-dedupe across
+pending/executed; approve path stamps the domain; operator tap denied.

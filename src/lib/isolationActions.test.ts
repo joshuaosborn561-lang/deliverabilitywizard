@@ -120,3 +120,71 @@ describe("isolation Slack reminds", () => {
   });
 
 });
+
+describe("D137 — one isolation-domain buy ask, ever", () => {
+  it("an executed buy means the rig never asks again", async () => {
+    const store = new StateStore(
+      `/tmp/dw-iso-ask-${process.pid}-${Date.now()}.json`,
+    );
+    await store.load();
+    const { slack, notified } = slackCapture();
+    const ask = () =>
+      buildIsolationAction({
+        kind: "buy_isolation_domain",
+        title: "Arm the word-hunt rig: buy its isolation domain",
+        proof: "Still.",
+        detail: { quantity: 1, isolationRig: true },
+      });
+    const first = await requestIsolationAction({ store, slack, action: ask() });
+    assert.ok(first, "first ask posts");
+    assert.equal(first?.allowed, "owner", "spend asks are owner-only");
+    // pending → dedupe
+    assert.equal(await requestIsolationAction({ store, slack, action: ask() }), null);
+    // executed → still dedupe: the rig is armed for life
+    store.upsertIsolationAction({
+      ...first!,
+      status: "executed",
+      executedAt: new Date().toISOString(),
+    });
+    assert.equal(await requestIsolationAction({ store, slack, action: ask() }), null);
+    assert.equal(notified.length, 1);
+  });
+});
+
+describe("D137 — a denied isolation-domain buy also never re-asks", () => {
+  it("deny stands until Josh says otherwise", async () => {
+    const store = new StateStore(
+      `/tmp/dw-iso-deny-${process.pid}-${Date.now()}.json`,
+    );
+    await store.load();
+    const { slack, notified } = slackCapture();
+    const first = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_isolation_domain",
+        title: "Arm the word-hunt rig: buy its isolation domain",
+        proof: "Still.",
+        detail: { quantity: 1, isolationRig: true },
+      }),
+    });
+    store.upsertIsolationAction({
+      ...first!,
+      status: "denied",
+      decidedAt: new Date().toISOString(),
+      decidedBy: "Josh",
+    });
+    const again = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_isolation_domain",
+        title: "Arm the word-hunt rig: buy its isolation domain",
+        proof: "Still.",
+        detail: { quantity: 1, isolationRig: true },
+      }),
+    });
+    assert.equal(again, null, "a deny is an answer, not a snooze");
+    assert.equal(notified.length, 1);
+  });
+});

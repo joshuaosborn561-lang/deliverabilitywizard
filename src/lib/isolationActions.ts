@@ -37,6 +37,7 @@ function samePending(
   // (already bought / recently executed / recently denied) in their branches.
   if (
     next.kind !== "buy_canary_fleet" &&
+    next.kind !== "buy_isolation_domain" &&
     next.kind !== "add_signature_tag" &&
     existing.status !== "pending"
   ) {
@@ -57,6 +58,12 @@ function samePending(
         existing.status === "approved" ||
         existing.status === "executed")
     );
+  }
+  if (next.kind === "buy_isolation_domain") {
+    // D137 — the rig asks once, ever: any prior answer (including a deny)
+    // stands. Josh reverses a deny by saying so, not by being re-asked
+    // every monitor pass.
+    return true;
   }
   if (next.kind === "buy_canary_fleet") {
     return (

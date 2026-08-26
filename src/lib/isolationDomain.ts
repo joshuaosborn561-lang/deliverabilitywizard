@@ -65,3 +65,21 @@ export function emailDomainOf(email: string | undefined): string | undefined {
   if (at < 0 || at === normalized.length - 1) return undefined;
   return normalized.slice(at + 1);
 }
+
+/**
+ * D137 — the isolation domain comes from ISOLATION_DOMAIN when set, else
+ * from the state record the approved buy stamped. Config wins so Josh can
+ * always override by hand.
+ */
+export function effectiveIsolationDomain(
+  config: { isolationDomain: string },
+  state: {
+    getIsolation(): { isolationDomain?: { domain?: string } | null };
+  },
+): string {
+  return (
+    normalizeIsolationDomain(config.isolationDomain) ??
+    normalizeIsolationDomain(state.getIsolation().isolationDomain?.domain ?? "") ??
+    ""
+  );
+}

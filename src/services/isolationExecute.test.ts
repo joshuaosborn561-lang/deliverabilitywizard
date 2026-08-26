@@ -468,3 +468,50 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     );
   });
 });
+
+describe("D137 — the isolation-domain buy arms the rig", () => {
+  it("an approved buy stamps the state domain the rig reads", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-arm-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_isolation_domain",
+      title: "Arm the word-hunt rig: buy its isolation domain",
+      proof: "proof",
+      detail: { quantity: 1, isolationRig: true },
+    });
+    state.upsertIsolationAction(action);
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async () => ({
+          domains: ["hunthouse.info"],
+          mailboxesOrdered: 3,
+          awaitingNameservers: false,
+        }),
+      } as never,
+    );
+
+    const denied = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(denied.ok, false, "spend stays owner-only");
+
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(outcome.ok, true);
+    assert.equal(
+      state.getIsolation().isolationDomain?.domain,
+      "hunthouse.info",
+      "the rig reads this domain on its next pass (D137)",
+    );
+    assert.equal(state.getIsolationAction(action.id)?.status, "executed");
+  });
+});

@@ -4192,3 +4192,53 @@ describe("owner intent — D135/D136 fleet visibility", () => {
     );
   });
 });
+
+describe("owner intent — D137 the rig arms through the approval flow", () => {
+  it("D137: an unarmed rig asks once; the buy stamps the state domain; config still overrides", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const rig = await readFile(
+      new URL("../services/isolationRig.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      rig,
+      /buy_isolation_domain/,
+      stop(
+        "An unarmed word-hunt rig requests its domain buy through the approval flow (D137).",
+        "isolationRig.ts silently skips when unarmed again.",
+      ),
+    );
+    assert.match(
+      rig,
+      /effectiveIsolationDomain/,
+      stop(
+        "The rig reads ISOLATION_DOMAIN or the state record the buy stamped (D137).",
+        "isolationRig.ts reads only the env var again.",
+      ),
+    );
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      exec,
+      /buyIsolationDomain/,
+      stop(
+        "Josh's tap buys the isolation domain and arms the rig (D137).",
+        "isolationExecute.ts lost the buy_isolation_domain path.",
+      ),
+    );
+    const actors = await readFile(
+      new URL("../lib/isolationActors.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actors,
+      /buy_isolation_domain/,
+      stop(
+        "The isolation-domain buy is owner-only spend (D4/D137).",
+        "isolationActors.ts no longer knows the kind.",
+      ),
+    );
+  });
+});

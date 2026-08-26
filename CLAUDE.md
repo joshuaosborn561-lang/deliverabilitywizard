@@ -315,6 +315,9 @@ confirmed one-mailbox rotation when every runtime precondition passes. Spending,
 approval decisions, destructive teardown, safety-policy changes, bulk
 remediation and deployment remain unavailable to the operator.
 
+The Placement tab lists tests for **ACTIVE sending campaigns** only. Anything
+with "canary copy" in the test or campaign title is hidden (D126).
+
 **Slack is only three things (D71).** A burned domain with receipts and
 a cancel/replace button; an isolated spam word with Make the changes;
 and one end-of-day client scoreboard (sends + spam). Health, rest, DNS,

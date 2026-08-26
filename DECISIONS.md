@@ -2777,3 +2777,29 @@ enrich is blank would both look covered. Accepted: we only
 write a test id onto the campaign we created it for.
 
 **Guards.** livingTestIds + missing campaign_id; owner-intent D123.
+
+---
+
+## D124 — Mailbox signature QA is First Last / client brand
+
+**Decision.** Campaign-check and campaign-audit compare each live
+mailbox to `desiredMailboxSignature` — First Last / client brand
+(D31 two-line pair, D74 foreign rewrite). Empty, HTML, one-line,
+wrong-name, and leftover other-client brands are `mailbox_sig`.
+The checker writes the leftover on that pass (D98). Slack stays
+the D92/D95 first `%signature%` write; mailbox-only rewrites stay
+in logs (D71).
+
+**Why.** Josh (2026-08-26): "audit mailbox signatures against
+First Last / client brand." QA only looked for a foreign client
+line, so an empty or one-line sender on an ACTIVE campaign was
+not a finding and waited for the 6-hour mailbox-settings full
+converge.
+
+**Tradeoff.** Health may write more mailbox signatures on the
+15-minute pass when a leftover `mailbox_sig` is open. Accepted:
+that is the same write mailbox-settings already wanted, and a
+lying scoreboard was the hole.
+
+**Guards.** mailboxSignatureMismatch; campaign-check leftover
+write; owner-intent D124.

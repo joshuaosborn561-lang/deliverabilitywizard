@@ -148,7 +148,8 @@ future campaign with a similar name is not skipped by accident.
 ## Campaign checks (D81)
 
 A new campaign id gets a **first-check** on the next health pass (15 minutes)
-against the standing rules: client tag, mailbox signatures, `%signature%`
+against the standing rules: client tag, mailbox signatures vs First Last /
+client brand (D124), `%signature%`
 in the sequence, no foreign brand in copy, one-client membership,
 pod-control shell stays paused, generics only on a **POC** client or after
 Josh Slack-approves a backfill. Goliath is marked POC. Bounce pause

@@ -3924,3 +3924,53 @@ describe("owner intent — D94 reconnect DCD mailboxes", () => {
     );
   });
 });
+
+describe("owner intent — D124 mailbox signature is First Last / client brand", () => {
+  it("D124: QA compares to desiredMailboxSignature, not only a foreign brand", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lib = await readFile(
+      new URL("../lib/mailboxSignature.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const audit = await readFile(
+      new URL("../services/campaignAudit.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      lib,
+      /export function mailboxSignatureMismatch/,
+      stop(
+        "Mailbox signature QA is First Last / client brand (D124).",
+        "mailboxSignature.ts no longer exports mailboxSignatureMismatch.",
+      ),
+    );
+    assert.match(
+      check,
+      /mailboxSignatureMismatch/,
+      stop(
+        "Campaign-check audits mailbox signatures against First Last / client brand (D124).",
+        "campaignCheck.ts no longer uses mailboxSignatureMismatch.",
+      ),
+    );
+    assert.match(
+      check,
+      /finding\.startsWith\("mailbox_sig"\)/,
+      stop(
+        "A leftover mailbox_sig is written on the next health pass (D98/D124).",
+        "campaignCheck.ts no longer treats mailbox_sig as a leftover writable hole.",
+      ),
+    );
+    assert.match(
+      audit,
+      /mailboxSignatureMismatch/,
+      stop(
+        "Campaign audit is the signature QA scan against First Last / client brand (D124).",
+        "campaignAudit.ts no longer uses mailboxSignatureMismatch.",
+      ),
+    );
+  });
+});

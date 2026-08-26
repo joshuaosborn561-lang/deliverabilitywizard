@@ -67,9 +67,69 @@ describe("CampaignAuditService signature QA", () => {
         (issue) =>
           issue.kind === "mailbox_sig" &&
           issue.detail.includes("Roofs by Peterson") &&
-          issue.detail.includes("aarav@pool.info"),
+          issue.detail.includes("aarav@pool.info") &&
+          issue.detail.includes("Goliath Cybersecurity"),
       ),
       "QA must catch a Peterson signature on Goliath",
+    );
+  });
+
+  it("flags an empty or one-line mailbox signature on a live campaign (D124)", async () => {
+    const state = new StateStore(
+      `/tmp/campaign-audit-sig-empty-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = new CampaignAuditService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3815447,
+            name: "Goliath Displacement M",
+            status: "ACTIVE",
+            client_id: 548611,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "leila@goliath.com",
+            from_name: "Leila Sanchez",
+            signature: "",
+            client_id: 548611,
+            campaign_ids: [3815447],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+        getCampaignSequences: async () => [
+          {
+            id: 1,
+            seq_number: 1,
+            email_body: "<div>Hi</div><div>%signature%</div>",
+          },
+        ],
+      } as unknown as SmartleadClient,
+      {
+        listTests: async () => [],
+        enrichCampaignIds: async (rows: unknown[]) => rows,
+      } as unknown as SmartDeliveryClient,
+      state,
+    );
+
+    const result = await service.run(50);
+    assert.ok(
+      result.signatureIssues.some(
+        (issue) =>
+          issue.kind === "mailbox_sig" &&
+          issue.detail.includes("leila@goliath.com") &&
+          issue.detail.includes("empty") &&
+          issue.detail.includes("Leila Sanchez / Goliath Cybersecurity"),
+      ),
+      "QA must catch a mailbox that is not First Last / client brand",
     );
   });
 });

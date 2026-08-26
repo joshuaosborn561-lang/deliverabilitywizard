@@ -72,3 +72,55 @@ export function desiredMailboxSignature(opts: {
   return `${name}\n${brand}`;
 }
 
+export type MailboxSignatureMismatchReason =
+  | "empty"
+  | "name"
+  | "brand"
+  | "format";
+
+export interface MailboxSignatureMismatch {
+  expected: string;
+  actual: string;
+  reason: MailboxSignatureMismatchReason;
+}
+
+/**
+ * D31 / D92 / D124 — stored signature vs First Last / client brand.
+ * `desiredMailboxSignature` is the bar (D74 rewrites a foreign brand
+ * line; D31 keeps a richer same-client brand). Null when we cannot
+ * form a pair — unassigned pool stays alone.
+ */
+export function mailboxSignatureMismatch(opts: {
+  fromName?: string | null;
+  signature?: string | null;
+  clientBrand?: string | null;
+  otherClientBrands?: string[];
+}): MailboxSignatureMismatch | null {
+  const expected = desiredMailboxSignature(opts);
+  if (!expected) return null;
+  const actual = opts.signature ?? "";
+  if (actual === expected) return null;
+  const lines = extractSignatureLines(actual);
+  const [wantName, wantBrand] = expected.split("\n");
+  if (!lines.length) {
+    return { expected, actual, reason: "empty" };
+  }
+  if ((lines[0] ?? "") !== (wantName ?? "")) {
+    return { expected, actual, reason: "name" };
+  }
+  if ((lines[1] ?? "") !== (wantBrand ?? "")) {
+    return { expected, actual, reason: "brand" };
+  }
+  return { expected, actual, reason: "format" };
+}
+
+/** Log / finding line: `email brand — have X / Y; want First Last / Brand`. */
+export function formatMailboxSignatureMismatch(
+  email: string,
+  mismatch: MailboxSignatureMismatch,
+): string {
+  const slash = (value: string) =>
+    extractSignatureLines(value).join(" / ") || "(empty)";
+  return `${email} ${mismatch.reason} — have ${slash(mismatch.actual)}; want ${slash(mismatch.expected)}`;
+}
+

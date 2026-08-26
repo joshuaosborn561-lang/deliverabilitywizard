@@ -3372,7 +3372,9 @@ order, nameserver-wait resume), then stamps the bought domain into
 `state.isolation.isolationDomain`. The rig, the denylist, pod assembly,
 and the domain audit all read `effectiveIsolationDomain` — config wins
 when set, else the state record. The ask dedupes for the lifetime of the
-rig: pending, approved, or executed means never asking again.
+rig: any prior answer — pending, approved, executed, or denied — means
+never asking again (Josh reverses a deny by saying so, not by being
+re-asked every pass).
 
 **Why.** `ISOLATION_DOMAIN` was never set in Railway, so the word hunt
 (D93's copy→word step) has been silently unarmed — verdicts could say

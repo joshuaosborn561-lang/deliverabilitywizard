@@ -150,3 +150,41 @@ describe("D137 — one isolation-domain buy ask, ever", () => {
     assert.equal(notified.length, 1);
   });
 });
+
+describe("D137 — a denied isolation-domain buy also never re-asks", () => {
+  it("deny stands until Josh says otherwise", async () => {
+    const store = new StateStore(
+      `/tmp/dw-iso-deny-${process.pid}-${Date.now()}.json`,
+    );
+    await store.load();
+    const { slack, notified } = slackCapture();
+    const first = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_isolation_domain",
+        title: "Arm the word-hunt rig: buy its isolation domain",
+        proof: "Still.",
+        detail: { quantity: 1, isolationRig: true },
+      }),
+    });
+    store.upsertIsolationAction({
+      ...first!,
+      status: "denied",
+      decidedAt: new Date().toISOString(),
+      decidedBy: "Josh",
+    });
+    const again = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_isolation_domain",
+        title: "Arm the word-hunt rig: buy its isolation domain",
+        proof: "Still.",
+        detail: { quantity: 1, isolationRig: true },
+      }),
+    });
+    assert.equal(again, null, "a deny is an answer, not a snooze");
+    assert.equal(notified.length, 1);
+  });
+});

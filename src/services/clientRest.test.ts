@@ -8,7 +8,6 @@ import { StateStore } from "../state/store.js";
 import {
   ClientRestService,
   isExcludedOnlyMembership,
-  shouldVetoRestRestore,
 } from "./clientRest.js";
 
 describe("isExcludedOnlyMembership", () => {
@@ -45,18 +44,6 @@ describe("isExcludedOnlyMembership", () => {
       isExcludedOnlyMembership([1, 3841904], byId, []),
       false,
     );
-  });
-});
-
-describe("shouldVetoRestRestore", () => {
-  it("allows the first swap when there is no same-ESP score", () => {
-    assert.equal(shouldVetoRestRestore(null, 80), false);
-    assert.equal(shouldVetoRestRestore(undefined, 80), false);
-  });
-
-  it("never vetoes on an old same-ESP reading (D59)", () => {
-    assert.equal(shouldVetoRestRestore(40, 80), false);
-    assert.equal(shouldVetoRestRestore(90, 80), false);
   });
 });
 
@@ -182,7 +169,6 @@ describe("ClientRestService", () => {
 
     const result = await service.run({ dryRun: false, now });
     assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
-    assert.equal(result.vetoed.length, 0);
     assert.equal(state.getRestingInbox(onEmail), undefined);
   });
 

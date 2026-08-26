@@ -39,20 +39,8 @@ export interface ClientRestResult {
   examined: number;
   benched: Array<{ email: string; campaignIds: number[] }>;
   restored: Array<{ email: string; campaignIds: number[] }>;
-  vetoed: Array<{ email: string; sameEspInbox: number }>;
   skipped: string[];
   errors: string[];
-}
-
-/**
- * D59 — leftover same-ESP scores are not unhealth. Rest restore never
- * vetoes on an old placement reading.
- */
-export function shouldVetoRestRestore(
-  _lastSameEspInbox: number | null | undefined,
-  _threshold: number,
-): boolean {
-  return false;
 }
 
 /**
@@ -115,7 +103,6 @@ export class ClientRestService {
       examined: 0,
       benched: [],
       restored: [],
-      vetoed: [],
       skipped: [],
       errors: [],
     };
@@ -272,22 +259,6 @@ export class ClientRestService {
         continue;
       }
 
-      if (
-        shouldVetoRestRestore(
-          existing?.lastSameEspInbox,
-          this.config.remediationInboxThreshold,
-        )
-      ) {
-        result.vetoed.push({
-          email,
-          sameEspInbox: existing!.lastSameEspInbox as number,
-        });
-        result.skipped.push(
-          `${email}: veto same-ESP ${existing!.lastSameEspInbox}%`,
-        );
-        continue;
-      }
-
       const clientId =
         typeof account.client_id === "number" ? account.client_id : null;
       const parsedId = groupKey.startsWith("id:")
@@ -328,12 +299,12 @@ export class ClientRestService {
     if (!dryRun) await this.state.save();
 
     console.log(
-      `[client-rest] onWeek=${result.onWeekCohort} examined=${result.examined} benched=${result.benched.length} restored=${result.restored.length} vetoed=${result.vetoed.length} errors=${result.errors.length}`,
+      `[client-rest] onWeek=${result.onWeekCohort} examined=${result.examined} benched=${result.benched.length} restored=${result.restored.length} errors=${result.errors.length}`,
     );
 
     // D71 — rest movements stay in the log. Slack does not say who is on
     // this fortnight.
-    if (result.benched.length || result.restored.length || result.vetoed.length) {
+    if (result.benched.length || result.restored.length) {
       console.log(
         `[client-rest] slack-quiet onWeek=${result.onWeekCohort} benched=${result.benched.length} restored=${result.restored.length}`,
       );

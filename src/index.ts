@@ -54,12 +54,8 @@ import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
 import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
-import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { ClientRestService } from "./services/clientRest.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
-import { RestBaselineRebuildService } from "./services/restBaselineRebuild.js";
-import { UnhealthyResetService } from "./services/unhealthyReset.js";
-import { ClientWipeService } from "./services/clientWipe.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -94,7 +90,6 @@ import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { OldClientTeardownService } from "./services/oldClientTeardown.js";
-import { MorningActivateService } from "./services/morningActivate.js";
 import { canonBoard } from "./lib/canonCompliance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -341,32 +336,6 @@ async function main(): Promise<void> {
     slack,
     state,
   );
-  const restBaselineRebuild = new RestBaselineRebuildService(
-    config,
-    smartlead,
-    slack,
-    state,
-  );
-  const unhealthyReset = new UnhealthyResetService(
-    config,
-    smartlead,
-    slack,
-    state,
-  );
-  const wipeInboxkit = config.inboxkitApiKey
-    ? new InboxKitClient(
-        config.inboxkitApiKey,
-        undefined,
-        config.genericPoolWorkspaceId || undefined,
-      )
-    : null;
-  const clientWipe = new ClientWipeService(
-    config,
-    smartlead,
-    wipeInboxkit,
-    slack,
-    state,
-  );
   const copyCanary = new CopyCanaryService(
     config,
     smartlead,
@@ -387,7 +356,6 @@ async function main(): Promise<void> {
     state,
   );
   const oldClientTeardown = new OldClientTeardownService(config, smartlead, state);
-  const morningActivate = new MorningActivateService(config, smartlead, state);
   // D85 — the standalone BounceAutopauseService is retired. Autostop owns the
   // Smartlead autopause write (write-on-drift, D84); a second blind writer
   // was how the key starved into 429s.
@@ -404,13 +372,6 @@ async function main(): Promise<void> {
     campaignTopUp,
     clientFanOut,
     copyCanary,
-  );
-  const heldPlacementTests = new HeldPlacementTestService(
-    config,
-    smartlead,
-    smartDelivery,
-    slack,
-    state,
   );
   const isolationRig = new IsolationRigService(
     config,
@@ -625,22 +586,15 @@ async function main(): Promise<void> {
   };
 
   const runRestGates = async (inventory?: InventorySnapshot) => {
-    const unhealthy = config.enableUnhealthyReset
-      ? await stage("unhealthy-reset", () => unhealthyReset.run())
-      : null;
-    const wipe = config.enableClientWipe
-      ? await stage("client-wipe", () => clientWipe.run())
-      : null;
-    const restBaseline = config.enableRestBaselineRebuild
-      ? await stage("rest-baseline", () => restBaselineRebuild.run())
-      : null;
+    // D129 — the D44/D59/D61 one-shots ran in Aug 2026 and are deleted;
+    // rest gates are just the living D43 loops now.
     const restResult = config.enableClientRest
       ? await stage("client-rest", () => clientRest.run({ inventory }))
       : null;
     const genericRest = config.enableGenericSendRest
       ? await stage("generic-rest", () => genericSendRest.run({ inventory }))
       : null;
-    return { unhealthyReset: unhealthy, clientWipe: wipe, restBaseline, clientRest: restResult, genericRest };
+    return { clientRest: restResult, genericRest };
   };
 
   const runCampaignTopUp = async () => {
@@ -716,10 +670,6 @@ async function main(): Promise<void> {
       if (config.enableWarmupGate) {
         await stage("warmup-gate", () => runWarmupGate(inventory));
       }
-
-      await stage("morning-activate", () =>
-        morningActivate.run({ inventory }),
-      );
 
       const healthResult = await stage("campaign-health", () =>
         campaignHealth.run({ inventory }),
@@ -804,9 +754,6 @@ async function main(): Promise<void> {
       await state.save();
 
       return {
-        unhealthyReset: rest.unhealthyReset,
-        clientWipe: rest.clientWipe,
-        restBaseline: rest.restBaseline,
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
         oneClient: oneClientResult,
@@ -901,24 +848,6 @@ async function main(): Promise<void> {
           "remediation",
           (remediationResult as { errors?: string[] })?.errors ?? [],
         );
-      }
-      // D39: held/pulled mailboxes get their own SmartDelivery tests — they
-      // stay off live campaigns; the test only uses a campaign as sequence shell.
-      let heldTestsResult: unknown = null;
-      if (config.enableHeldPlacementTests) {
-        try {
-          heldTestsResult = await heldPlacementTests.run();
-        } catch (error) {
-          console.warn("[held-tests] failed", error);
-        }
-      }
-      let restTestsResult: unknown = null;
-      if (config.enableRestPlacementTests) {
-        try {
-          restTestsResult = await heldPlacementTests.runResting();
-        } catch (error) {
-          console.warn("[rest-tests] failed", error);
-        }
       }
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
@@ -1020,8 +949,6 @@ async function main(): Promise<void> {
       return {
         monitor: monitorResult,
         remediation: remediationResult,
-        heldPlacementTests: heldTestsResult,
-        restPlacementTests: restTestsResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
@@ -1758,11 +1685,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         enableCampaignHealth: config.enableCampaignHealth,
         enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
         cronBounceAutostop: config.cronBounceAutostop,
-        enableHeldPlacementTests: config.enableHeldPlacementTests,
         enableClientRest: config.enableClientRest,
-        enableRestPlacementTests: config.enableRestPlacementTests,
         enableGenericSendRest: config.enableGenericSendRest,
-        enableRestBaselineRebuild: config.enableRestBaselineRebuild,
         freshInboxWarmupDays: config.freshInboxWarmupDays,
         bounceRateWarnThreshold: config.bounceRateWarnThreshold,
         cronPoolProvision: config.cronPoolProvision,
@@ -1889,48 +1813,10 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.json({ ok: true, mode: "fan-out", result: { ...rest, fanOut: result } });
         return;
       }
-      if (mode === "held-tests" || mode === "held-placement-tests") {
-        assertRuntimeSecrets(config);
-        const result = await heldPlacementTests.run();
-        res.json({ ok: true, mode: "held-tests", result });
-        return;
-      }
       if (mode === "client-rest" || mode === "rest") {
         assertRuntimeSecrets(config);
         const result = await clientRest.run();
         res.json({ ok: true, mode: "client-rest", result });
-        return;
-      }
-      if (
-        mode === "unhealthy-reset" ||
-        mode === "clear-holds" ||
-        mode === "start-clean"
-      ) {
-        assertRuntimeSecrets(config);
-        const result = await unhealthyReset.run();
-        res.json({ ok: true, mode: "unhealthy-reset", result });
-        return;
-      }
-      if (mode === "client-wipe" || mode === "vasco-trim") {
-        assertRuntimeSecrets(config);
-        const result = await clientWipe.run();
-        res.json({ ok: true, mode: "client-wipe", result });
-        return;
-      }
-      if (
-        mode === "rest-baseline" ||
-        mode === "hold-rebuild" ||
-        mode === "rest-baseline-rebuild"
-      ) {
-        assertRuntimeSecrets(config);
-        const result = await restBaselineRebuild.run();
-        res.json({ ok: true, mode: "rest-baseline", result });
-        return;
-      }
-      if (mode === "rest-tests" || mode === "rest-placement-tests") {
-        assertRuntimeSecrets(config);
-        const result = await heldPlacementTests.runResting();
-        res.json({ ok: true, mode: "rest-tests", result });
         return;
       }
       if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
@@ -2276,10 +2162,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Campaign bounce autostop (D90): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; pause over ${config.bouncePauseRatePercent}% after ${config.bouncePauseMinLeads} leads or >${config.bounceBurstCount} bounces/10m; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%)` : "disabled"}`,
     );
     console.log(
-      `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
-    );
-    console.log(
-      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}; hold rebuild (D44) ${config.enableRestBaselineRebuild ? (state.getRestBaselineRebuiltAt() ? `done ${state.getRestBaselineRebuiltAt()}` : "PENDING first health") : "disabled"}`,
+      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
@@ -2323,9 +2206,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Sending infra census: ${config.enableSendingInfraCensus ? "ENABLED (placement-report IPs, logs only)" : "disabled"}`,
-    );
-    console.log(
-      `[boot] Client wipe (D61): ${config.enableClientWipe ? `ENABLED (Vasco keep ${config.vascoKeepCount}; wipe ${config.wipeClientPatterns.join("/") || "none"})` : "disabled"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

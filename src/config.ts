@@ -107,19 +107,6 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
-  /**
-   * Leftover D58 name list. D81 uses pocClientNamePatterns + Slack
-   * approval. Kept so existing env does not surprise us.
-   */
-  genericStaffNamePatterns: z
-    .string()
-    .default("goliath")
-    .transform((s) =>
-      s
-        .split(",")
-        .map((x) => x.trim().toLowerCase())
-        .filter(Boolean),
-    ),
   enableCampaignTopUp: boolFromEnv(true),
   /**
    * Fast staffing loop: reconnect → mailbox settings → refill/unpause.
@@ -134,62 +121,15 @@ const ConfigSchema = z.object({
   enableCampaignCheck: boolFromEnv(true),
   cronCampaignCheck: z.string().default("0 * * * *"),
   /**
-   * D39 — separate SmartDelivery tests for held/pulled mailboxes (off campaigns).
-   */
-  enableHeldPlacementTests: boolFromEnv(true),
-  /**
    * D43 — 2 weeks on / 2 weeks off for client inboxes, split A/B per client.
    */
   enableClientRest: boolFromEnv(true),
-  /**
-   * D41/D43 — separate SmartDelivery tests for resting (off-week) client inboxes.
-   */
-  enableRestPlacementTests: boolFromEnv(true),
   /**
    * D43 — generics sit after this many days of live campaign send, then
    * become supply again after the same sit. Not the client A/B fortnight.
    */
   enableGenericSendRest: boolFromEnv(true),
   genericSendRestDays: z.coerce.number().int().positive().default(14),
-  /**
-   * D44 — one-shot: drop HOLD state/tags that are not a proven same-ESP
-   * fail so D43 rest can take over. Stamped in state after the first
-   * successful pass.
-   */
-  enableRestBaselineRebuild: boolFromEnv(true),
-  /**
-   * D59 — one-shot: wipe every leftover unhealthy mark (holds, HOLD-UNTIL,
-   * kill tags, rest veto scores) so D43/D58 can staff from a clean slate.
-   */
-  enableUnhealthyReset: boolFromEnv(true),
-  /**
-   * D61 — one-shot: Vasco down to 40 (same mix, all send). Wipe GXA / MSRS
-   * / Nieto from Smartlead and InboxKit.
-   */
-  enableClientWipe: boolFromEnv(true),
-  vascoKeepCount: z.coerce.number().int().min(0).default(40),
-  wipeClientPatterns: z
-    .string()
-    .default("gxa,msrs,nieto")
-    .transform((s) =>
-      s
-        .split(",")
-        .map((x) => x.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  /**
-   * Leftover D61 full-send list. D82: nobody is a full-send exception.
-   * Client wipe still finds Vasco via its own default patterns when empty.
-   */
-  fullSendClientPatterns: z
-    .string()
-    .default("")
-    .transform((s) =>
-      s
-        .split(",")
-        .map((x) => x.trim().toLowerCase())
-        .filter(Boolean),
-    ),
   /**
    * D48 — standing per-pod control tests (fixed control email, per-sender
    * read). Tests are unlimited (D45); this does not wait for seed approval.
@@ -284,20 +224,6 @@ const ConfigSchema = z.object({
    */
   bounceRateWarnThreshold: z.coerce.number().min(0).max(100).default(2),
   /**
-   * Aggregate sender bounce on a PAUSED campaign that triggers investigation
-   * (D29). Not a live per-sender pull (D79).
-   */
-  campaignBounceInvestigateThreshold: z.coerce
-    .number()
-    .min(0)
-    .max(100)
-    .default(7),
-  /**
-   * Leftover D78 env. D80 does not write Smartlead 20/7 from campaign names.
-   * Kept so a Railway leftover does not crash boot.
-   */
-  under1kBounceAutopausePercent: z.coerce.number().min(1).max(100).default(20),
-  /**
    * D80 — after our autostop has scanned, write Smartlead
    * bounce_autopause_threshold to 100 (off). Not a rule to turn it on.
    */
@@ -310,13 +236,9 @@ const ConfigSchema = z.object({
   /** D80 — our campaign bounce pause. Smartlead's own autopause stays off. */
   enableCampaignBounceAutostop: boolFromEnv(true),
   cronBounceAutostop: z.string().default("*/10 * * * *"),
-  bounceAutostopMinSent: z.coerce.number().int().min(0).default(100),
-  bounceAutostopHighVolumeSent: z.coerce.number().int().min(0).default(500),
-  bounceAutostopMidPercent: z.coerce.number().min(0).max(100).default(20),
-  bounceAutostopHighPercent: z.coerce.number().min(0).max(100).default(7),
   /**
    * D90 — live pause: over 10% bounce after 1k leads emailed, or more
-   * than 10 new bounces in the last 10 minutes. Old 20/7 env above is leftover.
+   * than 10 new bounces in the last 10 minutes (D88 retired the 20/7 bands).
    */
   bouncePauseMinLeads: z.coerce.number().int().min(0).default(1000),
   bouncePauseRatePercent: z.coerce.number().min(0).max(100).default(10),
@@ -395,16 +317,6 @@ const ConfigSchema = z.object({
         .split(",")
         .map((part) => Number(part.trim()))
         .filter((id) => Number.isFinite(id) && id > 0),
-    ),
-  /** D109 — name fragments for the morning START book. */
-  morningActivatePatterns: z
-    .string()
-    .default("goliath,bcp,bolder cyber,peterson,parlay,techevo,tech evo")
-    .transform((s) =>
-      s
-        .split(",")
-        .map((part) => part.trim().toLowerCase())
-        .filter(Boolean),
     ),
   campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
   /**
@@ -575,22 +487,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath",
-    genericStaffNamePatterns: env.GENERIC_STAFF_NAME_PATTERNS ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,
     cronCampaignCheck: env.CRON_CAMPAIGN_CHECK ?? "0 * * * *",
-    enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
     enableClientRest: env.ENABLE_CLIENT_REST,
-    enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
-    enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
-    enableUnhealthyReset: env.ENABLE_UNHEALTHY_RESET,
-    enableClientWipe: env.ENABLE_CLIENT_WIPE,
-    vascoKeepCount: env.VASCO_KEEP_COUNT ?? "40",
-    wipeClientPatterns: env.WIPE_CLIENT_PATTERNS ?? "gxa,msrs,nieto",
-    fullSendClientPatterns: env.FULL_SEND_CLIENT_PATTERNS ?? "",
     enablePodControls: env.ENABLE_POD_CONTROLS,
     podControlShellCampaignId: env.POD_CONTROL_SHELL_CAMPAIGN_ID ?? "0",
     enableIsolationRig: env.ENABLE_ISOLATION_RIG,
@@ -618,19 +521,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
     bounceRateWarnThreshold: env.BOUNCE_RATE_WARN_THRESHOLD ?? "2",
-    campaignBounceInvestigateThreshold:
-      env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
-    under1kBounceAutopausePercent:
-      env.UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT ?? "20",
     enableBounceAutopauseConverge: env.ENABLE_BOUNCE_AUTOPAUSE_CONVERGE,
     smartleadBounceAutopauseOffPercent:
       env.SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT ?? "100",
     enableCampaignBounceAutostop: env.ENABLE_CAMPAIGN_BOUNCE_AUTOSTOP,
     cronBounceAutostop: env.CRON_BOUNCE_AUTOSTOP ?? "*/10 * * * *",
-    bounceAutostopMinSent: env.BOUNCE_AUTOSTOP_MIN_SENT ?? "100",
-    bounceAutostopHighVolumeSent: env.BOUNCE_AUTOSTOP_HIGH_VOLUME_SENT ?? "500",
-    bounceAutostopMidPercent: env.BOUNCE_AUTOSTOP_MID_PERCENT ?? "20",
-    bounceAutostopHighPercent: env.BOUNCE_AUTOSTOP_HIGH_PERCENT ?? "7",
     bouncePauseMinLeads: env.BOUNCE_PAUSE_MIN_LEADS ?? "1000",
     bouncePauseRatePercent: env.BOUNCE_PAUSE_RATE_PERCENT ?? "10",
     bounceBurstCount: env.BOUNCE_BURST_COUNT ?? "10",
@@ -649,9 +544,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
     launchInboxThreshold: env.LAUNCH_INBOX_THRESHOLD ?? "85",
     oldClientCampaignIds: env.OLD_CLIENT_CAMPAIGN_IDS ?? "3437329,3628940,3628943",
-    morningActivatePatterns:
-      env.MORNING_ACTIVATE_PATTERNS ??
-      "goliath,bcp,bolder cyber,peterson,parlay,techevo,tech evo",
     campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "21",
     freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",

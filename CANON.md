@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D128** (2026-08-26). One page of current truth. When a new
+Canon as of **D129** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).

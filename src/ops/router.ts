@@ -268,8 +268,6 @@ export function createOpsRouter(opts: {
           clientRest: opts.config.enableClientRest,
           genericSendRestDays: opts.config.genericSendRestDays,
           espMixMinPercent: opts.config.campaignEspMixMinPercent,
-          restBaselineRebuild: opts.config.enableRestBaselineRebuild,
-          restBaselineRebuiltAt: state.restBaselineRebuiltAt ?? null,
         },
         pendingApprovals:
           req.opsSession!.role === "owner" ? pendingApprovals : undefined,

@@ -250,89 +250,42 @@ describe("owner intent", () => {
     );
   });
 
-  it("D29 leftover: the 7% number may stay in config; it is not a live hunt (D91)", () => {
-    assert.equal(
-      defaults.campaignBounceInvestigateThreshold,
-      7,
+
+  it("D40/D91/D129: the paused-campaign bounce hunt does not exist", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/campaignBounceInvestigate.ts", import.meta.url)),
       stop(
-        "The retired D29 7% leftover may stay in config (D91).",
-        `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
+        "D91 retired the D29 hunt; D129 deleted the file.",
+        "campaignBounceInvestigate.ts exists again — the retired hunt is back in the tree.",
       ),
     );
   });
 
-  it("D40: bounce investigate must not auto-START paused campaigns", async () => {
-    const src = await import("node:fs/promises").then((fs) =>
-      fs.readFile(
-        new URL("../services/campaignBounceInvestigate.ts", import.meta.url),
-        "utf8",
-      ),
+  it("D28/D36 retired by D69/D93/D96/D129: no provider-split copy classifier", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../lib/copySignal.ts", import.meta.url),
+      "utf8",
     );
-    assert.equal(
-      /updateCampaignStatus\([^)]*START/.test(src),
-      false,
+    assert.doesNotMatch(
+      src,
+      /classifyCopySignal|copy_likely|shouldDeferSenderRotationForCopy/,
       stop(
-        "Manual pause/stop must not be auto-resumed (D40).",
-        "CampaignBounceInvestigateService still calls updateCampaignStatus(..., START).",
-      ),
-    );
-  });
-
-  it("D28: copySignal defers Outlook-buried / Gmail-ok as copy", async () => {
-    const { classifyCopySignal, shouldDeferSenderRotationForCopy } =
-      await import("../lib/copySignal.js");
-    const signal = classifyCopySignal([
-      { name: "Outlook", inboxPercent: 10 },
-      { name: "Gmail", inboxPercent: 70 },
-    ]);
-    assert.equal(
-      shouldDeferSenderRotationForCopy(signal),
-      true,
-      stop(
-        "Copy-likely placement must defer sender rotation (D28).",
-        "Outlook-buried + Gmail-ok no longer defers rotation.",
+        "Provider divergence is never a Slack or rotation driver (D69/D93/D96).",
+        "copySignal.ts grew the D28/D36 classifier back.",
       ),
     );
   });
 
-  it("D36: copySignal defers a wide provider split in either direction", async () => {
-    const { classifyCopySignal, shouldDeferSenderRotationForCopy } =
-      await import("../lib/copySignal.js");
-    // Gmail buried, Outlook perfect — the Goliath shape D28 alone missed.
-    const gmailBuried = classifyCopySignal([
-      { name: "Office365", inboxPercent: 100 },
-      { name: "G Suite", inboxPercent: 36.4 },
-    ]);
-    assert.equal(
-      shouldDeferSenderRotationForCopy(gmailBuried),
-      true,
-      stop(
-        "A wide provider split is copy, whichever provider is buried (D36).",
-        "Gmail-buried placement no longer defers rotation, so senders get benched for a copy problem.",
-      ),
-    );
-    // Everything weak together is not a copy call — could be the domain.
-    const allWeak = classifyCopySignal([
-      { name: "Office365", inboxPercent: 60 },
-      { name: "G Suite", inboxPercent: 10 },
-    ]);
-    assert.equal(
-      shouldDeferSenderRotationForCopy(allWeak),
-      false,
-      stop(
-        "Divergence needs a healthy provider to diverge from (D36).",
-        "Campaigns weak on every provider now defer rotation, which would stall real remediation.",
-      ),
-    );
-  });
 
-  it("D39: held placement tests and client day brief stay on", () => {
-    assert.equal(
-      defaults.enableHeldPlacementTests,
-      true,
+  it("D39 retired by D51/D59/D129: held-test machinery does not exist", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/heldPlacementTests.ts", import.meta.url)),
       stop(
-        "Held/pulled mailboxes get separate SmartDelivery tests (D39).",
-        "ENABLE_HELD_PLACEMENT_TESTS now defaults off, so pulled mailboxes earn no fresh same-ESP score.",
+        "Held/rest recovery tests are retired; coverage lives on the shells (D56/D114).",
+        "heldPlacementTests.ts exists again.",
       ),
     );
   });
@@ -556,21 +509,13 @@ describe("owner intent — sender supply", () => {
 });
 
 describe("owner intent — D41 beanstalk rotation", () => {
-  it("D41: client rest and rest-placement tests default on", () => {
+  it("D41: client rest defaults on; rest tests retired (D129)", () => {
     assert.equal(
       defaults.enableClientRest,
       true,
       stop(
-        "Client inboxes rest 2 weeks on / 2 weeks off (D41).",
+        "Client inboxes rest 2 weeks on / 2 weeks off (D41/D43).",
         "ENABLE_CLIENT_REST now defaults off, so client inboxes stay on campaigns every week.",
-      ),
-    );
-    assert.equal(
-      defaults.enableRestPlacementTests,
-      true,
-      stop(
-        "Off-week client inboxes get separate SmartDelivery tests (D41).",
-        "ENABLE_REST_PLACEMENT_TESTS now defaults off.",
       ),
     );
   });
@@ -602,7 +547,7 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 
-  it("D41/D79: bounce warn is 2%; no per-sender pull; paused investigate stays 7%", () => {
+  it("D41/D79: bounce warn is 2% (a reading); no per-sender pull", () => {
     assert.equal(
       defaults.bounceRateWarnThreshold,
       2,
@@ -617,14 +562,6 @@ describe("owner intent — D41 beanstalk rotation", () => {
       stop(
         "D5's per-sender 5%/50 pull is retired (D79).",
         "ENABLE_BOUNCE_ROTATION now defaults on.",
-      ),
-    );
-    assert.equal(
-      defaults.campaignBounceInvestigateThreshold,
-      7,
-      stop(
-        "Paused-campaign investigate stays 7% (D29).",
-        `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
       ),
     );
   });
@@ -708,41 +645,13 @@ describe("owner intent — D43 rest model", () => {
 });
 
 describe("owner intent — D44 hold rebuild", () => {
-  it("D44: one-shot rebuild defaults on; only same-ESP fails stay held", async () => {
-    assert.equal(
-      defaults.enableRestBaselineRebuild,
-      true,
+  it("D44 historical (ran 2026-08-21; deleted D129)", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/restBaselineRebuild.ts", import.meta.url)),
       stop(
-        "Unproven HOLDs are rebuilt once so D43 can rest (D44).",
-        "ENABLE_REST_BASELINE_REBUILD now defaults off.",
-      ),
-    );
-    const { holdHasSameEspProof } = await import("../lib/holdProof.js");
-    assert.equal(
-      holdHasSameEspProof(
-        { scoredSameEsp: true, inboxRateSameEsp: 40 },
-        80,
-      ),
-      true,
-      stop(
-        "A same-ESP fail stays held (D32/D44).",
-        "Proven same-ESP holds are no longer kept.",
-      ),
-    );
-    assert.equal(
-      holdHasSameEspProof({ scoredSameEsp: false, inboxRate: 40 }, 80),
-      false,
-      stop(
-        "Blended-only HOLDs are not proof (D44).",
-        "A blended-only hold now counts as proven-weak.",
-      ),
-    );
-    assert.equal(
-      holdHasSameEspProof({ inboxRate: 40 }, 80),
-      false,
-      stop(
-        "No same-ESP score is not proof (D44).",
-        "A no-score hold now counts as proven-weak.",
+        "The hold rebuild ran once and its code is gone (D44/D129).",
+        "restBaselineRebuild.ts exists again.",
       ),
     );
   });
@@ -1113,58 +1022,13 @@ describe("owner intent — D51 kill-only pull", () => {
 });
 
 describe("owner intent — D61 Vasco trim and client wipe", () => {
-  it("D61: Vasco keeps 40 and GXA/MSRS/Nieto are wipe targets", async () => {
-    assert.equal(
-      defaults.vascoKeepCount,
-      40,
+  it("D61 historical (ran 2026-08-24; deleted D129)", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/clientWipe.ts", import.meta.url)),
       stop(
-        "Vasco keeps 40 inboxes (D61).",
-        `VASCO_KEEP_COUNT is now ${defaults.vascoKeepCount}.`,
-      ),
-    );
-    assert.deepEqual(
-      defaults.wipeClientPatterns,
-      ["gxa", "msrs", "nieto"],
-      stop(
-        "GXA, MSRS, and Nieto are the wipe list (D61).",
-        `WIPE_CLIENT_PATTERNS is now ${defaults.wipeClientPatterns.join(",")}.`,
-      ),
-    );
-    assert.deepEqual(
-      defaults.fullSendClientPatterns,
-      [],
-      stop(
-        "No client is a full-send exception (D82). D61's Vasco trim stays historical.",
-        `FULL_SEND_CLIENT_PATTERNS is now ${defaults.fullSendClientPatterns.join(",")}.`,
-      ),
-    );
-    assert.equal(
-      defaults.enableClientWipe,
-      true,
-      stop(
-        "The Vasco trim / client wipe defaults on (D61).",
-        "ENABLE_CLIENT_WIPE now defaults off.",
-      ),
-    );
-    const { readFile } = await import("node:fs/promises");
-    const src = await readFile(
-      new URL("../services/clientWipe.ts", import.meta.url),
-      "utf8",
-    );
-    assert.match(
-      src,
-      /deleteEmailAccount/,
-      stop(
-        "Wipe deletes Smartlead accounts (D61).",
-        "clientWipe.ts no longer deletes Smartlead accounts.",
-      ),
-    );
-    assert.match(
-      src,
-      /purgeDomain|cancelMailboxes/,
-      stop(
-        "Wipe cancels InboxKit mailboxes and purges empty domains (D61).",
-        "clientWipe.ts no longer touches InboxKit.",
+        "The Vasco trim and GXA/MSRS/Nieto wipe ran once; the destructive one-shot is deleted so a lost state file can never re-fire it (D61/D129).",
+        "clientWipe.ts exists again.",
       ),
     );
   });
@@ -1287,20 +1151,8 @@ describe("owner intent — D69 copy Slack is the word and a one-click edit", () 
         "remediation.ts no longer marks copy suspects.",
       ),
     );
-    const bounce = await import("node:fs/promises").then((fs) =>
-      fs.readFile(
-        new URL("../services/campaignBounceInvestigate.ts", import.meta.url),
-        "utf8",
-      ),
-    );
-    assert.equal(
-      /this looks like the copy or offer/.test(bounce),
-      false,
-      stop(
-        "Paused-bounce copy defer is not a Slack guess (D69).",
-        "campaignBounceInvestigate.ts still Slacks a copy guess.",
-      ),
-    );
+    // The paused-bounce hunt (and its copy-guess Slack) was deleted outright
+    // (D91/D129) — nothing left to check there.
     const { copySwapProof } = await import("../lib/isolationProof.js");
     const proof = copySwapProof({
       campaignName: "BCP Healthcare Over-1k (No Team)",
@@ -1670,40 +1522,25 @@ describe("owner intent — D58 half-client floor", () => {
 
 describe("owner intent — D59 clean slate", () => {
   it("D59: leftover unhealthy marks do not keep a B-pod box off", async () => {
-    const { shouldVetoRestRestore } = await import("../services/clientRest.js");
-    assert.equal(
-      shouldVetoRestRestore(10, 80),
-      false,
+    const { readFile, access } = await import("node:fs/promises");
+    // The one-shot wipe ran 2026-08-24 and was deleted (D129).
+    await assert.rejects(
+      access(new URL("../services/unhealthyReset.ts", import.meta.url)),
       stop(
-        "Old same-ESP scores are not unhealth (D59).",
-        "Client rest still vetoes restore on a leftover placement miss.",
+        "The unhealthy wipe ran once; its code is gone (D59/D129).",
+        "unhealthyReset.ts exists again.",
       ),
-    );
-    assert.equal(
-      defaults.enableUnhealthyReset,
-      true,
-      stop(
-        "The one-shot unhealthy wipe defaults on (D59).",
-        "ENABLE_UNHEALTHY_RESET now defaults off.",
-      ),
-    );
-
-    const { readFile } = await import("node:fs/promises");
-    const reset = await readFile(
-      new URL("../services/unhealthyReset.ts", import.meta.url),
-      "utf8",
     );
     const rest = await readFile(
       new URL("../services/clientRest.ts", import.meta.url),
       "utf8",
     );
-    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
-    assert.match(
-      reset,
-      /clearAllHeldInboxes/,
+    assert.doesNotMatch(
+      rest,
+      /shouldVetoRestRestore|lastSameEspInbox\s*<|veto same-ESP/,
       stop(
-        "The wipe deletes every heldInboxes record (D59).",
-        "unhealthyReset.ts no longer clears all holds.",
+        "Old same-ESP scores never veto a rest restore (D59/D129).",
+        "clientRest.ts vetoes restores on leftover placement scores again.",
       ),
     );
     assert.match(
@@ -1711,15 +1548,7 @@ describe("owner intent — D59 clean slate", () => {
       /onWeekTargets/,
       stop(
         "On-week client inboxes go on every live campaign for that client (D59).",
-        "clientRest.ts no longer restaffs the full B pod.",
-      ),
-    );
-    assert.match(
-      index,
-      /unhealthyReset\.run/,
-      stop(
-        "Health runs the wipe before rest/top-up (D59).",
-        "index.ts no longer calls UnhealthyResetService.",
+        "clientRest.ts no longer restaffs the full on-week pod.",
       ),
     );
   });
@@ -2163,15 +1992,15 @@ describe("owner intent — D80 campaign bounce autostop", () => {
         `Off percent is now ${defaults.smartleadBounceAutopauseOffPercent}.`,
       ),
     );
-    const { desiredBounceAutopausePercent } = await import(
-      "../lib/bounceAutopause.js"
+    const bounceLib = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/bounceAutopause.ts", import.meta.url), "utf8"),
     );
-    assert.equal(
-      desiredBounceAutopausePercent("BCP Healthcare Under-1k (No Team)"),
-      100,
+    assert.doesNotMatch(
+      bounceLib,
+      /isUnder1kCampaign|isOver1kCampaign|isGoliathCampaign/,
       stop(
-        "Do not turn Smartlead bounce autopause on (D80).",
-        "desiredBounceAutopausePercent still writes a live 20/7 band.",
+        "Campaign names never pick a bounce threshold (D80/D88/D129).",
+        "bounceAutopause.ts grew name-band helpers again.",
       ),
     );
     const index = await import("node:fs/promises").then((fs) =>
@@ -2286,14 +2115,9 @@ describe("owner intent — D79 no per-sender bounce pull", () => {
 
 describe("owner intent — D82 one rule for every client", () => {
   it("D82: no Vasco exception; POC/Slack generics; two canary checks; shell is not a hide", async () => {
-    assert.deepEqual(
-      defaults.fullSendClientPatterns,
-      [],
-      stop(
-        "Nobody skips A/B rest or takes a full-count floor (D82).",
-        `FULL_SEND_CLIENT_PATTERNS is now ${defaults.fullSendClientPatterns.join(",")}.`,
-      ),
-    );
+    // FULL_SEND_CLIENT_PATTERNS was deleted outright (D129): nobody skips
+    // A/B rest or takes a full-count floor, and there is no knob to bring
+    // that back without a code change.
     const { CAMPAIGN_CHECK_KINDS, isFirstCheckBlocking } = await import(
       "../lib/campaignCheck.js"
     );
@@ -2695,15 +2519,13 @@ describe("owner intent — D88 bounce pause bands retired", () => {
       ),
     );
 
-    const { shouldAutostopCampaignForBounce } = await import(
-      "../lib/campaignBounceAutostop.js"
-    );
-    assert.equal(
-      shouldAutostopCampaignForBounce(200, 50),
-      true,
+    const bandLib = await read("../lib/campaignBounceAutostop.ts");
+    assert.doesNotMatch(
+      bandLib,
+      /campaignBounceAutostopThreshold|shouldAutostopCampaignForBounce|MID_PERCENT/,
       stop(
-        "The retired 20/7 helpers may stay in lib/ (D80/D88).",
-        "shouldAutostopCampaignForBounce no longer encodes the old band — leave the helper, do not use it.",
+        "The 20/7 band helpers are deleted, not merely unused (D88/D129).",
+        "lib/campaignBounceAutostop.ts encodes the retired bands again.",
       ),
     );
   });
@@ -3706,14 +3528,13 @@ describe("owner intent — D108 15-minute yes/no canon", () => {
 });
 
 describe("owner intent — D109 morning activate", () => {
-  it("D109: morning book is Goliath BCP Peterson Parlay TechEvo", () => {
-    assert.ok(
-      ["goliath", "bcp", "peterson", "parlay", "techevo"].every((needle) =>
-        defaults.morningActivatePatterns.includes(needle),
-      ),
+  it("D109 historical (ran 2026-08-26; deleted D129)", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/morningActivate.ts", import.meta.url)),
       stop(
-        "Morning START covers the live book (D109).",
-        `MORNING_ACTIVATE_PATTERNS is now ${defaults.morningActivatePatterns.join(",")}.`,
+        "The morning START ran once; the flag-less one-shot is deleted so a lost state file can never re-fire it past the launch bar (D109/D129).",
+        "morningActivate.ts exists again.",
       ),
     );
   });
@@ -3923,15 +3744,12 @@ describe("owner intent — D124 force Smartlead autopause off once", () => {
         "campaignBounceAutostop.ts now STARTs a campaign.",
       ),
     );
-    const { desiredBounceAutopausePercent } = await import(
-      "../lib/bounceAutopause.js"
-    );
-    assert.equal(
-      desiredBounceAutopausePercent("Goliath L2 Healthcare Tickets"),
-      100,
+    assert.match(
+      autostop,
+      /SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT/,
       stop(
         "Do not turn Smartlead bounce autopause on (D80/D124).",
-        "desiredBounceAutopausePercent writes a live band again.",
+        "campaignBounceAutostop.ts no longer converges to the off percent.",
       ),
     );
   });
@@ -4133,5 +3951,29 @@ describe("owner intent — D128 live paths obey the ledger", () => {
         "campaignSetupPrompt.ts mentions the 20/7 bands again.",
       ),
     );
+  });
+});
+
+describe("owner intent — D129 retired machinery stays deleted", () => {
+  it("D129: none of the retired services exist in the tree", async () => {
+    const { access } = await import("node:fs/promises");
+    for (const path of [
+      "../services/heldPlacementTests.ts",
+      "../services/restBaselineRebuild.ts",
+      "../services/unhealthyReset.ts",
+      "../services/clientWipe.ts",
+      "../services/morningActivate.ts",
+      "../services/campaignBounceInvestigate.ts",
+      "../lib/clientWipe.ts",
+      "../lib/holdProof.ts",
+    ]) {
+      await assert.rejects(
+        access(new URL(path, import.meta.url)),
+        stop(
+          `Retired machinery is deleted, not parked (D127/D129): ${path}`,
+          `${path} exists again — a retired service came back.`,
+        ),
+      );
+    }
   });
 });

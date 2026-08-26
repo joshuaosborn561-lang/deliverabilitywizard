@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { SmartleadSequence } from "../types/index.js";
 import { findForeignBrand } from "./clientBrand.js";
 import {
   appendSignatureTag,
@@ -107,28 +108,37 @@ describe("one-click signature fix (D85)", () => {
     assert.ok(sequences[0]!.email_body!.endsWith("%signature%"));
   });
 
-  it("D101: sequence writes drop created_at so Smartlead accepts the POST", () => {
+  it("D101/D103: sequence writes keep only writable fields", () => {
     const written = sequencesForWrite([
       {
         id: 1,
         seq_number: 1,
         created_at: "2026-01-01T00:00:00.000Z",
         updated_at: "2026-01-02T00:00:00.000Z",
+        email_campaign_id: 3122546,
         email_body: "<div>Hi</div><div>%signature%</div>",
+        seq_delay_details: { delayInDays: 0 },
         sequence_variants: [
           {
             id: 11,
             variant_label: "A",
             created_at: "2026-01-01T00:00:00.000Z",
+            email_campaign_id: 3122546,
             email_body: "<div>Hi</div><div>%signature%</div>",
           },
         ],
-      },
+      } as SmartleadSequence,
     ]);
     assert.equal("created_at" in written[0]!, false);
     assert.equal("updated_at" in written[0]!, false);
+    assert.equal("email_campaign_id" in written[0]!, false);
     assert.equal("created_at" in (written[0]!.sequence_variants![0] as object), false);
+    assert.equal(
+      "email_campaign_id" in (written[0]!.sequence_variants![0] as object),
+      false,
+    );
     assert.equal(written[0]!.id, 1);
     assert.equal(written[0]!.email_body, "<div>Hi</div><div>%signature%</div>");
+    assert.deepEqual(written[0]!.seq_delay_details, { delayInDays: 0 });
   });
 });

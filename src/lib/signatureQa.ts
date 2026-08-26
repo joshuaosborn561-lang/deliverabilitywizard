@@ -93,17 +93,39 @@ export function appendSignatureTag(sequences: SmartleadSequence[]): {
   return { sequences: next, changed };
 }
 
+/** GET extras Smartlead rejects on POST /sequences. */
 const SEQUENCE_WRITE_OMIT = new Set([
   "created_at",
   "updated_at",
   "createdAt",
   "updatedAt",
+  "email_campaign_id",
+  "emailCampaignId",
 ]);
 
 /**
- * D101 — Smartlead POST /sequences rejects read-only timestamps
- * (`"sequences[0].created_at" is not allowed`). Strip them (and the
- * same on variants) before every write.
+ * Documented writable sequence / variant keys. GET returns more
+ * (timestamps, email_campaign_id). After D101 stripped timestamps,
+ * live 2026-08-26 then rejected email_campaign_id — keep only these.
+ */
+const SEQUENCE_WRITE_KEEP = new Set([
+  "id",
+  "seq_number",
+  "subject",
+  "email_body",
+  "seq_delay_details",
+  "sequence_variants",
+  "variants",
+  "seq_variants",
+  "variant_distribution_type",
+  "variant_label",
+  "variant_name",
+]);
+
+/**
+ * D101 / D103 — Smartlead POST /sequences rejects GET-only fields
+ * (`created_at`, then `email_campaign_id`). Keep the writable set
+ * (and the same on variants) before every write.
  */
 export function sequencesForWrite(
   sequences: SmartleadSequence[],
@@ -115,8 +137,9 @@ function omitReadonlySequence(row: SmartleadSequence): SmartleadSequence {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     if (SEQUENCE_WRITE_OMIT.has(key)) continue;
+    if (!SEQUENCE_WRITE_KEEP.has(key)) continue;
     if (
-      (key === "sequence_variants" || key === "variants") &&
+      (key === "sequence_variants" || key === "variants" || key === "seq_variants") &&
       Array.isArray(value)
     ) {
       out[key] = value.map((variant) => omitReadonlySequence(variant as SmartleadSequence));

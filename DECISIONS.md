@@ -2283,3 +2283,38 @@ need adding to the omit list. Accepted: we add it when it fails.
 
 **Guards.** sequencesForWrite; updateCampaignSequences uses it;
 owner-intent D101.
+---
+
+## D102 — Canary schedule sends sequence_mapping_id
+
+**Decision.** A Canary copy test must send `sequence_mapping_id` on
+`POST /spam-test/schedule`, taken from the campaign sequence the same
+way the scanner does (`sequenceMappingIdOf`). Missing mapping is a
+hard fail and is logged. The dedicated fleet still stays **off** the
+live campaign (D55). D100's `campaign_id` still stands.
+
+**Why.** Live 2026-08-26 after #120: `"campaign_id" is required` was
+gone; create then died on `"sequence_mapping_id" is required`.
+
+**Tradeoff.** A campaign with no sequence mapping cannot get a canary
+until copy exists. Accepted: that campaign has nothing to test.
+
+**Guards.** copyCanary isolationManualPayload includes sequenceMappingId;
+owner-intent D102.
+---
+
+## D103 — Sequence writes keep only writable fields
+
+**Decision.** Every Smartlead sequence POST keeps only writable keys
+(`id`, `seq_number`, subject/body, delay, variants). GET extras —
+`created_at` (D101) and `email_campaign_id` — are dropped. The
+`%signature%` append is unchanged (D92).
+
+**Why.** Live 2026-08-26 after #120: leftover `%signature%` writes
+cleared `created_at` and then died on `"sequences[0].email_campaign_id"
+is not allowed` (SalesGlider Nurture, Parlay2, Culture Fits, Positive).
+
+**Tradeoff.** An unknown writable field we do not list is dropped.
+Accepted: we add it when a write needs it. Whack-a-mole omit is worse.
+
+**Guards.** sequencesForWrite allowlist; owner-intent D103.

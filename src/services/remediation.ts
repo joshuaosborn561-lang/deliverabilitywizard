@@ -696,7 +696,7 @@ export class RemediationService {
         if (anyEspBelowThreshold(providers, threshold) && weak[0]) {
           copyDeferByCampaign.set(
             cid,
-            `${weak[0].name} is not inboxing the campaign copy. Word hunt starts only if known-good on those domains is fine across ESPs.`,
+            `${weak[0].name} is not inboxing the campaign copy. Word hunt starts only if known-good on those domains is fine across ESPs and unwarmed senders with that copy also fail.`,
           );
         }
       } catch {

@@ -112,9 +112,10 @@ export function shouldDeferSenderRotationForCopy(signal: CopySignal): boolean {
 }
 
 /**
- * D93 — the word hunt is not “Outlook buried, Gmail fine”. It is: this
- * campaign test is not inboxing on an ESP, and the known-good email from
- * those same domains is fine on every scored ESP.
+ * D93/D96 — the word hunt is not “Outlook buried, Gmail fine”. It is:
+ * this campaign test is not inboxing on an ESP, the known-good email
+ * from those same domains is fine on every scored ESP, and unwarmed
+ * senders with that copy are also failing an ESP.
  */
 export function anyEspBelowThreshold(
   providers: ProviderInboxSplit[],

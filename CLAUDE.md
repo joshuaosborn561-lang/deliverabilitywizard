@@ -116,16 +116,18 @@ the dedicated D54/D55 fleet (2 domains, 3 inboxes each, one Google and one
 Outlook, warmup off). Those six stay off live campaigns. They are extra
 to the half-client staffable floor.
 
-Copy/offer (Outlook buried, Gmail fine) still does not bench senders (D28).
-Do **not** Slack that guess. Confirm with canaries, run word-deletion
-tests, then Slack one button: it was this word, suggested edit, make
-the changes? (D69).
+The word-deletion test is **not** “Outlook buried, Gmail fine.” It
+runs when the campaign copy test is not inboxing on an ESP and the
+known-good email on those same domains is fine on every scored ESP
+(D93). Confirm, hunt the word, then Slack one button: it was this
+word, suggested edit, make the changes? (D69). Do not bench senders
+on that signal.
 
-If a campaign is **PAUSED** with aggregate sender bounce over **7%**,
-investigate: copy_likely → same canary + word hunt (D69); otherwise
-rotate worst bouncers (D29). Do **not** auto-`START` — a manual pause
-stays paused (D40). Only protective pauses recorded in `pendingResumes`
-may be resumed by health, and never when the campaign is **STOPPED**.
+Do **not** hunt already-PAUSED campaigns for 7% bounce (D91 retired D29).
+Do **not** auto-`START` — a manual pause stays paused (D40). Only
+protective pauses recorded in `pendingResumes` may be resumed by health,
+and never when the campaign is **STOPPED**. Disconnected SMTP/IMAP
+mailboxes are reconnected every health pass (D94).
 
 Campaigns are topped up to **half that client's inboxes** (staffable
 senders: connected SMTP/IMAP, not held, and not resting). Disconnected membership
@@ -141,15 +143,15 @@ A new campaign id gets a **first-check** on the next health pass (15 minutes)
 against the standing rules: client tag, mailbox signatures, `%signature%`
 in the sequence, no foreign brand in copy, one-client membership,
 pod-control shell stays paused, generics only on a **POC** client or after
-Josh Slack-approves a backfill. Goliath is marked POC. Bounce auto-pause
-is not this checker (Cayden's D80). It stays on that first-check until it
-passes.
+Josh Slack-approves a backfill. Goliath is marked POC. Bounce pause
+is not this checker (D90). Missing signature is written on the spot
+(D92). It stays on that first-check until it passes.
 
 After it passes, an **hourly sweep** watches pod/shell, mailbox signatures,
 client tag, one-client, **active canaries for each serving inbox and
 campaign**, and the floor (**half that client's inboxes**). Logs are
-`[campaign-check]`. Slack is only the Allow generics button. This does not
-START a campaign, import leads, spend, or pull a mailbox.
+`[campaign-check]`. Slack is Allow generics plus “I added the signature.”
+This does not START a campaign, import leads, spend, or pull a mailbox.
 
 ## Canon sweep (D84)
 
@@ -179,11 +181,10 @@ before trusting that "the loop is running".
 A finding the sweep keeps reporting with no path to zero is a bug in the
 sweep, not a fact of life:
 
-- **Missing `%signature%`** posts a one-tap *Add %signature%* Slack ask
-  (Josh or Cayden). Approval appends the tag to the steps missing it —
-  append-only, nothing else in the copy changes. Several blocked
-  campaigns in one sweep become **one bulk ask** covering all of them
-  (D87), never a button per campaign.
+- **Missing `%signature%`** is written automatically (D92): the tag is
+  appended and the mailbox signature is set to First Last / client
+  name (Goliath Cybersecurity, SalesGlider Growth Partners, …). Slack
+  after the write, not a button to approve it.
 - **Untagged campaigns** the tagger cannot uniquely match (D77 forbids
   guessing) are named on the end-of-day brief until a human tags them in
   Smartlead.

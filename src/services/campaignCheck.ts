@@ -28,10 +28,9 @@ import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
 import {
   buildIsolationAction,
-  coveredSignatureCampaigns,
   requestIsolationAction,
-  supersedePendingSingleSignatureAsks,
 } from "../lib/isolationActions.js";
+import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import {
   hasLivingUnwarmedCopyCanary,
   livingKnownGoodEmails,
@@ -45,6 +44,7 @@ import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { isPocClient } from "../lib/pocClient.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import {
+  appendSignatureTag,
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
@@ -193,11 +193,7 @@ export class CampaignCheckService {
     }
 
     const now = new Date().toISOString();
-    const sigBlocked: Array<{
-      campaignId: number;
-      name: string;
-      steps: string[];
-    }> = [];
+    const sigFixed: Array<{ name: string; brand: string }> = [];
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
       const name = String(campaign.name ?? campaign.id);
@@ -242,7 +238,7 @@ export class CampaignCheckService {
       if (!runFirst && !runHourly) continue;
 
       const kind: "first" | "hourly" = runFirst ? "first" : "hourly";
-      const findings = await this.inspect({
+      let findings = await this.inspect({
         campaign,
         campaigns: campaignById,
         accounts: accounts as SmartleadAccountWithCampaigns[],
@@ -258,6 +254,27 @@ export class CampaignCheckService {
         fleetDown,
         depth: kind,
       });
+      const clientId =
+        typeof campaign.client_id === "number" ? campaign.client_id : null;
+      const matched = matchClientForCampaign(name, clients);
+      const brand =
+        (clientId != null ? brandByClientId.get(clientId) : undefined) ??
+        (matched
+          ? brandFromClientDisplayName(clientDisplayName(matched))
+          : "");
+      const sigApplied = await this.autoApplySignature({
+        campaignId: campaign.id,
+        name,
+        brand,
+        accounts: accounts as SmartleadAccountWithCampaigns[],
+        findings,
+      });
+      if (sigApplied) {
+        findings = findings.filter(
+          (finding) => finding.kind !== "missing_signature_tag",
+        );
+        sigFixed.push({ name, brand: sigApplied.brand });
+      }
       const passed = firstCheckPassed(findings);
       const next: CampaignCheckRecord = {
         ...record,
@@ -295,19 +312,17 @@ export class CampaignCheckService {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
       }
       await this.maybeAskGenericBackfill(campaign, name, findings);
-      const missingSig = findings.filter(
-        (finding) => finding.kind === "missing_signature_tag",
-      );
-      if (missingSig.length) {
-        sigBlocked.push({
-          campaignId: campaign.id,
-          name,
-          steps: missingSig.map((finding) => finding.detail),
-        });
-      }
     }
 
-    await this.maybeAskSignatureFix(sigBlocked);
+    if (sigFixed.length && this.slack) {
+      const brands = [...new Set(sigFixed.map((row) => row.brand).filter(Boolean))];
+      await this.slack.notifyActionResult(
+        [
+          `I added the signature on ${sigFixed.length} campaign${sigFixed.length === 1 ? "" : "s"}. It sends as the mailbox's first and last name plus the client name${brands.length ? ` (${brands.join(", ")})` : ""}:`,
+          ...sigFixed.map((row) => `• ${row.name}`),
+        ].join("\n"),
+      );
+    }
 
     await this.state.save();
     console.log(
@@ -336,59 +351,56 @@ export class CampaignCheckService {
   }
 
   /**
-   * D85/D87/D89 — missing %signature% blocks first-check, so it must have
-   * an owner. Several blocked campaigns become ONE Slack ask (one tap
-   * appends the tag everywhere). Pending pre-D87 singles that still own
-   * those campaigns are collapsed first so they cannot strand a bulk.
+   * D92 — missing signature is written, not asked. Appends `%signature%`
+   * (mailbox expands it to First Last / client brand) and sets the
+   * mailbox signature to that two-line pair. Slack after, not before.
    */
-  private async maybeAskSignatureFix(
-    blocked: Array<{ campaignId: number; name: string; steps: string[] }>,
-  ): Promise<void> {
-    if (!this.slack || !blocked.length) return;
-    if (blocked.length >= 2) {
-      supersedePendingSingleSignatureAsks(
-        this.state,
-        blocked.map((row) => row.campaignId),
+  private async autoApplySignature(input: {
+    campaignId: number;
+    name: string;
+    brand: string;
+    accounts: SmartleadAccountWithCampaigns[];
+    findings: CampaignFinding[];
+  }): Promise<{ brand: string } | null> {
+    if (!input.findings.some((finding) => finding.kind === "missing_signature_tag")) {
+      return null;
+    }
+    if (this.config.dryRun) {
+      console.log(
+        `[campaign-check] dry-run signature #${input.campaignId} ${input.name}`,
       );
+      return { brand: input.brand };
     }
-    const covered = coveredSignatureCampaigns(this.state.listIsolationActions());
-    const open = blocked.filter((row) => !covered.has(row.campaignId));
-    if (!open.length) return;
-
-    if (open.length === 1) {
-      const row = open[0]!;
-      await requestIsolationAction({
-        store: this.state,
-        slack: this.slack,
-        action: buildIsolationAction({
-          kind: "add_signature_tag",
-          title: `%signature% missing on ${row.name}`,
-          proof: `#${row.campaignId} ${row.name} is blocked at QA: ${row.steps.join("; ")}. Tap Add %signature% and I will append the tag to those steps — the copy itself is untouched.`,
-          detail: { campaignId: row.campaignId, campaignName: row.name },
-        }),
-      });
-      return;
+    try {
+      const sequences = await this.smartlead.getCampaignSequences(input.campaignId);
+      const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
+      if (changed.length) {
+        await this.smartlead.updateCampaignSequences(input.campaignId, next);
+        await sleep(WRITE_GAP_MS);
+      }
+      for (const account of input.accounts) {
+        if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+        const desired = desiredMailboxSignature({
+          fromName: account.from_name,
+          signature: account.signature,
+          clientBrand: input.brand,
+        });
+        if (!desired || (account.signature ?? "") === desired) continue;
+        if (typeof account.id !== "number") continue;
+        await this.smartlead.updateEmailAccount(account.id, { signature: desired });
+        await sleep(WRITE_GAP_MS);
+      }
+      console.log(
+        `[campaign-check] signature written #${input.campaignId} ${input.name} brand=${input.brand || "unknown"}`,
+      );
+      return { brand: input.brand };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[campaign-check] signature write failed #${input.campaignId}: ${message}`,
+      );
+      return null;
     }
-
-    await requestIsolationAction({
-      store: this.state,
-      slack: this.slack,
-      action: buildIsolationAction({
-        kind: "add_signature_tag",
-        title: `%signature% missing on ${open.length} campaigns`,
-        proof: [
-          `${open.length} campaigns are blocked at QA because steps have no %signature%:`,
-          ...open.map(
-            (row) => `• ${row.name} (#${row.campaignId}) — ${row.steps.join("; ")}`,
-          ),
-          "One tap appends the tag to every step missing it across all of them. No other copy changes.",
-        ].join("\n"),
-        detail: {
-          campaignIds: open.map((row) => row.campaignId),
-          campaigns: open.map((row) => ({ id: row.campaignId, name: row.name })),
-        },
-      }),
-    });
   }
 
   private async inspect(input: {

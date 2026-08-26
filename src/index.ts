@@ -49,7 +49,6 @@ import { OneClientMembershipService } from "./services/oneClientMembership.js";
 import { CampaignClientTagService } from "./services/campaignClientTag.js";
 import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
 import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop.js";
-import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
@@ -388,13 +387,6 @@ async function main(): Promise<void> {
     copyCanary,
   );
   const heldPlacementTests = new HeldPlacementTestService(
-    config,
-    smartlead,
-    smartDelivery,
-    slack,
-    state,
-  );
-  const bounceInvestigate = new CampaignBounceInvestigateService(
     config,
     smartlead,
     smartDelivery,
@@ -942,14 +934,6 @@ async function main(): Promise<void> {
           console.warn("[sending-infra] failed", error);
         }
       }
-      // D29: PAUSED campaigns with high aggregate sender bounce → investigate
-      // (skip sender rotation when placement says the copy is the cause).
-      let bounceInvestigateResult: unknown = null;
-      try {
-        bounceInvestigateResult = await bounceInvestigate.run();
-      } catch (error) {
-        console.warn("[bounce-investigate] failed", error);
-      }
       let podControlResult: unknown = null;
       if (config.enablePodControls) {
         try {
@@ -1015,7 +999,6 @@ async function main(): Promise<void> {
         campaignAudit: campaignAuditResult,
         leadRunout: leadRunoutResult,
         sendingInfra: sendingInfraResult,
-        bounceInvestigate: bounceInvestigateResult,
         podControls: podControlResult,
         isolationRig: isolationRigResult,
         isolationBranch: isolationBranchResult,
@@ -1897,15 +1880,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await clientDayBrief.run({ endOfDay: true });
         res.json({ ok: true, mode: "client-day", result });
-        return;
-      }
-      if (
-        mode === "bounce-investigate" ||
-        mode === "campaign-bounce-investigate"
-      ) {
-        assertRuntimeSecrets(config);
-        const result = await bounceInvestigate.run();
-        res.json({ ok: true, mode: "bounce-investigate", result });
         return;
       }
       if (mode === "pod-controls" || mode === "pod-control") {

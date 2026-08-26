@@ -25,6 +25,12 @@ export interface IsolationVerdictInput {
    * Only consulted when the pod already has a control reading.
    */
   copyCanary?: CopyCanarySplit | null;
+  /**
+   * D93 — known-good email on these sending domains, scored per ESP.
+   * true = every scored ESP is at/above threshold; false = an ESP failed;
+   * null/omitted = no per-ESP reading (fall back to senderControls).
+   */
+  knownGoodFineAcrossEsps?: boolean | null;
 }
 
 export interface IsolationVerdictResult {
@@ -85,6 +91,19 @@ export function decideIsolationVerdict(
     };
   }
 
+  // D93 — campaign copy is failing an ESP, but known-good on those domains
+  // is also failing an ESP. That is infra, not a word hunt.
+  if (input.knownGoodFineAcrossEsps === false) {
+    return {
+      verdict: "INFRA",
+      control,
+      reason:
+        "The campaign copy is not inboxing on an ESP, and the known-good email on those same domains is also failing an ESP. That is the domain / inbox, not a word in the copy.",
+      startCopyTeardown: false,
+      pullInfraDiagnostics: true,
+    };
+  }
+
   // campaignInSpam && control === CLEAN → copy, unless canaries or the rig say otherwise.
   const canary = input.copyCanary
     ? interpretCopyCanary(input.copyCanary)
@@ -115,7 +134,7 @@ export function decideIsolationVerdict(
     reason:
       canary.lean === "COPY"
         ? canary.reason
-        : "The standing inbox test for these senders landed in the inbox. The campaign copy is the problem.",
+        : "The campaign copy is not inboxing on an ESP, and the known-good email on those same domains is landing across ESPs. The copy is the problem.",
     startCopyTeardown: true,
     pullInfraDiagnostics: false,
   };

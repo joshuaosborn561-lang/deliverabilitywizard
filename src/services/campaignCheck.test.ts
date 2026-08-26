@@ -6,7 +6,6 @@ import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import { firstCheckPassed } from "../lib/campaignCheck.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { isPocClient } from "../lib/pocClient.js";
-import { buildIsolationAction } from "../lib/isolationActions.js";
 import { StateStore } from "../state/store.js";
 import { CampaignCheckService } from "./campaignCheck.js";
 
@@ -412,13 +411,15 @@ describe("CampaignCheckService", () => {
     );
   });
 
-  it("D85: missing %signature% posts a one-tap fix ask", async () => {
+  it("D92: missing signature is written as First Last / client name and Slack says so", async () => {
     const state = new StateStore(stateFile());
     await state.load();
-    const asked: Array<{ kind: string; actionId: string }> = [];
+    const wrote: string[] = [];
+    const mailboxSigs: string[] = [];
+    const told: string[] = [];
     const slack = {
-      notifyIsolationAction: async (details: { kind: string; actionId: string }) => {
-        asked.push({ kind: details.kind, actionId: details.actionId });
+      notifyActionResult: async (text: string) => {
+        told.push(text);
       },
     } as never;
     const service = new CampaignCheckService(
@@ -427,11 +428,28 @@ describe("CampaignCheckService", () => {
         listCampaigns: async () => [
           { id: 77, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
         ],
-        listAllEmailAccounts: async () => [],
+        listAllEmailAccounts: async () => [
+          {
+            id: 9,
+            from_email: "leila@goliath.com",
+            from_name: "Leila Sanchez",
+            signature: "",
+            client_id: 548611,
+            campaign_ids: [77],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
         listClients: async () => [goliath],
         getCampaignSequences: async () => [
           { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
         ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
       } as unknown as SmartleadClient,
       delivery(),
       state,
@@ -439,130 +457,55 @@ describe("CampaignCheckService", () => {
     );
 
     const result = await service.run({ mode: "first" });
-    assert.equal(result.firstPassed, 0, "missing tag still blocks first-check");
-    assert.equal(asked.length, 1);
-    assert.equal(asked[0]?.kind, "add_signature_tag");
-    const action = state
-      .listIsolationActions()
-      .find((row) => row.kind === "add_signature_tag");
-    assert.ok(action);
-    assert.equal(Number(action?.detail.campaignId), 77);
+    assert.ok(wrote[0]?.includes("%signature%"));
+    assert.equal(mailboxSigs[0], "Leila Sanchez\nGoliath Cybersecurity");
+    assert.equal(result.firstPassed, 1, "same pass unblocks after the write");
+    assert.equal(told.length, 1);
+    assert.match(told[0]!, /Goliath Cybersecurity/);
+    assert.match(told[0]!, /SalesGlider Nurture/);
+    assert.equal(
+      state.listIsolationActions().filter((row) => row.kind === "add_signature_tag")
+        .length,
+      0,
+      "no Slack approve button",
+    );
   });
 
-  it("D87: several blocked campaigns get ONE bulk %signature% ask, not one each", async () => {
+  it("D92: several campaigns get one Slack after, not a button each", async () => {
     const state = new StateStore(stateFile());
     await state.load();
-    const asked: Array<{ kind: string }> = [];
-    const slack = {
-      notifyIsolationAction: async (details: { kind: string }) => {
-        asked.push({ kind: details.kind });
-      },
-    } as never;
+    const told: string[] = [];
+    const wrote: number[] = [];
     const service = new CampaignCheckService(
       loadConfig({}),
       {
         listCampaigns: async () => [
           { id: 81, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
           { id: 82, name: "Parlay2 Sports Offer", status: "ACTIVE", client_id: 548611 },
-          { id: 83, name: "Positive", status: "ACTIVE", client_id: 548611 },
         ],
         listAllEmailAccounts: async () => [],
         listClients: async () => [goliath],
         getCampaignSequences: async () => [
           { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
         ],
+        updateCampaignSequences: async (id: number) => {
+          wrote.push(id);
+        },
+        updateEmailAccount: async () => undefined,
       } as unknown as SmartleadClient,
       delivery(),
       state,
-      slack,
-    );
-
-    await service.run({ mode: "all" });
-    assert.equal(asked.length, 1, "three blocked campaigns must be one bulk ask");
-    const action = state
-      .listIsolationActions()
-      .find((row) => row.kind === "add_signature_tag");
-    assert.ok(action);
-    assert.deepEqual(
-      [...((action?.detail.campaignIds as number[]) ?? [])].sort(),
-      [81, 82, 83],
-    );
-
-    // A second sweep re-finds the same campaigns — covered, no new ask.
-    await service.run({ mode: "all" });
-    assert.equal(asked.length, 1, "covered campaigns must not re-ask");
-    assert.equal(
-      state
-        .listIsolationActions()
-        .filter((row) => row.kind === "add_signature_tag").length,
-      1,
-    );
-  });
-
-  it("D89: pending single %signature% asks collapse into one bulk ask", async () => {
-    const state = new StateStore(stateFile());
-    await state.load();
-    state.upsertIsolationAction(
-      buildIsolationAction({
-        kind: "add_signature_tag",
-        title: "%signature% missing on SalesGlider Nurture",
-        proof: "old single",
-        detail: { campaignId: 81, campaignName: "SalesGlider Nurture" },
-      }),
-    );
-    state.upsertIsolationAction(
-      buildIsolationAction({
-        kind: "add_signature_tag",
-        title: "%signature% missing on Parlay2 Sports Offer",
-        proof: "old single",
-        detail: { campaignId: 82, campaignName: "Parlay2 Sports Offer" },
-      }),
-    );
-    const asked: Array<{ kind: string }> = [];
-    const slack = {
-      notifyIsolationAction: async (details: { kind: string }) => {
-        asked.push({ kind: details.kind });
-      },
-    } as never;
-    const service = new CampaignCheckService(
-      loadConfig({}),
       {
-        listCampaigns: async () => [
-          { id: 81, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
-          { id: 82, name: "Parlay2 Sports Offer", status: "ACTIVE", client_id: 548611 },
-          { id: 83, name: "Positive", status: "ACTIVE", client_id: 548611 },
-        ],
-        listAllEmailAccounts: async () => [],
-        listClients: async () => [goliath],
-        getCampaignSequences: async () => [
-          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
-        ],
-      } as unknown as SmartleadClient,
-      delivery(),
-      state,
-      slack,
+        notifyActionResult: async (text: string) => {
+          told.push(text);
+        },
+      } as never,
     );
 
     await service.run({ mode: "all" });
-    assert.equal(asked.length, 1, "collapsed singles must become one bulk ask");
-    const pending = state
-      .listIsolationActions()
-      .filter((row) => row.kind === "add_signature_tag" && row.status === "pending");
-    assert.equal(pending.length, 1);
-    assert.deepEqual(
-      [...((pending[0]?.detail.campaignIds as number[]) ?? [])].sort(),
-      [81, 82, 83],
-    );
-    assert.equal(
-      state
-        .listIsolationActions()
-        .filter(
-          (row) =>
-            row.kind === "add_signature_tag" &&
-            row.detail.supersededByBulk === true,
-        ).length,
-      2,
-    );
+    assert.deepEqual(wrote.sort((a, b) => a - b), [81, 82]);
+    assert.equal(told.length, 1);
+    assert.match(told[0]!, /2 campaigns/);
   });
 
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {

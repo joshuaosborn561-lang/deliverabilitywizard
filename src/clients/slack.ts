@@ -702,6 +702,8 @@ export class SlackClient {
       ]
         .filter(Boolean)
         .join("\n"),
+      undefined,
+      "action_result",
     );
   }
 

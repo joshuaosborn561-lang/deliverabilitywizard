@@ -2703,3 +2703,158 @@ describe("owner intent — D86 hand-bought canary fleet is adopted", () => {
     );
   });
 });
+
+describe("owner intent — D88 bounce pause bands retired", () => {
+  it("D88: autostop does not pause; Smartlead off-write stays", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.doesNotMatch(
+      autostop,
+      /updateCampaignStatus/,
+      stop(
+        "The bounce loop does not pause a campaign (D88).",
+        "campaignBounceAutostop.ts still writes a campaign status — the 20/7 bands are live again.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /shouldAutostopCampaignForBounce/,
+      stop(
+        "The bounce loop does not score a 20/7 band (D88).",
+        "campaignBounceAutostop.ts still imports shouldAutostopCampaignForBounce.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /bounce_autopause_threshold/,
+      stop(
+        "The bounce loop still writes Smartlead autopause off (D80/D88).",
+        "campaignBounceAutostop.ts lost the Smartlead off-write.",
+      ),
+    );
+
+    const { shouldAutostopCampaignForBounce } = await import(
+      "../lib/campaignBounceAutostop.js"
+    );
+    assert.equal(
+      shouldAutostopCampaignForBounce(200, 50),
+      true,
+      stop(
+        "The retired 20/7 helpers may stay in lib/ (D80/D88).",
+        "shouldAutostopCampaignForBounce no longer encodes the old band — leave the helper, do not use it.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D89 leftover canon holes", () => {
+  it("D89: living known-good, queued reads, attach-after-adopt, bulk collapse, drafts on EOD", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const pod = await read("../services/podControls.ts");
+    assert.match(
+      pod,
+      /living\.has/,
+      stop(
+        "A stored pod-control test that is not living is not coverage (D89).",
+        "podControls.ts treats a stored spamTestId as coverage even when the test is dead.",
+      ),
+    );
+
+    const index = await read("../index.ts");
+    assert.match(
+      index,
+      /pod-cover/,
+      stop(
+        "Health grows known-good coverage when findings say it is missing (D89).",
+        "index.ts no longer runs a pod-cover pass.",
+      ),
+    );
+    assert.match(
+      index,
+      /3 \* 60_000/,
+      stop(
+        "Health boot-kicks three minutes after deploy, not immediately (D89).",
+        "index.ts lost the staggered health boot kick.",
+      ),
+    );
+    assert.match(
+      index,
+      /8 \* 60_000/,
+      stop(
+        "Pool boot-kicks eight minutes after deploy (D89).",
+        "index.ts lost the staggered pool boot kick.",
+      ),
+    );
+    assert.match(
+      index,
+      /copyCanary\.attach\(\)/,
+      stop(
+        "Canary attach runs after adopt, not only inside health (D89).",
+        "index.ts no longer attaches canary tests from the adopt pass.",
+      ),
+    );
+
+    const smartlead = await read("../clients/smartlead.ts");
+    assert.match(
+      smartlead,
+      /listCampaigns\(clientId\?: number\): Promise<SmartleadCampaign\[]> \{\s*return this\.mutate\(/,
+      stop(
+        "listCampaigns shares the write queue (D89).",
+        "listCampaigns is an unqueued read again — four deploys will 429 inventory.",
+      ),
+    );
+    assert.match(
+      smartlead,
+      /listClients\(\): Promise<SmartleadClientRecord\[]> \{\s*return this\.mutate\(/,
+      stop(
+        "listClients shares the write queue (D89).",
+        "listClients is an unqueued read again.",
+      ),
+    );
+    assert.match(
+      smartlead,
+      /listAllEmailAccounts[\s\S]*return this\.mutate\(/,
+      stop(
+        "listAllEmailAccounts shares the write queue (D89).",
+        "listAllEmailAccounts is an unqueued read again.",
+      ),
+    );
+
+    const check = await read("../services/campaignCheck.ts");
+    assert.match(
+      check,
+      /supersedePendingSingleSignatureAsks/,
+      stop(
+        "Pending single %signature% asks collapse into one bulk ask (D89).",
+        "campaignCheck.ts no longer supersedes pre-D87 singles — those campaigns stay stranded on old buttons.",
+      ),
+    );
+
+    const brief = await read("../services/clientDayBrief.ts");
+    assert.match(
+      brief,
+      /loadedDrafts/,
+      stop(
+        "DRAFT campaigns with remaining leads are named on the EOD brief (D89).",
+        "clientDayBrief.ts dropped loaded drafts.",
+      ),
+    );
+    const slackSrc = await read("../clients/slack.ts");
+    assert.match(
+      slackSrc,
+      /Leads loaded, not sending/,
+      stop(
+        "The EOD brief renders loaded drafts in plain English (D89).",
+        "slack.ts accepts loadedDrafts but never says leads are sitting in draft.",
+      ),
+    );
+  });
+});

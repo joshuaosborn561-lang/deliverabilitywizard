@@ -9,13 +9,17 @@ import {
 import { ensurePodControlShell } from "./podControlShell.js";
 import {
   folderIdOf,
+  isAutomatedTest,
+  isTestStoppable,
   parseSenderInboxRates,
+  testIdOf,
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import { defaultControlTemplate } from "../lib/controlTemplate.js";
 import {
   POD_CONTROL_FOLDER_NAME,
+  isPodControlTestName,
   podControlTestName,
 } from "../lib/isolationNames.js";
 import {
@@ -145,6 +149,7 @@ export class PodControlService {
         const chunk = chunks[index]!;
         const key = `${pod.id}:${index}`;
         const existing = existingByPod.get(key);
+        // D89 — a stored row whose test is dead is not coverage. Recreate.
         if (existing) continue;
         if (dryRun) {
           result.testsCreated.push(`dry-run:${key}`);
@@ -286,11 +291,20 @@ export class PodControlService {
     pods: Pod[],
   ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
-    for (const row of this.state.listPodControls()) {
-      if (row.spamTestId) out.set(row.id, row.spamTestId);
-    }
     try {
       const tests = await this.smartDelivery.listTests();
+      const living = new Set<string>();
+      for (const test of tests) {
+        if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
+        if (!isPodControlTestName(test.test_name)) continue;
+        const id = testIdOf(test);
+        if (id) living.add(String(id));
+      }
+      for (const row of this.state.listPodControls()) {
+        if (row.spamTestId && living.has(String(row.spamTestId))) {
+          out.set(row.id, row.spamTestId);
+        }
+      }
       for (const pod of pods) {
         const emails = emailsForPod(pod);
         if (!emails.length) continue;

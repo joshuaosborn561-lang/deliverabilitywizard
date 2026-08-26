@@ -48,8 +48,9 @@ export class SmartleadClient {
   }
 
   /**
-   * Optional serialiser for mutating calls. When set, writes share one queue
-   * so overlapping health/monitor/top-up work cannot stampede Smartlead.
+   * Serialiser for Smartlead reads AND writes. Inventory fetches (the 429
+   * source) share the same gap as mutations so overlapping boot kicks and
+   * the 15-minute sweep cannot stampede the key (D89).
    */
   setMutationQueue(queue: MutationQueue | null): void {
     this.mutationQueue = queue;
@@ -60,9 +61,11 @@ export class SmartleadClient {
   }
 
   listCampaigns(clientId?: number): Promise<SmartleadCampaign[]> {
-    return apiRequest<SmartleadCampaign[]>(BASE_URL, this.apiKey, "campaigns/", {
-      query: clientId === undefined ? undefined : { client_id: clientId },
-    });
+    return this.mutate(() =>
+      apiRequest<SmartleadCampaign[]>(BASE_URL, this.apiKey, "campaigns/", {
+        query: clientId === undefined ? undefined : { client_id: clientId },
+      }),
+    );
   }
 
   /**
@@ -112,7 +115,9 @@ export class SmartleadClient {
   }
 
   listClients(): Promise<SmartleadClientRecord[]> {
-    return apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/");
+    return this.mutate(() =>
+      apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/"),
+    );
   }
 
   getCampaign(campaignId: number): Promise<SmartleadCampaign> {
@@ -192,6 +197,12 @@ export class SmartleadClient {
   async listAllEmailAccounts(options: {
     fetchCampaigns?: boolean;
   } = {}): Promise<SmartleadAccountWithCampaigns[]> {
+    return this.mutate(() => this.listAllEmailAccountsUnqueued(options));
+  }
+
+  private async listAllEmailAccountsUnqueued(options: {
+    fetchCampaigns?: boolean;
+  } = {}): Promise<SmartleadAccountWithCampaigns[]> {
     const out: SmartleadAccountWithCampaigns[] = [];
     let offset = 0;
     const limit = 100;
@@ -212,7 +223,7 @@ export class SmartleadClient {
       out.push(...rows);
       if (rows.length < limit) break;
       offset += limit;
-      await sleep(150);
+      await sleep(400);
     }
     return out;
   }

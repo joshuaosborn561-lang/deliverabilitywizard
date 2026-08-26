@@ -15,11 +15,13 @@ import {
 } from "../clients/smartdelivery.js";
 import { sleep } from "../lib/http.js";
 import { isClientInbox } from "../lib/clientInbox.js";
+import { parseCampaignLeadStats } from "../lib/leadRunout.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { businessDate } from "./sendVolume.js";
 import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { overallSplit } from "./resultMonitor.js";
 import type { StateStore } from "../state/store.js";
+import type { SmartleadCampaign } from "../types/index.js";
 
 /**
  * Per-client day brief for Slack (D39): sent / bounce% / spam%, plus how many
@@ -44,11 +46,23 @@ export interface ClientDayRow {
   genericSpare: number;
 }
 
+export interface LoadedDraftRow {
+  id: number;
+  name: string;
+  remaining: number;
+}
+
 export interface ClientDayBriefResult {
   date: string;
   totalSent: number;
   rows: ClientDayRow[];
   errors: string[];
+  loadedDrafts?: LoadedDraftRow[];
+}
+
+function isDraftCampaignStatus(status: unknown): boolean {
+  const s = String(status ?? "").toUpperCase();
+  return s === "DRAFT" || s === "DRAFTED";
 }
 
 function toCount(value: unknown): number {
@@ -262,6 +276,13 @@ export class ClientDayBriefService {
         name: String(campaign.name ?? campaign.id),
       }));
 
+    const loadedDrafts = options.endOfDay
+      ? await this.collectLoadedDrafts(campaigns, errors)
+      : [];
+    if (loadedDrafts.length) {
+      result.loadedDrafts = loadedDrafts;
+    }
+
     if (options.alert !== false) {
       await this.slack.notifyClientDayBrief({
         ...result,
@@ -270,11 +291,53 @@ export class ClientDayBriefService {
           ? this.state.listLastStaffingShort()
           : undefined,
         untaggedCampaigns: options.endOfDay ? untagged : undefined,
+        loadedDrafts: options.endOfDay ? loadedDrafts : undefined,
         canaryFleetDownSince: options.endOfDay
           ? this.state.getCanaryFleetDown()?.since ?? null
           : null,
       });
     }
     return result;
+  }
+
+  /**
+   * D89 — DRAFT/DRAFTED campaigns that already have leads sitting in them
+   * and are not sending. Named on the EOD brief only. Does not import
+   * leads (D52) and does not START anyone (D40).
+   */
+  private async collectLoadedDrafts(
+    campaigns: SmartleadCampaign[],
+    errors: string[],
+  ): Promise<LoadedDraftRow[]> {
+    const drafts = campaigns.filter(
+      (campaign) =>
+        isDraftCampaignStatus(campaign.status) &&
+        !isPodControlShellCampaign(campaign) &&
+        !isTerminalCampaignStatus(campaign.status),
+    );
+    const loaded: LoadedDraftRow[] = [];
+    for (const campaign of drafts) {
+      try {
+        let stats = parseCampaignLeadStats(
+          await this.smartlead.getCampaignStatistics(campaign.id).catch(() => null),
+        );
+        if (!stats) {
+          stats = parseCampaignLeadStats(
+            await this.smartlead.getCampaign(campaign.id).catch(() => null),
+          );
+        }
+        if (!stats || stats.remaining <= 0) continue;
+        loaded.push({
+          id: campaign.id,
+          name: String(campaign.name ?? campaign.id),
+          remaining: stats.remaining,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`draft #${campaign.id}: ${message}`);
+      }
+      await sleep(150);
+    }
+    return loaded;
   }
 }

@@ -109,7 +109,7 @@ async function main(): Promise<void> {
   const smartlead = new SmartleadClient(config.smartleadApiKey || "missing");
   // Serialise Smartlead writes across health / remediation / settings so
   // overlapping crons do not stampede into 429s (D25).
-  smartlead.setMutationQueue(new MutationQueue(250));
+  smartlead.setMutationQueue(new MutationQueue(400));
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
   );
@@ -719,6 +719,26 @@ async function main(): Promise<void> {
         }
       }
 
+      // D89 — serving inboxes missing a living known-good canary get a
+      // pod-control test on this pass (throttled hourly), not only at the
+      // 6-hour monitor.
+      if (config.enablePodControls) {
+        const missingKnownGood = state
+          .listCampaignChecks()
+          .some((record) =>
+            (record.findings ?? []).some((f) =>
+              f.startsWith("inbox_missing_known_good"),
+            ),
+          );
+        const lastPodAt = state.getIsolation().lastPodControlAt;
+        const podAgeMs = lastPodAt
+          ? Date.now() - Date.parse(lastPodAt)
+          : Number.POSITIVE_INFINITY;
+        if (missingKnownGood && podAgeMs >= 55 * 60 * 1000) {
+          await stage("pod-cover", () => podControls.run());
+        }
+      }
+
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
         reconnectResult = await stage("reconnect", () => runReconnect());
@@ -1104,12 +1124,13 @@ async function main(): Promise<void> {
         feedBugRemediator("health-cron", error);
       });
     });
-    // Kick shortly after boot so thin/paused campaigns do not wait 15m.
+    // D89 — boot kicks are staggered so a deploy does not stampede
+    // Smartlead (four overlapping inventory fetches was the 429).
     setTimeout(() => {
       void runHealth().catch((error) => {
         console.error("[health] Boot kick failed", error);
       });
-    }, 45_000);
+    }, 3 * 60_000);
   }
 
   if (config.enableCampaignBounceAutostop) {
@@ -1119,11 +1140,8 @@ async function main(): Promise<void> {
         feedBugRemediator("bounce-autostop-cron", error);
       });
     });
-    setTimeout(() => {
-      void runBounceAutostop().catch((error) => {
-        console.error("[bounce-autostop] Boot kick failed", error);
-      });
-    }, 60_000);
+    // No boot kick — the 10-minute cron is soon enough and the first
+    // minutes after deploy belong to health / canary attach.
   }
 
   if (config.enablePoolProvisioner) {
@@ -1132,12 +1150,11 @@ async function main(): Promise<void> {
         console.error("[pool-provision] Unhandled cron error", error);
       });
     });
-    // Kick once shortly after boot so we don't wait up to 30m
     setTimeout(() => {
       void runPoolProvision().catch((error) => {
         console.error("[pool-provision] Boot kick failed", error);
       });
-    }, 15_000);
+    }, 8 * 60_000);
   }
 
   if (config.enableAccountReconnect) {
@@ -1151,12 +1168,7 @@ async function main(): Promise<void> {
       },
       { timezone: "America/New_York" },
     );
-    // Also kick shortly after boot so disconnects don't wait until 3am
-    setTimeout(() => {
-      void runReconnect().catch((error) => {
-        console.error("[reconnect] Boot kick failed", error);
-      });
-    }, 20_000);
+    // No boot kick — health already reconnects on the 15-minute pass.
   }
 
   // D86 — a canary fleet Josh bought by hand in InboxKit is adopted, not
@@ -1168,16 +1180,14 @@ async function main(): Promise<void> {
     const result = await copyCanaryBuy.adoptManualPurchase();
     if (!result) {
       console.log("[copy-canary-adopt] fleet is healthy — nothing to adopt");
-      return;
-    }
-    if (result.adopted.length && result.changed) {
+    } else if (result.adopted.length && result.changed) {
       await slack.send(
         [
           `Found the ${result.adopted.length} unwarmed inbox${result.adopted.length === 1 ? "" : "es"} you bought and registered them as the copy-test canaries:`,
           ...result.adopted.map((email) => `• ${email}`),
           "Warmup is off and they will never staff a live campaign.",
           result.ready
-            ? "They are in Smartlead — campaign copy tests start on the next sweep."
+            ? "They are in Smartlead — campaign copy tests start on this pass."
             : "Smartlead is still importing them; I keep checking and the copy tests start as soon as they land.",
         ].join("\n"),
         undefined,
@@ -1192,13 +1202,22 @@ async function main(): Promise<void> {
     } else if (result.reason) {
       console.log(`[copy-canary-adopt] nothing adopted: ${result.reason}`);
     }
+
+    // D89 — attach campaign-copy tests here, not only inside health. A
+    // 429'd inventory stage used to leave a ready fleet with no tests.
+    if (state.getCopyCanaryFleet()?.emails.length) {
+      const attach = await copyCanary.attach();
+      console.log(
+        `[copy-canary] attach tests=${attach.testsEnsured} errors=${attach.errors.length} skipped=${attach.skipped.join(";") || "none"}`,
+      );
+    }
   };
   if (secretsReady) {
     setTimeout(() => {
       void runCanaryAdoption().catch((error) => {
         console.warn("[copy-canary-adopt] boot kick failed", error);
       });
-    }, 70_000);
+    }, 90_000);
   }
 
   // Old Slack buttons were posted by another bot, so taps never arrived.
@@ -2227,7 +2246,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
     );
     console.log(
-      `[boot] Campaign bounce autostop (D80): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; skip <${config.bounceAutostopMinSent} sends; ${config.bounceAutostopMidPercent}% until ${config.bounceAutostopHighVolumeSent}; ${config.bounceAutostopHighPercent}% after; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%)` : "disabled"}`,
+      `[boot] Campaign bounce autostop (D88): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%; campaign pause bands retired)` : "disabled"}`,
     );
     console.log(
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,

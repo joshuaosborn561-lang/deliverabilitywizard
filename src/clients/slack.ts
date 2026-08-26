@@ -177,6 +177,8 @@ export class SlackClient {
     }>;
     /** D85 — campaigns the tagger cannot match to a client (D77 forbids guessing). */
     untaggedCampaigns?: Array<{ id: number; name: string }>;
+    /** D89 — DRAFT campaigns that already have leads and are not sending. */
+    loadedDrafts?: Array<{ id: number; name: string; remaining: number }>;
     /** D85 — set when the unwarmed canary fleet has zero connected mailboxes. */
     canaryFleetDownSince?: string | null;
   }): Promise<void> {
@@ -231,6 +233,22 @@ export class SlackClient {
         ...untagged.slice(0, 10).map((c) => `• ${c.name} (#${c.id})`),
       );
       if (untagged.length > 10) lines.push(`• …and ${untagged.length - 10} more`);
+    }
+
+    // D89 — leads sitting in draft, nothing going out.
+    const drafts = summary.loadedDrafts ?? [];
+    if (drafts.length) {
+      lines.push(
+        "",
+        `Leads loaded, not sending (${drafts.length}):`,
+        ...drafts
+          .slice(0, 10)
+          .map(
+            (c) =>
+              `• ${c.name} (#${c.id}) — about ${c.remaining.toLocaleString("en-US")} lead${c.remaining === 1 ? "" : "s"} sitting in draft`,
+          ),
+      );
+      if (drafts.length > 10) lines.push(`• …and ${drafts.length - 10} more`);
     }
 
     // D85 — one line for the fleet, not 48 findings.

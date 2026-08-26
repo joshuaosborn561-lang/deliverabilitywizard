@@ -118,6 +118,9 @@ describe("Slack copy is plain English (D47)", () => {
           status: "ACTIVE",
         },
       ],
+      loadedDrafts: [
+        { id: 99, name: "Parlay3 Launch", remaining: 2400 },
+      ],
     });
     await client.notifyTestReconcile({
       dryRun: false,

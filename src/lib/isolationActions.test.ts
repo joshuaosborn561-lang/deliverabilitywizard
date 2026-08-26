@@ -4,8 +4,10 @@ import type { SlackClient } from "../clients/slack.js";
 import { StateStore } from "../state/store.js";
 import {
   buildIsolationAction,
+  coveredSignatureCampaigns,
   remindPendingIsolationActions,
   requestIsolationAction,
+  supersedePendingSingleSignatureAsks,
 } from "./isolationActions.js";
 
 function slackCapture() {
@@ -191,5 +193,53 @@ describe("isolation Slack reminds", () => {
     const count = await remindPendingIsolationActions({ store, slack });
     assert.equal(count, 0);
     assert.deepEqual(notified, []);
+  });
+
+  it("D89: pending singles collapse so a bulk ask can own those campaigns", async () => {
+    const store = tempStore();
+    const { slack } = slackCapture();
+    const one = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "one",
+      proof: "one",
+      detail: { campaignId: 81 },
+    });
+    const two = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "two",
+      proof: "two",
+      detail: { campaignId: 82 },
+    });
+    await requestIsolationAction({ store, slack, action: one });
+    await requestIsolationAction({ store, slack, action: two });
+
+    assert.deepEqual(
+      [...coveredSignatureCampaigns(store.listIsolationActions())].sort(),
+      [81, 82],
+    );
+
+    const collapsed = supersedePendingSingleSignatureAsks(store, [81, 82, 83]);
+    assert.equal(collapsed, 2);
+    assert.deepEqual(
+      [...coveredSignatureCampaigns(store.listIsolationActions())],
+      [],
+      "superseded singles must not keep owning those campaigns",
+    );
+
+    const bulk = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "add_signature_tag",
+        title: "bulk",
+        proof: "bulk",
+        detail: { campaignIds: [81, 82, 83] },
+      }),
+    });
+    assert.ok(bulk);
+    assert.deepEqual(
+      [...coveredSignatureCampaigns(store.listIsolationActions())].sort(),
+      [81, 82, 83],
+    );
   });
 });

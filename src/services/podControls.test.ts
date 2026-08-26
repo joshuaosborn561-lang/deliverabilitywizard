@@ -4,6 +4,47 @@ import { loadConfig } from "../config.js";
 import { StateStore } from "../state/store.js";
 import { PodControlService } from "./podControls.js";
 
+import type { InventoryBook } from "./inventory.js";
+
+/** D132 — a test book reading the same fake client, one attempt. */
+function bookOf(sl: unknown): InventoryBook {
+  const client = sl as {
+    listCampaigns?: () => Promise<unknown[]>;
+    listAllEmailAccounts?: (o?: unknown) => Promise<unknown[]>;
+    listClients?: () => Promise<unknown[]>;
+  };
+  return {
+    get: async () => ({
+      campaigns:
+        typeof client.listCampaigns === "function"
+          ? await client.listCampaigns()
+          : [],
+      accounts:
+        typeof client.listAllEmailAccounts === "function"
+          ? await client.listAllEmailAccounts({ fetchCampaigns: true })
+          : [],
+      clients:
+        typeof client.listClients === "function"
+          ? await client.listClients().catch(() => [])
+          : [],
+      fetchedAt: Date.now(),
+    }),
+  } as unknown as InventoryBook;
+}
+
+function mkPods(
+  ...args: [
+    ConstructorParameters<typeof PodControlService>[0],
+    ConstructorParameters<typeof PodControlService>[1],
+    ConstructorParameters<typeof PodControlService>[2],
+    ConstructorParameters<typeof PodControlService>[3],
+    ConstructorParameters<typeof PodControlService>[4],
+  ]
+): PodControlService {
+  const [config, sl, sd, slack, state] = args;
+  return new PodControlService(config, sl, sd, slack, state, bookOf(sl));
+}
+
 describe("pod controls", () => {
   it("schedules the full pod without a seed-approval stop", async () => {
     const state = new StateStore(
@@ -12,7 +53,7 @@ describe("pod controls", () => {
     await state.load();
     const config = loadConfig({} as NodeJS.ProcessEnv);
     const created: Array<{ sender_accounts?: string[] }> = [];
-    const service = new PodControlService(
+    const service = mkPods(
       config,
       {
         listCampaigns: async () => [
@@ -100,7 +141,7 @@ describe("pod controls", () => {
       test_name: string;
       status: string;
     }> = [];
-    const service = new PodControlService(
+    const service = mkPods(
       config,
       {
         listCampaigns: async () => [
@@ -176,7 +217,7 @@ describe("pod controls", () => {
       test_name: string;
       status: string;
     }> = [];
-    const service = new PodControlService(
+    const service = mkPods(
       config,
       {
         listCampaigns: async () => [

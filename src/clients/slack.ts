@@ -179,6 +179,8 @@ export class SlackClient {
     untaggedCampaigns?: Array<{ id: number; name: string }>;
     /** D89 — DRAFT campaigns that already have leads and are not sending. */
     loadedDrafts?: Array<{ id: number; name: string; remaining: number }>;
+    /** D136 — sending domains whose client story needs a human. */
+    domainAdvisories?: Array<{ domain: string; kind: string; note: string }>;
     /** D85 — set when the unwarmed canary fleet has zero connected mailboxes. */
     canaryFleetDownSince?: string | null;
   }): Promise<void> {
@@ -233,6 +235,22 @@ export class SlackClient {
         ...untagged.slice(0, 10).map((c) => `• ${c.name} (#${c.id})`),
       );
       if (untagged.length > 10) lines.push(`• …and ${untagged.length - 10} more`);
+    }
+
+    // D136 — a domain split across clients or mapped to none is a human
+    // question; the audit never guesses.
+    const domainAdvisories = summary.domainAdvisories ?? [];
+    if (domainAdvisories.length) {
+      lines.push(
+        "",
+        `Domains needing a human (${domainAdvisories.length}) — I will not guess the client:`,
+        ...domainAdvisories
+          .slice(0, 10)
+          .map((row) => `• ${row.domain} — ${row.note}`),
+      );
+      if (domainAdvisories.length > 10) {
+        lines.push(`• …and ${domainAdvisories.length - 10} more`);
+      }
     }
 
     // D89 — leads sitting in draft, nothing going out.

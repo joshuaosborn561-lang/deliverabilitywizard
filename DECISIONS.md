@@ -150,6 +150,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D132 | Live | One Smartlead account book; partial reads distrusted |
 | D133 | Live | Word-swap tap edits every ACTIVE campaign carrying the word |
 | D134 | Live | A domain-retire tap approves generic backfill for the campaigns it cut |
+| D135 | Live | POD-A/POD-B tags converged on client mailboxes in Smartlead |
+| D136 | Live | Domain→client advisory audit; EOD escalation, never a guess |
 
 ---
 
@@ -3306,3 +3308,52 @@ and Josh can tell me to revoke any campaign's approval.
 `approveGenericBackfill` with `retire:` provenance; behavioral test:
 retire approves exactly the ACTIVE campaigns it pulled from, never a
 paused one.
+
+## D135 — The A/B rest split is visible in Smartlead: POD-A/POD-B tags converged on client mailboxes
+
+**Decision.** A monitor stage (`pod-tags`, 6-hourly) converges a `POD-A`
+or `POD-B` Smartlead tag onto every client mailbox sitting in a rest pod,
+using the exact pods the rest system computes (`loadPods`, shared with
+the pod-control coverage sweep off the account book — D132). Drift-only:
+assign the missing tag, drop the opposite one, touch nothing else.
+Generics, canaries, and idle inboxes are left alone — an idle inbox
+keeps its last pod tag until it staffs again. Tags are decoration for
+humans; no code reads them back (the cohort hash stays the truth, D43).
+
+**Why.** Josh runs the fleet from the Smartlead UI; the A/B split lived
+only in state and logs, so "which pod is this inbox in" needed a code
+spelunk. Pod A and pod B on the mailbox row answers it at a glance.
+
+**Tradeoff.** Tag writes are batched 25/call on a 6-hour cadence; a
+mid-cycle cohort change (membership reshuffle) shows stale for up to 6
+hours. Accepted — decoration, not control.
+
+**Guards.** owner-intent D135: podTags derives from `loadPods` (never
+its own split) and carries the POD tag converge; behavioral tests cover
+correct/wrong/missing tags and the untouched generic.
+
+## D136 — Domain→client is audited, mismatches are a human question
+
+**Decision.** A monitor stage (`domain-client-audit`, 6-hourly) checks
+every sending domain's client story against the shared account book:
+mailboxes of one domain resolving to **more than one client** →
+`split_clients` advisory; resolving to **no client at all** → `unmapped`
+advisory. Advisories go to logs and one section on the EOD brief
+("Domains needing a human — I will not guess the client"). The audit
+never writes a client_id, never moves a mailbox, never Slack-pages
+outside the EOD brief. Skipped by rule: pre-warmed generic fleets
+(D19/D76), BCP-owned domains (D99), the isolation domain, the canary
+fleet, retired domains.
+
+**Why.** The Aug 2026 incidents where replacement domains arrived with
+no client mapping (BCP) and generics carried stale client_ids showed
+domain↔client drift breaks fan-out and floors silently. D77 already
+forbids guessing a campaign's client; the same humility applies to
+domains.
+
+**Tradeoff.** One more EOD section when something is off. Silence when
+everything maps.
+
+**Guards.** owner-intent D136: the audit contains no client writes and
+persists advisories; behavioral tests cover split/unmapped/skips and
+that a clean pass clears stale advisories.

@@ -42,6 +42,7 @@ import {
   schedulerCronValue,
 } from "./campaignScanner.js";
 import type { StateStore } from "../state/store.js";
+import type { InventoryBook } from "./inventory.js";
 import type { IsolationPodRecord } from "../state/isolationState.js";
 
 export interface PodControlResult {
@@ -61,6 +62,7 @@ export class PodControlService {
     private readonly smartDelivery: SmartDeliveryClient,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    private readonly book: InventoryBook,
   ) {}
 
   async run(opts: { dryRun?: boolean } = {}): Promise<PodControlResult> {
@@ -243,50 +245,10 @@ export class PodControlService {
   }
 
   private async loadPods(): Promise<Pod[]> {
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => []),
-    ]);
-    const active = new Set(
-      campaigns
-        .filter((campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE")
-        .map((campaign) => campaign.id),
-    );
-    const campaignClient = new Map(
-      campaigns.map((campaign) => [campaign.id, campaign.client_id]),
-    );
-    const clientsById = new Map(clients.map((client) => [client.id, client]));
-    const resting = new Set(
-      this.state.listRestingInboxes().map((row) => row.email.toLowerCase()),
-    );
-    const isolation = {
-      emails: new Set(this.config.isolationMailboxEmails),
-      domain: normalizeIsolationDomain(this.config.isolationDomain),
-    };
-
-    return buildPods({
+    return loadPods({
       config: this.config,
       state: this.state,
-      isolation,
-      accounts: accounts.flatMap((account) => {
-        const email = accountEmail(account)?.toLowerCase();
-        if (!email || isIsolationEmail(email, isolation)) return [];
-        const ids = campaignIdsOf(account);
-        const onActiveCampaign = ids.some((id) => active.has(id));
-        const client = resolveAccountClient(account, campaignClient, clientsById);
-        return [
-          {
-            accountId: account.id,
-            email,
-            clientId: client.clientId,
-            clientName: client.clientName,
-            fromName: account.from_name,
-            onActiveCampaign,
-            resting: resting.has(email),
-          },
-        ];
-      }),
+      book: this.book,
     });
   }
 
@@ -565,4 +527,57 @@ function findFolderId(raw: unknown, name: string): string | number | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * D132/D135 — assemble the A/B pods from the shared account book. Used by
+ * the pod-control coverage sweep and the POD tag converge alike, so both
+ * see the same split without another account-book fetch.
+ */
+export async function loadPods(input: {
+  config: AppConfig;
+  state: StateStore;
+  book: InventoryBook;
+}): Promise<Pod[]> {
+  const { campaigns, accounts, clients } = await input.book.get();
+  const active = new Set(
+    campaigns
+      .filter((campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE")
+      .map((campaign) => campaign.id),
+  );
+  const campaignClient = new Map(
+    campaigns.map((campaign) => [campaign.id, campaign.client_id]),
+  );
+  const clientsById = new Map(clients.map((client) => [client.id, client]));
+  const resting = new Set(
+    input.state.listRestingInboxes().map((row) => row.email.toLowerCase()),
+  );
+  const isolation = {
+    emails: new Set(input.config.isolationMailboxEmails),
+    domain: normalizeIsolationDomain(input.config.isolationDomain),
+  };
+
+  return buildPods({
+    config: input.config,
+    state: input.state,
+    isolation,
+    accounts: accounts.flatMap((account) => {
+      const email = accountEmail(account)?.toLowerCase();
+      if (!email || isIsolationEmail(email, isolation)) return [];
+      const ids = campaignIdsOf(account);
+      const onActiveCampaign = ids.some((id) => active.has(id));
+      const client = resolveAccountClient(account, campaignClient, clientsById);
+      return [
+        {
+          accountId: account.id,
+          email,
+          clientId: client.clientId,
+          clientName: client.clientName,
+          fromName: account.from_name,
+          onActiveCampaign,
+          resting: resting.has(email),
+        },
+      ];
+    }),
+  });
 }

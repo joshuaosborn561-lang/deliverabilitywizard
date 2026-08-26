@@ -46,6 +46,8 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "lead-runout": SIX_HOURLY_MS,
   "sending-infra": SIX_HOURLY_MS,
   "pod-controls": SIX_HOURLY_MS,
+  "pod-tags": SIX_HOURLY_MS,
+  "domain-client-audit": SIX_HOURLY_MS,
   "domain-lifecycle": SIX_HOURLY_MS,
   "isolation-buy-resume": SIX_HOURLY_MS,
   "canary-buy-resume": SIX_HOURLY_MS,

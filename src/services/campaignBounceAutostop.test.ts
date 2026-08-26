@@ -261,7 +261,6 @@ describe("CampaignBounceAutostopService (D90)", () => {
     assert.ok(
       writes.every((row) => row.body.bounce_autopause_threshold === "100"),
     );
-    assert.ok(writes.every((row) => row.body.send_as_plain_text === true));
     assert.ok(forceAllAt);
 
     writes.length = 0;

@@ -237,19 +237,22 @@ export class CampaignBounceAutostopService {
       const alreadyOff = this.state?.getAutopauseOffAt(campaign.id);
       if (!forceAll && alreadyOff && !verifyDue) continue;
       try {
-        const settings = await this.smartlead
-          .getCampaignSettings(campaign.id)
-          .catch(() => null);
-        await sleep(120);
-        const current = readBounceAutopausePercent(settings);
+        // GET /campaigns/{id}/settings 404s on this Smartlead account.
+        // Only spend a read on the 6h verify; force/first write is POST-only.
+        let settings: unknown = null;
         if (!forceAll && alreadyOff && verifyDue) {
+          settings = await this.smartlead
+            .getCampaignSettings(campaign.id)
+            .catch(() => null);
+          await sleep(120);
+          const current = readBounceAutopausePercent(settings);
           if (current == null || current === offNumber) continue;
           console.log(
             `[bounce-autostop] drift on #${campaign.id} ${campaign.name}: autopause ${current}% → ${off}%${dryRun ? " (dry-run)" : ""}`,
           );
         } else if (forceAll) {
           console.log(
-            `[bounce-autostop] force autopause off #${campaign.id} ${campaign.name}: ${current ?? "?"}% → ${off}%${dryRun ? " (dry-run)" : ""}`,
+            `[bounce-autostop] force autopause off #${campaign.id} ${campaign.name} → ${off}%${dryRun ? " (dry-run)" : ""}`,
           );
         } else {
           console.log(

@@ -543,7 +543,11 @@ describe("CampaignCheckService", () => {
     await service.run({ mode: "all" });
     assert.equal(wrote.length, 1);
     assert.equal(told.length, 1);
-    assert.ok(state.getCampaignCheck(90)?.sigAutoWrittenAt);
+    const record = state.getCampaignCheck(90);
+    assert.ok(record?.sigAutoWrittenAt);
+    // First-check retries (hourly cron) still re-read sequences. A leftover
+    // that is still blocked on something else must write again, not Slack.
+    state.upsertCampaignCheck({ ...record!, firstPassedAt: null });
 
     await service.run({ mode: "all" });
     assert.equal(wrote.length, 2, "the write still happens if the tag is still missing");

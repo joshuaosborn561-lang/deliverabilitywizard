@@ -155,6 +155,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
 | D138 | Live | Campaign-level min gap converged to the 10-minute floor |
 | D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
+| D140 | Live | A bounce pause reads the SMTP reasons; tenant caps alert once/day |
 
 ---
 
@@ -3461,3 +3462,40 @@ its under_warmed findings match what the gate enforces.
 **Guards.** owner-intent D139 (owesWarmup exists; fan-out and top-up
 call it; no hardcoded 14-day text); fan-out test: a 2.8-day inbox is
 skipped with "owes warmup" while warmed and tag-exempt inboxes flow.
+
+## D140 — A bounce count is a symptom; the SMTP reason is the diagnosis
+
+**Decision.** When the D90 loop pauses a campaign, it samples up to four
+of that campaign's bounced sends (server-filtered statistics → lead →
+message-history NDR), extracts each SMTP reason, and classifies:
+`tenant_rate_limit` (Microsoft 550 5.7.233 — the tenant's daily
+external-recipient cap), `invalid_recipient` (5.1.1 / user unknown —
+the list), `content_block` (5.7.1 / spam / policy — the copy or
+reputation), or `other`. The verdict is logged with a human-readable
+snippet, stored per campaign (`bounceVerdicts`), and attached to the
+pause result. A `tenant_rate_limit` verdict Slacks Josh **once per
+tenant domain per day** on the burned-domain lane with the fix options;
+everything else stays in logs. Diagnosis is fully guarded — it can
+never break the pause itself.
+
+**Why.** Live 2026-08-26: two Goliath campaigns "bounced" 25–31% of
+everything they sent and the lists were blamed. Every sampled NDR was
+`550 5.7.233` — the cleartechco Microsoft tenant blowing through its
+daily external-recipient allowance by early afternoon (61 mailboxes ×
+campaign + warmup sends on one tenant), after which every send from the
+tenant refused until midnight. Josh's verified lists really do bounce
+3–4%; the counter alone cannot tell a bad list from a capped tenant
+from a content block, and each needs a different human.
+
+**Follow-up (not built here).** A `content_block` verdict is the
+trigger Josh described for the bounce-side canary diagnosis: run the
+same infra-vs-copy read as spam placement (D93/D96), and when the copy
+is the verdict on refusals, escalate spintax dramatically instead of
+word-hunting. That is D141, to be specced for Josh's sign-off since it
+edits live copy.
+
+**Guards.** owner-intent D140 (classifier knows the tenant cap; the
+pause path classifies; the tenant alert dedupes); classifier unit tests
+on the three real NDR shapes; integration test: a tenant-cap pause
+records the verdict, names the tenant, Slacks once, and a same-day
+second pause does not re-page.

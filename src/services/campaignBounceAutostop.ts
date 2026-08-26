@@ -1,5 +1,13 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
+import type { SlackClient } from "../clients/slack.js";
+import {
+  bounceReasonSnippet,
+  classifyBounceText,
+  sampleSenderDomains,
+  summarizeBounceSamples,
+  type BounceSample,
+} from "../lib/bounceReason.js";
 import { statsFromAnalytics, ymdUtc } from "../lib/campaignDayStats.js";
 import { SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT } from "../lib/campaignBounceAutostop.js";
 import {
@@ -13,6 +21,7 @@ import {
 } from "../lib/bounceAutopause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
+import type { BounceVerdictRecord } from "../state/store.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 
@@ -35,6 +44,7 @@ export interface BounceAutostopPause {
   bounceRate: number;
   reason: BouncePauseReason;
   burstBounces?: number;
+  verdict?: BounceVerdictRecord;
 }
 
 export interface CampaignBounceAutostopResult {
@@ -82,6 +92,7 @@ export class CampaignBounceAutostopService {
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly state?: StateStore,
+    private readonly slack?: Pick<SlackClient, "send">,
   ) {}
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignBounceAutostopResult> {
@@ -185,6 +196,15 @@ export class CampaignBounceAutostopService {
           this.state?.markBouncePaused(campaign.id, nowIso);
         }
         result.paused.push(finding);
+        // D140 — a bounce count is a symptom; read the actual SMTP reasons
+        // before anyone blames the list. Never let diagnosis break the pause.
+        try {
+          finding.verdict = await this.classifyRecentBounces(campaign.id, dryRun);
+        } catch (error) {
+          console.warn(
+            `[bounce-autostop] verdict #${campaign.id} unreadable: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
         await sleep(WRITE_GAP_MS);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -217,6 +237,96 @@ export class CampaignBounceAutostopService {
    * POST has already disagreed with the Smartlead UI toggle; GET-echo the
    * other settings so the write actually lands.
    */
+  /**
+   * D140 — sample the campaign's bounced sends, read each NDR's SMTP
+   * reason, classify, remember, and — for a Microsoft tenant hitting its
+   * daily external-recipient cap — Slack once per tenant per day. A
+   * content-block verdict is recorded for the canary-diagnosis follow-up
+   * (D141); an invalid-recipient wave points at the list.
+   */
+  private async classifyRecentBounces(
+    campaignId: number,
+    dryRun: boolean,
+  ): Promise<BounceVerdictRecord | undefined> {
+    const raw = await this.smartlead.listBouncedSendStats(campaignId, 4);
+    const rows = Array.isArray((raw as { data?: unknown[] })?.data)
+      ? ((raw as { data: Array<Record<string, unknown>> }).data ?? [])
+      : [];
+    const samples: BounceSample[] = [];
+    for (const row of rows.slice(0, 4)) {
+      const leadEmail = String(row.lead_email ?? "");
+      if (!leadEmail) continue;
+      try {
+        const lead = (await this.smartlead.fetchLeadByEmail(leadEmail)) as {
+          id?: number | string;
+        };
+        if (lead?.id == null) continue;
+        await sleep(120);
+        const history = (await this.smartlead.getLeadMessageHistory(
+          campaignId,
+          lead.id,
+        )) as { history?: Array<Record<string, unknown>> };
+        await sleep(120);
+        const sent = (history?.history ?? []).find(
+          (entry) => String(entry.type ?? "").toUpperCase() === "SENT",
+        );
+        const ndr = (history?.history ?? []).find(
+          (entry) =>
+            String(entry.type ?? "").toUpperCase() === "REPLY" &&
+            /delivery has failed|mail delivery|undeliverable|returned/i.test(
+              String(entry.email_body ?? ""),
+            ),
+        );
+        if (!ndr) continue;
+        const snippet = bounceReasonSnippet(String(ndr.email_body ?? ""));
+        samples.push({
+          leadEmail,
+          senderEmail: sent ? String(sent.from ?? "") || null : null,
+          bounceClass: classifyBounceText(snippet + " " + String(ndr.email_body ?? "")),
+          snippet,
+        });
+      } catch {
+        // one unreadable lead must not kill the verdict
+      }
+    }
+    const { dominant, summary } = summarizeBounceSamples(samples);
+    const senderDomains = sampleSenderDomains(samples);
+    const record: BounceVerdictRecord = {
+      campaignId,
+      at: new Date().toISOString(),
+      dominant,
+      summary,
+      senderDomains,
+    };
+    this.state?.setBounceVerdict(record);
+    console.log(
+      `[bounce-autostop] verdict #${campaignId}: ${summary}${senderDomains.length ? ` senders=${senderDomains.join(",")}` : ""}${samples[0] ? ` e.g. "${samples[0].snippet.slice(0, 120)}"` : ""}`,
+    );
+    if (
+      dominant === "tenant_rate_limit" &&
+      !dryRun &&
+      this.slack &&
+      this.state
+    ) {
+      const day = new Date().toISOString().slice(0, 10);
+      for (const domain of senderDomains) {
+        const key = `tenant-limit:${domain}:${day}`;
+        if (this.state.hasAlert(key)) continue;
+        this.state.markAlert(key);
+        await this.slack.send(
+          [
+            `*${domain} hit its Microsoft daily sending cap.*`,
+            `Every send from that tenant is bouncing with 550 5.7.233 (tenant external recipient rate limit) — first seen on campaign #${campaignId}. The lists are fine; the tenant is out of allowance until the cap resets.`,
+            "Fix options: fewer sending mailboxes on that tenant, lower per-mailbox daily caps, split the fleet across tenants, or add licenses.",
+          ].join("\n"),
+          undefined,
+          "burned_domain",
+        );
+      }
+    }
+    return record;
+  }
+
   private async disableSmartleadAutopause(
     campaigns: SmartleadCampaign[],
     dryRun: boolean,

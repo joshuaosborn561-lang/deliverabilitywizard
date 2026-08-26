@@ -339,6 +339,7 @@ async function main(): Promise<void> {
     config,
     smartlead,
     state,
+    slack,
   );
   const campaignHealth = new CampaignHealthService(
     config,

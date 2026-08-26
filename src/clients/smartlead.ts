@@ -311,6 +311,30 @@ export class SmartleadClient {
     );
   }
 
+  /** D140 — bounced send rows only (server-side filter), few and cheap. */
+  listBouncedSendStats(campaignId: number, limit = 5): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`, {
+      query: { email_status: "bounced", limit, offset: 0 },
+    });
+  }
+
+  /** D140 — resolve a lead id from its email (global lead lookup). */
+  fetchLeadByEmail(email: string): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, "leads", {
+      query: { email },
+    });
+  }
+
+  /** D140 — the per-lead thread; NDR replies carry the SMTP bounce reason. */
+  getLeadMessageHistory(campaignId: number, leadId: number | string): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `campaigns/${campaignId}/leads/${leadId}/message-history`,
+      {},
+    );
+  }
+
   getCampaignStatistics(campaignId: number): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`);
   }

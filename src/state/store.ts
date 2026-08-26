@@ -199,6 +199,8 @@ export interface AppState {
   /** D81 — Josh Slack-approved generic backfill, per campaign. */
   genericBackfillApprovals: Record<string, GenericBackfillApproval>;
   domainAdvisories: DomainClientAdvisory[];
+  /** D140 — last classified bounce verdict per campaign (id key). */
+  bounceVerdicts: Record<string, BounceVerdictRecord>;
   /**
    * D84 — campaign ids whose Smartlead bounce_autopause_threshold we already
    * wrote to 100 (off). The 10-minute loop writes only campaigns missing
@@ -295,6 +297,15 @@ export interface HeldInboxRecord {
 }
 
 /** D41/D43 — mailbox resting off live campaigns. */
+/** D140 — what the SMTP reasons said the last time a campaign's bounces were read. */
+export interface BounceVerdictRecord {
+  campaignId: number;
+  at: string;
+  dominant: string | null;
+  summary: string;
+  senderDomains: string[];
+}
+
 /** D136 — a sending domain whose client story needs a human. */
 export interface DomainClientAdvisory {
   domain: string;
@@ -349,6 +360,7 @@ const EMPTY_STATE: AppState = {
   campaignChecks: {},
   genericBackfillApprovals: {},
   domainAdvisories: [],
+  bounceVerdicts: {},
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
   autopauseForceAllAt: null,
@@ -407,6 +419,7 @@ export class StateStore {
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
         domainAdvisories: parsed.domainAdvisories ?? [],
+        bounceVerdicts: parsed.bounceVerdicts ?? {},
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
         autopauseForceAllAt: parsed.autopauseForceAllAt ?? null,
@@ -1019,6 +1032,15 @@ export class StateStore {
 
   clearCanaryFleetDown(): void {
     this.state.canaryFleetDown = null;
+  }
+
+  /** D140 — remember what the bounce reasons said, per campaign. */
+  setBounceVerdict(record: BounceVerdictRecord): void {
+    this.state.bounceVerdicts[String(record.campaignId)] = record;
+  }
+
+  getBounceVerdict(campaignId: number): BounceVerdictRecord | undefined {
+    return this.state.bounceVerdicts[String(campaignId)];
   }
 
   /** D136 — the monitor's domain→client audit replaces the full list each pass. */

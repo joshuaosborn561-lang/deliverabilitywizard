@@ -4,6 +4,55 @@ import { loadConfig } from "../config.js";
 import { StateStore } from "../state/store.js";
 import { IsolationExecuteService, replaceInSequence } from "./isolationExecute.js";
 import { buildIsolationAction } from "../lib/isolationActions.js";
+import type { InventoryBook } from "./inventory.js";
+
+/** D132/D133 — a test book reading the same fake client, one attempt. */
+function bookOf(sl: unknown): InventoryBook {
+  const client = sl as {
+    listCampaigns?: () => Promise<unknown[]>;
+    listAllEmailAccounts?: (o?: unknown) => Promise<unknown[]>;
+    listClients?: () => Promise<unknown[]>;
+  };
+  return {
+    get: async () => ({
+      campaigns:
+        typeof client.listCampaigns === "function"
+          ? await client.listCampaigns()
+          : [],
+      accounts:
+        typeof client.listAllEmailAccounts === "function"
+          ? await client.listAllEmailAccounts({ fetchCampaigns: true })
+          : [],
+      clients:
+        typeof client.listClients === "function"
+          ? await client.listClients().catch(() => [])
+          : [],
+      fetchedAt: Date.now(),
+    }),
+  } as unknown as InventoryBook;
+}
+
+function mkExec(
+  ...args: [
+    ConstructorParameters<typeof IsolationExecuteService>[0],
+    ConstructorParameters<typeof IsolationExecuteService>[1],
+    ConstructorParameters<typeof IsolationExecuteService>[2],
+    ConstructorParameters<typeof IsolationExecuteService>[3],
+    ConstructorParameters<typeof IsolationExecuteService>[4],
+    ConstructorParameters<typeof IsolationExecuteService>[6]?,
+  ]
+): IsolationExecuteService {
+  const [config, sl, slack, state, buy, canaryBuy] = args;
+  return new IsolationExecuteService(
+    config,
+    sl,
+    slack,
+    state,
+    buy,
+    bookOf(sl),
+    canaryBuy,
+  );
+}
 
 describe("IsolationExecuteService", () => {
   it("replaces only the recovered word in the sequence", () => {
@@ -50,7 +99,7 @@ describe("IsolationExecuteService", () => {
     state.upsertIsolationAction(buy);
     state.upsertIsolationAction(canary);
     state.upsertIsolationAction(retire);
-    const svc = new IsolationExecuteService(
+    const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {} as never,
       { send: async () => undefined } as never,
@@ -95,7 +144,7 @@ describe("IsolationExecuteService", () => {
       status: "executed",
       decidedBy: "Josh",
     });
-    const svc = new IsolationExecuteService(
+    const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {} as never,
       { send: async () => undefined } as never,
@@ -125,7 +174,7 @@ describe("IsolationExecuteService", () => {
     state.upsertIsolationAction(action);
     const body = "<div>Sean, that offer's still open</div>";
     let written: unknown = null;
-    const svc = new IsolationExecuteService(
+    const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {
         getCampaignSequences: async () => [
@@ -182,7 +231,7 @@ describe("IsolationExecuteService", () => {
     });
     state.upsertIsolationAction(action);
     const written = new Map<number, unknown>();
-    const svc = new IsolationExecuteService(
+    const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {
         getCampaignSequences: async (id: number) => [
@@ -229,7 +278,7 @@ describe("IsolationExecuteService", () => {
     });
     state.upsertIsolationAction(action);
     let wrote = false;
-    const svc = new IsolationExecuteService(
+    const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {
         getCampaignSequences: async () => [
@@ -269,7 +318,7 @@ describe("IsolationExecuteService", () => {
     });
     state.upsertIsolationAction(action);
     let wrote = false;
-    const svc = new IsolationExecuteService(
+    const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {
         getCampaignSequences: async () => {
@@ -291,5 +340,131 @@ describe("IsolationExecuteService", () => {
     assert.equal(result.ok, true);
     assert.equal(state.getIsolationAction(action.id)?.status, "denied");
     assert.equal(wrote, false);
+  });
+});
+
+describe("D133/D134 — the taps act fleet-wide", () => {
+  it("D133: one approved word swap edits every ACTIVE campaign carrying it, nothing else", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-fleet-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "swap_copy",
+      title: "It was “free” on Goliath A",
+      proof: "proof",
+      detail: {
+        campaignId: 1,
+        campaignName: "Goliath A",
+        element: "free",
+        swap: "complimentary",
+      },
+    });
+    state.upsertIsolationAction(action);
+    const writes = new Map<number, unknown[]>();
+    const sl = {
+      listCampaigns: async () => [
+        { id: 1, name: "Goliath A", status: "ACTIVE" },
+        { id: 2, name: "Goliath B", status: "ACTIVE" },
+        { id: 3, name: "Paused carrier", status: "PAUSED" },
+        { id: 4, name: "Canary shell: #1 Goliath A", status: "ACTIVE" },
+        { id: 5, name: "TechEvo C", status: "ACTIVE" },
+      ],
+      getCampaignSequences: async (id: number) => [
+        {
+          id: 100 + id,
+          subject: id === 2 ? "A clean subject" : "Free consult",
+          email_body:
+            id === 2 ? "Nothing to see." : "We have a free consult this week.",
+        },
+      ],
+      updateCampaignSequences: async (id: number, sequences: unknown[]) => {
+        writes.set(id, sequences);
+      },
+    };
+    const sent: string[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      sl as never,
+      { send: async (text: string) => void sent.push(text) } as never,
+      state,
+      {} as never,
+    );
+
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual([...writes.keys()].sort(), [1, 5], "only ACTIVE carriers");
+    const first = writes.get(1) as Array<{ subject?: string; email_body?: string }>;
+    assert.match(first[0]?.subject ?? "", /complimentary consult/i);
+    assert.doesNotMatch(first[0]?.email_body ?? "", /free/i);
+    assert.ok(
+      sent.some((text) => /2 ACTIVE campaign/.test(text)),
+      `announce names both edits: ${sent.join(" | ")}`,
+    );
+    assert.equal(
+      state.getIsolationAction(action.id)?.status,
+      "executed",
+      "the tap finished",
+    );
+  });
+
+  it("D134: retiring a domain approves generic backfill for the campaigns it cut", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-retire-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire burned.info",
+      proof: "proof",
+      detail: { domain: "burned.info" },
+    });
+    state.upsertIsolationAction(action);
+    const removed: Array<[number, number[]]> = [];
+    const sl = {
+      listCampaigns: async () => [
+        { id: 10, name: "Goliath X", status: "ACTIVE" },
+        { id: 11, name: "Old thing", status: "PAUSED" },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 21, from_email: "a@burned.info", campaign_ids: [10, 11] },
+        { id: 22, from_email: "b@burned.info", campaign_ids: [10] },
+        { id: 23, from_email: "safe@clean.info", campaign_ids: [10] },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        accountIds: number[],
+      ) => {
+        removed.push([campaignId, accountIds]);
+      },
+    };
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      sl as never,
+      { send: async () => undefined } as never,
+      state,
+      {} as never,
+    );
+
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(
+      removed.map(([campaignId]) => campaignId),
+      [10, 10],
+      "only ACTIVE memberships are pulled",
+    );
+    const approval = state.getGenericBackfillApproval(10);
+    assert.equal(approval?.approvedBy, "retire:burned.info");
+    assert.equal(
+      state.getGenericBackfillApproval(11),
+      undefined,
+      "a paused campaign gets no approval",
+    );
   });
 });

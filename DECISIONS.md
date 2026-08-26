@@ -148,6 +148,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D130 | Live — the engine teardown |
 | D131 | Live |
 | D132 | Live | One Smartlead account book; partial reads distrusted |
+| D133 | Live | Word-swap tap edits every ACTIVE campaign carrying the word |
+| D134 | Live | A domain-retire tap approves generic backfill for the campaigns it cut |
 
 ---
 
@@ -3246,3 +3248,61 @@ must not fetch the account book themselves; the hourly check hands the
 book's snapshot down; `InventoryBook` keeps the two-consecutive-reads
 gate. `inventory.test.ts` covers cache, carry-over, shrink-hold-believe,
 streak reset, attempt spacing, and in-flight dedupe.
+
+## D133 — The word tap is fleet-wide: one approval deletes/replaces the isolated word across every ACTIVE campaign carrying it
+
+**Decision.** When Josh or Cayden tap *Make the changes* on an isolated
+spam word, the edit applies to **every ACTIVE campaign whose live
+sequence carries that word** — subjects, bodies, and variants on every
+step — not just the campaign the hunt flagged. Shells are paused and
+never touched. Writes are spaced 1s apart; a partial failure announces
+the successes and asks for a re-tap, which skips campaigns already
+clean. One pending ask per word (the dedupe no longer keys on the
+campaign). The action reads the shared account book (D132) to find the
+ACTIVE fleet.
+
+**Why.** Josh's operating model, stated 2026-08-26: "I get a Slack
+notification and a push button to delete and replace that word across
+every active campaign." A spam word proven bad on one campaign is bad on
+all of them; fixing one campaign at a time re-runs the whole
+isolate-notify-tap loop per campaign for the same word.
+
+**Tradeoff.** One tap now writes N campaigns' sequences (~2 API calls
+per carrier, 1s apart). Accepted — the tap is rare and human-initiated.
+The Slack ask says exactly what the tap will do.
+
+**Supersedes.** The single-campaign swap in D69's flow (the D69 contract
+— hunt autonomously, Slack once, one button — is unchanged).
+
+**Guards.** owner-intent D133: `sequenceContainsWord` present,
+`pickSequence` gone from the execute path, per-word ask dedupe;
+behavioral test: two ACTIVE carriers edited, clean/PAUSED/shell
+campaigns untouched.
+
+## D134 — Retiring a domain approves generic backfill for the campaigns it cut
+
+**Decision.** The *Retire* tap, after pulling the burned domain's
+inboxes off ACTIVE campaigns, records a generic-backfill approval
+(`approvedBy: retire:<domain>`) for **each ACTIVE campaign that lost a
+sender** — no second Slack ask. Approving is allowing, never forcing:
+the half-client floor (D58/D82), one-client-per-sender (D75/D76), and
+the generic rest clock (D43) still govern what actually staffs.
+Campaigns already approved keep their original approval. The retire
+flow reads the shared account book (D132) instead of its own
+double-fetch.
+
+**Why.** Josh's model point 5: a cut mailbox means "a generic inbox
+rotates in so sending volume never drops." Before this, retiring a
+domain on a non-POC client left its campaigns under floor until someone
+noticed the separate generic-backfill ask.
+
+**Tradeoff.** A retire on a non-POC client now implicitly opens it to
+generics until Josh says otherwise (approvals have no expiry — the
+replacements warming does not revoke, it just makes generics
+unnecessary). Accepted: the announce line says the approval happened,
+and Josh can tell me to revoke any campaign's approval.
+
+**Guards.** owner-intent D134: retire path calls
+`approveGenericBackfill` with `retire:` provenance; behavioral test:
+retire approves exactly the ACTIVE campaigns it pulled from, never a
+paused one.

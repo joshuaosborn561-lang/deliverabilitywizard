@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D132** (2026-08-26). One page of current truth. When a new
+Canon as of **D134** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -65,7 +65,9 @@ Slack speaks only when a human decision is needed or the day is done.
   stays on; resting is not staffable (D43). Generics rest on their own clock:
   ~14 days of live send, then sit ~14, then supply again (D43).
 - **Generics** staff only a POC client (currently Goliath) or a campaign Josh
-  Slack-approved (D81/D82). Cross-client top-up is a compensated **move**;
+  Slack-approved (D81/D82); a domain-retire tap auto-approves the ACTIVE
+  campaigns it pulled senders from, so volume never drops while the
+  replacements warm (D134). Cross-client top-up is a compensated **move**;
   same-client is additive. (The old recovery-swap system and its
   reservations are deleted, D130.)
 - **Retired domains stay off** live campaigns forever; replacements owe the
@@ -127,7 +129,9 @@ Slack speaks only when a human decision is needed or the day is done.
     also fail that copy → **word hunt** (deletion tests on the isolation rig).
   - No unwarmed reading yet → wait. Do not hunt.
 - The hunt runs autonomously; Slack fires **once** when it has the word:
-  receipts, the suggested edit, one *Make the changes* button (D69). A
+  receipts, the suggested edit, one *Make the changes* button (D69) — and
+  that one tap deletes/replaces the word across **every ACTIVE campaign
+  carrying it**, all steps and variants, shells excluded (D133). A
   provider-split guess is never Slacked and never benches senders (D28/D36
   are dead as drivers).
 - Domains are judged on the known-good email only. Two consecutive
@@ -138,7 +142,8 @@ Slack speaks only when a human decision is needed or the day is done.
 ## Slack contract
 
 Exactly three pages plus receipts (D71, D47 plain English):
-1. **Burned domain** — receipts + cancel/replace buttons.
+1. **Burned domain** — receipts + cancel/replace buttons; the retire tap
+   also lets generics cover the campaigns it cut (D134).
 2. **Isolated spam word** — the word, the edit, *Make the changes*.
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
    campaigns and loaded DRAFTs (D85/D89).
@@ -153,7 +158,7 @@ are dead (D97); the fix is written automatically as
 
 Three human moments (D49): **retire a domain** (Josh), **buy
 domains/mailboxes** (Josh; Slack tap is the approval, asked once — D60),
-**change live copy** (Josh or Cayden, one word per tap). Everything else is
+**change live copy** (Josh or Cayden, one word per tap, applied fleet-wide — D133). Everything else is
 autonomous. `REQUIRE_SPEND_APPROVAL` stays on; approvals are single-use,
 client spend carries the $25 domain / 25 mailbox monthly caps (D4/D15).
 Never spend, purge, or bypass warmup/holds from chat (D18).

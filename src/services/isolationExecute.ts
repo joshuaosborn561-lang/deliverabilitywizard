@@ -4,9 +4,11 @@ import {
   accountEmail,
   accountDomain,
   campaignIdsOf,
-  pickSequence,
   type SmartleadClient,
 } from "../clients/smartlead.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import { sleep } from "../lib/http.js";
+import type { InventoryBook } from "./inventory.js";
 import type { SmartleadSequence } from "../types/index.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
 import { signatureCampaignIdsOf } from "../lib/isolationActions.js";
@@ -24,6 +26,7 @@ export class IsolationExecuteService {
     private readonly slack: SlackClient,
     private readonly state: StateStore,
     private readonly buy: IsolationBuyService,
+    private readonly book: InventoryBook,
     private readonly canaryBuy?: CopyCanaryBuyService,
   ) {}
 
@@ -122,10 +125,7 @@ export class IsolationExecuteService {
   private async retire(action: IsolationActionRecord): Promise<void> {
     const domain = String(action.detail.domain ?? "").toLowerCase();
     if (!domain) throw new Error("Missing domain");
-    const [campaigns, accounts] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-    ]);
+    const { campaigns, accounts } = await this.book.get();
     const active = new Set(
       campaigns
         .filter((campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE")
@@ -135,6 +135,7 @@ export class IsolationExecuteService {
       (account) => accountDomain(account) === domain,
     );
     let removed = 0;
+    const cutCampaignIds = new Set<number>();
     for (const account of onDomain) {
       const ids = campaignIdsOf(account).filter((id) => active.has(id));
       if (!ids.length) continue;
@@ -143,6 +144,7 @@ export class IsolationExecuteService {
           account.id,
         ]);
         removed += 1;
+        cutCampaignIds.add(campaignId);
       }
     }
     const history = this.state.getDomainHistory(domain);
@@ -153,14 +155,33 @@ export class IsolationExecuteService {
         retiredAt: new Date().toISOString(),
       });
     }
+    // D134 — the tap that cut senders is also the approval for generics to
+    // cover those campaigns: sending volume must not drop while the
+    // replacement domains warm. Approving is allowing, never forcing — the
+    // half-floor and the generic rest clock still govern.
+    let backfilled = 0;
+    for (const campaignId of cutCampaignIds) {
+      if (this.state.getGenericBackfillApproval(campaignId)) continue;
+      this.state.approveGenericBackfill({
+        campaignId,
+        approvedAt: new Date().toISOString(),
+        approvedBy: `retire:${domain}`,
+      });
+      backfilled += 1;
+    }
     await this.announce(
       "retire_domain",
       [
         `Retired *${domain}*.`,
         `Pulled ${onDomain.length} inbox${onDomain.length === 1 ? "" : "es"} off live campaigns (${removed} membership${removed === 1 ? "" : "s"}).`,
+        cutCampaignIds.size
+          ? `Generics may cover the ${cutCampaignIds.size} campaign(s) that lost senders until the replacements finish their 21 days (D134)${backfilled < cutCampaignIds.size ? " — some already had approval" : ""}.`
+          : undefined,
         "Health will fill those campaigns from clean spare inboxes on its own.",
         action.proof,
-      ].join("\n"),
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
     );
   }
 
@@ -208,25 +229,63 @@ export class IsolationExecuteService {
     );
   }
 
+  /**
+   * D133 — one tap fixes the word everywhere. The verdict was isolated on
+   * one campaign, but a spam word is not that campaign's private problem:
+   * the same tap deletes/replaces it across every ACTIVE campaign whose
+   * live sequence carries it. Shells are paused and never ACTIVE. A re-tap
+   * after a partial failure skips campaigns already clean.
+   */
   private async swapCopy(action: IsolationActionRecord): Promise<void> {
-    const campaignId = Number(action.detail.campaignId);
     const find = String(action.detail.element ?? "");
     const swap = String(action.detail.swap ?? "");
-    if (!campaignId || !find) throw new Error("Missing campaign or word");
-    const sequences = await this.smartlead.getCampaignSequences(campaignId);
-    const current = pickSequence(sequences ?? [], this.config.sequenceNumber);
-    if (!current) throw new Error("No sequence to edit");
-    const next = replaceInSequence(current, find, swap);
-    await this.smartlead.updateCampaignSequences(
-      campaignId,
-      sequences.map((sequence) =>
-        sequence.id === current.id ? next : sequence,
-      ),
+    if (!find) throw new Error("Missing word");
+    const { campaigns } = await this.book.get();
+    const targets = campaigns.filter(
+      (campaign) =>
+        String(campaign.status ?? "").toUpperCase() === "ACTIVE" &&
+        !isAnyShellCampaign(campaign),
     );
+    const edited: string[] = [];
+    const failed: string[] = [];
+    for (const campaign of targets) {
+      const label = String(campaign.name ?? `#${campaign.id}`);
+      try {
+        const sequences = await this.smartlead.getCampaignSequences(campaign.id);
+        const carrying = (sequences ?? []).filter((sequence) =>
+          sequenceContainsWord(sequence, find),
+        );
+        if (!carrying.length) continue;
+        await this.smartlead.updateCampaignSequences(
+          campaign.id,
+          (sequences ?? []).map((sequence) =>
+            carrying.includes(sequence)
+              ? replaceInSequence(sequence, find, swap)
+              : sequence,
+          ),
+        );
+        edited.push(label);
+        await sleep(WORD_SWAP_WRITE_GAP_MS);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failed.push(`${label}: ${message}`);
+      }
+    }
     await this.announce(
       "swap_copy",
-      `Switched the word on *${action.detail.campaignName ?? campaignId}*: ${find} → ${swap || "(removed)"}. That is the only change I made.`,
+      [
+        `Switched the word fleet-wide: ${find} → ${swap || "(removed)"}.`,
+        edited.length
+          ? `Edited ${edited.length} ACTIVE campaign(s): ${edited.map((name) => `*${name}*`).join(", ")}.`
+          : "No ACTIVE campaign still carried it.",
+        "That word edit is the only change I made.",
+      ].join("\n"),
     );
+    if (failed.length) {
+      throw new Error(
+        `Could not edit ${failed.length} campaign(s): ${failed.join("; ")}. Tap again — campaigns already clean are skipped.`,
+      );
+    }
   }
 
   /**
@@ -322,6 +381,34 @@ export class IsolationExecuteService {
     }
     await this.slack.send(text, undefined, "action_result");
   }
+}
+
+/** D133 — pause between fleet-wide sequence writes so Smartlead breathes. */
+const WORD_SWAP_WRITE_GAP_MS = 1000;
+
+/** D133 — does any step, subject or variant of this sequence carry the word? */
+export function sequenceContainsWord(
+  sequence: SmartleadSequence,
+  find: string,
+): boolean {
+  const pattern = new RegExp(escapeRegExp(find), "i");
+  const texts: Array<string | undefined> = [
+    sequence.subject,
+    sequence.email_body,
+    ...(sequence.sequence_variants ?? []).flatMap((variant) => [
+      variant.subject,
+      variant.email_body,
+    ]),
+    ...(sequence.seq_variants ?? []).flatMap((variant) => [
+      variant.subject,
+      variant.email_body,
+    ]),
+    ...(sequence.variants ?? []).flatMap((variant) => [
+      variant.subject,
+      variant.email_body,
+    ]),
+  ];
+  return texts.some((value) => Boolean(value && pattern.test(value)));
 }
 
 export function replaceInSequence(

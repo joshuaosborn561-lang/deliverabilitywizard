@@ -1166,7 +1166,10 @@ async function main(): Promise<void> {
   // or adoption needs a human; "nothing found" stays in logs.
   const runCanaryAdoption = async (): Promise<void> => {
     const result = await copyCanaryBuy.adoptManualPurchase();
-    if (!result) return;
+    if (!result) {
+      console.log("[copy-canary-adopt] fleet is healthy — nothing to adopt");
+      return;
+    }
     if (result.adopted.length) {
       await slack.send(
         [

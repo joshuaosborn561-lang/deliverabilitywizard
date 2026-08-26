@@ -93,6 +93,9 @@ import { DomainLifecycleService } from "./services/domainLifecycle.js";
 import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
+import { OldClientTeardownService } from "./services/oldClientTeardown.js";
+import { MorningActivateService } from "./services/morningActivate.js";
+import { canonBoard } from "./lib/canonCompliance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -275,13 +278,13 @@ async function main(): Promise<void> {
     return reconnectInFlight;
   };
 
-  const runWarmupGate = async () => {
+  const runWarmupGate = async (inventory?: InventorySnapshot) => {
     assertRuntimeSecrets(config);
     if (warmupGateInFlight) {
       console.log("[warmup-gate] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
-    warmupGateInFlight = warmupGate.run().finally(() => {
+    warmupGateInFlight = warmupGate.run({ inventory }).finally(() => {
       warmupGateInFlight = null;
     });
     return warmupGateInFlight;
@@ -372,6 +375,8 @@ async function main(): Promise<void> {
   );
   const campaignClientTag = new CampaignClientTagService(config, smartlead);
   const unpauseAfterSigQa = new UnpauseAfterSigQaService(config, smartlead);
+  const oldClientTeardown = new OldClientTeardownService(config, smartlead, state);
+  const morningActivate = new MorningActivateService(config, smartlead, state);
   // D85 — the standalone BounceAutopauseService is retired. Autostop owns the
   // Smartlead autopause write (write-on-drift, D84); a second blind writer
   // was how the key starved into 429s.
@@ -677,6 +682,10 @@ async function main(): Promise<void> {
         return { skipped: true as const, reason: "inventory-failed" };
       }
 
+      await stage("old-client", () =>
+        oldClientTeardown.run({ campaigns: inventory.campaigns }),
+      );
+
       const rest = await runRestGates(inventory);
 
       await stage("client-tag", () => campaignClientTag.run({ inventory }));
@@ -691,6 +700,14 @@ async function main(): Promise<void> {
           campaignCheck.run({ mode: "first", inventory }),
         );
       }
+
+      if (config.enableWarmupGate) {
+        await stage("warmup-gate", () => runWarmupGate(inventory));
+      }
+
+      await stage("morning-activate", () =>
+        morningActivate.run({ inventory }),
+      );
 
       const healthResult = await stage("campaign-health", () =>
         campaignHealth.run({ inventory }),
@@ -1645,6 +1662,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         }
       }
     }
+    const board = canonBoard(Object.values(s.campaignChecks ?? {}));
     const stages: Record<
       string,
       { lastOkAt: string | null; consecutiveFailures: number; lastError: string | null }
@@ -1661,6 +1679,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       service: "deliverabilitywizard",
       canonFindings,
       canonFindingSamples,
+      canonCompliant: board.compliant,
+      canonYes: board.campaigns.filter((row) => row.yes).length,
+      canonNo: board.campaigns.filter((row) => !row.yes).length,
       canaryFleetDown: s.canaryFleetDown ?? null,
       stages,
       secretsConfigured: secretsReady,
@@ -2270,7 +2291,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Account reconnect: ${config.enableAccountReconnect ? `ENABLED (${config.cronAccountReconnect} America/New_York)` : "disabled"}`,
     );
     console.log(
-      `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled (D51 kill-only pull)"}`,
+      `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d from InboxKit; canary/pre-warmed exempt; every health pass)` : "disabled"}`,
     );
     console.log(
       `[boot] Live mailbox pull: ${config.enableLegacyMailboxPulls ? "LEGACY (placement/bounce/HOLD)" : "KILL-ONLY (domain retire + backfill)"}`,

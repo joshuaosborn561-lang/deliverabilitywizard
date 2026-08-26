@@ -1054,15 +1054,7 @@ describe("owner intent — D50 live-send warmup", () => {
 });
 
 describe("owner intent — D51 kill-only pull", () => {
-  it("D51: no placement/bounce/warmup pulls; copy canaries stay on campaign copy", () => {
-    assert.equal(
-      defaults.enableWarmupGate,
-      false,
-      stop(
-        "The warmup gate does not strip campaign copy (D51).",
-        "ENABLE_WARMUP_GATE now defaults on.",
-      ),
-    );
+  it("D51: no placement/bounce pulls; copy canaries stay on campaign copy", () => {
     assert.equal(
       defaults.enableBounceRotation,
       false,
@@ -3210,6 +3202,91 @@ describe("owner intent — D103 sequence writes keep only writable fields", () =
       stop(
         "Sequence writes drop email_campaign_id (D103).",
         "sequencesForWrite no longer omits email_campaign_id.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D105 warmup gate is on", () => {
+  it("D105: 21-day warmup gate defaults on; canaries stay a separate fleet", () => {
+    assert.equal(
+      defaults.enableWarmupGate,
+      true,
+      stop(
+        "The 21-day warmup gate is on for live senders (D105).",
+        "ENABLE_WARMUP_GATE now defaults off.",
+      ),
+    );
+    assert.equal(
+      defaults.campaignMinWarmupDays,
+      21,
+      stop(
+        "Live send owes 21 days from InboxKit (D50/D105).",
+        `Campaign min warmup is now ${defaults.campaignMinWarmupDays}.`,
+      ),
+    );
+  });
+});
+
+describe("owner intent — D106 85% launch bar is a live START gate", () => {
+  it("D106: launch bar defaults to 85", () => {
+    assert.equal(
+      defaults.launchInboxThreshold,
+      85,
+      stop(
+        "Auto-START needs 85% inbox (D106).",
+        `LAUNCH_INBOX_THRESHOLD is now ${defaults.launchInboxThreshold}.`,
+      ),
+    );
+  });
+});
+
+describe("owner intent — D107 old-client campaigns are deleted", () => {
+  it("D107: Nieto / MSRS2 / Positive ids are the teardown list", () => {
+    assert.deepEqual(
+      defaults.oldClientCampaignIds,
+      [3437329, 3628940, 3628943],
+      stop(
+        "Those three leftover campaigns are deleted (D107).",
+        `OLD_CLIENT_CAMPAIGN_IDS is now ${defaults.oldClientCampaignIds.join(",")}.`,
+      ),
+    );
+  });
+});
+
+describe("owner intent — D108 15-minute yes/no canon", () => {
+  it("D108: health reports canonCompliant from core findings", async () => {
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /canonCompliant/,
+      stop(
+        " /health answers yes or no (D108).",
+        "index.ts no longer reports canonCompliant.",
+      ),
+    );
+    assert.match(
+      index,
+      /cronHealth/,
+      stop(
+        "The sweep is the 15-minute health pass (D108).",
+        "index.ts lost cronHealth.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D109 morning activate", () => {
+  it("D109: morning book is Goliath BCP Peterson Parlay TechEvo", () => {
+    assert.ok(
+      ["goliath", "bcp", "peterson", "parlay", "techevo"].every((needle) =>
+        defaults.morningActivatePatterns.includes(needle),
+      ),
+      stop(
+        "Morning START covers the live book (D109).",
+        `MORNING_ACTIVATE_PATTERNS is now ${defaults.morningActivatePatterns.join(",")}.`,
       ),
     );
   });

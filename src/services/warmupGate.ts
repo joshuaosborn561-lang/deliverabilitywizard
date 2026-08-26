@@ -2,9 +2,11 @@ import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import {
   accountEmail,
+  campaignIdsOf,
   type SmartleadAccountWithCampaigns,
   type SmartleadClient,
 } from "../clients/smartlead.js";
+import type { InventorySnapshot } from "./inventory.js";
 import { sleep } from "../lib/http.js";
 import { MATCH_THRESHOLD, scoreNameMatch } from "../lib/nameMatch.js";
 import type { StateStore } from "../state/store.js";
@@ -69,7 +71,7 @@ export class WarmupGateService {
     private readonly state: StateStore,
   ) {}
 
-  async run(): Promise<WarmupGateResult> {
+  async run(opts: { inventory?: InventorySnapshot } = {}): Promise<WarmupGateResult> {
     const result: WarmupGateResult = {
       dryRun: this.config.dryRun,
       campaignsScanned: 0,
@@ -91,11 +93,23 @@ export class WarmupGateService {
     );
 
     let campaigns;
+    let accountIndex: Map<number, SmartleadAccountWithCampaigns>;
     try {
-      campaigns = await this.smartlead.listCampaigns();
+      if (opts.inventory) {
+        campaigns = opts.inventory.campaigns;
+        accountIndex = new Map(
+          opts.inventory.accounts.map((account) => [account.id, account]),
+        );
+      } else {
+        campaigns = await this.smartlead.listCampaigns();
+        const all = await this.smartlead.listAllEmailAccounts({
+          fetchCampaigns: false,
+        });
+        accountIndex = new Map(all.map((a) => [a.id, a]));
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`list campaigns: ${message}`);
+      result.errors.push(`inventory: ${message}`);
       await this.finish(result);
       return result;
     }
@@ -103,29 +117,22 @@ export class WarmupGateService {
     const active = campaigns.filter((c) => isActiveCampaignStatus(c.status));
     result.campaignsScanned = active.length;
 
-    let accountIndex: Map<number, SmartleadAccountWithCampaigns>;
-    try {
-      const all = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: false,
-      });
-      accountIndex = new Map(all.map((a) => [a.id, a]));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`list accounts: ${message}`);
-      await this.finish(result);
-      return result;
-    }
-
     for (const campaign of active) {
       let campaignAccounts: SmartleadEmailAccount[];
-      try {
-        campaignAccounts = await this.smartlead.getCampaignEmailAccounts(
-          campaign.id,
+      if (opts.inventory) {
+        campaignAccounts = opts.inventory.accounts.filter((account) =>
+          campaignIdsOf(account).includes(campaign.id),
         );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        result.errors.push(`campaign ${campaign.id} accounts: ${message}`);
-        continue;
+      } else {
+        try {
+          campaignAccounts = await this.smartlead.getCampaignEmailAccounts(
+            campaign.id,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`campaign ${campaign.id} accounts: ${message}`);
+          continue;
+        }
       }
 
       const remainingIds = new Set(campaignAccounts.map((a) => a.id));
@@ -160,7 +167,7 @@ export class WarmupGateService {
         const started = warmupClockStartedAt(account, email, this.state);
         const daysWarmed = started != null ? daysSince(started) : null;
 
-        if (isWarmupGateExempt(tags)) {
+        if (isWarmupGateExempt(tags) || this.state.isCopyCanary(email)) {
           continue;
         }
 

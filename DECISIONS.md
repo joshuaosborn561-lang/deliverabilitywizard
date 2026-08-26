@@ -2338,3 +2338,95 @@ Positive).
 
 **Guards.** sequencesForWrite remaps sequence_variants → variants;
 owner-intent D104.
+---
+
+## D105 — Warmup 21-day gate is on for live senders
+
+**Decision.** A mailbox that has not served 21 days from InboxKit
+import is pulled off ACTIVE campaigns. Pre-warmed fleets and the
+unwarmed canary fleet stay exempt. Placement / bounce pulls stay
+off (D51). The gate runs on the 15-minute health pass.
+
+This supersedes D51's "warmup gate defaults off" only.
+
+**Why.** Josh (2026-08-26): "yea need to enforce warmup 21 days."
+
+**Tradeoff.** Cold client boxes come off until they finish the
+clock. Accepted: that is the point.
+
+**Guards.** enableWarmupGate default true; warmupGate skips
+isCopyCanary; owner-intent D105.
+---
+
+## D106 — 85% launch bar is a live reading
+
+**Decision.** `LAUNCH_INBOX_THRESHOLD` is 85. Campaign check
+flags `below_launch_bar` when the living placement test is under
+that (promo tab = miss). Auto-START (qa-unpause) should not
+launch a new campaign below it. The one-shot morning activate
+(D109) is Josh starting the existing book for tomorrow and is
+not blocked by this bar.
+
+**Why.** Josh (2026-08-26): enforce the 85 launch bar on the
+canon sweep.
+
+**Tradeoff.** A thin sample can hold a campaign below the bar
+on the board. Accepted: the board is honest.
+
+**Guards.** launchInboxThreshold default 85; owner-intent D106.
+---
+
+## D107 — Delete leftover old-client campaigns
+
+**Decision.** Delete Smartlead campaigns `#3437329` Nieto,
+`#3628940` MSRS2, `#3628943` Positive, and any other campaign
+whose name is Nieto / MSRS / Positive. One-shot. If delete
+fails, STOP the campaign.
+
+**Why.** Josh (2026-08-26): "Delete those 3 campaigns there
+are old clients."
+
+**Tradeoff.** Other leftover Nieto / MSRS names go too.
+Accepted: they are the same old clients.
+
+**Guards.** oldClientCampaignIds; owner-intent D107.
+---
+
+## D108 — 15-minute yes/no canon sweep
+
+**Decision.** Every health pass (15 minutes) is the canon
+sweep. `/health` answers `canonCompliant` yes or no.
+
+Core (flips the yes): staffing, 21-day warmup, signatures,
+mailbox gap, mailbox send volume, placement test, canaries
+(copy + known-good).
+
+Other (on the board, does not flip the main yes): DNS,
+85% launch bar, client tag, foreign brand, cross-client.
+
+**Why.** Josh (2026-08-26): sweep the entire canon every
+15 minutes. Simple yes or no. Mainly staffing / warmup /
+signatures / gap / campaign settings / placement / canaries,
+then the other stuff.
+
+**Tradeoff.** A campaign with only a DNS miss still reads
+yes on the core. Accepted: he named the core.
+
+**Guards.** canonCompliant on /health; CANON_CORE_KINDS;
+owner-intent D108.
+---
+
+## D109 — START the morning book
+
+**Decision.** One-shot: START every Goliath, BCP, Peterson,
+Parlay, and TechEvo campaign that is not a pod-control shell
+and not an old-client leftover. Already ACTIVE is left alone.
+The 85% bar does not block this pass.
+
+**Why.** Josh (2026-08-26): ready to send tomorrow morning.
+
+**Tradeoff.** A bounce-paused Goliath campaign comes back
+up. Accepted: he asked for ACTIVE.
+
+**Guards.** morningActivatePatterns; shells stay paused;
+owner-intent D109.

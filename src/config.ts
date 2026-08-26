@@ -377,10 +377,35 @@ const ConfigSchema = z.object({
    */
   poolWarmupDays: z.coerce.number().int().positive().default(21),
   /**
-   * D51 — under-warmed / HOLD-UNTIL strip is off. 21 days is the
-   * warmed-vs-unwarmed clock (D50), not a live pull.
+   * D105 — 21-day live-send gate is on. Canary fleet and pre-warmed
+   * fleets stay exempt. Placement / bounce pulls stay off (D51).
    */
-  enableWarmupGate: boolFromEnv(false),
+  enableWarmupGate: boolFromEnv(true),
+  /**
+   * D106 — same-ESP inbox % a campaign needs before auto-START
+   * (qa-unpause). Morning activate (D109) ignores this once.
+   */
+  launchInboxThreshold: z.coerce.number().min(0).max(100).default(85),
+  /** D107 — leftover old-client campaigns to delete. */
+  oldClientCampaignIds: z
+    .string()
+    .default("3437329,3628940,3628943")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((part) => Number(part.trim()))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  /** D109 — name fragments for the morning START book. */
+  morningActivatePatterns: z
+    .string()
+    .default("goliath,bcp,bolder cyber,peterson,parlay,techevo,tech evo")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
   /**
    * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
@@ -622,6 +647,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
+    launchInboxThreshold: env.LAUNCH_INBOX_THRESHOLD ?? "85",
+    oldClientCampaignIds: env.OLD_CLIENT_CAMPAIGN_IDS ?? "3437329,3628940,3628943",
+    morningActivatePatterns:
+      env.MORNING_ACTIVATE_PATTERNS ??
+      "goliath,bcp,bolder cyber,peterson,parlay,techevo,tech evo",
     campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "21",
     freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",

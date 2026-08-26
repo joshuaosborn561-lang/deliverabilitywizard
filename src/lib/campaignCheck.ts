@@ -22,6 +22,10 @@ export const CAMPAIGN_CHECK_KINDS = [
   "inbox_missing_known_good",
   "understaffed",
   "no_placement_test",
+  "under_warmed",
+  "mailbox_gap",
+  "mailbox_volume",
+  "below_launch_bar",
 ] as const;
 
 export type CampaignCheckKind = (typeof CAMPAIGN_CHECK_KINDS)[number];

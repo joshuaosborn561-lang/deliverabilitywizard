@@ -77,9 +77,10 @@ describe("campaign check first-pass helpers", () => {
 });
 
 describe("CampaignCheckService", () => {
-  it("D81: a new campaign with a foreign signature fails the first check", async () => {
+  it("D81: a new campaign with a foreign signature is rewritten to First Last / client brand", async () => {
     const state = new StateStore(stateFile());
     await state.load();
+    const mailboxSigs: string[] = [];
     const service = new CampaignCheckService(
       loadConfig({}),
       {
@@ -110,6 +111,9 @@ describe("CampaignCheckService", () => {
             email_body: "<div>Hi</div><div>%signature%</div>",
           },
         ],
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
       } as unknown as SmartleadClient,
       delivery(),
       state,
@@ -117,17 +121,19 @@ describe("CampaignCheckService", () => {
 
     const result = await service.run({ mode: "first" });
     assert.equal(result.firstSeen, 1);
-    assert.equal(result.firstPassed, 0);
-    assert.ok(
+    assert.equal(mailboxSigs[0], "Zuri Hernandez\nGoliath Cybersecurity");
+    assert.equal(result.firstPassed, 1, "D124 writes the leftover mailbox signature on this pass");
+    assert.equal(
       result.findings[0]?.findings.some((finding) => finding.kind === "mailbox_sig"),
-      "first check must catch Peterson on Goliath",
+      false,
+      "written leftover does not stay on the scoreboard",
     );
     assert.equal(
       result.findings[0]?.findings.some((finding) => finding.kind === "bounce_autopause"),
       false,
       "bounce auto-pause is not this checker",
     );
-    assert.equal(state.getCampaignCheck(3826693)?.firstPassedAt, null);
+    assert.ok(state.getCampaignCheck(3826693)?.firstPassedAt);
   });
 
   it("D81: a clean campaign passes first check; hourly still reads sequences", async () => {
@@ -475,6 +481,56 @@ describe("CampaignCheckService", () => {
     );
   });
 
+  it("D124: empty mailbox signature is written to First Last / client brand without Slack", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const mailboxSigs: string[] = [];
+    const told: string[] = [];
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 78, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 9,
+            from_email: "leila@goliath.com",
+            from_name: "Leila Sanchez",
+            signature: "",
+            client_id: 548611,
+            campaign_ids: [78],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [goliath],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+        ],
+        updateCampaignSequences: async () => {
+          throw new Error("sequence already has %signature%");
+        },
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      {
+        notifyActionResult: async (text: string) => {
+          told.push(text);
+        },
+      } as never,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.equal(mailboxSigs[0], "Leila Sanchez\nGoliath Cybersecurity");
+    assert.equal(told.length, 0, "mailbox-only rewrite is not the D92 sequence Slack");
+    assert.equal(result.firstPassed, 1);
+    assert.equal(state.getCampaignCheck(78)?.sigAutoWrittenAt, null);
+  });
+
   it("D92: several campaigns get one Slack after, not a button each", async () => {
     const state = new StateStore(stateFile());
     await state.load();
@@ -609,6 +665,70 @@ describe("CampaignCheckService", () => {
       false,
     );
     assert.ok(result.swept >= 1 || result.firstChecked >= 1);
+  });
+
+  it("D98/D124: health first-pass writes a leftover mailbox signature", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 92,
+      name: "Goliath Displacement M",
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      firstCheckAt: "2026-08-25T00:00:00.000Z",
+      firstPassedAt: "2026-08-25T00:05:00.000Z",
+      lastSweepAt: "2026-08-25T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: [
+        "mailbox_sig: leila@goliath.com empty — have (empty); want Leila Sanchez / Goliath Cybersecurity",
+      ],
+      sigAutoWrittenAt: null,
+    });
+    const mailboxSigs: string[] = [];
+    const told: string[] = [];
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 92, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 9,
+            from_email: "leila@goliath.com",
+            from_name: "Leila Sanchez",
+            signature: "",
+            client_id: 548611,
+            campaign_ids: [92],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [goliath],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+        ],
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      {
+        notifyActionResult: async (text: string) => {
+          told.push(text);
+        },
+      } as never,
+    );
+
+    await service.run({ mode: "first" });
+    assert.equal(mailboxSigs[0], "Leila Sanchez\nGoliath Cybersecurity");
+    assert.equal(told.length, 0);
+    assert.equal(
+      (state.getCampaignCheck(92)?.findings ?? []).some((finding) =>
+        finding.startsWith("mailbox_sig"),
+      ),
+      false,
+    );
   });
 
   it("D98: a failed SmartDelivery list does not invent placement or canary holes", async () => {

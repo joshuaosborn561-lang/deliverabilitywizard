@@ -12,13 +12,16 @@ import {
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
+import {
+  formatMailboxSignatureMismatch,
+  mailboxSignatureMismatch,
+} from "../lib/mailboxSignature.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
   sequenceCopyHay,
-  signatureHay,
 } from "../lib/signatureQa.js";
 import {
   countClientInboxesByKey,
@@ -312,13 +315,14 @@ export class CampaignAuditService {
         if (!campaignIdsOf(account).includes(campaign.id)) continue;
         const email = accountEmail(account);
         if (!email) continue;
-        const hay = signatureHay({
+        const mismatch = mailboxSignatureMismatch({
           fromName: account.from_name,
           signature: account.signature,
+          clientBrand: expected,
+          otherClientBrands: input.allBrands.filter((brand) => brand !== expected),
         });
-        const foreign = findForeignBrand(hay, expected, input.allBrands);
-        if (!foreign) continue;
-        const detail = `${email} carries ${foreign} (expected ${expected})`;
+        if (!mismatch) continue;
+        const detail = formatMailboxSignatureMismatch(email, mismatch);
         issues.push({
           campaignId: campaign.id,
           campaignName: String(campaign.name ?? campaign.id),

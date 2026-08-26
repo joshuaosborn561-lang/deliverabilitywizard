@@ -4,6 +4,8 @@ import {
   brandFromClientDisplayName,
   desiredMailboxSignature,
   extractSignatureLines,
+  formatMailboxSignatureMismatch,
+  mailboxSignatureMismatch,
 } from "./mailboxSignature.js";
 
 describe("mailboxSignature", () => {
@@ -70,6 +72,78 @@ describe("mailboxSignature", () => {
     assert.equal(
       brandFromClientDisplayName("Bolder Cyber Partners (Mike Trpkosh)"),
       "Bolder Cyber Partners",
+    );
+  });
+
+  it("audits against First Last / client brand (D124)", () => {
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Aarav Sanchez",
+        signature: "Aarav Sanchez\nGoliath Cybersecurity",
+        clientBrand: "Goliath Cybersecurity",
+      }),
+      null,
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Leila Sanchez",
+        signature: "",
+        clientBrand: "Goliath Cybersecurity",
+      })?.reason,
+      "empty",
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Nathaniel Cartwright",
+        signature: "Nathaniel Cartwright Bolder Cyber Partners",
+        clientBrand: "Bolder Cyber Partners",
+      })?.reason,
+      "name",
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Aarav Sanchez",
+        signature: "Aarav Sanchez\nSalesGlider Growth Partners",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: [
+          "SalesGlider Growth Partners",
+          "Goliath Cybersecurity",
+        ],
+      })?.reason,
+      "brand",
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Katya Sanchez",
+        signature: "<div>Katya Sanchez</div><div>Mid-South Roof Systems</div>",
+        clientBrand: "MSRS",
+      })?.reason,
+      "format",
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Aarav Sanchez",
+        signature: "Aarav Sanchez\nRoofs by Peterson",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: ["Roofs by Peterson", "Goliath Cybersecurity"],
+      })?.reason,
+      "brand",
+    );
+    assert.equal(
+      mailboxSignatureMismatch({
+        fromName: "Ada Pool",
+        signature: "Someone Else\nSalesGlider",
+        clientBrand: "SalesGlider",
+      })?.reason,
+      "name",
+    );
+    assert.match(
+      formatMailboxSignatureMismatch("leila@goliath.com", {
+        expected: "Leila Sanchez\nGoliath Cybersecurity",
+        actual: "",
+        reason: "empty",
+      }),
+      /leila@goliath.com empty — have \(empty\); want Leila Sanchez \/ Goliath Cybersecurity/,
     );
   });
 });

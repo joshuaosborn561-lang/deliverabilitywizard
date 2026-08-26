@@ -35,7 +35,7 @@ import {
 } from "./lib/slackOauth.js";
 import { StateStore, type PoolProvisionPhase } from "./state/store.js";
 import {
-  fetchInventory,
+  InventoryBook,
   type InventorySnapshot,
 } from "./services/inventory.js";
 import { SpendGateway } from "./lib/spendGateway.js";
@@ -417,17 +417,22 @@ async function main(): Promise<void> {
   void isolationRig.applyDenylist().catch((error) => {
     console.warn("[isolation-rig] denylist at boot failed", error);
   });
+  // D132 — one Smartlead account book shared by the health pass, the hourly
+  // campaign check, the 6-hour audit, and the /ops board.
+  const inventoryBook = new InventoryBook(smartlead);
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,
     smartDelivery,
     state,
+    inventoryBook,
   );
   const campaignCheck = new CampaignCheckService(
     config,
     smartlead,
     smartDelivery,
     state,
+    inventoryBook,
     slack,
   );
   const clientDayBrief = new ClientDayBriefService(
@@ -453,10 +458,10 @@ async function main(): Promise<void> {
   }
   const placementResults = new PlacementResultsService(
     smartDelivery,
-    smartlead,
+    inventoryBook,
     state,
   );
-  const fleetSummary = new FleetSummaryService(smartlead, state);
+  const fleetSummary = new FleetSummaryService(inventoryBook, state);
   const cursorCloud = config.cursorApiKey
     ? new CursorCloudClient(config.cursorApiKey)
     : null;
@@ -608,7 +613,9 @@ async function main(): Promise<void> {
       // mutating stages keep it truthful in place (recordMembership). Before
       // this, ~8 stages each refetched the full account book and the pass
       // starved itself into 429s.
-      const inventory = await stage("inventory", () => fetchInventory(smartlead));
+      // D132 — the per-pass fetch goes through the shared book's partial-read
+      // gate, so a shrunken read serves the last accepted book instead.
+      const inventory = await stage("inventory", () => inventoryBook.fetchFresh());
       if (!inventory) {
         console.warn("[health] inventory fetch failed — skipping this pass");
         await state.save();
@@ -760,9 +767,7 @@ async function main(): Promise<void> {
     opsCheckInFlight = (async () => {
       const monitorResult = await monitor.run();
       const dnsResult = await dnsAudit.run({ alert: false });
-      const campaignResult = await campaignAudit.run(
-        config.minCampaignSenders,
-      );
+      const campaignResult = await campaignAudit.run();
       return {
         monitor: monitorResult,
         dns: dnsResult,
@@ -948,10 +953,13 @@ async function main(): Promise<void> {
         );
         return;
       }
-      void campaignCheck.run({ mode: "hourly" }).catch((error) => {
-        console.error("[campaign-check] Unhandled cron error", error);
-        feedBugRemediator("campaign-check-cron", error);
-      });
+      void inventoryBook
+        .get()
+        .then((inventory) => campaignCheck.run({ mode: "hourly", inventory }))
+        .catch((error) => {
+          console.error("[campaign-check] Unhandled cron error", error);
+          feedBugRemediator("campaign-check-cron", error);
+        });
     });
   }
 
@@ -1434,7 +1442,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       runtime: {
         deliverability: runOpsDeliverability,
         dns: () => dnsAudit.run({ alert: false }),
-        campaigns: () => campaignAudit.run(config.minCampaignSenders),
+        campaigns: () => campaignAudit.run(),
         reconnect: runReconnect,
         placements: (force) => placementResults.get(force),
         fleet: (force) => fleetSummary.get(force),
@@ -1647,7 +1655,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
       if (mode === "campaign-audit" || mode === "audit-campaigns") {
         assertRuntimeSecrets(config);
-        const result = await campaignAudit.run(config.minCampaignSenders);
+        const result = await campaignAudit.run();
         res.json({ ok: true, mode: "campaign-audit", result });
         return;
       }

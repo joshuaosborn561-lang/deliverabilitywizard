@@ -4,7 +4,7 @@ import {
   normalizeTestList,
   testIdOf,
 } from "../clients/smartdelivery.js";
-import type { SmartleadClient } from "../clients/smartlead.js";
+import type { InventoryBook } from "./inventory.js";
 import {
   accountEmail,
   campaignIdsOf,
@@ -137,7 +137,7 @@ export class PlacementResultsService {
 
   constructor(
     private readonly smartDelivery: SmartDeliveryClient,
-    private readonly smartlead: SmartleadClient,
+    private readonly book: InventoryBook,
     private readonly state: StateStore,
     private readonly cacheMs = 5 * 60 * 1000,
   ) {}
@@ -170,7 +170,8 @@ export class PlacementResultsService {
     const liveById = new Map<number, { name: string }>();
     let campaignsLoaded = false;
     try {
-      const campaigns = await this.smartlead.listCampaigns();
+      // D132 — the board reads the shared account book, never its own fetch.
+      const campaigns = (await this.book.get()).campaigns;
       campaignsLoaded = true;
       for (const campaign of campaigns) {
         const id = Number(campaign.id);
@@ -300,7 +301,7 @@ export class FleetSummaryService {
   private readonly forceRefreshFloorMs = 15 * 1000;
 
   constructor(
-    private readonly smartlead: SmartleadClient,
+    private readonly book: InventoryBook,
     private readonly state: StateStore,
     private readonly cacheMs = 60 * 1000,
   ) {}
@@ -347,10 +348,8 @@ export class FleetSummaryService {
   }
 
   private async load(): Promise<FleetSummary> {
-    const [campaigns, accounts] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-    ]);
+    // D132 — the board reads the shared account book, never its own fetch.
+    const { campaigns, accounts } = await this.book.get();
     const activeCampaigns = new Set(
       campaigns
         .filter((campaign) =>

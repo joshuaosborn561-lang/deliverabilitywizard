@@ -147,6 +147,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D129 | Live — the deletion pass |
 | D130 | Live — the engine teardown |
 | D131 | Live |
+| D132 | Live | One Smartlead account book; partial reads distrusted |
 
 ---
 
@@ -3204,3 +3205,44 @@ created-status test; podControls newcomer-supplemental test; owner-intent
 D131 (including: every `stage("…")` call in index.ts must have a cadence
 window in `stageWindows.ts`, since the registry doubles as the prune
 list).
+
+## D132 — One account book: the audit, the board and the hourly check read the health pass's snapshot; partial reads are distrusted
+
+**Decision.** A single `InventoryBook` owns the Smartlead account book
+(campaigns + accounts + clients):
+
+1. The 15-minute health pass still fetches fresh every pass (D84), but the
+   fetch goes through the book, which every other consumer shares: the
+   hourly campaign check, the 6-hour campaign audit, the /ops board's
+   placement and fleet caches, and `/run`-triggered one-offs. Their own
+   full-fleet refetches are deleted — the split-brain fetching is what
+   429'd the board, starved `mailbox-settings-full`, and made "hourly"
+   cadences fiction.
+2. **The book refuses to believe a partial read.** Smartlead pagination
+   that quietly drops pages made findings oscillate (`under_warmed`
+   0→17→0→6 on 2026-08-26). A fetch whose account count falls below 80%
+   of the accepted book is held as a candidate and the accepted book keeps
+   serving; a second consecutive shrunken read is believed (mailboxes
+   really can be deleted in bulk — reality gets two reads to prove
+   itself). A healthy read in between resets the streak.
+3. A fetch that throws serves the accepted book as carry-over, loudly.
+   Fetch attempts are spaced at least 2 minutes apart while Smartlead is
+   unhappy, and concurrent callers share one in-flight read.
+
+**Why.** The board and audit each refetched ~12 paginated account pages on
+their own clocks; the D84 rule fixed only the health pass's internal
+split-brain. Findings built on partial books flapped between "17 mailboxes
+under-warmed" and "none", which trains people to ignore the scoreboard.
+
+**Tradeoff.** The hourly check and audit act on a book up to 15 minutes
+old (the shell converge and audit are idempotent posture writes — a stale
+PAUSED write is a no-op). A genuine mass mailbox deletion takes two reads
+(~30 minutes) to be believed. Accepted: oscillating findings cost more.
+
+**Supersedes.** Extends D84 (one fetch per pass) to one book per machine.
+
+**Guards.** owner-intent D132: `campaignAudit.ts` and `opsReporting.ts`
+must not fetch the account book themselves; the hourly check hands the
+book's snapshot down; `InventoryBook` keeps the two-consecutive-reads
+gate. `inventory.test.ts` covers cache, carry-over, shrink-hold-believe,
+streak reset, attempt spacing, and in-flight dedupe.

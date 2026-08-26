@@ -25,6 +25,7 @@ import {
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
+import type { InventoryBook } from "./inventory.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 
@@ -96,14 +97,13 @@ export class CampaignAuditService {
     private readonly smartlead: SmartleadClient,
     private readonly smartDelivery: SmartDeliveryClient,
     private readonly state: StateStore,
+    private readonly book: InventoryBook,
   ) {}
 
-  async run(_legacyMinSenders?: number): Promise<CampaignAuditResult> {
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+  async run(): Promise<CampaignAuditResult> {
+    // D132 — the audit reads the shared account book instead of refetching
+    // the whole fleet; its own triple-fetch was a steady 429 source.
+    const { campaigns, accounts, clients } = await this.book.get();
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
       brandByClientId.set(

@@ -5,6 +5,45 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import { StateStore } from "../state/store.js";
 import { CampaignAuditService } from "./campaignAudit.js";
+import type { InventoryBook } from "./inventory.js";
+
+/** D132 — a test book reading the same fake client, one attempt, clients optional. */
+function bookOf(sl: unknown): InventoryBook {
+  const client = sl as {
+    listCampaigns?: () => Promise<unknown[]>;
+    listAllEmailAccounts?: (o?: unknown) => Promise<unknown[]>;
+    listClients?: () => Promise<unknown[]>;
+  };
+  return {
+    get: async () => ({
+      campaigns:
+        typeof client.listCampaigns === "function"
+          ? await client.listCampaigns()
+          : [],
+      accounts:
+        typeof client.listAllEmailAccounts === "function"
+          ? await client.listAllEmailAccounts({ fetchCampaigns: true })
+          : [],
+      clients:
+        typeof client.listClients === "function"
+          ? await client.listClients().catch(() => [])
+          : [],
+      fetchedAt: Date.now(),
+    }),
+  } as unknown as InventoryBook;
+}
+
+function mkAudit(
+  ...args: [
+    ConstructorParameters<typeof CampaignAuditService>[0],
+    ConstructorParameters<typeof CampaignAuditService>[1],
+    ConstructorParameters<typeof CampaignAuditService>[2],
+    ConstructorParameters<typeof CampaignAuditService>[3],
+  ]
+): CampaignAuditService {
+  const [config, sl, sd, state] = args;
+  return new CampaignAuditService(config, sl, sd, state, bookOf(sl));
+}
 
 describe("CampaignAuditService signature QA", () => {
   it("flags a foreign-brand mailbox signature on a live campaign (D74)", async () => {
@@ -12,7 +51,7 @@ describe("CampaignAuditService signature QA", () => {
       `/tmp/campaign-audit-sig-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
-    const service = new CampaignAuditService(
+    const service = mkAudit(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -78,7 +117,7 @@ describe("CampaignAuditService signature QA", () => {
       `/tmp/campaign-audit-sig-empty-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
-    const service = new CampaignAuditService(
+    const service = mkAudit(
       loadConfig({}),
       {
         listCampaigns: async () => [

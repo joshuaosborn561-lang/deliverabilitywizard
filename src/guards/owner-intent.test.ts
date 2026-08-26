@@ -2171,9 +2171,9 @@ describe("owner intent — D84 canon sweep", () => {
     const index = await read("../index.ts");
     assert.match(
       index,
-      /fetchInventory\(smartlead\)/,
+      /stage\("inventory", \(\) => inventoryBook\.fetchFresh\(\)\)/,
       stop(
-        "The health pass fetches Smartlead inventory once and shares it (D84).",
+        "The health pass fetches Smartlead inventory once through the shared book and shares it (D84/D132).",
         "index.ts no longer builds one shared inventory per pass.",
       ),
     );
@@ -4031,5 +4031,64 @@ describe("owner intent — D131 findings the sweep can close are closed", () => 
         ),
       );
     }
+  });
+});
+
+describe("owner intent — D132 one account book", () => {
+  it("D132: audit, board and hourly check read the shared book; partial reads are distrusted", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const inventory = await readFile(
+      new URL("../services/inventory.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      inventory,
+      /class InventoryBook/,
+      stop(
+        "One Smartlead account book serves the whole machine (D132).",
+        "inventory.ts lost the shared book.",
+      ),
+    );
+    assert.match(
+      inventory,
+      /shrunkenStreak/,
+      stop(
+        "A shrunken account book needs two consecutive reads to be believed (D132).",
+        "inventory.ts lost the partial-read gate.",
+      ),
+    );
+    const audit = await readFile(
+      new URL("../services/campaignAudit.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      audit,
+      /listAllEmailAccounts|listCampaigns\(\)/,
+      stop(
+        "The campaign audit reads the shared book, never its own fetch (D132).",
+        "campaignAudit.ts refetches the account book again.",
+      ),
+    );
+    const ops = await readFile(
+      new URL("../services/opsReporting.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      ops,
+      /listAllEmailAccounts|listCampaigns\(\)/,
+      stop(
+        "The /ops board reads the shared book, never its own fetch (D132).",
+        "opsReporting.ts refetches the account book again.",
+      ),
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /mode: "hourly", inventory/,
+      stop(
+        "The hourly campaign check is handed the shared book's snapshot (D132).",
+        "index.ts runs the hourly sweep on its own fetch again.",
+      ),
+    );
   });
 });

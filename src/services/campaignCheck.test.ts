@@ -8,6 +8,50 @@ import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { isPocClient } from "../lib/pocClient.js";
 import { StateStore } from "../state/store.js";
 import { CampaignCheckService } from "./campaignCheck.js";
+import type { InventoryBook } from "./inventory.js";
+
+/**
+ * D132 — tests hand the service a book that reads the same fake client the
+ * old internal fetch used, one attempt, clients optional. Semantics match
+ * the pre-book per-service fetch exactly.
+ */
+function bookOf(sl: unknown): InventoryBook {
+  const client = sl as {
+    listCampaigns?: () => Promise<unknown[]>;
+    listAllEmailAccounts?: (o?: unknown) => Promise<unknown[]>;
+    listClients?: () => Promise<unknown[]>;
+  };
+  return {
+    get: async () => ({
+      campaigns:
+        typeof client.listCampaigns === "function"
+          ? await client.listCampaigns()
+          : [],
+      accounts:
+        typeof client.listAllEmailAccounts === "function"
+          ? await client.listAllEmailAccounts({ fetchCampaigns: true })
+          : [],
+      clients:
+        typeof client.listClients === "function"
+          ? await client.listClients().catch(() => [])
+          : [],
+      fetchedAt: Date.now(),
+    }),
+  } as unknown as InventoryBook;
+}
+
+function mkCheck(
+  ...args: [
+    ConstructorParameters<typeof CampaignCheckService>[0],
+    ConstructorParameters<typeof CampaignCheckService>[1],
+    ConstructorParameters<typeof CampaignCheckService>[2],
+    ConstructorParameters<typeof CampaignCheckService>[3],
+    ConstructorParameters<typeof CampaignCheckService>[5]?,
+  ]
+): CampaignCheckService {
+  const [config, sl, sd, state, slack] = args;
+  return new CampaignCheckService(config, sl, sd, state, bookOf(sl), slack);
+}
 
 function stateFile(): string {
   return `/tmp/campaign-check-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`;
@@ -81,7 +125,7 @@ describe("CampaignCheckService", () => {
     const state = new StateStore(stateFile());
     await state.load();
     const mailboxSigs: string[] = [];
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -175,7 +219,7 @@ describe("CampaignCheckService", () => {
         ];
       },
     } as unknown as SmartleadClient;
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       sl,
       delivery([
@@ -258,7 +302,7 @@ describe("CampaignCheckService", () => {
         },
       ],
     } as unknown as SmartleadClient;
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       sl,
       delivery([
@@ -312,7 +356,7 @@ describe("CampaignCheckService", () => {
       lastKind: "first",
       findings: ["missing_signature_tag: step 1 A is missing %signature%"],
     });
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -357,7 +401,7 @@ describe("CampaignCheckService", () => {
         { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
       ],
     } as unknown as SmartleadClient;
-    const service = new CampaignCheckService(loadConfig({}), sl, delivery(), state);
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
 
     await service.run({ mode: "first" });
     const hourly = await service.run({ mode: "hourly" });
@@ -406,7 +450,7 @@ describe("CampaignCheckService", () => {
         { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
       ],
     } as unknown as SmartleadClient;
-    const service = new CampaignCheckService(loadConfig({}), sl, delivery(), state);
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
 
     await service.run({ mode: "first" });
     const hourly = await service.run({ mode: "hourly" });
@@ -435,7 +479,7 @@ describe("CampaignCheckService", () => {
     const told: string[] = [];
     const mailboxSigs: string[] = [];
     const sequencesUpdated: number[] = [];
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -487,7 +531,7 @@ describe("CampaignCheckService", () => {
     const state = new StateStore(stateFile());
     await state.load();
     const statuses: Array<[number, string]> = [];
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -526,7 +570,7 @@ describe("CampaignCheckService", () => {
         told.push(text);
       },
     } as never;
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -580,7 +624,7 @@ describe("CampaignCheckService", () => {
     await state.load();
     const told: string[] = [];
     const wrote: number[] = [];
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -636,7 +680,7 @@ describe("CampaignCheckService", () => {
       },
       updateEmailAccount: async () => undefined,
     } as unknown as SmartleadClient;
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       sl,
       delivery(),
@@ -674,7 +718,7 @@ describe("CampaignCheckService", () => {
     });
     const told: string[] = [];
     const wrote: string[] = [];
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       {
         listCampaigns: async () => [
@@ -743,7 +787,7 @@ describe("CampaignCheckService", () => {
         },
       ],
     } as unknown as SmartleadClient;
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       sl,
       {
@@ -813,7 +857,7 @@ describe("CampaignCheckService", () => {
         },
       ],
     } as unknown as SmartleadClient;
-    const service = new CampaignCheckService(
+    const service = mkCheck(
       loadConfig({}),
       sl,
       delivery([
@@ -849,7 +893,7 @@ describe("CampaignCheckService", () => {
     const make = async (status: string) => {
       const store = new StateStore(stateFile());
       await store.load();
-      return new CampaignCheckService(
+      return mkCheck(
         loadConfig({}),
         {
           listCampaigns: async () => [

@@ -143,6 +143,7 @@ export class CampaignCheckService {
     let tested = new Set<string>();
     let listedTests: SpamTestSummary[] = [];
     let knownGoodEmails = new Set<string>();
+    let listedTestsFailed = false;
     try {
       listedTests = normalizeTestList(await this.smartDelivery.listTests({}));
       const enriched = await this.smartDelivery.enrichCampaignIds(listedTests);
@@ -156,6 +157,7 @@ export class CampaignCheckService {
         this.state.listPodControls(),
       );
     } catch (error) {
+      listedTestsFailed = true;
       console.warn("[campaign-check] could not list tests", error);
     }
 
@@ -224,17 +226,40 @@ export class CampaignCheckService {
       }
       const record = this.state.getCampaignCheck(campaign.id)!;
       const needsFirst = !record.firstPassedAt;
-      // Backoff: a blocked first check with a recent inspection waits for
-      // FIRST_CHECK_RETRY_MS before re-reading sequences.
-      const recentlyChecked = Boolean(
-        record.firstCheckAt &&
-          Date.now() - Date.parse(record.firstCheckAt) < FIRST_CHECK_RETRY_MS,
+      // D98 — leftover writable holes close on the next health pass.
+      // Do not wait 55 minutes, and do not skip a campaign that already
+      // first-passed while the scoreboard still shows the hole. A
+      // SmartDelivery list failure must not wipe coverage findings we
+      // cannot verify — inspect leftover signatures only in that case.
+      const openSigFinding = (record.findings ?? []).some((finding) =>
+        finding.startsWith("missing_signature_tag"),
       );
+      const openCoverageFinding = (record.findings ?? []).some(
+        (finding) =>
+          finding.startsWith("no_placement_test") ||
+          finding.startsWith("missing_canary") ||
+          finding.startsWith("inbox_missing_known_good"),
+      );
+      const recentlyChecked =
+        !openSigFinding &&
+        Boolean(
+          record.firstCheckAt &&
+            Date.now() - Date.parse(record.firstCheckAt) < FIRST_CHECK_RETRY_MS,
+        );
       const runFirst =
         needsFirst &&
         (mode === "first" || mode === "all" || mode === "hourly") &&
         (!recentlyChecked || mode !== "first");
-      const runHourly = Boolean(record.firstPassedAt) && (mode === "hourly" || mode === "all");
+      const healthLeftover =
+        mode === "first" &&
+        (openSigFinding || (openCoverageFinding && !listedTestsFailed));
+      const hourlySweep =
+        (mode === "hourly" || mode === "all") &&
+        Boolean(record.firstPassedAt) &&
+        !listedTestsFailed;
+      const hourlyLeftoverSig =
+        (mode === "hourly" || mode === "all") && openSigFinding;
+      const runHourly = healthLeftover || hourlySweep || hourlyLeftoverSig;
       if (!runFirst && !runHourly) continue;
 
       const kind: "first" | "hourly" = runFirst ? "first" : "hourly";
@@ -252,6 +277,7 @@ export class CampaignCheckService {
         connectedCanaries,
         fleetSize: fleetEmails.length,
         fleetDown,
+        listedTestsFailed,
         depth: kind,
       });
       const clientId =
@@ -428,6 +454,7 @@ export class CampaignCheckService {
     connectedCanaries: number;
     fleetSize: number;
     fleetDown: boolean;
+    listedTestsFailed: boolean;
     depth: "first" | "hourly";
   }): Promise<CampaignFinding[]> {
     const findings: CampaignFinding[] = [];
@@ -541,33 +568,31 @@ export class CampaignCheckService {
       }
     }
 
-    if (input.depth === "first") {
-      try {
-        const sequences = await this.smartlead.getCampaignSequences(campaign.id);
-        await sleep(WRITE_GAP_MS);
-        for (const row of sequenceCopyHay(sequences ?? [])) {
-          if (missingSignatureTag(row.text)) {
+    try {
+      const sequences = await this.smartlead.getCampaignSequences(campaign.id);
+      await sleep(WRITE_GAP_MS);
+      for (const row of sequenceCopyHay(sequences ?? [])) {
+        if (missingSignatureTag(row.text)) {
+          findings.push({
+            kind: "missing_signature_tag",
+            detail: `${row.label} is missing %signature%`,
+          });
+        }
+        if (input.depth === "first" && expected) {
+          const foreign = findForeignBrand(row.text, expected, input.allBrands);
+          if (foreign) {
             findings.push({
-              kind: "missing_signature_tag",
-              detail: `${row.label} is missing %signature%`,
+              kind: "foreign_brand_in_copy",
+              detail: `${row.label} has ${foreign} in the copy`,
             });
           }
-          if (expected) {
-            const foreign = findForeignBrand(row.text, expected, input.allBrands);
-            if (foreign) {
-              findings.push({
-                kind: "foreign_brand_in_copy",
-                detail: `${row.label} has ${foreign} in the copy`,
-              });
-            }
-          }
         }
-      } catch (error) {
-        console.warn(
-          `[campaign-check] could not read sequences for #${campaign.id}`,
-          error,
-        );
       }
+    } catch (error) {
+      console.warn(
+        `[campaign-check] could not read sequences for #${campaign.id}`,
+        error,
+      );
     }
 
     if (status === "ACTIVE" && !excluded) {
@@ -583,14 +608,18 @@ export class CampaignCheckService {
           detail: `staffable ${serving.length}/${floor} (half this client's inboxes)`,
         });
       }
-      if (input.depth === "hourly" && !input.tested.has(String(campaign.id))) {
+      if (
+        input.depth === "hourly" &&
+        !input.listedTestsFailed &&
+        !input.tested.has(String(campaign.id))
+      ) {
         findings.push({
           kind: "no_placement_test",
           detail: "no recurring SmartDelivery test for serving inboxes",
         });
       }
 
-      if (input.depth === "hourly") {
+      if (input.depth === "hourly" && !input.listedTestsFailed) {
         const missingKnownGood = serving.filter(
           (email) => !input.knownGoodEmails.has(email),
         );
@@ -608,6 +637,7 @@ export class CampaignCheckService {
       const storedCanaryId = this.state.getCopyCanaryTestId(campaign.id);
       if (
         !input.fleetDown &&
+        !input.listedTestsFailed &&
         !hasLivingUnwarmedCopyCanary(
           campaign.id,
           input.listedTests,

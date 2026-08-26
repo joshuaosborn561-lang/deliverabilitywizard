@@ -15,6 +15,10 @@ decisions, Cayden contributes freely alongside him.
 **Add features, fix bugs and refactor freely while the tests pass.** That
 needs nobody's permission.
 
+**Find a hole, fix it (D98).** A production sweep that finds a writable
+hole is not a report. Write the leftover signature, attach the canary,
+refresh a stale finding. Do not leave it for the next chat.
+
 **Reversing an entry in `DECISIONS.md` needs Josh.** The guards in
 `src/guards/owner-intent.test.ts` exist to catch that and tell you who to ask.
 If a guard blocks something that looks genuinely wrong, raise it — do not

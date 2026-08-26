@@ -102,6 +102,7 @@ describe("CopyCanaryService", () => {
     } as unknown as SmartleadClient;
     const smartDelivery = {
       listTests: async () => [],
+      resolveProviderIds: async () => [2, 20],
       createAutomatedPlacement: async (payload: {
         test_name?: string;
         sender_accounts: string[];
@@ -294,6 +295,7 @@ describe("CopyCanaryService", () => {
       smartlead,
       {
         listTests: async () => [],
+        resolveProviderIds: async () => [2, 20],
         createAutomatedPlacement: async (payload: {
           sender_accounts: string[];
         }) => {
@@ -311,5 +313,99 @@ describe("CopyCanaryService", () => {
       "o1@canary-o.info",
     ]);
     assert.ok(!created[0]?.includes("hot@crosslaunchco.com"));
+  });
+
+  it("D98: ensureCopyTest fails loudly when no provider ids resolve", async () => {
+    const state = new StateStore(
+      `/tmp/copy-canary-noprov-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    seedFleet(state);
+    const created: unknown[] = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 5, name: "Live", status: "ACTIVE", client_id: 2 },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 11, from_email: "g1@canary-g.info", type: "GMAIL", campaign_ids: [] },
+        { id: 12, from_email: "o1@canary-o.info", type: "OUTLOOK", campaign_ids: [] },
+      ],
+      getCampaignSequences: async () => [
+        { id: 1, subject: "Hi", email_body: "Body" },
+      ],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+      configureWarmup: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const result = await new CopyCanaryService(
+      loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),
+      smartlead,
+      {
+        listTests: async () => [],
+        resolveProviderIds: async () => [],
+        createAutomatedPlacement: async () => {
+          created.push(true);
+          throw new Error("should not create");
+        },
+      } as unknown as SmartDeliveryClient,
+      slackStub(),
+      state,
+    ).attach({ dryRun: false });
+
+    assert.equal(created.length, 0);
+    assert.equal(result.testsEnsured, 0);
+    assert.ok(
+      result.errors.some((row) => row.includes("no SmartDelivery provider_ids")),
+    );
+  });
+
+  it("D98: a stored canary is reused when listTests is down", async () => {
+    const state = new StateStore(
+      `/tmp/copy-canary-reuse-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    seedFleet(state);
+    state.setCopyCanaries(5, ["g1@canary-g.info", "o1@canary-o.info"], "existing-1");
+    let created = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 5, name: "Live", status: "ACTIVE", client_id: 2 },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 11, from_email: "g1@canary-g.info", type: "GMAIL", campaign_ids: [] },
+        { id: 12, from_email: "o1@canary-o.info", type: "OUTLOOK", campaign_ids: [] },
+      ],
+      getCampaignSequences: async () => [
+        { id: 1, subject: "Hi", email_body: "Body" },
+      ],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+      configureWarmup: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const result = await new CopyCanaryService(
+      loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),
+      smartlead,
+      {
+        listTests: async () => {
+          throw new Error("list down");
+        },
+        resolveProviderIds: async () => [2, 20],
+        createAutomatedPlacement: async () => {
+          created += 1;
+          return { id: "new-1" };
+        },
+      } as unknown as SmartDeliveryClient,
+      slackStub(),
+      state,
+    ).attach({ dryRun: false });
+
+    assert.equal(created, 0, "list failure must not spawn a second test");
+    assert.equal(result.errors.length, 0);
+    assert.equal(result.testsEnsured, 1);
+    assert.equal(state.getCopyCanaryTestId(5), "existing-1");
   });
 });

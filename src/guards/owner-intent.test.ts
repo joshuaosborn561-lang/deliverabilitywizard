@@ -3121,6 +3121,71 @@ describe("owner intent — D95 signature Slack once per campaign", () => {
   });
 });
 
+describe("owner intent — D98 find a hole, fix it", () => {
+  it("D98: leftover signatures write on health; canary attach resolves providers; list-fail does not invent holes", async () => {
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      check,
+      /openSigFinding/,
+      stop(
+        "A leftover missing %signature% writes on the next health pass (D98).",
+        "campaignCheck.ts no longer treats leftover signature findings as writable on first-pass.",
+      ),
+    );
+    assert.match(
+      check,
+      /listedTestsFailed/,
+      stop(
+        "A failed SmartDelivery list does not invent placement or canary holes (D98).",
+        "campaignCheck.ts stamps no_placement_test / missing_canary from an empty list again.",
+      ),
+    );
+    const canary = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      canary,
+      /resolveProviderIds/,
+      stop(
+        "Canary attach resolves provider ids the same way the scanner does (D98).",
+        "copyCanary.ts no longer calls resolveProviderIds.",
+      ),
+    );
+    assert.match(
+      canary,
+      /hasLivingUnwarmedCopyCanary/,
+      stop(
+        "A stored canary is reused only when it is still living (D98).",
+        "copyCanary.ts returns a stored test id without checking the live list.",
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /\[copy-canary\] \$\{err\}/,
+      stop(
+        "Each canary attach failure is logged, not only the count (D98).",
+        "index.ts no longer logs individual copy-canary errors.",
+      ),
+    );
+    const scan = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignScanner.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      scan,
+      /already-tested=/,
+      stop(
+        "Scanner logs why zero plans, not only No eligible campaigns (D98).",
+        "campaignScanner.ts lost the candidate / already-tested counts.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D94 reconnect DCD mailboxes", () => {
   it("D94: health reconnects; Slack uses action_result", async () => {
     const index = await import("node:fs/promises").then((fs) =>

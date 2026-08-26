@@ -279,7 +279,15 @@ export class CampaignScanner {
     result.eligible = plans.length;
 
     if (!plans.length) {
-      console.log("[scan] No eligible campaigns");
+      const live = campaigns.filter((campaign) =>
+        creationStatusSet.has(String(campaign.status ?? "").toUpperCase()),
+      );
+      const alreadyTested = live.filter((campaign) =>
+        testedCampaignIds.has(String(campaign.id)),
+      ).length;
+      console.log(
+        `[scan] No eligible campaigns live=${live.length} candidates=${candidates.length} already-tested=${alreadyTested} skipped=${result.skipped}`,
+      );
       await this.finish(result);
       if (options.trigger === "manual") {
         await this.slack.notifyRunSummary(result);

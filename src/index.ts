@@ -1196,6 +1196,12 @@ async function main(): Promise<void> {
       console.log(
         `[copy-canary] attach tests=${attach.testsEnsured} errors=${attach.errors.length} skipped=${attach.skipped.join(";") || "none"}`,
       );
+      for (const err of attach.errors.slice(0, 12)) {
+        console.warn(`[copy-canary] ${err}`);
+      }
+      if (attach.errors.length > 12) {
+        console.warn(`[copy-canary] … and ${attach.errors.length - 12} more`);
+      }
     }
   };
   if (secretsReady) {

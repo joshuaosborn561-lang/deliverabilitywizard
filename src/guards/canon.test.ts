@@ -3815,7 +3815,13 @@ describe("owner intent — D131 findings the sweep can close are closed", () => 
       ),
     );
     const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
-    const staged = [...index.matchAll(/stage\("([a-z0-9-]+)"/g)].map((m) => m[1]);
+    // Both roads into stageHealth: the stage() wrapper AND direct
+    // recordStageOk calls (the health-pass umbrella slipped this net once —
+    // its record was pruned as a ghost on every deploy).
+    const staged = [
+      ...[...index.matchAll(/stage\("([a-z0-9-]+)"/g)].map((m) => m[1]),
+      ...[...index.matchAll(/recordStageOk\("([a-z0-9-]+)"/g)].map((m) => m[1]),
+    ];
     assert.ok(staged.length >= 25, "the stage() calls in index.ts should be findable");
     for (const name of staged) {
       assert.ok(

@@ -198,7 +198,9 @@ sweep, not a fact of life:
   appended and the mailbox signature is set to First Last / client
   name (Goliath Cybersecurity, SalesGlider Growth Partners, …). Slack
   the first time we write a campaign, not a button and not every
-  leftover backfill pass (D92/D95).
+  leftover backfill pass (D92/D95). Empty, one-line, HTML-blob, and
+  foreign-client mailbox signatures on a living campaign are the same
+  leftover: write the two-line pair on that pass (D31/D98).
 - **Untagged campaigns** the tagger cannot uniquely match (D77 forbids
   guessing) are named on the end-of-day brief until a human tags them in
   Smartlead.

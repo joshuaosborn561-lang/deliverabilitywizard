@@ -180,7 +180,9 @@ sweep, not a fact of life:
 
 - **Missing `%signature%`** posts a one-tap *Add %signature%* Slack ask
   (Josh or Cayden). Approval appends the tag to the steps missing it —
-  append-only, nothing else in the copy changes.
+  append-only, nothing else in the copy changes. Several blocked
+  campaigns in one sweep become **one bulk ask** covering all of them
+  (D87), never a button per campaign.
 - **Untagged campaigns** the tagger cannot uniquely match (D77 forbids
   guessing) are named on the end-of-day brief until a human tags them in
   Smartlead.

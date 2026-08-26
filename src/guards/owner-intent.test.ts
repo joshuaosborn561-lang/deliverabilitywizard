@@ -2608,6 +2608,55 @@ describe("owner intent — D85 findings have owners", () => {
   });
 });
 
+describe("owner intent — D87 bulk signature approve", () => {
+  it("D87: several blocked campaigns are one bulk ask; execution covers the whole list", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const check = await read("../services/campaignCheck.ts");
+    assert.match(
+      check,
+      /campaignIds: open\.map/,
+      stop(
+        "Several blocked campaigns get one bulk %signature% ask (D87).",
+        "campaignCheck.ts went back to a Slack button per campaign.",
+      ),
+    );
+    assert.match(
+      check,
+      /coveredSignatureCampaigns/,
+      stop(
+        "A campaign already owned by a live ask is not re-asked (D85/D87).",
+        "campaignCheck.ts no longer checks signature-ask coverage.",
+      ),
+    );
+
+    const { signatureCampaignIdsOf } = await import(
+      "../lib/isolationActions.js"
+    );
+    assert.deepEqual(
+      signatureCampaignIdsOf({ detail: { campaignIds: [7, 9], campaignId: 7 } }),
+      [7, 9],
+      stop(
+        "A signature ask carries every campaign it covers (D87).",
+        "signatureCampaignIdsOf no longer reads bulk campaignIds.",
+      ),
+    );
+
+    const execute = await read("../services/isolationExecute.ts");
+    assert.match(
+      execute,
+      /signatureCampaignIdsOf/,
+      stop(
+        "A bulk approve executes against the whole list (D87).",
+        "isolationExecute.ts only writes a single campaignId again.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D86 hand-bought canary fleet is adopted", () => {
   it("D86: adoption exists, runs from boot + monitor, and canaries never staff", async () => {
     const read = (path: string) =>

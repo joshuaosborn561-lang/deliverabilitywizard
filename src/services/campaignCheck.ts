@@ -26,7 +26,11 @@ import {
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
-import { requestIsolationAction, buildIsolationAction } from "../lib/isolationActions.js";
+import {
+  buildIsolationAction,
+  coveredSignatureCampaigns,
+  requestIsolationAction,
+} from "../lib/isolationActions.js";
 import {
   hasLivingUnwarmedCopyCanary,
   livingKnownGoodEmails,
@@ -188,6 +192,11 @@ export class CampaignCheckService {
     }
 
     const now = new Date().toISOString();
+    const sigBlocked: Array<{
+      campaignId: number;
+      name: string;
+      steps: string[];
+    }> = [];
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
       const name = String(campaign.name ?? campaign.id);
@@ -285,8 +294,19 @@ export class CampaignCheckService {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
       }
       await this.maybeAskGenericBackfill(campaign, name, findings);
-      await this.maybeAskSignatureFix(campaign, name, findings);
+      const missingSig = findings.filter(
+        (finding) => finding.kind === "missing_signature_tag",
+      );
+      if (missingSig.length) {
+        sigBlocked.push({
+          campaignId: campaign.id,
+          name,
+          steps: missingSig.map((finding) => finding.detail),
+        });
+      }
     }
+
+    await this.maybeAskSignatureFix(sigBlocked);
 
     await this.state.save();
     console.log(
@@ -315,28 +335,51 @@ export class CampaignCheckService {
   }
 
   /**
-   * D85 — missing %signature% blocks first-check, so it must have an owner.
-   * One tap appends the tag to the steps missing it; nothing else changes.
+   * D85/D87 — missing %signature% blocks first-check, so it must have an
+   * owner. Campaigns not already covered by a live ask get ONE Slack ask:
+   * a single-campaign ask when one campaign is blocked, a bulk ask (one tap
+   * fixes all of them) when several are. Appending the tag is the only edit.
    */
   private async maybeAskSignatureFix(
-    campaign: SmartleadCampaign,
-    name: string,
-    findings: CampaignFinding[],
+    blocked: Array<{ campaignId: number; name: string; steps: string[] }>,
   ): Promise<void> {
-    if (!this.slack) return;
-    const missing = findings.filter(
-      (finding) => finding.kind === "missing_signature_tag",
-    );
-    if (!missing.length) return;
-    const steps = missing.map((finding) => finding.detail).join("; ");
+    if (!this.slack || !blocked.length) return;
+    const covered = coveredSignatureCampaigns(this.state.listIsolationActions());
+    const open = blocked.filter((row) => !covered.has(row.campaignId));
+    if (!open.length) return;
+
+    if (open.length === 1) {
+      const row = open[0]!;
+      await requestIsolationAction({
+        store: this.state,
+        slack: this.slack,
+        action: buildIsolationAction({
+          kind: "add_signature_tag",
+          title: `%signature% missing on ${row.name}`,
+          proof: `#${row.campaignId} ${row.name} is blocked at QA: ${row.steps.join("; ")}. Tap Add %signature% and I will append the tag to those steps — the copy itself is untouched.`,
+          detail: { campaignId: row.campaignId, campaignName: row.name },
+        }),
+      });
+      return;
+    }
+
     await requestIsolationAction({
       store: this.state,
       slack: this.slack,
       action: buildIsolationAction({
         kind: "add_signature_tag",
-        title: `%signature% missing on ${name}`,
-        proof: `#${campaign.id} ${name} is blocked at QA: ${steps}. Tap Add %signature% and I will append the tag to those steps — the copy itself is untouched.`,
-        detail: { campaignId: campaign.id, campaignName: name },
+        title: `%signature% missing on ${open.length} campaigns`,
+        proof: [
+          `${open.length} campaigns are blocked at QA because steps have no %signature%:`,
+          ...open.map(
+            (row) => `• ${row.name} (#${row.campaignId}) — ${row.steps.join("; ")}`,
+          ),
+          "One tap appends the tag to every step missing it across all of them. No other copy changes.",
+        ].join("\n"),
+        detail: {
+          campaignIds: open.map((row) => row.campaignId),
+          campaigns: open.map((row) => ({ id: row.campaignId, name: row.name })),
+        },
       }),
     });
   }

@@ -58,9 +58,11 @@ function samePending(
     );
   }
   if (next.kind === "add_signature_tag") {
-    if (Number(existing.detail.campaignId) !== Number(next.detail.campaignId)) {
-      return false;
-    }
+    const key = (action: IsolationActionRecord): string =>
+      signatureCampaignIdsOf(action)
+        .sort((a, b) => a - b)
+        .join(",");
+    if (key(existing) !== key(next)) return false;
     if (existing.status === "pending" || existing.status === "approved") {
       return true;
     }
@@ -138,6 +140,50 @@ export async function remindPendingIsolationActions(input: {
     posted += 1;
   }
   return posted;
+}
+
+/** D87 — the campaign ids a signature ask covers (single or bulk). */
+export function signatureCampaignIdsOf(action: {
+  detail: Record<string, unknown>;
+}): number[] {
+  const ids: number[] = [];
+  const single = Number(action.detail.campaignId);
+  if (Number.isFinite(single) && single > 0) ids.push(single);
+  if (Array.isArray(action.detail.campaignIds)) {
+    for (const raw of action.detail.campaignIds) {
+      const id = Number(raw);
+      if (Number.isFinite(id) && id > 0 && !ids.includes(id)) ids.push(id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * D85/D87 — campaigns already owned by a live signature ask: pending or
+ * approved, executed within a day, or denied within a week. A new ask only
+ * covers campaigns outside this set.
+ */
+export function coveredSignatureCampaigns(
+  actions: IsolationActionRecord[],
+  nowMs = Date.now(),
+): Set<number> {
+  const covered = new Set<number>();
+  for (const action of actions) {
+    if (action.kind !== "add_signature_tag") continue;
+    let live = false;
+    if (action.status === "pending" || action.status === "approved") {
+      live = true;
+    } else if (action.status === "executed") {
+      const at = Date.parse(action.executedAt ?? action.requestedAt);
+      live = Number.isFinite(at) && nowMs - at < 24 * 60 * 60 * 1000;
+    } else if (action.status === "denied") {
+      const at = Date.parse(action.decidedAt ?? action.requestedAt);
+      live = Number.isFinite(at) && nowMs - at < 7 * 24 * 60 * 60 * 1000;
+    }
+    if (!live) continue;
+    for (const id of signatureCampaignIdsOf(action)) covered.add(id);
+  }
+  return covered;
 }
 
 export function suggestedCopySwap(element: string): string {

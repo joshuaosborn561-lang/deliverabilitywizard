@@ -1897,3 +1897,31 @@ accepted; nothing else buys unregistered mailboxes in that workspace.
 are `copyCanary` and excluded from `findAvailablePoolMailbox`; warmup is
 written off, never on; the pool provisioner still skips canaries;
 owner-intent D86.
+---
+
+## D87 — Signature fixes are a bulk approve when several campaigns are blocked
+
+**Decision.** When one sweep finds `missing_signature_tag` on more than one
+campaign not already covered by a live ask, Slack gets **one** bulk
+*Add %signature%* ask naming every campaign and its steps; one tap appends
+the tag across all of them. A single blocked campaign keeps the
+single-campaign ask. Coverage (`coveredSignatureCampaigns`) spans both
+shapes — pending/approved asks, executes younger than a day, and denials
+younger than a week — so a campaign never sits in two asks and a bulk ask
+is not re-posted while an older single ask still owns one of its campaigns.
+Execution is per campaign and append-only; a partial failure announces the
+successes and throws so the action can be re-tapped, and re-taps skip
+already-tagged bodies.
+
+**Why.** Josh (2026-08-26): "from now on also adding sigs should be a bulk
+approve within slack when applicable." Six campaigns blocked at once meant
+six separate buttons for the same one decision.
+
+**Tradeoff.** Bulk approval is all-or-nothing at decision time — Josh
+cannot exclude one campaign from the tap. Accepted: a deny leaves all of
+them for the per-campaign week-later re-ask, and appending %signature% is
+the same low-risk edit everywhere.
+
+**Guards.** Multiple uncovered blocked campaigns produce exactly one ask
+carrying `campaignIds`; a second sweep does not re-ask; a bulk approve
+writes every listed campaign; owner-intent D87.

@@ -9,6 +9,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadSequence } from "../types/index.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
+import { signatureCampaignIdsOf } from "../lib/isolationActions.js";
 import { appendSignatureTag } from "../lib/signatureQa.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
@@ -229,29 +230,65 @@ export class IsolationExecuteService {
   }
 
   /**
-   * D85 — append `%signature%` to every step/variant body missing it.
-   * Append-only by construction (appendSignatureTag); the rest of the copy
-   * is written back byte-for-byte.
+   * D85/D87 — append `%signature%` to every step/variant body missing it,
+   * for one campaign or a bulk-approved list. Append-only by construction
+   * (appendSignatureTag); the rest of the copy is written back
+   * byte-for-byte. A partial failure reports the successes and throws so
+   * the action can be re-tapped — re-runs skip already-tagged bodies.
    */
   private async addSignatureTag(action: IsolationActionRecord): Promise<void> {
-    const campaignId = Number(action.detail.campaignId);
-    if (!Number.isFinite(campaignId) || campaignId <= 0) {
-      throw new Error("Missing campaign");
+    const ids = signatureCampaignIdsOf(action);
+    if (!ids.length) throw new Error("Missing campaign");
+    const names = new Map<number, string>();
+    if (typeof action.detail.campaignName === "string") {
+      names.set(ids[0]!, action.detail.campaignName);
     }
-    const sequences = await this.smartlead.getCampaignSequences(campaignId);
-    const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
-    if (!changed.length) {
+    if (Array.isArray(action.detail.campaigns)) {
+      for (const row of action.detail.campaigns as Array<{
+        id?: unknown;
+        name?: unknown;
+      }>) {
+        const id = Number(row.id);
+        if (Number.isFinite(id) && typeof row.name === "string") {
+          names.set(id, row.name);
+        }
+      }
+    }
+
+    const done: string[] = [];
+    const failed: string[] = [];
+    for (const campaignId of ids) {
+      const label = names.get(campaignId) ?? `#${campaignId}`;
+      try {
+        const sequences = await this.smartlead.getCampaignSequences(campaignId);
+        const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
+        if (!changed.length) {
+          done.push(`*${label}* already had the tag everywhere`);
+          continue;
+        }
+        await this.smartlead.updateCampaignSequences(campaignId, next);
+        done.push(`*${label}*: ${changed.join(", ")}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failed.push(`${label}: ${message}`);
+      }
+    }
+
+    if (done.length) {
       await this.announce(
         "add_signature_tag",
-        `*${action.detail.campaignName ?? campaignId}* already carries %signature% on every step — nothing to write.`,
+        [
+          `Added %signature% where it was missing — appended the tag only, no other copy changed:`,
+          ...done.map((line) => `• ${line}`),
+          "The next sweep unblocks these campaigns.",
+        ].join("\n"),
       );
-      return;
     }
-    await this.smartlead.updateCampaignSequences(campaignId, next);
-    await this.announce(
-      "add_signature_tag",
-      `Added %signature% to ${changed.join(", ")} on *${action.detail.campaignName ?? campaignId}*. Appended the tag only — no other copy changed. The next sweep unblocks the campaign.`,
-    );
+    if (failed.length) {
+      throw new Error(
+        `Could not write ${failed.length} campaign(s): ${failed.join("; ")}. Tap again to retry — already-tagged steps are skipped.`,
+      );
+    }
   }
 
   private async approveGenericBackfill(

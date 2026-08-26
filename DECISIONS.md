@@ -2777,3 +2777,30 @@ enrich is blank would both look covered. Accepted: we only
 write a test id onto the campaign we created it for.
 
 **Guards.** livingTestIds + missing campaign_id; owner-intent D123.
+
+---
+
+## D125 — Bounce-autostop pauses are not unpaused by signature QA
+
+**Decision.** A campaign `CampaignBounceAutostopService` paused stays
+paused. `UnpauseAfterSigQaService` must not `START` it, even when it
+is a POC and every sender signature matches. Stamp `bouncePausedAt`
+on the pause; also refuse when the stored bounce snapshot is still
+over 10% after 1k leads. A human STARTs it (D40). This is not a
+`pendingResume`.
+
+**Why.** Live 2026-08-26: bounce-autostop paused Goliath L4 Education
+Tickets (31%), L3 Manufacturing Defense AirPods (655 new bounces in
+10m), and L3 Manufacturing Defense Tickets (310 burst). Health
+`qa-unpause` STARTed those same campaigns ~15 minutes later because
+Goliath is a POC and sigs matched. The pause/START loop ran all
+afternoon (12:30–15:17). Smartlead Campaign Watchdog emailed each
+pause. D77/D82 unpause is for a new POC that is ready, not a 31%
+bounce pause.
+
+**Tradeoff.** A bounce-paused POC will not auto-launch after a later
+signature fix. Accepted: lifetime bounce over 10% after 1k still
+trips autostop anyway. Josh STARTs it in Smartlead if he wants it
+on.
+
+**Guards.** `bouncePausedAt`; qa-unpause skip; owner-intent D125.

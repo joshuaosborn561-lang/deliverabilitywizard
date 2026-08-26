@@ -16,6 +16,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
     const paused: number[] = [];
     const started: number[] = [];
     const settings: Array<{ id: number; threshold: unknown }> = [];
+    const state = store();
     const service = new CampaignBounceAutostopService(
       loadConfig({ DRY_RUN: "false" }),
       {
@@ -43,7 +44,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
           settings.push({ id, threshold: body.bounce_autopause_threshold });
         },
       } as never,
-      store(),
+      state,
     );
 
     const result = await service.run({ dryRun: false });
@@ -51,6 +52,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
     assert.equal(result.paused[0]?.reason, "rate");
     assert.deepEqual(paused, [3]);
     assert.deepEqual(started, []);
+    assert.ok(state.getBouncePausedAt(3));
     assert.equal(
       settings.every((row) => row.threshold === "100"),
       true,

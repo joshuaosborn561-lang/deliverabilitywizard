@@ -18,7 +18,9 @@ import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import { sleep } from "../lib/http.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
+import { shouldPauseCampaignForBounceRate } from "../lib/campaignBouncePause.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 400;
 
@@ -33,12 +35,14 @@ export interface UnpauseAfterSigQaResult {
 /**
  * D77 / D82 — after senders on a PAUSED **POC** campaign match that
  * campaign's assigned client, START it. Shell, STOPPED, DRAFTED, excluded,
- * and non-POC pauses stay down. Goliath is the current POC, not a name gate.
+ * non-POC, and bounce-autostop pauses stay down (D40/D125). Goliath is
+ * the current POC, not a name gate.
  */
 export class UnpauseAfterSigQaService {
   constructor(
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
+    private readonly state?: StateStore,
   ) {}
 
   async run(
@@ -86,6 +90,28 @@ export class UnpauseAfterSigQaService {
       );
       if (!isPocClient(`${name} ${clientName}`, this.config.pocClientNamePatterns)) {
         result.blocked.push(`#${campaign.id} ${name}: not a POC campaign`);
+        continue;
+      }
+      if (this.state?.getBouncePausedAt(campaign.id)) {
+        result.blocked.push(
+          `#${campaign.id} ${name}: bounce autostop pause — human START only (D40/D125)`,
+        );
+        continue;
+      }
+      const bounce = this.state?.getBounceSnapshot(campaign.id);
+      if (
+        bounce &&
+        shouldPauseCampaignForBounceRate(
+          bounce.sent,
+          bounce.bounced,
+          this.config.bouncePauseMinLeads,
+          this.config.bouncePauseRatePercent,
+        )
+      ) {
+        this.state?.markBouncePaused(campaign.id);
+        result.blocked.push(
+          `#${campaign.id} ${name}: still over bounce autostop — human START only (D40/D125)`,
+        );
         continue;
       }
       const expected = brandByClientId.get(campaign.client_id) ?? "";

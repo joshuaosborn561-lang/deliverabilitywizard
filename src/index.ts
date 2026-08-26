@@ -380,7 +380,7 @@ async function main(): Promise<void> {
     state,
   );
   const campaignClientTag = new CampaignClientTagService(config, smartlead);
-  const unpauseAfterSigQa = new UnpauseAfterSigQaService(config, smartlead);
+  const unpauseAfterSigQa = new UnpauseAfterSigQaService(config, smartlead, state);
   const oldClientTeardown = new OldClientTeardownService(config, smartlead, state);
   const morningActivate = new MorningActivateService(config, smartlead, state);
   // D85 — the standalone BounceAutopauseService is retired. Autostop owns the

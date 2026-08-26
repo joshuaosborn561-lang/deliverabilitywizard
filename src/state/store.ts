@@ -230,6 +230,11 @@ export interface AppState {
   lastAutopauseVerifyAt: string | null;
   /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
   bounceSnapshots: Record<string, { bounced: number; sent: number; at: string }>;
+  /**
+   * D125 — campaign ids bounce-autostop paused. Sig-QA unpause must not
+   * START these (D40). Sticky until a human clears it.
+   */
+  bouncePausedAt: Record<string, string>;
   /** D84 — per-stage watchdog: last success / failure per named loop. */
   stageHealth: Record<string, StageHealthRecord>;
   /**
@@ -364,6 +369,7 @@ const EMPTY_STATE: AppState = {
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
   bounceSnapshots: {},
+  bouncePausedAt: {},
   stageHealth: {},
   canaryFleetDown: null,
 };
@@ -418,6 +424,7 @@ export class StateStore {
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
         bounceSnapshots: parsed.bounceSnapshots ?? {},
+        bouncePausedAt: parsed.bouncePausedAt ?? {},
         stageHealth: parsed.stageHealth ?? {},
         canaryFleetDown: parsed.canaryFleetDown ?? null,
       };
@@ -1037,6 +1044,19 @@ export class StateStore {
     snapshot: { bounced: number; sent: number; at: string },
   ): void {
     this.state.bounceSnapshots[String(campaignId)] = snapshot;
+  }
+
+  /** D125 — bounce-autostop paused this campaign; do not auto-START. */
+  getBouncePausedAt(campaignId: number): string | undefined {
+    return this.state.bouncePausedAt[String(campaignId)];
+  }
+
+  markBouncePaused(campaignId: number): void {
+    this.state.bouncePausedAt[String(campaignId)] = new Date().toISOString();
+  }
+
+  clearBouncePaused(campaignId: number): void {
+    delete this.state.bouncePausedAt[String(campaignId)];
   }
 
   /** D84 — watchdog bookkeeping for one named stage. */

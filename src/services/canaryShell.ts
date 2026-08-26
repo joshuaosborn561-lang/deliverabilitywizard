@@ -62,7 +62,10 @@ export async function ensureCanaryShell(input: {
         `Smartlead did not return an id for canary shell #${input.live.id}.`,
       );
     }
-    campaign = { id, name: wanted, status: "PAUSED" };
+    // Smartlead creates campaigns DRAFTED — record that honestly so the
+    // pause step below actually runs (D131; the fabricated "PAUSED" here
+    // is why 16 shells sat DRAFTED all day on 2026-08-26).
+    campaign = { id, name: wanted, status: "DRAFTED" };
     input.campaigns.push(campaign);
     created = true;
     await sleep(WRITE_GAP_MS);

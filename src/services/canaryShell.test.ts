@@ -68,6 +68,53 @@ describe("ensureCanaryShell", () => {
     assert.deepEqual(added, [{ campaignId: 104, ids: [11, 12] }]);
   });
 
+  it("D131: pauses a DRAFTED shell before scheduling", async () => {
+    const statuses: Array<[number, string]> = [];
+    const campaigns: SmartleadCampaign[] = [
+      { id: 4, name: "Live A", status: "ACTIVE", client_id: 2 },
+      { id: 104, name: "Canary shell: #4 Live A", status: "DRAFTED" },
+    ];
+    const result = await ensureCanaryShell({
+      smartlead: {
+        createCampaign: async () => {
+          throw new Error("should reuse the existing shell");
+        },
+        updateCampaignStatus: async (id: number, status: string) => {
+          statuses.push([id, status]);
+        },
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Old", email_body: "<div>Old</div>" },
+        ],
+        updateCampaignSequences: async () => undefined,
+        addLeadsToCampaign: async (
+          _campaignId: number,
+          leads: Array<{ email: string }>,
+        ) => ({
+          upload_count: 1,
+          already_added_to_campaign: 0,
+          added_count: 0,
+          emailToLeadIdMap: {
+            newlyAddedLeads: { [leads[0]!.email]: "1" },
+            existingLeads: {},
+            existingLeadsInOtherCampaigns: {},
+          },
+        }),
+        getCampaignLeads: async () => ({ total_leads: 0, data: [] }),
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      campaigns,
+      live: campaigns[0]!,
+      subject: "Quick look",
+      bodyHtml: "<div>Campaign copy</div>",
+      senderAccountIds: [11],
+      seedEmail: "g1@canary-g.info",
+      dryRun: false,
+    });
+    assert.equal(result.campaignId, 104);
+    assert.deepEqual(statuses, [[104, "PAUSED"]]);
+  });
+
   it("D118: default seed is the non-sender instrumentation address", async () => {
     const seeded: string[] = [];
     await ensureCanaryShell({

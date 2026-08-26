@@ -159,4 +159,103 @@ describe("pod controls", () => {
       "a completed stored pod-control test is not coverage — recreate it",
     );
   });
+
+  it("D131: a pod that grew gets a supplemental test for only the newcomers", async () => {
+    const state = new StateStore(
+      `/tmp/dw-pod-grow-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const config = loadConfig({} as NodeJS.ProcessEnv);
+    const created: Array<{ id: string; senders: string[] }> = [];
+    let accounts = [
+      { id: 1, from_email: "a@client.com", client_id: 9, campaign_ids: [1] },
+    ];
+    let listed: Array<{
+      id: string;
+      spam_test_id: string;
+      test_name: string;
+      status: string;
+    }> = [];
+    const service = new PodControlService(
+      config,
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Acme", status: "ACTIVE", client_id: 9 },
+          { id: 99, name: "Pod control shell", status: "PAUSED" },
+        ],
+        listClients: async () => [{ id: 9, name: "Acme" }],
+        listAllEmailAccounts: async () => accounts,
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Quick check-in" },
+        ],
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateCampaignSequences: async () => undefined,
+        updateCampaignStatus: async () => undefined,
+      } as never,
+      {
+        listFolders: async () => [],
+        createFolder: async () => ({ id: 3 }),
+        listTests: async () => listed,
+        resolveProviderIds: async () => [2, 20, 21],
+        getTestDetails: async () => ({ provider_id: [2, 20, 21] }),
+        createAutomatedPlacement: async (payload: { sender_accounts?: string[] }) => {
+          const id = `pod-${created.length + 1}`;
+          created.push({ id, senders: payload.sender_accounts ?? [] });
+          return { id };
+        },
+        getSenderAccountReport: async () => [],
+      } as never,
+      { notifyPodControls: async () => undefined } as never,
+      state,
+    );
+
+    const first = await service.run({ dryRun: false });
+    assert.equal(first.testsCreated.length, 1);
+    // Keep the first test living, then grow the pod by one inbox.
+    listed = state.listPodControls().map((row) => ({
+      id: row.spamTestId,
+      spam_test_id: row.spamTestId,
+      test_name: "Pod control: Acme A",
+      status: "running",
+      every_days: 1,
+    }));
+    accounts = [
+      ...accounts,
+      { id: 2, from_email: "b@client.com", client_id: 9, campaign_ids: [1] },
+    ];
+
+    const second = await service.run({ dryRun: false });
+    assert.equal(
+      second.testsCreated.length,
+      1,
+      "the newcomer gets a supplemental test",
+    );
+    const supplemental = created.at(-1)!;
+    assert.deepEqual(
+      supplemental.senders.map((row) => row.toLowerCase()),
+      ["b@client.com"],
+      "only the uncovered inbox is in the supplemental test",
+    );
+
+    const third = await service.run({ dryRun: false });
+    // With both tests stored (second listed refresh not applied), the
+    // newcomer's stored row is dead by the D89 rule until listed refreshes —
+    // refresh and confirm convergence.
+    listed = state.listPodControls().map((row) => ({
+      id: row.spamTestId,
+      spam_test_id: row.spamTestId,
+      test_name: "Pod control: Acme A",
+      status: "running",
+      every_days: 1,
+    }));
+    const fourth = await service.run({ dryRun: false });
+    assert.equal(
+      fourth.testsCreated.length,
+      0,
+      "full coverage creates nothing new",
+    );
+    void third;
+  });
 });

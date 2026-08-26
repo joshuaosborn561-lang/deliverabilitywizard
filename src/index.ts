@@ -756,107 +756,64 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     monitorInFlight = (async () => {
-      const monitorResult = await monitor.run();
+      // D131 — every monitor stage is watchdogged like the health pass:
+      // a silent 429 death shows up in stageHealth instead of a swallowed
+      // console.warn (D84 covered only the 15-minute loop).
+      const monitorResult = await stage("monitor-results", () => monitor.run());
       feedBugRemediator(
         "monitor",
         (monitorResult as { errors?: string[] })?.errors ?? [],
       );
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
-        warmupGateResult = await runWarmupGate();
+        warmupGateResult = await stage("warmup-gate", () => runWarmupGate());
       }
       // Stop recurring tests whose campaign stopped being active since the scan
       let reconcileResult: unknown = null;
       if (config.enableTestReconciler) {
-        reconcileResult = await runTestReconcile();
+        reconcileResult = await stage("test-reconcile", () => runTestReconcile());
       }
       // Zone-level faults are invisible from inside Smartlead; resolve DNS
       // directly so a domain sending without SPF cannot stay silent.
-      let dnsAuditResult: unknown = null;
-      try {
-        dnsAuditResult = await dnsAudit.run();
-      } catch (error) {
-        console.warn("[dns-audit] failed", error);
-      }
+      const dnsAuditResult: unknown = await stage("dns-audit", () => dnsAudit.run());
       // Campaign-level audit (read-only). Staffing mutations live on the
       // faster CRON_HEALTH loop so thin campaigns do not wait six hours.
-      let campaignAuditResult: unknown = null;
-      try {
-        campaignAuditResult = await campaignAudit.run(config.minCampaignSenders);
-      } catch (error) {
-        console.warn("[campaign-audit] failed", error);
-      }
+      const campaignAuditResult: unknown = await stage("campaign-audit", () =>
+        campaignAudit.run(),
+      );
       // D52 — remaining leads. Campaign audit watches senders, not this number.
       let leadRunoutResult: unknown = null;
       if (config.enableLeadRunout) {
-        try {
-          leadRunoutResult = await leadRunout.run();
-        } catch (error) {
-          console.warn("[lead-runout] failed", error);
-        }
+        leadRunoutResult = await stage("lead-runout", () => leadRunout.run());
       }
       // D53 — sending IPs from placement reports we already pull.
       let sendingInfraResult: unknown = null;
       if (config.enableSendingInfraCensus) {
-        try {
-          sendingInfraResult = await sendingInfra.run();
-        } catch (error) {
-          console.warn("[sending-infra] failed", error);
-        }
+        sendingInfraResult = await stage("sending-infra", () => sendingInfra.run());
       }
       let podControlResult: unknown = null;
       if (config.enablePodControls) {
-        try {
-          podControlResult = await podControls.run();
-          try {
-            await domainLifecycle.run();
-          } catch (error) {
-            console.warn("[domain-lifecycle] failed", error);
-          }
-          try {
-            await isolationBuy.resume();
-          } catch (error) {
-            console.warn("[isolation-buy] resume failed", error);
-          }
-          try {
-            await copyCanaryBuy.resume();
-          } catch (error) {
-            console.warn("[copy-canary-buy] resume failed", error);
-          }
-          try {
-            await runCanaryAdoption();
-          } catch (error) {
-            console.warn("[copy-canary-adopt] failed", error);
-          }
-        } catch (error) {
-          console.warn("[pod-controls] failed", error);
-        }
+        podControlResult = await stage("pod-controls", () => podControls.run());
+        await stage("domain-lifecycle", () => domainLifecycle.run());
+        await stage("isolation-buy-resume", () => isolationBuy.resume());
+        await stage("canary-buy-resume", () => copyCanaryBuy.resume());
+        await stage("canary-adopt", () => runCanaryAdoption());
       }
       let isolationRigResult: unknown = null;
       if (config.enableIsolationRig) {
-        try {
-          isolationRigResult = await isolationRig.run();
-        } catch (error) {
-          console.warn("[isolation-rig] failed", error);
-        }
+        isolationRigResult = await stage("isolation-rig", () => isolationRig.run());
       }
       let isolationBranchResult: unknown = null;
       if (config.enableIsolationBranch) {
-        try {
-          isolationBranchResult = await isolationBranch.run();
-        } catch (error) {
-          console.warn("[isolation-branch] failed", error);
-        }
+        isolationBranchResult = await stage("isolation-branch", () => isolationBranch.run());
       }
       if (config.enableCopyIsolation) {
-        try {
+        await stage("copy-isolation", async () => {
           for (const run of state.listIsolationRuns()) {
             if (!run.teardownStarted) continue;
             await copyIsolation.runForCampaign(run);
           }
-        } catch (error) {
-          console.warn("[copy-isolation] poll failed", error);
-        }
+        });
       }
       return {
         monitor: monitorResult,

@@ -146,6 +146,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D128 | Live |
 | D129 | Live — the deletion pass |
 | D130 | Live — the engine teardown |
+| D131 | Live |
 
 ---
 
@@ -3150,3 +3151,45 @@ known-good verdict and Josh's tap. Accepted — that is D49/D51 verbatim.
 **Guards.** owner-intent D130 (absence census); flipped
 D5/D6/D32/D41/D50/D51/D69/D79/D93 blocks; ops policy denies rotate with
 the kill-only explanation.
+
+---
+
+## D131 — Findings the sweep can close are closed: shells pause themselves, pods cover per email, the monitor is watchdogged
+
+**Decision.** Three fixes to standing findings with no owner (D85):
+
+1. **Instrumentation shells converge to PAUSED.** Smartlead creates
+   campaigns DRAFTED; the shell builders assumed "PAUSED" on the object
+   they fabricated after create, so the pause step never ran — 16 canary
+   shells sat DRAFTED all day on 2026-08-26 with `shell_not_paused`
+   reprinting every pass. The builders now record the honest status, and
+   the campaign checker's one permitted status write is pausing a
+   non-paused shell (never a live campaign, never START — the D81 guard
+   pins exactly that boundary).
+2. **Pod-control coverage is per EMAIL across every living control, not
+   per chunk key.** A pod whose membership grew — fresh imports, the
+   Aug-24 replacement domains, cleartechco generics restaffed onto Goliath
+   — hid behind an old chunk's existence, so newcomers never earned a
+   known-good reading (`inbox_missing_known_good` sat at 16–36 forever).
+   Supplemental tests now cover exactly the uncovered inboxes, the
+   covered set is global so cohort reshuffles cannot double-test, and
+   living tests keep running untouched.
+3. **The 6-hour monitor loop is watchdogged like the health pass.** Every
+   stage (results, DNS, campaign audit, lead runout, census, pod
+   controls, domain lifecycle, buy resumes, canary adopt, isolation rig /
+   branch / copy poll) records stageHealth — a silent 429 death shows on
+   `/health` instead of a swallowed console.warn. D84 covered only the
+   15-minute loop.
+
+**Why.** Live 2026-08-26: `shell_not_paused=16` flat for six hours,
+`inbox_missing_known_good` never reaching zero (the uncovered emails were
+exactly the newcomers), and `mailbox-settings-full` overdue for 7+ hours
+with only a watchdog line to show for it.
+
+**Tradeoff.** A supplemental pod test per membership change (tests are
+unlimited, D45). The checker gains one narrow Smartlead write. Accepted:
+a finding that reprints forever is a bug in the sweep (D85).
+
+**Guards.** D81 guard: only status write is the shell pause; canaryShell
+created-status test; podControls newcomer-supplemental test; owner-intent
+D131.

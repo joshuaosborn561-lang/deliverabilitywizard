@@ -2036,10 +2036,20 @@ describe("owner intent — D81 new-campaign audit + hourly sweep", () => {
     );
     assert.doesNotMatch(
       check,
-      /updateCampaignStatus/,
+      /updateCampaignStatus\([^)]*START/,
       stop(
-        "The campaign checker does not START or PAUSE a campaign (D40/D81).",
-        "campaignCheck.ts now writes campaign status.",
+        "The campaign checker never STARTs a campaign (D40/D81).",
+        "campaignCheck.ts now STARTs campaigns.",
+      ),
+    );
+    // D131 — the one status write the checker may make: converging a
+    // non-paused instrumentation shell back to PAUSED (D56/D114/D85).
+    const statusWrites = check.match(/updateCampaignStatus\([^)]*\)/g) ?? [];
+    assert.ok(
+      statusWrites.every((call) => call.includes('"PAUSED"')),
+      stop(
+        "The checker's only status write is pausing a shell (D131).",
+        `campaignCheck.ts writes campaign status beyond the shell pause: ${statusWrites.join(", ")}`,
       ),
     );
     assert.doesNotMatch(
@@ -3968,6 +3978,45 @@ describe("owner intent — D130 the rotation engine is gone", () => {
       stop(
         "Boot drains leftover hold/swap residue so it cannot suppress staffing (D130).",
         "index.ts lost the D130 residue drain.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D131 findings the sweep can close are closed", () => {
+  it("D131: shells converge, pods cover per email, monitor is watchdogged", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canary = await readFile(
+      new URL("../services/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      canary,
+      /status: "PAUSED" \};/,
+      stop(
+        "A freshly created shell records its honest DRAFTED status so the pause runs (D131).",
+        "canaryShell.ts fabricates a PAUSED status on create again.",
+      ),
+    );
+    const pods = await readFile(
+      new URL("../services/podControls.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      pods,
+      /uncovered/,
+      stop(
+        "Pod-control coverage is per email — newcomers get supplemental tests (D131).",
+        "podControls.ts went back to chunk-key-only coverage.",
+      ),
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /stage\("dns-audit"/,
+      stop(
+        "Monitor stages are watchdogged into stageHealth (D131).",
+        "index.ts runs monitor stages outside the watchdog again.",
       ),
     );
   });

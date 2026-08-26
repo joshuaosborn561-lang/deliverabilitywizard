@@ -141,16 +141,36 @@ export class PodControlService {
     }
     const existingByPod = await this.indexExistingControls(pods);
 
+    // D131 — coverage is per EMAIL across every living control, not per
+    // chunk key. A pod whose membership grew (fresh import, replacement
+    // domains, generics restaffed) used to hide behind an old chunk's
+    // existence, so the newcomers never earned a known-good reading; and
+    // cohort reshuffles move emails between pods, so the covered set is
+    // global. Supplemental tests cover exactly the uncovered inboxes.
+    const covered = new Set<string>();
+    for (const row of this.state.listPodControls()) {
+      // D89 — a stored row whose test is dead is not coverage.
+      if (!existingByPod.has(row.id)) continue;
+      for (const email of row.emails ?? []) covered.add(email.toLowerCase());
+    }
     for (const pod of pods) {
       const emails = emailsForPod(pod);
       if (!emails.length) continue;
-      const chunks = chunkArray(emails, this.config.maxMailboxesPerTest);
-      for (let index = 0; index < chunks.length; index += 1) {
-        const chunk = chunks[index]!;
+      let maxIndex = -1;
+      for (const row of this.state.listPodControls()) {
+        if (row.podId !== pod.id) continue;
+        const n = Number(row.id.split(":").pop());
+        if (Number.isFinite(n)) maxIndex = Math.max(maxIndex, n);
+      }
+      const uncovered = emails.filter(
+        (email) => !covered.has(email.toLowerCase()),
+      );
+      if (!uncovered.length) continue;
+      const chunks = chunkArray(uncovered, this.config.maxMailboxesPerTest);
+      for (let offset = 0; offset < chunks.length; offset += 1) {
+        const chunk = chunks[offset]!;
+        const index = maxIndex + 1 + offset;
         const key = `${pod.id}:${index}`;
-        const existing = existingByPod.get(key);
-        // D89 — a stored row whose test is dead is not coverage. Recreate.
-        if (existing) continue;
         if (dryRun) {
           result.testsCreated.push(`dry-run:${key}`);
           continue;
@@ -160,7 +180,7 @@ export class PodControlService {
             pod,
             emails: chunk,
             chunk: index + 1,
-            chunks: chunks.length,
+            chunks: index + chunks.length - offset,
             folderId,
             shellCampaignId,
             sequenceMappingId,
@@ -177,6 +197,7 @@ export class PodControlService {
             createdAt: new Date().toISOString(),
           });
           result.testsCreated.push(created);
+          for (const email of chunk) covered.add(email.toLowerCase());
         } catch (error) {
           result.errors.push(
             `create ${pod.id} ${index + 1}: ${error instanceof Error ? error.message : String(error)}`,

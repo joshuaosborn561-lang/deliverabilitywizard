@@ -193,13 +193,25 @@ export class CopyCanaryBuyService {
     if (fleet?.status === "ready" && !this.store.getCanaryFleetDown()) {
       return null;
     }
-    // An app-made purchase mid-flight is resume()'s job, not adoption's.
+    // A FRESH app-made purchase mid-flight is resume()'s job. A purchase
+    // stuck awaiting mailboxes for more than a day is exactly the situation
+    // a manual InboxKit buy fixes — it must not block adoption forever.
     for (const action of this.store.listIsolationActions()) {
       if (action.kind !== "buy_canary_fleet") continue;
       if (action.status !== "approved" && action.status !== "executed") continue;
       const phase = String(action.detail.phase ?? "");
-      if (phase === "awaiting_mailboxes" || phase === "awaiting_export") {
-        return null;
+      if (phase !== "awaiting_mailboxes" && phase !== "awaiting_export") continue;
+      const at = Date.parse(
+        action.executedAt ?? action.decidedAt ?? action.requestedAt,
+      );
+      if (Number.isFinite(at) && Date.now() - at < 24 * 60 * 60 * 1000) {
+        return {
+          found: [],
+          adopted: [],
+          mapped: this.fleetMappedCount(),
+          ready: false,
+          reason: `an app purchase (${action.id}) is still in flight — resume() owns it`,
+        };
       }
     }
     if (!this.inboxkit) {
@@ -215,6 +227,9 @@ export class CopyCanaryBuyService {
     const workspaceId =
       this.config.genericPoolWorkspaceId || this.config.inboxkitWorkspaceId;
     const rows = await this.inboxkit.listAllMailboxes(workspaceId || undefined);
+    console.log(
+      `[copy-canary-adopt] scanning ${rows.length} InboxKit mailbox(es) for a manual fleet buy`,
+    );
     const planDomains = new Set(
       GENERIC_POOL_PLAN.domains.map((d) => d.domain.toLowerCase()),
     );

@@ -351,6 +351,60 @@ describe("manual fleet adoption (D86)", () => {
     assert.equal(await service.adoptManualPurchase(), null);
   });
 
+  it("a stale stuck app purchase does not block adoption; a fresh one defers", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-stuck-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const stuck = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy the unwarmed canary fleet",
+      proof: "proof",
+      detail: { phase: "awaiting_mailboxes", domains: ["old-a.info", "old-b.info"] },
+    });
+    state.upsertIsolationAction({
+      ...stuck,
+      status: "executed",
+      executedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    const service = makeService({
+      state,
+      inboxkitRows: manualRows,
+      smartleadAccounts: manualEmails.map((email, index) => ({
+        id: 9100 + index,
+        from_email: email,
+      })),
+      warmupCalls: [],
+    });
+    const result = await service.adoptManualPurchase();
+    assert.ok(result);
+    assert.equal(
+      result!.adopted.length,
+      manualEmails.length,
+      "a purchase stuck for days must not block adopting what Josh actually bought",
+    );
+
+    const state2 = new StateStore(
+      `/tmp/canary-adopt-fresh-${process.pid}-${Date.now()}.json`,
+    );
+    await state2.load();
+    state2.upsertIsolationAction({
+      ...buildIsolationAction({
+        kind: "buy_canary_fleet",
+        title: "Buy the unwarmed canary fleet",
+        proof: "proof",
+        detail: { phase: "awaiting_mailboxes", domains: ["new-a.info"] },
+      }),
+      status: "executed",
+      executedAt: new Date().toISOString(),
+    });
+    const service2 = makeService({ state: state2, inboxkitRows: manualRows });
+    const deferred = await service2.adoptManualPurchase();
+    assert.ok(deferred);
+    assert.equal(deferred!.adopted.length, 0);
+    assert.match(deferred!.reason ?? "", /in flight/);
+  });
+
   it("adopts nothing when the candidate set is too big to be a fleet buy", async () => {
     const state = new StateStore(
       `/tmp/canary-adopt-many-${process.pid}-${Date.now()}.json`,

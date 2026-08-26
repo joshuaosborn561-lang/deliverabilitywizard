@@ -30,19 +30,10 @@ export function parseWarmupReputation(
 }
 
 export interface StaffableOptions {
-  /** Email is currently on a recovery hold. */
-  held?: boolean;
-  /** D43 — off-week client inbox or send-clock generic; not staffable. */
+  /** D43 — a resting inbox is not staffable. */
   resting?: boolean;
-  /** D51 — unwarmed campaign-copy canary; extra to the 50 floor. */
+  /** D54/D55 — the canary fleet never staffs. */
   copyCanary?: boolean;
-  /**
-   * Latest known placement inbox rate (0–100). When set and below the
-   * remediation threshold, the sender does not count as inboxing.
-   */
-  inboxRate?: number | null;
-  /** Remediation / inboxing floor (default 80). */
-  inboxThreshold?: number;
 }
 
 /**
@@ -60,19 +51,10 @@ export function isStaffableSender(
   options: StaffableOptions = {},
 ): boolean {
   if (!isConnectedAccount(account)) return false;
-  if (options.held) return false;
   if (options.resting) return false;
   if (options.copyCanary) return false;
   if (account.warmup_details?.is_warmup_blocked) return false;
-
-  const threshold = options.inboxThreshold ?? 80;
-  if (
-    typeof options.inboxRate === "number" &&
-    Number.isFinite(options.inboxRate) &&
-    options.inboxRate < threshold
-  ) {
-    return false;
-  }
-
+  // D130 — the held/recovery tier and its placement-rate bar are gone;
+  // kill-only (D51) means a connected, non-resting, non-canary inbox staffs.
   return true;
 }

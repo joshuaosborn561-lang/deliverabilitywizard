@@ -154,26 +154,15 @@ export class CampaignTopUpService {
             Boolean(row[0]),
         ),
     );
-    const activeSwapPoolEmails = new Set(
-      this.state
-        .listActiveSwaps()
-        .map((swap) => swap.poolEmail.toLowerCase()),
-    );
-    const inboxThreshold = this.config.remediationInboxThreshold;
     const staffableCounts = new Map<number, number>();
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email) continue;
-      const held = Boolean(this.state.getHeldInbox(email));
       const resting = Boolean(this.state.getRestingInbox(email));
-      const heldRate = this.state.getHeldInbox(email)?.inboxRate;
       if (
         !isStaffableSender(account, {
-          held,
           resting,
           copyCanary: this.state.isCopyCanary(email),
-          inboxRate: heldRate,
-          inboxThreshold,
         })
       ) {
         continue;
@@ -321,9 +310,6 @@ export class CampaignTopUpService {
         .map((c) => c.id),
     );
     for (const row of this.state.listPoolMailboxes()) {
-      // A recovery swap is a dedicated one-for-one assignment until the
-      // original recovers. Campaign balancing must never steal it.
-      if (activeSwapPoolEmails.has(row.email.toLowerCase())) continue;
       if (this.state.getRestingInbox(row.email)) continue;
       const on = (campaignsByEmail.get(row.email.toLowerCase()) ?? []).filter(
         (id) => activeIds.has(id),
@@ -443,7 +429,6 @@ export class CampaignTopUpService {
             const domain = key.split("@")[1];
             const poolAccount = accountByEmail.get(key);
             return (
-              !activeSwapPoolEmails.has(key) &&
               !selectedThisRun.has(key) &&
               !(campaignsByEmail.get(key) ?? []).includes(campaign.id) &&
               isReassignable(key, campaign) &&

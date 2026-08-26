@@ -9,6 +9,7 @@ import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isClientInbox } from "./clientInbox.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
+import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
  * D58 / D82 — live staffable floor is half that client's own inboxes.
@@ -38,7 +39,6 @@ export function allowsGenericStaff(
 }
 
 type FloorCountState = Pick<StateStore, "getPoolMailbox"> & {
-  getHeldInbox?: StateStore["getHeldInbox"];
   isCopyCanary?: StateStore["isCopyCanary"];
   getDomainHistory?: StateStore["getDomainHistory"];
 };
@@ -59,10 +59,12 @@ export function countClientInboxesByKey(
     const email = accountEmail(account);
     if (!email) continue;
     if (!isClientInbox(account, email, config, state)) continue;
-    // D99 — held / retired / canary boxes cannot sit or send. They are
-    // not "A+B sitting" (D58) and must not inflate the half-floor.
-    if (state.getHeldInbox?.(email)) continue;
+    // D99 — held / retired / canary boxes cannot staff a campaign. They
+    // are not "A+B sitting" (D58) and must not inflate the half-floor.
+    // A hold is the HOLD-UNTIL tag (D128) — fan-out refuses those boxes,
+    // so a floor that counts them demands staffing nothing can deliver.
     if (state.isCopyCanary?.(email)) continue;
+    if (activeHoldUntilDate(tagNames(account))) continue;
     const domain = email.split("@")[1]?.toLowerCase();
     const history = domain ? state.getDomainHistory?.(domain) : undefined;
     if (isRetiredSendingDomain(domain, history)) continue;

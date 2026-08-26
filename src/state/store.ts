@@ -487,22 +487,6 @@ export class StateStore {
     delete this.state.remediatedKeys[key];
   }
 
-  markHeldInbox(record: HeldInboxRecord): void {
-    this.state.heldInboxes[record.email.toLowerCase()] = record;
-  }
-
-  getHeldInbox(email: string): HeldInboxRecord | undefined {
-    return this.state.heldInboxes[email.toLowerCase()];
-  }
-
-  listHeldInboxes(): HeldInboxRecord[] {
-    return Object.values(this.state.heldInboxes);
-  }
-
-  clearHeldInbox(email: string): void {
-    delete this.state.heldInboxes[email.toLowerCase()];
-  }
-
   clearAllHeldInboxes(): number {
     const n = Object.keys(this.state.heldInboxes).length;
     this.state.heldInboxes = {};
@@ -807,9 +791,6 @@ export class StateStore {
     return this.state.activeSwaps[originalEmail.toLowerCase()];
   }
 
-  listActiveSwaps(): ActiveSwapRecord[] {
-    return Object.values(this.state.activeSwaps);
-  }
 
   /**
    * Drop the original↔generic reservation only. The covering generic stays

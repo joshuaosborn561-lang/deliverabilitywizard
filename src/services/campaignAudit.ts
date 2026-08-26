@@ -32,17 +32,16 @@ import type { SmartleadCampaign } from "../types/index.js";
 /**
  * Standing audit of live campaigns: sender headcount and placement-test cover.
  *
- * Two things can silently degrade a campaign — it loses senders to recovery
- * holds until it is barely sending, or it never picked up a placement test
- * and nothing is watching its inbox rate. Neither shows up in the remediation
- * summary, which reports on mailboxes rather than campaigns.
+ * Two things can silently degrade a campaign — it drops under its staffing
+ * floor, or it never picked up a placement test and nothing is watching its
+ * inbox rate (D130: the old recovery-hold tier is gone; pulls are kill-only).
  */
 
 export interface CampaignAuditRow {
   id: number;
   name: string;
   status: string;
-  /** All campaign memberships (includes disconnected / held). */
+  /** All campaign memberships (includes disconnected). */
   senders: number;
   /** Connected + inboxing senders that count toward the D25 floor. */
   staffable: number;
@@ -60,8 +59,6 @@ export interface SupplyForecast {
   availableNow: number;
   /** Pool mailboxes still serving warmup, with the date each frees up. */
   warmingUntil: Array<{ date: string; count: number }>;
-  /** Held senders and the date their hold expires. */
-  heldUntil: Array<{ date: string; count: number }>;
 }
 
 export interface SignatureQaIssue {
@@ -119,7 +116,6 @@ export class CampaignAuditService {
     // Mailboxes carrying no campaign at all are idle capacity we can place
     // without taking a sender off another campaign.
     const idleByDomain = new Map<string, number>();
-    const inboxThreshold = this.config.remediationInboxThreshold;
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account)?.toLowerCase();
@@ -130,14 +126,8 @@ export class CampaignAuditService {
         if (domain) idleByDomain.set(domain, (idleByDomain.get(domain) ?? 0) + 1);
         continue;
       }
-      const held = this.state.getHeldInbox(email);
       const resting = Boolean(this.state.getRestingInbox(email));
-      const staffable = isStaffableSender(account, {
-        held: Boolean(held),
-        resting,
-        inboxRate: held?.inboxRate,
-        inboxThreshold,
-      });
+      const staffable = isStaffableSender(account, { resting });
       for (const id of ids) {
         senderCounts.set(id, (senderCounts.get(id) ?? 0) + 1);
         if (staffable) {
@@ -208,12 +198,6 @@ export class CampaignAuditService {
             new Date(Date.parse(m.warmedAt!) + warmupMs).toISOString(),
           ),
       ),
-      heldUntil: groupByDate(
-        this.state
-          .listHeldInboxes()
-          .map((h) => h.holdUntil)
-          .filter((d): d is string => !!d),
-      ),
     };
 
     const untested = rows.filter((r) => !r.hasTest);
@@ -257,9 +241,6 @@ export class CampaignAuditService {
     );
     for (const w of supply.warmingUntil) {
       console.log(`[campaign-audit]   ${w.count} pool mailbox(es) warm on ${w.date}`);
-    }
-    for (const h of supply.heldUntil) {
-      console.log(`[campaign-audit]   ${h.count} held sender(s) release on ${h.date}`);
     }
 
     const activeIds = new Set(rows.map((row) => row.id));

@@ -76,23 +76,10 @@ function fakeSlack(): SlackClient {
 
 function fakeState(
   pool: PoolMailboxRecord,
-  activeSwapPoolEmails: string[] = [],
 ): { state: StateStore; current: () => PoolMailboxRecord } {
   let current = { ...pool };
   const state = {
     listPoolMailboxes: () => [current],
-    listActiveSwaps: () =>
-      activeSwapPoolEmails.map((poolEmail, index) => ({
-        originalEmail: `original-${index}@client.info`,
-        originalAccountId: 1000 + index,
-        poolEmail,
-        poolAccountId: current.smartleadAccountId!,
-        clientId: 1,
-        clientName: "Client",
-        campaignIds: [1],
-        swappedAt: new Date().toISOString(),
-        poolPlatform: current.platform,
-      })),
     findReassignablePoolMailbox: (
       platforms: Array<"GOOGLE" | "MICROSOFT">,
       canTake: (email: string) => boolean,
@@ -105,7 +92,6 @@ function fakeState(
     upsertPoolMailbox: (record: PoolMailboxRecord) => {
       current = { ...record };
     },
-    getHeldInbox: () => undefined,
     getRestingInbox: () => undefined,
     getPoolMailbox: () => undefined,
     getDomainHistory: () => undefined,
@@ -119,62 +105,6 @@ function fakeState(
 }
 
 describe("CampaignTopUpService safety", () => {
-  it("never selects a generic dedicated to an active recovery swap", async () => {
-    const pool: PoolMailboxRecord = {
-      email: "swap@pool.info",
-      domain: "pool.info",
-      platform: "GOOGLE",
-      smartleadAccountId: 10,
-      firstName: "Swap",
-      lastName: "Sender",
-      status: "assigned",
-    };
-    const { state } = fakeState(pool, [pool.email]);
-    let addCalls = 0;
-    const smartlead = {
-      listCampaigns: async () => [
-        { id: 2, name: "Goliath Thin", status: "ACTIVE", client_id: 2 },
-      ],
-      listAllEmailAccounts: async () => [
-        {
-          id: 10,
-          from_email: pool.email,
-          created_at: "2026-06-01T00:00:00Z",
-          from_name: "Swap Sender",
-          type: "GMAIL",
-          is_smtp_success: true,
-          is_imap_success: true,
-          campaign_ids: [],
-        },
-        ...Array.from({ length: 100 }, (_, index) => ({
-          id: 300 + index,
-          from_email: `client-${index}@goliath.com`,
-          created_at: "2026-06-01T00:00:00Z",
-          client_id: 2,
-          type: "GMAIL",
-          is_smtp_success: true,
-          is_imap_success: true,
-          campaign_ids: [],
-        })),
-      ],
-      listClients: async () => [{ id: 2, name: "Client B" }],
-      addEmailAccountsToCampaign: async () => {
-        addCalls += 1;
-      },
-    } as unknown as SmartleadClient;
-    const service = new CampaignTopUpService(
-      loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
-      smartlead,
-      fakeSlack(),
-      state,
-    );
-
-    const result = await service.run();
-    assert.equal(addCalls, 0);
-    assert.equal(result.assigned.length, 0);
-    assert.equal(result.unfilled[0]?.shortBy, 50);
-  });
-
   it("ignores disconnected membership when measuring the floor", async () => {
     const pool: PoolMailboxRecord = {
       email: "free@pool.info",

@@ -190,7 +190,7 @@ export class ClientRestService {
       const cohort = cohortByEmail.get(email);
       if (!cohort) continue;
 
-      if (this.state.getHeldInbox(email) || activeHoldUntilDate(tagNames(account))) {
+      if (activeHoldUntilDate(tagNames(account))) {
         result.skipped.push(`${email}: held`);
         continue;
       }

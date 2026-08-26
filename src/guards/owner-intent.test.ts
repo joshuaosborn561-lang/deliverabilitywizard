@@ -2890,7 +2890,7 @@ describe("owner intent — D99 BCP short is a hole", () => {
     );
     assert.match(
       floor,
-      /getHeldInbox/,
+      /activeHoldUntilDate\(tagNames\(account\)\)/,
       stop(
         "Held inboxes do not inflate the half-floor (D99).",
         "countClientInboxesByKey counts HOLD-UNTIL boxes as sitting again.",

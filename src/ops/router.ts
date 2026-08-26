@@ -216,7 +216,6 @@ export function createOpsRouter(opts: {
           generatedAt: new Date().toISOString(),
           totalMailboxes: null,
           sendingMailboxes: null,
-          mailboxesInRecovery: Object.keys(state.heldInboxes).length,
           activeCampaigns: null,
           disconnectedMailboxes: null,
           stale: true,
@@ -239,8 +238,6 @@ export function createOpsRouter(opts: {
         pool: {
           total: pool.length,
           byStatus: poolByStatus,
-          activeSwaps: Object.keys(state.activeSwaps).length,
-          heldInboxes: Object.keys(state.heldInboxes).length,
           restingInboxes: Object.keys(state.restingInboxes ?? {}).length,
           phase: state.poolProvision.phase,
           message: state.poolProvision.lastMessage,

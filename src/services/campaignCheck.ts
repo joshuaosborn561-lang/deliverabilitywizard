@@ -662,9 +662,7 @@ export class CampaignCheckService {
       }
       if (
         isStaffableSender(account, {
-          held: Boolean(this.state.getHeldInbox(email.toLowerCase())),
           resting: Boolean(this.state.getRestingInbox(email.toLowerCase())),
-          inboxThreshold: this.config.remediationInboxThreshold,
         })
       ) {
         serving.push(email.toLowerCase());

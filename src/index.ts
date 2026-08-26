@@ -1568,7 +1568,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       enablePoolProvisioner: config.enablePoolProvisioner,
       poolProvisionPhase: s.poolProvision?.phase ?? "idle",
       poolMailboxCount: Object.keys(s.poolMailboxes).length,
-      activeSwapCount: Object.keys(s.activeSwaps).length,
       requireSpendApproval: config.requireSpendApproval,
       pendingSpendApprovals: Object.values(s.spendApprovals).filter(
         (a) => a.status === "pending",

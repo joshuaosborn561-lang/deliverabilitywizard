@@ -60,7 +60,6 @@ describe("PlacementAuditService", () => {
         },
       } as unknown as SlackClient,
       {
-        listActiveSwaps: () => [],
         getPoolMailbox: () => undefined,
       } as unknown as StateStore,
     );
@@ -78,7 +77,7 @@ describe("PlacementAuditService", () => {
     assert.ok(slackMessages.length >= 1);
   });
 
-  it("reports BCP generics from pool and active swaps", async () => {
+  it("reports BCP generics from the pool", async () => {
     const config = loadConfig({});
     const service = new PlacementAuditService(
       config,
@@ -104,13 +103,6 @@ describe("PlacementAuditService", () => {
       {} as SmartDeliveryClient,
       { send: async () => undefined } as unknown as SlackClient,
       {
-        listActiveSwaps: () => [
-          {
-            originalEmail: "orig@x.com",
-            poolEmail: "pool@crosslaunchco.com",
-            campaignIds: [9],
-          },
-        ],
         getPoolMailbox: (email: string) =>
           email === "a@crossscaleco.com"
             ? { email, status: "assigned", prewarmed: true }
@@ -120,7 +112,6 @@ describe("PlacementAuditService", () => {
 
     const result = await service.runBcpGenerics();
     assert.equal(result.bcpCampaigns.length, 1);
-    assert.ok(result.genericHits.some((h) => h.reason === "active_swap"));
     assert.ok(
       result.genericHits.some(
         (h) =>

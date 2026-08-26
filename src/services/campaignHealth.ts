@@ -214,7 +214,6 @@ export class CampaignHealthService {
   ): CampaignHealthSnapshot[] {
     const membership = new Map<number, number>();
     const staffable = new Map<number, number>();
-    const threshold = this.config.remediationInboxThreshold;
     const clientInboxCounts = countClientInboxesByKey(
       accounts,
       campaigns,
@@ -230,16 +229,12 @@ export class CampaignHealthService {
       for (const id of ids) {
         membership.set(id, (membership.get(id) ?? 0) + 1);
       }
-      const heldRow = this.state.getHeldInbox(email);
       const resting = Boolean(this.state.getRestingInbox(email));
       const copyCanary = this.state.isCopyCanary(email);
       if (
         !isStaffableSender(account, {
-          held: Boolean(heldRow),
           resting,
           copyCanary,
-          inboxRate: heldRow?.inboxRate,
-          inboxThreshold: threshold,
         })
       ) {
         continue;

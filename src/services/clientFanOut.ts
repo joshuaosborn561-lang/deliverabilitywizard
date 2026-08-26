@@ -145,20 +145,14 @@ export class ClientFanOutService {
         const email = accountEmail(account);
         if (!email || !account.id) continue;
 
-        // A benched mailbox must never be fanned back out. Remediation pulls a
-        // sender for bad placement (D5) or bounce (D6) and tags it HOLD-UNTIL;
-        // without this check fan-out re-attaches it to every ACTIVE campaign
-        // for the client on the next 15-minute health pass, so held senders
-        // keep reappearing on live campaigns. Top-up already filters on this.
+        // Never fan a mailbox that must sit out: retired domains stay off
+        // forever (D65), a leftover HOLD-UNTIL tag sits inert until it
+        // expires (D128), rest is rest (D43), and warmup is owed (D139).
         const domain = email.split("@")[1]?.toLowerCase();
         if (
           isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
         ) {
           result.skipped.push(`${email}: retired domain`);
-          continue;
-        }
-        if (this.state.getHeldInbox(email)) {
-          result.skipped.push(`${email}: held`);
           continue;
         }
         if (this.state.getRestingInbox(email)) {

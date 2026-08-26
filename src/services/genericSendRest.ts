@@ -93,7 +93,7 @@ export class GenericSendRestService {
       }
       result.examined += 1;
 
-      if (this.state.getHeldInbox(email) || activeHoldUntilDate(tagNames(account))) {
+      if (activeHoldUntilDate(tagNames(account))) {
         result.skipped.push(`${email}: held`);
         continue;
       }

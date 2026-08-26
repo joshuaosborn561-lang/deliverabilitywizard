@@ -82,18 +82,27 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       [
         { id: 1, from_email: "a@bcp.com", client_id: 9 },
         { id: 2, from_email: "b@bcp.com", client_id: 9 },
-        { id: 3, from_email: "held@bcp.com", client_id: 9 },
+        {
+          id: 3,
+          from_email: "held@bcp.com",
+          client_id: 9,
+          // The live hold mechanism (D128): fan-out refuses this box, so
+          // the floor must not count it as a box that could be sitting.
+          tags: [{ tag_name: "HOLD-UNTIL-2099-01-01" }],
+        },
+        {
+          id: 4,
+          from_email: "released@bcp.com",
+          client_id: 9,
+          tags: [{ tag_name: "HOLD-UNTIL-2020-01-01" }],
+        },
       ],
       [{ id: 1, name: "BCP Healthcare", status: "ACTIVE", client_id: 9 }],
       [{ id: 9, name: "BCP" }],
       { extraGenericMailboxes: [], extraGenericDomains: [] },
-      {
-        getPoolMailbox: () => undefined,
-        getHeldInbox: (email: string) =>
-          email === "held@bcp.com" ? ({ email } as never) : undefined,
-      },
+      { getPoolMailbox: () => undefined },
     );
-    assert.equal(counts.get(clientCountKey(9)), 2);
+    assert.equal(counts.get(clientCountKey(9)), 3, "expired hold counts again");
     assert.equal(
       staffFloorForCampaign({ client_id: 9, name: "BCP Healthcare" }, counts),
       1,

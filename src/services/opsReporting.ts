@@ -73,7 +73,6 @@ export interface FleetSummary {
   generatedAt: string;
   totalMailboxes: number;
   sendingMailboxes: number;
-  mailboxesInRecovery: number;
   activeCampaigns: number;
   disconnectedMailboxes: number;
   stale?: boolean;
@@ -343,7 +342,6 @@ export class FleetSummaryService {
     if (!snapshot) return null;
     return {
       ...snapshot,
-      mailboxesInRecovery: this.state.listHeldInboxes().length,
     };
   }
 
@@ -370,7 +368,6 @@ export class FleetSummaryService {
         Boolean(accountEmail(account)),
       ).length,
       sendingMailboxes: new Set(sending.map((account) => account.id)).size,
-      mailboxesInRecovery: this.state.listHeldInboxes().length,
       activeCampaigns: activeCampaigns.size,
       disconnectedMailboxes: accounts.filter(
         (account) =>

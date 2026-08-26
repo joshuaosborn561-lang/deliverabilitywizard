@@ -3,29 +3,18 @@ import assert from "node:assert/strict";
 import { loadConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
-import type { HeldInboxRecord, StateStore } from "../state/store.js";
+import type { StateStore } from "../state/store.js";
 import { ClientFanOutService } from "./clientFanOut.js";
 
 /**
- * Remediation benches a sender for bad placement (D5) or bounce (D6) and tags
- * it HOLD-UNTIL. Fan-out (D26) is additive across a client's ACTIVE campaigns
- * and runs every 15 minutes, so without a held check it re-attaches benched
- * senders to every campaign for that client — which is how held mailboxes kept
- * reappearing on live BCP campaigns.
+ * A leftover HOLD-UNTIL tag sits inert until it expires (D128). Fan-out (D26)
+ * is additive across a client's ACTIVE campaigns and runs every 15 minutes,
+ * so without the tag check it would re-attach benched senders to every
+ * campaign for that client — which is how held mailboxes kept reappearing on
+ * live BCP campaigns.
  */
 
-function heldRecord(email: string): HeldInboxRecord {
-  return {
-    accountId: 100,
-    email,
-    heldAt: "2026-08-11T00:00:00.000Z",
-    holdUntil: "2026-08-25",
-    tagName: "HOLD-UNTIL-2026-08-25",
-  };
-}
-
 function fixture(opts: {
-  heldEmails?: string[];
   tags?: Array<{ tag_name: string }>;
 }) {
   const adds: Array<[number, number[]]> = [];
@@ -57,12 +46,9 @@ function fixture(opts: {
     updateEmailAccount: async () => undefined,
   } as unknown as SmartleadClient;
 
-  const heldSet = new Set((opts.heldEmails ?? []).map((e) => e.toLowerCase()));
   const state = {
     getPoolMailbox: () => undefined,
-      isCopyCanary: () => false,
-    getHeldInbox: (email: string) =>
-      heldSet.has(email.toLowerCase()) ? heldRecord(email) : undefined,
+    isCopyCanary: () => false,
     getRestingInbox: () => undefined,
     getDomainHistory: (domain?: string) =>
       domain === "retired.info" ? { status: "retired" } : undefined,
@@ -78,27 +64,7 @@ function fixture(opts: {
 }
 
 describe("ClientFanOutService held exclusion", () => {
-  it("never fans out a mailbox held in state", async () => {
-    const { service, adds } = fixture({
-      heldEmails: ["held@boldercyperpartnerbiz.info"],
-    });
-
-    const result = await service.run({ dryRun: false });
-
-    const addedIds = adds.flatMap(([, ids]) => ids);
-    assert.ok(
-      !addedIds.includes(100),
-      "held mailbox must not be re-attached to a campaign",
-    );
-    assert.ok(addedIds.includes(101), "healthy mailbox should still fan out");
-    assert.ok(
-      result.skipped.some((s) => s.includes("held@boldercyperpartnerbiz.info")),
-      "the skip should be reported, not silent",
-    );
-  });
-
   it("never fans out a mailbox carrying an unexpired HOLD-UNTIL tag", async () => {
-    // Held in Smartlead but missing from state — e.g. tagged by the backfill.
     const { service, adds } = fixture({
       tags: [{ tag_name: "HOLD-UNTIL-2099-01-01" }],
     });
@@ -146,8 +112,7 @@ describe("ClientFanOutService held exclusion", () => {
       { send: async () => undefined } as unknown as SlackClient,
       {
         getPoolMailbox: () => undefined,
-      isCopyCanary: () => false,
-        getHeldInbox: () => undefined,
+        isCopyCanary: () => false,
         getRestingInbox: () => undefined,
         getDomainHistory: (domain?: string) =>
           domain === "retired.info" ? { status: "retired" } : undefined,

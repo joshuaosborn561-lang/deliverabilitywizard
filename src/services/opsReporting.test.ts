@@ -206,15 +206,8 @@ describe("PlacementResultsService", () => {
 });
 
 describe("FleetSummaryService", () => {
-  it("counts distinct mailboxes on active campaigns and held recovery rows", async () => {
+  it("counts distinct mailboxes on active campaigns", async () => {
     const state = await stateFixture();
-    state.markHeldInbox({
-      accountId: 3,
-      email: "held@example.com",
-      heldAt: new Date().toISOString(),
-      holdUntil: "2026-08-15",
-      tagName: "HOLD-UNTIL-2026-08-15",
-    });
     const smartlead = {
       listCampaigns: async () => [
         { id: 1, name: "Active", status: "ACTIVE" },
@@ -225,7 +218,7 @@ describe("FleetSummaryService", () => {
         { id: 2, from_email: "paused@example.com", campaign_ids: [2] },
         {
           id: 3,
-          from_email: "held@example.com",
+          from_email: "broken@example.com",
           campaign_ids: [],
           is_smtp_success: false,
         },
@@ -236,7 +229,6 @@ describe("FleetSummaryService", () => {
 
     assert.equal(result.totalMailboxes, 3);
     assert.equal(result.sendingMailboxes, 1);
-    assert.equal(result.mailboxesInRecovery, 1);
     assert.equal(result.activeCampaigns, 1);
     assert.equal(result.disconnectedMailboxes, 1);
   });
@@ -274,13 +266,6 @@ describe("FleetSummaryService", () => {
       activeCampaigns: 9,
       disconnectedMailboxes: 3,
     });
-    state.markHeldInbox({
-      accountId: 2,
-      email: "held@example.com",
-      heldAt: new Date().toISOString(),
-      holdUntil: "2026-08-15",
-      tagName: "HOLD-UNTIL-2026-08-15",
-    });
     const smartlead = {
       listCampaigns: async () => {
         throw new Error("HTTP 429");
@@ -292,7 +277,6 @@ describe("FleetSummaryService", () => {
     const service = new FleetSummaryService(bookOf(smartlead), state);
     const result = await service.get(true);
     assert.equal(result.sendingMailboxes, 420);
-    assert.equal(result.mailboxesInRecovery, 1);
     assert.equal(result.stale, true);
     assert.match(result.error!, /429/);
   });

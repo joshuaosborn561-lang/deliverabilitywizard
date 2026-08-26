@@ -101,13 +101,12 @@ export interface BcpGenericHit {
   campaignId: number;
   campaignName: string;
   email: string;
-  reason: "pool" | "prewarmed_domain" | "prewarmed_name" | "active_swap";
+  reason: "pool" | "prewarmed_domain" | "prewarmed_name";
 }
 
 export interface BcpAuditResult {
   bcpCampaigns: Array<{ id: number; name: string; senders: number }>;
   genericHits: BcpGenericHit[];
-  activeSwapsOnBcp: number;
   errors: string[];
 }
 
@@ -613,7 +612,6 @@ export class PlacementAuditService {
     const result: BcpAuditResult = {
       bcpCampaigns: [],
       genericHits: [],
-      activeSwapsOnBcp: 0,
       errors: [],
     };
 
@@ -652,21 +650,6 @@ export class PlacementAuditService {
       senders: sendersByCampaign.get(c.id) ?? 0,
     }));
 
-    for (const swap of this.state.listActiveSwaps()) {
-      const onBcp = swap.campaignIds.filter((id) => bcpIds.has(id));
-      if (!onBcp.length) continue;
-      result.activeSwapsOnBcp += 1;
-      for (const campaignId of onBcp) {
-        const campaign = bcp.find((c) => c.id === campaignId);
-        result.genericHits.push({
-          campaignId,
-          campaignName: campaign?.name ?? `campaign ${campaignId}`,
-          email: swap.poolEmail,
-          reason: "active_swap",
-        });
-      }
-    }
-
     for (const account of accounts) {
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;
@@ -698,7 +681,6 @@ export class PlacementAuditService {
     console.log("[bcp-audit] Done", {
       campaigns: result.bcpCampaigns.length,
       genericHits: result.genericHits.length,
-      activeSwapsOnBcp: result.activeSwapsOnBcp,
     });
 
     return result;

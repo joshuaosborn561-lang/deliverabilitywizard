@@ -162,7 +162,6 @@ export class SlackClient {
       bouncePercent: number | null;
       spamPercent: number | null;
       activeInboxes: number;
-      heldInboxes: number;
       restingInboxes?: number;
       genericSpare?: number;
     }>;

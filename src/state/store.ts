@@ -224,6 +224,8 @@ export interface AppState {
   smartleadAutopauseOff: Record<string, string>;
   /** D84 — ISO time of the last read-verify sweep of bounce autopause. */
   lastAutopauseVerifyAt: string | null;
+  /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
+  bounceSnapshots: Record<string, { bounced: number; sent: number; at: string }>;
   /** D84 — per-stage watchdog: last success / failure per named loop. */
   stageHealth: Record<string, StageHealthRecord>;
   /**
@@ -355,6 +357,7 @@ const EMPTY_STATE: AppState = {
   genericBackfillApprovals: {},
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
+  bounceSnapshots: {},
   stageHealth: {},
   canaryFleetDown: null,
 };
@@ -406,6 +409,7 @@ export class StateStore {
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
+        bounceSnapshots: parsed.bounceSnapshots ?? {},
         stageHealth: parsed.stageHealth ?? {},
         canaryFleetDown: parsed.canaryFleetDown ?? null,
       };
@@ -996,6 +1000,19 @@ export class StateStore {
 
   setLastAutopauseVerifyAt(iso: string): void {
     this.state.lastAutopauseVerifyAt = iso;
+  }
+
+  getBounceSnapshot(
+    campaignId: number,
+  ): { bounced: number; sent: number; at: string } | undefined {
+    return this.state.bounceSnapshots[String(campaignId)];
+  }
+
+  setBounceSnapshot(
+    campaignId: number,
+    snapshot: { bounced: number; sent: number; at: string },
+  ): void {
+    this.state.bounceSnapshots[String(campaignId)] = snapshot;
   }
 
   /** D84 — watchdog bookkeeping for one named stage. */

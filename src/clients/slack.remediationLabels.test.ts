@@ -141,4 +141,32 @@ describe("remediation / placement Slack is client-level (D39)", () => {
     assert.doesNotMatch(sent[0]!, /on \/ .* off/);
     assert.doesNotMatch(sent[0]!, /not enough warmed spares/i);
   });
+
+  it("D89: EOD brief names draft campaigns that already have leads", async () => {
+    const { client, sent } = capture();
+    await client.notifyClientDayBrief({
+      date: "2026-08-26",
+      totalSent: 10,
+      rows: [
+        {
+          clientName: "BCP",
+          sent: 10,
+          bouncePercent: 1,
+          spamPercent: 0,
+          activeInboxes: 22,
+          heldInboxes: 0,
+        },
+      ],
+      errors: [],
+      endOfDay: true,
+      loadedDrafts: [
+        { id: 99, name: "Parlay3 Launch", remaining: 2400 },
+      ],
+    });
+    assert.match(sent[0]!, /Leads loaded, not sending \(1\)/);
+    assert.match(sent[0]!, /Parlay3 Launch \(#99\)/);
+    assert.match(sent[0]!, /2,400 leads sitting in draft/);
+    assert.doesNotMatch(sent[0]!, /staffable/i);
+    assert.doesNotMatch(sent[0]!, /DRAFTED/);
+  });
 });

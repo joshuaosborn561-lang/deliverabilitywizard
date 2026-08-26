@@ -58,6 +58,7 @@ function samePending(
     );
   }
   if (next.kind === "add_signature_tag") {
+    if (existing.detail.supersededByBulk === true) return false;
     const key = (action: IsolationActionRecord): string =>
       signatureCampaignIdsOf(action)
         .sort((a, b) => a - b)
@@ -158,10 +159,15 @@ export function signatureCampaignIdsOf(action: {
   return ids;
 }
 
+function isSupersededSignatureAsk(action: IsolationActionRecord): boolean {
+  return action.detail.supersededByBulk === true;
+}
+
 /**
- * D85/D87 — campaigns already owned by a live signature ask: pending or
+ * D85/D87/D89 — campaigns already owned by a live signature ask: pending or
  * approved, executed within a day, or denied within a week. A new ask only
- * covers campaigns outside this set.
+ * covers campaigns outside this set. Pending singles collapsed into a bulk
+ * ask (D89) do not own their campaigns.
  */
 export function coveredSignatureCampaigns(
   actions: IsolationActionRecord[],
@@ -170,6 +176,7 @@ export function coveredSignatureCampaigns(
   const covered = new Set<number>();
   for (const action of actions) {
     if (action.kind !== "add_signature_tag") continue;
+    if (isSupersededSignatureAsk(action)) continue;
     let live = false;
     if (action.status === "pending" || action.status === "approved") {
       live = true;
@@ -184,6 +191,35 @@ export function coveredSignatureCampaigns(
     for (const id of signatureCampaignIdsOf(action)) covered.add(id);
   }
   return covered;
+}
+
+/**
+ * D89 — pending single-campaign %signature% asks that still own any of
+ * `campaignIds` are superseded so one bulk ask can cover the set.
+ */
+export function supersedePendingSingleSignatureAsks(
+  store: StateStore,
+  campaignIds: number[],
+  now = new Date().toISOString(),
+): number {
+  const wanted = new Set(campaignIds);
+  let collapsed = 0;
+  for (const action of store.listIsolationActions()) {
+    if (action.kind !== "add_signature_tag") continue;
+    if (action.status !== "pending") continue;
+    if (Array.isArray(action.detail.campaignIds)) continue;
+    if (!signatureCampaignIdsOf(action).some((id) => wanted.has(id))) continue;
+    store.upsertIsolationAction({
+      ...action,
+      status: "denied",
+      decidedAt: now,
+      decidedBy: "system",
+      error: "Collapsed into one %signature% ask.",
+      detail: { ...action.detail, supersededByBulk: true },
+    });
+    collapsed += 1;
+  }
+  return collapsed;
 }
 
 export function suggestedCopySwap(element: string): string {

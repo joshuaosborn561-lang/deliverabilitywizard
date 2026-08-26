@@ -86,4 +86,77 @@ describe("pod controls", () => {
     );
     assert.deepEqual(created[0]?.provider_ids, [2, 20, 21]);
   });
+
+  it("D89: a stored test that is no longer living is recreated", async () => {
+    const state = new StateStore(
+      `/tmp/dw-pod-dead-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const config = loadConfig({} as NodeJS.ProcessEnv);
+    const created: string[] = [];
+    let listed: Array<{
+      id: string;
+      spam_test_id: string;
+      test_name: string;
+      status: string;
+    }> = [];
+    const service = new PodControlService(
+      config,
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Acme", status: "ACTIVE", client_id: 9 },
+          { id: 99, name: "Pod control shell", status: "PAUSED" },
+        ],
+        listClients: async () => [{ id: 9, name: "Acme" }],
+        listAllEmailAccounts: async () => [
+          {
+            id: 1,
+            from_email: "a@client.com",
+            client_id: 9,
+            campaign_ids: [1],
+          },
+        ],
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Quick check-in" },
+        ],
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateCampaignSequences: async () => undefined,
+        updateCampaignStatus: async () => undefined,
+      } as never,
+      {
+        listFolders: async () => [],
+        createFolder: async () => ({ id: 3 }),
+        listTests: async () => listed,
+        resolveProviderIds: async () => [2, 20, 21],
+        getTestDetails: async () => ({ provider_id: [2, 20, 21] }),
+        createAutomatedPlacement: async () => {
+          const id = `pod-${created.length + 1}`;
+          created.push(id);
+          return { id };
+        },
+        getSenderAccountReport: async () => [],
+      } as never,
+      { notifyPodControls: async () => undefined } as never,
+      state,
+    );
+
+    const first = await service.run({ dryRun: false });
+    assert.ok(first.testsCreated.length >= 1);
+    const stored = state.listPodControls();
+    assert.ok(stored.length >= 1);
+    listed = stored.map((row) => ({
+      id: row.spamTestId,
+      spam_test_id: row.spamTestId,
+      test_name: "Pod control leftover",
+      status: "completed",
+    }));
+
+    const second = await service.run({ dryRun: false });
+    assert.ok(
+      second.testsCreated.length >= 1,
+      "a completed stored pod-control test is not coverage — recreate it",
+    );
+  });
 });

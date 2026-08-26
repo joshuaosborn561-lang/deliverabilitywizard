@@ -30,6 +30,7 @@ import {
   buildIsolationAction,
   coveredSignatureCampaigns,
   requestIsolationAction,
+  supersedePendingSingleSignatureAsks,
 } from "../lib/isolationActions.js";
 import {
   hasLivingUnwarmedCopyCanary,
@@ -335,15 +336,21 @@ export class CampaignCheckService {
   }
 
   /**
-   * D85/D87 — missing %signature% blocks first-check, so it must have an
-   * owner. Campaigns not already covered by a live ask get ONE Slack ask:
-   * a single-campaign ask when one campaign is blocked, a bulk ask (one tap
-   * fixes all of them) when several are. Appending the tag is the only edit.
+   * D85/D87/D89 — missing %signature% blocks first-check, so it must have
+   * an owner. Several blocked campaigns become ONE Slack ask (one tap
+   * appends the tag everywhere). Pending pre-D87 singles that still own
+   * those campaigns are collapsed first so they cannot strand a bulk.
    */
   private async maybeAskSignatureFix(
     blocked: Array<{ campaignId: number; name: string; steps: string[] }>,
   ): Promise<void> {
     if (!this.slack || !blocked.length) return;
+    if (blocked.length >= 2) {
+      supersedePendingSingleSignatureAsks(
+        this.state,
+        blocked.map((row) => row.campaignId),
+      );
+    }
     const covered = coveredSignatureCampaigns(this.state.listIsolationActions());
     const open = blocked.filter((row) => !covered.has(row.campaignId));
     if (!open.length) return;

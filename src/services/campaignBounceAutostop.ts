@@ -1,11 +1,12 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { statsFromAnalytics, ymdUtc } from "../lib/campaignDayStats.js";
+import { SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT } from "../lib/campaignBounceAutostop.js";
 import {
-  SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT,
-  campaignBounceAutostopThreshold,
-  shouldAutostopCampaignForBounce,
-} from "../lib/campaignBounceAutostop.js";
+  shouldPauseCampaignForBounceBurst,
+  shouldPauseCampaignForBounceRate,
+  type BouncePauseReason,
+} from "../lib/campaignBouncePause.js";
 import { readBounceAutopausePercent } from "../lib/bounceAutopause.js";
 import { isPodControlShellCampaign } from "../lib/podControlShell.js";
 import { sleep } from "../lib/http.js";
@@ -27,8 +28,10 @@ export interface BounceAutostopPause {
   campaignId: number;
   campaignName: string;
   sent: number;
+  bounces: number;
   bounceRate: number;
-  threshold: number;
+  reason: BouncePauseReason;
+  burstBounces?: number;
 }
 
 export interface CampaignBounceAutostopResult {
@@ -64,10 +67,11 @@ function mergeSendBounce(...payloads: unknown[]): {
 }
 
 /**
- * D80 — pause ACTIVE campaigns on our send-volume bounce bands.
- * Does not START anyone (D40). A bounce pause stays paused until a human
- * starts it. After a successful scan, Smartlead bounce_autopause_threshold
- * is converged to 100 (off).
+ * D90 — pause ACTIVE campaigns over 10% bounce after 1k leads emailed, or
+ * more than 10 new bounces in the last 10 minutes. Does not START anyone
+ * (D40). D88's 20%/7% bands stay retired. After the scan, Smartlead
+ * bounce_autopause_threshold is converged to 100 (off). D29 still
+ * investigates an already-PAUSED campaign.
  */
 export class CampaignBounceAutostopService {
   constructor(
@@ -101,6 +105,8 @@ export class CampaignBounceAutostopService {
     }
 
     const end = ymdUtc(new Date());
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
     const active = campaigns.filter((campaign) => {
       if (isPodControlShellCampaign(campaign, this.config.podControlShellCampaignId)) {
         return false;
@@ -111,9 +117,6 @@ export class CampaignBounceAutostopService {
     for (const campaign of active) {
       result.scanned += 1;
       try {
-        // One read per campaign; statistics only as a fallback when the
-        // analytics endpoint gave nothing. The old parallel double-read cost
-        // ~576 requests/hour on its own.
         const analytics = await this.smartlead
           .getCampaignAnalyticsByDate(campaign.id, lifetimeStart(campaign), end)
           .catch(() => null);
@@ -123,22 +126,33 @@ export class CampaignBounceAutostopService {
             : await this.smartlead
                 .getCampaignStatistics(campaign.id)
                 .catch(() => null);
-        const bands = {
-          minSent: this.config.bounceAutostopMinSent,
-          highVolumeSent: this.config.bounceAutostopHighVolumeSent,
-          midPercent: this.config.bounceAutostopMidPercent,
-          highPercent: this.config.bounceAutostopHighPercent,
-        };
         const { sent, bounces, bounceRate } = mergeSendBounce(analytics, statistics);
-        const threshold = campaignBounceAutostopThreshold(sent, bands);
-        if (threshold == null) {
-          result.skipped += 1;
-          console.log(
-            `[bounce-autostop] skip #${campaign.id} ${campaign.name} sent=${sent} (need ${this.config.bounceAutostopMinSent})`,
-          );
-          continue;
-        }
-        if (!shouldAutostopCampaignForBounce(sent, bounceRate, bands, bounces)) {
+        const previous = this.state?.getBounceSnapshot(campaign.id);
+        const burst = shouldPauseCampaignForBounceBurst(
+          previous,
+          bounces,
+          nowMs,
+          this.config.bounceBurstCount,
+        );
+        const rate = shouldPauseCampaignForBounceRate(
+          sent,
+          bounces,
+          this.config.bouncePauseMinLeads,
+          this.config.bouncePauseRatePercent,
+        );
+        const reason: BouncePauseReason | null = burst.trip
+          ? "burst"
+          : rate
+            ? "rate"
+            : null;
+
+        this.state?.setBounceSnapshot(campaign.id, {
+          bounced: bounces,
+          sent,
+          at: nowIso,
+        });
+
+        if (!reason) {
           result.skipped += 1;
           continue;
         }
@@ -147,11 +161,15 @@ export class CampaignBounceAutostopService {
           campaignId: campaign.id,
           campaignName: String(campaign.name ?? campaign.id),
           sent,
+          bounces,
           bounceRate,
-          threshold,
+          reason,
+          burstBounces: burst.trip ? burst.delta : undefined,
         };
         console.log(
-          `[bounce-autostop] PAUSE #${finding.campaignId} ${finding.campaignName} sent=${sent} bounce=${bounceRate.toFixed(2)}% threshold=${threshold}%${dryRun ? " (dry-run)" : ""}`,
+          reason === "burst"
+            ? `[bounce-autostop] PAUSE #${finding.campaignId} ${finding.campaignName} burst=${finding.burstBounces} new bounces in 10m sent=${sent}${dryRun ? " (dry-run)" : ""}`
+            : `[bounce-autostop] PAUSE #${finding.campaignId} ${finding.campaignName} sent=${sent} bounce=${bounceRate.toFixed(2)}% (over 10% after 1k)${dryRun ? " (dry-run)" : ""}`,
         );
         if (!dryRun) {
           await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
@@ -166,6 +184,10 @@ export class CampaignBounceAutostopService {
 
     if (this.config.enableBounceAutopauseConverge) {
       await this.disableSmartleadAutopause(campaigns, dryRun, result);
+    }
+
+    if (!dryRun) {
+      await this.state?.save();
     }
 
     console.log(
@@ -206,7 +228,6 @@ export class CampaignBounceAutostopService {
       if (alreadyOff && !verifyDue) continue;
       try {
         if (alreadyOff && verifyDue) {
-          // Read-verify: rewrite only when Smartlead shows drift.
           const settings = await this.smartlead
             .getCampaignSettings(campaign.id)
             .catch(() => null);

@@ -6,6 +6,7 @@ import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import { firstCheckPassed } from "../lib/campaignCheck.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { isPocClient } from "../lib/pocClient.js";
+import { buildIsolationAction } from "../lib/isolationActions.js";
 import { StateStore } from "../state/store.js";
 import { CampaignCheckService } from "./campaignCheck.js";
 
@@ -495,6 +496,72 @@ describe("CampaignCheckService", () => {
         .listIsolationActions()
         .filter((row) => row.kind === "add_signature_tag").length,
       1,
+    );
+  });
+
+  it("D89: pending single %signature% asks collapse into one bulk ask", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "add_signature_tag",
+        title: "%signature% missing on SalesGlider Nurture",
+        proof: "old single",
+        detail: { campaignId: 81, campaignName: "SalesGlider Nurture" },
+      }),
+    );
+    state.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "add_signature_tag",
+        title: "%signature% missing on Parlay2 Sports Offer",
+        proof: "old single",
+        detail: { campaignId: 82, campaignName: "Parlay2 Sports Offer" },
+      }),
+    );
+    const asked: Array<{ kind: string }> = [];
+    const slack = {
+      notifyIsolationAction: async (details: { kind: string }) => {
+        asked.push({ kind: details.kind });
+      },
+    } as never;
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 81, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
+          { id: 82, name: "Parlay2 Sports Offer", status: "ACTIVE", client_id: 548611 },
+          { id: 83, name: "Positive", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [goliath],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+        ],
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      slack,
+    );
+
+    await service.run({ mode: "all" });
+    assert.equal(asked.length, 1, "collapsed singles must become one bulk ask");
+    const pending = state
+      .listIsolationActions()
+      .filter((row) => row.kind === "add_signature_tag" && row.status === "pending");
+    assert.equal(pending.length, 1);
+    assert.deepEqual(
+      [...((pending[0]?.detail.campaignIds as number[]) ?? [])].sort(),
+      [81, 82, 83],
+    );
+    assert.equal(
+      state
+        .listIsolationActions()
+        .filter(
+          (row) =>
+            row.kind === "add_signature_tag" &&
+            row.detail.supersededByBulk === true,
+        ).length,
+      2,
     );
   });
 

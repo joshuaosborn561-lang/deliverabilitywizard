@@ -97,17 +97,18 @@ enabled. The 15-minute gap pass turns it back off if it drifted on (D83).
 
 ## Rotation thresholds
 
-**D51 / D79 / D80 — kill-only pull.** Placement below 80% same-ESP and the warmup
+**D51 / D79 / D88 / D90 — kill-only pull.** Placement below 80% same-ESP and the warmup
 / HOLD-UNTIL gate do **not** pull a mailbox off an ACTIVE campaign. There
 is no per-sender bounce pull — D5's 5% after 50 sends is retired. Those
-numbers stay isolation readings and logs. Live bounce control is **ours**:
-skip under 100 campaign sends, **20%** from 100–499, **7%** from 500 up,
-every 10 minutes (D80). Do **not** turn Smartlead `bounce_autopause_threshold`
-on; converge it to 100 (off) after autostop has scanned. The only automatic
-live mailbox removal is Josh killing that mailbox / retiring
-its domain; health backfills to the half-client floor. Never use the blended / all-ESP
-SmartDelivery score as a rotation signal (D32). Bounce at 2% is a log,
-not a Slack (D71).
+numbers stay isolation readings and logs. Do **not** pause a campaign on
+a 20%/7% bounce band (D78/D80 retired by D88). The 10-minute loop pauses
+an ACTIVE campaign over **10%** bounce after **1,000** leads emailed, or
+more than **10** new bounces in 10 minutes (D90). Do **not** turn Smartlead
+`bounce_autopause_threshold` on; that same loop converges it to 100 (off)
+on drift. The only automatic live mailbox removal is Josh killing that
+mailbox / retiring its domain; health backfills to the half-client floor.
+Never use the blended / all-ESP SmartDelivery score as a rotation signal
+(D32). Bounce at 2% is a log, not a Slack (D71).
 
 Each sending inbox must be on a living **known-good** canary (pod-control
 test). Each ACTIVE campaign gets a SmartDelivery **canary-copy test** from
@@ -129,7 +130,7 @@ may be resumed by health, and never when the campaign is **STOPPED**.
 Campaigns are topped up to **half that client's inboxes** (staffable
 senders: connected SMTP/IMAP, not held, and not resting). Disconnected membership
 does not count (D25). Health also runs same-client fan-out and client rest (D43). `CRON_HEALTH`
-every 15m; bounce autostop every 10m (D80); Measure on the slower monitor.
+every 15m; bounce autostop every 10m (Smartlead off-write only, D88); Measure on the slower monitor.
 `TOP_UP_EXCLUDE_CAMPAIGNS` holds ids or name fragments to leave alone —
 currently the MSRS, HVAC and Roofers campaigns, listed by exact id so a
 future campaign with a similar name is not skipped by accident.
@@ -196,7 +197,14 @@ sweep, not a fact of life:
 - **A canary fleet bought by hand in InboxKit is adopted automatically**
   (D86): registered `copyCanary` (never staffing supply), exported to
   Smartlead, warmup off. Runs at boot and on the monitor pass while the
-  fleet is not ready. Do not hand-edit state to register canaries.
+  fleet is not ready. Attach campaign-copy tests on that same pass (D89),
+  not only inside a healthy health run. Do not hand-edit state to register
+  canaries.
+- **Pending single `%signature%` asks collapse into one bulk ask** when
+  two or more campaigns are blocked (D89). Pre-D87 singles do not own
+  those campaigns.
+- **EOD names DRAFT campaigns that already have leads** and are not
+  sending (D89). Does not import and does not START them.
 
 ## When setting up a campaign
 
@@ -209,7 +217,7 @@ Follow these rails (same text lives in `campaignSetupPrompt()` and `/ops`):
 5. 21 days from InboxKit import is the warmed-vs-unwarmed clock. Pool supply is warmed only. Each sending inbox must be on a living known-good copy canary. Each ACTIVE campaign must have its copy on the unwarmed fleet canary. Pre-warmed fleets skip that wait.
 6. Every mailbox: 30 campaign emails/day (warmups not included), 10-minute gap, warmup ON (except the D54 canary fleet), plain Name / Brand signature.
 7. Placement tests are one recurring SmartDelivery schedule per campaign (`every_days: 1`), not a new test each morning. No plan quota (unlimited). Still ≤50 senders per test (SmartDelivery API limit).
-8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only. Bounce autostop (D80) pauses are not pendingResumes; leave Smartlead bounce auto-pause off.
+8. Never auto-resume a campaign someone paused or stopped by hand. Protective pauses we took stay in `pendingResumes` only. Bounce autostop pauses on D90 trips (10% after 1k, or >10 bounces in 10 minutes) and those are not pendingResumes; leave Smartlead bounce auto-pause off.
 9. Do not spend, purge, or bypass warmup/holds from chat. Approvals stay on.
 10. After launch: health (15m) will rest, top-up, and fan-out in the background. Slack only pages a burned domain, an isolated word, or the EOD send/spam scoreboard (D71). Watch `[client-rest]` / `[health]` logs for the rest.
 

@@ -1925,3 +1925,112 @@ the same low-risk edit everywhere.
 **Guards.** Multiple uncovered blocked campaigns produce exactly one ask
 carrying `campaignIds`; a second sweep does not re-ask; a bulk approve
 writes every listed campaign; owner-intent D87.
+---
+
+## D88 — Campaign bounce pause bands are retired
+
+**Decision.** The wizard does **not** pause an ACTIVE campaign on a
+bounce band. D78's Smartlead 20%/7% write is already superseded (D80).
+D80's own pause rule — skip under 100 lifetime sends, **20%** from
+100–499, **7%** from 500 — is retired here. The 10-minute
+`campaignBounceAutostop` loop stays, and it only writes Smartlead
+`bounce_autopause_threshold` to **100** (off) on drift. It does not
+read analytics for a pause decision and it does not call
+`updateCampaignStatus`.
+
+Unchanged:
+- D79 — no per-sender bounce pull
+- D29 — investigate an already-PAUSED campaign over 7%
+- D40 — do not auto-START a manual pause
+- Smartlead autopause stays off at 100
+
+The helper functions that compute the old 20/7 bands may remain in
+`lib/campaignBounceAutostop.ts`. They are not a live write rule.
+
+**Why.** Josh (2026-08-26): "Bounce: 20% under 1k / 7% over,
+campaign-level, our bands (D78/D79/D80) is legacy delete it." The
+campaign-level pause was still the live bounce rule after D80 moved
+it off Smartlead and onto us. That is the leftover.
+
+**Tradeoff.** A hot campaign can keep sending until a human pauses it
+or D29 investigates after someone already paused it. Accepted: the
+bands paused campaigns on a rate Smartlead's own autopause was
+deliberately turned off to ignore, and the 429 storm from stacked
+boot kicks made the 10-minute pause loop a second reader we did not
+need.
+
+**Guards.** Autostop service does not pause; no analytics read for a
+band; Smartlead off-write remains; owner-intent D88.
+---
+
+## D89 — Close the leftover canon holes
+
+**Decision.** Five leftovers from the canon audit ship together:
+
+1. **Known-good coverage is grown, not only reported.** A stored
+   pod-control test that is no longer living is not coverage. Health
+   runs a throttled `pod-cover` pass (hourly) when
+   `inbox_missing_known_good` findings exist.
+2. **Smartlead reads share the write queue.** `listCampaigns`,
+   `listClients`, and `listAllEmailAccounts` go through `mutate()`.
+   Account-page sleep is 400ms. Boot kicks are staggered (health 3
+   minutes, pool 8 minutes); bounce and reconnect do not boot-kick.
+3. **Canary attach is independent of a healthy health pass.** After
+   adopt (boot + monitor), `copyCanary.attach()` runs whenever the
+   fleet has emails, even if adopt returned nothing because the
+   fleet was already mapped.
+4. **Pending single `%signature%` asks collapse into one bulk ask.**
+   D87 only applied to new findings; pre-D87 singles still owned
+   those campaigns. Two or more blocked campaigns supersede the
+   overlapping pending singles (`supersededByBulk`) and post one
+   bulk *Add %signature%* covering the whole set.
+5. **EOD names DRAFT/DRAFTED campaigns that already have remaining
+   leads.** Leads loaded, nothing sending. Does not import (D52) and
+   does not START (D40).
+
+**Why.** Josh (2026-08-26): "see this is wait im talking about you
+still have crap in there that is old even though i just told you to
+audit it. fix 1 2 3 give me a bulk approve for 4. add 7." The audit
+listed those holes; D87 left the already-pending singles in place.
+
+**Tradeoff.** Collapsing a pending single denies it as system so one
+button remains. A human who wanted to approve only one of those
+campaigns loses that path — same all-or-nothing tradeoff as D87.
+Staggered boots mean the first health pass is ~3 minutes after
+deploy, not immediate.
+
+**Guards.** Living-test skip; queued list reads; attach-after-adopt;
+pending-single collapse; EOD `loadedDrafts`; owner-intent D89.
+---
+
+## D90 — Pause over 10% after 1k leads, or more than 10 bounces in 10 minutes
+
+**Decision.** The 10-minute bounce loop pauses an ACTIVE campaign when
+either trip hits:
+
+- **Rate:** lifetime bounce is **strictly over 10%** and the campaign
+  has emailed **1,000 or more** leads (`sent_count`). 100/1000 is 10%
+  and must not pause.
+- **Burst:** more than **10** new bounces since the last snapshot,
+  and that snapshot is still inside the 10-minute window (15 minutes
+  allowed for cron drift). The first reading is a baseline, not a pause.
+
+The old 20%/7% bands stay retired (D88). Smartlead
+`bounce_autopause_threshold` stays **100** (off). A bounce pause is
+not a `pendingResume` — a human STARTs it (D40). D29 still
+investigates an already-PAUSED campaign over 7%. D79 still forbids
+per-sender bounce pull. No Slack (D71); the pause is in logs.
+
+**Why.** Josh (2026-08-26): "oh no it was supposed to basically auto
+pause anything over 10% and 1k leads, or more than 10 bounces in 10
+minutes." D88 deleted the leftover 20/7 pause and left no live pause
+behind. This is the rule that was meant to replace it.
+
+**Tradeoff.** A campaign under 1,000 sends can still run at 20%+
+bounce until 11 bounces land in one 10-minute window. Accepted: that
+is the burst trip, and a tiny sample's percent is the noise D80
+already refused to treat as evidence.
+
+**Guards.** Rate helper (1k / over 10%); burst helper (>10 in window);
+service pauses on those trips only; no 20/7 import; no START;
+owner-intent D90.

@@ -2703,3 +2703,258 @@ describe("owner intent — D86 hand-bought canary fleet is adopted", () => {
     );
   });
 });
+
+describe("owner intent — D88 bounce pause bands retired", () => {
+  it("D88: the 20/7 pause bands stay unused; Smartlead off-write stays", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.doesNotMatch(
+      autostop,
+      /shouldAutostopCampaignForBounce/,
+      stop(
+        "The bounce loop does not score a 20/7 band (D88).",
+        "campaignBounceAutostop.ts still imports shouldAutostopCampaignForBounce.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /bounce_autopause_threshold/,
+      stop(
+        "The bounce loop still writes Smartlead autopause off (D80/D88).",
+        "campaignBounceAutostop.ts lost the Smartlead off-write.",
+      ),
+    );
+
+    const { shouldAutostopCampaignForBounce } = await import(
+      "../lib/campaignBounceAutostop.js"
+    );
+    assert.equal(
+      shouldAutostopCampaignForBounce(200, 50),
+      true,
+      stop(
+        "The retired 20/7 helpers may stay in lib/ (D80/D88).",
+        "shouldAutostopCampaignForBounce no longer encodes the old band — leave the helper, do not use it.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D90 bounce pause is 10% after 1k or 10-in-10m", () => {
+  it("D90: pause over 10% after 1k leads, or more than 10 bounces in 10 minutes", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    assert.equal(
+      defaults.bouncePauseMinLeads,
+      1000,
+      stop(
+        "Rate pause needs 1,000 leads emailed (D90).",
+        `Min leads is now ${defaults.bouncePauseMinLeads}.`,
+      ),
+    );
+    assert.equal(
+      defaults.bouncePauseRatePercent,
+      10,
+      stop(
+        "Rate pause is over 10% (D90).",
+        `Rate is now ${defaults.bouncePauseRatePercent}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.bounceBurstCount,
+      10,
+      stop(
+        "Burst pause is more than 10 new bounces in 10 minutes (D90).",
+        `Burst count is now ${defaults.bounceBurstCount}.`,
+      ),
+    );
+
+    const { shouldPauseCampaignForBounceRate, shouldPauseCampaignForBounceBurst } =
+      await import("../lib/campaignBouncePause.js");
+    assert.equal(
+      shouldPauseCampaignForBounceRate(1000, 100),
+      false,
+      stop(
+        "Exactly 10% after 1k must not pause (D90).",
+        "shouldPauseCampaignForBounceRate now trips at 10% exactly.",
+      ),
+    );
+    assert.equal(
+      shouldPauseCampaignForBounceRate(1000, 101),
+      true,
+      stop(
+        "Over 10% after 1k pauses (D90).",
+        "shouldPauseCampaignForBounceRate no longer trips at 101/1000.",
+      ),
+    );
+    assert.equal(
+      shouldPauseCampaignForBounceRate(150, 40),
+      false,
+      stop(
+        "The old 20/7 mid-volume sample is not a pause (D88/D90).",
+        "A 150-send 20%+ campaign is being paused on the retired band.",
+      ),
+    );
+    const now = Date.parse("2026-08-26T02:10:00.000Z");
+    assert.equal(
+      shouldPauseCampaignForBounceBurst(
+        { bounced: 4, sent: 40, at: "2026-08-26T02:00:00.000Z" },
+        15,
+        now,
+      ).trip,
+      true,
+      stop(
+        "More than 10 new bounces in 10 minutes pauses (D90).",
+        "The burst helper no longer trips on +11 in 10 minutes.",
+      ),
+    );
+
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /shouldPauseCampaignForBounceRate/,
+      stop(
+        "The 10-minute loop uses the D90 rate trip (D90).",
+        "campaignBounceAutostop.ts lost the 10%/1k pause.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /shouldPauseCampaignForBounceBurst/,
+      stop(
+        "The 10-minute loop uses the D90 burst trip (D90).",
+        "campaignBounceAutostop.ts lost the 10-bounces-in-10-minutes pause.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /updateCampaignStatus\(campaign\.id, "PAUSED"\)/,
+      stop(
+        "A D90 trip pauses the campaign (D90).",
+        "campaignBounceAutostop.ts no longer writes PAUSED.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /updateCampaignStatus\([^)]*START/,
+      stop(
+        "A bounce pause is not auto-resumed (D40/D90).",
+        "campaignBounceAutostop.ts STARTs a campaign again.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D89 leftover canon holes", () => {
+  it("D89: living known-good, queued reads, attach-after-adopt, bulk collapse, drafts on EOD", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const pod = await read("../services/podControls.ts");
+    assert.match(
+      pod,
+      /living\.has/,
+      stop(
+        "A stored pod-control test that is not living is not coverage (D89).",
+        "podControls.ts treats a stored spamTestId as coverage even when the test is dead.",
+      ),
+    );
+
+    const index = await read("../index.ts");
+    assert.match(
+      index,
+      /pod-cover/,
+      stop(
+        "Health grows known-good coverage when findings say it is missing (D89).",
+        "index.ts no longer runs a pod-cover pass.",
+      ),
+    );
+    assert.match(
+      index,
+      /3 \* 60_000/,
+      stop(
+        "Health boot-kicks three minutes after deploy, not immediately (D89).",
+        "index.ts lost the staggered health boot kick.",
+      ),
+    );
+    assert.match(
+      index,
+      /8 \* 60_000/,
+      stop(
+        "Pool boot-kicks eight minutes after deploy (D89).",
+        "index.ts lost the staggered pool boot kick.",
+      ),
+    );
+    assert.match(
+      index,
+      /copyCanary\.attach\(\)/,
+      stop(
+        "Canary attach runs after adopt, not only inside health (D89).",
+        "index.ts no longer attaches canary tests from the adopt pass.",
+      ),
+    );
+
+    const smartlead = await read("../clients/smartlead.ts");
+    assert.match(
+      smartlead,
+      /listCampaigns\(clientId\?: number\): Promise<SmartleadCampaign\[]> \{\s*return this\.mutate\(/,
+      stop(
+        "listCampaigns shares the write queue (D89).",
+        "listCampaigns is an unqueued read again — four deploys will 429 inventory.",
+      ),
+    );
+    assert.match(
+      smartlead,
+      /listClients\(\): Promise<SmartleadClientRecord\[]> \{\s*return this\.mutate\(/,
+      stop(
+        "listClients shares the write queue (D89).",
+        "listClients is an unqueued read again.",
+      ),
+    );
+    assert.match(
+      smartlead,
+      /listAllEmailAccounts[\s\S]*return this\.mutate\(/,
+      stop(
+        "listAllEmailAccounts shares the write queue (D89).",
+        "listAllEmailAccounts is an unqueued read again.",
+      ),
+    );
+
+    const check = await read("../services/campaignCheck.ts");
+    assert.match(
+      check,
+      /supersedePendingSingleSignatureAsks/,
+      stop(
+        "Pending single %signature% asks collapse into one bulk ask (D89).",
+        "campaignCheck.ts no longer supersedes pre-D87 singles — those campaigns stay stranded on old buttons.",
+      ),
+    );
+
+    const brief = await read("../services/clientDayBrief.ts");
+    assert.match(
+      brief,
+      /loadedDrafts/,
+      stop(
+        "DRAFT campaigns with remaining leads are named on the EOD brief (D89).",
+        "clientDayBrief.ts dropped loaded drafts.",
+      ),
+    );
+    const slackSrc = await read("../clients/slack.ts");
+    assert.match(
+      slackSrc,
+      /Leads loaded, not sending/,
+      stop(
+        "The EOD brief renders loaded drafts in plain English (D89).",
+        "slack.ts accepts loadedDrafts but never says leads are sitting in draft.",
+      ),
+    );
+  });
+});

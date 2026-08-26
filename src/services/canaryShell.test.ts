@@ -32,7 +32,7 @@ describe("ensureCanaryShell", () => {
           leads: Array<{ email: string }>,
         ) => {
           seeded.push({ campaignId, email: leads[0]!.email });
-          return { added_count: 1, skipped_count: 0 };
+          return { upload_count: 1, already_added_to_campaign: 0, added_count: 0 };
         },
         getCampaignLeads: async () => ({ total_leads: 0, data: [] }),
         getCampaignEmailAccounts: async () => [],
@@ -57,6 +57,77 @@ describe("ensureCanaryShell", () => {
       { campaignId: 104, email: "g1@canary-g.info" },
     ]);
     assert.deepEqual(added, [{ campaignId: 104, ids: [11, 12] }]);
+  });
+
+  it("D118: default seed is the non-sender instrumentation address", async () => {
+    const seeded: string[] = [];
+    await ensureCanaryShell({
+      smartlead: {
+        createCampaign: async () => {
+          throw new Error("should reuse");
+        },
+        updateCampaignStatus: async () => undefined,
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Hi", email_body: "Body" },
+        ],
+        updateCampaignSequences: async () => undefined,
+        addLeadsToCampaign: async (
+          _campaignId: number,
+          leads: Array<{ email: string }>,
+        ) => {
+          seeded.push(leads[0]!.email);
+          return { upload_count: 1 };
+        },
+        getCampaignLeads: async () => ({ total: 0, leads: [] }),
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      campaigns: [
+        { id: 4, name: "Live A", status: "ACTIVE" },
+        { id: 104, name: "Canary shell: #4 Live A", status: "DRAFTED" },
+      ],
+      live: { id: 4, name: "Live A", status: "ACTIVE" },
+      subject: "Hi",
+      bodyHtml: "Body",
+      senderAccountIds: [11],
+      dryRun: false,
+    });
+    assert.deepEqual(seeded, ["canary.instrumentation@getcrosslaunchco.info"]);
+  });
+
+  it("D118: fails loud when import and GET both show no leads", async () => {
+    await assert.rejects(
+      () =>
+        ensureCanaryShell({
+          smartlead: {
+            createCampaign: async () => {
+              throw new Error("should reuse");
+            },
+            updateCampaignStatus: async () => undefined,
+            getCampaignSequences: async () => [
+              { id: 77, seq_number: 1, subject: "Hi", email_body: "Body" },
+            ],
+            updateCampaignSequences: async () => undefined,
+            addLeadsToCampaign: async () => ({
+              added_count: 0,
+              skipped_count: 0,
+            }),
+            getCampaignLeads: async () => ({ total_leads: 0, data: [] }),
+            getCampaignEmailAccounts: async () => [],
+            addEmailAccountsToCampaign: async () => undefined,
+          } as unknown as SmartleadClient,
+          campaigns: [
+            { id: 4, name: "Live A", status: "ACTIVE" },
+            { id: 104, name: "Canary shell: #4 Live A", status: "PAUSED" },
+          ],
+          live: { id: 4, name: "Live A", status: "ACTIVE" },
+          subject: "Hi",
+          bodyHtml: "Body",
+          senderAccountIds: [11],
+          dryRun: false,
+        }),
+      /still has no leads/,
+    );
   });
 
   it("refuses an ACTIVE shell", async () => {

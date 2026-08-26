@@ -242,7 +242,7 @@ export class SmartleadClient {
   }
 
   /**
-   * D115 / D117 — instrumentation only. Canary shells need one dummy
+   * D115 / D118 — instrumentation only. Canary shells need one dummy
    * lead before SmartDelivery will schedule. Never call this for a
    * live client campaign (D52).
    */
@@ -257,6 +257,10 @@ export class SmartleadClient {
     added_count?: number;
     skipped_count?: number;
     skipped_leads?: unknown;
+    upload_count?: number;
+    already_added_to_campaign?: number;
+    total_leads?: number | string;
+    lead_ids?: number[];
     success?: boolean;
   }> {
     return this.mutate(() =>
@@ -269,6 +273,7 @@ export class SmartleadClient {
             ignore_global_block_list: true,
             ignore_unsubscribe_list: true,
             ignore_community_bounce_list: true,
+            return_lead_ids: true,
           },
         },
       }),
@@ -278,7 +283,7 @@ export class SmartleadClient {
   getCampaignLeads(
     campaignId: number,
     query: { limit?: number; offset?: number } = {},
-  ): Promise<{ total_leads?: string | number; data?: unknown[] }> {
+  ): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
       query: {
         limit: query.limit ?? 1,

@@ -9,6 +9,8 @@ import {
   canaryShellName,
   isCanaryShellCampaign,
   liveCampaignIdFromCanaryShellName,
+  shellLeadCount,
+  shellLeadImportAccepted,
 } from "../lib/canaryShell.js";
 import { campaignIdFromCreate } from "../lib/podControlShell.js";
 import type { SmartleadCampaign, SmartleadSequence } from "../types/index.js";
@@ -34,7 +36,7 @@ export async function ensureCanaryShell(input: {
   subject: string;
   bodyHtml: string;
   senderAccountIds: number[];
-  /** D117 — a real fleet inbox, not a fabricated address. */
+  /** D118 — optional override; default is the non-sender instrumentation address. */
   seedEmail?: string;
   dryRun?: boolean;
   sequenceNumber?: number;
@@ -76,9 +78,8 @@ export async function ensureCanaryShell(input: {
       `Canary shell #${campaign.id} is ACTIVE — refuse to hang tests on a live campaign.`,
     );
   }
-  // D117 — seed while DRAFTED so the lead attaches to sequence 1,
-  // then pause. Seeding a PAUSED empty shell left SmartDelivery
-  // saying "No leads available for the selected or lower sequence".
+  // D118 — seed a non-sender contact, then pause. D117's fleet
+  // inbox was a sending account and Smartlead reported added=0.
   if (!input.dryRun) {
     await writeLiveCopy(input, campaign.id);
     await seedShellLead(
@@ -192,7 +193,7 @@ async function seedShellLead(
   seedEmail: string,
 ): Promise<void> {
   const listed = await smartlead.getCampaignLeads(campaignId, { limit: 1 });
-  if (leadCountOf(listed) > 0) return;
+  if (shellLeadCount(listed) > 0) return;
 
   const result = await smartlead.addLeadsToCampaign(campaignId, [
     {
@@ -202,27 +203,25 @@ async function seedShellLead(
     },
   ]);
   await sleep(WRITE_GAP_MS);
-  const added = Number(result.added_count ?? 0);
-  const skipped = Number(result.skipped_count ?? 0);
+  const rawAdd = safeJson(result);
   console.log(
-    `[canary-shell] seed #${campaignId} ${seedEmail} added=${added} skipped=${skipped}`,
+    `[canary-shell] seed #${campaignId} ${seedEmail} upload_count=${Number(result.upload_count ?? 0)} already=${Number(result.already_added_to_campaign ?? 0)} added=${Number(result.added_count ?? 0)} raw=${rawAdd}`,
   );
-  if (added < 1) {
-    const again = await smartlead.getCampaignLeads(campaignId, { limit: 1 });
-    if (leadCountOf(again) > 0) return;
-    throw new Error(
-      `canary shell #${campaignId} still has no leads (added=${added} skipped=${skipped})`,
-    );
-  }
+  if (shellLeadImportAccepted(result)) return;
+
+  const again = await smartlead.getCampaignLeads(campaignId, { limit: 1 });
+  if (shellLeadCount(again) > 0) return;
+  throw new Error(
+    `canary shell #${campaignId} still has no leads add=${rawAdd} get=${safeJson(again)}`,
+  );
 }
 
-function leadCountOf(listed: {
-  total_leads?: string | number;
-  data?: unknown[];
-}): number {
-  const total = Number(listed.total_leads);
-  if (Number.isFinite(total) && total > 0) return total;
-  return Array.isArray(listed.data) ? listed.data.length : 0;
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value).slice(0, 500);
+  } catch {
+    return String(value);
+  }
 }
 
 async function syncCanaryMembers(

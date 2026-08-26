@@ -503,6 +503,24 @@ export class CampaignCheckService {
 
     if (shell) {
       if (status !== "PAUSED") {
+        // D131 — a finding the sweep can close itself is closed, not
+        // reported forever (D85). Shells must sit PAUSED (D56/D114).
+        if (!this.config.dryRun) {
+          try {
+            await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
+            await sleep(WRITE_GAP_MS);
+            console.log(
+              `[campaign-check] paused instrumentation shell #${campaign.id} ${name} (was ${status || "unknown"})`,
+            );
+            return findings;
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[campaign-check] could not pause shell #${campaign.id}: ${message}`,
+            );
+          }
+        }
         findings.push({
           kind: "shell_not_paused",
           detail: `instrumentation shell is ${status || "unknown"} — must stay PAUSED`,

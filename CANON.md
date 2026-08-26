@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D130** (2026-08-26). One page of current truth. When a new
+Canon as of **D131** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -23,7 +23,7 @@ Slack speaks only when a human decision is needed or the day is done.
 | Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → old-client teardown retry (D111) → stage watchdog + `canonCompliant` yes/no (D108) |
 | Bounce loop | 10 min | Pause an ACTIVE campaign at >10% lifetime bounce with ≥1,000 leads emailed, or >10 new bounces inside the 10-minute window (D90). Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift (D80/D84/D88; one forced full-fleet off-write ran under D124). Never touches COMPLETED/STOPPED; a bounce pause is stamped so qa-unpause never fights it, and is not a pendingResume (D40/D128). No Slack. |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). |
-| Monitor | Slower cadence | Placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86). |
+| Monitor | Slower cadence | Placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. |
 
@@ -101,11 +101,14 @@ Slack speaks only when a human decision is needed or the day is done.
   campaign named `Canary copy: #{liveId}`, senders = the fleet, copy = that
   campaign's live sequence. The test hangs on a **paused per-campaign Canary
   shell** carrying that copy, with one unique instrumentation seed lead
-  (`canary.instrumentation.{shellId}@…`) (D114–D120). Shells stay PAUSED and
-  are invisible to START/top-up/fan-out/bounce/board.
+  (`canary.instrumentation.{shellId}@…`) (D114–D120). Shells stay PAUSED —
+  the checker converges a non-paused shell back to PAUSED itself (D131) —
+  and are invisible to START/top-up/fan-out/bounce/board.
 - **Known-good pod controls**: versioned no-offer control email on the paused
   **Pod control shell** (D56); every serving inbox must sit on a living
-  known-good test; sitters are members of the shell only.
+  known-good test — coverage is per email, and newcomers to a pod get
+  supplemental tests on the next pass (D131); sitters are members of the
+  shell only.
 - **Placement tests**: one recurring schedule per campaign (`every_days: 1`),
   unlimited quota (`TOTAL_TEST_QUOTA=0`, D45), ≤50 senders per test (API
   limit), reconciler stops tests of inactive campaigns (D8/D45). A missing

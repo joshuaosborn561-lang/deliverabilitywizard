@@ -483,6 +483,38 @@ describe("CampaignCheckService", () => {
     );
   });
 
+  it("D131: a non-paused instrumentation shell is paused, not reported forever", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const statuses: Array<[number, string]> = [];
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 501, name: "Canary shell: #77 Goliath L2", status: "DRAFTED" },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [],
+        getCampaignSequences: async () => [],
+        updateCampaignStatus: async (id: number, status: string) => {
+          statuses.push([id, status]);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(statuses, [[501, "PAUSED"]]);
+    assert.equal(
+      result.findings.some((row) =>
+        row.findings.some((finding) => finding.includes("shell_not_paused")),
+      ),
+      false,
+      "a converged shell is not a standing finding",
+    );
+  });
+
   it("D92: missing signature is written as First Last / client name and Slack says so", async () => {
     const state = new StateStore(stateFile());
     await state.load();

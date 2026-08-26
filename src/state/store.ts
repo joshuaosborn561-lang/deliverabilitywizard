@@ -992,6 +992,11 @@ export class StateStore {
     return this.state.stageHealth;
   }
 
+  /** D131 — a stage deleted from the code must not alarm from its record. */
+  dropStageHealth(name: string): void {
+    delete this.state.stageHealth[name];
+  }
+
   /** D85 — one fleet-level fact instead of a finding per campaign. */
   getCanaryFleetDown(): CanaryFleetDownRecord | null {
     return this.state.canaryFleetDown;

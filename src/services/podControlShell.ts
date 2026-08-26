@@ -55,7 +55,8 @@ export async function ensurePodControlShell(input: {
     campaign = {
       id,
       name: POD_CONTROL_SHELL_NAME,
-      status: "PAUSED",
+      // Smartlead creates campaigns DRAFTED; the converge below pauses it.
+      status: "DRAFTED",
     };
     created = true;
   }

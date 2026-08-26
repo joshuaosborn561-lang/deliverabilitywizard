@@ -4019,5 +4019,17 @@ describe("owner intent — D131 findings the sweep can close are closed", () => 
         "index.ts runs monitor stages outside the watchdog again.",
       ),
     );
+    const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
+    const staged = [...index.matchAll(/stage\("([a-z0-9-]+)"/g)].map((m) => m[1]);
+    assert.ok(staged.length >= 25, "the stage() calls in index.ts should be findable");
+    for (const name of staged) {
+      assert.ok(
+        name in STAGE_OVERDUE_WINDOWS_MS,
+        stop(
+          `Stage "${name}" needs a cadence window in stageWindows.ts (D131).`,
+          "The registry is also the boot prune list — an unlisted stage's record is dropped on deploy.",
+        ),
+      );
+    }
   });
 });

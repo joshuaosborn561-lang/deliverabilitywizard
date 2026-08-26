@@ -3179,7 +3179,16 @@ the kill-only explanation.
    controls, domain lifecycle, buy resumes, canary adopt, isolation rig /
    branch / copy poll) records stageHealth — a silent 429 death shows on
    `/health` instead of a swallowed console.warn. D84 covered only the
-   15-minute loop.
+   15-minute loop. Overdue is judged per stage against its own cadence
+   (`src/lib/stageWindows.ts`): the blanket 45-minute window had
+   scan-backfill and mailbox-settings-full alarming most of every cycle,
+   and would have done the same to all fourteen monitor stages.
+   Event-driven scan-backfill (D116) is never "overdue". The same
+   registry is the boot prune list — a persisted stageHealth record whose
+   stage no longer exists in code is dropped at boot, because after the
+   Phase 2/3 deploy the deleted morning-activate / unhealthy-reset /
+   client-wipe / rest-baseline stages alarmed forever from their ghost
+   records.
 
 **Why.** Live 2026-08-26: `shell_not_paused=16` flat for six hours,
 `inbox_missing_known_good` never reaching zero (the uncovered emails were
@@ -3192,4 +3201,6 @@ a finding that reprints forever is a bug in the sweep (D85).
 
 **Guards.** D81 guard: only status write is the shell pause; canaryShell
 created-status test; podControls newcomer-supplemental test; owner-intent
-D131.
+D131 (including: every `stage("…")` call in index.ts must have a cadence
+window in `stageWindows.ts`, since the registry doubles as the prune
+list).

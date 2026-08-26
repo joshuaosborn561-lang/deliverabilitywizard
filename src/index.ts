@@ -85,6 +85,7 @@ import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { OldClientTeardownService } from "./services/oldClientTeardown.js";
 import { canonBoard } from "./lib/canonCompliance.js";
+import { STAGE_OVERDUE_WINDOWS_MS } from "./lib/stageWindows.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -101,6 +102,20 @@ async function main(): Promise<void> {
     if (heldResidue || swapResidue) {
       console.warn(
         `[boot] D130 drain: cleared ${holdCleared} leftover hold record(s) and ${swapResidue} swap reservation(s) — freed inboxes rejoin staffing on the next health pass`,
+      );
+      await state.save();
+    }
+  }
+  // D131 — a stage deleted from the code must not alarm forever from its
+  // persisted record (morning-activate et al. sat OVERDUE after Phase 2/3).
+  {
+    const ghostStages = Object.keys(state.listStageHealth()).filter(
+      (name) => !(name in STAGE_OVERDUE_WINDOWS_MS),
+    );
+    if (ghostStages.length) {
+      for (const name of ghostStages) state.dropStageHealth(name);
+      console.warn(
+        `[boot] D131 prune: dropped stageHealth for deleted stage(s): ${ghostStages.join(", ")}`,
       );
       await state.save();
     }
@@ -502,7 +517,10 @@ async function main(): Promise<void> {
     }
   };
 
-  /** Stages that have not succeeded in this long get a loud log line. */
+  /**
+   * Fallback for a stage that runs but is missing from the D131 registry
+   * (the guard suite catches that; this keeps the runtime honest meanwhile).
+   */
   const STAGE_OVERDUE_MS = 45 * 60 * 1000;
 
   const logCanonScoreboard = (): void => {
@@ -526,8 +544,15 @@ async function main(): Promise<void> {
     }
     const now = Date.now();
     for (const [name, row] of Object.entries(state.listStageHealth())) {
+      // D131 — overdue is judged against the stage's own cadence; an
+      // event-driven stage (window null) is never overdue.
+      const window =
+        name in STAGE_OVERDUE_WINDOWS_MS
+          ? STAGE_OVERDUE_WINDOWS_MS[name]
+          : STAGE_OVERDUE_MS;
+      if (window == null) continue;
       const lastOk = row.lastOkAt ? Date.parse(row.lastOkAt) : null;
-      if (lastOk == null || now - lastOk > STAGE_OVERDUE_MS) {
+      if (lastOk == null || now - lastOk > window) {
         console.warn(
           `[watchdog] stage ${name} OVERDUE — last ok ${row.lastOkAt ?? "never"}; failures=${row.consecutiveFailures}; lastError=${row.lastError ?? "none"}`,
         );

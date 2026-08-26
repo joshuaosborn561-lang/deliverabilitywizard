@@ -18,9 +18,11 @@ describe("ops chat policy", () => {
       classifyOpsMessage("reconnect disconnected accounts", "operator").type,
       "reconnect",
     );
-    assert.deepEqual(
-      classifyOpsMessage("rotate Sender@Example.com", "operator"),
-      { type: "rotate", email: "sender@example.com" },
+    const rotate = classifyOpsMessage("rotate Sender@Example.com", "operator");
+    assert.equal(rotate.type, "denied");
+    assert.match(
+      rotate.type === "denied" ? rotate.reason : "",
+      /kill-only/i,
     );
   });
 

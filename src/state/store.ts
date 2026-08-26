@@ -530,10 +530,6 @@ export class StateStore {
     delete this.state.genericSendStartedAt[email.toLowerCase()];
   }
 
-  clearInboxRemediation(email: string): void {
-    delete this.state.remediatedKeys[`remediate-inbox:${email.toLowerCase()}`];
-  }
-
   /** Drop inbox-recovery dedupe keys so a follow-up run can retry rate-limited work. */
   clearInboxRemediations(): number {
     let cleared = 0;
@@ -760,6 +756,13 @@ export class StateStore {
       if (match) return match;
     }
     return undefined;
+  }
+
+  /** D130 — drain every leftover swap reservation; nothing writes them now. */
+  clearAllSwaps(): number {
+    const n = Object.keys(this.state.activeSwaps).length;
+    this.state.activeSwaps = {};
+    return n;
   }
 
   markSwap(record: ActiveSwapRecord): void {

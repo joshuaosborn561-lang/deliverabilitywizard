@@ -8,7 +8,6 @@ export type OpsIntent =
   | { type: "campaigns" }
   | { type: "campaign_setup" }
   | { type: "reconnect" }
-  | { type: "rotate"; email: string }
   | { type: "approvals" }
   | { type: "ask_cursor"; message: string }
   | { type: "denied"; reason: string }
@@ -26,9 +25,12 @@ export function classifyOpsMessage(
     return { type: "help" };
   }
 
-  const rotateEmail = message.match(EMAIL)?.[0]?.toLowerCase();
-  if (rotateEmail && /\b(rotate|bench|swap|pull)\b/i.test(message)) {
-    return { type: "rotate", email: rotateEmail };
+  if (/\b(rotate|bench|swap|pull)\b/i.test(message) && EMAIL.test(message)) {
+    return {
+      type: "denied",
+      reason:
+        "Manual mailbox rotation is retired (D51/D130): pulls are kill-only. Ask Josh to retire the domain from the burned-domain Slack, and health will backfill.",
+    };
   }
 
   if (
@@ -139,8 +141,7 @@ export function opsHelp(role: OpsRole): string {
     "• “Audit campaigns” — sender floor, rest piles, and placement-test coverage",
     "• “Campaign setup” — D43 rails for launching a new campaign",
     "• “Reconnect disconnected mailboxes”",
-    "• “Rotate name@example.com” — preview first, then explicit confirmation",
-    "• “Status” — pool, holds, swaps and recent runs",
+    "• “Status” — pool, rest piles and recent runs",
   ];
   if (role === "owner") {
     lines.push("• “Approvals” — owner-only pending spend decisions");

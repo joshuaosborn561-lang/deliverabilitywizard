@@ -38,13 +38,12 @@ describe("owner intent", () => {
     );
   });
 
-  it("D6: recovery hold is 14 days", () => {
-    assert.equal(
-      defaults.recoveryHoldDays,
-      14,
+  it("D6 retired by D51/D59/D130: there is no recovery hold", () => {
+    assert.ok(
+      !("recoveryHoldDays" in defaults),
       stop(
-        "A benched sender sits 14 days before returning (D6).",
-        `Recovery hold is now ${defaults.recoveryHoldDays} days.`,
+        "Benching is gone — pulls are kill-only and holds were wiped (D51/D59/D130).",
+        "config grew recoveryHoldDays back.",
       ),
     );
   });
@@ -85,12 +84,11 @@ describe("owner intent", () => {
         `Bounce threshold is now ${defaults.bounceRateThreshold}%.`,
       ),
     );
-    assert.equal(
-      defaults.enableLegacyMailboxPulls,
-      false,
+    assert.ok(
+      !("enableLegacyMailboxPulls" in defaults),
       stop(
-        "Placement / bounce / HOLD no longer pull a live mailbox (D51).",
-        "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
+        "The legacy pull machinery is deleted, not merely off (D51/D130).",
+        "config grew enableLegacyMailboxPulls back — is the old engine returning?",
       ),
     );
   });
@@ -100,23 +98,18 @@ describe("owner intent", () => {
       defaults.scoreSameEspOnly,
       true,
       stop(
-        "Placement rotation uses same-ESP scores only (D32).",
-        "SCORE_SAME_ESP_ONLY is off, so blended all-ESP scores can bench mailboxes again.",
+        "Placement readings use same-ESP scores only (D32).",
+        "SCORE_SAME_ESP_ONLY is off, so blended all-ESP scores can mislead readings again.",
       ),
     );
-    const { shouldRotateForPlacement } = await import(
-      "../lib/placementRotation.js"
-    );
-    assert.equal(
-      shouldRotateForPlacement(
-        { inboxRate: 10, scoredSameEsp: false },
-        defaults.remediationInboxThreshold,
-        { scoreSameEspOnly: true },
-      ),
-      false,
+    // There is no placement rotation left at all (D51/D130) — the blended
+    // score cannot bench anyone because nothing benches anyone.
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../lib/placementRotation.ts", import.meta.url)),
       stop(
-        "Blended (non-same-ESP) scores must not rotate senders (D32).",
-        "shouldRotateForPlacement now returns true for scoredSameEsp=false.",
+        "Placement rotation is deleted, not gated (D51/D130).",
+        "lib/placementRotation.ts exists again.",
       ),
     );
   });
@@ -547,7 +540,7 @@ describe("owner intent — D41 beanstalk rotation", () => {
     );
   });
 
-  it("D41/D79: bounce warn is 2% (a reading); no per-sender pull", () => {
+  it("D41/D79: bounce warn is 2% (a reading); the per-sender pull is deleted", () => {
     assert.equal(
       defaults.bounceRateWarnThreshold,
       2,
@@ -556,12 +549,11 @@ describe("owner intent — D41 beanstalk rotation", () => {
         `Warn threshold is now ${defaults.bounceRateWarnThreshold}%.`,
       ),
     );
-    assert.equal(
-      defaults.enableBounceRotation,
-      false,
+    assert.ok(
+      !("enableBounceRotation" in defaults),
       stop(
-        "D5's per-sender 5%/50 pull is retired (D79).",
-        "ENABLE_BOUNCE_ROTATION now defaults on.",
+        "D5's per-sender pull machinery is deleted, not merely off (D79/D130).",
+        "config grew enableBounceRotation back.",
       ),
     );
   });
@@ -924,7 +916,7 @@ describe("owner intent — D49 isolation autonomy", () => {
 });
 
 describe("owner intent — D50 live-send warmup", () => {
-  it("D50: live-send warmup is 21 days; recovery hold and generic rest stay 14", () => {
+  it("D50: live-send warmup is 21 days; generic rest stays 14", () => {
     assert.equal(
       defaults.poolWarmupDays,
       21,
@@ -937,7 +929,7 @@ describe("owner intent — D50 live-send warmup", () => {
       defaults.campaignMinWarmupDays,
       21,
       stop(
-        "21 days is the warmed-vs-unwarmed clock (D50). The gate does not pull (D51).",
+        "21 days is the warmed-vs-unwarmed clock (D50).",
         `Campaign min warmup is now ${defaults.campaignMinWarmupDays} days.`,
       ),
     );
@@ -947,14 +939,6 @@ describe("owner intent — D50 live-send warmup", () => {
       stop(
         "Fresh InboxKit inboxes still owe 21 days (D41/D50).",
         `Fresh warmup is now ${defaults.freshInboxWarmupDays} days.`,
-      ),
-    );
-    assert.equal(
-      defaults.recoveryHoldDays,
-      14,
-      stop(
-        "Recovery hold after a bounce / placement pull stays 14 days (D6).",
-        `Recovery hold is now ${defaults.recoveryHoldDays} days.`,
       ),
     );
     assert.equal(
@@ -970,22 +954,20 @@ describe("owner intent — D50 live-send warmup", () => {
 
 describe("owner intent — D51 kill-only pull", () => {
   it("D51: no placement/bounce pulls; copy canaries stay on campaign copy", () => {
-    assert.equal(
-      defaults.enableBounceRotation,
-      false,
-      stop(
-        "Bounce does not pull a live mailbox (D51).",
-        "ENABLE_BOUNCE_ROTATION now defaults on.",
-      ),
-    );
-    assert.equal(
-      defaults.enableLegacyMailboxPulls,
-      false,
-      stop(
-        "The only automatic live pull is Josh killing a mailbox (D51).",
-        "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
-      ),
-    );
+    for (const knob of [
+      "enableBounceRotation",
+      "enableLegacyMailboxPulls",
+      "enableRemediation",
+      "enableRecoveryPool",
+    ]) {
+      assert.ok(
+        !(knob in defaults),
+        stop(
+          "The pull/rotation machinery is deleted, not gated (D51/D130).",
+          `config grew ${knob} back — is the old engine returning?`,
+        ),
+      );
+    }
     assert.equal(
       defaults.enableCopyCanary,
       true,
@@ -1000,14 +982,6 @@ describe("owner intent — D51 kill-only pull", () => {
       stop(
         "Each live campaign keeps 3 unwarmed campaign-copy canaries (D51).",
         `Copy canaries per campaign is now ${defaults.copyCanaryPerCampaign}.`,
-      ),
-    );
-    assert.equal(
-      defaults.enableRemediation,
-      false,
-      stop(
-        "Remediation stays off so placement pull cannot sneak back (D51).",
-        "ENABLE_REMEDIATION now defaults on.",
       ),
     );
     assert.equal(
@@ -1132,23 +1106,18 @@ describe("owner intent — D64 staffing Slack is end of day", () => {
 
 describe("owner intent — D69 copy Slack is the word and a one-click edit", () => {
   it("D69: do not Slack a copy guess; Slack the word and Make the changes", async () => {
-    const rem = await import("node:fs/promises").then((fs) =>
-      fs.readFile(new URL("../services/remediation.ts", import.meta.url), "utf8"),
-    );
-    assert.equal(
-      /Low inbox looks like/.test(rem),
-      false,
-      stop(
-        "Do not Slack a copy/offer guess (D69).",
-        "remediation.ts still Slacks the copy-signal guess.",
-      ),
+    // The old rotation engine (and its copy-guess Slack) is deleted (D130).
+    // Copy suspects now come from the daily delivery watch, which feeds the
+    // D93/D96 verdict instead of guessing in Slack.
+    const watch = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/deliveryWatch.ts", import.meta.url), "utf8"),
     );
     assert.match(
-      rem,
+      watch,
       /markCopySuspect/,
       stop(
         "Copy suspects still start the canary + word hunt (D69).",
-        "remediation.ts no longer marks copy suspects.",
+        "deliveryWatch.ts no longer marks copy suspects.",
       ),
     );
     // The paused-bounce hunt (and its copy-guess Slack) was deleted outright
@@ -2093,21 +2062,13 @@ describe("owner intent — D81 new-campaign audit + hourly sweep", () => {
 });
 
 describe("owner intent — D79 no per-sender bounce pull", () => {
-  it("D79: D5's 5%/50 pull stays off; campaign auto-pause is the bounce control", () => {
-    assert.equal(
-      defaults.enableBounceRotation,
-      false,
+  it("D79: D5's 5%/50 pull machinery is deleted; the D90 loop is the bounce control", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/remediation.ts", import.meta.url)),
       stop(
-        "There is no per-sender bounce pull (D79).",
-        "ENABLE_BOUNCE_ROTATION now defaults on.",
-      ),
-    );
-    assert.equal(
-      defaults.enableLegacyMailboxPulls,
-      false,
-      stop(
-        "Legacy mailbox pulls stay off (D51/D79).",
-        "ENABLE_LEGACY_MAILBOX_PULLS now defaults on.",
+        "The per-sender rotation engine is deleted (D79/D130).",
+        "remediation.ts exists again.",
       ),
     );
   });
@@ -2781,15 +2742,15 @@ describe("owner intent — D92 signature writes itself", () => {
 
 describe("owner intent — D93 word hunt is ESP-fail + known-good clean", () => {
   it("D93: suspects from any weak ESP; known-good fail is infra", async () => {
-    const rem = await import("node:fs/promises").then((fs) =>
-      fs.readFile(new URL("../services/remediation.ts", import.meta.url), "utf8"),
+    const branch = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/isolationBranch.ts", import.meta.url), "utf8"),
     );
     assert.match(
-      rem,
+      branch,
       /anyEspBelowThreshold/,
       stop(
         "A campaign copy test failing any ESP can start the word-hunt path (D93).",
-        "remediation.ts still waits for the Outlook-vs-Gmail copy_likely pattern.",
+        "isolationBranch.ts no longer reads per-ESP weakness.",
       ),
     );
     const verdict = await import("node:fs/promises").then((fs) =>
@@ -3975,5 +3936,39 @@ describe("owner intent — D129 retired machinery stays deleted", () => {
         ),
       );
     }
+  });
+});
+
+describe("owner intent — D130 the rotation engine is gone", () => {
+  it("D130: engine files stay deleted and no knob can revive a pull", async () => {
+    const { access } = await import("node:fs/promises");
+    for (const path of [
+      "../services/remediation.ts",
+      "../services/recoveryPool.ts",
+      "../services/bcpClientRestore.ts",
+      "../ops/manualRotation.ts",
+      "../lib/holdOutcome.ts",
+      "../lib/placementRotation.ts",
+      "../lib/burnChecklist.ts",
+    ]) {
+      await assert.rejects(
+        access(new URL(path, import.meta.url)),
+        stop(
+          `The rotation engine is deleted, not parked (D130): ${path}`,
+          `${path} exists again.`,
+        ),
+      );
+    }
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /D130 drain/,
+      stop(
+        "Boot drains leftover hold/swap residue so it cannot suppress staffing (D130).",
+        "index.ts lost the D130 residue drain.",
+      ),
+    );
   });
 });

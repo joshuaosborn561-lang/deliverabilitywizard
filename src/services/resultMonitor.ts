@@ -258,11 +258,8 @@ export class ResultMonitor {
         email: row.email,
         inboxPercent: row.inboxRate,
         scoredSameEsp: row.scoredSameEsp,
-        // D32: Slack "will remediate" must match rotation — same-ESP only.
-        willRemediate:
-          this.config.enableRemediation &&
-          row.scoredSameEsp === true &&
-          row.inboxRate < this.config.remediationInboxThreshold,
+        // D51/D130 — pulls are kill-only; nothing auto-remediates a sender.
+        willRemediate: false,
       }));
       authFailures = parseSenderAuthResults(senderRaw)
         .map((row) => ({
@@ -281,12 +278,11 @@ export class ResultMonitor {
       testId,
       threshold: this.config.deliverabilityThreshold,
       providers,
-      autoRemediation: this.config.enableRemediation,
+      autoRemediation: false,
       overall: overallSplit(rows),
       senders,
       authFailures,
       remediationThreshold: this.config.remediationInboxThreshold,
-      holdDays: this.config.recoveryHoldDays,
     });
     this.state.markAlert(key);
     console.log(
@@ -298,10 +294,8 @@ export class ResultMonitor {
   }
 
   private async checkMailboxSummary(): Promise<number> {
-    // Provider-level alerts already cover campaign placement in plain English.
-    // Skip the noisy per-mailbox summary channel unless remediation is off
-    // (then the human needs the heads-up).
-    if (this.config.enableRemediation) return 0;
+    // Provider-level alerts already cover campaign placement in plain
+    // English; this per-mailbox summary is a log-side reading (D51/D71).
 
     let alerts = 0;
     const rows: MailboxSummaryRow[] = await this.smartDelivery.getMailboxSummary();

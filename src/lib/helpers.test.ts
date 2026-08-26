@@ -266,7 +266,6 @@ describe("sender inbox rate parsing", () => {
 
   it("marks thin same-ESP samples as not placement-eligible (blended is display-only)", async () => {
     const { parseSenderInboxRates } = await import("../clients/smartdelivery.js");
-    const { shouldRotateForPlacement } = await import("./placementRotation.js");
     const googleAuth = {
       dkim_result: { dkim: "mx.google.com; dkim=pass" },
     };
@@ -294,13 +293,9 @@ describe("sender inbox rate parsing", () => {
     );
     assert.equal(rows[0]?.sameEspSamples, 1);
     assert.equal(rows[0]?.scoredSameEsp, false);
-    // Blended % may still be exposed for display…
+    // Blended % may still be exposed for display — D32 forbids treating it
+    // as a signal, and rotation itself is deleted (D51/D130).
     assert.equal(rows[0]?.inboxRate, 75);
-    // …but D32 forbids rotating on it.
-    assert.equal(
-      shouldRotateForPlacement(rows[0], 80, { scoreSameEspOnly: true }),
-      false,
-    );
   });
 
   it("computes inbox rate from inbox_count when avg is missing", async () => {
@@ -319,58 +314,4 @@ describe("sender inbox rate parsing", () => {
     assert.equal(rows[0]?.inboxRate, 20);
   });
 
-  it("computes hold-until date 28 days out in UTC", async () => {
-    const { addDaysIsoDate } = await import("../services/remediation.js");
-    assert.equal(addDaysIsoDate(new Date("2026-07-20T15:00:00Z"), 28), "2026-08-17");
-    assert.equal(addDaysIsoDate(new Date("2026-01-31T12:00:00Z"), 28), "2026-02-28");
-  });
-
-  it("groups backfill actions by client with obvious counts", async () => {
-    const { buildClientBackfillActions } = await import(
-      "../services/remediation.js"
-    );
-    const actions = buildClientBackfillActions({
-      deletedSmartleadAccounts: [
-        {
-          id: 1,
-          email: "a@bad.example",
-          domain: "bad.example",
-          clientId: 10,
-          clientName: "MSRS (Randy Gaines)",
-        },
-      ],
-      purgedInboxKitDomains: ["bad.example"],
-      recoveredInboxes: [
-        {
-          id: 2,
-          email: "b@ok.example",
-          inboxRate: 40,
-          removedFromCampaigns: [100, 200],
-          holdUntil: "2026-08-17",
-          clientId: 10,
-          clientName: "MSRS (Randy Gaines)",
-        },
-        {
-          id: 3,
-          email: "c@other.example",
-          inboxRate: 10,
-          removedFromCampaigns: [300],
-          holdUntil: "2026-08-17",
-          clientId: 20,
-          clientName: "SalesGlider",
-        },
-      ],
-      pausedCampaigns: [200],
-    });
-
-    assert.equal(actions.length, 2);
-    const msrs = actions.find((a) => a.clientName.startsWith("MSRS"));
-    assert.ok(msrs);
-    assert.deepEqual(msrs!.domainsToReplace, ["bad.example"]);
-    assert.equal(msrs!.inboxesToReplace, 1);
-    assert.deepEqual(msrs!.pausedCampaignIds, [200]);
-    const sg = actions.find((a) => a.clientName === "SalesGlider");
-    assert.equal(sg!.inboxesToReplace, 1);
-    assert.deepEqual(sg!.domainsToReplace, []);
-  });
 });

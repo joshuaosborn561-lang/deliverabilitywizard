@@ -85,13 +85,10 @@ const ConfigSchema = z.object({
   enableTestReconciler: boolFromEnv(true),
   deliverabilityThreshold: z.coerce.number().min(0).max(100).default(90),
   remediationInboxThreshold: z.coerce.number().min(0).max(100).default(80),
-  enableRemediation: boolFromEnv(false),
   /** Score Gmail→G Suite / Outlook→O365 only (matches ESP-matched campaigns). */
   scoreSameEspOnly: boolFromEnv(true),
   /** Min same-ESP seed hits before trusting same-ESP %. Below that, skip placement rotation (D32). */
   minSameEspSamples: z.coerce.number().int().positive().default(3),
-  /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
-  recoveryHoldDays: z.coerce.number().int().positive().default(14),
   /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
   /**
@@ -246,17 +243,6 @@ const ConfigSchema = z.object({
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
   /**
-   * D51 / D79 — there is no per-sender bounce pull. Default off.
-   * Placement pull is already behind enableRemediation (false).
-   */
-  enableBounceRotation: boolFromEnv(false),
-  /**
-   * D51 — master for placement / bounce / HOLD-UNTIL removals from ACTIVE
-   * campaigns. Off: the only automatic live pull is Josh killing a mailbox
-   * (domain retire) and health backfilling.
-   */
-  enableLegacyMailboxPulls: boolFromEnv(false),
-  /**
    * D51 — keep this many still-warming pool generics on each ACTIVE campaign
    * sending the live sequence (extra to the 50 staffable floor).
    */
@@ -290,8 +276,6 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
-  /** Sub in warmed generics while originals recover (requires pool inventory in state). */
-  enableRecoveryPool: boolFromEnv(false),
   /**
    * Days from InboxKit import before a generic is free for live send / swaps.
    * Clock is `warmedAt` at import, not Smartlead's warmup record (D1).
@@ -481,10 +465,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableTestReconciler: env.ENABLE_TEST_RECONCILER,
     deliverabilityThreshold: env.DELIVERABILITY_THRESHOLD ?? "90",
     remediationInboxThreshold: env.REMEDIATION_INBOX_THRESHOLD ?? "80",
-    enableRemediation: env.ENABLE_REMEDIATION,
     scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
-    recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
@@ -530,8 +512,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bouncePauseRatePercent: env.BOUNCE_PAUSE_RATE_PERCENT ?? "10",
     bounceBurstCount: env.BOUNCE_BURST_COUNT ?? "10",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
-    enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
-    enableLegacyMailboxPulls: env.ENABLE_LEGACY_MAILBOX_PULLS,
     enableCopyCanary: env.ENABLE_COPY_CANARY,
     copyCanaryPerCampaign: env.COPY_CANARY_PER_CAMPAIGN ?? "3",
     extraGenericMailboxes:
@@ -539,7 +519,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     extraGenericDomains:
       env.EXTRA_GENERIC_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",
-    enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
     launchInboxThreshold: env.LAUNCH_INBOX_THRESHOLD ?? "85",

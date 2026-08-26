@@ -340,6 +340,11 @@ export function replaceInSequence(
       subject: replace(variant.subject),
       email_body: replace(variant.email_body),
     })),
+    seq_variants: sequence.seq_variants?.map((variant) => ({
+      ...variant,
+      subject: replace(variant.subject),
+      email_body: replace(variant.email_body),
+    })),
     variants: sequence.variants?.map((variant) => ({
       ...variant,
       subject: replace(variant.subject),

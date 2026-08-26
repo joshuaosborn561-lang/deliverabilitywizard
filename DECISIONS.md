@@ -2430,3 +2430,27 @@ up. Accepted: he asked for ACTIVE.
 
 **Guards.** morningActivatePatterns; shells stay paused;
 owner-intent D109.
+---
+
+## D110 — Sequence writes send seq_variants, never variants
+
+**Decision.** `sequencesForWrite` remaps GET `sequence_variants`
+(and any leftover `variants`) onto `seq_variants` and never
+sends `variants` or `sequence_variants`. Writable allowlist
+and append-only `%signature%` stay (D92 / D103). This
+supersedes D104's POST key only — D104 already named
+`seq_variants` as the rename if `variants` failed.
+
+**Why.** Live 2026-08-26 after #122: leftover `%signature%`
+writes remapped onto `variants` and died on
+`"sequences[0].variants" is not allowed` (#3705889,
+#3701207 Culture Fits, #3628957). Smartlead's helpcenter
+documents `seq_variants`.
+
+**Tradeoff.** If POST also rejects `seq_variants`, the next
+lever is pause → write → resume (API: cannot modify
+sequences while ACTIVE), not another key rename.
+Accepted: the live reject named this key.
+
+**Guards.** sequencesForWrite remaps onto seq_variants and
+skips variants; owner-intent D110.

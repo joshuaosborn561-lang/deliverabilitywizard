@@ -66,6 +66,7 @@ export interface SmartleadSequence {
   email_body?: string;
   sequence_variants?: SmartleadSequenceVariant[];
   variants?: SmartleadSequenceVariant[];
+  seq_variants?: SmartleadSequenceVariant[];
 }
 
 export interface SpamTestSummary {

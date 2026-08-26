@@ -3293,24 +3293,40 @@ describe("owner intent — D109 morning activate", () => {
 });
 
 describe("owner intent — D104 sequence writes remap sequence_variants", () => {
-  it("D104: GET sequence_variants become POST variants", async () => {
+  it("D104: POST never sends sequence_variants (D110 remaps onto seq_variants)", async () => {
     const qa = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../lib/signatureQa.ts", import.meta.url), "utf8"),
     );
     assert.match(
       qa,
-      /out\.variants/,
+      /key === "sequence_variants"/,
       stop(
-        "GET sequence_variants remap to variants on write (D104).",
-        "sequencesForWrite no longer emits variants from sequence_variants.",
+        "POST must not send sequence_variants (D104).",
+        "sequencesForWrite still forwards the GET key.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D110 sequence writes send seq_variants", () => {
+  it("D110: leftover signature writes emit seq_variants, never variants", async () => {
+    const qa = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/signatureQa.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      qa,
+      /out\.seq_variants/,
+      stop(
+        "GET sequence_variants remap to seq_variants on write (D110).",
+        "sequencesForWrite no longer emits seq_variants.",
       ),
     );
     assert.match(
       qa,
-      /key === "sequence_variants"\) continue/,
+      /key === "variants"/,
       stop(
-        "POST must not send sequence_variants (D104).",
-        "sequencesForWrite still forwards the GET key.",
+        "POST must not send variants (D110). Live rejected sequences[0].variants.",
+        "sequencesForWrite still forwards variants.",
       ),
     );
   });

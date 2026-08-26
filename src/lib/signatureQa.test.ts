@@ -133,20 +133,46 @@ describe("one-click signature fix (D85)", () => {
     assert.equal("updated_at" in written[0]!, false);
     assert.equal("email_campaign_id" in written[0]!, false);
     assert.equal("sequence_variants" in written[0]!, false);
+    assert.equal("variants" in written[0]!, false);
     assert.equal(
-      "created_at" in (written[0]!.variants![0] as object),
+      "created_at" in (written[0]!.seq_variants![0] as object),
       false,
     );
     assert.equal(
-      "email_campaign_id" in (written[0]!.variants![0] as object),
+      "email_campaign_id" in (written[0]!.seq_variants![0] as object),
       false,
     );
     assert.equal(written[0]!.id, 1);
     assert.equal(written[0]!.email_body, "<div>Hi</div><div>%signature%</div>");
     assert.equal(
-      written[0]!.variants![0]!.email_body,
+      written[0]!.seq_variants![0]!.email_body,
       "<div>Hi</div><div>%signature%</div>",
     );
     assert.deepEqual(written[0]!.seq_delay_details, { delayInDays: 0 });
+  });
+
+  it("D110: GET sequence_variants become POST seq_variants; never variants", () => {
+    const written = sequencesForWrite([
+      {
+        id: 9,
+        seq_number: 1,
+        email_body: "<div>Hi</div><div>%signature%</div>",
+        variants: [{ id: 1, variant_label: "stale", email_body: "no" }],
+        sequence_variants: [
+          {
+            id: 22,
+            variant_label: "A",
+            email_body: "<div>Hi</div><div>%signature%</div>",
+          },
+        ],
+      } as SmartleadSequence,
+    ]);
+    assert.equal("variants" in written[0]!, false);
+    assert.equal("sequence_variants" in written[0]!, false);
+    assert.equal(written[0]!.seq_variants![0]!.id, 22);
+    assert.equal(
+      written[0]!.seq_variants![0]!.email_body,
+      "<div>Hi</div><div>%signature%</div>",
+    );
   });
 });

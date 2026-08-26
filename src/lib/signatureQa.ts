@@ -32,9 +32,11 @@ export function sequenceCopyHay(sequences: SmartleadSequence[]): Array<{
   for (const sequence of sequences) {
     const variants = sequence.sequence_variants?.length
       ? sequence.sequence_variants
-      : sequence.variants?.length
-        ? sequence.variants
-        : [{ email_body: sequence.email_body, subject: sequence.subject }];
+      : sequence.seq_variants?.length
+        ? sequence.seq_variants
+        : sequence.variants?.length
+          ? sequence.variants
+          : [{ email_body: sequence.email_body, subject: sequence.subject }];
     variants.forEach((variant, index) => {
       const body = String(variant.email_body ?? sequence.email_body ?? "");
       const subject = String(variant.subject ?? sequence.subject ?? "");
@@ -78,6 +80,15 @@ export function appendSignatureTag(sequences: SmartleadSequence[]): {
         ),
       }));
     }
+    if (sequence.seq_variants?.length) {
+      out.seq_variants = sequence.seq_variants.map((variant, index) => ({
+        ...variant,
+        email_body: fixBody(
+          variant.email_body,
+          `step ${sequence.seq_number} ${variant.variant_label ?? String.fromCharCode(65 + index)}`,
+        ),
+      }));
+    }
     if (sequence.variants?.length) {
       out.variants = sequence.variants.map((variant, index) => ({
         ...variant,
@@ -114,7 +125,6 @@ const SEQUENCE_WRITE_KEEP = new Set([
   "subject",
   "email_body",
   "seq_delay_details",
-  "variants",
   "seq_variants",
   "variant_distribution_type",
   "variant_label",
@@ -122,10 +132,12 @@ const SEQUENCE_WRITE_KEEP = new Set([
 ]);
 
 /**
- * D101 / D103 / D104 — Smartlead POST /sequences rejects GET-only
- * fields (`created_at`, `email_campaign_id`) and GET's
- * `sequence_variants` key (`"sequences[0].sequence_variants" is not
- * allowed`). Keep the writable set, remap GET variants to `variants`.
+ * D101 / D103 / D104 / D110 — Smartlead POST /sequences rejects
+ * GET-only fields (`created_at`, `email_campaign_id`) and GET's
+ * `sequence_variants` key. Live 2026-08-26 then rejected `variants`
+ * too (`"sequences[0].variants" is not allowed`). Keep the writable
+ * set, remap GET variants onto `seq_variants`, and never send
+ * `variants` or `sequence_variants`.
  */
 export function sequencesForWrite(
   sequences: SmartleadSequence[],
@@ -137,26 +149,31 @@ function omitReadonlySequence(row: SmartleadSequence): SmartleadSequence {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     if (SEQUENCE_WRITE_OMIT.has(key)) continue;
-    if (key === "sequence_variants") continue;
+    if (key === "sequence_variants" || key === "variants") continue;
     if (!SEQUENCE_WRITE_KEEP.has(key)) continue;
-    if (
-      (key === "variants" || key === "seq_variants") &&
-      Array.isArray(value)
-    ) {
+    if (key === "seq_variants" && Array.isArray(value)) {
       out[key] = value.map((variant) => omitReadonlySequence(variant as SmartleadSequence));
       continue;
     }
     out[key] = value;
   }
-  const raw = row as SmartleadSequence & { sequence_variants?: unknown };
-  if (
-    out.variants == null &&
-    out.seq_variants == null &&
-    Array.isArray(raw.sequence_variants)
-  ) {
-    out.variants = raw.sequence_variants.map((variant) =>
-      omitReadonlySequence(variant as SmartleadSequence),
-    );
+  const raw = row as SmartleadSequence & {
+    sequence_variants?: unknown;
+    seq_variants?: unknown;
+  };
+  if (out.seq_variants == null) {
+    const source = Array.isArray(raw.seq_variants)
+      ? raw.seq_variants
+      : Array.isArray(raw.sequence_variants)
+        ? raw.sequence_variants
+        : Array.isArray(raw.variants)
+          ? raw.variants
+          : null;
+    if (source) {
+      out.seq_variants = source.map((variant) =>
+        omitReadonlySequence(variant as SmartleadSequence),
+      );
+    }
   }
   return out as unknown as SmartleadSequence;
 }

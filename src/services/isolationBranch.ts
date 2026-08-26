@@ -12,6 +12,11 @@ import {
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
 import { decideIsolationVerdict } from "../lib/isolationVerdict.js";
+import {
+  allEspsAtOrAbove,
+  anyEspBelowThreshold,
+  type ProviderInboxSplit,
+} from "../lib/copySignal.js";
 import { campaignProof } from "../lib/isolationProof.js";
 import { nyDateLabel } from "../lib/campaignDayStats.js";
 import type { IsolationRunRecord } from "../state/isolationState.js";
@@ -115,6 +120,7 @@ export class IsolationBranchService {
     );
     const campaignInSpam =
       opts.campaignInSpam ?? (await this.campaignLooksSpam(campaignId));
+    const knownGoodFineAcrossEsps = await this.knownGoodFineAcrossEsps(emails);
     const rigPrimary = await this.rig.readLatestControl();
     const copyCanarySplit = this.copyCanary
       ? await this.copyCanary.readSplit(campaignId)
@@ -122,6 +128,7 @@ export class IsolationBranchService {
     const decided = decideIsolationVerdict({
       campaignInSpam,
       senderControls,
+      knownGoodFineAcrossEsps,
       copyCanary: copyCanarySplit,
       rig:
         decidedNeedsRig(campaignInSpam, senderControls)
@@ -207,11 +214,62 @@ export class IsolationBranchService {
       String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
     )[0];
     if (!latest) return true;
+    const tid = latest.spam_test_id ?? latest.id;
+    if (tid != null) {
+      const splits = await this.providerSplits(String(tid));
+      if (splits.length) {
+        return anyEspBelowThreshold(
+          splits,
+          this.config.remediationInboxThreshold,
+        );
+      }
+    }
     const spam = Number(latest.spam_count ?? 0);
     const inbox = Number(latest.inbox_count ?? 0);
     const total = spam + inbox + Number(latest.tab_count ?? 0);
     if (total <= 0) return true;
     return inbox / total * 100 < this.config.remediationInboxThreshold;
+  }
+
+  /** D93 — known-good on these domains, every scored ESP at/above 80%. */
+  private async knownGoodFineAcrossEsps(
+    emails: string[],
+  ): Promise<boolean | null> {
+    const wanted = new Set(emails.map((email) => email.toLowerCase()));
+    const controls = this.state
+      .listPodControls()
+      .filter((row) =>
+        row.emails.some((email) => wanted.has(email.toLowerCase())),
+      );
+    if (!controls.length) return null;
+    let scored = false;
+    for (const row of controls) {
+      if (!row.spamTestId) continue;
+      const splits = await this.providerSplits(row.spamTestId);
+      if (!splits.length) continue;
+      scored = true;
+      if (allEspsAtOrAbove(splits, this.config.remediationInboxThreshold) === false) {
+        return false;
+      }
+    }
+    return scored ? true : null;
+  }
+
+  private async providerSplits(testId: string): Promise<ProviderInboxSplit[]> {
+    try {
+      const report = await this.smartDelivery.getProviderwiseReport(testId);
+      const rows = Array.isArray(report?.result) ? report.result : [];
+      const out: ProviderInboxSplit[] = [];
+      for (const row of rows) {
+        const name = String(row.provider_name ?? row.provider ?? "");
+        const inbox = inboxPercentFromProvider(row);
+        if (!name || inbox == null) continue;
+        out.push({ name, inboxPercent: inbox });
+      }
+      return out;
+    } catch {
+      return [];
+    }
   }
 
   private async infraFromLatestControl(
@@ -241,6 +299,28 @@ export class IsolationBranchService {
       ipAnalytics,
     };
   }
+}
+
+function inboxPercentFromProvider(row: {
+  inbox_rate?: number;
+  inbox_count?: number;
+  tab_count?: number;
+  spam_count?: number;
+  adjusted_total_email_count?: number;
+  total_email_count?: number;
+}): number | null {
+  if (typeof row.inbox_rate === "number" && Number.isFinite(row.inbox_rate)) {
+    return row.inbox_rate <= 1 ? row.inbox_rate * 100 : row.inbox_rate;
+  }
+  const inbox = row.inbox_count ?? 0;
+  const tab = row.tab_count ?? 0;
+  const spam = row.spam_count ?? 0;
+  const total =
+    row.adjusted_total_email_count ??
+    row.total_email_count ??
+    inbox + tab + spam;
+  if (!total) return null;
+  return (inbox / total) * 100;
 }
 
 function decidedNeedsRig(

@@ -110,3 +110,23 @@ export function classifyCopySignal(
 export function shouldDeferSenderRotationForCopy(signal: CopySignal): boolean {
   return signal.kind === "copy_likely";
 }
+
+/**
+ * D93 — the word hunt is not “Outlook buried, Gmail fine”. It is: this
+ * campaign test is not inboxing on an ESP, and the known-good email from
+ * those same domains is fine on every scored ESP.
+ */
+export function anyEspBelowThreshold(
+  providers: ProviderInboxSplit[],
+  threshold = 80,
+): boolean {
+  return providers.some((row) => row.inboxPercent < threshold);
+}
+
+export function allEspsAtOrAbove(
+  providers: ProviderInboxSplit[],
+  threshold = 80,
+): boolean | null {
+  if (!providers.length) return null;
+  return providers.every((row) => row.inboxPercent >= threshold);
+}

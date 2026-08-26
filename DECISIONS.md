@@ -2034,3 +2034,85 @@ already refused to treat as evidence.
 **Guards.** Rate helper (1k / over 10%); burst helper (>10 in window);
 service pauses on those trips only; no 20/7 import; no START;
 owner-intent D90.
+---
+
+## D91 — Paused-campaign bounce investigate is retired
+
+**Decision.** D29 is no longer live. Do not scan already-PAUSED
+campaigns for 7% aggregate sender bounce. Do not rotate worst
+bouncers from that hunt. Do not start the campaign. The 10-minute
+D90 pause on live campaigns is the bounce rule. The leftover
+`CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD` default of 7 may stay in
+config so a Railway leftover does not crash boot.
+
+**Why.** Josh (2026-08-26): "delete this If a campaign is already
+paused and senders are over 7% bounce, it digs in…"
+
+**Tradeoff.** A paused campaign with hot senders stays paused with
+those senders until a human acts. Accepted: that hunt was the
+confusing leftover next to D90.
+
+**Guards.** index.ts does not construct or run
+CampaignBounceInvestigateService; owner-intent D91.
+---
+
+## D92 — Signature fix writes First Last / client name, then tells Josh
+
+**Decision.** Missing `%signature%` is not a Slack approve. The
+checker appends the tag (mailbox expands it to the two-line
+signature) and writes each mailbox on that campaign to
+`First Last\n{Client name}` — Goliath Cybersecurity, SalesGlider
+Growth Partners, etc. Then Slack one `action_result`: I added the
+signature on these campaigns, it sends as name plus client name.
+No button. Append-only on the sequence body; subjects untouched.
+
+**Why.** Josh (2026-08-26): "for the sig fix, just automatically
+put it first name last name client name … but tell me when you
+did that."
+
+**Tradeoff.** A campaign Josh wanted to leave tag-less gets the
+tag. Accepted: that is what was blocking send, and the write is
+the same two-line pair mailbox-settings already wanted.
+
+**Guards.** campaignCheck autoApplySignature + notifyActionResult;
+no add_signature_tag ask; owner-intent D92.
+---
+
+## D93 — Word hunt is ESP-fail on campaign copy + known-good fine ESP-to-ESP
+
+**Decision.** The spam-word / deletion test is not “Outlook buried
+and Gmail is fine.” It starts when the **campaign copy test is not
+inboxing on an ESP** and the **known-good email on those same
+domains is fine on every scored ESP**. If known-good is also
+failing an ESP, that is infra, not a word. Isolation still never
+calls COPY from a failing control (D48).
+
+**Why.** Josh (2026-08-26): "its not just if outlook. that spam
+deletion test is for an esp where its not inboxing in the test
+and the known good copy on those domains are fine esp to esp."
+
+**Tradeoff.** A one-ESP campaign fail with no known-good ESP
+reading still uses the standing CLEAN control as fallback.
+Accepted: no per-ESP known-good is the old path, not a new guess.
+
+**Guards.** anyEspBelowThreshold marks the suspect; known-good
+false across ESPs is INFRA; owner-intent D93.
+---
+
+## D94 — Disconnected mailboxes are reconnected every health pass
+
+**Decision.** Every 15-minute health pass reauths disconnected
+SMTP/IMAP mailboxes (`AccountReconnectService`). Slack after a
+real reconnect or a hard failure (`action_result`) so the work
+is visible — D71 was dropping those messages as unclassified.
+Daily 3am reconnect stays. Do not wait for a human to reconnect
+a DCD mailbox.
+
+**Why.** Josh (2026-08-26): "it also needs to autoreconnect dcd
+mailboxes." Reconnect already ran; Slack did not post.
+
+**Tradeoff.** A mailbox that needs manual OAuth still fails and
+is named. Accepted: that is the only leftover human step.
+
+**Guards.** Health still calls runReconnect; notifyReconnect uses
+action_result; owner-intent D94.

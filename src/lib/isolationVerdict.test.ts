@@ -91,4 +91,15 @@ describe("isolation verdict", () => {
     assert.equal(result.verdict, "INCONCLUSIVE");
     assert.equal(failedControlIsNeverCopy(result), true);
   });
+
+  it("D93: campaign ESP fail + known-good also failing an ESP is INFRA", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["PRIMARY", "PRIMARY"],
+      knownGoodFineAcrossEsps: false,
+    });
+    assert.equal(result.verdict, "INFRA");
+    assert.equal(result.startCopyTeardown, false);
+    assert.equal(failedControlIsNeverCopy(result), true);
+  });
 });

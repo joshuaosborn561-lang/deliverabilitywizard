@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  allEspsAtOrAbove,
+  anyEspBelowThreshold,
   classifyCopySignal,
   shouldDeferSenderRotationForCopy,
 } from "./copySignal.js";
@@ -88,5 +90,29 @@ describe("copySignal", () => {
       const signal = classifyCopySignal([{ name: "G Suite", inboxPercent: 40 }]);
       assert.notEqual(signal.kind, "copy_likely");
     });
+  });
+
+  it("D93: any ESP below 80% is a campaign-copy fail; known-good needs every ESP clean", () => {
+    assert.equal(
+      anyEspBelowThreshold([
+        { name: "G Suite", inboxPercent: 90 },
+        { name: "Outlook", inboxPercent: 40 },
+      ]),
+      true,
+    );
+    assert.equal(
+      allEspsAtOrAbove([
+        { name: "G Suite", inboxPercent: 90 },
+        { name: "Outlook", inboxPercent: 85 },
+      ]),
+      true,
+    );
+    assert.equal(
+      allEspsAtOrAbove([
+        { name: "G Suite", inboxPercent: 90 },
+        { name: "Outlook", inboxPercent: 40 },
+      ]),
+      false,
+    );
   });
 });

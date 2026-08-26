@@ -27,8 +27,7 @@ import {
 import { isBenignOpsNoise } from "../lib/alertNoise.js";
 import { ApiError, sleep } from "../lib/http.js";
 import {
-  classifyCopySignal,
-  shouldDeferSenderRotationForCopy,
+  anyEspBelowThreshold,
   type ProviderInboxSplit,
 } from "../lib/copySignal.js";
 import type {
@@ -693,9 +692,12 @@ export class RemediationService {
           if (!name || inbox == null) continue;
           providers.push({ name, inboxPercent: inbox });
         }
-        const signal = classifyCopySignal(providers, threshold);
-        if (shouldDeferSenderRotationForCopy(signal)) {
-          copyDeferByCampaign.set(cid, signal.reason);
+        const weak = providers.filter((row) => row.inboxPercent < threshold);
+        if (anyEspBelowThreshold(providers, threshold) && weak[0]) {
+          copyDeferByCampaign.set(
+            cid,
+            `${weak[0].name} is not inboxing the campaign copy. Word hunt starts only if known-good on those domains is fine across ESPs.`,
+          );
         }
       } catch {
         // Placement copy signal is best-effort; bounce path still runs.

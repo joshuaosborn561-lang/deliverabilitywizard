@@ -244,12 +244,12 @@ describe("owner intent", () => {
     );
   });
 
-  it("D29: paused-campaign bounce investigate threshold is 7%", () => {
+  it("D29 leftover: the 7% number may stay in config; it is not a live hunt (D91)", () => {
     assert.equal(
       defaults.campaignBounceInvestigateThreshold,
       7,
       stop(
-        "Paused campaigns with >7% aggregate sender bounce are investigated (D29).",
+        "The retired D29 7% leftover may stay in config (D91).",
         `Investigate threshold is now ${defaults.campaignBounceInvestigateThreshold}%.`,
       ),
     );
@@ -2545,10 +2545,10 @@ describe("owner intent — D85 findings have owners", () => {
     const check = await read("../services/campaignCheck.ts");
     assert.match(
       check,
-      /add_signature_tag/,
+      /autoApplySignature/,
       stop(
-        "missing %signature% posts a one-tap fix ask (D85).",
-        "campaignCheck.ts no longer asks add_signature_tag — the finding is ownerless again.",
+        "missing signature is written automatically (D92).",
+        "campaignCheck.ts no longer auto-applies the signature.",
       ),
     );
     assert.match(
@@ -2618,18 +2618,10 @@ describe("owner intent — D87 bulk signature approve", () => {
     const check = await read("../services/campaignCheck.ts");
     assert.match(
       check,
-      /campaignIds: open\.map/,
+      /notifyActionResult/,
       stop(
-        "Several blocked campaigns get one bulk %signature% ask (D87).",
-        "campaignCheck.ts went back to a Slack button per campaign.",
-      ),
-    );
-    assert.match(
-      check,
-      /coveredSignatureCampaigns/,
-      stop(
-        "A campaign already owned by a live ask is not re-asked (D85/D87).",
-        "campaignCheck.ts no longer checks signature-ask coverage.",
+        "Several signature writes are one Slack after the fact (D92).",
+        "campaignCheck.ts no longer tells Josh after it writes signatures.",
       ),
     );
 
@@ -2931,10 +2923,10 @@ describe("owner intent — D89 leftover canon holes", () => {
     const check = await read("../services/campaignCheck.ts");
     assert.match(
       check,
-      /supersedePendingSingleSignatureAsks/,
+      /autoApplySignature/,
       stop(
-        "Pending single %signature% asks collapse into one bulk ask (D89).",
-        "campaignCheck.ts no longer supersedes pre-D87 singles — those campaigns stay stranded on old buttons.",
+        "Signatures are written without a Slack approve (D92).",
+        "campaignCheck.ts lost autoApplySignature.",
       ),
     );
 
@@ -2954,6 +2946,108 @@ describe("owner intent — D89 leftover canon holes", () => {
       stop(
         "The EOD brief renders loaded drafts in plain English (D89).",
         "slack.ts accepts loadedDrafts but never says leads are sitting in draft.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D91 paused bounce hunt retired", () => {
+  it("D91: monitor does not run bounce investigate", async () => {
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      index,
+      /CampaignBounceInvestigateService/,
+      stop(
+        "Paused-campaign bounce investigate is retired (D91).",
+        "index.ts still constructs CampaignBounceInvestigateService.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /bounce-investigate/,
+      stop(
+        "The bounce-investigate /run mode is retired (D91).",
+        "index.ts still exposes bounce-investigate.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D92 signature writes itself", () => {
+  it("D92: checker writes the signature and Slacks after", async () => {
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      check,
+      /desiredMailboxSignature/,
+      stop(
+        "Mailbox signature is set to First Last / client name (D92).",
+        "campaignCheck.ts no longer writes the two-line mailbox signature.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
+      /kind: "add_signature_tag"/,
+      stop(
+        "Signature fix is not a Slack approve (D92).",
+        "campaignCheck.ts still asks add_signature_tag.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D93 word hunt is ESP-fail + known-good clean", () => {
+  it("D93: suspects from any weak ESP; known-good fail is infra", async () => {
+    const rem = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/remediation.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      rem,
+      /anyEspBelowThreshold/,
+      stop(
+        "A campaign copy test failing any ESP can start the word-hunt path (D93).",
+        "remediation.ts still waits for the Outlook-vs-Gmail copy_likely pattern.",
+      ),
+    );
+    const verdict = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/isolationVerdict.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      verdict,
+      /knownGoodFineAcrossEsps/,
+      stop(
+        "Known-good failing an ESP is infra, not a word hunt (D93).",
+        "isolationVerdict.ts lost the known-good ESP-to-ESP gate.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D94 reconnect DCD mailboxes", () => {
+  it("D94: health reconnects; Slack uses action_result", async () => {
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /stage\("reconnect"/,
+      stop(
+        "Health reauths disconnected mailboxes (D94).",
+        "index.ts no longer runs reconnect on the health pass.",
+      ),
+    );
+    const slack = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../clients/slack.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      slack,
+      /notifyReconnect[\s\S]*action_result/,
+      stop(
+        "A real reconnect is posted as an action result (D94).",
+        "notifyReconnect is unclassified again — D71 drops it.",
       ),
     );
   });

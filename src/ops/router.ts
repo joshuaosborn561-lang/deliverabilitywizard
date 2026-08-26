@@ -555,7 +555,7 @@ export function createOpsRouter(opts: {
         case "approvals":
           if (session.role !== "owner") {
             const reason =
-              "Only Josh can view or decide spend approvals. Cayden can run checks and safe mailbox rotations.";
+              "Only Josh can view or decide spend approvals. Cayden can run checks and reconnects.";
             await audit(session, "approvals", "denied", undefined, reason);
             respond(`I can't do that.\n\n${reason}`);
             return;

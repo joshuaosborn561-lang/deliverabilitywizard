@@ -95,7 +95,7 @@ export function classifyOpsMessage(
     return {
       type: "denied",
       reason:
-        "Bulk remediation is intentionally unavailable in chat. Inspect specific evidence and rotate one mailbox at a time, or use the protected owner runbook.",
+        "There is no remediation to run — pulls are kill-only (D51/D130), single or bulk. If a domain is burned, Josh retires it from the burned-domain Slack and health backfills the floor.",
     };
   }
 

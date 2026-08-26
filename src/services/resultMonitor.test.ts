@@ -82,7 +82,6 @@ function fakeSlack(captured: Captured): SlackClient {
 const config = loadConfig({
   SCORE_SAME_ESP_ONLY: "true",
   MIN_SAME_ESP_SAMPLES: "3",
-  ENABLE_REMEDIATION: "true",
   REMEDIATION_INBOX_THRESHOLD: "80",
   DELIVERABILITY_THRESHOLD: "80",
 });

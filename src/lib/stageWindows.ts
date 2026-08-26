@@ -33,7 +33,7 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "qa-unpause": HEALTH_MS,
   "campaign-check-first": HEALTH_MS,
   "campaign-health": HEALTH_MS,
-  "pod-cover": HEALTH_MS,
+  "pod-cover": null, // D89 — runs only while an inbox lacks known-good coverage
   "mailbox-gap": HEALTH_MS,
   // Slower converges piggybacked on the sweep.
   "mailbox-settings-full": SIX_HOURLY_MS,

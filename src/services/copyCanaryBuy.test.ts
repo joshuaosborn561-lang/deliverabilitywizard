@@ -242,15 +242,19 @@ describe("manual fleet adoption (D86)", () => {
     inboxkitRows?: unknown[];
     smartleadAccounts?: unknown[];
     warmupCalls?: Array<{ id: number; enabled: boolean }>;
-    exported?: string[][];
+    exported?: Array<{ seq: string; uids: string[] }>;
+    exportImpl?: (seq: string, uids: string[]) => Promise<void>;
+    sequencers?: unknown[];
   }) {
     return new CopyCanaryBuyService(
       loadConfig({ DRY_RUN: "false" }),
       {
         listAllMailboxes: async () => opts.inboxkitRows ?? [],
-        exportMailboxesToSequencer: async (_seq: string, uids: string[]) => {
-          opts.exported?.push(uids);
+        exportMailboxesToSequencer: async (seq: string, uids: string[]) => {
+          if (opts.exportImpl) return opts.exportImpl(seq, uids);
+          opts.exported?.push({ seq, uids });
         },
+        listSequencers: async () => opts.sequencers ?? [],
       } as unknown as InboxKitClient,
       null,
       {
@@ -403,6 +407,39 @@ describe("manual fleet adoption (D86)", () => {
     assert.ok(deferred);
     assert.equal(deferred!.adopted.length, 0);
     assert.match(deferred!.reason ?? "", /in flight/);
+  });
+
+  it("heals a stale Smartlead sequencer uid and still exports", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-seq-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setPoolProvision({ sequencerUid: "stale-uid" });
+    const exported: Array<{ seq: string; uids: string[] }> = [];
+    const service = makeService({
+      state,
+      inboxkitRows: manualRows,
+      // Not in Smartlead yet — the whole point of the export.
+      smartleadAccounts: [],
+      sequencers: [{ uid: "fresh-uid", platform: "SMARTLEAD", name: "Smartlead" }],
+      exportImpl: async (seq, uids) => {
+        if (seq === "stale-uid") {
+          throw new Error("Sequencer not found");
+        }
+        exported.push({ seq, uids });
+      },
+    });
+    const result = await service.adoptManualPurchase();
+    assert.ok(result);
+    assert.equal(result!.adopted.length, manualEmails.length);
+    assert.equal(exported.length, 1);
+    assert.equal(exported[0]?.seq, "fresh-uid");
+    assert.equal(exported[0]?.uids.length, manualEmails.length);
+    assert.equal(
+      state.getPoolProvision().sequencerUid,
+      "fresh-uid",
+      "the healed uid must be written back so the pool provisioner heals too",
+    );
   });
 
   it("a client inbox bought through the same workspace is never adopted", async () => {

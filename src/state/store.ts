@@ -228,6 +228,13 @@ export interface AppState {
   smartleadAutopauseOff: Record<string, string>;
   /** D84 — ISO time of the last read-verify sweep of bounce autopause. */
   lastAutopauseVerifyAt: string | null;
+  /**
+   * D124 — ISO time the one-shot force write of bounce_autopause_threshold
+   * 100 (off) finished on every living campaign. Null means the next
+   * bounce-autostop pass still owes that write, even if the D84 cache
+   * already says off.
+   */
+  autopauseForceAllAt: string | null;
   /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
   bounceSnapshots: Record<string, { bounced: number; sent: number; at: string }>;
   /** D84 — per-stage watchdog: last success / failure per named loop. */
@@ -363,6 +370,7 @@ const EMPTY_STATE: AppState = {
   genericBackfillApprovals: {},
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
+  autopauseForceAllAt: null,
   bounceSnapshots: {},
   stageHealth: {},
   canaryFleetDown: null,
@@ -417,6 +425,7 @@ export class StateStore {
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
+        autopauseForceAllAt: parsed.autopauseForceAllAt ?? null,
         bounceSnapshots: parsed.bounceSnapshots ?? {},
         stageHealth: parsed.stageHealth ?? {},
         canaryFleetDown: parsed.canaryFleetDown ?? null,
@@ -1024,6 +1033,15 @@ export class StateStore {
 
   setLastAutopauseVerifyAt(iso: string): void {
     this.state.lastAutopauseVerifyAt = iso;
+  }
+
+  /** D124 — one forced autopause-off write has already run. */
+  getAutopauseForceAllAt(): string | null {
+    return this.state.autopauseForceAllAt;
+  }
+
+  setAutopauseForceAllAt(iso: string): void {
+    this.state.autopauseForceAllAt = iso;
   }
 
   getBounceSnapshot(

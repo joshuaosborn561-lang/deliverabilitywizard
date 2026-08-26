@@ -148,8 +148,10 @@ pod-control shell stays paused, generics only on a **POC** client or after
 Josh Slack-approves a backfill. Goliath is marked POC. Bounce pause
 is not this checker (D90). Missing signature is written on the spot
 (D92). Slack the first time we write a campaign; a leftover
-backfill does not re-ping every pass (D95). It stays on that
-first-check until it passes.
+backfill does not re-ping every pass (D95). The old
+*Add %signature%* button is retired and leftover pending asks
+are dismissed on boot (D97). It stays on that first-check
+until it passes.
 
 After it passes, an **hourly sweep** watches pod/shell, mailbox signatures,
 client tag, one-client, **active canaries for each serving inbox and

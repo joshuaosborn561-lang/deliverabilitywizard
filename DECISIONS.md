@@ -2161,3 +2161,22 @@ is why the unwarmed fleet exists.
 
 **Guards.** isolationVerdict requires unwarmedCopyFineAcrossEsps
 or copyCanary.unwarmedLanded before COPY; owner-intent D96.
+---
+
+## D97 — Leftover Add %signature% Slack asks are retired
+
+**Decision.** D92 still writes the tag. Do not Slack
+`add_signature_tag` (the "tap Add %signature%" button). A deploy
+remind must not re-post leftover pending asks. Boot dismisses
+them. `slackKindForIsolationAction("add_signature_tag")` is null
+so D71 drops the post even if something still requests one.
+
+**Why.** Josh (2026-08-26): "STOP SENDING ME THESE ALERTS
+%signature% missing on SalesGlider Nurture" — the old QA button,
+re-posted on deploy from leftover pending state.
+
+**Tradeoff.** An old Slack button still executes if someone taps
+it. Accepted: that write is the same append D92 already does.
+
+**Guards.** slackKind add_signature_tag is null; remind skips and
+dismisses those asks; owner-intent D97.

@@ -18,6 +18,7 @@ describe("slackAllowed", () => {
     assert.equal(slackKindForIsolationAction("retire_domain"), "burned_domain");
     assert.equal(slackKindForIsolationAction("buy_domains"), "burned_domain");
     assert.equal(slackKindForIsolationAction("swap_copy"), "copy_word");
+    assert.equal(slackKindForIsolationAction("add_signature_tag"), null);
     assert.equal(slackKindForIsolationAction("buy_canary_fleet"), null);
   });
 });

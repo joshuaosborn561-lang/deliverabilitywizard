@@ -31,7 +31,8 @@ export function slackKindForIsolationAction(
     | "generic_backfill"
     | "add_signature_tag",
 ): SlackAllowKind | null {
-  if (kind === "swap_copy" || kind === "add_signature_tag") return "copy_word";
+  if (kind === "swap_copy") return "copy_word";
+  // D97 — leftover Add %signature% asks are not Slack. The checker writes.
   if (kind === "retire_domain" || kind === "buy_domains") return "burned_domain";
   if (kind === "generic_backfill") return "generic_backfill";
   return null;

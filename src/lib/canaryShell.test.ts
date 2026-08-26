@@ -7,6 +7,8 @@ import {
   isAnyShellCampaign,
   isCanaryShellCampaign,
   liveCampaignIdFromCanaryShellName,
+  shellLeadCount,
+  shellLeadImportAccepted,
 } from "./canaryShell.js";
 
 describe("canary shell identity", () => {
@@ -30,7 +32,29 @@ describe("canary shell identity", () => {
     assert.equal(isAnyShellCampaign({ id: 3, name: "Goliath L2" }), false);
     assert.equal(
       CANARY_SHELL_SEED_EMAIL,
-      "canary.shell.seed@getcrosslaunchco.info",
+      "canary.instrumentation@getcrosslaunchco.info",
     );
+    assert.equal(CANARY_SHELL_SEED_EMAIL.includes("+"), false);
+  });
+
+  it("D118: import success reads upload_count / already_added, not only added_count", () => {
+    assert.equal(shellLeadImportAccepted({ added_count: 1 }), true);
+    assert.equal(shellLeadImportAccepted({ upload_count: 1, added_count: 0 }), true);
+    assert.equal(
+      shellLeadImportAccepted({ already_added_to_campaign: 1, added_count: 0 }),
+      true,
+    );
+    assert.equal(shellLeadImportAccepted({ lead_ids: [99] }), true);
+    assert.equal(
+      shellLeadImportAccepted({ added_count: 0, skipped_count: 0 }),
+      false,
+    );
+  });
+
+  it("D118: lead count reads Smartlead's total / nested / leads shapes", () => {
+    assert.equal(shellLeadCount({ total_leads: "1", data: [] }), 1);
+    assert.equal(shellLeadCount({ total: 1, leads: [{ id: 1 }] }), 1);
+    assert.equal(shellLeadCount({ data: { total_leads: 2, leads: [{}, {}] } }), 2);
+    assert.equal(shellLeadCount({ total_leads: 0, data: [] }), 0);
   });
 });

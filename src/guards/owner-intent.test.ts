@@ -3298,7 +3298,7 @@ describe("owner intent — D114 canary tests hang on a paused shell", () => {
 });
 
 describe("owner intent — D117 seed a real canary inbox then pause", () => {
-  it("D117: fleet seed email is used and the shell is paused after seeding", async () => {
+  it("D117: fleet-inbox seed is superseded — still seed then pause", async () => {
     const { readFile } = await import("node:fs/promises");
     const canary = await readFile(
       new URL("../services/copyCanary.ts", import.meta.url),
@@ -3308,28 +3308,86 @@ describe("owner intent — D117 seed a real canary inbox then pause", () => {
       new URL("../services/canaryShell.ts", import.meta.url),
       "utf8",
     );
-    assert.match(
+    assert.doesNotMatch(
       canary,
       /seedEmail:\s*senderAccounts\[0\]/,
       stop(
-        "The shell lead is a real canary inbox (D117).",
-        "copyCanary.ts no longer passes a fleet seed email.",
+        "D117's fleet-inbox seed is superseded (D118).",
+        "copyCanary.ts still seeds a canary sender as a lead.",
       ),
     );
     assert.match(
       shell,
       /seedShellLead[\s\S]*updateCampaignStatus\(campaign\.id, "PAUSED"\)/,
       stop(
-        "Seed while drafted, then pause (D117).",
+        "Seed, then pause (D117, kept by D118).",
         "canaryShell.ts pauses before seeding again.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D118 parse the real import and seed a non-sender", () => {
+  it("D118: non-sender seed, upload_count accepted, raw import logged", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lib = await readFile(
+      new URL("../lib/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    const shell = await readFile(
+      new URL("../services/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    const client = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      lib,
+      /canary\.instrumentation@getcrosslaunchco\.info/,
+      stop(
+        "The shell lead is an instrumentation address, not a sending account (D118).",
+        "CANARY_SHELL_SEED_EMAIL is no longer the non-sender seed.",
+      ),
+    );
+    assert.match(
+      lib,
+      /upload_count/,
+      stop(
+        "Import success reads upload_count (D118).",
+        "shellLeadImportAccepted no longer looks at upload_count.",
+      ),
+    );
+    assert.match(
+      lib,
+      /already_added_to_campaign/,
+      stop(
+        "A lead already on the shell counts (D118).",
+        "already_added_to_campaign is no longer accepted.",
       ),
     );
     assert.match(
       shell,
-      /added_count/,
+      /upload_count=/,
       stop(
-        "A skipped seed is a hard fail (D117).",
-        "canaryShell.ts no longer checks added_count.",
+        "Live logs must show the real import fields (D118).",
+        "canary-shell seed log no longer prints upload_count.",
+      ),
+    );
+    assert.match(
+      shell,
+      /raw=/,
+      stop(
+        "A failed seed must log the raw add/get bodies (D118).",
+        "canaryShell.ts no longer logs the raw Smartlead JSON.",
+      ),
+    );
+    assert.match(
+      client,
+      /addLeadsToCampaign/,
+      stop(
+        "Only the Smartlead client imports leads, and only for shells (D52/D118).",
+        "addLeadsToCampaign is gone.",
       ),
     );
   });

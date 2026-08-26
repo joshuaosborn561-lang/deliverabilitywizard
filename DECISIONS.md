@@ -2622,3 +2622,34 @@ Accepted: the campaign stays paused and never sends to it.
 
 **Guards.** seedEmail from the fleet; seed then pause;
 added_count checked; owner-intent D117.
+
+---
+
+## D118 — Parse the real Smartlead import; seed a non-sender
+
+**Decision.** Treat a canary-shell lead import as successful when
+`upload_count`, `already_added_to_campaign`, `added_count`, or
+`lead_ids` is positive, or GET `/leads` shows `total_leads` /
+`total` / a non-empty `data` or `leads` list (including a nested
+`data` object). Log the raw add and GET JSON. The dummy seed is
+`canary.instrumentation@getcrosslaunchco.info` — not a Smartlead
+sending account and not a plus-address of one. Still seed, then
+PAUSE. Still never import onto a live client campaign (D52).
+
+**Why.** Live 2026-08-26 after #128 (D117): every shell logged
+`leilasanchez@getcrosslaunchco.info added=0 skipped=0` then
+`still has no leads`. Two bugs: (1) the Cotera / in-repo skill
+response is `upload_count` + `already_added_to_campaign`, not
+`added_count` — D117 read the wrong fields and failed even if
+the import worked; GET may use `total` / `leads` rather than
+`total_leads` / `data`. (2) that address is a canary *sending*
+account on the shell; Smartlead can refuse an email-account as
+a lead. D115's fabricated `canary.shell.seed@…` hit the same
+"No leads available" wall, so we do not go back to it.
+
+**Tradeoff.** One unused instrumentation contact per shell, not
+a real inbox. Accepted: the campaign stays paused and never
+sends to it, and SmartDelivery only needs a lead row at seq 1.
+
+**Guards.** CANARY_SHELL_SEED_EMAIL is the non-sender address;
+shellLeadImportAccepted; raw import log; owner-intent D118.

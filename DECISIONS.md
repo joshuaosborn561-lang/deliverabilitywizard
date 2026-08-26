@@ -2551,3 +2551,51 @@ D56 already proved the shell pattern.
 **Guards.** isCanaryShellCampaign / isAnyShellCampaign;
 ensureCanaryShell; copyCanary never adds to a live campaign;
 owner-intent D114.
+
+---
+
+## D115 — Canary shells get one dummy seed lead
+
+**Decision.** Each paused canary shell is given **one dummy
+lead** (`canary.shell.seed@getcrosslaunchco.info`) so
+SmartDelivery `/spam-test/schedule` will accept it. The shell
+stays **PAUSED**. Placement tests still send to seed inboxes,
+not this contact. The same address may sit on every canary
+shell (`ignore_duplicate_leads_in_other_campaign`).
+
+This is not a client list import. Lead runout still never
+imports or extends a live campaign (D52). `addLeadsToCampaign`
+is only called from `canaryShell.ts`.
+
+**Why.** Live 2026-08-26 after #126: D114 created the shells
+and then every attach died on "No leads available for the
+selected or lower sequence".
+
+**Tradeoff.** One unused contact per shell. Accepted: the
+schedule API requires a lead on that campaign, and starting
+the shell is already blocked.
+
+**Guards.** CANARY_SHELL_SEED_EMAIL; seedShellLead;
+owner-intent D115.
+
+---
+
+## D116 — Missing placement tests scan on that health pass
+
+**Decision.** When `no_placement_test` is on the board, the
+health pass runs scan-backfill **on that pass**. The D84
+hourly throttle for this kick is gone. Pod-control cover
+stays hourly (D89).
+
+**Why.** Live 2026-08-26: morning START and the hourly
+checker flagged 20 ACTIVE campaigns with no recurring test
+after the 04:54 scan. The next backfill was gated to ~05:49,
+so the hole sat through two health passes.
+
+**Tradeoff.** A full scan on every 15-minute pass while any
+campaign is uncovered. The scanner skips campaigns that
+already have a living test. Accepted: leaving them bare is
+worse.
+
+**Guards.** missingTest → scan-backfill with no 55-minute
+gate; owner-intent D116.

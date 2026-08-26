@@ -8,6 +8,7 @@ describe("ensureCanaryShell", () => {
   it("reuses a paused shell, writes live copy, and adds only canary accounts", async () => {
     const added: Array<{ campaignId: number; ids: number[] }> = [];
     const written: Array<{ campaignId: number; subject?: string }> = [];
+    const seeded: Array<{ campaignId: number; email: string }> = [];
     const campaigns: SmartleadCampaign[] = [
       { id: 4, name: "Live A", status: "ACTIVE", client_id: 2 },
       { id: 104, name: "Canary shell: #4 Live A", status: "PAUSED" },
@@ -26,6 +27,12 @@ describe("ensureCanaryShell", () => {
         updateCampaignSequences: async (campaignId: number, sequences: Array<{ subject?: string }>) => {
           written.push({ campaignId, subject: sequences[0]?.subject });
         },
+        addLeadsToCampaign: async (
+          campaignId: number,
+          leads: Array<{ email: string }>,
+        ) => {
+          seeded.push({ campaignId, email: leads[0]!.email });
+        },
         getCampaignEmailAccounts: async () => [],
         addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
           added.push({ campaignId, ids });
@@ -43,6 +50,9 @@ describe("ensureCanaryShell", () => {
     assert.equal(result.sequenceMappingId, 77);
     assert.equal(result.created, false);
     assert.deepEqual(written, [{ campaignId: 104, subject: "Quick look" }]);
+    assert.deepEqual(seeded, [
+      { campaignId: 104, email: "canary.shell.seed@getcrosslaunchco.info" },
+    ]);
     assert.deepEqual(added, [{ campaignId: 104, ids: [11, 12] }]);
   });
 

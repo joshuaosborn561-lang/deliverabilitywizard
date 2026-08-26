@@ -713,20 +713,17 @@ async function main(): Promise<void> {
         campaignHealth.run({ inventory }),
       );
 
-      // D84 — placement coverage is fixed when it is found missing, not only
-      // at the daily 9:00 scan. One failed morning run used to mean 24h of
-      // ACTIVE campaigns with no recurring test.
+      // D84 / D116 — placement coverage is fixed on the pass that finds
+      // it, not only at the daily 9:00 scan. The D84 hourly throttle
+      // left new ACTIVE campaigns uncovered for ~55 minutes after the
+      // 04:54 scan (live 2026-08-26: no_placement_test=20).
       if (config.autoPlacementTests) {
         const missingTest = state
           .listCampaignChecks()
           .some((record) =>
             (record.findings ?? []).some((f) => f.startsWith("no_placement_test")),
           );
-        const lastScanAt = state.get().lastScanAt;
-        const scanAgeMs = lastScanAt
-          ? Date.now() - Date.parse(lastScanAt)
-          : Number.POSITIVE_INFINITY;
-        if (missingTest && scanAgeMs >= 55 * 60 * 1000) {
+        if (missingTest) {
           await stage("scan-backfill", () => runScan("canon-sweep"));
         }
       }

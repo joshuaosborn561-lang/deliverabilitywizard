@@ -3297,6 +3297,84 @@ describe("owner intent — D114 canary tests hang on a paused shell", () => {
   });
 });
 
+describe("owner intent — D116 missing placement scans on that pass", () => {
+  it("D116: no_placement_test kicks scan-backfill without the hourly wait", async () => {
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /if \(missingTest\) \{\s*await stage\("scan-backfill"/,
+      stop(
+        "A missing placement test is fixed on that health pass (D116).",
+        "index.ts still waits 55 minutes before scan-backfill.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /missingTest && scanAgeMs >= 55/,
+      stop(
+        "The D84 hourly placement throttle is gone (D116).",
+        "scan-backfill is still gated on a 55-minute clock.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D115 canary shells get a dummy seed lead", () => {
+  it("D115: only canary shells import the dummy seed; live campaigns never do", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const shellLib = await readFile(
+      new URL("../lib/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    const shellSvc = await readFile(
+      new URL("../services/canaryShell.ts", import.meta.url),
+      "utf8",
+    );
+    const canary = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    const runout = await readFile(
+      new URL("../services/leadRunout.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      shellLib,
+      /CANARY_SHELL_SEED_EMAIL/,
+      stop(
+        "The dummy seed address is named (D115).",
+        "CANARY_SHELL_SEED_EMAIL is gone.",
+      ),
+    );
+    assert.match(
+      shellSvc,
+      /addLeadsToCampaign/,
+      stop(
+        "Canary shells get the dummy seed so SmartDelivery will schedule (D115).",
+        "canaryShell.ts no longer seeds a lead.",
+      ),
+    );
+    assert.doesNotMatch(
+      canary,
+      /addLeadsToCampaign/,
+      stop(
+        "Live campaigns never get a lead import from copy-canary (D52/D115).",
+        "copyCanary.ts now writes leads.",
+      ),
+    );
+    assert.doesNotMatch(
+      runout,
+      /addLeadsToCampaign/,
+      stop(
+        "Lead runout still never imports (D52).",
+        "leadRunout.ts now writes leads.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D112 canary schedule omits sequence", () => {
   it("D112: schedule sends mapping id, not a custom sequence body", async () => {
     const placement = await import("node:fs/promises").then((fs) =>

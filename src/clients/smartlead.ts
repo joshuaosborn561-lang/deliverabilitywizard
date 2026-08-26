@@ -241,6 +241,32 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * D115 — instrumentation only. Canary shells need one dummy lead
+   * before SmartDelivery will schedule. Never call this for a live
+   * client campaign (D52).
+   */
+  addLeadsToCampaign(
+    campaignId: number,
+    leadList: Array<{
+      email: string;
+      first_name?: string;
+      last_name?: string;
+    }>,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+        method: "POST",
+        body: {
+          lead_list: leadList,
+          settings: {
+            ignore_duplicate_leads_in_other_campaign: true,
+          },
+        },
+      }),
+    );
+  }
+
   addEmailAccountsToCampaign(
     campaignId: number,
     emailAccountIds: number[],

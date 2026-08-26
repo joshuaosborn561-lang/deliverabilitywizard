@@ -2432,6 +2432,14 @@ describe("owner intent — D84 canon sweep", () => {
         "index.ts no longer reports canonFindings.",
       ),
     );
+    assert.match(
+      index,
+      /canonFindingSamples/,
+      stop(
+        "/health names the campaigns behind each canon hole (D98).",
+        "index.ts reports counts only — a 46-wide hole cannot be read.",
+      ),
+    );
 
     const fanOut = await read("../services/clientFanOut.ts");
     assert.doesNotMatch(

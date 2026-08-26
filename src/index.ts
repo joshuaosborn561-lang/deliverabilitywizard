@@ -1633,10 +1633,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     // only) and per-stage watchdog, so "is the sweep actually running" is a
     // curl instead of a Smartlead eyeball.
     const canonFindings: Record<string, number> = {};
+    const canonFindingSamples: Record<string, string[]> = {};
     for (const record of Object.values(s.campaignChecks ?? {})) {
       for (const finding of record.findings ?? []) {
         const kind = finding.split(":")[0] ?? "unknown";
         canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
+        const samples = canonFindingSamples[kind] ?? [];
+        if (samples.length < 5) {
+          samples.push(`#${record.campaignId} ${record.name}`);
+          canonFindingSamples[kind] = samples;
+        }
       }
     }
     const stages: Record<
@@ -1654,6 +1660,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       ok: true,
       service: "deliverabilitywizard",
       canonFindings,
+      canonFindingSamples,
       canaryFleetDown: s.canaryFleetDown ?? null,
       stages,
       secretsConfigured: secretsReady,

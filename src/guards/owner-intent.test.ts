@@ -4092,3 +4092,57 @@ describe("owner intent — D132 one account book", () => {
     );
   });
 });
+
+describe("owner intent — D133/D134 the taps act fleet-wide", () => {
+  it("D133: the word tap sweeps every ACTIVE campaign; D134: retire approves the backfill", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      exec,
+      /sequenceContainsWord/,
+      stop(
+        "One tap fixes the word on every ACTIVE campaign carrying it (D133).",
+        "isolationExecute.ts went back to a single-campaign swap.",
+      ),
+    );
+    assert.doesNotMatch(
+      exec,
+      /pickSequence/,
+      stop(
+        "The fleet-wide swap edits every step that carries the word (D133).",
+        "isolationExecute.ts picks a single sequence again.",
+      ),
+    );
+    assert.match(
+      exec,
+      /approveGenericBackfill/,
+      stop(
+        "A retire tap doubles as the generic-backfill approval for the campaigns it cut (D134).",
+        "isolationExecute.ts retires without covering the volume.",
+      ),
+    );
+    assert.match(
+      exec,
+      /retire:\$\{domain\}/,
+      stop(
+        "Backfill approvals record which retire granted them (D134).",
+        "isolationExecute.ts lost the retire provenance on approvals.",
+      ),
+    );
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actions,
+      /one pending ask per word/,
+      stop(
+        "One pending ask per word — the tap covers the fleet (D133).",
+        "isolationActions.ts dedupes word swaps per campaign again.",
+      ),
+    );
+  });
+});

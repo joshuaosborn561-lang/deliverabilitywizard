@@ -43,10 +43,11 @@ function samePending(
     return false;
   }
   if (next.kind === "swap_copy") {
+    // D133 — the tap applies fleet-wide, so one pending ask per word is
+    // enough no matter which campaign isolated it.
     return (
-      Number(existing.detail.campaignId) === Number(next.detail.campaignId) &&
       String(existing.detail.element ?? "").toLowerCase() ===
-        String(next.detail.element ?? "").toLowerCase()
+      String(next.detail.element ?? "").toLowerCase()
     );
   }
   if (next.kind === "generic_backfill") {

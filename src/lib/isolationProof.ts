@@ -44,7 +44,7 @@ export function copySwapProof(input: {
   return [
     `It was the word *${input.element}*.`,
     `Suggested edit: *${edit}*.`,
-    "Make the changes?",
+    "Make the changes? One tap deletes/replaces it across every ACTIVE campaign that carries it (D133).",
     `Known-good email from the same inboxes ${input.controlLanded ? "landed" : "did not land"} — this is the copy, not dead inboxes. I have not edited the live email.`,
   ].join("\n");
 }

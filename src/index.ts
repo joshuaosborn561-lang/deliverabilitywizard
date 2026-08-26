@@ -398,12 +398,16 @@ async function main(): Promise<void> {
     state,
     spendGateway,
   );
+  // D132 — one Smartlead account book shared by the health pass, the hourly
+  // campaign check, the 6-hour audit, the /ops board, and the Slack taps.
+  const inventoryBook = new InventoryBook(smartlead);
   const isolationExecute = new IsolationExecuteService(
     config,
     smartlead,
     slack,
     state,
     isolationBuy,
+    inventoryBook,
     copyCanaryBuy,
   );
   const domainLifecycle = new DomainLifecycleService(config, state, slack);
@@ -417,9 +421,6 @@ async function main(): Promise<void> {
   void isolationRig.applyDenylist().catch((error) => {
     console.warn("[isolation-rig] denylist at boot failed", error);
   });
-  // D132 — one Smartlead account book shared by the health pass, the hourly
-  // campaign check, the 6-hour audit, and the /ops board.
-  const inventoryBook = new InventoryBook(smartlead);
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,

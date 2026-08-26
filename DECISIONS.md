@@ -2247,3 +2247,21 @@ Accepted: that box cannot send until the hold lifts.
 
 **Guards.** owner-intent D99; fan-out BCP-domain belong;
 countClientInboxesByKey skips held.
+---
+
+## D100 — Canary schedule sends campaign_id; senders stay off
+
+**Decision.** A Canary copy test must send `campaign_id` on
+`POST /spam-test/schedule`. SmartDelivery rejects the create
+without it. The dedicated fleet still stays **off** the live
+campaign (D55). The id is linkage for the test, not membership.
+
+**Why.** Live 2026-08-26 after #119: thirteen `#…: "campaign_id"
+is required` on boot attach. Provider ids had resolved; create
+still died.
+
+**Tradeoff.** The test is named to a live campaign id. Accepted:
+that is how isolation already reads it.
+
+**Guards.** copyCanary isolationManualPayload includes campaignId;
+owner-intent D100.

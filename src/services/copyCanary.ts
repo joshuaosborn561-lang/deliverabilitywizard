@@ -428,6 +428,10 @@ export class CopyCanaryService {
         copy.bodyHtml,
       ),
       providerIds,
+      // SmartDelivery /spam-test/schedule requires campaign_id (live
+      // 2026-08-26: 13x "campaign_id is required"). The canary senders
+      // still stay off the campaign (D55).
+      campaignId: campaign.id,
     });
 
     if (dryRun) return `dry-run-canary-${campaign.id}`;

@@ -58,7 +58,11 @@ describe("CopyCanaryService", () => {
 
     const added: number[] = [];
     const removed: Array<{ campaignId: number; ids: number[] }> = [];
-    const created: Array<{ name?: string; senders: string[] }> = [];
+    const created: Array<{
+      name?: string;
+      senders: string[];
+      campaignId?: number;
+    }> = [];
     const smartlead = {
       listCampaigns: async () => [
         { id: 4, name: "Live A", status: "ACTIVE", client_id: 2 },
@@ -106,10 +110,12 @@ describe("CopyCanaryService", () => {
       createAutomatedPlacement: async (payload: {
         test_name?: string;
         sender_accounts: string[];
+        campaign_id?: number;
       }) => {
         created.push({
           name: payload.test_name,
           senders: payload.sender_accounts,
+          campaignId: payload.campaign_id,
         });
         return { id: `t-${created.length}` };
       },
@@ -135,6 +141,11 @@ describe("CopyCanaryService", () => {
     assert.deepEqual(removed, [{ campaignId: 4, ids: [11] }]);
     assert.equal(created.length, 2);
     assert.ok(created.every((row) => row.name?.startsWith("Canary copy:")));
+    assert.deepEqual(
+      created.map((row) => row.campaignId).sort((a, b) => (a ?? 0) - (b ?? 0)),
+      [4, 5],
+      "schedule requires campaign_id even though canaries stay off the campaign",
+    );
     assert.deepEqual(created[0]?.senders.sort(), [
       "g1@canary-g.info",
       "o1@canary-o.info",

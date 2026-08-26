@@ -314,6 +314,13 @@ const ConfigSchema = z.object({
   bounceAutostopHighVolumeSent: z.coerce.number().int().min(0).default(500),
   bounceAutostopMidPercent: z.coerce.number().min(0).max(100).default(20),
   bounceAutostopHighPercent: z.coerce.number().min(0).max(100).default(7),
+  /**
+   * D90 — live pause: over 10% bounce after 1k leads emailed, or more
+   * than 10 new bounces in the last 10 minutes. Old 20/7 env above is leftover.
+   */
+  bouncePauseMinLeads: z.coerce.number().int().min(0).default(1000),
+  bouncePauseRatePercent: z.coerce.number().min(0).max(100).default(10),
+  bounceBurstCount: z.coerce.number().int().min(0).default(10),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
   /**
@@ -599,6 +606,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bounceAutostopHighVolumeSent: env.BOUNCE_AUTOSTOP_HIGH_VOLUME_SENT ?? "500",
     bounceAutostopMidPercent: env.BOUNCE_AUTOSTOP_MID_PERCENT ?? "20",
     bounceAutostopHighPercent: env.BOUNCE_AUTOSTOP_HIGH_PERCENT ?? "7",
+    bouncePauseMinLeads: env.BOUNCE_PAUSE_MIN_LEADS ?? "1000",
+    bouncePauseRatePercent: env.BOUNCE_PAUSE_RATE_PERCENT ?? "10",
+    bounceBurstCount: env.BOUNCE_BURST_COUNT ?? "10",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
     enableLegacyMailboxPulls: env.ENABLE_LEGACY_MAILBOX_PULLS,

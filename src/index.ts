@@ -2246,7 +2246,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
     );
     console.log(
-      `[boot] Campaign bounce autostop (D88): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%; campaign pause bands retired)` : "disabled"}`,
+      `[boot] Campaign bounce autostop (D90): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; pause over ${config.bouncePauseRatePercent}% after ${config.bouncePauseMinLeads} leads or >${config.bounceBurstCount} bounces/10m; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%)` : "disabled"}`,
     );
     console.log(
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,

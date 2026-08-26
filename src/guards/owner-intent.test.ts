@@ -2705,21 +2705,13 @@ describe("owner intent — D86 hand-bought canary fleet is adopted", () => {
 });
 
 describe("owner intent — D88 bounce pause bands retired", () => {
-  it("D88: autostop does not pause; Smartlead off-write stays", async () => {
+  it("D88: the 20/7 pause bands stay unused; Smartlead off-write stays", async () => {
     const read = (path: string) =>
       import("node:fs/promises").then((fs) =>
         fs.readFile(new URL(path, import.meta.url), "utf8"),
       );
 
     const autostop = await read("../services/campaignBounceAutostop.ts");
-    assert.doesNotMatch(
-      autostop,
-      /updateCampaignStatus/,
-      stop(
-        "The bounce loop does not pause a campaign (D88).",
-        "campaignBounceAutostop.ts still writes a campaign status — the 20/7 bands are live again.",
-      ),
-    );
     assert.doesNotMatch(
       autostop,
       /shouldAutostopCampaignForBounce/,
@@ -2746,6 +2738,114 @@ describe("owner intent — D88 bounce pause bands retired", () => {
       stop(
         "The retired 20/7 helpers may stay in lib/ (D80/D88).",
         "shouldAutostopCampaignForBounce no longer encodes the old band — leave the helper, do not use it.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D90 bounce pause is 10% after 1k or 10-in-10m", () => {
+  it("D90: pause over 10% after 1k leads, or more than 10 bounces in 10 minutes", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    assert.equal(
+      defaults.bouncePauseMinLeads,
+      1000,
+      stop(
+        "Rate pause needs 1,000 leads emailed (D90).",
+        `Min leads is now ${defaults.bouncePauseMinLeads}.`,
+      ),
+    );
+    assert.equal(
+      defaults.bouncePauseRatePercent,
+      10,
+      stop(
+        "Rate pause is over 10% (D90).",
+        `Rate is now ${defaults.bouncePauseRatePercent}%.`,
+      ),
+    );
+    assert.equal(
+      defaults.bounceBurstCount,
+      10,
+      stop(
+        "Burst pause is more than 10 new bounces in 10 minutes (D90).",
+        `Burst count is now ${defaults.bounceBurstCount}.`,
+      ),
+    );
+
+    const { shouldPauseCampaignForBounceRate, shouldPauseCampaignForBounceBurst } =
+      await import("../lib/campaignBouncePause.js");
+    assert.equal(
+      shouldPauseCampaignForBounceRate(1000, 100),
+      false,
+      stop(
+        "Exactly 10% after 1k must not pause (D90).",
+        "shouldPauseCampaignForBounceRate now trips at 10% exactly.",
+      ),
+    );
+    assert.equal(
+      shouldPauseCampaignForBounceRate(1000, 101),
+      true,
+      stop(
+        "Over 10% after 1k pauses (D90).",
+        "shouldPauseCampaignForBounceRate no longer trips at 101/1000.",
+      ),
+    );
+    assert.equal(
+      shouldPauseCampaignForBounceRate(150, 40),
+      false,
+      stop(
+        "The old 20/7 mid-volume sample is not a pause (D88/D90).",
+        "A 150-send 20%+ campaign is being paused on the retired band.",
+      ),
+    );
+    const now = Date.parse("2026-08-26T02:10:00.000Z");
+    assert.equal(
+      shouldPauseCampaignForBounceBurst(
+        { bounced: 4, sent: 40, at: "2026-08-26T02:00:00.000Z" },
+        15,
+        now,
+      ).trip,
+      true,
+      stop(
+        "More than 10 new bounces in 10 minutes pauses (D90).",
+        "The burst helper no longer trips on +11 in 10 minutes.",
+      ),
+    );
+
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /shouldPauseCampaignForBounceRate/,
+      stop(
+        "The 10-minute loop uses the D90 rate trip (D90).",
+        "campaignBounceAutostop.ts lost the 10%/1k pause.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /shouldPauseCampaignForBounceBurst/,
+      stop(
+        "The 10-minute loop uses the D90 burst trip (D90).",
+        "campaignBounceAutostop.ts lost the 10-bounces-in-10-minutes pause.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /updateCampaignStatus\(campaign\.id, "PAUSED"\)/,
+      stop(
+        "A D90 trip pauses the campaign (D90).",
+        "campaignBounceAutostop.ts no longer writes PAUSED.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /updateCampaignStatus\([^)]*START/,
+      stop(
+        "A bounce pause is not auto-resumed (D40/D90).",
+        "campaignBounceAutostop.ts STARTs a campaign again.",
       ),
     );
   });

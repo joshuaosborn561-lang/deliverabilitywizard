@@ -2001,3 +2001,36 @@ deploy, not immediate.
 
 **Guards.** Living-test skip; queued list reads; attach-after-adopt;
 pending-single collapse; EOD `loadedDrafts`; owner-intent D89.
+---
+
+## D90 — Pause over 10% after 1k leads, or more than 10 bounces in 10 minutes
+
+**Decision.** The 10-minute bounce loop pauses an ACTIVE campaign when
+either trip hits:
+
+- **Rate:** lifetime bounce is **strictly over 10%** and the campaign
+  has emailed **1,000 or more** leads (`sent_count`). 100/1000 is 10%
+  and must not pause.
+- **Burst:** more than **10** new bounces since the last snapshot,
+  and that snapshot is still inside the 10-minute window (15 minutes
+  allowed for cron drift). The first reading is a baseline, not a pause.
+
+The old 20%/7% bands stay retired (D88). Smartlead
+`bounce_autopause_threshold` stays **100** (off). A bounce pause is
+not a `pendingResume` — a human STARTs it (D40). D29 still
+investigates an already-PAUSED campaign over 7%. D79 still forbids
+per-sender bounce pull. No Slack (D71); the pause is in logs.
+
+**Why.** Josh (2026-08-26): "oh no it was supposed to basically auto
+pause anything over 10% and 1k leads, or more than 10 bounces in 10
+minutes." D88 deleted the leftover 20/7 pause and left no live pause
+behind. This is the rule that was meant to replace it.
+
+**Tradeoff.** A campaign under 1,000 sends can still run at 20%+
+bounce until 11 bounces land in one 10-minute window. Accepted: that
+is the burst trip, and a tiny sample's percent is the noise D80
+already refused to treat as evidence.
+
+**Guards.** Rate helper (1k / over 10%); burst helper (>10 in window);
+service pauses on those trips only; no 20/7 import; no START;
+owner-intent D90.

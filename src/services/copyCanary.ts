@@ -157,7 +157,7 @@ export class CopyCanaryService {
     let providerIds: number[] = [];
     if (this.smartDelivery) {
       try {
-        listed = await this.smartDelivery.listTests({});
+        listed = await this.listTestsRetrying();
       } catch (error) {
         listFailed = true;
         console.warn("[copy-canary] could not list tests", error);
@@ -381,6 +381,46 @@ export class CopyCanaryService {
     }
   }
 
+  private async listTestsRetrying(): Promise<unknown> {
+    const attempts = 3;
+    const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 8_000;
+    let last: unknown;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        return await this.smartDelivery!.listTests({});
+      } catch (error) {
+        last = error;
+        if (attempt < attempts - 1) await sleep(gapMs);
+      }
+    }
+    throw last instanceof Error ? last : new Error(String(last));
+  }
+
+  /** D119 — plant the shell lead even when we cannot list or schedule. */
+  private async seedCanaryShell(
+    campaign: SmartleadCampaign,
+    campaigns: SmartleadCampaign[],
+    picks: PoolMailboxRecord[],
+    dryRun: boolean,
+  ): Promise<void> {
+    if (dryRun) return;
+    const copy = await this.loadCampaignCopy(campaign.id);
+    if (!copy.subject && !copy.bodyHtml) return;
+    const senderAccountIds = picks
+      .map((row) => row.smartleadAccountId)
+      .filter((id): id is number => typeof id === "number" && id > 0);
+    await ensureCanaryShell({
+      smartlead: this.smartlead,
+      campaigns,
+      live: campaign,
+      subject: copy.subject || "",
+      bodyHtml: copy.bodyHtml,
+      senderAccountIds,
+      dryRun,
+      sequenceNumber: this.config.sequenceNumber,
+    });
+  }
+
   private async ensureCopyTest(
     campaign: SmartleadCampaign,
     campaigns: SmartleadCampaign[],
@@ -396,8 +436,10 @@ export class CopyCanaryService {
 
     const existing = this.state.getCopyCanaryTestId(campaign.id);
     // D98 — a list failure must reuse the stored id, not spawn a second test.
+    // D119 — still seed the paused shell so the next list can schedule.
     if (listFailed) {
       if (existing) return existing;
+      await this.seedCanaryShell(campaign, campaigns, picks, dryRun);
       throw new Error("could not list SmartDelivery tests");
     }
     const tests = normalizeTestList(listed);

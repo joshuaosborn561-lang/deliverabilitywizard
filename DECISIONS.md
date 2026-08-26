@@ -2653,3 +2653,27 @@ sends to it, and SmartDelivery only needs a lead row at seq 1.
 
 **Guards.** CANARY_SHELL_SEED_EMAIL is the non-sender address;
 shellLeadImportAccepted; raw import log; owner-intent D118.
+
+---
+
+## D119 — Seed canary shells even when SmartDelivery list 429s
+
+**Decision.** `listTests` is retried three times. If it still fails,
+reuse a stored test id (D98) and **still seed** the paused canary
+shell. Do not create a new SmartDelivery test without a successful
+list.
+
+**Why.** Live 2026-08-26 after #129 (D118): boot attach and the
+health attach both died on `ApiError: Rate limit exceeded` from
+`listTests`. D118's seed never ran (`upload_count=` was 0) because
+`ensureCopyTest` threw before `ensureCanaryShell`. The 63
+"could not list SmartDelivery tests" errors left `missing_canary`
+at 61. D98 still forbids inventing a second test when the list is
+down.
+
+**Tradeoff.** Shell seed writes happen during a SmartDelivery
+outage / 429. Accepted: a lead on the paused shell is what the
+next successful list needs, and creating a duplicate test is worse.
+
+**Guards.** listTestsRetrying; seedCanaryShell before the
+list-failed throw; owner-intent D119.

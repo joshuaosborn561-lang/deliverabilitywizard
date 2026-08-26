@@ -2599,3 +2599,26 @@ worse.
 
 **Guards.** missingTest → scan-backfill with no 55-minute
 gate; owner-intent D116.
+
+---
+
+## D117 — Seed a real canary inbox as the shell lead, then pause
+
+**Decision.** The dummy shell lead is a **real fleet inbox**
+(first canary sender), not a fabricated address. Add it while
+the shell is still DRAFTED so it attaches to sequence 1, then
+PAUSE. Ignore block / bounce / unsubscribe lists on this
+import. If Smartlead reports added=0 and GET still shows no
+leads, fail that shell instead of scheduling.
+
+**Why.** Live 2026-08-26 after #127: D115 still died on
+"No leads available for the selected or lower sequence".
+`canary.shell.seed@getcrosslaunchco.info` is not a mailbox;
+Smartlead likely skipped it. Seeding a PAUSED empty shell
+also left the lead off the sequence.
+
+**Tradeoff.** One canary inbox is a contact on every shell.
+Accepted: the campaign stays paused and never sends to it.
+
+**Guards.** seedEmail from the fleet; seed then pause;
+added_count checked; owner-intent D117.

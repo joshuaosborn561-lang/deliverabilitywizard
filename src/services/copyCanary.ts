@@ -438,6 +438,7 @@ export class CopyCanaryService {
       subject: copy.subject || "",
       bodyHtml: copy.bodyHtml,
       senderAccountIds,
+      seedEmail: senderAccounts[0],
       dryRun,
       sequenceNumber: this.config.sequenceNumber,
     });

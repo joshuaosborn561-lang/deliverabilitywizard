@@ -242,9 +242,9 @@ export class SmartleadClient {
   }
 
   /**
-   * D115 — instrumentation only. Canary shells need one dummy lead
-   * before SmartDelivery will schedule. Never call this for a live
-   * client campaign (D52).
+   * D115 / D117 — instrumentation only. Canary shells need one dummy
+   * lead before SmartDelivery will schedule. Never call this for a
+   * live client campaign (D52).
    */
   addLeadsToCampaign(
     campaignId: number,
@@ -253,7 +253,12 @@ export class SmartleadClient {
       first_name?: string;
       last_name?: string;
     }>,
-  ): Promise<unknown> {
+  ): Promise<{
+    added_count?: number;
+    skipped_count?: number;
+    skipped_leads?: unknown;
+    success?: boolean;
+  }> {
     return this.mutate(() =>
       apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
         method: "POST",
@@ -261,10 +266,25 @@ export class SmartleadClient {
           lead_list: leadList,
           settings: {
             ignore_duplicate_leads_in_other_campaign: true,
+            ignore_global_block_list: true,
+            ignore_unsubscribe_list: true,
+            ignore_community_bounce_list: true,
           },
         },
       }),
     );
+  }
+
+  getCampaignLeads(
+    campaignId: number,
+    query: { limit?: number; offset?: number } = {},
+  ): Promise<{ total_leads?: string | number; data?: unknown[] }> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+      query: {
+        limit: query.limit ?? 1,
+        offset: query.offset ?? 0,
+      },
+    });
   }
 
   addEmailAccountsToCampaign(

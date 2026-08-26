@@ -2283,3 +2283,21 @@ need adding to the omit list. Accepted: we add it when it fails.
 
 **Guards.** sequencesForWrite; updateCampaignSequences uses it;
 owner-intent D101.
+---
+
+## D102 — Canary schedule sends sequence_mapping_id
+
+**Decision.** A Canary copy test must send `sequence_mapping_id` on
+`POST /spam-test/schedule`, taken from the campaign sequence the same
+way the scanner does (`sequenceMappingIdOf`). Missing mapping is a
+hard fail and is logged. The dedicated fleet still stays **off** the
+live campaign (D55). D100's `campaign_id` still stands.
+
+**Why.** Live 2026-08-26 after #120: `"campaign_id" is required` was
+gone; create then died on `"sequence_mapping_id" is required`.
+
+**Tradeoff.** A campaign with no sequence mapping cannot get a canary
+until copy exists. Accepted: that campaign has nothing to test.
+
+**Guards.** copyCanary isolationManualPayload includes sequenceMappingId;
+owner-intent D102.

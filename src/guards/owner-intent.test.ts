@@ -3207,6 +3207,30 @@ describe("owner intent — D100 canary schedule needs campaign_id", () => {
   });
 });
 
+describe("owner intent — D102 canary schedule needs sequence_mapping_id", () => {
+  it("D102: canary attach sends sequence_mapping_id from the campaign sequence", async () => {
+    const canary = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      canary,
+      /sequenceMappingId:\s*copy\.sequenceMappingId/,
+      stop(
+        "Canary schedule sends sequence_mapping_id (D102).",
+        "copyCanary.ts creates a SmartDelivery test without sequence_mapping_id.",
+      ),
+    );
+    assert.match(
+      canary,
+      /sequenceMappingIdOf/,
+      stop(
+        "Canary mapping id comes from the campaign sequence (D102).",
+        "copyCanary.ts no longer reads sequenceMappingIdOf.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D98 find a hole, fix it", () => {
   it("D98: leftover signatures write on health; canary attach resolves providers; list-fail does not invent holes", async () => {
     const check = await import("node:fs/promises").then((fs) =>

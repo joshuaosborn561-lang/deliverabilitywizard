@@ -4,6 +4,7 @@ import {
   accountEmail,
   campaignIdsOf,
   pickSequence,
+  sequenceMappingIdOf,
   sequenceSubjectPreview,
   type SmartleadAccountWithCampaigns,
   type SmartleadClient,
@@ -408,6 +409,11 @@ export class CopyCanaryService {
     if (!copy.subject && !copy.bodyHtml) {
       throw new Error("no campaign copy to test");
     }
+    if (copy.sequenceMappingId == null) {
+      throw new Error(
+        "no sequence_mapping_id — SmartDelivery schedule requires it",
+      );
+    }
     if (!providerIds.length) {
       throw new Error(
         "no SmartDelivery provider_ids — resolve PROVIDER_IDS or seed providers",
@@ -428,10 +434,11 @@ export class CopyCanaryService {
         copy.bodyHtml,
       ),
       providerIds,
-      // SmartDelivery /spam-test/schedule requires campaign_id (live
-      // 2026-08-26: 13x "campaign_id is required"). The canary senders
-      // still stay off the campaign (D55).
+      // SmartDelivery /spam-test/schedule requires campaign_id (D100)
+      // and sequence_mapping_id (live 2026-08-26 after D100: "sequence_mapping_id
+      // is required"). The canary senders still stay off the campaign (D55).
       campaignId: campaign.id,
+      sequenceMappingId: copy.sequenceMappingId,
     });
 
     if (dryRun) return `dry-run-canary-${campaign.id}`;
@@ -462,7 +469,11 @@ export class CopyCanaryService {
 
   private async loadCampaignCopy(
     campaignId: number,
-  ): Promise<{ subject?: string; bodyHtml: string }> {
+  ): Promise<{
+    subject?: string;
+    bodyHtml: string;
+    sequenceMappingId?: number;
+  }> {
     const sequences = await this.smartlead.getCampaignSequences(campaignId);
     const sequence = pickSequence(sequences ?? [], this.config.sequenceNumber);
     if (!sequence) return { bodyHtml: "" };
@@ -474,6 +485,7 @@ export class CopyCanaryService {
     return {
       subject: sequenceSubjectPreview(sequence),
       bodyHtml: html,
+      sequenceMappingId: sequenceMappingIdOf(sequence),
     };
   }
 

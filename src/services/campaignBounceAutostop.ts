@@ -7,7 +7,10 @@ import {
   shouldPauseCampaignForBounceRate,
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
-import { readBounceAutopausePercent } from "../lib/bounceAutopause.js";
+import {
+  campaignSettingsWriteBody,
+  readBounceAutopausePercent,
+} from "../lib/bounceAutopause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
@@ -201,6 +204,11 @@ export class CampaignBounceAutostopService {
    * campaigns we have never converged (new ids). Every 6h one read-verify
    * sweep checks living campaigns and rewrites only actual drift, so a
    * UI-side change still gets caught without ~600 blind writes/hour.
+   *
+   * D124 — until `autopauseForceAllAt` is stamped, write 100 on every living
+   * campaign even when the cache and GET already say 100. A threshold-only
+   * POST has already disagreed with the Smartlead UI toggle; GET-echo the
+   * other settings so the write actually lands.
    */
   private async disableSmartleadAutopause(
     campaigns: SmartleadCampaign[],
@@ -222,20 +230,26 @@ export class CampaignBounceAutostopService {
     const verifyDue =
       !lastVerify ||
       Date.now() - Date.parse(lastVerify) >= AUTOPAUSE_VERIFY_EVERY_MS;
+    const forceAll = !this.state?.getAutopauseForceAllAt();
 
+    let disableErrors = 0;
     for (const campaign of living) {
       const alreadyOff = this.state?.getAutopauseOffAt(campaign.id);
-      if (alreadyOff && !verifyDue) continue;
+      if (!forceAll && alreadyOff && !verifyDue) continue;
       try {
-        if (alreadyOff && verifyDue) {
-          const settings = await this.smartlead
-            .getCampaignSettings(campaign.id)
-            .catch(() => null);
-          await sleep(120);
-          const current = readBounceAutopausePercent(settings);
+        const settings = await this.smartlead
+          .getCampaignSettings(campaign.id)
+          .catch(() => null);
+        await sleep(120);
+        const current = readBounceAutopausePercent(settings);
+        if (!forceAll && alreadyOff && verifyDue) {
           if (current == null || current === offNumber) continue;
           console.log(
             `[bounce-autostop] drift on #${campaign.id} ${campaign.name}: autopause ${current}% → ${off}%${dryRun ? " (dry-run)" : ""}`,
+          );
+        } else if (forceAll) {
+          console.log(
+            `[bounce-autostop] force autopause off #${campaign.id} ${campaign.name}: ${current ?? "?"}% → ${off}%${dryRun ? " (dry-run)" : ""}`,
           );
         } else {
           console.log(
@@ -243,14 +257,16 @@ export class CampaignBounceAutostopService {
           );
         }
         if (!dryRun) {
-          await this.smartlead.updateCampaignSettings(campaign.id, {
+          const body = campaignSettingsWriteBody(settings ?? {}, {
             bounce_autopause_threshold: off,
           });
+          await this.smartlead.updateCampaignSettings(campaign.id, body);
           await sleep(WRITE_GAP_MS);
           this.state?.markAutopauseOff(campaign.id);
         }
         result.smartleadDisabled += 1;
       } catch (error) {
+        disableErrors += 1;
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`disable #${campaign.id}: ${message}`);
       }
@@ -258,6 +274,9 @@ export class CampaignBounceAutostopService {
 
     if (verifyDue && !dryRun) {
       this.state?.setLastAutopauseVerifyAt(new Date().toISOString());
+    }
+    if (forceAll && !dryRun && disableErrors === 0) {
+      this.state?.setAutopauseForceAllAt(new Date().toISOString());
     }
   }
 }

@@ -3898,6 +3898,71 @@ describe("owner intent — D98 find a hole, fix it", () => {
   });
 });
 
+describe("owner intent — D124 force Smartlead autopause off once", () => {
+  it("D124: one forced GET-echo write of 100; D84 drift after", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D124 — Force Smartlead bounce autopause off once/,
+      stop(
+        "Josh called a one-shot force-off of Smartlead autopause (D124).",
+        "DECISIONS.md no longer has D124.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /bounce_autopause_threshold[\s\S]{0,200}100/,
+      stop(
+        "The force write is still 100 / off (D80/D124).",
+        "D124 no longer says the force write is 100.",
+      ),
+    );
+    const autostop = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      autostop,
+      /campaignSettingsWriteBody/,
+      stop(
+        "Autopause writes GET-echo settings so the Smartlead UI updates (D124).",
+        "campaignBounceAutostop.ts posts only bounce_autopause_threshold again.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /getAutopauseForceAllAt/,
+      stop(
+        "The force-off is one pass, then D84 write-on-drift (D124).",
+        "campaignBounceAutostop.ts lost the autopauseForceAllAt gate.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /updateCampaignStatus\([^)]*START/,
+      stop(
+        "The bounce loop still does not START anyone (D40/D124).",
+        "campaignBounceAutostop.ts now STARTs a campaign.",
+      ),
+    );
+    const { desiredBounceAutopausePercent } = await import(
+      "../lib/bounceAutopause.js"
+    );
+    assert.equal(
+      desiredBounceAutopausePercent("Goliath L2 Healthcare Tickets"),
+      100,
+      stop(
+        "Do not turn Smartlead bounce autopause on (D80/D124).",
+        "desiredBounceAutopausePercent writes a live band again.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D94 reconnect DCD mailboxes", () => {
   it("D94: health reconnects; Slack uses action_result", async () => {
     const index = await import("node:fs/promises").then((fs) =>

@@ -39,6 +39,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
           if (status === "PAUSED") paused.push(id);
           if (status === "START") started.push(id);
         },
+        getCampaignSettings: async () => ({ bounce_autopause_threshold: "7" }),
         updateCampaignSettings: async (id: number, body: Record<string, unknown>) => {
           settings.push({ id, threshold: body.bounce_autopause_threshold });
         },
@@ -81,6 +82,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
         updateCampaignStatus: async (id: number, status: string) => {
           if (status === "PAUSED") paused.push(id);
         },
+        getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
       } as never,
       state,
@@ -109,6 +111,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
         updateCampaignStatus: async (id: number, status: string) => {
           if (status === "PAUSED") paused.push(id);
         },
+        getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
       } as never,
       state,
@@ -139,6 +142,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
   it("D84: converge skips COMPLETED/STOPPED and writes each campaign once, not every 10 minutes", async () => {
     const settings: Array<{ id: number }> = [];
     const autopauseOff = new Map<string, string>();
+    let forceAllAt: string | null = null;
     const state = {
       getAutopauseOffAt: (id: number) => autopauseOff.get(String(id)),
       markAutopauseOff: (id: number) => {
@@ -149,6 +153,10 @@ describe("CampaignBounceAutostopService (D90)", () => {
       },
       getLastAutopauseVerifyAt: () => new Date().toISOString(),
       setLastAutopauseVerifyAt: () => undefined,
+      getAutopauseForceAllAt: () => forceAllAt,
+      setAutopauseForceAllAt: (iso: string) => {
+        forceAllAt = iso;
+      },
       getBounceSnapshot: () => undefined,
       setBounceSnapshot: () => undefined,
       save: async () => undefined,
@@ -191,5 +199,74 @@ describe("CampaignBounceAutostopService (D90)", () => {
       [],
       "an already-converged campaign is not rewritten every pass (write-on-drift)",
     );
+  });
+
+  it("D124: forces a GET-echo write once even when cache and GET already say 100", async () => {
+    const writes: Array<{ id: number; body: Record<string, unknown> }> = [];
+    const autopauseOff = new Map<string, string>([
+      ["1", "already"],
+      ["4", "already"],
+    ]);
+    let forceAllAt: string | null = null;
+    const state = {
+      getAutopauseOffAt: (id: number) => autopauseOff.get(String(id)),
+      markAutopauseOff: (id: number) => {
+        autopauseOff.set(String(id), new Date().toISOString());
+      },
+      getLastAutopauseVerifyAt: () => new Date().toISOString(),
+      setLastAutopauseVerifyAt: () => undefined,
+      getAutopauseForceAllAt: () => forceAllAt,
+      setAutopauseForceAllAt: (iso: string) => {
+        forceAllAt = iso;
+      },
+      getBounceSnapshot: () => undefined,
+      setBounceSnapshot: () => undefined,
+      save: async () => undefined,
+    } as never;
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Live", status: "ACTIVE" },
+          { id: 2, name: "Old", status: "COMPLETED" },
+          { id: 4, name: "Paused", status: "PAUSED" },
+          { id: 9, name: "Pod control shell", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 10,
+          bounce_count: 0,
+        }),
+        getCampaignStatistics: async () => ({}),
+        getCampaignSettings: async () => ({
+          bounce_autopause_threshold: "100",
+          send_as_plain_text: true,
+        }),
+        updateCampaignStatus: async () => undefined,
+        updateCampaignSettings: async (
+          id: number,
+          body: Record<string, unknown>,
+        ) => {
+          writes.push({ id, body });
+        },
+      } as never,
+      state,
+    );
+
+    const first = await service.run({ dryRun: false });
+    assert.equal(first.smartleadDisabled, 2);
+    assert.deepEqual(
+      writes.map((row) => row.id).sort((a, b) => a - b),
+      [1, 4],
+    );
+    assert.ok(
+      writes.every((row) => row.body.bounce_autopause_threshold === "100"),
+    );
+    assert.ok(writes.every((row) => row.body.send_as_plain_text === true));
+    assert.ok(forceAllAt);
+
+    writes.length = 0;
+    const second = await service.run({ dryRun: false });
+    assert.deepEqual(writes, []);
+    assert.equal(second.smartleadDisabled, 0);
   });
 });

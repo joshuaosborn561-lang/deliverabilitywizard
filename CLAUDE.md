@@ -45,7 +45,9 @@ person's branch.
 **`main` is the deploying branch.** Railway watches it, so a merge there is a
 production deploy. Each deploy restarts the app, which resets the cron cycle —
 avoid merging in a tight sequence when you need a scheduled job to actually
-run.
+run. The only Smartlead boot kick is canary attach at 90s (D122). Do not
+boot-kick health, pool, or campaign-audit — those raced attach and 429'd
+the board (D121 deploy 2026-08-26).
 
 Verified against Railway on 2026-08-12: service `deliverabilitywizard`,
 environment `production`, source repo `joshuaosborn561-lang/deliverabilitywizard`,

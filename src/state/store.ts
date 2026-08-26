@@ -208,6 +208,10 @@ export interface AppState {
    * D61 — ISO time Vasco trim + GXA/MSRS/Nieto wipe finished.
    */
   clientWipeAt: string | null;
+  /** D107 — leftover Nieto / MSRS / Positive campaigns deleted. */
+  oldClientTeardownAt: string | null;
+  /** D109 — morning START of the live book. */
+  morningActivateAt: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
   /** D81 — first-seen campaign audit + hourly sweep records. */
@@ -352,6 +356,8 @@ const EMPTY_STATE: AppState = {
   restBaselineRebuiltAt: null,
   unhealthyResetAt: null,
   clientWipeAt: null,
+  oldClientTeardownAt: null,
+  morningActivateAt: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
   campaignChecks: {},
   genericBackfillApprovals: {},
@@ -404,6 +410,8 @@ export class StateStore {
         restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
         unhealthyResetAt: parsed.unhealthyResetAt ?? null,
         clientWipeAt: parsed.clientWipeAt ?? null,
+        oldClientTeardownAt: parsed.oldClientTeardownAt ?? null,
+        morningActivateAt: parsed.morningActivateAt ?? null,
         isolation: normalizeIsolationState(parsed.isolation),
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
@@ -508,6 +516,22 @@ export class StateStore {
 
   markClientWipe(iso: string): void {
     this.state.clientWipeAt = iso;
+  }
+
+  getOldClientTeardownAt(): string | null {
+    return this.state.oldClientTeardownAt;
+  }
+
+  setOldClientTeardownAt(iso: string): void {
+    this.state.oldClientTeardownAt = iso;
+  }
+
+  getMorningActivateAt(): string | null {
+    return this.state.morningActivateAt;
+  }
+
+  setMorningActivateAt(iso: string): void {
+    this.state.morningActivateAt = iso;
   }
 
   clearMailboxControls(): number {

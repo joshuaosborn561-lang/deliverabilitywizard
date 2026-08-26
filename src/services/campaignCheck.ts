@@ -1,7 +1,7 @@
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
-import { normalizeTestList } from "../clients/smartdelivery.js";
+import { campaignIdOf, normalizeTestList } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
@@ -56,6 +56,15 @@ import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import type { SpamTestSummary } from "../types/index.js";
 import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
+import {
+  readMessagePerDay,
+  readMinTimeGapMins,
+} from "../lib/mailboxSendSettings.js";
+import {
+  daysSince,
+  isPrewarmedGeneric,
+  warmupClockStartedAt,
+} from "./warmupGate.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
@@ -566,6 +575,33 @@ export class CampaignCheckService {
       ) {
         serving.push(email.toLowerCase());
       }
+      if (
+        !this.state.isCopyCanary(email) &&
+        !isPrewarmedGeneric(account, email, this.config, this.state)
+      ) {
+        const started = warmupClockStartedAt(account, email, this.state);
+        const days = started != null ? daysSince(started) : null;
+        if (days == null || days < this.config.campaignMinWarmupDays) {
+          findings.push({
+            kind: "under_warmed",
+            detail: `${email} has ${days == null ? "no" : `${days.toFixed(1)}d`} warmup (owes ${this.config.campaignMinWarmupDays})`,
+          });
+        }
+      }
+      const gap = readMinTimeGapMins(account);
+      if (Number.isFinite(gap) && gap !== this.config.mailboxMinTimeGapMins) {
+        findings.push({
+          kind: "mailbox_gap",
+          detail: `${email} gap ${gap}m (want ${this.config.mailboxMinTimeGapMins})`,
+        });
+      }
+      const volume = readMessagePerDay(account);
+      if (Number.isFinite(volume) && volume !== this.config.messagePerDay) {
+        findings.push({
+          kind: "mailbox_volume",
+          detail: `${email} ${volume}/day (want ${this.config.messagePerDay})`,
+        });
+      }
     }
 
     try {
@@ -617,6 +653,24 @@ export class CampaignCheckService {
           kind: "no_placement_test",
           detail: "no recurring SmartDelivery test for serving inboxes",
         });
+      }
+      if (!input.listedTestsFailed) {
+        const living = input.listedTests.find(
+          (test) => Number(campaignIdOf(test)) === campaign.id,
+        );
+        const inbox = Number(living?.inbox_count ?? 0);
+        const tab = Number(living?.tab_count ?? 0);
+        const spam = Number(living?.spam_count ?? 0);
+        const total = inbox + tab + spam;
+        if (living && total > 0) {
+          const rate = (inbox / total) * 100;
+          if (rate < this.config.launchInboxThreshold) {
+            findings.push({
+              kind: "below_launch_bar",
+              detail: `${rate.toFixed(0)}% inbox (bar ${this.config.launchInboxThreshold}%; promo counts as a miss)`,
+            });
+          }
+        }
       }
 
       if (input.depth === "hourly" && !input.listedTestsFailed) {

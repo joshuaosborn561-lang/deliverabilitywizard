@@ -114,7 +114,6 @@ const SEQUENCE_WRITE_KEEP = new Set([
   "subject",
   "email_body",
   "seq_delay_details",
-  "sequence_variants",
   "variants",
   "seq_variants",
   "variant_distribution_type",
@@ -123,9 +122,10 @@ const SEQUENCE_WRITE_KEEP = new Set([
 ]);
 
 /**
- * D101 / D103 — Smartlead POST /sequences rejects GET-only fields
- * (`created_at`, then `email_campaign_id`). Keep the writable set
- * (and the same on variants) before every write.
+ * D101 / D103 / D104 — Smartlead POST /sequences rejects GET-only
+ * fields (`created_at`, `email_campaign_id`) and GET's
+ * `sequence_variants` key (`"sequences[0].sequence_variants" is not
+ * allowed`). Keep the writable set, remap GET variants to `variants`.
  */
 export function sequencesForWrite(
   sequences: SmartleadSequence[],
@@ -137,15 +137,26 @@ function omitReadonlySequence(row: SmartleadSequence): SmartleadSequence {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(row)) {
     if (SEQUENCE_WRITE_OMIT.has(key)) continue;
+    if (key === "sequence_variants") continue;
     if (!SEQUENCE_WRITE_KEEP.has(key)) continue;
     if (
-      (key === "sequence_variants" || key === "variants" || key === "seq_variants") &&
+      (key === "variants" || key === "seq_variants") &&
       Array.isArray(value)
     ) {
       out[key] = value.map((variant) => omitReadonlySequence(variant as SmartleadSequence));
       continue;
     }
     out[key] = value;
+  }
+  const raw = row as SmartleadSequence & { sequence_variants?: unknown };
+  if (
+    out.variants == null &&
+    out.seq_variants == null &&
+    Array.isArray(raw.sequence_variants)
+  ) {
+    out.variants = raw.sequence_variants.map((variant) =>
+      omitReadonlySequence(variant as SmartleadSequence),
+    );
   }
   return out as unknown as SmartleadSequence;
 }

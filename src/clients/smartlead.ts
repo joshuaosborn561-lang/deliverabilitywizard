@@ -347,6 +347,14 @@ export class SmartleadClient {
     );
   }
 
+  deleteCampaign(campaignId: number): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}`, {
+        method: "DELETE",
+      }),
+    );
+  }
+
   /**
    * Daily sending ceiling for a mailbox.
    *

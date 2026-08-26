@@ -2135,3 +2135,29 @@ is a re-touch, not a first write.
 
 **Guards.** campaignCheck records `sigAutoWrittenAt` and still
 calls notifyActionResult; owner-intent D95.
+---
+
+## D96 — Infra vs copy also reads unwarmed senders with that copy
+
+**Decision.** D93 still stands: campaign copy failing an ESP plus
+known-good failing an ESP is infra. The same two calls also look
+at **unwarmed senders sending that campaign copy** (the Canary
+copy test), ESP-to-ESP:
+
+- Unwarmed senders **land** that copy across ESPs → infra (the
+  copy works on fresh boxes; the live inboxes / domain are the
+  problem).
+- Unwarmed senders **fail** an ESP, and known-good is fine →
+  copy / word hunt.
+- No unwarmed reading yet → inconclusive. Do not start the word
+  hunt.
+
+**Why.** Josh (2026-08-26): "you should also be looking at
+unwarmed senders with that copy for 3 and 4."
+
+**Tradeoff.** A campaign that is burying copy with no living
+canary-copy test waits instead of hunting a word. Accepted: that
+is why the unwarmed fleet exists.
+
+**Guards.** isolationVerdict requires unwarmedCopyFineAcrossEsps
+or copyCanary.unwarmedLanded before COPY; owner-intent D96.

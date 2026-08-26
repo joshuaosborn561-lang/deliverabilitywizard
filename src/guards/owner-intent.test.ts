@@ -3026,6 +3026,41 @@ describe("owner intent — D93 word hunt is ESP-fail + known-good clean", () => 
   });
 });
 
+describe("owner intent — D96 unwarmed senders with that copy", () => {
+  it("D96: word hunt waits for unwarmed copy; landing it is infra", async () => {
+    const verdict = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/isolationVerdict.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      verdict,
+      /unwarmedCopyFineAcrossEsps/,
+      stop(
+        "Infra vs copy reads unwarmed senders with that campaign copy (D96).",
+        "isolationVerdict.ts no longer looks at unwarmedCopyFineAcrossEsps.",
+      ),
+    );
+    assert.match(
+      verdict,
+      /unwarmedAlsoFailed/,
+      stop(
+        "Word hunt waits until unwarmed senders with that copy also fail (D96).",
+        "isolationVerdict.ts starts COPY without an unwarmed-copy fail.",
+      ),
+    );
+    const branch = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/isolationBranch.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      branch,
+      /unwarmedCopyFineAcrossEsps/,
+      stop(
+        "The isolation branch scores the canary-copy test per ESP (D96).",
+        "isolationBranch.ts no longer reads unwarmed copy ESP-to-ESP.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D95 signature Slack once per campaign", () => {
   it("D95: first write Slacks; a leftover backfill does not re-ping", async () => {
     const check = await import("node:fs/promises").then((fs) =>

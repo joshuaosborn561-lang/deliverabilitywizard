@@ -31,6 +31,13 @@ export interface IsolationVerdictInput {
    * null/omitted = no per-ESP reading (fall back to senderControls).
    */
   knownGoodFineAcrossEsps?: boolean | null;
+  /**
+   * D96 — unwarmed senders sending this campaign copy, scored per ESP.
+   * true = every scored ESP is at/above threshold (copy works cold);
+   * false = an ESP failed (copy fails on fresh boxes too);
+   * null/omitted = no per-ESP reading yet (use copyCanary.unwarmedLanded).
+   */
+  unwarmedCopyFineAcrossEsps?: boolean | null;
 }
 
 export interface IsolationVerdictResult {
@@ -104,7 +111,21 @@ export function decideIsolationVerdict(
     };
   }
 
-  // campaignInSpam && control === CLEAN → copy, unless canaries or the rig say otherwise.
+  // D96 — unwarmed senders landed that campaign copy across ESPs. The
+  // copy works on fresh boxes, so this is the live inboxes / domain.
+  if (input.unwarmedCopyFineAcrossEsps === true) {
+    return {
+      verdict: "INFRA",
+      control,
+      reason:
+        "The campaign copy is not inboxing on an ESP, but unwarmed senders with that same copy are landing across ESPs. That is the live inboxes / domain, not a word.",
+      startCopyTeardown: false,
+      pullInfraDiagnostics: true,
+    };
+  }
+
+  // campaignInSpam && control === CLEAN → copy only after we have looked
+  // at unwarmed senders with that copy (D96).
   const canary = input.copyCanary
     ? interpretCopyCanary(input.copyCanary)
     : { lean: "NONE" as const, reason: "" };
@@ -128,13 +149,28 @@ export function decideIsolationVerdict(
     };
   }
 
+  const unwarmedAlsoFailed =
+    input.unwarmedCopyFineAcrossEsps === false ||
+    canary.lean === "COPY" ||
+    input.copyCanary?.unwarmedLanded === false;
+  if (!unwarmedAlsoFailed) {
+    return {
+      verdict: "INCONCLUSIVE",
+      control,
+      reason:
+        "The campaign copy is not inboxing on an ESP, and known-good on those domains looks fine, but I do not yet have the unwarmed senders with that copy. Not a word hunt until that reading exists.",
+      startCopyTeardown: false,
+      pullInfraDiagnostics: false,
+    };
+  }
+
   const fromPod: IsolationVerdictResult = {
     verdict: "COPY",
     control,
     reason:
       canary.lean === "COPY"
         ? canary.reason
-        : "The campaign copy is not inboxing on an ESP, and the known-good email on those same domains is landing across ESPs. The copy is the problem.",
+        : "The campaign copy is not inboxing on an ESP. Known-good on those domains is landing across ESPs, and unwarmed senders with that same copy are also failing an ESP. The copy is the problem.",
     startCopyTeardown: true,
     pullInfraDiagnostics: false,
   };

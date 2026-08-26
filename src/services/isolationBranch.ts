@@ -121,6 +121,8 @@ export class IsolationBranchService {
     const campaignInSpam =
       opts.campaignInSpam ?? (await this.campaignLooksSpam(campaignId));
     const knownGoodFineAcrossEsps = await this.knownGoodFineAcrossEsps(emails);
+    const unwarmedCopyFineAcrossEsps =
+      await this.unwarmedCopyFineAcrossEsps(campaignId);
     const rigPrimary = await this.rig.readLatestControl();
     const copyCanarySplit = this.copyCanary
       ? await this.copyCanary.readSplit(campaignId)
@@ -129,6 +131,7 @@ export class IsolationBranchService {
       campaignInSpam,
       senderControls,
       knownGoodFineAcrossEsps,
+      unwarmedCopyFineAcrossEsps,
       copyCanary: copyCanarySplit,
       rig:
         decidedNeedsRig(campaignInSpam, senderControls)
@@ -229,6 +232,17 @@ export class IsolationBranchService {
     const total = spam + inbox + Number(latest.tab_count ?? 0);
     if (total <= 0) return true;
     return inbox / total * 100 < this.config.remediationInboxThreshold;
+  }
+
+  /** D96 — unwarmed fleet sending this campaign copy, every scored ESP. */
+  private async unwarmedCopyFineAcrossEsps(
+    campaignId: number,
+  ): Promise<boolean | null> {
+    const testId = this.state.getCopyCanaryTestId(campaignId);
+    if (!testId) return null;
+    const splits = await this.providerSplits(String(testId));
+    if (!splits.length) return null;
+    return allEspsAtOrAbove(splits, this.config.remediationInboxThreshold);
   }
 
   /** D93 — known-good on these domains, every scored ESP at/above 80%. */
@@ -339,10 +353,10 @@ function whyNotTheOtherCause(
   reason: string,
 ): string {
   if (verdict === "COPY") {
-    return "Why not the inboxes: the same inboxes landed the known-good email (no offer, no link, no spam words).";
+    return "Why not the inboxes: known-good on those domains landed across ESPs, and unwarmed senders with that same copy also failed an ESP.";
   }
   if (verdict === "INFRA") {
-    return "Why not the copy: the known-good email from those same inboxes also landed in spam, so rewriting the campaign will not fix this.";
+    return "Why not the copy: either the known-good email on those domains failed an ESP, or unwarmed senders landed that campaign copy — rewriting the live email will not fix this.";
   }
   if (verdict === "HEALTHY") {
     return "Why nothing is broken: the campaign test and the known-good email both look fine.";

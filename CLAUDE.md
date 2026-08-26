@@ -117,11 +117,13 @@ Outlook, warmup off). Those six stay off live campaigns. They are extra
 to the half-client staffable floor.
 
 The word-deletion test is **not** “Outlook buried, Gmail fine.” It
-runs when the campaign copy test is not inboxing on an ESP and the
+runs when the campaign copy test is not inboxing on an ESP, the
 known-good email on those same domains is fine on every scored ESP
-(D93). Confirm, hunt the word, then Slack one button: it was this
-word, suggested edit, make the changes? (D69). Do not bench senders
-on that signal.
+(D93), **and** unwarmed senders with that same copy are also failing
+an ESP (D96). If those unwarmed senders land the copy, that is infra,
+not a word. No unwarmed reading yet → wait, do not hunt. Confirm,
+hunt the word, then Slack one button: it was this word, suggested
+edit, make the changes? (D69). Do not bench senders on that signal.
 
 Do **not** hunt already-PAUSED campaigns for 7% bounce (D91 retired D29).
 Do **not** auto-`START` — a manual pause stays paused (D40). Only

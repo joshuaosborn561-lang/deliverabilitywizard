@@ -10,7 +10,7 @@ export function campaignProof(input: {
 }): string {
   return [
     `What I know: ${plainVerdict(input.verdict)}`,
-    `What I ran: known-good email${input.controlVersion ? ` (${input.controlVersion})` : ""} — no offer, no link, no spam words — from ${input.senderSummary}.`,
+    `What I ran: known-good email${input.controlVersion ? ` (${input.controlVersion})` : ""} — no offer, no link, no spam words — from ${input.senderSummary}, and unwarmed senders with that campaign copy.`,
     input.whyNotTheOther,
     `What I will not do yet: ${input.next}`,
   ].join("\n");

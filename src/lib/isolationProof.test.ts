@@ -13,6 +13,7 @@ describe("isolation proof", () => {
       next: "I will not edit the live email until someone taps Make the changes.",
     });
     assert.match(text, /known-good email/);
+    assert.match(text, /unwarmed senders with that campaign copy/);
     assert.match(text, /Why not the inboxes/);
     assert.doesNotMatch(text, /\bD48\b/);
   });

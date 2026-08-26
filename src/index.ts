@@ -1170,7 +1170,7 @@ async function main(): Promise<void> {
       console.log("[copy-canary-adopt] fleet is healthy — nothing to adopt");
       return;
     }
-    if (result.adopted.length) {
+    if (result.adopted.length && result.changed) {
       await slack.send(
         [
           `Found the ${result.adopted.length} unwarmed inbox${result.adopted.length === 1 ? "" : "es"} you bought and registered them as the copy-test canaries:`,

@@ -278,6 +278,16 @@ export class CampaignScanner {
     result.plans = plans;
     result.eligible = plans.length;
 
+    if (candidates.length) {
+      const uncovered = candidates
+        .map((campaign) => `#${campaign.id}`)
+        .slice(0, 12)
+        .join(" ");
+      console.log(
+        `[scan] Uncovered live campaigns=${candidates.length}${uncovered ? ` ${uncovered}` : ""}`,
+      );
+    }
+
     if (!plans.length) {
       const live = campaigns.filter((campaign) =>
         creationStatusSet.has(String(campaign.status ?? "").toUpperCase()),

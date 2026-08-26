@@ -2732,7 +2732,8 @@ until a new test exists. Accepted: leaving those two bare is worse.
 **Decision.** The only Smartlead work a deploy may start immediately
 is canary attach at 90s. Do not boot-kick health, pool provision, or
 campaign-audit. Health inventory retries a 429 three times with a
-30s pause. Pool cron skips while a health pass is in flight.
+30s pause. Pool cron and the hourly campaign-check skip while a
+health pass is in flight.
 
 **Why.** Live 2026-08-26 after D121 (`07ab5ac` 06:32:22): attach
 scheduled 52 tests by 06:35:31 (0 "No leads"). Boot campaign-audit
@@ -2749,4 +2750,5 @@ stampede; they still race attach and poison the next 15-minute cron.
 for 15 minutes is better than no completed pass for an hour.
 
 **Guards.** no boot health/pool/audit kicks; inventory 429 retry;
-pool skips health; owner-intent D122.
+pool and hourly campaign-check skip health; scan logs uncovered
+ids; owner-intent D122.

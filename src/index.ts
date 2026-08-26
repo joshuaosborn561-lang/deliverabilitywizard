@@ -1116,6 +1116,12 @@ async function main(): Promise<void> {
 
   if (config.enableCampaignCheck) {
     cron.schedule(config.cronCampaignCheck, () => {
+      if (healthInFlight) {
+        console.log(
+          "[campaign-check] Health pass running — skipping overlapping hourly sweep",
+        );
+        return;
+      }
       void campaignCheck.run({ mode: "hourly" }).catch((error) => {
         console.error("[campaign-check] Unhandled cron error", error);
         feedBugRemediator("campaign-check-cron", error);

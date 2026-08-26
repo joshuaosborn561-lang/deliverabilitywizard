@@ -3381,6 +3381,14 @@ describe("owner intent — D122 no Smartlead boot kicks except attach", () => {
       ),
     );
     assert.match(
+      index,
+      /Health pass running — skipping overlapping hourly sweep/,
+      stop(
+        "Hourly campaign-check yields while a health pass is in flight (D122).",
+        "The :00 campaign-check cron still overlaps health's inventory.",
+      ),
+    );
+    assert.match(
       inventory,
       /isSmartleadRateLimit/,
       stop(
@@ -3394,6 +3402,18 @@ describe("owner intent — D122 no Smartlead boot kicks except attach", () => {
       stop(
         "Inventory retries a 429 three times (D122).",
         "fetchInventory no longer retries rate limits.",
+      ),
+    );
+    const scanner = await readFile(
+      new URL("../services/campaignScanner.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      scanner,
+      /Uncovered live campaigns=/,
+      stop(
+        "A placement scan names the uncovered live campaigns (D122).",
+        "campaignScanner.ts no longer logs uncovered candidate ids.",
       ),
     );
   });

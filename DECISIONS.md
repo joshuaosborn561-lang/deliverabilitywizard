@@ -2702,3 +2702,25 @@ campaigns stay paused and never send to them.
 
 **Guards.** canaryShellSeedEmail; shellLeadImportAccepted ignores
 upload_count-only; owner-intent D120.
+
+---
+
+## D121 — State placement marks only count for that campaign's test
+
+**Decision.** `testedCampaignCoverage` treats a state `testIds`
+mark as coverage only when that id is a living automated test
+**and** `campaignIdOf(test)` is this campaign. A living test on
+another campaign does not cover this one.
+
+**Why.** Live 2026-08-26: D116 created 37 tests and
+`no_placement_test` fell 20→2. The leftovers `#3847844` Parlay
+Trendrr Ops DM and `#3847845` Parlay Receipts Ops DM stayed on
+the board. The next scan logged `eligible: 0` while
+campaign-check still stamped `no_placement_test`. The merge of
+state marks with "any living test id" can attribute a sibling
+or canary-shell test to the live campaign and skip creating one.
+
+**Tradeoff.** A state mark whose test moved campaigns is ignored
+until a new test exists. Accepted: leaving those two bare is worse.
+
+**Guards.** livingCampaignByTestId match; owner-intent D121.

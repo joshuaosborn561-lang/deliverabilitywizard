@@ -3327,6 +3327,32 @@ describe("owner intent — D117 seed a real canary inbox then pause", () => {
   });
 });
 
+describe("owner intent — D121 placement state marks match campaign id", () => {
+  it("D121: a living test covers only the campaign it belongs to", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const coverage = await readFile(
+      new URL("../lib/placementCoverage.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      coverage,
+      /livingCampaignByTestId/,
+      stop(
+        "State placement marks only count when the living test is for that campaign (D121).",
+        "testedCampaignCoverage no longer maps living tests to their campaign id.",
+      ),
+    );
+    assert.match(
+      coverage,
+      /livingCampaignByTestId\.get\(String\(id\)\) === String\(campaignId\)/,
+      stop(
+        "A living test on another campaign does not cover this one (D121).",
+        "testedCampaignCoverage still treats any living testId as coverage.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D120 unique shell seed, not upload_count-only", () => {
   it("D120: each shell gets its own seed address; other-campaign skip is not success", async () => {
     const { readFile } = await import("node:fs/promises");

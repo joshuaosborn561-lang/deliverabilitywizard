@@ -198,6 +198,7 @@ export interface AppState {
   campaignChecks: Record<string, CampaignCheckRecord>;
   /** D81 — Josh Slack-approved generic backfill, per campaign. */
   genericBackfillApprovals: Record<string, GenericBackfillApproval>;
+  domainAdvisories: DomainClientAdvisory[];
   /**
    * D84 — campaign ids whose Smartlead bounce_autopause_threshold we already
    * wrote to 100 (off). The 10-minute loop writes only campaigns missing
@@ -294,6 +295,14 @@ export interface HeldInboxRecord {
 }
 
 /** D41/D43 — mailbox resting off live campaigns. */
+/** D136 — a sending domain whose client story needs a human. */
+export interface DomainClientAdvisory {
+  domain: string;
+  kind: "split_clients" | "unmapped";
+  note: string;
+  at: string;
+}
+
 export interface RestingInboxRecord {
   accountId: number;
   email: string;
@@ -339,6 +348,7 @@ const EMPTY_STATE: AppState = {
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
   campaignChecks: {},
   genericBackfillApprovals: {},
+  domainAdvisories: [],
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
   autopauseForceAllAt: null,
@@ -396,6 +406,7 @@ export class StateStore {
         isolation: normalizeIsolationState(parsed.isolation),
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
+        domainAdvisories: parsed.domainAdvisories ?? [],
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
         autopauseForceAllAt: parsed.autopauseForceAllAt ?? null,
@@ -1008,6 +1019,15 @@ export class StateStore {
 
   clearCanaryFleetDown(): void {
     this.state.canaryFleetDown = null;
+  }
+
+  /** D136 — the monitor's domain→client audit replaces the full list each pass. */
+  setDomainAdvisories(advisories: DomainClientAdvisory[]): void {
+    this.state.domainAdvisories = advisories;
+  }
+
+  listDomainAdvisories(): DomainClientAdvisory[] {
+    return this.state.domainAdvisories;
   }
 
   approveGenericBackfill(record: GenericBackfillApproval): void {

@@ -86,6 +86,8 @@ import { SendingInfraService } from "./services/sendingInfra.js";
 import { OldClientTeardownService } from "./services/oldClientTeardown.js";
 import { canonBoard } from "./lib/canonCompliance.js";
 import { STAGE_OVERDUE_WINDOWS_MS } from "./lib/stageWindows.js";
+import { PodTagService } from "./services/podTags.js";
+import { DomainClientAuditService } from "./services/domainClientAudit.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -129,6 +131,9 @@ async function main(): Promise<void> {
   }
 
   const smartlead = new SmartleadClient(config.smartleadApiKey || "missing");
+  // D132 — one Smartlead account book shared by the health pass, the hourly
+  // campaign check, the 6-hour audit, the /ops board, and the Slack taps.
+  const inventoryBook = new InventoryBook(smartlead);
   // Serialise Smartlead writes across health / remediation / settings so
   // overlapping crons do not stampede into 429s (D25).
   smartlead.setMutationQueue(new MutationQueue(400));
@@ -375,6 +380,13 @@ async function main(): Promise<void> {
     smartDelivery,
     slack,
     state,
+    inventoryBook,
+  );
+  const podTags = new PodTagService(config, smartlead, state, inventoryBook);
+  const domainClientAudit = new DomainClientAuditService(
+    config,
+    state,
+    inventoryBook,
   );
   const porkbun =
     config.porkbunApiKey && config.porkbunSecretApiKey
@@ -398,9 +410,6 @@ async function main(): Promise<void> {
     state,
     spendGateway,
   );
-  // D132 — one Smartlead account book shared by the health pass, the hourly
-  // campaign check, the 6-hour audit, the /ops board, and the Slack taps.
-  const inventoryBook = new InventoryBook(smartlead);
   const isolationExecute = new IsolationExecuteService(
     config,
     smartlead,
@@ -825,7 +834,9 @@ async function main(): Promise<void> {
       let podControlResult: unknown = null;
       if (config.enablePodControls) {
         podControlResult = await stage("pod-controls", () => podControls.run());
-        await stage("domain-lifecycle", () => domainLifecycle.run());
+        await stage("pod-tags", () => podTags.run());
+        await stage("domain-client-audit", () => domainClientAudit.run());
+      await stage("domain-lifecycle", () => domainLifecycle.run());
         await stage("isolation-buy-resume", () => isolationBuy.resume());
         await stage("canary-buy-resume", () => copyCanaryBuy.resume());
         await stage("canary-adopt", () => runCanaryAdoption());

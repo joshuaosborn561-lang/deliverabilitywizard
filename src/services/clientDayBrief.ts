@@ -291,6 +291,9 @@ export class ClientDayBriefService {
           ? this.state.listLastStaffingShort()
           : undefined,
         untaggedCampaigns: options.endOfDay ? untagged : undefined,
+        domainAdvisories: options.endOfDay
+          ? this.state.listDomainAdvisories()
+          : undefined,
         loadedDrafts: options.endOfDay ? loadedDrafts : undefined,
         canaryFleetDownSince: options.endOfDay
           ? this.state.getCanaryFleetDown()?.since ?? null

@@ -526,6 +526,21 @@ export class SmartleadClient {
     });
   }
 
+  /** Ensure a named tag exists and return its id (create with color if not). */
+  async ensureTag(name: string, color: string): Promise<{ id: number; name: string }> {
+    const existing = await this.listTags();
+    const match = existing.find(
+      (t) => t.name.trim().toUpperCase() === name.toUpperCase(),
+    );
+    if (match) return { id: match.id, name: match.name };
+    const created = await this.createTag(name, color);
+    const id = created.data?.id;
+    if (!id) {
+      throw new Error(`Could not create tag ${name}`);
+    }
+    return { id, name };
+  }
+
   /**
    * Ensure a HOLD-UNTIL-YYYY-MM-DD tag exists and return its id.
    */

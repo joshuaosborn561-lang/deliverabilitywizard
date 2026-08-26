@@ -4146,3 +4146,49 @@ describe("owner intent — D133/D134 the taps act fleet-wide", () => {
     );
   });
 });
+
+describe("owner intent — D135/D136 fleet visibility", () => {
+  it("D135: POD tags converge from the shared pods; D136: domain-client mismatches are advisory only", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const tags = await readFile(
+      new URL("../services/podTags.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      tags,
+      /loadPods\(/,
+      stop(
+        "POD tags come from the same A/B pods the rest system computes (D135).",
+        "podTags.ts derives pods on its own.",
+      ),
+    );
+    assert.match(
+      tags,
+      /POD_TAG_A|"POD-A"/,
+      stop(
+        "The A/B rest split is visible in Smartlead as POD-A/POD-B tags (D135).",
+        "podTags.ts lost the tag converge.",
+      ),
+    );
+    const audit = await readFile(
+      new URL("../services/domainClientAudit.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      audit,
+      /updateEmailAccount|updateCampaign|client_id\s*[:=]\s*[^n]/,
+      stop(
+        "The domain→client audit never writes a client mapping (D136).",
+        "domainClientAudit.ts assigns clients instead of asking a human.",
+      ),
+    );
+    assert.match(
+      audit,
+      /setDomainAdvisories/,
+      stop(
+        "Domain-client mismatches surface on the EOD brief (D136).",
+        "domainClientAudit.ts no longer persists advisories.",
+      ),
+    );
+  });
+});

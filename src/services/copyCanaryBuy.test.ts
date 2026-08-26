@@ -4,6 +4,7 @@ import { loadConfig } from "../config.js";
 import type { InboxKitClient } from "../clients/inboxkit.js";
 import type { PorkbunClient } from "../clients/porkbun.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
+import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { COPY_CANARY_FLEET_SIZE } from "../lib/copyCanaryFleet.js";
 import { buildIsolationAction } from "../lib/isolationActions.js";
 import type { SpendGateway } from "../lib/spendGateway.js";
@@ -219,5 +220,153 @@ describe("CopyCanaryBuyService", () => {
       "getcrosslaunchco.info",
       "crosslaunchcoget.info",
     ]);
+  });
+});
+
+describe("manual fleet adoption (D86)", () => {
+  const planDomain = GENERIC_POOL_PLAN.domains[0]!.domain;
+  const manualRows = [
+    { username: "ava", domain_name: "getcleartechco.info", platform: "GOOGLE", first_name: "Ava", last_name: "Reed", uid: "m1" },
+    { username: "eli", domain_name: "getcleartechco.info", platform: "GOOGLE", first_name: "Eli", last_name: "Park", uid: "m2" },
+    { username: "mia", domain_name: "getcleartechco.info", platform: "GOOGLE", first_name: "Mia", last_name: "Cole", uid: "m3" },
+    { username: "leo", domain_name: "cleartechcoget.info", platform: "MICROSOFT", first_name: "Leo", last_name: "Hale", uid: "m4" },
+    { username: "ivy", domain_name: "cleartechcoget.info", platform: "MICROSOFT", first_name: "Ivy", last_name: "Moss", uid: "m5" },
+    { username: "kai", domain_name: "cleartechcoget.info", platform: "MICROSOFT", first_name: "Kai", last_name: "Ford", uid: "m6" },
+  ];
+  const manualEmails = manualRows.map(
+    (row) => `${row.username}@${row.domain_name}`,
+  );
+
+  function makeService(opts: {
+    state: StateStore;
+    inboxkitRows?: unknown[];
+    smartleadAccounts?: unknown[];
+    warmupCalls?: Array<{ id: number; enabled: boolean }>;
+    exported?: string[][];
+  }) {
+    return new CopyCanaryBuyService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listAllMailboxes: async () => opts.inboxkitRows ?? [],
+        exportMailboxesToSequencer: async (_seq: string, uids: string[]) => {
+          opts.exported?.push(uids);
+        },
+      } as unknown as InboxKitClient,
+      null,
+      {
+        listAllEmailAccounts: async () => opts.smartleadAccounts ?? [],
+        configureWarmup: async (
+          id: number,
+          settings: { warmup_enabled: boolean },
+        ) => {
+          opts.warmupCalls?.push({ id, enabled: settings.warmup_enabled });
+        },
+      } as unknown as SmartleadClient,
+      opts.state,
+      {} as unknown as SpendGateway,
+    );
+  }
+
+  it("adopts a hand-bought fleet: registers, maps, turns warmup off, never staffs", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    // A stale planned fleet from an earlier dry run — never actually bought.
+    state.setCopyCanaryFleet({
+      status: "awaiting_mailboxes",
+      domains: ["planned-a.info", "planned-b.info"],
+      emails: ["ghost@planned-a.info"],
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    });
+    state.upsertPoolMailbox({
+      email: "ghost@planned-a.info",
+      domain: "planned-a.info",
+      platform: "GOOGLE",
+      firstName: "Ghost",
+      lastName: "Row",
+      status: "available",
+      copyCanary: true,
+    });
+    // A known generic pool mailbox in the same workspace must not be adopted.
+    state.upsertPoolMailbox({
+      email: `pool@${planDomain}`,
+      domain: planDomain,
+      platform: "GOOGLE",
+      firstName: "Pool",
+      lastName: "User",
+      status: "available",
+    });
+    const warmupCalls: Array<{ id: number; enabled: boolean }> = [];
+    const service = makeService({
+      state,
+      inboxkitRows: [
+        ...manualRows,
+        { username: "pool", domain_name: planDomain, platform: "GOOGLE", uid: "p1" },
+      ],
+      smartleadAccounts: manualEmails.map((email, index) => ({
+        id: 9000 + index,
+        from_email: email,
+      })),
+      warmupCalls,
+    });
+
+    const result = await service.adoptManualPurchase();
+    assert.ok(result);
+    assert.deepEqual([...result!.adopted].sort(), [...manualEmails].sort());
+    assert.equal(result!.ready, true);
+    const fleet = state.getCopyCanaryFleet();
+    assert.deepEqual([...(fleet?.emails ?? [])].sort(), [...manualEmails].sort());
+    assert.equal(fleet?.status, "ready");
+    assert.equal(fleet?.googleDomain, "getcleartechco.info");
+    assert.equal(fleet?.microsoftDomain, "cleartechcoget.info");
+    // The stale planned row is gone; the real rows are canary-flagged and
+    // mapped, and canary rows never surface as staffing supply.
+    assert.equal(state.getPoolMailbox("ghost@planned-a.info"), undefined);
+    for (const email of manualEmails) {
+      const row = state.getPoolMailbox(email);
+      assert.equal(row?.copyCanary, true);
+      assert.ok(row?.smartleadAccountId);
+    }
+    assert.equal(state.findAvailablePoolMailbox("GOOGLE")?.copyCanary, undefined);
+    // Warmup written off for the adopted accounts, never on.
+    assert.ok(warmupCalls.length >= manualEmails.length);
+    assert.ok(warmupCalls.every((call) => call.enabled === false));
+    // The generic pool mailbox stayed a generic.
+    assert.equal(state.getPoolMailbox(`pool@${planDomain}`)?.copyCanary, undefined);
+  });
+
+  it("returns null when the fleet is ready and connected", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-ready-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["getcleartechco.info"],
+      emails: manualEmails,
+      updatedAt: new Date().toISOString(),
+    });
+    const service = makeService({ state, inboxkitRows: manualRows });
+    assert.equal(await service.adoptManualPurchase(), null);
+  });
+
+  it("adopts nothing when the candidate set is too big to be a fleet buy", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-many-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const rows = Array.from({ length: COPY_CANARY_FLEET_SIZE * 2 + 1 }, (_, i) => ({
+      username: `box${i}`,
+      domain_name: `mystery${i}.info`,
+      platform: "GOOGLE",
+      uid: `x${i}`,
+    }));
+    const service = makeService({ state, inboxkitRows: rows });
+    const result = await service.adoptManualPurchase();
+    assert.ok(result);
+    assert.equal(result!.adopted.length, 0);
+    assert.match(result!.reason ?? "", /too many/);
+    assert.equal(state.getCopyCanaryFleet(), null);
   });
 });

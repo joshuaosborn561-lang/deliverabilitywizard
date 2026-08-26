@@ -1860,3 +1860,40 @@ untrackable anyway with zero canaries.
 canary findings and sets `canaryFleetDown`; `services/bounceAutopause`
 does not exist and index routes the old aliases to autostop; the EOD
 brief renders untagged campaigns and staffing shorts; owner-intent D85.
+---
+
+## D86 — A hand-bought canary fleet is adopted, not stranded
+
+**Decision.** When the unwarmed canary fleet is not ready, the app looks at
+the InboxKit workspace for mailboxes that can only be a manual fleet buy —
+on domains that are not generic-pool plan, not a pre-warmed fleet
+(`EXTRA_GENERIC_DOMAINS`), not the isolation domain, and not already known
+non-canary pool rows — and adopts them: registered `copyCanary` (never
+staffing supply), fleet record updated to what actually exists, exported to
+Smartlead if missing, warmup turned off (D83). Stale planned fleet emails
+that were never bought are dropped; rows mapped to a Smartlead account are
+never dropped. Runs ~70s after boot and on each monitor pass while the
+fleet is not ready. Slack only announces an actual adoption or an ambiguous
+candidate set (more than twice the fleet size ⇒ adopt nothing, ask).
+Canary test attachment stays with the normal sweep (copyCanary.attach on
+the health pass); campaign checks clear `canaryFleetDown` on their own once
+a fleet mailbox is connected.
+
+**Why.** Josh (2026-08-26): "I just bought 6 inboxes as unwarmed for here —
+find what they are and mark them as such and get them on the canary tests."
+The buy flow (D54/D60) assumed the app made the purchase; a manual InboxKit
+buy left no action record, so six good unwarmed inboxes would have sat
+unregistered — warmup on whatever the default is, invisible to the tests,
+and at risk of being treated as pool supply.
+
+**Tradeoff.** Adoption infers intent from the workspace rather than an
+explicit list. Held by the exclusion filters (plan domains, pre-warmed
+fleets, isolation domain, known pool rows), the ambiguity cap, and the
+provisioner's existing `isCopyCanary` skip. A mailbox Josh buys for some
+other unstated purpose on a brand-new domain would be adopted as a canary —
+accepted; nothing else buys unregistered mailboxes in that workspace.
+
+**Guards.** Adoption exists and is called from boot + monitor; adopted rows
+are `copyCanary` and excluded from `findAvailablePoolMailbox`; warmup is
+written off, never on; the pool provisioner still skips canaries;
+owner-intent D86.

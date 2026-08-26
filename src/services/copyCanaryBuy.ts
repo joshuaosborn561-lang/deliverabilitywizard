@@ -29,6 +29,18 @@ export interface CopyCanaryBuyResult {
   awaitingExport: boolean;
 }
 
+export interface CopyCanaryAdoptResult {
+  /** Candidate mailboxes seen in InboxKit that look like a manual fleet buy. */
+  found: string[];
+  /** Emails registered as the unwarmed canary fleet this pass. */
+  adopted: string[];
+  /** Fleet emails with a Smartlead account id after export/mapping. */
+  mapped: number;
+  ready: boolean;
+  /** Why nothing was adopted, when found/adopted are empty. */
+  reason?: string;
+}
+
 /**
  * D54 — Josh-tapped purchase of the dedicated unwarmed canary fleet.
  * Two domains, three inboxes each, Google then Outlook. Warmup stays off.
@@ -161,6 +173,161 @@ export class CopyCanaryBuyService {
     }
     if (finished) await this.store.save();
     return finished;
+  }
+
+  /**
+   * D86 — adopt a fleet Josh bought by hand in InboxKit.
+   *
+   * The buy flow assumes the app made the purchase, so a manual buy used to
+   * strand six perfectly good unwarmed inboxes: no fleet record, warmup on
+   * whatever InboxKit defaults to, no canary tests. This pass treats the
+   * InboxKit workspace as the record of what Josh bought: any mailbox on a
+   * domain that is not generic-pool plan, not a pre-warmed fleet, not the
+   * isolation domain, and not already a known non-canary pool row is a
+   * manual canary purchase. Adopted mailboxes are registered `copyCanary`
+   * (never staffing supply), exported to Smartlead if missing, and warmup
+   * is turned off (D83). Test attachment stays with the normal sweep.
+   */
+  async adoptManualPurchase(): Promise<CopyCanaryAdoptResult | null> {
+    const fleet = this.store.getCopyCanaryFleet();
+    if (fleet?.status === "ready" && !this.store.getCanaryFleetDown()) {
+      return null;
+    }
+    // An app-made purchase mid-flight is resume()'s job, not adoption's.
+    for (const action of this.store.listIsolationActions()) {
+      if (action.kind !== "buy_canary_fleet") continue;
+      if (action.status !== "approved" && action.status !== "executed") continue;
+      const phase = String(action.detail.phase ?? "");
+      if (phase === "awaiting_mailboxes" || phase === "awaiting_export") {
+        return null;
+      }
+    }
+    if (!this.inboxkit) {
+      return {
+        found: [],
+        adopted: [],
+        mapped: 0,
+        ready: false,
+        reason: "InboxKit is not configured",
+      };
+    }
+
+    const workspaceId =
+      this.config.genericPoolWorkspaceId || this.config.inboxkitWorkspaceId;
+    const rows = await this.inboxkit.listAllMailboxes(workspaceId || undefined);
+    const planDomains = new Set(
+      GENERIC_POOL_PLAN.domains.map((d) => d.domain.toLowerCase()),
+    );
+    const excludedDomains = new Set([
+      ...this.config.extraGenericDomains.map((d) => d.toLowerCase()),
+      ...(this.config.isolationDomain
+        ? [this.config.isolationDomain.toLowerCase()]
+        : []),
+    ]);
+
+    const candidates: Array<{
+      email: string;
+      domain: string;
+      platform: "GOOGLE" | "MICROSOFT";
+      firstName: string;
+      lastName: string;
+    }> = [];
+    for (const row of rows) {
+      const domain = (row.domain_name || row.domain || "").toLowerCase();
+      const username = (row.username || "").toLowerCase();
+      const email = (
+        row.email ||
+        row.address ||
+        (username && domain ? `${username}@${domain}` : "")
+      ).toLowerCase();
+      if (!email || !domain) continue;
+      if (planDomains.has(domain) || excludedDomains.has(domain)) continue;
+      const existing = this.store.getPoolMailbox(email);
+      if (existing && !existing.copyCanary) continue;
+      candidates.push({
+        email,
+        domain,
+        platform: /micro|outlook/i.test(String(row.platform ?? ""))
+          ? "MICROSOFT"
+          : "GOOGLE",
+        firstName: row.first_name || username || "Canary",
+        lastName: row.last_name || "Box",
+      });
+    }
+
+    const found = candidates.map((c) => c.email);
+    if (!candidates.length) {
+      return {
+        found,
+        adopted: [],
+        mapped: this.fleetMappedCount(),
+        ready: false,
+        reason:
+          "No unassigned mailboxes in the InboxKit workspace look like a canary buy",
+      };
+    }
+    if (candidates.length > COPY_CANARY_FLEET_SIZE * 2) {
+      return {
+        found,
+        adopted: [],
+        mapped: this.fleetMappedCount(),
+        ready: false,
+        reason: `${candidates.length} candidate mailboxes is too many to adopt blind — expected about ${COPY_CANARY_FLEET_SIZE}`,
+      };
+    }
+
+    for (const candidate of candidates) {
+      const existing = this.store.getPoolMailbox(candidate.email);
+      this.store.upsertPoolMailbox({
+        email: candidate.email,
+        domain: candidate.domain,
+        platform: candidate.platform,
+        smartleadAccountId: existing?.smartleadAccountId,
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        status: "available",
+        copyCanary: true,
+      });
+    }
+    // Planned-but-never-bought fleet emails (dry-run leftovers) give way to
+    // what InboxKit says actually exists. Mapped rows are never dropped.
+    const adoptedSet = new Set(found);
+    for (const email of fleet?.emails ?? []) {
+      if (adoptedSet.has(email)) continue;
+      const row = this.store.getPoolMailbox(email);
+      if (row?.copyCanary && !row.smartleadAccountId) {
+        this.store.removePoolMailbox(email);
+      }
+    }
+
+    const domains = [...new Set(candidates.map((c) => c.domain))];
+    const googleDomain = domains.find((d) =>
+      candidates.some((c) => c.domain === d && c.platform === "GOOGLE"),
+    );
+    const microsoftDomain = domains.find((d) =>
+      candidates.some((c) => c.domain === d && c.platform === "MICROSOFT"),
+    );
+    this.patchFleet({
+      status: "awaiting_export",
+      domains,
+      googleDomain,
+      microsoftDomain,
+      emails: found,
+    });
+
+    const exported = await this.exportAndDisableWarmup(domains);
+    const ready = exported.mapped >= candidates.length;
+    this.patchFleet({ status: ready ? "ready" : "awaiting_export" });
+    await this.store.save();
+    console.log(
+      `[copy-canary-adopt] adopted=${found.length} mapped=${exported.mapped} ready=${ready} domains=${domains.join(",")}`,
+    );
+    return {
+      found,
+      adopted: found,
+      mapped: exported.mapped,
+      ready,
+    };
   }
 
   private async purchaseDomains(

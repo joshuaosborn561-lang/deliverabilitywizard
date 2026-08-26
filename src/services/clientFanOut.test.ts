@@ -18,13 +18,13 @@ describe("ClientFanOutService", () => {
       listAllEmailAccounts: async () => [
         {
           id: 100,
-          from_email: "a@boldercyperpartnerbiz.info",
+          from_email: "a@boldercyperpartnerbiz.info", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
         },
         {
           id: 101,
-          from_email: "b@boldercyperpartnerbiz.info",
+          from_email: "b@boldercyperpartnerbiz.info", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
         },
@@ -41,6 +41,7 @@ describe("ClientFanOutService", () => {
 
     const state = {
       getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
       getHeldInbox: () => undefined,
       getRestingInbox: () => undefined,
       getDomainHistory: () => undefined,
@@ -71,7 +72,7 @@ describe("ClientFanOutService", () => {
         // touches-the-group gate skipped it forever (TechEvo/Peterson at 1).
         {
           id: 100,
-          from_email: "kyle@petersonroofs.com",
+          from_email: "kyle@petersonroofs.com", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [],
           client_id: 9,
         },
@@ -92,6 +93,7 @@ describe("ClientFanOutService", () => {
       { send: async () => undefined } as unknown as SlackClient,
       {
         getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
         getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
@@ -114,8 +116,8 @@ describe("ClientFanOutService", () => {
         { id: 1, name: "TechEvo Red Sox", status: "ACTIVE", client_id: 7 },
       ],
       listAllEmailAccounts: async () => [
-        { id: 100, from_email: "corey@techevo.com", campaign_ids: [], client_id: 7 },
-        { id: 101, from_email: "onit@techevo.com", campaign_ids: [1], client_id: 7 },
+        { id: 100, from_email: "corey@techevo.com", created_at: "2026-06-01T00:00:00Z", campaign_ids: [], client_id: 7 },
+        { id: 101, from_email: "onit@techevo.com", created_at: "2026-06-01T00:00:00Z", campaign_ids: [1], client_id: 7 },
       ],
       listClients: async () => [{ id: 7, name: "TechEvolution" }],
       addEmailAccountsToCampaign: async (
@@ -133,6 +135,7 @@ describe("ClientFanOutService", () => {
       { send: async () => undefined } as unknown as SlackClient,
       {
         getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
         getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
@@ -156,7 +159,7 @@ describe("ClientFanOutService", () => {
         // memberships). Fan-out must leave it for top-up.
         {
           id: 100,
-          from_email: "idle@crosslaunchco.com",
+          from_email: "idle@crosslaunchco.com", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [],
           client_id: 9,
         },
@@ -177,6 +180,7 @@ describe("ClientFanOutService", () => {
       { send: async () => undefined } as unknown as SlackClient,
       {
         getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
         getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
@@ -197,13 +201,13 @@ describe("ClientFanOutService", () => {
       listAllEmailAccounts: async () => [
         {
           id: 100,
-          from_email: "spare@crosslaunchco.com",
+          from_email: "spare@crosslaunchco.com", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
         },
         {
           id: 101,
-          from_email: "rep@vasco.com",
+          from_email: "rep@vasco.com", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [1],
           client_id: 9,
         },
@@ -224,6 +228,7 @@ describe("ClientFanOutService", () => {
       { send: async () => undefined } as unknown as SlackClient,
       {
         getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
         getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
@@ -245,7 +250,7 @@ describe("ClientFanOutService", () => {
       listAllEmailAccounts: async () => [
         {
           id: 100,
-          from_email: "idle@boldercyperpartnerhub.info",
+          from_email: "idle@boldercyperpartnerhub.info", created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [],
           client_id: null,
         },
@@ -266,6 +271,7 @@ describe("ClientFanOutService", () => {
       { send: async () => undefined } as unknown as SlackClient,
       {
         getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
         getHeldInbox: () => undefined,
         getRestingInbox: () => undefined,
         getDomainHistory: () => undefined,
@@ -277,5 +283,76 @@ describe("ClientFanOutService", () => {
       [1, 2],
     );
     assert.equal(result.attached.length, 2);
+  });
+});
+
+describe("D139 — staffing never hands the gate its next pull", () => {
+  it("a freshly imported client inbox waits out its 21 days; exempt inventory still flows", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const fresh = new Date(Date.now() - 2.8 * 86_400_000).toISOString();
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Parlay EOS", status: "ACTIVE", client_id: 5 },
+        { id: 2, name: "Parlay Trendrr", status: "ACTIVE", client_id: 5 },
+      ],
+      listAllEmailAccounts: async () => [
+        // 2.8 days old — the gate would pull it; fan-out must not re-add it
+        {
+          id: 100,
+          from_email: "valentina.flores@getparlay.info",
+          created_at: fresh,
+          campaign_ids: [1],
+          client_id: 5,
+        },
+        // warmed client inbox — still fans onto campaign 2
+        {
+          id: 101,
+          from_email: "old.hand@getparlay.info",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [1],
+          client_id: 5,
+        },
+        // young by clock but gate-exempt by tag — still fans
+        {
+          id: 102,
+          from_email: "exempt@getparlay.info",
+          created_at: fresh,
+          campaign_ids: [1],
+          client_id: 5,
+          tags: [{ tag_name: "WARMUP-GATE-EXEMPT" }],
+        },
+      ],
+      listClients: async () => [{ id: 5, name: "Parlay Tech" }],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const state = {
+      getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
+      getHeldInbox: () => undefined,
+      getRestingInbox: () => undefined,
+      getDomainHistory: () => undefined,
+    } as unknown as StateStore;
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    const added = adds.flatMap(([, ids]) => ids);
+    assert.ok(!added.includes(100), "the 2.8-day inbox is not fanned out");
+    assert.ok(added.includes(101), "the warmed inbox still fans out");
+    assert.ok(added.includes(102), "the WARMUP-GATE-EXEMPT inbox still fans out");
+    assert.ok(
+      result.skipped.some((row) => row.includes("owes warmup")),
+      `skip reason names the clock: ${result.skipped.join(" | ")}`,
+    );
   });
 });

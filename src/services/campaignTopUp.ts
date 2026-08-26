@@ -11,6 +11,7 @@ import {
 import type { SmartleadCampaign } from "../types/index.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
+import { owesWarmup } from "./warmupGate.js";
 import {
   allowsGenericStaff,
   countClientInboxesByKey,
@@ -440,6 +441,7 @@ export class CampaignTopUpService {
           (email) => {
             const key = email.toLowerCase();
             const domain = key.split("@")[1];
+            const poolAccount = accountByEmail.get(key);
             return (
               !activeSwapPoolEmails.has(key) &&
               !selectedThisRun.has(key) &&
@@ -448,7 +450,9 @@ export class CampaignTopUpService {
               !isRetiredSendingDomain(
                 domain,
                 this.state.getDomainHistory(domain),
-              )
+              ) &&
+              // D139 — supply that owes warmup days is not supply.
+              !(poolAccount && owesWarmup(poolAccount, key, this.config, this.state))
             );
           },
         );

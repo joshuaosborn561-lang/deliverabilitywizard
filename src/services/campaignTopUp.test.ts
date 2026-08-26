@@ -139,6 +139,7 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 10,
           from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
           from_name: "Swap Sender",
           type: "GMAIL",
           is_smtp_success: true,
@@ -148,6 +149,7 @@ describe("CampaignTopUpService safety", () => {
         ...Array.from({ length: 100 }, (_, index) => ({
           id: 300 + index,
           from_email: `client-${index}@goliath.com`,
+          created_at: "2026-06-01T00:00:00Z",
           client_id: 2,
           type: "GMAIL",
           is_smtp_success: true,
@@ -193,6 +195,7 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 10,
           from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
           type: "GMAIL",
           is_smtp_success: true,
           is_imap_success: true,
@@ -201,6 +204,7 @@ describe("CampaignTopUpService safety", () => {
         ...Array.from({ length: 49 }, (_, index) => ({
           id: 200 + index,
           from_email: `dead-${index}@x.com`,
+          created_at: "2026-06-01T00:00:00Z",
           client_id: 2,
           type: "GMAIL",
           is_smtp_success: false,
@@ -210,6 +214,7 @@ describe("CampaignTopUpService safety", () => {
         ...Array.from({ length: 51 }, (_, index) => ({
           id: 400 + index,
           from_email: `live-${index}@goliath.com`,
+          created_at: "2026-06-01T00:00:00Z",
           client_id: 2,
           type: "GMAIL",
           is_smtp_success: true,
@@ -253,6 +258,7 @@ describe("CampaignTopUpService safety", () => {
     const donorAccounts = Array.from({ length: 50 }, (_, index) => ({
       id: 100 + index,
       from_email: `donor-${index}@client-a.info`,
+      created_at: "2026-06-01T00:00:00Z",
       type: "GMAIL",
       campaign_ids: [1],
     }));
@@ -267,6 +273,7 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 10,
           from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
           from_name: "Old Sender",
           signature: "Old signature",
           client_id: 1,
@@ -277,6 +284,7 @@ describe("CampaignTopUpService safety", () => {
         ...Array.from({ length: 100 }, (_, index) => ({
           id: 500 + index,
           from_email: `goliath-${index}@client-b.info`,
+          created_at: "2026-06-01T00:00:00Z",
           client_id: 2,
           type: "GMAIL",
           campaign_ids: [],
@@ -350,6 +358,7 @@ describe("CampaignTopUpService safety", () => {
         {
           id: 10,
           from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
           type: "GMAIL",
           is_smtp_success: true,
           is_imap_success: true,
@@ -358,6 +367,7 @@ describe("CampaignTopUpService safety", () => {
         ...Array.from({ length: 80 }, (_, index) => ({
           id: 100 + index,
           from_email: `vasco-${index}@vasco.com`,
+          created_at: "2026-06-01T00:00:00Z",
           client_id: 9,
           type: "GMAIL",
           is_smtp_success: true,

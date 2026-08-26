@@ -154,6 +154,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D136 | Live | Domain→client advisory audit; EOD escalation, never a guess |
 | D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
 | D138 | Live | Campaign-level min gap converged to the 10-minute floor |
+| D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
 
 ---
 
@@ -3429,3 +3430,34 @@ made here.
 **Guards.** owner-intent D138 (converge present, failures visible);
 tests: below-floor ACTIVE written to 10, at/above-floor untouched,
 PAUSED untouched, failed write keeps the finding.
+
+## D139 — Staffing never hands the gate its next pull
+
+**Decision.** Fan-out and top-up refuse any mailbox that owes warmup
+days, using the gate's own clock and exemptions (`owesWarmup` in
+`warmupGate.ts`: WARMUP-GATE-EXEMPT tag, pre-warmed fleets, canaries
+exempt; InboxKit import stamp first, Smartlead warmup/account creation
+date as fallback; no readable clock = owes, same as the gate). The
+warmup-gate pull notice now states the real owed days from config
+(21) — the Slack text had a hardcoded "14".
+
+**Why.** Live 2026-08-26: three Parlay inboxes at 2.8 days and ~10
+Culture Fits inboxes at 2.0–2.8 days were serving every ACTIVE campaign
+of their clients. The gate pulled them every pass (~40 memberships per
+pass) — and the same health pass fanned them straight back out, because
+the D84 fan-out filter checked retired/held/resting/HOLD-UNTIL but
+never the warmup clock, and its "freshly imported" language treated a
+2.8-day inbox as supply. The pull/re-add thrash ran invisibly (the pull
+notice was dropped by the D71 Slack allowlist as unclassified) until
+the D132 stable account book made the under_warmed findings stick at
+~49 instead of flapping to zero.
+
+**Effect.** The gate's pull now sticks; under-21-day client inboxes sit
+in warmup while their campaigns show `understaffed` and land on the EOD
+staffing shorts — honest scarcity instead of quiet canon violation
+(D1/D50/D105). The checker also honors the WARMUP-GATE-EXEMPT tag so
+its under_warmed findings match what the gate enforces.
+
+**Guards.** owner-intent D139 (owesWarmup exists; fan-out and top-up
+call it; no hardcoded 14-day text); fan-out test: a 2.8-day inbox is
+skipped with "owes warmup" while warmed and tag-exempt inboxes flow.

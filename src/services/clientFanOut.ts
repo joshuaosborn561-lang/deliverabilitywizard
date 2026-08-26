@@ -16,7 +16,7 @@ import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
 import { isExcluded } from "./campaignTopUp.js";
-import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
+import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
 import {
   fetchInventory,
   recordMembership,
@@ -167,6 +167,14 @@ export class ClientFanOutService {
         }
         if (activeHoldUntilDate(tagNames(account))) {
           result.skipped.push(`${email}: HOLD-UNTIL tag`);
+          continue;
+        }
+        // D139 — the gate pulls under-warmed inboxes every pass; fanning the
+        // same inboxes back out seconds later made the pull a no-op and the
+        // 21-day clock (D1/D50/D105) fiction. Freshly imported client inboxes
+        // wait out their clock; pre-warmed fleets and exempt tags still flow.
+        if (owesWarmup(account, email, this.config, this.state)) {
+          result.skipped.push(`${email}: owes warmup (D139)`);
           continue;
         }
 

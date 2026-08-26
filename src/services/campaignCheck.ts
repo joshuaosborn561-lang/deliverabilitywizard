@@ -67,6 +67,8 @@ import {
 import {
   daysSince,
   isPrewarmedGeneric,
+  isWarmupGateExempt,
+  tagNames,
   warmupClockStartedAt,
 } from "./warmupGate.js";
 import { isExcluded } from "./campaignTopUp.js";
@@ -669,6 +671,7 @@ export class CampaignCheckService {
       }
       if (
         !this.state.isCopyCanary(email) &&
+        !isWarmupGateExempt(tagNames(account)) &&
         !isPrewarmedGeneric(account, email, this.config, this.state)
       ) {
         const started = warmupClockStartedAt(account, email, this.state);

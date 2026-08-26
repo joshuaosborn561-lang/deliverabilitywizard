@@ -63,6 +63,7 @@ describe("CopyCanaryService", () => {
       senders: string[];
       campaignId?: number;
       sequenceMappingId?: number;
+      sequence?: unknown;
     }> = [];
     const smartlead = {
       listCampaigns: async () => [
@@ -113,12 +114,14 @@ describe("CopyCanaryService", () => {
         sender_accounts: string[];
         campaign_id?: number;
         sequence_mapping_id?: number;
+        sequence?: unknown;
       }) => {
         created.push({
           name: payload.test_name,
           senders: payload.sender_accounts,
           campaignId: payload.campaign_id,
           sequenceMappingId: payload.sequence_mapping_id,
+          sequence: payload.sequence,
         });
         return { id: `t-${created.length}` };
       },
@@ -152,6 +155,10 @@ describe("CopyCanaryService", () => {
     assert.ok(
       created.every((row) => row.sequenceMappingId === 1),
       "schedule requires sequence_mapping_id from the campaign sequence",
+    );
+    assert.ok(
+      created.every((row) => row.sequence === undefined),
+      "schedule omits sequence when sequence_mapping_id is set (D112)",
     );
     assert.deepEqual(created[0]?.senders.sort(), [
       "g1@canary-g.info",

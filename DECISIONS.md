@@ -2454,3 +2454,41 @@ Accepted: the live reject named this key.
 
 **Guards.** sequencesForWrite remaps onto seq_variants and
 skips variants; owner-intent D110.
+---
+
+## D111 — Old-client teardown retries leftovers
+
+**Decision.** Delete remaining Nieto / MSRS / Positive
+campaigns every health pass until none match. The D107
+one-shot skip is gone. Delete-fail still STOP (D107).
+
+**Why.** Live 2026-08-26 after #122: deleted=9 errors=1.
+`#3429333` Nieto Astros was still on the inventory after
+the one-shot stamped `oldClientTeardownAt`, so the next
+pass skipped it.
+
+**Tradeoff.** A campaign that cannot be deleted is retried
+each pass (then STOP). Accepted: Josh wanted them gone.
+
+**Guards.** no one-shot skip while targets remain;
+owner-intent D111.
+---
+
+## D112 — Canary schedule omits sequence when mapping id is set
+
+**Decision.** SmartDelivery `/spam-test/schedule` gets
+`campaign_id` + `sequence_mapping_id` and does **not** get a
+custom `sequence` body. Isolation variant tests with no
+mapping id still send `sequence`.
+
+**Why.** Live 2026-08-26 after #122: canary attach died on
+`"sequence" is not allowed` (66 campaigns). Pod-control
+already strips `sequence` (D56). Campaign-copy canaries
+were still sending both.
+
+**Tradeoff.** The test uses the campaign's mapped step, not
+a rebuilt body. Accepted: that is the copy we wanted to
+test.
+
+**Guards.** isolationManualPayload omits sequence when
+mapping id is set; owner-intent D112.

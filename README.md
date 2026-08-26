@@ -9,7 +9,12 @@ Two people drive this repo: **Josh** owns product calls (`DECISIONS.md`);
 
 ## How senders rotate
 
-Health runs every **15 minutes**. That is the live loop.
+Health runs every **15 minutes**. That is the staffing loop.
+
+**Campaign bounce (D80).** A separate job every **10 minutes** pauses an
+ACTIVE campaign only after **100** lifetime sends: **20%** bounce from
+100–499, **7%** from 500 up. Smartlead's own bounce auto-pause stays
+**off**. A bounce pause is not auto-resumed.
 
 **Client inboxes (D43).** Each client is split evenly A/B. The off-week half
 comes **off** live campaigns; warmup stays on. Resting boxes are not staffable
@@ -26,10 +31,9 @@ clients rest.
 (connected SMTP/IMAP, not held, not resting) with at least **~30% Google and
 ~30% Microsoft**. Generics may staff any client, including BCP.
 
-**Holds (D44).** First health after deploy rebuilds the hold pile once: keep
-only **same-ESP** fails below 80%. Unproven HOLDs go back into D43. Going
-forward, only proven-weak senders are pulled — same-ESP inbox below 80%, or
-bounce above 5% with at least 50 sends. Copy/offer (Outlook buried, Gmail fine)
+**Holds (D44 / D51 / D79).** First health after deploy rebuilds the hold pile
+once: keep only **same-ESP** fails below 80%. Unproven HOLDs go back into D43.
+There is no per-sender bounce pull. Copy/offer (Outlook buried, Gmail fine)
 is Slack only; those senders stay up.
 
 **Left alone.** MSRS, HVAC, and Roofers (`TOP_UP_EXCLUDE_CAMPAIGNS`, exact
@@ -47,8 +51,9 @@ reconciler stops a test when its campaign is no longer active.
 blocks. **≤50 senders per test** is a SmartDelivery API limit, not a plan
 quota.
 
-**Launch bar is 85% same-ESP** (promo tab = miss, D46). Live pull stays **80%**
-same-ESP (D32) or bounce over 5% with 50 sends. Do not mix the two.
+**Launch bar is 85% same-ESP** (promo tab = miss, D46). 80% same-ESP and
+5% bounce are **readings only** (D51) — they do not pull a live mailbox.
+The only automatic live pull is Josh killing a mailbox / retiring a domain.
 
 Idle or zero-lead ACTIVE campaigns still get a daily test unless we skip them
 — that matters more with the cap gone.
@@ -86,7 +91,7 @@ Only `domain_burned` is eligible for automatic replacement.
 Managed plan plus pre-warmed fleets on `crosslaunchco.com`,
 `crossscaleco.com`, and `cleartechco.com` (`EXTRA_GENERIC_DOMAINS`). Those
 fleets arrive pre-warmed and owe no import warmup. Fresh (non-prewarmed)
-InboxKit mailboxes owe **21 days** before live send; pool warmup stays 14.
+InboxKit mailboxes owe **21 days** from import before live send (D50).
 
 With `ENABLE_POOL_PROVISIONER=true`, cron self-advances
 `awaiting_ns` → `buying` → `awaiting_mailboxes` → `awaiting_sequencer` →
@@ -145,6 +150,7 @@ Copy `.env.example`. Required: `SMARTLEAD_API_KEY` and Slack
 | `REMEDIATION_INBOX_THRESHOLD` | `80` | Pull on same-ESP inbox below this % |
 | `MIN_CAMPAIGN_SENDERS` | `50` | Staffable-sender floor |
 | `CRON_HEALTH` | `*/15 * * * *` | Rest / sit / top-up / fan-out |
+| `CRON_BOUNCE_AUTOSTOP` | `*/10 * * * *` | Campaign bounce pause (100/20 then 500/7) |
 | `CRON_MONITOR` | `0 */6 * * *` | Placement / DNS / Slack brief |
 | `CRON_SCAN` | `0 9 * * 1,4` | New-campaign test create |
 | `ENABLE_CLIENT_REST` | `true` | Per-client A/B fortnight |
@@ -154,7 +160,7 @@ Copy `.env.example`. Required: `SMARTLEAD_API_KEY` and Slack
 | `CAMPAIGN_ESP_MIX_MIN_PERCENT` | `30` | Min Google / Microsoft share on top-up |
 | `MESSAGE_PER_DAY` | `30` | Campaign send cap (warmups not included) |
 | `MAILBOX_MIN_TIME_GAP_MINS` | `10` | Minimum time gap |
-| `POOL_WARMUP_DAYS` | `14` | Import warmup for managed generics |
+| `POOL_WARMUP_DAYS` | `21` | Import warmup for managed generics |
 | `EXTRA_GENERIC_DOMAINS` | `crosslaunchco.com,crossscaleco.com,cleartechco.com` | Pre-warmed fleets |
 | `REQUIRE_SPEND_APPROVAL` | `true` | Hold real-money spend for `/approvals` |
 | `RUN_TOKEN` | _(empty)_ | Required to enable `/status`, `/run`, `/approvals/*` |

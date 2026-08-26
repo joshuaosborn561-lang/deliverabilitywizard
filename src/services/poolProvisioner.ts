@@ -170,6 +170,7 @@ export class PoolProvisioner {
             if (!email) continue;
             const domain = email.split("@")[1] ?? "";
             if (!planDomains.has(domain)) continue;
+            if (this.state.isCopyCanary(email)) continue;
             try {
               await this.smartlead.configureWarmup(account.id, {
                 warmup_enabled: true,
@@ -398,11 +399,11 @@ export class PoolProvisioner {
           await this.notifyOnce(
             "pool-need-smartlead-login",
             [
-              "*Generic pool — action needed (one-time)*",
-              "NS synced and mailboxes are active. To auto-export into Smartlead, either:",
-              "1. Set Railway vars `SMARTLEAD_LOGIN_EMAIL` + `SMARTLEAD_LOGIN_PASSWORD` (InboxKit sequencer login), or",
-              "2. In InboxKit → DW Generic Pool → Sequencers → connect Smartlead once.",
-              "Cron will detect it and finish export + 14-day warmup without further babysitting.",
+              "*Spare inboxes — Josh needs to connect InboxKit to Smartlead once*",
+              "The domains and mailboxes are ready. To finish importing them:",
+              "1. Josh: connect Smartlead inside InboxKit (DW Generic Pool → Sequencers), or",
+              "2. Josh: add the InboxKit Smartlead login in Railway.",
+              `After that, the job will import them and warm them for ${this.config.poolWarmupDays} days on its own.`,
             ].join("\n"),
           );
           this.state.setPoolProvision({
@@ -585,6 +586,7 @@ export class PoolProvisioner {
           const domain = email.split("@")[1]!;
           const platform = platformByDomain.get(domain) ?? "GOOGLE";
           const existing = this.state.getPoolMailbox(email);
+          if (this.state.isCopyCanary(email) || existing?.copyCanary) continue;
           try {
             await this.smartlead.configureWarmup(account.id, {
               warmup_enabled: true,
@@ -635,9 +637,9 @@ export class PoolProvisioner {
         await this.notifyOnce(
           "pool-warmup-started",
           [
-            `*Generic pool — warmup started*`,
-            `${poolAccounts.length} mailboxes in Smartlead, warmup on, no campaigns.`,
-            `Cron will mark them available after ${this.config.poolWarmupDays} days, then recovery swaps can run.`,
+            `*Spare inboxes — warmup started*`,
+            `${poolAccounts.length} spare${poolAccounts.length === 1 ? "" : "s"} are in Smartlead with warmup on, not on any campaign yet.`,
+            `They’ll be ready to cover a failed inbox after ${this.config.poolWarmupDays} days.`,
           ].join("\n"),
         );
       }
@@ -659,6 +661,7 @@ export class PoolProvisioner {
             if (!email) continue;
             const domain = email.split("@")[1] ?? "";
             if (!planDomains.has(domain)) continue;
+            if (this.state.isCopyCanary(email)) continue;
             try {
               await this.smartlead.configureWarmup(account.id, {
                 warmup_enabled: true,
@@ -715,9 +718,9 @@ export class PoolProvisioner {
           await this.notifyOnce(
             "pool-ready",
             [
-              `*Generic pool READY*`,
-              `${available} generics available for ESP-matched recovery swaps.`,
-              `Set \`ENABLE_RECOVERY_POOL=true\` if not already — cron handles the rest.`,
+              `*Spare inboxes are ready*`,
+              `${available} spare${available === 1 ? "" : "s"} can cover a failed inbox (same Gmail or Outlook type).`,
+              `The job will use them on its own when an inbox fails.`,
             ].join("\n"),
           );
         } else {

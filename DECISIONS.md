@@ -908,3 +908,1872 @@ Do not waive from chat.
 
 **Guards.** `campaignSetupPrompt` 85% launch / 80% live; owner-intent D46.
 
+---
+
+## D47 — Slack that people read is plain English
+
+**Decision.** Every Slack message the app sends must be readable by Cayden
+without D-numbers, API field names, or internal labels. Say what happened
+and what to do. Logs, `DECISIONS.md`, and `/ops` chat prompts may keep the
+jargon. Slack may not.
+
+No `D43`, `same-ESP`, `staffable`, `fan-out`, `HOLD-UNTIL`, `ESP-matched`,
+`Fingerprint`, env var names, or `monthly quota`. Say “inbox test for that
+mailbox type,” “sending inboxes,” “same-client inboxes,” “sitting after a
+bad test,” “matching spare,” “same error N times,” “a cap we set.”
+
+**Why.** Josh (2026-08-21): Cayden works from Slack. Jargon updates are
+noise. Tonight’s hold rebuild / rest / top-up notes were the example.
+
+**Tradeoff.** Messages get a bit longer. A person who wants the exact field
+name still has the logs.
+
+**Guards.** `slackJargonHits` / `slack.plainEnglish.test.ts`; owner-intent D47.
+
+---
+
+## D48 — Isolation system: report-only on campaigns, unlimited tests
+
+**Decision.** When a campaign is in spam, the wizard answers **inboxes vs copy**, and if copy, **which element**. It does that with standing per-pod control tests plus a low-rep isolation rig. It **never** pauses, edits, launches, or attaches isolation-domain mailboxes to a production campaign. Slack recommends the fix; a human edits the sequence.
+
+Standing controls are keyed to a **pod** (that client's A group, B group, or the generic sending / sitting piles), not to each campaign. One control test (chunked at 50 senders — SmartDelivery's API limit) attaches every mailbox in the pod and is read **per sender**. A campaign inherits the reading of the mailboxes it is actually sending from. A burnt minority in an otherwise fine pod is still inboxes, not copy.
+
+The control email is a versioned constant (no offer, no link, no spam vocabulary). Changing it starts a new `control_version`. A failed control is never a copy finding.
+
+Copy teardown (one change per variant, same day, same isolation domain, in parallel) **starts on its own** when the verdict is copy. Do **not** hold those SmartDelivery tests for seed approval. Josh (2026-08-23): unlimited monthly tests — do not be stingy and do not ask. That qualifies the draft isolation plan's "estimate seeds and stop for approval" and "do not auto-run Phase 2" lines. `TOTAL_TEST_QUOTA` stays 0 (D45). Real-money spend (buying the isolation domain) still needs D4 approval.
+
+Keep/watch/kill tags on control history are **evidence for a cull note**, not an automatic pull. Live rotation stays 80% same-ESP (D32) and 5% bounce (D5). Copy/offer still does not bench senders (D28).
+
+Persistence stays the Railway state file (this app's system of record). Do not add a second database for isolation.
+
+**Why.** Eric found "free" alone burying a campaign; "complimentary" fixed it in hours. At 75–95 words with one proof point, a single word is a live risk and there was no diagnostic. Live SmartDelivery against production pods is uninterpretable in both directions — trusted infra can land bad copy, and a struggling pod can bury good copy. A standing control on the pod, plus a deliberately low-rep rig for teardown, is the constant.
+
+**Tradeoff.** Standing controls consume seeds every cycle. Accepted: tests are unlimited, and the alternative is guessing. The isolation domain must stay cold and off campaigns or it will start masking copy the same way production pods do.
+
+**Guards.** Isolation denylist on `addEmailAccountsToCampaign`; failed control never `COPY`; one variable per variant; no seed-approval gate on isolation tests; owner-intent D48.
+
+---
+
+## D49 — Autonomous isolation; humans only for retire, buy, and copy
+
+**Decision.** The wizard runs on its own: standing known-good tests, copy-vs-inboxes research, word hunting, daily rest, rotation, and filling campaigns back to 50 after a cut. A human is in the loop only for three things:
+
+1. **Retire a domain** — Josh only, Slack button or Railway `/ops`.
+2. **Buy replacement domains / mailboxes** — Josh only. Cayden cannot approve spend. Slack button is the approval (same D4 ledger; do not ask a second time in Approvals). Porkbun + InboxKit follow the existing onboarding path: spin `.info` names, buy at Porkbun, attach InboxKit nameservers, order mailboxes on the generic pool, register them `warming` (14 days from import).
+3. **Change live copy** — Josh **or** Cayden, Slack button or `/ops`. One recovered word. That qualifies D48's "never edit the sequence": the hunt still starts alone; the live email changes only after a tap.
+
+**Domains, not mailboxes.** Judge a domain only on the known-good email, never on campaign placement (copy fingerprinting must not condemn a domain). One domain-level fail cycle → count it in the buy-ahead number so replacements can warm. Two **consecutive** domain-level fails → ask Josh to retire. Fleet domains (`EXTRA_GENERIC_DOMAINS`) may die fleet-wide, but only when **several inboxes** fail (at least three). One or two readings is not enough. Sitting / off-week inboxes get the known-good test only; if those fail, they count toward that several.
+
+**A campaign in spam is a flag**, not a death sentence. Something is wrong — inboxes **or** copy — and isolation is the research. Every diagnosis Slack/`/ops` shows proof: what ran, who failed, why it is not the other cause.
+
+**Autonomy choice A.** Daily rest and fill-up stay automatic. Only killing a domain waits for Josh; after he approves, health fills on its own. Do not ask before every rest or rotation (that was C). Do not wait to restaff after an approved retire (that was B).
+
+Josh's Slack user ids (`SLACK_JOSH_USER_ID`) and Cayden's (`SLACK_CAYDEN_USER_ID`) map button taps. Interactivity URL is `POST /slack/interactions` with `SLACK_SIGNING_SECRET`. `/ops` Isolation panel is the same queue in the Railway UI.
+
+**Why.** The wizard was a dashboard Josh still had to interpret. After production showed cold clocks and copy-driven Outlook fails, the missing piece was: prove the cause, then only stop for money, a dead domain, or a live word change.
+
+**Tradeoff.** Slack buttons spend real money once Josh taps. Accepted: that *is* the approval. Nameserver lag may delay mailbox orders; resume finishes them without a second tap.
+
+**Guards.** Owner-intent D49; `canDecideIsolationAction`; domain rollup needs multiple fleet inbox fails; campaign placement does not open a retire.
+
+---
+
+## D50 — Live-send warmup is 21 days from InboxKit import
+
+**Decision.** A mailbox owes **21 days** from InboxKit import before it may
+send campaign copy or be handed out as pool supply. `POOL_WARMUP_DAYS` and
+`MIN_CAMPAIGN_WARMUP_DAYS` default to **21**. `freshInboxWarmupDays` stays
+**21**. Pre-warmed fleets (`EXTRA_GENERIC_DOMAINS` /
+`EXTRA_GENERIC_MAILBOXES`) stay exempt and may send immediately.
+
+This supersedes the **duration** in D1 and D41 (those said pool / campaign-min
+stay 14). It does **not** reverse D1's clock: warmup is still owed from the
+InboxKit import stamp (`warmedAt`), never from Smartlead's
+`warmup_details.created_at`. The warmup gate prefers that pool stamp when
+one exists.
+
+Unchanged:
+- Recovery hold after a bounce / placement pull stays **14 days** (D6)
+- Generic send / sit rotation stays **~14 days** (D43)
+- Warmup stays on for every mailbox
+
+**Why.** Josh (2026-08-23): unwarmed mailboxes were still able to sit on
+ACTIVE campaigns and send the campaign sequence. Fourteen days was not
+enough; make the live-send clock 21 across the pool and the gate.
+
+**Tradeoff.** Newly bought non-prewarmed mailboxes stay off live send for
+an extra week. Accepted: campaign copy on a cold box is worse than a
+thinner spare pile.
+
+**Guards.** `poolWarmupDays` / `campaignMinWarmupDays` default 21;
+`warmupClockStartedAt` prefers pool `warmedAt`; owner-intent D50.
+
+---
+
+## D51 — Kill-only pull; unwarmed campaign-copy canaries
+
+**Decision.** Placement below 80% same-ESP, bounce above 5% after 50 sends,
+under-warmed, and HOLD-UNTIL strip **do not pull** a mailbox off an ACTIVE
+campaign. The only automatic live removal is Josh **killing that mailbox /
+retiring its domain** (`retire_domain`). Health then backfills to 50
+staffable on its own.
+
+D5's 80% / 5% numbers stay as Slack / isolation **readings**, not pull
+triggers. D32 still forbids blended scores as a rotation signal (there is
+no metric rotation). D50's 21-day import clock stays the definition of
+warmed vs unwarmed; it is no longer a gate that strips campaign copy.
+`ENABLE_WARMUP_GATE`, `ENABLE_BOUNCE_ROTATION`, and
+`ENABLE_LEGACY_MAILBOX_PULLS` default **off**.
+
+Keep a small set of **purposely unwarmed** pool generics on each ACTIVE
+campaign sending the **campaign sequence** (not the known-good control).
+Default **3 per campaign**, extra to the 50 staffable floor, not counted
+as staffable, not sat by the generic send clock, not pre-warmed fleets.
+Isolation reads their campaign-copy placement against warmed peers:
+
+- Unwarmed lands campaign copy while warmed peers fail → the copy is not
+  the problem (inboxes / infra).
+- Unwarmed and warmed both bury campaign copy, known-good lands → COPY.
+- Unwarmed buries, warmed lands → warmup / age, not a word hunt.
+
+Client A/B rest and generic send-rest (D43) stay. Cross-client top-up
+donor moves stay. Manual ops rotation stays. Isolation-domain mailboxes
+still never attach.
+
+**Why.** Josh (2026-08-23): legacy pulls (placement, bounce, warmup gate)
+are the old rules. Only pull when killing a mailbox and backfilling. Want
+some cold boxes sending campaign copy so copy-vs-inboxes has a third
+reading.
+
+**Tradeoff.** A weak sender can stay on a live campaign until its domain
+is retired. Accepted: isolation + rest + kill is the system; metric-driven
+benching was the old one. A thin warming pile may leave a campaign short
+of 3 canaries.
+
+**Guards.** `enableWarmupGate` / `enableBounceRotation` /
+`enableLegacyMailboxPulls` default false; `copyCanaryPerCampaign` default 3;
+owner-intent D51.
+
+---
+
+## D54 — Dedicated unwarmed canary fleet (2 domains × 3 inboxes)
+
+**Decision.** Campaign-copy canaries are a **bought research fleet**, not
+still-warming pool generics. Buy **two new domains**, **three inboxes
+each**: domain 1 Google, domain 2 Outlook. **Warmup stays off** on those
+six mailboxes. They send the **live campaign sequence**.
+
+They are not staffable supply (D25). Generic send-rest does not sit them
+(D43). Mailbox-settings converge still writes daily volume and gap; it
+does **not** turn warmup on for this fleet (qualifies “warmup on for
+every mailbox”).
+
+**D26 exception.** These six may sit on **every ACTIVE campaign**,
+including across clients. They are research instrumentation, not a
+client sender. Identity stays a fixed canary signature; do not assign
+them as a client’s staffed from-name.
+
+Spend is still Josh-only through the isolation Slack tap
+(`buy_canary_fleet`) and the D4 ledger. “Just buy” in chat is owner
+intent to implement the path, not a substitute for the tap.
+
+Health requests the buy when the fleet is missing. After Josh taps,
+nameserver lag and Smartlead export resume without a second tap.
+`configureWarmup(..., warmup_enabled: false)` after import.
+
+Do not pick `status === "warming"` pool rows as canaries anymore. D51’s
+isolation reading (unwarmed vs warmed campaign copy) stays; only the
+supply source changed.
+
+**Why.** Josh (2026-08-23): the unwarmed canary should be purpose-bought
+boxes that never turn warmup on — two domains, three inboxes each, one
+Gmail and one Outlook — and those are the canaries that send.
+
+**Tradeoff.** Six boxes total, not three fresh warming generics per
+campaign. Accepted: a stable Google + Outlook pair is a cleaner reading
+than a rotating warming pile, and it does not steal staffable supply.
+Cross-client attach is an explicit D26 exception for this fleet only.
+
+**Guards.** `COPY_CANARY_FLEET_DOMAIN_COUNT` 2;
+`COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN` 3; `buy_canary_fleet` owner-only;
+warmup never enabled for fleet emails; owner-intent D54.
+
+---
+
+## D55 — Canaries send campaign copy off live campaigns
+
+**Decision.** The D54 fleet sends the **campaign sequence in SmartDelivery
+placement tests**. It does **not** sit on Smartlead campaigns and does
+not send to real leads. If a canary is on a campaign, pull it off.
+
+One recurring `Canary copy: #{id}` test per ACTIVE campaign, senders =
+the six fleet inboxes, body = that campaign’s live sequence. Isolation
+reads unwarmed from that test and warmed from the campaign’s standing
+test. The test reconciler stops a canary test when its campaign is no
+longer ACTIVE.
+
+This supersedes D54’s D26 exception (cross-client campaign membership).
+That exception is no longer needed because they are not campaign
+members.
+
+Sending IPs are not added to Slack / campaign / placement reports. Ask
+for the list when you want it.
+
+**Why.** Josh (2026-08-23): do not put the canaries on campaigns; they
+should run the campaign copy but stay off campaigns. Sending IPs are
+wanted as a list, not in reports.
+
+**Tradeoff.** Copy evidence comes from seed inboxes, not live lead send.
+Accepted: that is the point of a research fleet.
+
+**Guards.** `copyCanary.ts` never calls `addEmailAccountsToCampaign`;
+owner-intent D55.
+
+---
+
+## D56 — Pod controls hang on a paused known-good shell
+
+**Decision.** Standing pod-control tests use a dedicated Smartlead campaign
+named **Pod control shell**. It stays **PAUSED** (D40 — never START it).
+Its sequence **is** the versioned known-good control email. SmartDelivery's
+schedule endpoint rejects a custom `sequence` body, so the shell sequence
+is the email that actually sends.
+
+Sitters (off-week client A/B and generic sit) are members of **that shell
+only** — not live campaigns. Sending pods are also members of the shell so
+their known-good tests can run; they stay on their live client campaigns
+too. Do **not** hang pod controls on a live client campaign.
+
+Health, top-up, fan-out, rest, scanner Auto: tests, bounce-investigate, and
+copy-canary never treat the shell as a production campaign. Isolation-domain
+and D54 canary fleet mailboxes never join it.
+
+**Why.** Josh (2026-08-23): paused shell is the path. Sitters are off live
+campaigns, and SmartDelivery will only test senders that are already
+campaign members.
+
+**Tradeoff.** Sending mailboxes sit on live + the paused shell. Accepted:
+the shell never sends to leads.
+
+**Guards.** `isPodControlShellCampaign` / `isExcluded`; owner-intent D56;
+pod controls refuse a first-ACTIVE fallback.
+
+## D58 — Generics only on Goliath; floor is half the client's inboxes
+
+**Decision.** Pull every generic off every campaign except **Goliath**.
+Goliath may keep and still receive generics. Everyone else is staffed
+from that client's own inboxes only.
+
+The live staffable floor is **half of that client's total client
+inboxes** (A+B, sitting included), not the old global 50 (D7). Vasco
+has 80 client inboxes → 40 per campaign. Odd counts round down.
+
+D26 fan-out still puts client inboxes on every ACTIVE campaign for that
+client. Fan-out must not put generics back on a non-Goliath campaign.
+The paused pod-control shell is not a live campaign and keeps its
+members (D56).
+
+**Why.** Josh (2026-08-24): 300 generics sending was too high. Keep them
+on Goliath only and drop the floor to half of each client's own boxes.
+
+**Tradeoff.** Non-Goliath campaigns shrink to the on-week client cohort
+plus any leftover client boxes. Shortfalls Slack; they are not filled
+with pool generics.
+
+**Guards.** `clientInboxStaffFloor(80) === 40`; `allowsGenericStaff`
+matches Goliath; top-up pulls and will not restaff non-Goliath;
+owner-intent D58. The D7 default of 50 stays in config as a leftover
+number and is not the live floor.
+
+## D59 — Wipe leftover unhealthy marks; B-pod is the sending half
+
+**Decision.** Every leftover “unhealthy” mark is deleted. That includes
+`heldInboxes`, HOLD-UNTIL tags, mailbox-control kill/watch tags, held
+placement-test records, inbox-remediation dedupe keys, active recovery
+swaps, and old same-ESP scores on client rest records.
+
+Nothing is unhealthy until the **new** rules mark it (D51 kill-only
+readings, D58 Goliath-only generics). D43 A/B sit is not a hold: this
+fortnight **B sends**, A sits. Every on-week client inbox goes on every
+ACTIVE campaign for that client — half of that client’s own inboxes,
+which is also the D58 floor.
+
+Client rest must not skip or veto a B-pod box because of an old hold or
+an old placement score.
+
+**Why.** Josh (2026-08-24): BCP and Parlay looked short because boxes
+were still marked unhealthy from the old rules. Start clean.
+
+**Tradeoff.** Real same-ESP fails that D44 kept are released too.
+Accepted: the new system has to earn those marks again.
+
+**Guards.** `shouldVetoRestRestore` is always false; `UnhealthyResetService`
+wipes holds; on-week restore targets every live client campaign;
+owner-intent D59.
+
+## D52 — Tell Josh when a campaign is running out of leads
+
+**Decision.** Watch remaining leads on every ACTIVE campaign. Slack at
+**half consumed**, **three quarters**, and **done**. Say it in plain
+English with leads left and recent send rate so the remaining days are
+obvious. Never import leads or extend a campaign. Tell Josh and wait.
+
+A campaign that is **working** (reply / positive-reply data already on
+hand) and running low is urgent. A campaign that is **not getting
+replies** and running low is not urgent — say do not top it up; that
+would throw good leads after a campaign that is not working.
+
+Campaign audit watches **sender headcount and placement-test cover**.
+Send volume watches **today's sent count**. Neither watches remaining
+leads. Do not add this number to those two reports — one watcher, one
+Slack.
+
+**Why.** Josh (2026-08-23): a working campaign that quietly empties is
+the most expensive failure. Warmup and list-building take time, so
+finding out the day it empties is already too late.
+
+**Tradeoff.** One statistics + analytics call per ACTIVE campaign on the
+monitor pass. Accepted: the alternative is discovering an empty list by
+hand.
+
+**Guards.** `enableLeadRunout` default true; `formatRunoutMessage` never
+imports; owner-intent D52.
+
+---
+
+## D53 — Sending-infrastructure census from placement reports
+
+**Decision.** Before spending on an add-on that claims a reply lift from
+"better sending IPs", read what our mailboxes actually send from. Use
+SmartDelivery IP analytics, rDNS, and IP blacklist on the placement
+tests we already run. Do not buy a new data source.
+
+For each sending IP: address, geography, who owns the range, whether it
+is listed. Slack a straight summary: reputable ranges in the right
+region, or not. Good → drop the add-on. Bad → bigger than the add-on;
+say so immediately. Never spend from this path.
+
+**Why.** Josh (2026-08-23): the same vendor has complaints about serving
+traffic from IP ranges that do not match where customers sell. If we are
+already on good infrastructure the add-on buys nothing.
+
+**Tradeoff.** First census after deploy posts once. A bad reading pages
+again at most weekly. Parser is defensive because SmartDelivery payload
+shapes vary.
+
+**Guards.** `enableSendingInfraCensus` default true; owner-intent D53;
+no spend from the census service.
+
+## D60 — Ask once for the canary fleet; then wait
+
+**Decision.** Slack **Buy the unwarmed canary fleet** once. After Josh
+taps, or while nameservers / InboxKit / Smartlead export are still
+catching up, do not ask again. Do not open a second pending buy. Do not
+wipe the domains already bought. A second tap is “already done.”
+
+Empty inboxes are not “not bought.” They mean wait. Health resumes the
+mailbox wait. Deploy remind does not re-post that button once a buy is
+approved or executed.
+
+**Why.** Josh (2026-08-24): the wizard kept prompting to buy the fleet
+after the domains were already purchased.
+
+**Tradeoff.** If the first Slack is missed, Josh has to ask in chat or
+hit `/ops`. Accepted: a second buy prompt is how we almost bought twice.
+
+**Guards.** `canaryFleetBuyAlreadyOpen`; attach restores domains from the
+executed action; owner-intent D60.
+
+## D61 — Vasco to 40; wipe GXA / MSRS / Nieto
+
+**Decision.** Vasco keeps **40** client inboxes — the same Google /
+Microsoft mix it has now. Prefer boxes already on live campaigns. The
+other Vasco inboxes come off Smartlead and InboxKit. Vasco does **not**
+A/B-sit after this; all 40 send. The live floor for Vasco is 40, not 20.
+
+GXA, MSRS, and Nieto inboxes are wiped from Smartlead and InboxKit —
+accounts deleted, matching InboxKit mailboxes cancelled, domains purged
+when nothing else still uses them. Pool generics, pre-warmed fleets, and
+the canary fleet are not touched.
+
+**Why.** Josh (2026-08-24): Vasco's TAM is too small for 80. GXA, MSRS,
+and Nieto should be totally gone from InboxKit and Smartlead.
+
+**Tradeoff.** Destructive and one-shot. A mis-named client would be
+skipped rather than guessed. Retry if InboxKit errors; 404s on already
+deleted Smartlead accounts are not errors.
+
+**Guards.** `vascoKeepCount === 40`; wipe patterns gxa/msrs/nieto;
+`ClientWipeService`; Vasco is a full-send client; owner-intent D61.
+
+## D63 — Campaigns are not short of generics
+
+**Decision.** Do not tell anyone a campaign is short because there are
+not enough warmed spares. Non-Goliath campaigns are client-inbox only
+(D58). The generic pile is large and stays on Goliath. Slack must say
+the campaign is missing this client's own on-week inboxes, or stay
+quiet. A leftover / unknown campaign id on an inbox is not "excluded"
+— those inboxes still rest and restore onto the client's live
+campaigns. The same unchanged short Slack goes out at most once per
+twelve hours.
+
+**Why.** Josh (2026-08-24): "you keep telling me campaigns are short on
+senders but its because we dont have enough generics which i dont
+believe." Live count: 238 available pool generics, 60 on Goliath, BCP
+sending 22 of 44 on-week client boxes. The lie was the Slack line.
+
+**Tradeoff.** Slack is quieter. Missing on-week client boxes still get
+restored every health pass; we just stop paging the same wrong reason.
+
+**Guards.** Slack copy has no "not enough warmed spares";
+`isExcludedOnlyMembership` ignores unknown campaign ids; owner-intent
+D63. The twelve-hour Slack cadence is superseded by D64.
+
+## D64 — Staffing Slack is end of day
+
+**Decision.** Routine campaign-staffing Slack is **once at end of day**,
+on the last client-day brief (America/New_York). The 15-minute health
+loop still restaffs; it does **not** Slack “still short.” Spend, DNS,
+isolation, lead-runout, and a real staffing *action* (added a spare,
+resumed a protective pause) may still Slack when they happen.
+
+**Why.** Josh (2026-08-24): "stop spamming me updates every 10 minutes.
+those should be end of day updates."
+
+**Tradeoff.** A thin campaign can sit all afternoon before Slack says
+so. Health is still putting on-week boxes back every 15 minutes.
+
+**Guards.** Health does not Slack when the only news is still-short;
+day brief `endOfDay` includes the staffing picture; owner-intent D64.
+
+## D65 — Retired domains stay off live campaigns
+
+**Decision.** Once Josh retires a sending domain, every inbox on that
+domain stays off ACTIVE campaigns. Fan-out, rest restore, and generic
+top-up must not put them back. Replacements are new domains; they owe
+21 days from InboxKit import and stay off campaigns until warm.
+`client_id` is not set on a BCP replacement until it is warm, so the
+live floor does not move.
+
+**Why.** Josh (2026-08-24) authorized retiring
+`boldercyperpartnerhqs.info` and `hubmeetconnect.com` after same-ESP
+known-good Gmail→Gmail scores of 0% (8 seeds, peers 100%). Health
+fan-out put Sandy and Ted back on live BCP campaigns within minutes
+because retire only pulled membership.
+
+**Tradeoff.** A retired inbox cannot be reused without Josh un-retiring
+the domain. Accepted: putting a 0% same-ESP domain back on client send
+is worse.
+
+**Guards.** `isRetiredSendingDomain`; fan-out / rest / top-up skip
+retired domains; owner-intent D65.
+
+## D69 — Copy Slack is the word and a one-click edit
+
+**Decision.** Do not Slack a placement-split guess that "it's the
+copy/offer." Mark the campaign copy-suspect, confirm with canaries,
+run the word-deletion tests, then Slack once: it was this word, here
+is the suggested edit, make the changes? The button applies that one
+edit. Missing isolation rig or a hunt that recovers nothing may still
+Slack — those are blockers, not guesses.
+
+**Why.** Josh (2026-08-25) pasted the BCP Healthcare Over-1k Slack
+("Outlook/Microsoft is mostly spam while Gmail is healthier — usually
+the copy/offer") and said it is not helpful. The hunt already existed;
+the guess fired first and the button waited.
+
+**Tradeoff.** Josh will not see a copy alert until the word hunt
+finishes. Accepted: a guess without a word is noise.
+
+**Guards.** Remediation / bounce-investigate do not Slack copy_likely
+reasons; isolation is silent on COPY until the swap button; owner-intent
+D69.
+
+## D71 — Slack is burned domain, isolated word, and EOD sends/spam
+
+**Decision.** Slack posts only three things:
+
+1. A **burned domain** with receipts and a button to cancel / replace
+   (`retire_domain` / `buy_domains`).
+2. A **spam word or phrase** that isolation actually recovered, with
+   Make the changes (`swap_copy`).
+3. The **end-of-day client scoreboard**: each client, total sends, spam
+   rate. Once. America/New_York last send-volume slot.
+
+Health, rest, fan-out, top-up, reconnect, DNS, lead-runout, placement
+guesses, pod/cohort chatter, midday briefs, and staffing ticks stay in
+logs and `/ops`. The 15-minute loop still restaffs. It does not talk.
+
+This supersedes D64's Slack exceptions (spend / DNS / lead-runout /
+staffing-action may Slack) and D69's "missing rig may still Slack."
+The hunt still runs; it only Slacks when it has the word and the
+button. Spend stays on `/approvals` (D4). Button tap results may Slack
+so Josh sees the retire / swap / buy finished.
+
+**Why.** Josh (2026-08-25): "i literally only want these things coming
+into slack... the updates i keep getting every 15 minutes are
+worthless. this is supposed to run in the background and flag me when
+there is a deliverability issue, not to let me know im on pod b for
+the 80th time." Client rest was Slacking "group B is sending" every
+time health restored an on-week box.
+
+**Tradeoff.** A thin campaign, a DNS miss, or a canary-fleet buy ask
+will not page Slack. Accepted: those are `/ops` and logs.
+
+**Guards.** `slackAllowed` is only burned_domain / copy_word /
+eod_summary / action_result; client-rest does not Slack the fortnight;
+EOD brief has sent + spam and no staffing; owner-intent D71.
+
+## D74 — QA must catch a foreign-client signature
+
+**Decision.** A live campaign must not send another client's brand in
+the mailbox signature or in the sequence. Campaign audit is the QA
+scan: it flags a mailbox whose from-name / signature carries a
+different known client, a step missing `%signature%`, or copy that
+hardcodes another client's brand. Health rewrites a foreign-brand
+signature on the 15-minute gap pass — do not wait six hours.
+
+D31 still formats signatures as two-line Name / Brand and still
+preserves a richer *same-client* brand line (Mid-South Roof Systems
+vs MSRS). It does **not** preserve a leftover other-client line.
+The sending brand is the ACTIVE campaign's client, not a stale
+mailbox `client_id`.
+
+This does not Slack (D71). It logs `[campaign-audit] SIG-MISMATCH`.
+
+**Why.** Josh (2026-08-25): a Goliath email went out with
+`Sean, that offer's still open whenever you want it` and the
+signature `Aarav Sanchez / Roofs by Peterson`. "you should have
+caught this in your QA scans, sigs is part of it." Campaign audit
+only counted senders and placement tests. Signature converge
+preferred the existing second line, so a Peterson leftover on a
+Goliath generic was treated as correct.
+
+**Tradeoff.** A mailbox on two clients' ACTIVE campaigns (D26
+forbidden) is logged, not rewritten. Accepted: that is a membership
+bug, not a signature guess.
+
+**Guards.** `findForeignBrand`; `desiredMailboxSignature` drops a
+foreign second line; campaign-audit SIG-MISMATCH; gap enforce
+rewrites foreign sigs; owner-intent D74.
+
+## D75 — One inbox, one client, hard cleanup every health pass
+
+**Decision.** An inbox may sit on every campaign for **one** client
+and on the paused pod-control shell. It may not sit on another
+client's campaigns at the same time. Health pulls those foreign
+memberships every 15 minutes, then sets the signature to the owner
+client's brand.
+
+Owner is `mailbox.client_id`. The shell does not count. Isolation
+and canary-fleet mailboxes are skipped. Same-client fan-out (D26)
+is unchanged.
+
+This supersedes D74's "two-client membership is logged, not
+rewritten."
+
+**Why.** Josh (2026-08-25): change the leftover Peterson signature
+on the Goliath send, and "hard rule of an inbox can only be
+assocoated wiht one clients cmpaigns at a time." D26 already said
+that; nothing stripped existing cross-client memberships, so a
+generic could send Goliath with a Peterson line.
+
+**Tradeoff.** Pulling a mailbox off the wrong client can thin that
+campaign until top-up refills. Accepted: the wrong-brand send is
+worse.
+
+**Guards.** `foreignCampaignIds`; `OneClientMembershipService`;
+owner-intent D75.
+
+---
+
+## D76 — Generics belong to Goliath even with a leftover client_id
+
+**Decision.** A pool or extra-fleet generic is owned by Goliath
+(D58) even when `mailbox.client_id` still names another client, or
+is empty. Health treats Goliath as the owner: pulls every other
+client's campaigns, sets `client_id` + signature to Goliath, and if
+the generic is sitting on a foreign client with no Goliath
+campaign, puts it back on every **ACTIVE** Goliath campaign
+(stopped L1–L4 and the shell stay untouched).
+
+Pool-plan domains (`getoutreachdesk.info` and the rest of
+`GENERIC_POOL_PLAN`) count as generic without needing the local
+pool file.
+
+This supersedes D75's "Owner is `mailbox.client_id`" for generics
+only. Real client inboxes still use `mailbox.client_id`.
+
+**Why.** Josh (2026-08-25): change the leftover Peterson signature,
+and one inbox / one client's campaigns. Aarav Sanchez at
+`getoutreachdesk.info` is a pool generic that still had Peterson's
+`client_id`. Treating that id as owner pulled the box off Goliath
+instead of rewriting the sig.
+
+**Tradeoff.** A generic that was parked on another client before
+D58 comes back to Goliath. Accepted: D58 already forbids
+non-Goliath generic staff.
+
+**Guards.** `ownerClientId` generic override; `isGenericPoolDomain`;
+`OneClientMembershipService` restore; owner-intent D76.
+
+---
+
+## D77 — Campaigns carry a client tag; unpause after signature QA
+
+**Decision.** Every campaign is assigned a Smartlead client
+(`client_id` — the client tag). Health fills a missing tag from a
+unique name match. Signature QA matches senders to that assigned
+client, not a guess from the campaign title.
+
+After a passing QA (no leftover other-client brand on any sender),
+a **PAUSED Goliath** campaign is STARTed. The pod-control shell,
+STOPPED L1–L4, DRAFTED campaigns, and non-Goliath manual pauses
+stay down (D40 / D56).
+
+**Why.** Josh (2026-08-25): after a QA pass knows sigs match the
+client, unpause. "Client matching should be easy — every campaign
+gets a client tag assigned."
+
+**Tradeoff.** A Goliath campaign Josh paused by hand will come back
+once signatures are clean. Accepted: the leftover Peterson send was
+the reason those were down. STOPPED still means operator takeover.
+
+**Guards.** `matchClientForCampaign`; `CampaignClientTagService`;
+`UnpauseAfterSigQaService`; owner-intent D77.
+
+---
+
+## D78 — Campaign bounce auto-pause is 20% under 1k, 7% over 1k
+
+**Decision.** Smartlead `bounce_autopause_threshold` is:
+
+- **20%** on Under-1k name matches and every Goliath campaign
+- **7%** on Over-1k name matches and every other campaign
+
+Never leave Smartlead's **5%** default. Health converges this every
+15 minutes. Per-sender pull stays 5% after 50 sends (D5) — that
+removes a mailbox, it does not pause the campaign. D29 investigate
+stays 7%.
+
+Under-1k / Over-1k are **name matches only**. Do not infer them from
+company-size bands like 501-1000. Goliath Displacement / Education
+are 20% (D73).
+
+**Why.** Josh (2026-08-25): a Goliath campaign paused because it
+was over 5%. "The rules should be 7% if over 1k and 20% if under.
+Make sure campaigns are enforcing those rules and unpause that
+Goliath one."
+
+**Tradeoff.** A 6–7% Over-1k list still auto-pauses. Accepted:
+that band is large enough that 7% is a real problem.
+
+**Guards.** `desiredBounceAutopausePercent`; `BounceAutopauseService`;
+owner-intent D78.
+
+---
+
+## D79 — No per-sender bounce pull
+
+**Decision.** D5's per-sender pull (bounce above 5% after 50 sends) is
+retired. Do not keep it as a standing live rule. D51 already defaulted
+`ENABLE_BOUNCE_ROTATION` off; D78's leftover sentence "Per-sender pull
+stays 5% after 50 sends (D5)" is superseded here.
+
+Bounce control on live campaigns is Smartlead `bounce_autopause_threshold`
+(D78): **20%** Under-1k and Goliath, **7%** everyone else. That pauses
+the campaign; it does not bench one mailbox.
+
+Unchanged:
+- D29 paused-campaign investigate at 7% (may rotate worst bouncers on an
+  already-PAUSED campaign)
+- D51 kill-only: the only automatic live removal is Josh killing a mailbox
+- `enableBounceRotation` / `enableLegacyMailboxPulls` stay **false**
+- 5% remains a leftover reading on the disabled path, not a pull trigger
+- The 50-send sample floor still applies where a bounce rate is treated
+  as evidence (D29)
+
+**Why.** Josh (2026-08-25): "delete this rule that is legacy Per-sender
+pull stays 5% after 50 sends." Campaign auto-pause is the bounce rule
+now. Leaving D5 written as live made the 20/7 campaign write look like
+it still had a second pull underneath.
+
+**Tradeoff.** A single mailbox can bounce hard on a live campaign until
+the campaign hits 7% or 20% aggregate. Accepted: D51 already stopped
+benching on that signal, and the leftover rule was the confusing one.
+
+**Guards.** `enableBounceRotation` false; owner-intent D79.
+
+---
+
+## D80 — Campaign bounce autostop is ours; Smartlead autopause stays off
+
+**Decision.** The wizard pauses ACTIVE campaigns on lifetime campaign
+sends (analytics), not Smartlead's `bounce_autopause_threshold`:
+
+- **Under 100 sends:** do not pause. The rate is noise.
+- **100–499 sends:** pause above **20%**
+- **500+ sends:** pause above **7%**
+
+Poll every **10 minutes** (`CRON_BOUNCE_AUTOSTOP`). Do not record
+`pendingResumes` — a bounce pause stays paused until a human STARTs it
+(D40). Do not Slack (D71).
+
+After a successful autostop scan, write Smartlead
+`bounce_autopause_threshold` to **100** (off) on every campaign. Do
+**not** converge Smartlead to 20/7 (D78) or 5. Name-band Under-1k /
+Goliath / Over-1k is not a write rule anymore.
+
+This supersedes D78's live Smartlead converge and D79's sentence that
+campaign auto-pause is Smartlead's 20/7. D29 investigate on already
+PAUSED campaigns is unchanged.
+
+**Why.** Cayden (2026-08-25) for Josh: campaigns were pausing on ~10
+sends because Smartlead weights a couple of bounces as a high percent.
+Josh to approve via PR. Ten sends is not a bounce sample; 100 is the
+floor, then 20% until 500, then 7%.
+
+**Tradeoff.** Smartlead can still pause a campaign until this code is
+on `main` and has completed one autostop pass. Accepted. A campaign at
+499 sends still uses the looser 20% line.
+
+**Guards.** `shouldAutostopCampaignForBounce`; `CampaignBounceAutostopService`;
+`desiredBounceAutopausePercent` returns 100; owner-intent D80.
+
+---
+
+## D81 — First-seen campaign audit, then hourly sweeps
+
+**Decision.** When a campaign id is new to us, run a first-check against
+the standing rules (client tag, signatures, `%signature%` in the
+sequence, no foreign brand in copy, one-client membership, pod-control
+shell stays paused, generics only if the client is a **POC** or Josh
+Slack-approved a backfill). It stays on that first-check until it
+passes. After it passes, an hourly sweep watches the living bits:
+pod/shell, mailbox signatures, client tag, one-client, **active canaries
+for each serving inbox and campaign**, and the staffable floor.
+
+The live floor is **half of that client's inboxes** (D58). There is no
+Goliath-only bounce, Goliath-only generic list, or Smartlead bounce
+auto-pause check here. **Goliath is a POC client** (`pocClientNamePatterns`).
+Generics may backfill **any** campaign after Josh taps Allow generics
+in Slack. Bounce pause is **D80** — this checker does
+not read or write `bounce_autopause_threshold`.
+
+Health (15 minutes) discovers new campaigns and retries a failed first
+check after the identity writes. `CRON_CAMPAIGN_CHECK` (`0 * * * *`) is
+the hourly sweep.
+
+This does **not** START a campaign, import leads, spend, write DNS,
+edit sequence copy, or pull a mailbox. Slack is only the generic-backfill
+button (extends D71). Shell stays paused (D56).
+
+**Why.** Josh (2026-08-25): first-check new campaigns, then hourly
+pods/sigs. Then: "too many Goliath specific rules, those need to be
+gone. Bounce auto pause is gone. Generics can backfill any campaign
+after I approve in slack. Also need to check if canaries are active
+for each serving inbox and campaign. Floor is just half of per client
+senders. For Goliath it's marked as a POC client. Redo that pr and
+reconcile it w cayden."
+
+**Tradeoff.** A brand-new ACTIVE campaign can send for up to 15 minutes
+before the first-check sees it. Staffing / missing canary / missing
+test do not fail the first-check.
+
+**Guards.** `enableCampaignCheck` / `pocClientNamePatterns`;
+`CampaignCheckService`; `campaignMayTakeGenerics`; owner-intent D81.
+
+## D82 — One rule for every client; two canaries
+
+**Decision.** Named-client exceptions from last week are dead. Vasco is
+not a full-send client. The live floor is **half that client's inboxes**
+for everyone, including Vasco (40 inboxes → 20). Client A/B rest applies
+to Vasco. `fullSendClientPatterns` defaults empty and is not a staffing
+rule. The one-shot Vasco trim to 40 and the GXA / MSRS / Nieto wipe
+(D61) stay historical.
+
+Generics: **POC** (`pocClientNamePatterns`) or Josh Slack-approved.
+Fan-out, one-client restore, top-up, and the campaign checker all use
+that. Unpause after signature QA is any **POC**, not the word Goliath.
+Goliath remains the current POC.
+
+The leftover floor of 50 is not used. Campaign audit and health use
+`staffFloorForCampaign` (always half). Smartlead bounce auto-pause stays
+off; leftover Under-1k / 20% knobs are not a write rule.
+
+Hourly campaign check:
+
+- Each **serving inbox** is on a living **known-good** canary (pod-control
+  test).
+- Each **ACTIVE campaign** has its **copy** on the **unwarmed fleet**
+  canary (`Canary copy: #id`).
+
+The paused shell is not "excluded-only" for rest. An on-week inbox that
+sits only on the shell is restored to that client's live campaigns.
+
+This supersedes D58's Goliath-only generics, D61's Vasco full-send /
+floor-40 exception, D77's Goliath-only unpause, and D51's leftover
+"3 canaries on the campaign" as a living rule (D54/D55 fleet is the
+unwarmed senders).
+
+**Why.** Josh (2026-08-25): Vasco is old special-case — if it conflicts
+with the rewrite, it goes. Do all of it. Each sending inbox on a
+known-good copy canary; each campaign's copy on unwarmed senders
+canary.
+
+**Tradeoff.** Vasco now sits half its 40 boxes. A campaign can look
+short against 20 instead of 40. Missing known-good coverage will show
+on the hourly sweep until pod-control tests exist for those inboxes.
+
+**Guards.** empty `fullSendClientPatterns`; `staffFloorForCampaign` has
+no full-send override; `campaignMayTakeGenerics` / `isPocClient` in
+fan-out, one-client, unpause; `inbox_missing_known_good` +
+`hasLivingUnwarmedCopyCanary`; `isExcludedOnlyMembership` ignores the
+shell; owner-intent D82.
+
+## D83 — Unwarmed canary fleet never has warmup on
+
+**Decision.** The dedicated copy-canary fleet stays **warmup off**. The
+15-minute health gap pass turns it off when Smartlead shows it on. Full
+mailbox-settings must never turn warmup on for those inboxes. This is
+the same loop as volume + 10-minute gap (D35), not the 6-hour full
+converge.
+
+**Why.** Josh (2026-08-25): "those unwarmed inboxes never have warmup
+on — make it part of the 15 minute pass."
+
+**Tradeoff.** Six extra warmup writes on a pass only when a canary
+drifted on. Accepted: they are research boxes; warmup on them ruins the
+unwarmed reading.
+
+**Guards.** `mailboxSettings` gap mode `configureWarmup(..., false)` for
+`isCopyCanary`; owner-intent D83.
+
+## D84 — Canon sweep: one snapshot, fixers on findings, watchdog
+
+**Decision.** The 15-minute loop is one **canon sweep**, not eight
+services each refetching Smartlead:
+
+- **One inventory per pass** (`fetchInventory`): campaigns + accounts +
+  clients fetched once and shared by rest gates, client tag, one-client,
+  first-check, health/top-up/fan-out, and mailbox gap. Mutating stages
+  keep the snapshot truthful in place (`recordMembership` /
+  `dropMembership`), not by refetching mid-pass.
+- **A client inbox is always fanned out.** An inbox whose resolved
+  client is X belongs on every ACTIVE campaign for X even when it
+  currently sits on zero of them (shell-stranded, wiped, freshly
+  imported) and even when X has only one ACTIVE campaign. Held /
+  resting / retired / HOLD-UNTIL still skip. Idle generics stay top-up
+  supply, not fan-out supply.
+- **Write-on-drift for Smartlead bounce autopause.** COMPLETED/STOPPED
+  campaigns are never touched. A campaign is written off (100) once and
+  cached (`smartleadAutopauseOff`); a 6-hour read-verify sweep catches
+  UI-side drift. One analytics read per ACTIVE campaign, statistics
+  only as fallback.
+- **Terminal campaigns leave the sweep.** COMPLETED/STOPPED campaign
+  check records are archived so the scoreboard shows living reality.
+- **Blocked first-checks back off.** A campaign stuck on a blocking
+  copy finding re-inspects hourly, not every 15 minutes.
+- **Missing placement coverage is fixed on the pass that finds it**
+  (`no_placement_test` → scan kick, throttled hourly), not only at the
+  daily 9:00 scan.
+- **Watchdog.** Every stage records lastOkAt / consecutiveFailures /
+  duration in state (`stageHealth`); `/health` exposes `stages` and a
+  `canonFindings` count by kind; overdue stages log `[watchdog]` lines.
+  A silent 429 death is a visible fact, not a swallowed console.warn.
+
+**Why.** Josh (2026-08-25): the misses are systemic — "every time a new
+campaign comes online you do a QA and every 15 you're monitoring for
+all rules to be followed. You're not doing that right now. You think
+you are, but you're not. Full audit, tear whatever down and rebuild."
+Production evidence: the checker had found `understaffed 0/40`
+(Peterson) and `0/19` (TechEvo) plus 49 campaigns with dead canary
+coverage, written to state nobody read, while fan-out refused to staff
+any inbox that wasn't already on a campaign, and bounce-autostop's ~600
+blind writes/hour starved every other loop into 429s.
+
+**Tradeoff.** A shared snapshot can be minutes stale within a pass for
+memberships mutated by stages that lack the account object (rare paths
+keep their own refetch). Smartlead-side manual autopause edits are
+caught within 6 hours instead of 10 minutes. Accepted: the old loop
+"caught" them instantly in theory and never finished in practice.
+
+**Guards.** `fetchInventory` / `recordMembership`; fan-out attaches a
+zero-membership client inbox and skips idle generics; converge skips
+terminal statuses and does not rewrite converged campaigns;
+`removeCampaignCheck` on terminal; `stageHealth` on `/health`;
+owner-intent D84.
+
+---
+
+## D85 — Every standing finding gets an owner; one bounce writer; one fleet fact
+
+**Decision.** A finding the sweep reports forever with no path to zero is
+treated as a bug in the sweep. Specifically:
+
+- **`missing_signature_tag` gets a one-tap fixer.** The checker posts an
+  *Add %signature%* Slack ask (`add_signature_tag`, approvable by Josh or
+  Cayden like a word swap). Approval appends `%signature%` to the steps
+  missing it via `appendSignatureTag` — append-only by construction; the
+  rest of the copy is written back byte-for-byte, subjects untouched.
+  Re-asks are throttled: never while pending, not within 24h of an
+  execute, not within 7 days of a deny.
+- **`missing_client_tag` the tagger cannot close is escalated, not
+  silently skipped.** D77 forbids guessing a client from the name, so
+  campaigns with no unique match are named on the end-of-day brief until
+  a human tags them in Smartlead.
+- **A dead unwarmed-canary fleet is ONE fact.** Zero connected fleet
+  mailboxes used to produce `canary_inactive` + `missing_canary` on every
+  ACTIVE campaign (48+48 findings for one root cause). It is now a single
+  fleet-level record (`canaryFleetDown` in state, on `/health`, one
+  `[canon]` warn, one EOD line). Per-campaign canary checks resume
+  automatically the moment the fleet has a connected mailbox. This does
+  not weaken D82 — the two-canary rule is enforced identically whenever a
+  canary can actually exist.
+- **The standalone `BounceAutopauseService` is retired.** The D80/D84
+  autostop loop is the only Smartlead autopause writer (write-on-drift).
+  The old `/run?mode=bounce-autopause` aliases run the autostop.
+- **One-off production scripts are archived** (`scripts/archive/`), not
+  left lying around as an alternative to the sweep.
+
+Also fixed here: the EOD brief accepted `staffingShorts` but never
+rendered them — the D64 staffing picture was silently dropped from Slack.
+It renders now, in plain English.
+
+**Why.** Josh (2026-08-25), after the D84 rebuild: "Do what you think is
+best" on the keep-vs-teardown evaluation, whose verdict was: keep the
+meeting machine, close the findings that stop sends, cut the duplicate
+writers. The live scoreboard showed 13 `missing_signature_tag` findings
+holding six campaigns in first-check jail with no one assigned, 3
+campaigns unmatchable by the tagger and skipped in silence, and 96 canary
+findings that were one unplugged fleet.
+
+**Tradeoff.** The signature fixer can put `%signature%` at the end of a
+body where a human might have placed it mid-copy — accepted, since the
+alternative was campaigns silently not sending; the tag placement can be
+hand-tuned later without re-blocking QA. Fleet-down means per-campaign
+canary state is not tracked during the outage — accepted, it was
+untrackable anyway with zero canaries.
+
+**Guards.** `appendSignatureTag` is append-only; campaign check asks
+`add_signature_tag` on the finding; fleet-down produces no per-campaign
+canary findings and sets `canaryFleetDown`; `services/bounceAutopause`
+does not exist and index routes the old aliases to autostop; the EOD
+brief renders untagged campaigns and staffing shorts; owner-intent D85.
+---
+
+## D86 — A hand-bought canary fleet is adopted, not stranded
+
+**Decision.** When the unwarmed canary fleet is not ready, the app looks at
+the InboxKit workspace for mailboxes that can only be a manual fleet buy —
+on domains that are not generic-pool plan, not a pre-warmed fleet
+(`EXTRA_GENERIC_DOMAINS`), not the isolation domain, and not already known
+non-canary pool rows — and adopts them: registered `copyCanary` (never
+staffing supply), fleet record updated to what actually exists, exported to
+Smartlead if missing, warmup turned off (D83). Stale planned fleet emails
+that were never bought are dropped; rows mapped to a Smartlead account are
+never dropped. Runs ~70s after boot and on each monitor pass while the
+fleet is not ready. Slack only announces an actual adoption or an ambiguous
+candidate set (more than twice the fleet size ⇒ adopt nothing, ask).
+Canary test attachment stays with the normal sweep (copyCanary.attach on
+the health pass); campaign checks clear `canaryFleetDown` on their own once
+a fleet mailbox is connected.
+
+**Why.** Josh (2026-08-26): "I just bought 6 inboxes as unwarmed for here —
+find what they are and mark them as such and get them on the canary tests."
+The buy flow (D54/D60) assumed the app made the purchase; a manual InboxKit
+buy left no action record, so six good unwarmed inboxes would have sat
+unregistered — warmup on whatever the default is, invisible to the tests,
+and at risk of being treated as pool supply.
+
+**Tradeoff.** Adoption infers intent from the workspace rather than an
+explicit list. Held by the exclusion filters (plan domains, pre-warmed
+fleets, isolation domain, known pool rows), the ambiguity cap, and the
+provisioner's existing `isCopyCanary` skip. A mailbox Josh buys for some
+other unstated purpose on a brand-new domain would be adopted as a canary —
+accepted; nothing else buys unregistered mailboxes in that workspace.
+
+**Guards.** Adoption exists and is called from boot + monitor; adopted rows
+are `copyCanary` and excluded from `findAvailablePoolMailbox`; warmup is
+written off, never on; the pool provisioner still skips canaries;
+owner-intent D86.
+---
+
+## D87 — Signature fixes are a bulk approve when several campaigns are blocked
+
+**Decision.** When one sweep finds `missing_signature_tag` on more than one
+campaign not already covered by a live ask, Slack gets **one** bulk
+*Add %signature%* ask naming every campaign and its steps; one tap appends
+the tag across all of them. A single blocked campaign keeps the
+single-campaign ask. Coverage (`coveredSignatureCampaigns`) spans both
+shapes — pending/approved asks, executes younger than a day, and denials
+younger than a week — so a campaign never sits in two asks and a bulk ask
+is not re-posted while an older single ask still owns one of its campaigns.
+Execution is per campaign and append-only; a partial failure announces the
+successes and throws so the action can be re-tapped, and re-taps skip
+already-tagged bodies.
+
+**Why.** Josh (2026-08-26): "from now on also adding sigs should be a bulk
+approve within slack when applicable." Six campaigns blocked at once meant
+six separate buttons for the same one decision.
+
+**Tradeoff.** Bulk approval is all-or-nothing at decision time — Josh
+cannot exclude one campaign from the tap. Accepted: a deny leaves all of
+them for the per-campaign week-later re-ask, and appending %signature% is
+the same low-risk edit everywhere.
+
+**Guards.** Multiple uncovered blocked campaigns produce exactly one ask
+carrying `campaignIds`; a second sweep does not re-ask; a bulk approve
+writes every listed campaign; owner-intent D87.
+---
+
+## D88 — Campaign bounce pause bands are retired
+
+**Decision.** The wizard does **not** pause an ACTIVE campaign on a
+bounce band. D78's Smartlead 20%/7% write is already superseded (D80).
+D80's own pause rule — skip under 100 lifetime sends, **20%** from
+100–499, **7%** from 500 — is retired here. The 10-minute
+`campaignBounceAutostop` loop stays, and it only writes Smartlead
+`bounce_autopause_threshold` to **100** (off) on drift. It does not
+read analytics for a pause decision and it does not call
+`updateCampaignStatus`.
+
+Unchanged:
+- D79 — no per-sender bounce pull
+- D29 — investigate an already-PAUSED campaign over 7%
+- D40 — do not auto-START a manual pause
+- Smartlead autopause stays off at 100
+
+The helper functions that compute the old 20/7 bands may remain in
+`lib/campaignBounceAutostop.ts`. They are not a live write rule.
+
+**Why.** Josh (2026-08-26): "Bounce: 20% under 1k / 7% over,
+campaign-level, our bands (D78/D79/D80) is legacy delete it." The
+campaign-level pause was still the live bounce rule after D80 moved
+it off Smartlead and onto us. That is the leftover.
+
+**Tradeoff.** A hot campaign can keep sending until a human pauses it
+or D29 investigates after someone already paused it. Accepted: the
+bands paused campaigns on a rate Smartlead's own autopause was
+deliberately turned off to ignore, and the 429 storm from stacked
+boot kicks made the 10-minute pause loop a second reader we did not
+need.
+
+**Guards.** Autostop service does not pause; no analytics read for a
+band; Smartlead off-write remains; owner-intent D88.
+---
+
+## D89 — Close the leftover canon holes
+
+**Decision.** Five leftovers from the canon audit ship together:
+
+1. **Known-good coverage is grown, not only reported.** A stored
+   pod-control test that is no longer living is not coverage. Health
+   runs a throttled `pod-cover` pass (hourly) when
+   `inbox_missing_known_good` findings exist.
+2. **Smartlead reads share the write queue.** `listCampaigns`,
+   `listClients`, and `listAllEmailAccounts` go through `mutate()`.
+   Account-page sleep is 400ms. Boot kicks are staggered (health 3
+   minutes, pool 8 minutes); bounce and reconnect do not boot-kick.
+3. **Canary attach is independent of a healthy health pass.** After
+   adopt (boot + monitor), `copyCanary.attach()` runs whenever the
+   fleet has emails, even if adopt returned nothing because the
+   fleet was already mapped.
+4. **Pending single `%signature%` asks collapse into one bulk ask.**
+   D87 only applied to new findings; pre-D87 singles still owned
+   those campaigns. Two or more blocked campaigns supersede the
+   overlapping pending singles (`supersededByBulk`) and post one
+   bulk *Add %signature%* covering the whole set.
+5. **EOD names DRAFT/DRAFTED campaigns that already have remaining
+   leads.** Leads loaded, nothing sending. Does not import (D52) and
+   does not START (D40).
+
+**Why.** Josh (2026-08-26): "see this is wait im talking about you
+still have crap in there that is old even though i just told you to
+audit it. fix 1 2 3 give me a bulk approve for 4. add 7." The audit
+listed those holes; D87 left the already-pending singles in place.
+
+**Tradeoff.** Collapsing a pending single denies it as system so one
+button remains. A human who wanted to approve only one of those
+campaigns loses that path — same all-or-nothing tradeoff as D87.
+Staggered boots mean the first health pass is ~3 minutes after
+deploy, not immediate.
+
+**Guards.** Living-test skip; queued list reads; attach-after-adopt;
+pending-single collapse; EOD `loadedDrafts`; owner-intent D89.
+---
+
+## D90 — Pause over 10% after 1k leads, or more than 10 bounces in 10 minutes
+
+**Decision.** The 10-minute bounce loop pauses an ACTIVE campaign when
+either trip hits:
+
+- **Rate:** lifetime bounce is **strictly over 10%** and the campaign
+  has emailed **1,000 or more** leads (`sent_count`). 100/1000 is 10%
+  and must not pause.
+- **Burst:** more than **10** new bounces since the last snapshot,
+  and that snapshot is still inside the 10-minute window (15 minutes
+  allowed for cron drift). The first reading is a baseline, not a pause.
+
+The old 20%/7% bands stay retired (D88). Smartlead
+`bounce_autopause_threshold` stays **100** (off). A bounce pause is
+not a `pendingResume` — a human STARTs it (D40). D29 still
+investigates an already-PAUSED campaign over 7%. D79 still forbids
+per-sender bounce pull. No Slack (D71); the pause is in logs.
+
+**Why.** Josh (2026-08-26): "oh no it was supposed to basically auto
+pause anything over 10% and 1k leads, or more than 10 bounces in 10
+minutes." D88 deleted the leftover 20/7 pause and left no live pause
+behind. This is the rule that was meant to replace it.
+
+**Tradeoff.** A campaign under 1,000 sends can still run at 20%+
+bounce until 11 bounces land in one 10-minute window. Accepted: that
+is the burst trip, and a tiny sample's percent is the noise D80
+already refused to treat as evidence.
+
+**Guards.** Rate helper (1k / over 10%); burst helper (>10 in window);
+service pauses on those trips only; no 20/7 import; no START;
+owner-intent D90.
+---
+
+## D91 — Paused-campaign bounce investigate is retired
+
+**Decision.** D29 is no longer live. Do not scan already-PAUSED
+campaigns for 7% aggregate sender bounce. Do not rotate worst
+bouncers from that hunt. Do not start the campaign. The 10-minute
+D90 pause on live campaigns is the bounce rule. The leftover
+`CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD` default of 7 may stay in
+config so a Railway leftover does not crash boot.
+
+**Why.** Josh (2026-08-26): "delete this If a campaign is already
+paused and senders are over 7% bounce, it digs in…"
+
+**Tradeoff.** A paused campaign with hot senders stays paused with
+those senders until a human acts. Accepted: that hunt was the
+confusing leftover next to D90.
+
+**Guards.** index.ts does not construct or run
+CampaignBounceInvestigateService; owner-intent D91.
+---
+
+## D92 — Signature fix writes First Last / client name, then tells Josh
+
+**Decision.** Missing `%signature%` is not a Slack approve. The
+checker appends the tag (mailbox expands it to the two-line
+signature) and writes each mailbox on that campaign to
+`First Last\n{Client name}` — Goliath Cybersecurity, SalesGlider
+Growth Partners, etc. Then Slack one `action_result`: I added the
+signature on these campaigns, it sends as name plus client name.
+No button. Append-only on the sequence body; subjects untouched.
+
+**Why.** Josh (2026-08-26): "for the sig fix, just automatically
+put it first name last name client name … but tell me when you
+did that."
+
+**Tradeoff.** A campaign Josh wanted to leave tag-less gets the
+tag. Accepted: that is what was blocking send, and the write is
+the same two-line pair mailbox-settings already wanted.
+
+**Guards.** campaignCheck autoApplySignature + notifyActionResult;
+no add_signature_tag ask; owner-intent D92.
+---
+
+## D93 — Word hunt is ESP-fail on campaign copy + known-good fine ESP-to-ESP
+
+**Decision.** The spam-word / deletion test is not “Outlook buried
+and Gmail is fine.” It starts when the **campaign copy test is not
+inboxing on an ESP** and the **known-good email on those same
+domains is fine on every scored ESP**. If known-good is also
+failing an ESP, that is infra, not a word. Isolation still never
+calls COPY from a failing control (D48).
+
+**Why.** Josh (2026-08-26): "its not just if outlook. that spam
+deletion test is for an esp where its not inboxing in the test
+and the known good copy on those domains are fine esp to esp."
+
+**Tradeoff.** A one-ESP campaign fail with no known-good ESP
+reading still uses the standing CLEAN control as fallback.
+Accepted: no per-ESP known-good is the old path, not a new guess.
+
+**Guards.** anyEspBelowThreshold marks the suspect; known-good
+false across ESPs is INFRA; owner-intent D93.
+---
+
+## D94 — Disconnected mailboxes are reconnected every health pass
+
+**Decision.** Every 15-minute health pass reauths disconnected
+SMTP/IMAP mailboxes (`AccountReconnectService`). Slack after a
+real reconnect or a hard failure (`action_result`) so the work
+is visible — D71 was dropping those messages as unclassified.
+Daily 3am reconnect stays. Do not wait for a human to reconnect
+a DCD mailbox.
+
+**Why.** Josh (2026-08-26): "it also needs to autoreconnect dcd
+mailboxes." Reconnect already ran; Slack did not post.
+
+**Tradeoff.** A mailbox that needs manual OAuth still fails and
+is named. Accepted: that is the only leftover human step.
+
+**Guards.** Health still calls runReconnect; notifyReconnect uses
+action_result; owner-intent D94.
+---
+
+## D95 — Signature Slack is once per campaign, not every pass
+
+**Decision.** D92 still writes First Last / client name and still
+Slacks `action_result` the first time a campaign is auto-fixed.
+A leftover backfill already told does not Slack again on the next
+health or hourly pass. The write still happens if the tag is
+missing. New campaigns still Slack when they are written.
+
+**Why.** Josh (2026-08-26): "you can tell me when you do it you
+were just alerting me a bunch just now i assume from backfill."
+
+**Tradeoff.** If someone later strips `%signature%` off a campaign
+we already wrote, we put it back and stay quiet. Accepted: that
+is a re-touch, not a first write.
+
+**Guards.** campaignCheck records `sigAutoWrittenAt` and still
+calls notifyActionResult; owner-intent D95.
+---
+
+## D96 — Infra vs copy also reads unwarmed senders with that copy
+
+**Decision.** D93 still stands: campaign copy failing an ESP plus
+known-good failing an ESP is infra. The same two calls also look
+at **unwarmed senders sending that campaign copy** (the Canary
+copy test), ESP-to-ESP:
+
+- Unwarmed senders **land** that copy across ESPs → infra (the
+  copy works on fresh boxes; the live inboxes / domain are the
+  problem).
+- Unwarmed senders **fail** an ESP, and known-good is fine →
+  copy / word hunt.
+- No unwarmed reading yet → inconclusive. Do not start the word
+  hunt.
+
+**Why.** Josh (2026-08-26): "you should also be looking at
+unwarmed senders with that copy for 3 and 4."
+
+**Tradeoff.** A campaign that is burying copy with no living
+canary-copy test waits instead of hunting a word. Accepted: that
+is why the unwarmed fleet exists.
+
+**Guards.** isolationVerdict requires unwarmedCopyFineAcrossEsps
+or copyCanary.unwarmedLanded before COPY; owner-intent D96.
+---
+
+## D97 — Leftover Add %signature% Slack asks are retired
+
+**Decision.** D92 still writes the tag. Do not Slack
+`add_signature_tag` (the "tap Add %signature%" button). A deploy
+remind must not re-post leftover pending asks. Boot dismisses
+them. `slackKindForIsolationAction("add_signature_tag")` is null
+so D71 drops the post even if something still requests one.
+
+**Why.** Josh (2026-08-26): "STOP SENDING ME THESE ALERTS
+%signature% missing on SalesGlider Nurture" — the old QA button,
+re-posted on deploy from leftover pending state.
+
+**Tradeoff.** An old Slack button still executes if someone taps
+it. Accepted: that write is the same append D92 already does.
+
+**Guards.** slackKind add_signature_tag is null; remind skips and
+dismisses those asks; owner-intent D97.
+---
+
+## D98 — Find a hole, fix it
+
+**Decision.** When production shows a writable hole, fix it in
+that session. Do not stop at a report. Josh (2026-08-26):
+"whenever you find a problem you need to fix it."
+
+The 2026-08-26 sweep holes:
+
+1. Leftover `missing_signature_tag` writes on the next health
+   first-pass. Do not wait 55 minutes or for the hourly inspect.
+   D95 Slack-once still stands.
+2. Canary attach resolves provider ids the same way the scanner
+   does. Empty `provider_ids` is a hard fail and is logged.
+   A stored test is reused when it is still living. A
+   list-tests failure reuses the stored id — it does not spawn
+   a second test.
+3. Placement / known-good / missing-canary findings are not
+   invented when SmartDelivery `listTests` failed. Leftover
+   coverage findings refresh on the health first-pass once the
+   list succeeds, so a stale scoreboard cannot sit for hours.
+4. Scanner logs why zero plans (`live` / `candidates` /
+   `already-tested` / `skipped`), not only "No eligible
+   campaigns".
+
+BCP short of floor is not a hole (D58 / D81). Do not staff BCP
+with pool generics.
+
+**Why.** Josh did not trust the wizard because the scoreboard
+showed holes the loops were not closing.
+
+**Tradeoff.** Health first-pass re-inspects leftover holes, so
+a real missing test means extra sequence reads until the
+scanner fills it. Accepted: that is cheaper than a lying
+scoreboard.
+
+**Guards.** owner-intent D98; campaignCheck leftover write +
+listedTestsFailed; copyCanary resolveProviderIds + living reuse.
+---
+
+## D99 — BCP short is a hole; fill from BCP inboxes, not generics
+
+**Decision.** D98's "BCP short of floor is not a hole" is
+superseded. A BCP campaign below the half-floor is a hole and
+must be closed from **BCP-owned / same-client inboxes**:
+
+- A BCP-owned domain belongs on every ACTIVE BCP campaign even
+  when the mailbox has no `client_id` (fan-out + rest).
+- Held, retired, and copy-canary inboxes do not count toward
+  the half-floor. D58's "A+B sitting" means rest-sitting, not
+  a HOLD-UNTIL bench.
+- Pool generics still need POC or Slack approve (D58 / D81).
+  Do not staff BCP from the generic pile.
+
+Fan-out logs skip reasons so a 44/46 with `attached=0` can be
+read, not guessed.
+
+**Why.** Live 2026-08-26: four BCP campaigns sat 44/46
+membership 44, fan-out attached 0, no skip log. Josh's D98
+call is to fix the hole, not relabel it.
+
+**Tradeoff.** A held BCP inbox no longer inflates the floor.
+Accepted: that box cannot send until the hold lifts.
+
+**Guards.** owner-intent D99; fan-out BCP-domain belong;
+countClientInboxesByKey skips held.
+---
+
+## D100 — Canary schedule sends campaign_id; senders stay off
+
+**Decision.** A Canary copy test must send `campaign_id` on
+`POST /spam-test/schedule`. SmartDelivery rejects the create
+without it. The dedicated fleet still stays **off** the live
+campaign (D55). The id is linkage for the test, not membership.
+
+**Why.** Live 2026-08-26 after #119: thirteen `#…: "campaign_id"
+is required` on boot attach. Provider ids had resolved; create
+still died.
+
+**Tradeoff.** The test is named to a live campaign id. Accepted:
+that is how isolation already reads it.
+
+**Guards.** copyCanary isolationManualPayload includes campaignId;
+owner-intent D100.
+---
+
+## D101 — Sequence writes omit created_at
+
+**Decision.** Every Smartlead sequence POST strips `created_at` /
+`updated_at` (step and variants). The API rejects
+`"sequences[0].created_at" is not allowed`. The tag append is
+unchanged (D92).
+
+**Why.** Live 2026-08-26 after #119: leftover `%signature%` writes
+failed on SalesGlider Nurture, Parlay2, Culture Fits, and Positive
+for that reason. The campaigns were inspected; the write bounced.
+
+**Tradeoff.** A future Smartlead field that is also read-only will
+need adding to the omit list. Accepted: we add it when it fails.
+
+**Guards.** sequencesForWrite; updateCampaignSequences uses it;
+owner-intent D101.
+---
+
+## D102 — Canary schedule sends sequence_mapping_id
+
+**Decision.** A Canary copy test must send `sequence_mapping_id` on
+`POST /spam-test/schedule`, taken from the campaign sequence the same
+way the scanner does (`sequenceMappingIdOf`). Missing mapping is a
+hard fail and is logged. The dedicated fleet still stays **off** the
+live campaign (D55). D100's `campaign_id` still stands.
+
+**Why.** Live 2026-08-26 after #120: `"campaign_id" is required` was
+gone; create then died on `"sequence_mapping_id" is required`.
+
+**Tradeoff.** A campaign with no sequence mapping cannot get a canary
+until copy exists. Accepted: that campaign has nothing to test.
+
+**Guards.** copyCanary isolationManualPayload includes sequenceMappingId;
+owner-intent D102.
+---
+
+## D103 — Sequence writes keep only writable fields
+
+**Decision.** Every Smartlead sequence POST keeps only writable keys
+(`id`, `seq_number`, subject/body, delay, variants). GET extras —
+`created_at` (D101) and `email_campaign_id` — are dropped. The
+`%signature%` append is unchanged (D92).
+
+**Why.** Live 2026-08-26 after #120: leftover `%signature%` writes
+cleared `created_at` and then died on `"sequences[0].email_campaign_id"
+is not allowed` (SalesGlider Nurture, Parlay2, Culture Fits, Positive).
+
+**Tradeoff.** An unknown writable field we do not list is dropped.
+Accepted: we add it when a write needs it. Whack-a-mole omit is worse.
+
+**Guards.** sequencesForWrite allowlist; owner-intent D103.
+---
+
+## D104 — Sequence writes send variants, not sequence_variants
+
+**Decision.** GET `/sequences` returns `sequence_variants`. POST
+`/sequences` rejects that key (`"sequences[0].sequence_variants" is
+not allowed`). `sequencesForWrite` remaps GET variants onto `variants`
+and never sends `sequence_variants`. The tag append is unchanged
+(D92). D103's writable allowlist still stands.
+
+**Why.** Live 2026-08-26 after #121: leftover `%signature%` writes
+cleared timestamps and `email_campaign_id`, then died on
+`sequence_variants` (SalesGlider Nurture, Parlay2, Culture Fits,
+Positive).
+
+**Tradeoff.** If Smartlead later requires `seq_variants` instead of
+`variants`, we rename once. Accepted: GET and POST already disagree.
+
+**Guards.** sequencesForWrite remaps sequence_variants → variants;
+owner-intent D104.
+---
+
+## D105 — Warmup 21-day gate is on for live senders
+
+**Decision.** A mailbox that has not served 21 days from InboxKit
+import is pulled off ACTIVE campaigns. Pre-warmed fleets and the
+unwarmed canary fleet stay exempt. Placement / bounce pulls stay
+off (D51). The gate runs on the 15-minute health pass.
+
+This supersedes D51's "warmup gate defaults off" only.
+
+**Why.** Josh (2026-08-26): "yea need to enforce warmup 21 days."
+
+**Tradeoff.** Cold client boxes come off until they finish the
+clock. Accepted: that is the point.
+
+**Guards.** enableWarmupGate default true; warmupGate skips
+isCopyCanary; owner-intent D105.
+---
+
+## D106 — 85% launch bar is a live reading
+
+**Decision.** `LAUNCH_INBOX_THRESHOLD` is 85. Campaign check
+flags `below_launch_bar` when the living placement test is under
+that (promo tab = miss). Auto-START (qa-unpause) should not
+launch a new campaign below it. The one-shot morning activate
+(D109) is Josh starting the existing book for tomorrow and is
+not blocked by this bar.
+
+**Why.** Josh (2026-08-26): enforce the 85 launch bar on the
+canon sweep.
+
+**Tradeoff.** A thin sample can hold a campaign below the bar
+on the board. Accepted: the board is honest.
+
+**Guards.** launchInboxThreshold default 85; owner-intent D106.
+---
+
+## D107 — Delete leftover old-client campaigns
+
+**Decision.** Delete Smartlead campaigns `#3437329` Nieto,
+`#3628940` MSRS2, `#3628943` Positive, and any other campaign
+whose name is Nieto / MSRS / Positive. One-shot. If delete
+fails, STOP the campaign.
+
+**Why.** Josh (2026-08-26): "Delete those 3 campaigns there
+are old clients."
+
+**Tradeoff.** Other leftover Nieto / MSRS names go too.
+Accepted: they are the same old clients.
+
+**Guards.** oldClientCampaignIds; owner-intent D107.
+---
+
+## D108 — 15-minute yes/no canon sweep
+
+**Decision.** Every health pass (15 minutes) is the canon
+sweep. `/health` answers `canonCompliant` yes or no.
+
+Core (flips the yes): staffing, 21-day warmup, signatures,
+mailbox gap, mailbox send volume, placement test, canaries
+(copy + known-good).
+
+Other (on the board, does not flip the main yes): DNS,
+85% launch bar, client tag, foreign brand, cross-client.
+
+**Why.** Josh (2026-08-26): sweep the entire canon every
+15 minutes. Simple yes or no. Mainly staffing / warmup /
+signatures / gap / campaign settings / placement / canaries,
+then the other stuff.
+
+**Tradeoff.** A campaign with only a DNS miss still reads
+yes on the core. Accepted: he named the core.
+
+**Guards.** canonCompliant on /health; CANON_CORE_KINDS;
+owner-intent D108.
+---
+
+## D109 — START the morning book
+
+**Decision.** One-shot: START every Goliath, BCP, Peterson,
+Parlay, and TechEvo campaign that is not a pod-control shell
+and not an old-client leftover. Already ACTIVE is left alone.
+The 85% bar does not block this pass.
+
+**Why.** Josh (2026-08-26): ready to send tomorrow morning.
+
+**Tradeoff.** A bounce-paused Goliath campaign comes back
+up. Accepted: he asked for ACTIVE.
+
+**Guards.** morningActivatePatterns; shells stay paused;
+owner-intent D109.
+---
+
+## D110 — Sequence writes send seq_variants, never variants
+
+**Decision.** `sequencesForWrite` remaps GET `sequence_variants`
+(and any leftover `variants`) onto `seq_variants` and never
+sends `variants` or `sequence_variants`. Writable allowlist
+and append-only `%signature%` stay (D92 / D103). This
+supersedes D104's POST key only — D104 already named
+`seq_variants` as the rename if `variants` failed.
+
+**Why.** Live 2026-08-26 after #122: leftover `%signature%`
+writes remapped onto `variants` and died on
+`"sequences[0].variants" is not allowed` (#3705889,
+#3701207 Culture Fits, #3628957). Smartlead's helpcenter
+documents `seq_variants`.
+
+**Tradeoff.** If POST also rejects `seq_variants`, the next
+lever is pause → write → resume (API: cannot modify
+sequences while ACTIVE), not another key rename.
+Accepted: the live reject named this key.
+
+**Guards.** sequencesForWrite remaps onto seq_variants and
+skips variants; owner-intent D110.
+---
+
+## D111 — Old-client teardown retries leftovers
+
+**Decision.** Delete remaining Nieto / MSRS / Positive
+campaigns every health pass until none match. The D107
+one-shot skip is gone. Delete-fail still STOP (D107).
+
+**Why.** Live 2026-08-26 after #122: deleted=9 errors=1.
+`#3429333` Nieto Astros was still on the inventory after
+the one-shot stamped `oldClientTeardownAt`, so the next
+pass skipped it.
+
+**Tradeoff.** A campaign that cannot be deleted is retried
+each pass (then STOP). Accepted: Josh wanted them gone.
+
+**Guards.** no one-shot skip while targets remain;
+owner-intent D111.
+---
+
+## D112 — Canary schedule omits sequence when mapping id is set
+
+**Decision.** SmartDelivery `/spam-test/schedule` gets
+`campaign_id` + `sequence_mapping_id` and does **not** get a
+custom `sequence` body. Isolation variant tests with no
+mapping id still send `sequence`.
+
+**Why.** Live 2026-08-26 after #122: canary attach died on
+`"sequence" is not allowed` (66 campaigns). Pod-control
+already strips `sequence` (D56). Campaign-copy canaries
+were still sending both.
+
+**Tradeoff.** The test uses the campaign's mapped step, not
+a rebuilt body. Accepted: that is the copy we wanted to
+test.
+
+**Guards.** isolationManualPayload omits sequence when
+mapping id is set; owner-intent D112.
+---
+
+## D113 — Canary schedule is off-campaign
+
+**Decision.** Copy-canary SmartDelivery tests send a custom
+`sequence` body and do **not** send `campaign_id` or
+`sequence_mapping_id`. Canary senders stay off the live
+campaign (D55). Campaign-bound tests (pod-control, daily
+scan) still send mapping id and omit `sequence` (D112).
+
+This supersedes D100 / D102 for canary POST only.
+
+**Why.** Live 2026-08-26 after #124: omitting `sequence`
+(D112) died on "Sender email accounts … not used in the
+campaign" (getcrosslaunchco.info canary fleet).
+`campaign_id` binds senders to that campaign. Canaries
+cannot join it.
+
+**Tradeoff.** Schedule no longer carries the mapping id.
+Accepted: the body is the campaign copy we loaded.
+
+**Guards.** offCampaignSenders; owner-intent D113.
+
+---
+
+## D114 — Canary tests hang on a paused per-campaign shell
+
+**Decision.** Copy-canary SmartDelivery tests hang on a **paused
+Canary shell** per ACTIVE live campaign — the same pattern as the
+pod-control shell (D56). The shell's sequence is that campaign's
+live copy. The dedicated fleet sits on the shell only. The
+schedule POST sends the **shell** `campaign_id` +
+`sequence_mapping_id` and omits `sequence` (D112). The test name
+stays `Canary copy: #{liveId}` so isolation still keys off the
+live campaign.
+
+Canaries still never sit on a **live** client campaign and never
+send to leads (D55). Morning START, top-up, fan-out, bounce, and
+the yes/no board skip canary shells so a name like
+`Canary shell: #3781910 Goliath…` cannot be started.
+
+This supersedes D113's "omit campaign_id" POST. D113's reason
+(do not bind senders to the live campaign) still stands.
+
+**Why.** Live 2026-08-26 after #125: every attach died on
+`"campaign_id" is required`. Sending the live `campaign_id`
+requires those senders to be members
+(`Sender email accounts … not used in the campaign`). Custom
+`sequence` without `campaign_id` is rejected. The schedule API
+needs a campaign the canaries actually sit on, and that cannot
+be a live client campaign.
+
+**Tradeoff.** One extra paused Smartlead campaign per ACTIVE
+campaign. Accepted: that is what the schedule API requires, and
+D56 already proved the shell pattern.
+
+**Guards.** isCanaryShellCampaign / isAnyShellCampaign;
+ensureCanaryShell; copyCanary never adds to a live campaign;
+owner-intent D114.
+
+---
+
+## D115 — Canary shells get one dummy seed lead
+
+**Decision.** Each paused canary shell is given **one dummy
+lead** (`canary.shell.seed@getcrosslaunchco.info`) so
+SmartDelivery `/spam-test/schedule` will accept it. The shell
+stays **PAUSED**. Placement tests still send to seed inboxes,
+not this contact. The same address may sit on every canary
+shell (`ignore_duplicate_leads_in_other_campaign`).
+
+This is not a client list import. Lead runout still never
+imports or extends a live campaign (D52). `addLeadsToCampaign`
+is only called from `canaryShell.ts`.
+
+**Why.** Live 2026-08-26 after #126: D114 created the shells
+and then every attach died on "No leads available for the
+selected or lower sequence".
+
+**Tradeoff.** One unused contact per shell. Accepted: the
+schedule API requires a lead on that campaign, and starting
+the shell is already blocked.
+
+**Guards.** CANARY_SHELL_SEED_EMAIL; seedShellLead;
+owner-intent D115.
+
+---
+
+## D116 — Missing placement tests scan on that health pass
+
+**Decision.** When `no_placement_test` is on the board, the
+health pass runs scan-backfill **on that pass**. The D84
+hourly throttle for this kick is gone. Pod-control cover
+stays hourly (D89).
+
+**Why.** Live 2026-08-26: morning START and the hourly
+checker flagged 20 ACTIVE campaigns with no recurring test
+after the 04:54 scan. The next backfill was gated to ~05:49,
+so the hole sat through two health passes.
+
+**Tradeoff.** A full scan on every 15-minute pass while any
+campaign is uncovered. The scanner skips campaigns that
+already have a living test. Accepted: leaving them bare is
+worse.
+
+**Guards.** missingTest → scan-backfill with no 55-minute
+gate; owner-intent D116.
+
+---
+
+## D117 — Seed a real canary inbox as the shell lead, then pause
+
+**Decision.** The dummy shell lead is a **real fleet inbox**
+(first canary sender), not a fabricated address. Add it while
+the shell is still DRAFTED so it attaches to sequence 1, then
+PAUSE. Ignore block / bounce / unsubscribe lists on this
+import. If Smartlead reports added=0 and GET still shows no
+leads, fail that shell instead of scheduling.
+
+**Why.** Live 2026-08-26 after #127: D115 still died on
+"No leads available for the selected or lower sequence".
+`canary.shell.seed@getcrosslaunchco.info` is not a mailbox;
+Smartlead likely skipped it. Seeding a PAUSED empty shell
+also left the lead off the sequence.
+
+**Tradeoff.** One canary inbox is a contact on every shell.
+Accepted: the campaign stays paused and never sends to it.
+
+**Guards.** seedEmail from the fleet; seed then pause;
+added_count checked; owner-intent D117.
+
+---
+
+## D118 — Parse the real Smartlead import; seed a non-sender
+
+**Decision.** Treat a canary-shell lead import as successful when
+`upload_count`, `already_added_to_campaign`, `added_count`, or
+`lead_ids` is positive, or GET `/leads` shows `total_leads` /
+`total` / a non-empty `data` or `leads` list (including a nested
+`data` object). Log the raw add and GET JSON. The dummy seed is
+`canary.instrumentation@getcrosslaunchco.info` — not a Smartlead
+sending account and not a plus-address of one. Still seed, then
+PAUSE. Still never import onto a live client campaign (D52).
+
+**Why.** Live 2026-08-26 after #128 (D117): every shell logged
+`leilasanchez@getcrosslaunchco.info added=0 skipped=0` then
+`still has no leads`. Two bugs: (1) the Cotera / in-repo skill
+response is `upload_count` + `already_added_to_campaign`, not
+`added_count` — D117 read the wrong fields and failed even if
+the import worked; GET may use `total` / `leads` rather than
+`total_leads` / `data`. (2) that address is a canary *sending*
+account on the shell; Smartlead can refuse an email-account as
+a lead. D115's fabricated `canary.shell.seed@…` hit the same
+"No leads available" wall, so we do not go back to it.
+
+**Tradeoff.** One unused instrumentation contact per shell, not
+a real inbox. Accepted: the campaign stays paused and never
+sends to it, and SmartDelivery only needs a lead row at seq 1.
+
+**Guards.** CANARY_SHELL_SEED_EMAIL is the non-sender address;
+shellLeadImportAccepted; raw import log; owner-intent D118.
+
+---
+
+## D119 — Seed canary shells even when SmartDelivery list 429s
+
+**Decision.** `listTests` is retried three times. If it still fails,
+reuse a stored test id (D98) and **still seed** the paused canary
+shell. Do not create a new SmartDelivery test without a successful
+list.
+
+**Why.** Live 2026-08-26 after #129 (D118): boot attach and the
+health attach both died on `ApiError: Rate limit exceeded` from
+`listTests`. D118's seed never ran (`upload_count=` was 0) because
+`ensureCopyTest` threw before `ensureCanaryShell`. The 63
+"could not list SmartDelivery tests" errors left `missing_canary`
+at 61. D98 still forbids inventing a second test when the list is
+down.
+
+**Tradeoff.** Shell seed writes happen during a SmartDelivery
+outage / 429. Accepted: a lead on the paused shell is what the
+next successful list needs, and creating a duplicate test is worse.
+
+**Guards.** listTestsRetrying; seedCanaryShell before the
+list-failed throw; owner-intent D119.
+
+---
+
+## D120 — Unique shell seed email; upload_count alone is not success
+
+**Decision.** Each canary shell seeds
+`canary.instrumentation.{shellCampaignId}@getcrosslaunchco.info`.
+Import success is a lead **on that shell**: `newlyAddedLeads`,
+`existingLeads`, `already_added_to_campaign`, `added_count`, or
+`lead_ids`. `upload_count` alone is not enough.
+
+**Why.** Live 2026-08-26 after #130 (D119): the first shell
+imported `canary.instrumentation@getcrosslaunchco.info`
+(`newlyAddedLeads` id 4420562184). The next 13 calls returned
+`upload_count=1` with only `existingLeadsInOtherCampaigns` —
+Smartlead did not add the same address to the other shells even
+with `ignore_duplicate_leads_in_other_campaign`. D118 treated
+`upload_count=1` as success, skipped GET, and SmartDelivery then
+said "No leads available for the selected or lower sequence".
+
+**Tradeoff.** One unique unused contact per shell. Accepted: the
+campaigns stay paused and never send to them.
+
+**Guards.** canaryShellSeedEmail; shellLeadImportAccepted ignores
+upload_count-only; owner-intent D120.
+
+---
+
+## D121 — State placement marks only count for that campaign's test
+
+**Decision.** `testedCampaignCoverage` treats a state `testIds`
+mark as coverage only when that id is a living automated test
+**and** `campaignIdOf(test)` is this campaign. A living test on
+another campaign does not cover this one.
+
+**Why.** Live 2026-08-26: D116 created 37 tests and
+`no_placement_test` fell 20→2. The leftovers `#3847844` Parlay
+Trendrr Ops DM and `#3847845` Parlay Receipts Ops DM stayed on
+the board. The next scan logged `eligible: 0` while
+campaign-check still stamped `no_placement_test`. The merge of
+state marks with "any living test id" can attribute a sibling
+or canary-shell test to the live campaign and skip creating one.
+
+**Tradeoff.** A state mark whose test moved campaigns is ignored
+until a new test exists. Accepted: leaving those two bare is worse.
+
+**Guards.** livingCampaignByTestId match; owner-intent D121.
+
+---
+
+## D122 — No Smartlead boot kicks except canary attach
+
+**Decision.** The only Smartlead work a deploy may start immediately
+is canary attach at 90s. Do not boot-kick health, pool provision, or
+campaign-audit. Health inventory retries a 429 three times with a
+30s pause. Pool cron and the hourly campaign-check skip while a
+health pass is in flight.
+
+**Why.** Live 2026-08-26 after D121 (`07ab5ac` 06:32:22): attach
+scheduled 52 tests by 06:35:31 (0 "No leads"). Boot campaign-audit
+ran 06:32:49–06:36:41, boot health 429-skipped at 06:36:01, boot
+pool ran 06:41–06:43, and the 06:45 health cron 429-skipped again.
+`health-pass.lastOkAt` stayed `06:02:39`, so the board still showed
+`missing_canary=69` and `no_placement_test=2` after attach had
+already worked. D89 staggered those kicks to avoid a four-inventory
+stampede; they still race attach and poison the next 15-minute cron.
+
+**Tradeoff.** After a deploy, staffing waits for the next
+`CRON_HEALTH` (up to 15 minutes) and pool waits for
+`CRON_POOL_PROVISION` (up to 30 minutes). Accepted: a stale board
+for 15 minutes is better than no completed pass for an hour.
+
+**Guards.** no boot health/pool/audit kicks; inventory 429 retry;
+pool and hourly campaign-check skip health; scan logs uncovered
+ids; owner-intent D122.
+
+---
+
+## D123 — State placement marks cover when enrich omits campaign_id
+
+**Decision.** `testedCampaignCoverage` treats a state `testIds`
+mark as coverage when that id is a living stoppable auto test
+and either `campaignIdOf(test)` is this campaign (D121) **or**
+the living test has no campaign_id (enrich missed it). A living
+test whose campaign_id is a different campaign still does not
+cover.
+
+**Why.** Live 2026-08-26 07:19: campaign-check stamped
+`no_placement_test` on `#3847841` / `#3847842` / `#3847848`
+while the scanner reported `eligible: 1` and created a test
+for a different campaign. `enrichCampaignIds` walks ~300 tests
+and swallows 429s, so the two callers see different
+`campaign_id` sets and disagree. The original leftovers
+`#3847844` / `#3847845` did get tests (519653 / 519654).
+
+**Tradeoff.** Two campaigns that stored the same test id while
+enrich is blank would both look covered. Accepted: we only
+write a test id onto the campaign we created it for.
+
+**Guards.** livingTestIds + missing campaign_id; owner-intent D123.

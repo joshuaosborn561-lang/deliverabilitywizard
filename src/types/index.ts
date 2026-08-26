@@ -61,10 +61,12 @@ export interface SmartleadSequenceVariant {
 export interface SmartleadSequence {
   id: number;
   seq_number: number;
+  seq_delay_details?: { delayInDays?: number; delay_in_days?: number };
   subject?: string;
   email_body?: string;
   sequence_variants?: SmartleadSequenceVariant[];
   variants?: SmartleadSequenceVariant[];
+  seq_variants?: SmartleadSequenceVariant[];
 }
 
 export interface SpamTestSummary {

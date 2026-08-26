@@ -6,6 +6,25 @@ import {
   normalizeMonthlyUsage,
   type MonthlyUsageBucket,
 } from "../lib/monthlyCaps.js";
+import {
+  isCopyCanaryFleetEmail,
+  type CopyCanaryFleetRecord,
+} from "../lib/copyCanaryFleet.js";
+import {
+  EMPTY_ISOLATION_STATE,
+  normalizeIsolationState,
+  type CopySuspectRecord,
+  type IsolationActionRecord,
+  type IsolationRunRecord,
+  type IsolationState,
+  type IsolationVariantRecord,
+  type MailboxControlResultRecord,
+  type PodControlRecord,
+  type DomainControlHistoryRecord,
+} from "./isolationState.js";
+import type { SuppressedTerm } from "../lib/suppressedTerms.js";
+import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
+import type { GenericBackfillApproval } from "../lib/genericBackfill.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -59,6 +78,8 @@ export interface PoolMailboxRecord {
   lastName: string;
   /** Hand-bought fleet that completed warmup before this app managed it. */
   prewarmed?: boolean;
+  /** D54 dedicated campaign-copy canary — never staffable, warmup stays off. */
+  copyCanary?: boolean;
   status: PoolMailboxRecordStatus;
   warmedAt?: string;
   availableAt?: string;
@@ -110,6 +131,14 @@ export interface PendingResumeRecord {
   reason: string;
 }
 
+export interface StaffingShortRecord {
+  campaignId: number;
+  name: string;
+  staffable: number;
+  shortBy: number;
+  status: string;
+}
+
 export interface AppState {
   version: 1;
   lastScanAt: string | null;
@@ -119,6 +148,8 @@ export interface AppState {
   lastWarmupGateAt: string | null;
   lastHealthAt: string | null;
   lastMailboxSettingsAt: string | null;
+  /** Latest health short list — posted on the end-of-day brief (D64). */
+  lastStaffingShort: StaffingShortRecord[];
   testedCampaigns: Record<string, TestedCampaignRecord>;
   /** Dedupe keys for Slack alerts already sent */
   alertedKeys: Record<string, string>;
@@ -168,6 +199,60 @@ export interface AppState {
    * not run yet and the next health pass should.
    */
   restBaselineRebuiltAt: string | null;
+  /**
+   * D59 — ISO time the one-shot unhealthy-mark wipe finished. Empty means
+   * the next health pass should still run it.
+   */
+  unhealthyResetAt: string | null;
+  /**
+   * D61 — ISO time Vasco trim + GXA/MSRS/Nieto wipe finished.
+   */
+  clientWipeAt: string | null;
+  /** D107 — leftover Nieto / MSRS / Positive campaigns deleted. */
+  oldClientTeardownAt: string | null;
+  /** D109 — morning START of the live book. */
+  morningActivateAt: string | null;
+  /** D48 — standing pod controls, isolation runs, suppressed terms. */
+  isolation: IsolationState;
+  /** D81 — first-seen campaign audit + hourly sweep records. */
+  campaignChecks: Record<string, CampaignCheckRecord>;
+  /** D81 — Josh Slack-approved generic backfill, per campaign. */
+  genericBackfillApprovals: Record<string, GenericBackfillApproval>;
+  /**
+   * D84 — campaign ids whose Smartlead bounce_autopause_threshold we already
+   * wrote to 100 (off). The 10-minute loop writes only campaigns missing
+   * here; a slower verify pass reconciles drift. Before this cache the loop
+   * rewrote every campaign (including COMPLETED ones from 2025) every 10
+   * minutes — ~600 writes/hour that starved the whole key into 429s.
+   */
+  smartleadAutopauseOff: Record<string, string>;
+  /** D84 — ISO time of the last read-verify sweep of bounce autopause. */
+  lastAutopauseVerifyAt: string | null;
+  /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
+  bounceSnapshots: Record<string, { bounced: number; sent: number; at: string }>;
+  /** D84 — per-stage watchdog: last success / failure per named loop. */
+  stageHealth: Record<string, StageHealthRecord>;
+  /**
+   * D85 — zero connected unwarmed-canary mailboxes, reported once instead of
+   * as a finding on every ACTIVE campaign. Null when the fleet has at least
+   * one connected mailbox.
+   */
+  canaryFleetDown: CanaryFleetDownRecord | null;
+}
+
+/** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
+export interface CanaryFleetDownRecord {
+  since: string;
+  fleetSize: number;
+}
+
+/** D84 — watchdog record for one named stage of a scheduled loop. */
+export interface StageHealthRecord {
+  lastOkAt: string | null;
+  lastErrorAt: string | null;
+  lastError: string | null;
+  lastDurationMs: number | null;
+  consecutiveFailures: number;
 }
 
 export interface BugRemediationRecord {
@@ -249,6 +334,7 @@ const EMPTY_STATE: AppState = {
   lastWarmupGateAt: null,
   lastHealthAt: null,
   lastMailboxSettingsAt: null,
+  lastStaffingShort: [],
   testedCampaigns: {},
   alertedKeys: {},
   remediatedKeys: {},
@@ -268,6 +354,18 @@ const EMPTY_STATE: AppState = {
   bugRemediations: {},
   pendingResumes: {},
   restBaselineRebuiltAt: null,
+  unhealthyResetAt: null,
+  clientWipeAt: null,
+  oldClientTeardownAt: null,
+  morningActivateAt: null,
+  isolation: structuredClone(EMPTY_ISOLATION_STATE),
+  campaignChecks: {},
+  genericBackfillApprovals: {},
+  smartleadAutopauseOff: {},
+  lastAutopauseVerifyAt: null,
+  bounceSnapshots: {},
+  stageHealth: {},
+  canaryFleetDown: null,
 };
 
 export class StateStore {
@@ -306,7 +404,22 @@ export class StateStore {
         pendingResumes: parsed.pendingResumes ?? {},
         lastHealthAt: parsed.lastHealthAt ?? null,
         lastMailboxSettingsAt: parsed.lastMailboxSettingsAt ?? null,
+        lastStaffingShort: Array.isArray(parsed.lastStaffingShort)
+          ? parsed.lastStaffingShort
+          : [],
         restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
+        unhealthyResetAt: parsed.unhealthyResetAt ?? null,
+        clientWipeAt: parsed.clientWipeAt ?? null,
+        oldClientTeardownAt: parsed.oldClientTeardownAt ?? null,
+        morningActivateAt: parsed.morningActivateAt ?? null,
+        isolation: normalizeIsolationState(parsed.isolation),
+        campaignChecks: parsed.campaignChecks ?? {},
+        genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
+        smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
+        lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
+        bounceSnapshots: parsed.bounceSnapshots ?? {},
+        stageHealth: parsed.stageHealth ?? {},
+        canaryFleetDown: parsed.canaryFleetDown ?? null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -381,6 +494,68 @@ export class StateStore {
 
   clearHeldInbox(email: string): void {
     delete this.state.heldInboxes[email.toLowerCase()];
+  }
+
+  clearAllHeldInboxes(): number {
+    const n = Object.keys(this.state.heldInboxes).length;
+    this.state.heldInboxes = {};
+    return n;
+  }
+
+  getUnhealthyResetAt(): string | null {
+    return this.state.unhealthyResetAt;
+  }
+
+  markUnhealthyReset(iso: string): void {
+    this.state.unhealthyResetAt = iso;
+  }
+
+  getClientWipeAt(): string | null {
+    return this.state.clientWipeAt;
+  }
+
+  markClientWipe(iso: string): void {
+    this.state.clientWipeAt = iso;
+  }
+
+  getOldClientTeardownAt(): string | null {
+    return this.state.oldClientTeardownAt;
+  }
+
+  setOldClientTeardownAt(iso: string): void {
+    this.state.oldClientTeardownAt = iso;
+  }
+
+  getMorningActivateAt(): string | null {
+    return this.state.morningActivateAt;
+  }
+
+  setMorningActivateAt(iso: string): void {
+    this.state.morningActivateAt = iso;
+  }
+
+  clearMailboxControls(): number {
+    const n = Object.keys(this.state.isolation.mailboxResults).length;
+    this.state.isolation.mailboxResults = {};
+    return n;
+  }
+
+  clearHeldPlacementTests(): number {
+    const n = Object.keys(this.state.heldPlacementTests).length;
+    this.state.heldPlacementTests = {};
+    return n;
+  }
+
+  /** D59 — old same-ESP scores are not a reason to keep a B-pod box off. */
+  clearClientRestProof(): number {
+    let cleared = 0;
+    for (const row of Object.values(this.state.restingInboxes)) {
+      if (row.kind === "generic") continue;
+      if (row.lastSameEspInbox == null) continue;
+      row.lastSameEspInbox = null;
+      cleared += 1;
+    }
+    return cleared;
   }
 
   getRestBaselineRebuiltAt(): string | null {
@@ -612,6 +787,11 @@ export class StateStore {
     this.state.poolMailboxes[record.email.toLowerCase()] = record;
   }
 
+  /** D86 — drop a stale planned row (never one mapped to a Smartlead account). */
+  removePoolMailbox(email: string): void {
+    delete this.state.poolMailboxes[email.toLowerCase()];
+  }
+
   getPoolMailbox(email: string): PoolMailboxRecord | undefined {
     return this.state.poolMailboxes[email.toLowerCase()];
   }
@@ -627,6 +807,7 @@ export class StateStore {
     let flipped = 0;
     const ms = warmupDays * 24 * 60 * 60 * 1000;
     for (const row of Object.values(this.state.poolMailboxes)) {
+      if (row.copyCanary) continue;
       if (row.status !== "warming") continue;
       const start = row.warmedAt ? Date.parse(row.warmedAt) : NaN;
       if (!Number.isFinite(start)) continue;
@@ -646,6 +827,8 @@ export class StateStore {
       (m) =>
         m.status === "available" &&
         m.platform === platform &&
+        !m.copyCanary &&
+        !this.isCopyCanary(m.email) &&
         !this.getRestingInbox(m.email),
     );
   }
@@ -668,6 +851,8 @@ export class StateStore {
         (m) =>
           m.platform === platform &&
           (m.status === "available" || m.status === "assigned") &&
+          !m.copyCanary &&
+          !this.isCopyCanary(m.email) &&
           !this.getRestingInbox(m.email) &&
           canTake(m.email),
       );
@@ -791,8 +976,121 @@ export class StateStore {
     this.state.lastHealthAt = iso;
   }
 
+  setLastStaffingShort(rows: StaffingShortRecord[]): void {
+    this.state.lastStaffingShort = rows.map((row) => ({ ...row }));
+  }
+
+  listLastStaffingShort(): StaffingShortRecord[] {
+    return this.state.lastStaffingShort.map((row) => ({ ...row }));
+  }
+
   setLastMailboxSettingsAt(iso: string): void {
     this.state.lastMailboxSettingsAt = iso;
+  }
+
+  getCampaignCheck(campaignId: number): CampaignCheckRecord | undefined {
+    return this.state.campaignChecks[String(campaignId)];
+  }
+
+  upsertCampaignCheck(record: CampaignCheckRecord): void {
+    this.state.campaignChecks[String(record.campaignId)] = record;
+  }
+
+  listCampaignChecks(): CampaignCheckRecord[] {
+    return Object.values(this.state.campaignChecks);
+  }
+
+  removeCampaignCheck(campaignId: number): void {
+    delete this.state.campaignChecks[String(campaignId)];
+  }
+
+  /** D84 — bounce autopause already written off for this campaign. */
+  getAutopauseOffAt(campaignId: number): string | undefined {
+    return this.state.smartleadAutopauseOff[String(campaignId)];
+  }
+
+  markAutopauseOff(campaignId: number): void {
+    this.state.smartleadAutopauseOff[String(campaignId)] =
+      new Date().toISOString();
+  }
+
+  clearAutopauseOff(campaignId: number): void {
+    delete this.state.smartleadAutopauseOff[String(campaignId)];
+  }
+
+  getLastAutopauseVerifyAt(): string | null {
+    return this.state.lastAutopauseVerifyAt;
+  }
+
+  setLastAutopauseVerifyAt(iso: string): void {
+    this.state.lastAutopauseVerifyAt = iso;
+  }
+
+  getBounceSnapshot(
+    campaignId: number,
+  ): { bounced: number; sent: number; at: string } | undefined {
+    return this.state.bounceSnapshots[String(campaignId)];
+  }
+
+  setBounceSnapshot(
+    campaignId: number,
+    snapshot: { bounced: number; sent: number; at: string },
+  ): void {
+    this.state.bounceSnapshots[String(campaignId)] = snapshot;
+  }
+
+  /** D84 — watchdog bookkeeping for one named stage. */
+  recordStageOk(name: string, durationMs: number): void {
+    const existing = this.state.stageHealth[name];
+    this.state.stageHealth[name] = {
+      lastOkAt: new Date().toISOString(),
+      lastErrorAt: existing?.lastErrorAt ?? null,
+      lastError: existing?.lastError ?? null,
+      lastDurationMs: durationMs,
+      consecutiveFailures: 0,
+    };
+  }
+
+  recordStageError(name: string, error: string): void {
+    const existing = this.state.stageHealth[name];
+    this.state.stageHealth[name] = {
+      lastOkAt: existing?.lastOkAt ?? null,
+      lastErrorAt: new Date().toISOString(),
+      lastError: error.slice(0, 500),
+      lastDurationMs: existing?.lastDurationMs ?? null,
+      consecutiveFailures: (existing?.consecutiveFailures ?? 0) + 1,
+    };
+  }
+
+  listStageHealth(): Record<string, StageHealthRecord> {
+    return this.state.stageHealth;
+  }
+
+  /** D85 — one fleet-level fact instead of a finding per campaign. */
+  getCanaryFleetDown(): CanaryFleetDownRecord | null {
+    return this.state.canaryFleetDown;
+  }
+
+  setCanaryFleetDown(record: CanaryFleetDownRecord): void {
+    this.state.canaryFleetDown = record;
+  }
+
+  clearCanaryFleetDown(): void {
+    this.state.canaryFleetDown = null;
+  }
+
+  approveGenericBackfill(record: GenericBackfillApproval): void {
+    this.state.genericBackfillApprovals[String(record.campaignId)] = record;
+  }
+
+  getGenericBackfillApproval(
+    campaignId: number,
+  ): GenericBackfillApproval | undefined {
+    return this.state.genericBackfillApprovals[String(campaignId)];
+  }
+
+  listGenericBackfillApprovals(): Record<string, GenericBackfillApproval> {
+    return this.state.genericBackfillApprovals;
   }
 
   markPendingResume(record: PendingResumeRecord): void {
@@ -813,6 +1111,165 @@ export class StateStore {
 
   clearPendingResume(campaignId: number): void {
     delete this.state.pendingResumes[String(campaignId)];
+  }
+
+  getIsolation(): IsolationState {
+    return this.state.isolation;
+  }
+
+  patchIsolation(patch: Partial<IsolationState>): IsolationState {
+    this.state.isolation = {
+      ...this.state.isolation,
+      ...patch,
+    };
+    return this.state.isolation;
+  }
+
+  upsertPodControl(record: PodControlRecord): void {
+    this.state.isolation.podControls[record.id] = record;
+  }
+
+  listPodControls(): PodControlRecord[] {
+    return Object.values(this.state.isolation.podControls);
+  }
+
+  upsertMailboxControl(record: MailboxControlResultRecord): void {
+    this.state.isolation.mailboxResults[record.email.toLowerCase()] = record;
+  }
+
+  getMailboxControl(email: string): MailboxControlResultRecord | undefined {
+    return this.state.isolation.mailboxResults[email.toLowerCase()];
+  }
+
+  listMailboxControls(): MailboxControlResultRecord[] {
+    return Object.values(this.state.isolation.mailboxResults);
+  }
+
+  upsertIsolationRun(record: IsolationRunRecord): void {
+    this.state.isolation.runs[record.id] = record;
+  }
+
+  getIsolationRun(id: string): IsolationRunRecord | undefined {
+    return this.state.isolation.runs[id];
+  }
+
+  listIsolationRuns(): IsolationRunRecord[] {
+    return Object.values(this.state.isolation.runs);
+  }
+
+  latestIsolationRunForCampaign(
+    campaignId: number,
+  ): IsolationRunRecord | undefined {
+    return Object.values(this.state.isolation.runs)
+      .filter((run) => run.campaignId === campaignId)
+      .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
+  }
+
+  upsertIsolationVariant(record: IsolationVariantRecord): void {
+    this.state.isolation.variants[record.id] = record;
+  }
+
+  listIsolationVariants(runId?: string): IsolationVariantRecord[] {
+    const rows = Object.values(this.state.isolation.variants);
+    return runId ? rows.filter((row) => row.runId === runId) : rows;
+  }
+
+  upsertSuppressedTerm(term: SuppressedTerm): void {
+    const scope = (term.clientScope ?? "*").toLowerCase();
+    this.state.isolation.suppressedTerms[`${scope}:${term.term.toLowerCase()}`] =
+      term;
+  }
+
+  listSuppressedTerms(): SuppressedTerm[] {
+    return Object.values(this.state.isolation.suppressedTerms);
+  }
+
+  markCopySuspect(record: CopySuspectRecord): void {
+    this.state.isolation.copySuspects[String(record.campaignId)] = {
+      ...this.state.isolation.copySuspects[String(record.campaignId)],
+      ...record,
+    };
+  }
+
+  listCopySuspects(): CopySuspectRecord[] {
+    return Object.values(this.state.isolation.copySuspects);
+  }
+
+  setCopyCanaries(
+    campaignId: number,
+    emails: string[],
+    testId?: string,
+  ): void {
+    const unique = [...new Set(emails.map((email) => email.toLowerCase()))];
+    const existing = this.state.isolation.copyCanaries[String(campaignId)];
+    this.state.isolation.copyCanaries[String(campaignId)] = {
+      campaignId,
+      emails: unique,
+      testId: testId ?? existing?.testId,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  getCopyCanaries(campaignId: number): string[] {
+    return this.state.isolation.copyCanaries[String(campaignId)]?.emails ?? [];
+  }
+
+  getCopyCanaryTestId(campaignId: number): string | undefined {
+    return this.state.isolation.copyCanaries[String(campaignId)]?.testId;
+  }
+
+  listCopyCanaryEmails(): Set<string> {
+    const out = new Set<string>();
+    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+      for (const email of row.emails) out.add(email.toLowerCase());
+    }
+    return out;
+  }
+
+  isCopyCanary(email: string): boolean {
+    const lower = email.toLowerCase();
+    if (this.listCopyCanaryEmails().has(lower)) return true;
+    return isCopyCanaryFleetEmail(lower, this.getCopyCanaryFleet());
+  }
+
+  setCopyCanaryFleet(record: CopyCanaryFleetRecord): void {
+    this.state.isolation.copyCanaryFleet = {
+      ...record,
+      domains: [...new Set(record.domains.map((row) => row.toLowerCase()))],
+      emails: [...new Set(record.emails.map((row) => row.toLowerCase()))],
+    };
+  }
+
+  getCopyCanaryFleet(): CopyCanaryFleetRecord | null {
+    return this.state.isolation.copyCanaryFleet;
+  }
+
+  upsertDomainHistory(record: DomainControlHistoryRecord): void {
+    this.state.isolation.domainHistory[record.domain.toLowerCase()] = record;
+  }
+
+  getDomainHistory(domain: string): DomainControlHistoryRecord | undefined {
+    return this.state.isolation.domainHistory[domain.toLowerCase()];
+  }
+
+  listDomainHistory(): DomainControlHistoryRecord[] {
+    return Object.values(this.state.isolation.domainHistory);
+  }
+
+  upsertIsolationAction(record: IsolationActionRecord): void {
+    this.state.isolation.actions[record.id] = record;
+  }
+
+  getIsolationAction(id: string): IsolationActionRecord | undefined {
+    return this.state.isolation.actions[id];
+  }
+
+  listIsolationActions(): IsolationActionRecord[] {
+    return Object.values(this.state.isolation.actions);
+  }
+
+  pendingIsolationActions(): IsolationActionRecord[] {
+    return this.listIsolationActions().filter((row) => row.status === "pending");
   }
 
   async save(): Promise<void> {

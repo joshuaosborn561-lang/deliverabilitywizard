@@ -9,6 +9,7 @@ import {
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
@@ -48,7 +49,9 @@ export class GenericSendRestService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean; now?: Date } = {}): Promise<GenericSendRestResult> {
+  async run(
+    opts: { dryRun?: boolean; now?: Date; inventory?: InventorySnapshot } = {},
+  ): Promise<GenericSendRestResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const now = opts.now ?? new Date();
     const result: GenericSendRestResult = {
@@ -66,10 +69,8 @@ export class GenericSendRestService {
       return result;
     }
 
-    const [campaigns, accounts] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-    ]);
+    const { campaigns, accounts } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );
@@ -86,6 +87,10 @@ export class GenericSendRestService {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
+      if (this.state.isCopyCanary(email)) {
+        result.skipped.push(`${email}: copy canary`);
+        continue;
+      }
       result.examined += 1;
 
       if (this.state.getHeldInbox(email) || activeHoldUntilDate(tagNames(account))) {
@@ -189,10 +194,14 @@ export class GenericSendRestService {
       try {
         await this.slack.send(
           [
-            `${dryRun ? "[DRY RUN] " : ""}Generic send rest (${owed} days on, then sit):`,
-            `- ${result.benched.length} generic(s) taken off after ${owed} days of live send`,
-            `- ${result.released.length} generic(s) back on supply after sitting`,
-          ].join("\n"),
+            `${dryRun ? "Preview — " : ""}Spare inbox rotation`,
+            `${result.benched.length} spare inbox${result.benched.length === 1 ? "" : "es"} came off campaigns after about ${owed} days of sending. They’ll sit about ${owed} days, then we can use them again.`,
+            result.released.length
+              ? `${result.released.length} spare${result.released.length === 1 ? "" : "s"} finished sitting and are available again.`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join("\n"),
         );
       } catch (error) {
         console.warn("[generic-rest] Slack notify failed", error);

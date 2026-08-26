@@ -5,16 +5,24 @@ import {
   accountEmail,
   campaignIdsOf,
   type SmartleadAccountWithCampaigns,
+  type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import {
+  countClientInboxesByKey,
+  staffFloorForCampaign,
+} from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
+import { staffingSlackLines } from "../lib/staffingSlack.js";
 import {
   CampaignTopUpService,
   isExcluded,
   type TopUpResult,
 } from "./campaignTopUp.js";
 import type { ClientFanOutService } from "./clientFanOut.js";
+import type { CopyCanaryAttachResult, CopyCanaryService } from "./copyCanary.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
 /**
  * Sole mutator brain for campaign staffing (D25).
@@ -32,6 +40,7 @@ export interface CampaignHealthSnapshot {
   status: string;
   membership: number;
   staffable: number;
+  floor: number;
   needed: number;
   pendingResume: boolean;
 }
@@ -42,6 +51,7 @@ export interface CampaignHealthResult {
   snapshots: CampaignHealthSnapshot[];
   topUp: TopUpResult | null;
   fanOutAttached: number;
+  copyCanaryAttached: number;
   resumed: Array<{ campaignId: number; name: string; staffable: number }>;
   stillShort: Array<{
     campaignId: number;
@@ -61,33 +71,38 @@ export class CampaignHealthService {
     private readonly state: StateStore,
     private readonly topUp: CampaignTopUpService,
     private readonly fanOut?: ClientFanOutService,
+    private readonly copyCanary?: CopyCanaryService,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<CampaignHealthResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<CampaignHealthResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
-    const floor = this.config.minCampaignSenders;
     const result: CampaignHealthResult = {
       dryRun,
-      floor,
+      floor: this.config.minCampaignSenders,
       snapshots: [],
       topUp: null,
       fanOutAttached: 0,
+      copyCanaryAttached: 0,
       resumed: [],
       stillShort: [],
       errors: [],
     };
 
     console.log(
-      `[health] Starting campaign health (${dryRun ? "DRY RUN" : "LIVE"}, floor=${floor} staffable)`,
+      `[health] Starting campaign health (${dryRun ? "DRY RUN" : "LIVE"}, D58 half-client-inbox floors; generics on Goliath only)`,
     );
 
     let campaigns: SmartleadCampaign[] = [];
     let accounts: SmartleadAccountWithCampaigns[] = [];
+    let clients: SmartleadClientRecord[] = [];
+    let inventory = opts.inventory ?? null;
     try {
-      [campaigns, accounts] = await Promise.all([
-        this.smartlead.listCampaigns(),
-        this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      ]);
+      inventory = inventory ?? (await fetchInventory(this.smartlead));
+      campaigns = inventory.campaigns;
+      accounts = inventory.accounts;
+      clients = inventory.clients;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`inventory: ${message}`);
@@ -96,10 +111,10 @@ export class CampaignHealthService {
       return result;
     }
 
-    result.snapshots = this.buildSnapshots(campaigns, accounts, floor);
+    result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
 
     try {
-      result.topUp = await this.topUp.run({ dryRun });
+      result.topUp = await this.topUp.run({ dryRun, inventory: inventory ?? undefined });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`top-up: ${message}`);
@@ -108,7 +123,10 @@ export class CampaignHealthService {
     // D26: every mailbox for a client onto every ACTIVE campaign for that client.
     if (this.fanOut) {
       try {
-        const fan = await this.fanOut.run({ dryRun });
+        const fan = await this.fanOut.run({
+          dryRun,
+          inventory: inventory ?? undefined,
+        });
         result.fanOutAttached = fan.attached.length;
         result.errors.push(...fan.errors.slice(0, 20));
       } catch (error) {
@@ -117,18 +135,25 @@ export class CampaignHealthService {
       }
     }
 
-    // Re-read membership after top-up/fan-out so resume decisions use live Smartlead.
-    try {
-      accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: true,
-      });
-      campaigns = await this.smartlead.listCampaigns();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      result.errors.push(`re-inventory: ${message}`);
+    // D55: dedicated canaries send campaign copy in placement tests, off campaigns.
+    if (this.copyCanary) {
+      try {
+        const canary: CopyCanaryAttachResult = await this.copyCanary.attach({
+          dryRun,
+        });
+        result.copyCanaryAttached = canary.attached.length;
+        result.errors.push(...canary.errors.slice(0, 20));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`copy-canary: ${message}`);
+      }
     }
 
-    result.snapshots = this.buildSnapshots(campaigns, accounts, floor);
+    // Top-up and fan-out keep the shared snapshot truthful in place
+    // (recordMembership), so resume decisions below reuse it instead of
+    // re-fetching the whole account book a second time per pass.
+
+    result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
     await this.resumeStaffed(result, campaigns, dryRun);
 
     const shortAfter = result.snapshots.filter(
@@ -147,6 +172,12 @@ export class CampaignHealthService {
       shortBy: s.needed,
       status: s.status,
     }));
+    this.state.setLastStaffingShort(result.stillShort);
+    for (const row of result.stillShort) {
+      console.log(
+        `[health] short #${row.campaignId} ${row.name} — staffable ${row.staffable} short ${row.shortBy} (fill from same-client / BCP-owned inboxes, not pool generics)`,
+      );
+    }
 
     this.state.setLastHealthAt(new Date().toISOString());
     if (!dryRun) await this.state.save();
@@ -158,14 +189,14 @@ export class CampaignHealthService {
     );
     for (const s of [...activeSnaps].sort((a, b) => b.needed - a.needed)) {
       console.log(
-        `[health]   #${s.campaignId} ${s.campaignName} — staffable ${s.staffable}/${floor} (membership ${s.membership})${s.needed ? ` short ${s.needed}` : ""}${s.pendingResume ? " pending-resume" : ""}`,
+        `[health]   #${s.campaignId} ${s.campaignName} — staffable ${s.staffable}/${s.floor} (membership ${s.membership})${s.needed ? ` short ${s.needed}` : ""}${s.pendingResume ? " pending-resume" : ""}`,
       );
     }
     for (const s of result.snapshots.filter(
       (row) => row.pendingResume && row.status !== "ACTIVE",
     )) {
       console.log(
-        `[health]   #${s.campaignId} ${s.campaignName} — PAUSED pending-resume staffable ${s.staffable}/${floor}`,
+        `[health]   #${s.campaignId} ${s.campaignName} — PAUSED pending-resume staffable ${s.staffable}/${s.floor}`,
       );
     }
 
@@ -176,11 +207,18 @@ export class CampaignHealthService {
   private buildSnapshots(
     campaigns: SmartleadCampaign[],
     accounts: SmartleadAccountWithCampaigns[],
-    floor: number,
+    clients: SmartleadClientRecord[],
   ): CampaignHealthSnapshot[] {
     const membership = new Map<number, number>();
     const staffable = new Map<number, number>();
     const threshold = this.config.remediationInboxThreshold;
+    const clientInboxCounts = countClientInboxesByKey(
+      accounts,
+      campaigns,
+      clients,
+      this.config,
+      this.state,
+    );
 
     for (const account of accounts) {
       const email = accountEmail(account);
@@ -191,10 +229,12 @@ export class CampaignHealthService {
       }
       const heldRow = this.state.getHeldInbox(email);
       const resting = Boolean(this.state.getRestingInbox(email));
+      const copyCanary = this.state.isCopyCanary(email);
       if (
         !isStaffableSender(account, {
           held: Boolean(heldRow),
           resting,
+          copyCanary,
           inboxRate: heldRow?.inboxRate,
           inboxThreshold: threshold,
         })
@@ -218,12 +258,22 @@ export class CampaignHealthService {
       .map((c) => {
         const status = String(c.status ?? "").toUpperCase();
         const staff = staffable.get(c.id) ?? 0;
+        const clientName =
+          typeof c.client_id === "number"
+            ? clients.find((row) => row.id === c.client_id)?.name
+            : null;
+        const floor = staffFloorForCampaign(
+          c,
+          clientInboxCounts,
+          clientName,
+        );
         return {
           campaignId: c.id,
           campaignName: String(c.name ?? c.id),
           status,
           membership: membership.get(c.id) ?? 0,
           staffable: staff,
+          floor,
           needed: Math.max(0, floor - staff),
           pendingResume: this.state.hasPendingResume(c.id),
         };
@@ -252,7 +302,11 @@ export class CampaignHealthService {
           pending.campaignId,
       );
 
-      if (staffable < result.floor) continue;
+      if (isExcluded({ id: pending.campaignId, name }, this.config.topUpExcludeCampaigns)) {
+        this.state.clearPendingResume(pending.campaignId);
+        continue;
+      }
+      if (staffable < (snap?.floor ?? result.floor)) continue;
       if (status === "ACTIVE") {
         // Already live — drop the stale resume marker.
         this.state.clearPendingResume(pending.campaignId);
@@ -298,43 +352,31 @@ export class CampaignHealthService {
       !assigned &&
       !result.resumed.length &&
       !result.stillShort.length &&
-      !(topUp?.released.length ?? 0)
+      !(topUp?.released.length ?? 0) &&
+      !(topUp?.pulledGenerics.length ?? 0)
     ) {
       return;
     }
 
-    const byCampaign = new Map<string, number>();
-    for (const a of topUp?.assigned ?? []) {
-      const key = `#${a.campaignId} ${a.campaignName}`;
-      byCampaign.set(key, (byCampaign.get(key) ?? 0) + 1);
-    }
+    const action =
+      assigned ||
+      result.resumed.length ||
+      (topUp?.released.length ?? 0) ||
+      (topUp?.pulledGenerics.length ?? 0);
+    // D64 — "still short" waits for the end-of-day brief. Health only
+    // Slacks when it actually moved something.
+    if (!action) return;
 
-    const lines = [
-      `${result.dryRun ? "[DRY RUN] " : ""}Campaign health (floor ${result.floor} connected+inboxing):`,
-    ];
-    for (const [name, n] of byCampaign) {
-      lines.push(`- ${name}: +${n} generic(s)`);
-    }
-    for (const r of result.resumed) {
-      lines.push(
-        `- #${r.campaignId} ${r.name}: resumed (${r.staffable} staffable)`,
-      );
-    }
-    for (const u of result.stillShort) {
-      lines.push(
-        `- #${u.campaignId} ${u.name}: still short ${u.shortBy} staffable (${u.status}) — pool/reconnect could not close the gap`,
-      );
-    }
-    if (topUp?.released.length) {
-      lines.push(
-        `- released ${topUp.released.length} duplicated generic(s) from misbranded campaigns`,
-      );
-    }
+    const lines = staffingSlackLines({
+      dryRun: result.dryRun,
+      assigned: topUp?.assigned,
+      resumed: result.resumed,
+      stillShort: [],
+      pulledGenerics: topUp?.pulledGenerics.length ?? 0,
+      released: topUp?.released.length ?? 0,
+    });
 
-    try {
-      await this.slack.send(lines.join("\n"));
-    } catch (error) {
-      console.warn("[health] Slack notify failed", error);
-    }
+    // D71 — staffing movements stay in the log. Slack is not a restaff ticker.
+    console.log(`[health] slack-quiet ${lines.join(" / ")}`);
   }
 }

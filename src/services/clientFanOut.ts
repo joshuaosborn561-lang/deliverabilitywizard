@@ -4,14 +4,24 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
   campaignIdsOf,
+  clientDisplayName,
   resolveAccountClient,
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import { isRetiredSendingDomain } from "../lib/domainControl.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
+import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
+import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
+import {
+  fetchInventory,
+  recordMembership,
+  type InventorySnapshot,
+} from "./inventory.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -56,7 +66,9 @@ export class ClientFanOutService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<ClientFanOutResult> {
+  async run(
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+  ): Promise<ClientFanOutResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: ClientFanOutResult = {
       dryRun,
@@ -66,11 +78,8 @@ export class ClientFanOutService {
       errors: [],
     };
 
-    const [campaigns, accounts, clients] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
-    ]);
+    const { campaigns, accounts, clients } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
 
     const clientsById = new Map(clients.map((c) => [c.id, c]));
     const campaignClientById = new Map(
@@ -80,18 +89,7 @@ export class ClientFanOutService {
     const activeByGroup = new Map<string, SmartleadCampaign[]>();
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
-      // Exclusions (MSRS etc.) stay untouched.
-      const excluded = this.config.topUpExcludeCampaigns.some((raw) => {
-        const p = raw.trim().toLowerCase();
-        if (!p) return false;
-        return (
-          p === String(campaign.id) ||
-          String(campaign.name ?? "")
-            .toLowerCase()
-            .includes(p)
-        );
-      });
-      if (excluded) continue;
+      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
       const key = clientGroupKey(campaign);
       if (!key) continue;
       const list = activeByGroup.get(key) ?? [];
@@ -101,16 +99,46 @@ export class ClientFanOutService {
     result.groups = activeByGroup.size;
 
     for (const [groupKey, groupCampaigns] of activeByGroup) {
-      if (groupCampaigns.length < 2) continue;
+      // A single-campaign group still fans out: a client inbox attached to
+      // nothing (wiped, shell-stranded, freshly imported) must reach that
+      // one live campaign. The old `length < 2` skip left whole clients at
+      // one sender per campaign.
       const groupIds = new Set(groupCampaigns.map((c) => c.id));
+      const groupIsBcp =
+        groupKey === "bcp" ||
+        groupCampaigns.some((campaign) =>
+          isBcpCampaignName(String(campaign.name ?? "")),
+        );
       const campaignName = new Map(
         groupCampaigns.map((c) => [c.id, String(c.name ?? c.id)]),
       );
+      const approvals =
+        typeof this.state.listGenericBackfillApprovals === "function"
+          ? this.state.listGenericBackfillApprovals()
+          : {};
+      const campaignAllowsGenerics = (campaign: SmartleadCampaign): boolean => {
+        const clientName =
+          typeof campaign.client_id === "number"
+            ? clientDisplayName(
+                clientsById.get(campaign.client_id) ?? { id: campaign.client_id },
+              )
+            : "";
+        return campaignMayTakeGenerics(
+          campaign,
+          clientName,
+          this.config.pocClientNamePatterns,
+          approvals,
+        );
+      };
 
       // campaignId → pending account attachments (batched Smartlead writes)
       const pendingByCampaign = new Map<
         number,
-        Array<{ accountId: number; email: string }>
+        Array<{
+          accountId: number;
+          email: string;
+          account: SmartleadAccountWithCampaigns;
+        }>
       >();
 
       for (const account of accounts as SmartleadAccountWithCampaigns[]) {
@@ -122,6 +150,13 @@ export class ClientFanOutService {
         // without this check fan-out re-attaches it to every ACTIVE campaign
         // for the client on the next 15-minute health pass, so held senders
         // keep reappearing on live campaigns. Top-up already filters on this.
+        const domain = email.split("@")[1]?.toLowerCase();
+        if (
+          isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
+        ) {
+          result.skipped.push(`${email}: retired domain`);
+          continue;
+        }
         if (this.state.getHeldInbox(email)) {
           result.skipped.push(`${email}: held`);
           continue;
@@ -135,28 +170,42 @@ export class ClientFanOutService {
           continue;
         }
 
+        const generic = isGenericMailbox(account, email, this.config, this.state);
+
         const belongs = this.accountBelongsToGroup(
           account,
           groupKey,
           groupIds,
           campaignClientById,
           clientsById,
+          groupIsBcp,
         );
         if (!belongs) continue;
 
         const on = new Set(campaignIdsOf(account));
-        // Only fan out mailboxes that already serve at least one campaign in
-        // the group (or are BCP-owned inventory for the BCP group). Idle
-        // generics stay for top-up; idle BCP domains are handled here too.
+        // D84 — a client-owned inbox belongs on every ACTIVE campaign for its
+        // client even when it currently sits on zero of them (shell-stranded,
+        // wiped, freshly imported). The old touches-the-group gate kept whole
+        // fleets off their campaigns forever: only a mailbox already on one
+        // group campaign could spread, so a detached inbox had no way back
+        // (TechEvo and Peterson ran at 1 sender per campaign because of it).
+        // Generics stay gated: an idle pool generic is top-up supply, not
+        // fan-out supply, unless it already serves this group.
         const touchesGroup = [...on].some((id) => groupIds.has(id));
         const isBcpInventory =
-          groupKey === "bcp" && isBcpOwnedDomain(email.split("@")[1] ?? "");
-        if (!touchesGroup && !isBcpInventory) continue;
+          groupIsBcp && isBcpOwnedDomain(email.split("@")[1] ?? "");
+        if (generic && !touchesGroup && !isBcpInventory) continue;
 
         for (const campaign of groupCampaigns) {
           if (on.has(campaign.id)) continue;
+          if (generic && !campaignAllowsGenerics(campaign)) {
+            result.skipped.push(
+              `${email}: generics need POC or Slack approve on #${campaign.id}`,
+            );
+            continue;
+          }
           const list = pendingByCampaign.get(campaign.id) ?? [];
-          list.push({ accountId: account.id, email });
+          list.push({ accountId: account.id, email, account });
           pendingByCampaign.set(campaign.id, list);
         }
       }
@@ -190,6 +239,7 @@ export class ClientFanOutService {
               }
             }
             for (const row of chunk) {
+              recordMembership(row.account, campaignId);
               result.attached.push({
                 email: row.email,
                 accountId: row.accountId,
@@ -228,6 +278,7 @@ export class ClientFanOutService {
                     );
                   }
                 }
+                recordMembership(row.account, campaignId);
                 result.attached.push({
                   email: row.email,
                   accountId: row.accountId,
@@ -251,9 +302,23 @@ export class ClientFanOutService {
       }
     }
 
+    const skipReasons = new Map<string, number>();
+    for (const line of result.skipped) {
+      const reason = line.includes(": ")
+        ? line.slice(line.indexOf(": ") + 2)
+        : line;
+      skipReasons.set(reason, (skipReasons.get(reason) ?? 0) + 1);
+    }
     console.log(
-      `[fan-out] groups=${result.groups} attached=${result.attached.length} errors=${result.errors.length}`,
+      `[fan-out] groups=${result.groups} attached=${result.attached.length} skipped=${result.skipped.length} errors=${result.errors.length}`,
     );
+    if (skipReasons.size) {
+      console.log(
+        `[fan-out] skip reasons: ${[...skipReasons]
+          .map(([reason, n]) => `${reason}=${n}`)
+          .join(" ")}`,
+      );
+    }
     if (result.attached.length) {
       const byCampaign = new Map<string, number>();
       for (const row of result.attached) {
@@ -263,8 +328,12 @@ export class ClientFanOutService {
       try {
         await this.slack.send(
           [
-            `${dryRun ? "[DRY RUN] " : ""}Same-client fan-out (mailbox → every campaign for that client):`,
-            ...[...byCampaign].map(([name, n]) => `- ${name}: +${n}`),
+            `${dryRun ? "Preview — " : ""}Same-client inboxes`,
+            `If an inbox belongs to a client, it should sit on every live campaign for that client, not just one.`,
+            ...[...byCampaign].map(
+              ([name, n]) =>
+                `• ${name} — added ${n} inbox${n === 1 ? "" : "es"} that way`,
+            ),
           ].join("\n"),
         );
       } catch (error) {
@@ -281,9 +350,14 @@ export class ClientFanOutService {
     groupIds: Set<number>,
     campaignClientById: Map<number, number | null | undefined>,
     clientsById: Map<number, SmartleadClientRecord>,
+    groupIsBcp = false,
   ): boolean {
     const email = accountEmail(account)?.toLowerCase() ?? "";
     const domain = email.split("@")[1] ?? "";
+
+    // D99 — a BCP-owned domain belongs on BCP campaigns even when the
+    // mailbox has no client_id (or the campaigns are tagged id:N).
+    if (groupIsBcp && isBcpOwnedDomain(domain)) return true;
 
     if (groupKey === "bcp") {
       return (

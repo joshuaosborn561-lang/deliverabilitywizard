@@ -13,6 +13,7 @@ import {
   testIdOf,
 } from "../clients/smartdelivery.js";
 import { type EspFamily, normalizeSenderEspFamily } from "../lib/esp.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { quotaWouldBlock, remainingTestSlots } from "../lib/testQuota.js";
@@ -154,7 +155,9 @@ export class CampaignScanner {
     private readonly state: StateStore,
   ) {}
 
-  async run(options: { trigger: "cron" | "manual" } = { trigger: "cron" }): Promise<ScanResult> {
+  async run(
+    options: { trigger: "cron" | "manual" | "canon-sweep" } = { trigger: "cron" },
+  ): Promise<ScanResult> {
     const result: ScanResult = {
       scanned: 0,
       eligible: 0,
@@ -173,7 +176,9 @@ export class CampaignScanner {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(message);
-      await this.slack.send(`:x: *SmartDelivery access check failed*\n${message}`);
+      await this.slack.send(
+        `:x: *Couldn't reach placement tests*\nWill retry. If this keeps happening, Josh needs to check the Smartlead connection.\n${message}`,
+      );
       await this.finish(result);
       return result;
     }
@@ -187,7 +192,9 @@ export class CampaignScanner {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`Failed to list campaigns: ${message}`);
-      await this.slack.send(`:x: *Campaign scan failed*\n${message}`);
+      await this.slack.send(
+        `:x: *Couldn't scan campaigns for placement tests*\nWill retry.\n${message}`,
+      );
       await this.finish(result);
       return result;
     }
@@ -229,6 +236,7 @@ export class CampaignScanner {
       : statusSet;
 
     const candidates = campaigns.filter((campaign) => {
+      if (isAnyShellCampaign(campaign)) return false;
       if (!creationStatusSet.has(String(campaign.status ?? "").toUpperCase())) {
         return false;
       }
@@ -270,8 +278,26 @@ export class CampaignScanner {
     result.plans = plans;
     result.eligible = plans.length;
 
+    if (candidates.length) {
+      const uncovered = candidates
+        .map((campaign) => `#${campaign.id}`)
+        .slice(0, 12)
+        .join(" ");
+      console.log(
+        `[scan] Uncovered live campaigns=${candidates.length}${uncovered ? ` ${uncovered}` : ""}`,
+      );
+    }
+
     if (!plans.length) {
-      console.log("[scan] No eligible campaigns");
+      const live = campaigns.filter((campaign) =>
+        creationStatusSet.has(String(campaign.status ?? "").toUpperCase()),
+      );
+      const alreadyTested = live.filter((campaign) =>
+        testedCampaignIds.has(String(campaign.id)),
+      ).length;
+      console.log(
+        `[scan] No eligible campaigns live=${live.length} candidates=${candidates.length} already-tested=${alreadyTested} skipped=${result.skipped}`,
+      );
       await this.finish(result);
       if (options.trigger === "manual") {
         await this.slack.notifyRunSummary(result);

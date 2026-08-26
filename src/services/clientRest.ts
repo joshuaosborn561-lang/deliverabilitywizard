@@ -6,8 +6,10 @@ import {
   campaignIdsOf,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
-import { isBcpOwnedDomain } from "../lib/bcp.js";
+import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import {
   assignClientCohorts,
@@ -18,6 +20,12 @@ import {
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isExcluded } from "./campaignTopUp.js";
+import {
+  dropMembership,
+  fetchInventory,
+  recordMembership,
+  type InventorySnapshot,
+} from "./inventory.js";
 import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
 
 /**
@@ -36,14 +44,37 @@ export interface ClientRestResult {
   errors: string[];
 }
 
+/**
+ * D59 — leftover same-ESP scores are not unhealth. Rest restore never
+ * vetoes on an old placement reading.
+ */
 export function shouldVetoRestRestore(
-  lastSameEspInbox: number | null | undefined,
-  threshold: number,
+  _lastSameEspInbox: number | null | undefined,
+  _threshold: number,
 ): boolean {
-  if (lastSameEspInbox == null || !Number.isFinite(lastSameEspInbox)) {
-    return false;
-  }
-  return lastSameEspInbox < threshold;
+  return false;
+}
+
+/**
+ * True only when every *known* campaign this inbox is on is excluded.
+ * Unknown / leftover campaign ids do not count as excluded (D63) — those
+ * inboxes still belong in the A/B rest loop.
+ */
+export function isExcludedOnlyMembership(
+  campaignIds: number[],
+  campaignById: Map<number, { id: number; name?: string | null }>,
+  excluded: string[],
+): boolean {
+  const known = campaignIds
+    .map((id) => campaignById.get(id))
+    .filter((campaign): campaign is { id: number; name?: string | null } =>
+      Boolean(campaign),
+    )
+    .filter((campaign) => !isAnyShellCampaign(campaign));
+  return (
+    known.length > 0 &&
+    known.every((campaign) => isExcluded(campaign, excluded))
+  );
 }
 
 export function clientRestGroupKey(
@@ -73,7 +104,9 @@ export class ClientRestService {
     private readonly state: StateStore,
   ) {}
 
-  async run(opts: { dryRun?: boolean; now?: Date } = {}): Promise<ClientRestResult> {
+  async run(
+    opts: { dryRun?: boolean; now?: Date; inventory?: InventorySnapshot } = {},
+  ): Promise<ClientRestResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const now = opts.now ?? new Date();
     const result: ClientRestResult = {
@@ -92,10 +125,8 @@ export class ClientRestService {
       return result;
     }
 
-    const [campaigns, accounts] = await Promise.all([
-      this.smartlead.listCampaigns(),
-      this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-    ]);
+    const { campaigns, accounts } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
 
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
@@ -131,6 +162,13 @@ export class ClientRestService {
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
+      const domain = email.split("@")[1]?.toLowerCase();
+      if (
+        isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
+      ) {
+        result.skipped.push(`${email}: retired domain`);
+        continue;
+      }
       if (isGenericMailbox(account, email, this.config, this.state)) continue;
       const groupKey = clientRestGroupKey(account, email, campaignClientById);
       if (!groupKey) {
@@ -138,15 +176,11 @@ export class ClientRestService {
         continue;
       }
       const onCampaigns = campaignIdsOf(account);
-      const onlyExcluded =
-        onCampaigns.length > 0 &&
-        onCampaigns.every((id) => {
-          const campaign = campaignById.get(id);
-          return (
-            !campaign ||
-            isExcluded(campaign, this.config.topUpExcludeCampaigns)
-          );
-        });
+      const onlyExcluded = isExcludedOnlyMembership(
+        onCampaigns,
+        campaignById,
+        this.config.topUpExcludeCampaigns,
+      );
       if (onlyExcluded) {
         result.skipped.push(`${email}: excluded campaign`);
         continue;
@@ -203,6 +237,7 @@ export class ClientRestService {
                 account.id,
               ]);
               await sleep(150);
+              dropMembership(account, campaignId);
             }
             membership.set(campaignId, remaining - 1);
             removed.push(campaignId);
@@ -258,11 +293,13 @@ export class ClientRestService {
       const parsedId = groupKey.startsWith("id:")
         ? Number(groupKey.slice(3))
         : clientId;
-      const targets = this.restoreTargets(
-        existing?.removedFromCampaigns ?? onCampaigns,
+      // D59 — on-week (B this fortnight) sits on every ACTIVE campaign for
+      // that client, not just the campaigns it happened to be on before a hold.
+      const targets = this.onWeekTargets(
         Number.isFinite(parsedId) ? parsedId : null,
+        groupKey,
+        campaigns as SmartleadCampaign[],
         activeByClient,
-        campaignById,
       );
       const added: number[] = [];
       for (const campaignId of targets) {
@@ -273,6 +310,7 @@ export class ClientRestService {
               account.id,
             ]);
             await sleep(150);
+            recordMembership(account, campaignId);
           }
           added.push(campaignId);
         } catch (error) {
@@ -293,45 +331,36 @@ export class ClientRestService {
       `[client-rest] onWeek=${result.onWeekCohort} examined=${result.examined} benched=${result.benched.length} restored=${result.restored.length} vetoed=${result.vetoed.length} errors=${result.errors.length}`,
     );
 
+    // D71 — rest movements stay in the log. Slack does not say who is on
+    // this fortnight.
     if (result.benched.length || result.restored.length || result.vetoed.length) {
-      await this.notify(result);
+      console.log(
+        `[client-rest] slack-quiet onWeek=${result.onWeekCohort} benched=${result.benched.length} restored=${result.restored.length}`,
+      );
     }
     return result;
   }
 
-  private restoreTargets(
-    previous: number[],
+  private onWeekTargets(
     clientId: number | null,
+    groupKey: string,
+    campaigns: SmartleadCampaign[],
     activeByClient: Map<number, SmartleadCampaign[]>,
-    campaignById: Map<number, SmartleadCampaign>,
   ): number[] {
-    const fromPrevious = previous.filter((id) => {
-      const campaign = campaignById.get(id);
-      if (!campaign) return false;
-      if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
-      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) return false;
-      return true;
-    });
-    if (fromPrevious.length) return fromPrevious;
-    if (clientId == null) return [];
-    return (activeByClient.get(clientId) ?? []).map((c) => c.id);
-  }
-
-  private async notify(result: ClientRestResult): Promise<void> {
-    const lines = [
-      `${result.dryRun ? "[DRY RUN] " : ""}Client rest (per-client A/B, 2 weeks on / 2 weeks off), on-week ${result.onWeekCohort}:`,
-      `- ${result.benched.length} client inbox(es) taken off live campaigns`,
-      `- ${result.restored.length} client inbox(es) put back on`,
-    ];
-    if (result.vetoed.length) {
-      lines.push(
-        `- ${result.vetoed.length} handoff(s) vetoed (known-bad same-ESP)`,
-      );
-    }
-    try {
-      await this.slack.send(lines.join("\n"));
-    } catch (error) {
-      console.warn("[client-rest] Slack notify failed", error);
-    }
+    const fromClient =
+      clientId != null ? (activeByClient.get(clientId) ?? []) : [];
+    const fromBcp =
+      groupKey === "bcp"
+        ? campaigns.filter((campaign) => {
+            if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") {
+              return false;
+            }
+            if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) {
+              return false;
+            }
+            return isBcpCampaignName(String(campaign.name ?? ""));
+          })
+        : [];
+    return [...new Set([...fromClient, ...fromBcp].map((campaign) => campaign.id))];
   }
 }

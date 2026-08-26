@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { loadConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
+import { StateStore } from "../state/store.js";
 import { MailboxSettingsService } from "./mailboxSettings.js";
 
 describe("MailboxSettingsService", () => {
@@ -35,6 +36,7 @@ describe("MailboxSettingsService", () => {
         { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
         { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
       ],
+      listCampaigns: async () => [],
       updateEmailAccount: async () => {
         writes += 1;
       },
@@ -80,6 +82,7 @@ describe("MailboxSettingsService", () => {
       listClients: async () => [
         { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
       ],
+      listCampaigns: async () => [],
       updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
         updates.push({ id, fields });
       },
@@ -113,7 +116,55 @@ describe("MailboxSettingsService", () => {
       max_email_per_day: 30,
       time_to_wait_in_mins: 10,
     });
-    assert.match(slackMessages.join("\n"), /min-gap drift fixed/i);
+    assert.match(slackMessages.join("\n"), /Sending pace/);
+    assert.match(slackMessages.join("\n"), /10 minutes/);
+  });
+
+  it("gap enforce rewrites a foreign-client signature on a live campaign (D74)", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "aarav@pool.info",
+          from_name: "Aarav Sanchez",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Aarav Sanchez\nRoofs by Peterson",
+          client_id: 548611,
+          campaign_ids: [3815447],
+        },
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 99, name: "Peterson", logo: "Roofs by Peterson" },
+      ],
+      listCampaigns: async () => [
+        { id: 3815447, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run in gap mode");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.signatureSet, 1);
+    assert.deepEqual(updates[0]?.fields, {
+      signature: "Aarav Sanchez\nGoliath Cybersecurity",
+    });
   });
 
   it("writes 30/day, 10m gap, and plain two-line signatures when drifted", async () => {
@@ -145,6 +196,7 @@ describe("MailboxSettingsService", () => {
         { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
         { id: 446286, name: "Randy Gaines", logo: "MSRS" },
       ],
+      listCampaigns: async () => [],
       updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
         updates.push({ id, fields });
       },
@@ -175,5 +227,114 @@ describe("MailboxSettingsService", () => {
       time_to_wait_in_mins: 10,
       signature: "Katya Sanchez\nMid-South Roof Systems",
     });
+  });
+
+  it("never enables warmup on the dedicated canary fleet", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-canary-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["canary-g.info"],
+      emails: ["g1@canary-g.info"],
+      googleDomain: "canary-g.info",
+      updatedAt: new Date().toISOString(),
+    });
+    let warmupWrites = 0;
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 3,
+          from_email: "g1@canary-g.info",
+          from_name: "Gale Canary",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Gale Canary\nCanary",
+          warmup_details: null,
+        },
+      ],
+      listClients: async () => [],
+      listCampaigns: async () => [],
+      updateEmailAccount: async () => undefined,
+      configureWarmup: async () => {
+        warmupWrites += 1;
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, mode: "full" });
+    assert.equal(warmupWrites, 0);
+    assert.equal(result.warmupEnabled, 0);
+    assert.equal(result.warmupDisabled, 0);
+  });
+
+  it("turns warmup off on the canary fleet during the 15-minute gap pass (D83)", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-canary-off-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["canary-g.info"],
+      emails: ["g1@canary-g.info"],
+      googleDomain: "canary-g.info",
+      updatedAt: new Date().toISOString(),
+    });
+    const warmup: Array<{ id: number; enabled: boolean }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 3,
+          from_email: "g1@canary-g.info",
+          from_name: "Gale Canary",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Gale Canary\nCanary",
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 4,
+          from_email: "keeper@client.info",
+          from_name: "Keep Warm",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Keep Warm\nClient",
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [],
+      listCampaigns: async () => [],
+      updateEmailAccount: async () => {
+        throw new Error("gap pass should not rewrite matching volume/gap");
+      },
+      configureWarmup: async (id: number, settings: { warmup_enabled: boolean }) => {
+        warmup.push({ id, enabled: settings.warmup_enabled });
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.deepEqual(warmup, [{ id: 3, enabled: false }]);
+    assert.equal(result.warmupDisabled, 1);
+    assert.equal(result.warmupEnabled, 0);
   });
 });

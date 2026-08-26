@@ -62,10 +62,9 @@ export function classifyFailure(
     }
   }
 
-  // D41 burn gate working as designed — blacklist alone never purges a
-  // domain. Not a code bug; do not launch a remediator (was fingerprinting
-  // per-domain as unknown:remediation:…burn-checklist-no).
-  // Checked before SURBL: checklist reasons can mention "non-SURBL".
+  // D41 burn gate working as designed — blacklist alone must not purge a
+  // domain. Checked before the SURBL noise rule because checklist reasons
+  // can say "non-SURBL" and would otherwise fingerprint as noise:surbl.
   if (
     /burn checklist not ready|blacklist alone is not enough/i.test(lower)
   ) {
@@ -74,7 +73,7 @@ export function classifyFailure(
       fingerprint: fingerprintOf("noise", "burn-checklist"),
       autoRemediate: false,
       summary:
-        "Burn checklist not ready (D41: blacklist alone is not enough)",
+        "Burn checklist refused teardown (blacklist alone is not enough)",
       raw: text,
     };
   }
@@ -242,7 +241,7 @@ export function classifyFailure(
       class: "report_fanout",
       fingerprint: fingerprintOf("report_fanout", "cap"),
       autoRemediate: true,
-      summary: "Placement report fan-out / test-id selection bug",
+      summary: "Placement report picked the wrong test",
       raw: text,
     };
   }

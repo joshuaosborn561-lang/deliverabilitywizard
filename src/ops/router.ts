@@ -10,6 +10,8 @@ import type {
   ManualRotationService,
   RotationResult,
 } from "./manualRotation.js";
+import type { IsolationExecuteService } from "../services/isolationExecute.js";
+import { canDecideIsolationAction } from "../lib/isolationActors.js";
 
 export interface OpsRuntime {
   deliverability: () => Promise<{
@@ -40,6 +42,7 @@ export function createOpsRouter(opts: {
   executeRotation: (email: string) => Promise<RotationResult>;
   runtime: OpsRuntime;
   cursorAssistant?: CursorAssistantService | null;
+  isolationExecute?: IsolationExecuteService;
 }): express.Router {
   const router = express.Router();
   const loginAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -250,7 +253,7 @@ export function createOpsRouter(opts: {
           message: state.poolProvision.lastMessage,
         },
         policy: {
-          campaignSenderFloor: opts.config.minCampaignSenders,
+          campaignSenderFloor: "half that client's inboxes",
           mailboxDailyCap: opts.config.messagePerDay,
           warmupDays: opts.config.poolWarmupDays,
           freshInboxWarmupDays: opts.config.freshInboxWarmupDays,
@@ -259,6 +262,9 @@ export function createOpsRouter(opts: {
           bounceThreshold: opts.config.bounceRateThreshold,
           bounceWarnThreshold: opts.config.bounceRateWarnThreshold,
           bounceMinSample: opts.config.minBounceSample,
+          bounceAutostop: opts.config.enableCampaignBounceAutostop
+            ? `${opts.config.bounceAutostopMidPercent}% after ${opts.config.bounceAutostopMinSent} / ${opts.config.bounceAutostopHighPercent}% after ${opts.config.bounceAutostopHighVolumeSent}`
+            : "off",
           clientRest: opts.config.enableClientRest,
           genericSendRestDays: opts.config.genericSendRestDays,
           espMixMinPercent: opts.config.campaignEspMixMinPercent,
@@ -267,6 +273,7 @@ export function createOpsRouter(opts: {
         },
         pendingApprovals:
           req.opsSession!.role === "owner" ? pendingApprovals : undefined,
+        pendingIsolation: opts.state.pendingIsolationActions().length,
         recentAudit: opts.state.listOpsAudit(30),
         campaignSetupPrompt: campaignSetupPrompt(),
       });
@@ -350,6 +357,82 @@ export function createOpsRouter(opts: {
   router.get("/audit", (_req, res) => {
     res.json({ audit: opts.state.listOpsAudit(100) });
   });
+
+  router.get("/isolation", (_req, res) => {
+    const isolation = opts.state.getIsolation();
+    res.json({
+      actions: opts.state.listIsolationActions().sort((a, b) =>
+        b.requestedAt.localeCompare(a.requestedAt),
+      ),
+      domains: opts.state.listDomainHistory(),
+      runs: Object.values(isolation.runs)
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+        .slice(0, 20),
+    });
+  });
+
+  router.post(
+    "/isolation/actions/:id/:decision",
+    async (req: AuthenticatedRequest, res) => {
+      if (!opts.isolationExecute) {
+        res.status(503).json({ error: "Isolation actions are not wired yet." });
+        return;
+      }
+      const decision = String(req.params.decision);
+      if (decision !== "approve" && decision !== "deny") {
+        res.status(400).json({ error: "Decision must be approve or deny" });
+        return;
+      }
+      if (req.body?.confirm !== true) {
+        res.status(400).json({ error: "Explicit confirmation is required" });
+        return;
+      }
+      const action = opts.state.getIsolationAction(String(req.params.id));
+      if (!action || action.status !== "pending") {
+        res.status(409).json({ error: "That request is no longer waiting." });
+        return;
+      }
+      const role = req.opsSession!.role;
+      if (!canDecideIsolationAction(action.kind, role)) {
+        await audit(
+          req.opsSession!,
+          "isolation-denied",
+          "denied",
+          action.id,
+          action.kind === "swap_copy"
+            ? "Josh or Cayden can switch the word."
+            : "Only Josh can retire a domain or buy replacements.",
+        );
+        res.status(403).json({
+          error:
+            action.kind === "swap_copy"
+              ? "Josh or Cayden can switch the word."
+              : "Only Josh can retire a domain or buy replacements.",
+        });
+        return;
+      }
+      try {
+        const result = await opts.isolationExecute.decide(
+          action.id,
+          decision,
+          { name: req.opsSession!.username, role },
+        );
+        await audit(
+          req.opsSession!,
+          `isolation-${decision}`,
+          result.ok ? "success" : "error",
+          action.id,
+          result.message,
+          true,
+        );
+        res.status(result.ok ? 200 : 409).json(result);
+      } catch (error) {
+        const message = safeMessage(error);
+        await audit(req.opsSession!, "isolation-decide", "error", action.id, message);
+        res.status(500).json({ error: message });
+      }
+    },
+  );
 
   router.get(
     "/cursor-run/:agentId/:runId",

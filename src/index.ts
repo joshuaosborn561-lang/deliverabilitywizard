@@ -13,24 +13,53 @@ import {
   testIdOf,
 } from "./clients/smartdelivery.js";
 import { InboxKitClient } from "./clients/inboxkit.js";
+import { PorkbunClient } from "./clients/porkbun.js";
 import { SlackClient } from "./clients/slack.js";
+import { slackRoleOf } from "./lib/isolationActors.js";
+import {
+  parseIsolationActionValue,
+  slackSignatureValid,
+} from "./lib/slackSignature.js";
+import {
+  publicBaseUrlFromEnv,
+  slackInstallHref,
+  verifySlackActionLink,
+} from "./lib/slackActionLink.js";
+import {
+  dismissPendingSignatureAsks,
+  remindPendingIsolationActions,
+} from "./lib/isolationActions.js";
+import {
+  exchangeSlackOauth,
+  writeSlackBotTokenFile,
+} from "./lib/slackOauth.js";
 import { StateStore, type PoolProvisionPhase } from "./state/store.js";
+import {
+  fetchInventory,
+  type InventorySnapshot,
+} from "./services/inventory.js";
 import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
 import { RemediationService } from "./services/remediation.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
+import { CampaignCheckService } from "./services/campaignCheck.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
-import { CampaignBounceInvestigateService } from "./services/campaignBounceInvestigate.js";
+import { OneClientMembershipService } from "./services/oneClientMembership.js";
+import { CampaignClientTagService } from "./services/campaignClientTag.js";
+import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
+import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
 import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { ClientRestService } from "./services/clientRest.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
 import { RestBaselineRebuildService } from "./services/restBaselineRebuild.js";
+import { UnhealthyResetService } from "./services/unhealthyReset.js";
+import { ClientWipeService } from "./services/clientWipe.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
@@ -52,6 +81,21 @@ import {
 } from "./ops/manualRotation.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
+import { PodControlService } from "./services/podControls.js";
+import { IsolationRigService } from "./services/isolationRig.js";
+import { CopyIsolationService } from "./services/copyIsolation.js";
+import { IsolationBranchService } from "./services/isolationBranch.js";
+import { DeliveryWatchService } from "./services/deliveryWatch.js";
+import { IsolationBuyService } from "./services/isolationBuy.js";
+import { CopyCanaryBuyService } from "./services/copyCanaryBuy.js";
+import { IsolationExecuteService } from "./services/isolationExecute.js";
+import { DomainLifecycleService } from "./services/domainLifecycle.js";
+import { CopyCanaryService } from "./services/copyCanary.js";
+import { LeadRunoutService } from "./services/leadRunout.js";
+import { SendingInfraService } from "./services/sendingInfra.js";
+import { OldClientTeardownService } from "./services/oldClientTeardown.js";
+import { MorningActivateService } from "./services/morningActivate.js";
+import { canonBoard } from "./lib/canonCompliance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -70,7 +114,7 @@ async function main(): Promise<void> {
   const smartlead = new SmartleadClient(config.smartleadApiKey || "missing");
   // Serialise Smartlead writes across health / remediation / settings so
   // overlapping crons do not stampede into 429s (D25).
-  smartlead.setMutationQueue(new MutationQueue(250));
+  smartlead.setMutationQueue(new MutationQueue(400));
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
   );
@@ -86,8 +130,11 @@ async function main(): Promise<void> {
   const slack = new SlackClient({
     webhookUrl: config.slackWebhookUrl,
     botToken: config.slackBotToken,
+    botTokenFile: config.slackBotTokenFile,
     channelId: config.slackChannelId,
     channelLabel: config.slackChannel,
+    actionLinkSecret: config.slackSigningSecret,
+    publicBaseUrl: publicBaseUrlFromEnv(process.env),
   });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, smartlead, slack, state);
@@ -148,6 +195,7 @@ async function main(): Promise<void> {
   let reconcileInFlight: Promise<unknown> | null = null;
   let topUpInFlight: Promise<unknown> | null = null;
   let healthInFlight: Promise<unknown> | null = null;
+  let bounceAutostopInFlight: Promise<unknown> | null = null;
   let manualRotationInFlight: Promise<RotationResult> | null = null;
   let opsCheckInFlight: Promise<{
     monitor: unknown;
@@ -155,7 +203,7 @@ async function main(): Promise<void> {
     campaigns: unknown;
   }> | null = null;
 
-  const runScan = async (trigger: "cron" | "manual") => {
+  const runScan = async (trigger: "cron" | "manual" | "canon-sweep") => {
     assertRuntimeSecrets(config);
     if (scanInFlight) {
       console.log("[scan] Already running — skipping overlapping trigger");
@@ -208,6 +256,12 @@ async function main(): Promise<void> {
       );
       return { skipped: true as const, reason: "manual-rotation-active" };
     }
+    if (healthInFlight) {
+      console.log(
+        "[pool-provision] Health pass running — skipping overlapping trigger",
+      );
+      return { skipped: true as const, reason: "health-running" };
+    }
     if (poolInFlight) {
       console.log("[pool-provision] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
@@ -230,13 +284,13 @@ async function main(): Promise<void> {
     return reconnectInFlight;
   };
 
-  const runWarmupGate = async () => {
+  const runWarmupGate = async (inventory?: InventorySnapshot) => {
     assertRuntimeSecrets(config);
     if (warmupGateInFlight) {
       console.log("[warmup-gate] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
-    warmupGateInFlight = warmupGate.run().finally(() => {
+    warmupGateInFlight = warmupGate.run({ inventory }).finally(() => {
       warmupGateInFlight = null;
     });
     return warmupGateInFlight;
@@ -254,8 +308,20 @@ async function main(): Promise<void> {
     return reconcileInFlight;
   };
 
+  const leadRunout = new LeadRunoutService(config, smartlead, slack, state);
+  const sendingInfra = new SendingInfraService(
+    config,
+    smartDelivery,
+    slack,
+    state,
+  );
   const dnsAudit = new DnsAuditService(smartlead, slack, state);
-  const mailboxSettings = new MailboxSettingsService(config, smartlead, slack);
+  const mailboxSettings = new MailboxSettingsService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
   const campaignTopUp = new CampaignTopUpService(
     config,
     smartlead,
@@ -281,6 +347,50 @@ async function main(): Promise<void> {
     slack,
     state,
   );
+  const unhealthyReset = new UnhealthyResetService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
+  const wipeInboxkit = config.inboxkitApiKey
+    ? new InboxKitClient(
+        config.inboxkitApiKey,
+        undefined,
+        config.genericPoolWorkspaceId || undefined,
+      )
+    : null;
+  const clientWipe = new ClientWipeService(
+    config,
+    smartlead,
+    wipeInboxkit,
+    slack,
+    state,
+  );
+  const copyCanary = new CopyCanaryService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const oneClientMembership = new OneClientMembershipService(
+    config,
+    smartlead,
+    state,
+  );
+  const campaignClientTag = new CampaignClientTagService(config, smartlead);
+  const unpauseAfterSigQa = new UnpauseAfterSigQaService(config, smartlead);
+  const oldClientTeardown = new OldClientTeardownService(config, smartlead, state);
+  const morningActivate = new MorningActivateService(config, smartlead, state);
+  // D85 — the standalone BounceAutopauseService is retired. Autostop owns the
+  // Smartlead autopause write (write-on-drift, D84); a second blind writer
+  // was how the key starved into 429s.
+  const campaignBounceAutostop = new CampaignBounceAutostopService(
+    config,
+    smartlead,
+    state,
+  );
   const campaignHealth = new CampaignHealthService(
     config,
     smartlead,
@@ -288,6 +398,7 @@ async function main(): Promise<void> {
     state,
     campaignTopUp,
     clientFanOut,
+    copyCanary,
   );
   const heldPlacementTests = new HeldPlacementTestService(
     config,
@@ -296,18 +407,91 @@ async function main(): Promise<void> {
     slack,
     state,
   );
-  const bounceInvestigate = new CampaignBounceInvestigateService(
+  const isolationRig = new IsolationRigService(
     config,
     smartlead,
     smartDelivery,
     slack,
     state,
   );
+  const copyIsolation = new CopyIsolationService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    isolationRig,
+  );
+  const isolationBranch = new IsolationBranchService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+    copyIsolation,
+    isolationRig,
+    copyCanary,
+  );
+  const podControls = new PodControlService(
+    config,
+    smartlead,
+    smartDelivery,
+    slack,
+    state,
+  );
+  const porkbun =
+    config.porkbunApiKey && config.porkbunSecretApiKey
+      ? new PorkbunClient({
+          apiKey: config.porkbunApiKey,
+          secretApiKey: config.porkbunSecretApiKey,
+        })
+      : null;
+  const isolationBuy = new IsolationBuyService(
+    config,
+    inboxkit,
+    porkbun,
+    state,
+    spendGateway,
+  );
+  const copyCanaryBuy = new CopyCanaryBuyService(
+    config,
+    inboxkit,
+    porkbun,
+    smartlead,
+    state,
+    spendGateway,
+  );
+  const isolationExecute = new IsolationExecuteService(
+    config,
+    smartlead,
+    slack,
+    state,
+    isolationBuy,
+    copyCanaryBuy,
+  );
+  const domainLifecycle = new DomainLifecycleService(config, state, slack);
+  const deliveryWatch = new DeliveryWatchService(
+    config,
+    smartlead,
+    slack,
+    state,
+    isolationBranch,
+  );
+  void isolationRig.applyDenylist().catch((error) => {
+    console.warn("[isolation-rig] denylist at boot failed", error);
+  });
   const campaignAudit = new CampaignAuditService(
     config,
     smartlead,
     smartDelivery,
     state,
+  );
+  const campaignCheck = new CampaignCheckService(
+    config,
+    smartlead,
+    smartDelivery,
+    state,
+    slack,
   );
   const clientDayBrief = new ClientDayBriefService(
     config,
@@ -377,32 +561,80 @@ async function main(): Promise<void> {
     });
   };
 
-  const runRestGates = async () => {
-    let restBaseline: unknown = null;
-    let restResult: unknown = null;
-    let genericRest: unknown = null;
-    if (config.enableRestBaselineRebuild) {
-      try {
-        restBaseline = await restBaselineRebuild.run();
-      } catch (error) {
-        console.warn("[health] rest baseline rebuild failed", error);
+  /**
+   * D84 — watchdog. Every scheduled stage runs through here so a failure is
+   * recorded (per-stage lastOkAt / consecutiveFailures in state, surfaced on
+   * /health) instead of vanishing into a console.warn. Production ran for
+   * days with fan-out and campaign-audit dying on 429s and nothing said so.
+   */
+  const stage = async <T>(
+    name: string,
+    fn: () => Promise<T>,
+  ): Promise<T | null> => {
+    const startedAt = Date.now();
+    try {
+      const out = await fn();
+      state.recordStageOk(name, Date.now() - startedAt);
+      return out;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      state.recordStageError(name, message);
+      console.warn(`[watchdog] stage ${name} FAILED: ${message}`);
+      feedBugRemediator(`stage-${name}`, error);
+      return null;
+    }
+  };
+
+  /** Stages that have not succeeded in this long get a loud log line. */
+  const STAGE_OVERDUE_MS = 45 * 60 * 1000;
+
+  const logCanonScoreboard = (): void => {
+    const counts = new Map<string, number>();
+    for (const record of state.listCampaignChecks()) {
+      for (const finding of record.findings ?? []) {
+        const kind = finding.split(":")[0] ?? "unknown";
+        counts.set(kind, (counts.get(kind) ?? 0) + 1);
       }
     }
-    if (config.enableClientRest) {
-      try {
-        restResult = await clientRest.run();
-      } catch (error) {
-        console.warn("[health] client rest failed", error);
+    const summary = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([kind, n]) => `${kind}=${n}`)
+      .join(" ");
+    console.log(`[canon] open findings: ${summary || "none"}`);
+    const fleetDown = state.getCanaryFleetDown();
+    if (fleetDown) {
+      console.warn(
+        `[canon] canary fleet DOWN since ${fleetDown.since} (${fleetDown.fleetSize} known email(s), 0 connected) — placement measurement is blind`,
+      );
+    }
+    const now = Date.now();
+    for (const [name, row] of Object.entries(state.listStageHealth())) {
+      const lastOk = row.lastOkAt ? Date.parse(row.lastOkAt) : null;
+      if (lastOk == null || now - lastOk > STAGE_OVERDUE_MS) {
+        console.warn(
+          `[watchdog] stage ${name} OVERDUE — last ok ${row.lastOkAt ?? "never"}; failures=${row.consecutiveFailures}; lastError=${row.lastError ?? "none"}`,
+        );
       }
     }
-    if (config.enableGenericSendRest) {
-      try {
-        genericRest = await genericSendRest.run();
-      } catch (error) {
-        console.warn("[health] generic send rest failed", error);
-      }
-    }
-    return { restBaseline, clientRest: restResult, genericRest };
+  };
+
+  const runRestGates = async (inventory?: InventorySnapshot) => {
+    const unhealthy = config.enableUnhealthyReset
+      ? await stage("unhealthy-reset", () => unhealthyReset.run())
+      : null;
+    const wipe = config.enableClientWipe
+      ? await stage("client-wipe", () => clientWipe.run())
+      : null;
+    const restBaseline = config.enableRestBaselineRebuild
+      ? await stage("rest-baseline", () => restBaselineRebuild.run())
+      : null;
+    const restResult = config.enableClientRest
+      ? await stage("client-rest", () => clientRest.run({ inventory }))
+      : null;
+    const genericRest = config.enableGenericSendRest
+      ? await stage("generic-rest", () => genericSendRest.run({ inventory }))
+      : null;
+    return { unhealthyReset: unhealthy, clientWipe: wipe, restBaseline, clientRest: restResult, genericRest };
   };
 
   const runCampaignTopUp = async () => {
@@ -443,47 +675,110 @@ async function main(): Promise<void> {
       return { skipped: true as const, reason: "already-running" };
     }
     healthInFlight = (async () => {
-      const rest = await runRestGates();
+      const passStart = Date.now();
 
-      let healthResult: unknown = null;
-      try {
-        healthResult = await campaignHealth.run();
-      } catch (error) {
-        console.warn("[health] campaign health failed", error);
-        throw error;
+      // D84 — one Smartlead inventory per pass. Every stage below shares it;
+      // mutating stages keep it truthful in place (recordMembership). Before
+      // this, ~8 stages each refetched the full account book and the pass
+      // starved itself into 429s.
+      const inventory = await stage("inventory", () => fetchInventory(smartlead));
+      if (!inventory) {
+        console.warn("[health] inventory fetch failed — skipping this pass");
+        await state.save();
+        return { skipped: true as const, reason: "inventory-failed" };
+      }
+
+      await stage("old-client", () =>
+        oldClientTeardown.run({ campaigns: inventory.campaigns }),
+      );
+
+      const rest = await runRestGates(inventory);
+
+      await stage("client-tag", () => campaignClientTag.run({ inventory }));
+      const oneClientResult = await stage("one-client", () =>
+        oneClientMembership.run({ inventory }),
+      );
+      await stage("qa-unpause", () => unpauseAfterSigQa.run({ inventory }));
+
+      let campaignCheckResult: unknown = null;
+      if (config.enableCampaignCheck) {
+        campaignCheckResult = await stage("campaign-check-first", () =>
+          campaignCheck.run({ mode: "first", inventory }),
+        );
+      }
+
+      if (config.enableWarmupGate) {
+        await stage("warmup-gate", () => runWarmupGate(inventory));
+      }
+
+      await stage("morning-activate", () =>
+        morningActivate.run({ inventory }),
+      );
+
+      const healthResult = await stage("campaign-health", () =>
+        campaignHealth.run({ inventory }),
+      );
+
+      // D84 / D116 — placement coverage is fixed on the pass that finds
+      // it, not only at the daily 9:00 scan. The D84 hourly throttle
+      // left new ACTIVE campaigns uncovered for ~55 minutes after the
+      // 04:54 scan (live 2026-08-26: no_placement_test=20).
+      if (config.autoPlacementTests) {
+        const missingTest = state
+          .listCampaignChecks()
+          .some((record) =>
+            (record.findings ?? []).some((f) => f.startsWith("no_placement_test")),
+          );
+        if (missingTest) {
+          await stage("scan-backfill", () => runScan("canon-sweep"));
+        }
+      }
+
+      // D89 — serving inboxes missing a living known-good canary get a
+      // pod-control test on this pass (throttled hourly), not only at the
+      // 6-hour monitor.
+      if (config.enablePodControls) {
+        const missingKnownGood = state
+          .listCampaignChecks()
+          .some((record) =>
+            (record.findings ?? []).some((f) =>
+              f.startsWith("inbox_missing_known_good"),
+            ),
+          );
+        const lastPodAt = state.getIsolation().lastPodControlAt;
+        const podAgeMs = lastPodAt
+          ? Date.now() - Date.parse(lastPodAt)
+          : Number.POSITIVE_INFINITY;
+        if (missingKnownGood && podAgeMs >= 55 * 60 * 1000) {
+          await stage("pod-cover", () => podControls.run());
+        }
       }
 
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
-        try {
-          reconnectResult = await runReconnect();
-        } catch (error) {
-          console.warn("[health] reconnect failed", error);
-        }
+        reconnectResult = await stage("reconnect", () => runReconnect());
       }
 
-      // D30/D35: gap + daily volume every health pass. Full signature/warmup
-      // converge stays throttled so it cannot starve the 15-minute staffing loop.
+      // D30/D35/D83: gap + daily volume + canary warmup-off every health pass.
+      // Full signature/everyone-else warmup stays throttled so it cannot
+      // starve the 15-minute staffing loop.
       let mailboxGapResult: unknown = null;
       let mailboxSettingsResult: unknown = null;
       if (config.enforceMailboxSettings) {
-        try {
-          mailboxGapResult = await mailboxSettings.runGapEnforce();
-        } catch (error) {
-          console.warn("[health] mailbox gap enforce failed", error);
-        }
+        mailboxGapResult = await stage("mailbox-gap", () =>
+          mailboxSettings.runGapEnforce({ inventory }),
+        );
 
         const lastSettingsAt = state.get().lastMailboxSettingsAt;
         const settingsAgeMs = lastSettingsAt
           ? Date.now() - Date.parse(lastSettingsAt)
           : Number.POSITIVE_INFINITY;
         if (settingsAgeMs >= MAILBOX_SETTINGS_EVERY_MS) {
-          try {
-            mailboxSettingsResult = await mailboxSettings.run({ mode: "full" });
+          mailboxSettingsResult = await stage("mailbox-settings-full", () =>
+            mailboxSettings.run({ mode: "full", inventory }),
+          );
+          if (mailboxSettingsResult) {
             state.setLastMailboxSettingsAt(new Date().toISOString());
-            await state.save();
-          } catch (error) {
-            console.warn("[health] mailbox-settings failed", error);
           }
         } else {
           console.log(
@@ -492,10 +787,24 @@ async function main(): Promise<void> {
         }
       }
 
+      logCanonScoreboard();
+      const passMs = Date.now() - passStart;
+      if (passMs > 15 * 60 * 1000) {
+        console.warn(
+          `[watchdog] health pass took ${(passMs / 60000).toFixed(1)} min — longer than its 15m cadence`,
+        );
+      }
+      state.recordStageOk("health-pass", passMs);
+      await state.save();
+
       return {
+        unhealthyReset: rest.unhealthyReset,
+        clientWipe: rest.clientWipe,
         restBaseline: rest.restBaseline,
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
+        oneClient: oneClientResult,
+        campaignCheck: campaignCheckResult,
         health: healthResult,
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
@@ -505,6 +814,23 @@ async function main(): Promise<void> {
       healthInFlight = null;
     });
     return healthInFlight;
+  };
+
+  const runBounceAutostop = async () => {
+    assertRuntimeSecrets(config);
+    if (!config.enableCampaignBounceAutostop) {
+      return { skipped: true as const, reason: "disabled" };
+    }
+    if (bounceAutostopInFlight) {
+      console.log("[bounce-autostop] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    bounceAutostopInFlight = (async () => {
+      return campaignBounceAutostop.run();
+    })().finally(() => {
+      bounceAutostopInFlight = null;
+    });
+    return bounceAutostopInFlight;
   };
 
   const runManualRotation = async (email: string) => {
@@ -613,13 +939,77 @@ async function main(): Promise<void> {
       } catch (error) {
         console.warn("[campaign-audit] failed", error);
       }
-      // D29: PAUSED campaigns with high aggregate sender bounce → investigate
-      // (skip sender rotation when placement says the copy is the cause).
-      let bounceInvestigateResult: unknown = null;
-      try {
-        bounceInvestigateResult = await bounceInvestigate.run();
-      } catch (error) {
-        console.warn("[bounce-investigate] failed", error);
+      // D52 — remaining leads. Campaign audit watches senders, not this number.
+      let leadRunoutResult: unknown = null;
+      if (config.enableLeadRunout) {
+        try {
+          leadRunoutResult = await leadRunout.run();
+        } catch (error) {
+          console.warn("[lead-runout] failed", error);
+        }
+      }
+      // D53 — sending IPs from placement reports we already pull.
+      let sendingInfraResult: unknown = null;
+      if (config.enableSendingInfraCensus) {
+        try {
+          sendingInfraResult = await sendingInfra.run();
+        } catch (error) {
+          console.warn("[sending-infra] failed", error);
+        }
+      }
+      let podControlResult: unknown = null;
+      if (config.enablePodControls) {
+        try {
+          podControlResult = await podControls.run();
+          try {
+            await domainLifecycle.run();
+          } catch (error) {
+            console.warn("[domain-lifecycle] failed", error);
+          }
+          try {
+            await isolationBuy.resume();
+          } catch (error) {
+            console.warn("[isolation-buy] resume failed", error);
+          }
+          try {
+            await copyCanaryBuy.resume();
+          } catch (error) {
+            console.warn("[copy-canary-buy] resume failed", error);
+          }
+          try {
+            await runCanaryAdoption();
+          } catch (error) {
+            console.warn("[copy-canary-adopt] failed", error);
+          }
+        } catch (error) {
+          console.warn("[pod-controls] failed", error);
+        }
+      }
+      let isolationRigResult: unknown = null;
+      if (config.enableIsolationRig) {
+        try {
+          isolationRigResult = await isolationRig.run();
+        } catch (error) {
+          console.warn("[isolation-rig] failed", error);
+        }
+      }
+      let isolationBranchResult: unknown = null;
+      if (config.enableIsolationBranch) {
+        try {
+          isolationBranchResult = await isolationBranch.run();
+        } catch (error) {
+          console.warn("[isolation-branch] failed", error);
+        }
+      }
+      if (config.enableCopyIsolation) {
+        try {
+          for (const run of state.listIsolationRuns()) {
+            if (!run.teardownStarted) continue;
+            await copyIsolation.runForCampaign(run);
+          }
+        } catch (error) {
+          console.warn("[copy-isolation] poll failed", error);
+        }
       }
       return {
         monitor: monitorResult,
@@ -630,7 +1020,11 @@ async function main(): Promise<void> {
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
         campaignAudit: campaignAuditResult,
-        bounceInvestigate: bounceInvestigateResult,
+        leadRunout: leadRunoutResult,
+        sendingInfra: sendingInfraResult,
+        podControls: podControlResult,
+        isolationRig: isolationRigResult,
+        isolationBranch: isolationBranchResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -647,6 +1041,16 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronHealth)) {
     throw new Error(`Invalid CRON_HEALTH expression: ${config.cronHealth}`);
   }
+  if (!cron.validate(config.cronCampaignCheck)) {
+    throw new Error(
+      `Invalid CRON_CAMPAIGN_CHECK expression: ${config.cronCampaignCheck}`,
+    );
+  }
+  if (!cron.validate(config.cronBounceAutostop)) {
+    throw new Error(
+      `Invalid CRON_BOUNCE_AUTOSTOP expression: ${config.cronBounceAutostop}`,
+    );
+  }
   if (!cron.validate(config.cronPoolProvision)) {
     throw new Error(
       `Invalid CRON_POOL_PROVISION expression: ${config.cronPoolProvision}`,
@@ -655,6 +1059,11 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronAccountReconnect)) {
     throw new Error(
       `Invalid CRON_ACCOUNT_RECONNECT expression: ${config.cronAccountReconnect}`,
+    );
+  }
+  if (!cron.validate(config.cronDeliveryWatch)) {
+    throw new Error(
+      `Invalid CRON_DELIVERY_WATCH expression: ${config.cronDeliveryWatch}`,
     );
   }
   const sendVolumeSchedules = parseSchedules(config.cronSendVolume);
@@ -680,16 +1089,44 @@ async function main(): Promise<void> {
 
   // Client day brief (sent / bounce% / spam% + resting vs active) posts at
   // fixed local times. America/New_York so the times track EST/EDT.
-  for (const expression of sendVolumeSchedules) {
+  sendVolumeSchedules.forEach((expression, index) => {
+    const endOfDay = index === sendVolumeSchedules.length - 1;
     cron.schedule(
       expression,
       () => {
-        void clientDayBrief.run().catch((error) => {
+        void clientDayBrief.run({ endOfDay }).catch((error) => {
           console.error("[client-day] Unhandled cron error", error);
         });
       },
       { timezone: "America/New_York" },
     );
+  });
+
+  if (config.enableDeliveryWatch) {
+    cron.schedule(
+      config.cronDeliveryWatch,
+      () => {
+        void deliveryWatch.run().catch((error) => {
+          console.error("[delivery-watch] Unhandled cron error", error);
+        });
+      },
+      { timezone: "America/New_York" },
+    );
+  }
+
+  if (config.enableCampaignCheck) {
+    cron.schedule(config.cronCampaignCheck, () => {
+      if (healthInFlight) {
+        console.log(
+          "[campaign-check] Health pass running — skipping overlapping hourly sweep",
+        );
+        return;
+      }
+      void campaignCheck.run({ mode: "hourly" }).catch((error) => {
+        console.error("[campaign-check] Unhandled cron error", error);
+        feedBugRemediator("campaign-check-cron", error);
+      });
+    });
   }
 
   if (config.enableCampaignHealth) {
@@ -699,12 +1136,21 @@ async function main(): Promise<void> {
         feedBugRemediator("health-cron", error);
       });
     });
-    // Kick shortly after boot so thin/paused campaigns do not wait 15m.
-    setTimeout(() => {
-      void runHealth().catch((error) => {
-        console.error("[health] Boot kick failed", error);
+    // D122 — no boot health. D89 staggered it three minutes after
+    // listen; attach (90s) plus that kick still 429'd inventory
+    // (live 2026-08-26 D121: attach ended 06:35:31, boot health
+    // skipped 06:36:01). The 15-minute cron is soon enough.
+  }
+
+  if (config.enableCampaignBounceAutostop) {
+    cron.schedule(config.cronBounceAutostop, () => {
+      void runBounceAutostop().catch((error) => {
+        console.error("[bounce-autostop] Unhandled cron error", error);
+        feedBugRemediator("bounce-autostop-cron", error);
       });
-    }, 45_000);
+    });
+    // No boot kick — the 10-minute cron is soon enough. The first
+    // minutes after deploy belong to canary attach (D122).
   }
 
   if (config.enablePoolProvisioner) {
@@ -713,12 +1159,9 @@ async function main(): Promise<void> {
         console.error("[pool-provision] Unhandled cron error", error);
       });
     });
-    // Kick once shortly after boot so we don't wait up to 30m
-    setTimeout(() => {
-      void runPoolProvision().catch((error) => {
-        console.error("[pool-provision] Boot kick failed", error);
-      });
-    }, 15_000);
+    // D122 — no boot pool. The eight-minute kick (06:41–06:43)
+    // starved the 06:45 health cron. CRON_POOL_PROVISION every
+    // 30 minutes is enough.
   }
 
   if (config.enableAccountReconnect) {
@@ -732,19 +1175,418 @@ async function main(): Promise<void> {
       },
       { timezone: "America/New_York" },
     );
-    // Also kick shortly after boot so disconnects don't wait until 3am
-    setTimeout(() => {
-      void runReconnect().catch((error) => {
-        console.error("[reconnect] Boot kick failed", error);
-      });
-    }, 20_000);
+    // No boot kick — health already reconnects on the 15-minute pass.
   }
+
+  // D86 — a canary fleet Josh bought by hand in InboxKit is adopted, not
+  // stranded. Kick shortly after boot (a deploy restarts the app, so this
+  // runs within ~2 minutes of merging) and again on each monitor pass while
+  // the fleet is not ready. Slack only when something was actually adopted
+  // or adoption needs a human; "nothing found" stays in logs.
+  const runCanaryAdoption = async (): Promise<void> => {
+    const result = await copyCanaryBuy.adoptManualPurchase();
+    if (!result) {
+      console.log("[copy-canary-adopt] fleet is healthy — nothing to adopt");
+    } else if (result.adopted.length && result.changed) {
+      await slack.send(
+        [
+          `Found the ${result.adopted.length} unwarmed inbox${result.adopted.length === 1 ? "" : "es"} you bought and registered them as the copy-test canaries:`,
+          ...result.adopted.map((email) => `• ${email}`),
+          "Warmup is off and they will never staff a live campaign.",
+          result.ready
+            ? "They are in Smartlead — campaign copy tests start on this pass."
+            : "Smartlead is still importing them; I keep checking and the copy tests start as soon as they land.",
+        ].join("\n"),
+        undefined,
+        "action_result",
+      );
+    } else if (result.reason?.includes("too many")) {
+      await slack.send(
+        `I looked for the unwarmed inboxes you bought but ${result.reason}. Tell me the domain and I will register them.`,
+        undefined,
+        "action_result",
+      );
+    } else if (result.reason) {
+      console.log(`[copy-canary-adopt] nothing adopted: ${result.reason}`);
+    }
+
+    // D89 — attach campaign-copy tests here, not only inside health. A
+    // 429'd inventory stage used to leave a ready fleet with no tests.
+    if (state.getCopyCanaryFleet()?.emails.length) {
+      const attach = await copyCanary.attach();
+      console.log(
+        `[copy-canary] attach tests=${attach.testsEnsured} errors=${attach.errors.length} skipped=${attach.skipped.join(";") || "none"}`,
+      );
+      for (const err of attach.errors.slice(0, 12)) {
+        console.warn(`[copy-canary] ${err}`);
+      }
+      if (attach.errors.length > 12) {
+        console.warn(`[copy-canary] … and ${attach.errors.length - 12} more`);
+      }
+    }
+  };
+  if (secretsReady) {
+    setTimeout(() => {
+      void runCanaryAdoption().catch((error) => {
+        console.warn("[copy-canary-adopt] boot kick failed", error);
+      });
+    }, 90_000);
+  }
+
+  // Old Slack buttons were posted by another bot, so taps never arrived.
+  // Re-send pending asks with signed /slack/action links after deploy.
+  // D97 — leftover Add %signature% asks are dismissed, not re-posted.
+  setTimeout(() => {
+    const dropped = dismissPendingSignatureAsks(state);
+    if (dropped) {
+      console.log(
+        `[slack] Dismissed ${dropped} leftover signature ask(s) (D97)`,
+      );
+      void state.save().catch((error) => {
+        console.error("[slack] could not persist signature-ask dismiss", error);
+      });
+    }
+    void remindPendingIsolationActions({ store: state, slack })
+      .then((count) => {
+        if (count) {
+          console.log(`[slack] Re-posted ${count} pending isolation button(s)`);
+        }
+      })
+      .catch((error) => {
+        console.error("[slack] isolation remind failed", error);
+      });
+  }, 25_000);
 
   const app = express();
   // Railway terminates TLS one proxy hop in front of the app. This makes
   // req.ip useful for login throttling without trusting arbitrary forwarded
   // chains.
   app.set("trust proxy", 1);
+
+  const escapeHtml = (value: string): string =>
+    value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+  const slackActionHtml = (opts: {
+    title: string;
+    body: string;
+    form?: { id: string; decision: string; exp: string; sig: string };
+  }): string => {
+    const form = opts.form
+      ? `<form method="post" action="/slack/action">
+<input type="hidden" name="id" value="${escapeHtml(opts.form.id)}" />
+<input type="hidden" name="decision" value="${escapeHtml(opts.form.decision)}" />
+<input type="hidden" name="exp" value="${escapeHtml(opts.form.exp)}" />
+<input type="hidden" name="sig" value="${escapeHtml(opts.form.sig)}" />
+<input type="hidden" name="confirm" value="1" />
+<button type="submit">${opts.form.decision === "approve" ? "Confirm" : "Confirm deny"}</button>
+</form>`
+      : "";
+    return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${escapeHtml(opts.title)}</title>
+<style>
+body{font-family:ui-sans-serif,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:2rem;}
+main{max-width:36rem;margin:0 auto;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:1.5rem;}
+h1{font-size:1.25rem;margin:0 0 .75rem;}
+p{line-height:1.5;color:#cbd5e1;white-space:pre-wrap;}
+button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem 1.1rem;font-weight:700;cursor:pointer;}
+</style></head><body><main><h1>${escapeHtml(opts.title)}</h1><p>${escapeHtml(opts.body)}</p>${form}</main></body></html>`;
+  };
+
+  const isolationKindTitle = (kind: string): string => {
+    if (kind === "buy_canary_fleet") return "Buy canary fleet";
+    if (kind === "buy_domains") return "Buy replacements";
+    if (kind === "retire_domain") return "Retire this domain";
+    if (kind === "swap_copy") return "Make the changes";
+    if (kind === "generic_backfill") return "Allow generics";
+    if (kind === "add_signature_tag") return "Add %signature%";
+    return kind;
+  };
+
+  const readSignedSlackAction = (src: Record<string, unknown>) => {
+    const id = typeof src.id === "string" ? src.id : "";
+    const decision = typeof src.decision === "string" ? src.decision : "";
+    const exp = typeof src.exp === "string" ? src.exp : "";
+    const sig = typeof src.sig === "string" ? src.sig : "";
+    const verified = verifySlackActionLink({
+      secret: config.slackSigningSecret,
+      id,
+      decision,
+      exp,
+      sig,
+    });
+    if (!verified.ok) return { ok: false as const, reason: verified.reason };
+    return {
+      ok: true as const,
+      id,
+      decision: verified.decision,
+      exp,
+      sig,
+    };
+  };
+
+  app.get("/slack/install", (_req, res) => {
+    if (!config.slackClientId) {
+      res
+        .status(503)
+        .type("html")
+        .send(
+          slackActionHtml({
+            title: "Slack install not configured",
+            body: "SLACK_CLIENT_ID is missing. Add the Wizard Slack app credentials and retry.",
+          }),
+        );
+      return;
+    }
+    res.redirect(
+      302,
+      slackInstallHref({
+        clientId: config.slackClientId,
+        redirectUri: config.slackOauthRedirectUri,
+      }),
+    );
+  });
+
+  app.get("/slack/action", (req, res) => {
+    const parsed = readSignedSlackAction(req.query as Record<string, unknown>);
+    if (!parsed.ok) {
+      res
+        .status(400)
+        .type("html")
+        .send(
+          slackActionHtml({
+            title: "Link expired or invalid",
+            body: `${parsed.reason} Ask the Wizard to send a fresh Slack message, or use /ops Isolation.`,
+          }),
+        );
+      return;
+    }
+    const pending = state.getIsolationAction(parsed.id);
+    const title = isolationKindTitle(pending?.kind ?? "request");
+    if (!pending || pending.status !== "pending") {
+      res.type("html").send(
+        slackActionHtml({
+          title,
+          body: pending
+            ? `This request is already ${pending.status}.`
+            : "That request is no longer pending.",
+        }),
+      );
+      return;
+    }
+    const spendNote =
+      pending.kind === "buy_canary_fleet" || pending.kind === "buy_domains"
+        ? " Confirming spends real money."
+        : "";
+    const verb =
+      parsed.decision === "approve"
+        ? `This will ${title.toLowerCase()} now.${spendNote}`
+        : "This will deny the request. Nothing will be bought or retired.";
+    res.type("html").send(
+      slackActionHtml({
+        title: pending.title || title,
+        body: [pending.proof, verb].filter(Boolean).join("\n\n"),
+        form: parsed,
+      }),
+    );
+  });
+
+  app.post(
+    "/slack/action",
+    express.urlencoded({ extended: false }),
+    async (req, res) => {
+      const parsed = readSignedSlackAction(
+        (req.body ?? {}) as Record<string, unknown>,
+      );
+      if (!parsed.ok || req.body?.confirm !== "1") {
+        res
+          .status(400)
+          .type("html")
+          .send(
+            slackActionHtml({
+              title: "Link expired or invalid",
+              body: `${!parsed.ok ? parsed.reason : "Confirm the form first."} Ask the Wizard to send a fresh Slack message, or use /ops Isolation.`,
+            }),
+          );
+        return;
+      }
+      try {
+        const result = await isolationExecute.decide(
+          parsed.id,
+          parsed.decision,
+          { name: "Josh", role: "owner" },
+        );
+        res
+          .status(result.ok ? 200 : 409)
+          .type("html")
+          .send(
+            slackActionHtml({
+              title: result.ok ? "Done" : "Could not complete",
+              body: result.message,
+            }),
+          );
+      } catch (error) {
+        res
+          .status(500)
+          .type("html")
+          .send(
+            slackActionHtml({
+              title: "Failed",
+              body: error instanceof Error ? error.message : String(error),
+            }),
+          );
+      }
+    },
+  );
+
+  app.post(
+    "/slack/interactions",
+    express.raw({ type: "application/x-www-form-urlencoded" }),
+    async (req, res) => {
+      try {
+        const rawBody = Buffer.isBuffer(req.body)
+          ? req.body.toString("utf8")
+          : String(req.body ?? "");
+        if (
+          !slackSignatureValid({
+            signingSecret: config.slackSigningSecret,
+            timestamp: String(req.header("x-slack-request-timestamp") ?? ""),
+            rawBody,
+            signature: String(req.header("x-slack-signature") ?? ""),
+          })
+        ) {
+          console.warn("[slack-interactions] bad signature");
+          res.status(401).json({ error: "Bad Slack signature" });
+          return;
+        }
+        const payloadRaw = new URLSearchParams(rawBody).get("payload");
+        if (!payloadRaw) {
+          res.status(400).json({ error: "Missing payload" });
+          return;
+        }
+        const payload = JSON.parse(payloadRaw) as {
+          user?: { id?: string; name?: string; username?: string };
+          actions?: Array<{ value?: string }>;
+          response_url?: string;
+        };
+        const parsed = parseIsolationActionValue(
+          payload.actions?.[0]?.value ?? "",
+        );
+        if (!parsed) {
+          res.status(200).json({ text: "That button is not one I handle." });
+          return;
+        }
+        const role = slackRoleOf(
+          payload.user?.id,
+          config.slackJoshUserIds,
+          config.slackCaydenUserIds,
+        );
+        const name =
+          role === "owner"
+            ? "Josh"
+            : role === "operator"
+              ? "Cayden"
+              : payload.user?.name || payload.user?.username || "unknown";
+        console.log(
+          `[slack-interactions] kind=${parsed.kind} decision=${parsed.decision} role=${role}`,
+        );
+        if (
+          (role === "unknown" || role === "operator") &&
+          (parsed.kind === "buy_domains" ||
+            parsed.kind === "buy_canary_fleet" ||
+            parsed.kind === "retire_domain")
+        ) {
+          res.status(200).json({
+            text:
+              role === "operator"
+                ? "Only Josh can approve a purchase or a retire. The confirm page is the same rule."
+                : "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
+          });
+          return;
+        }
+        // Slack requires an answer in 3s. Buying domains takes longer, so
+        // ack now and post the result to response_url / the channel.
+        res.status(200).json({
+          text: "Working on it — I will post here when it is done.",
+        });
+        void isolationExecute
+          .decide(parsed.id, parsed.decision, { name, role })
+          .then(async (result) => {
+            const text = result.message;
+            if (payload.response_url) {
+              await fetch(payload.response_url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text }),
+              });
+              return;
+            }
+            await slack.notifyActionResult(text);
+          })
+          .catch((error) => {
+            console.error("[slack-interactions] decide failed", error);
+          });
+      } catch (error) {
+        console.error("[slack-interactions]", error);
+        if (!res.headersSent) {
+          res.status(200).json({
+            text: error instanceof Error ? error.message : "That tap failed.",
+          });
+        }
+      }
+    },
+  );
+  app.get("/slack/oauth", async (req, res) => {
+    const error = String(req.query.error ?? "");
+    if (error) {
+      res.status(400).send(`Slack install was cancelled (${error}).`);
+      return;
+    }
+    const code = String(req.query.code ?? "").trim();
+    if (!code) {
+      res.status(400).send("Missing Slack install code.");
+      return;
+    }
+    if (!config.slackClientId || !config.slackClientSecret) {
+      res.status(503).send("Slack app credentials are not on this service yet.");
+      return;
+    }
+    try {
+      const installed = await exchangeSlackOauth({
+        clientId: config.slackClientId,
+        clientSecret: config.slackClientSecret,
+        code,
+        redirectUri: config.slackOauthRedirectUri,
+      });
+      await writeSlackBotTokenFile(config.slackBotTokenFile, installed.botToken);
+      try {
+        await slack.send(
+          "Deliverability Wizard is now its own Slack app. Approve / retire / buy buttons on new messages will work here. Invite *Deliverability Wizard* to this channel if you do not see this note.",
+        );
+      } catch (postError) {
+        console.warn("[slack-oauth] installed but could not post yet", postError);
+      }
+      res
+        .status(200)
+        .type("html")
+        .send(
+          "<p>Installed. You can close this tab. Check the deliverability channel for a confirmation.</p>",
+        );
+    } catch (installError) {
+      console.error("[slack-oauth]", installError);
+      res
+        .status(400)
+        .send(
+          installError instanceof Error
+            ? installError.message
+            : "Slack install failed.",
+        );
+    }
+  });
   app.use(express.json({ limit: "100kb" }));
 
   app.use("/ops", (_req, res, next) => {
@@ -764,6 +1606,7 @@ async function main(): Promise<void> {
       rotation: manualRotation,
       executeRotation: runManualRotation,
       cursorAssistant,
+      isolationExecute,
       runtime: {
         deliverability: runOpsDeliverability,
         dns: () => dnsAudit.run({ alert: false }),
@@ -807,9 +1650,44 @@ async function main(): Promise<void> {
 
   app.get("/health", (_req, res) => {
     const s = state.get();
+    // D84 — the canon scoreboard: open findings by kind (living campaigns
+    // only) and per-stage watchdog, so "is the sweep actually running" is a
+    // curl instead of a Smartlead eyeball.
+    const canonFindings: Record<string, number> = {};
+    const canonFindingSamples: Record<string, string[]> = {};
+    for (const record of Object.values(s.campaignChecks ?? {})) {
+      for (const finding of record.findings ?? []) {
+        const kind = finding.split(":")[0] ?? "unknown";
+        canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
+        const samples = canonFindingSamples[kind] ?? [];
+        if (samples.length < 5) {
+          samples.push(`#${record.campaignId} ${record.name}`);
+          canonFindingSamples[kind] = samples;
+        }
+      }
+    }
+    const board = canonBoard(Object.values(s.campaignChecks ?? {}));
+    const stages: Record<
+      string,
+      { lastOkAt: string | null; consecutiveFailures: number; lastError: string | null }
+    > = {};
+    for (const [name, row] of Object.entries(s.stageHealth ?? {})) {
+      stages[name] = {
+        lastOkAt: row.lastOkAt,
+        consecutiveFailures: row.consecutiveFailures,
+        lastError: row.consecutiveFailures > 0 ? row.lastError : null,
+      };
+    }
     res.json({
       ok: true,
       service: "deliverabilitywizard",
+      canonFindings,
+      canonFindingSamples,
+      canonCompliant: board.compliant,
+      canonYes: board.campaigns.filter((row) => row.yes).length,
+      canonNo: board.campaigns.filter((row) => !row.yes).length,
+      canaryFleetDown: s.canaryFleetDown ?? null,
+      stages,
       secretsConfigured: secretsReady,
       remediationEnabled: config.enableRemediation,
       inboxkitConfigured: Boolean(config.inboxkitApiKey),
@@ -823,6 +1701,11 @@ async function main(): Promise<void> {
       cronMonitor: config.cronMonitor,
       enableCampaignHealth: config.enableCampaignHealth,
       cronHealth: config.cronHealth,
+      enableCampaignCheck: config.enableCampaignCheck,
+      cronCampaignCheck: config.cronCampaignCheck,
+      campaignCheckCount: Object.keys(s.campaignChecks ?? {}).length,
+      enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
+      cronBounceAutostop: config.cronBounceAutostop,
       pendingResumes: Object.keys(s.pendingResumes ?? {}).length,
       lastHealthAt: s.lastHealthAt,
       totalTestQuota: config.totalTestQuota,
@@ -864,7 +1747,11 @@ async function main(): Promise<void> {
         cronScan: config.cronScan,
         cronMonitor: config.cronMonitor,
         cronHealth: config.cronHealth,
+        cronCampaignCheck: config.cronCampaignCheck,
+        enableCampaignCheck: config.enableCampaignCheck,
         enableCampaignHealth: config.enableCampaignHealth,
+        enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
+        cronBounceAutostop: config.cronBounceAutostop,
         enableHeldPlacementTests: config.enableHeldPlacementTests,
         enableClientRest: config.enableClientRest,
         enableRestPlacementTests: config.enableRestPlacementTests,
@@ -890,6 +1777,11 @@ async function main(): Promise<void> {
         enablePoolProvisioner: config.enablePoolProvisioner,
         enableAccountReconnect: config.enableAccountReconnect,
         enableWarmupGate: config.enableWarmupGate,
+        enableLegacyMailboxPulls: config.enableLegacyMailboxPulls,
+        enableCopyCanary: config.enableCopyCanary,
+        copyCanaryPerCampaign: config.copyCanaryPerCampaign,
+        enableLeadRunout: config.enableLeadRunout,
+        enableSendingInfraCensus: config.enableSendingInfraCensus,
         campaignMinWarmupDays: config.campaignMinWarmupDays,
         poolWarmupDays: config.poolWarmupDays,
         clientDomainBudgetUsd: config.clientDomainBudgetUsd,
@@ -944,6 +1836,38 @@ async function main(): Promise<void> {
         res.json({ ok: true, mode: "campaign-audit", result });
         return;
       }
+      if (mode === "campaign-check" || mode === "new-campaign-check") {
+        assertRuntimeSecrets(config);
+        const result = await campaignCheck.run({ mode: "all" });
+        res.json({ ok: true, mode: "campaign-check", result });
+        return;
+      }
+      if (mode === "one-client" || mode === "one-client-membership") {
+        assertRuntimeSecrets(config);
+        const result = await oneClientMembership.run();
+        res.json({ ok: true, mode: "one-client", result });
+        return;
+      }
+      if (mode === "client-tag" || mode === "campaign-client-tag") {
+        assertRuntimeSecrets(config);
+        const result = await campaignClientTag.run();
+        res.json({ ok: true, mode: "client-tag", result });
+        return;
+      }
+      if (mode === "qa-unpause" || mode === "unpause-after-sig-qa") {
+        assertRuntimeSecrets(config);
+        const result = await unpauseAfterSigQa.run();
+        res.json({ ok: true, mode: "qa-unpause", result });
+        return;
+      }
+      if (mode === "bounce-autostop" || mode === "bounce-autopause" || mode === "bounce-threshold") {
+        assertRuntimeSecrets(config);
+        // D85 — one bounce writer. The old aliases run the same autostop
+        // (its converge already keeps Smartlead autopause off, D80/D84).
+        const result = await runBounceAutostop();
+        res.json({ ok: true, mode: "bounce-autostop", result });
+        return;
+      }
       if (mode === "fan-out" || mode === "client-fanout") {
         assertRuntimeSecrets(config);
         if (healthInFlight || topUpInFlight || manualRotationInFlight) {
@@ -972,6 +1896,22 @@ async function main(): Promise<void> {
         return;
       }
       if (
+        mode === "unhealthy-reset" ||
+        mode === "clear-holds" ||
+        mode === "start-clean"
+      ) {
+        assertRuntimeSecrets(config);
+        const result = await unhealthyReset.run();
+        res.json({ ok: true, mode: "unhealthy-reset", result });
+        return;
+      }
+      if (mode === "client-wipe" || mode === "vasco-trim") {
+        assertRuntimeSecrets(config);
+        const result = await clientWipe.run();
+        res.json({ ok: true, mode: "client-wipe", result });
+        return;
+      }
+      if (
         mode === "rest-baseline" ||
         mode === "hold-rebuild" ||
         mode === "rest-baseline-rebuild"
@@ -989,17 +1929,54 @@ async function main(): Promise<void> {
       }
       if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
         assertRuntimeSecrets(config);
-        const result = await clientDayBrief.run();
+        const result = await clientDayBrief.run({ endOfDay: true });
         res.json({ ok: true, mode: "client-day", result });
         return;
       }
-      if (
-        mode === "bounce-investigate" ||
-        mode === "campaign-bounce-investigate"
-      ) {
+      if (mode === "pod-controls" || mode === "pod-control") {
         assertRuntimeSecrets(config);
-        const result = await bounceInvestigate.run();
-        res.json({ ok: true, mode: "bounce-investigate", result });
+        const result = await podControls.run();
+        res.json({ ok: true, mode: "pod-controls", result });
+        return;
+      }
+      if (mode === "isolation-rig" || mode === "rig") {
+        assertRuntimeSecrets(config);
+        const result = await isolationRig.run({
+          force:
+            String(req.query.force ?? req.body?.force ?? "") === "1" ||
+            String(req.query.force ?? req.body?.force ?? "").toLowerCase() ===
+              "true",
+        });
+        res.json({ ok: true, mode: "isolation-rig", result });
+        return;
+      }
+      if (mode === "isolation" || mode === "isolation-branch") {
+        assertRuntimeSecrets(config);
+        const campaignId = Number(
+          req.query.campaignId ?? req.body?.campaignId ?? "",
+        );
+        const result = Number.isFinite(campaignId) && campaignId > 0
+          ? {
+              run: await isolationBranch.evaluate(campaignId),
+            }
+          : await isolationBranch.run();
+        res.json({ ok: true, mode: "isolation", result });
+        return;
+      }
+      if (mode === "isolation-remind" || mode === "remind-isolation") {
+        const count = await remindPendingIsolationActions({ store: state, slack });
+        res.json({ ok: true, mode: "isolation-remind", result: { count } });
+        return;
+      }
+      if (mode === "copy-canary-resume" || mode === "canary-resume") {
+        const finished = await copyCanaryBuy.resume();
+        res.json({ ok: true, mode: "copy-canary-resume", result: { finished } });
+        return;
+      }
+      if (mode === "delivery-watch" || mode === "copy-watch") {
+        assertRuntimeSecrets(config);
+        const result = await deliveryWatch.run();
+        res.json({ ok: true, mode: "delivery-watch", result });
         return;
       }
       if (mode === "remediate") {
@@ -1271,24 +2248,26 @@ async function main(): Promise<void> {
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
     console.log(`[boot] Scan cron: ${config.cronScan}`);
-    // Read-only campaign audit at boot; staffing mutations are owned by the
-    // health cron (boot kick + CRON_HEALTH) so we do not double-write.
+    // D122 — no boot campaign-audit. It lists campaigns + accounts +
+    // tests + sequences and raced attach (06:32:49–06:36:41 vs attach
+    // 06:34–06:35). Read-only audit stays on the 6-hour monitor.
     if (secretsReady) {
-      void (async () => {
-        try {
-          await manualRotation.recoverStaleReservations();
-          await campaignAudit.run(config.minCampaignSenders);
-        } catch (error) {
-          console.warn("[boot] campaign audit failed", error);
-        }
-      })();
+      void manualRotation.recoverStaleReservations().catch((error) => {
+        console.warn("[boot] stale reservation recover failed", error);
+      });
     }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
     );
     console.log(`[boot] Monitor cron: ${config.cronMonitor} (measure/remediate/DNS)`);
     console.log(
-      `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; floor ${config.minCampaignSenders} connected+inboxing; auto-resume protective pauses)` : "disabled"}`,
+      `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; D58 half-client-inbox floor; auto-resume protective pauses)` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Campaign bounce autostop (D90): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; pause over ${config.bouncePauseRatePercent}% after ${config.bouncePauseMinLeads} leads or >${config.bounceBurstCount} bounces/10m; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%)` : "disabled"}`,
     );
     console.log(
       `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
@@ -1300,7 +2279,7 @@ async function main(): Promise<void> {
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
-      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (floor ${config.minCampaignSenders} staffable${config.topUpExcludeCampaigns.length ? `, excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (half-client-inbox floor; generics on POC ${config.pocClientNamePatterns.join("/") || "nobody"} or Slack approve${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
     );
     console.log(
       `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
@@ -1312,7 +2291,13 @@ async function main(): Promise<void> {
       `[boot] Account reconnect: ${config.enableAccountReconnect ? `ENABLED (${config.cronAccountReconnect} America/New_York)` : "disabled"}`,
     );
     console.log(
-      `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d + HOLD strip, runs with monitor)` : "disabled"}`,
+      `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d from InboxKit; canary/pre-warmed exempt; every health pass)` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Live mailbox pull: ${config.enableLegacyMailboxPulls ? "LEGACY (placement/bounce/HOLD)" : "KILL-ONLY (domain retire + backfill)"}`,
+    );
+    console.log(
+      `[boot] Copy canaries: ${config.enableCopyCanary ? "ENABLED (dedicated 2-domain fleet, warmup off, off-campaign copy tests)" : "disabled"}`,
     );
     console.log(`[boot] InboxKit: ${inboxkit ? "configured" : "not configured"}`);
     console.log(
@@ -1323,6 +2308,18 @@ async function main(): Promise<void> {
     );
     console.log(
       `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
+    );
+    console.log(
+      "[boot] Slack (D71): burned-domain replace, isolated-word replace, EOD sends/spam only",
+    );
+    console.log(
+      `[boot] Lead runout: ${config.enableLeadRunout ? "ENABLED (half / three-quarters / done, logs only, no import)" : "disabled"}`,
+    );
+    console.log(
+      `[boot] Sending infra census: ${config.enableSendingInfraCensus ? "ENABLED (placement-report IPs, logs only)" : "disabled"}`,
+    );
+    console.log(
+      `[boot] Client wipe (D61): ${config.enableClientWipe ? `ENABLED (Vasco keep ${config.vascoKeepCount}; wipe ${config.wipeClientPatterns.join("/") || "none"})` : "disabled"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

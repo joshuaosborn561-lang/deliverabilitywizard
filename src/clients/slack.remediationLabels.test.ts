@@ -80,11 +80,11 @@ describe("remediation / placement Slack is client-level (D39)", () => {
       ],
     });
 
-    assert.match(sent[0]!, /1 sender under 80%/);
+    assert.match(sent[0]!, /1 inbox on this test landed below 80%/);
     assert.doesNotMatch(sent[0]!, /weak@x\.com/);
   });
 
-  it("client day brief shows sent / bounce / spam and held counts", async () => {
+  it("midday client day brief does not Slack (D71)", async () => {
     const { client, sent } = capture();
     await client.notifyClientDayBrief({
       date: "2026-08-17",
@@ -103,11 +103,70 @@ describe("remediation / placement Slack is client-level (D39)", () => {
       ],
       errors: [],
     });
+    assert.equal(sent.length, 0);
+  });
 
-    assert.match(sent[0]!, /Client day — 2026-08-17/);
-    assert.match(sent[0]!, /Goliath/);
-    assert.match(sent[0]!, /2\.5% bounce/);
-    assert.match(sent[0]!, /18\.0% spam/);
-    assert.match(sent[0]!, /66 on \/ 20 off \/ 12 generic-spare \/ 34 held/);
+  it("end-of-day brief is client sends and spam only (D71)", async () => {
+    const { client, sent } = capture();
+    await client.notifyClientDayBrief({
+      date: "2026-08-24",
+      totalSent: 10,
+      rows: [
+        {
+          clientName: "BCP",
+          sent: 10,
+          bouncePercent: 1,
+          spamPercent: 0,
+          activeInboxes: 22,
+          heldInboxes: 0,
+          restingInboxes: 22,
+          genericSpare: 0,
+        },
+      ],
+      errors: [],
+      endOfDay: true,
+      staffingShorts: [
+        {
+          name: "BCP PE Firms (No Team)",
+          staffable: 22,
+          shortBy: 22,
+          status: "ACTIVE",
+        },
+      ],
+    });
+    assert.match(sent[0]!, /Client day — 2026-08-24/);
+    assert.match(sent[0]!, /BCP/);
+    assert.match(sent[0]!, /10 sent · 0\.0% spam/);
+    assert.doesNotMatch(sent[0]!, /Staffing \(end of day\)/);
+    assert.doesNotMatch(sent[0]!, /on \/ .* off/);
+    assert.doesNotMatch(sent[0]!, /not enough warmed spares/i);
+  });
+
+  it("D89: EOD brief names draft campaigns that already have leads", async () => {
+    const { client, sent } = capture();
+    await client.notifyClientDayBrief({
+      date: "2026-08-26",
+      totalSent: 10,
+      rows: [
+        {
+          clientName: "BCP",
+          sent: 10,
+          bouncePercent: 1,
+          spamPercent: 0,
+          activeInboxes: 22,
+          heldInboxes: 0,
+        },
+      ],
+      errors: [],
+      endOfDay: true,
+      loadedDrafts: [
+        { id: 99, name: "Parlay3 Launch", remaining: 2400 },
+      ],
+    });
+    assert.match(sent[0]!, /Leads loaded, not sending \(1\)/);
+    assert.match(sent[0]!, /Parlay3 Launch \(#99\)/);
+    assert.match(sent[0]!, /2,400 leads sitting in draft/);
+    assert.doesNotMatch(sent[0]!, /staffable/i);
+    assert.doesNotMatch(sent[0]!, /DRAFTED/);
   });
 });

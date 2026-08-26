@@ -76,7 +76,8 @@ describe("BugRemediator", () => {
     assert.equal(second.launched, true);
     assert.equal(createCalls, 1);
     assert.equal(slackMessages.length, 1);
-    assert.match(slackMessages[0]!, /Auto bug remediator/);
+    assert.match(slackMessages[0]!, /same error/);
+    assert.doesNotMatch(slackMessages[0]!, /Fingerprint/);
 
     const third = await remediator.observe(
       "scan",

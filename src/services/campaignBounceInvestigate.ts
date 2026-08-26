@@ -17,6 +17,7 @@ import {
   parseSenderBounceStats,
   shouldRotateForBounces,
 } from "../lib/bounceRate.js";
+import { isExcluded } from "./campaignTopUp.js";
 import {
   classifyCopySignal,
   shouldDeferSenderRotationForCopy,
@@ -137,6 +138,7 @@ export class CampaignBounceInvestigateService {
     result.scannedPaused = paused.length;
 
     for (const campaign of paused) {
+      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
       // Our own last-account protective pauses are resumed by health staffing.
       const pending = this.state.getPendingResume(campaign.id);
       if (pending?.reason?.includes("last_account")) continue;
@@ -207,6 +209,11 @@ export class CampaignBounceInvestigateService {
       };
 
       if (copyDefer) {
+        this.state.markCopySuspect({
+          campaignId: campaign.id,
+          campaignName: finding.campaignName,
+          at: new Date().toISOString(),
+        });
         result.findings.push(finding);
         continue;
       }
@@ -250,20 +257,15 @@ export class CampaignBounceInvestigateService {
       result.findings.push(finding);
     }
 
-    if (result.findings.length) {
+    const slackFindings = result.findings.filter((f) => !f.copyDefer);
+    if (slackFindings.length) {
       const lines = [
-        `${dryRun ? "[DRY RUN] " : ""}Paused-campaign bounce investigation (>${threshold}%):`,
+        `${dryRun ? "Preview — " : ""}Paused campaign — high bounce (over ${threshold}%):`,
       ];
-      for (const f of result.findings) {
-        if (f.copyDefer) {
-          lines.push(
-            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — copy/offer likely, not rotating senders. ${f.copyReason ?? "Test/fix the sequence copy."}`,
-          );
-        } else {
-          lines.push(
-            `- #${f.campaignId} ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — rotated ${f.rotated.length} sender(s). Not auto-resumed (manual pause stays paused).`,
-          );
-        }
+      for (const f of slackFindings) {
+        lines.push(
+          `• ${f.campaignName}: ${f.aggregateBouncePercent.toFixed(1)}% bounce — swapped out ${f.rotated.length} worst inbox${f.rotated.length === 1 ? "" : "es"}. Campaign stays paused until someone turns it back on.`,
+        );
       }
       try {
         await this.slack.send(lines.join("\n"));

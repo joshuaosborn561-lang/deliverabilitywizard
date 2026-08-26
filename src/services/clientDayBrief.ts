@@ -15,9 +15,13 @@ import {
 } from "../clients/smartdelivery.js";
 import { sleep } from "../lib/http.js";
 import { isClientInbox } from "../lib/clientInbox.js";
+import { parseCampaignLeadStats } from "../lib/leadRunout.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { businessDate } from "./sendVolume.js";
+import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { overallSplit } from "./resultMonitor.js";
 import type { StateStore } from "../state/store.js";
+import type { SmartleadCampaign } from "../types/index.js";
 
 /**
  * Per-client day brief for Slack (D39): sent / bounce% / spam%, plus how many
@@ -42,11 +46,23 @@ export interface ClientDayRow {
   genericSpare: number;
 }
 
+export interface LoadedDraftRow {
+  id: number;
+  name: string;
+  remaining: number;
+}
+
 export interface ClientDayBriefResult {
   date: string;
   totalSent: number;
   rows: ClientDayRow[];
   errors: string[];
+  loadedDrafts?: LoadedDraftRow[];
+}
+
+function isDraftCampaignStatus(status: unknown): boolean {
+  const s = String(status ?? "").toUpperCase();
+  return s === "DRAFT" || s === "DRAFTED";
 }
 
 function toCount(value: unknown): number {
@@ -63,7 +79,9 @@ export class ClientDayBriefService {
     private readonly state: StateStore,
   ) {}
 
-  async run(options: { alert?: boolean } = {}): Promise<ClientDayBriefResult> {
+  async run(
+    options: { alert?: boolean; endOfDay?: boolean } = {},
+  ): Promise<ClientDayBriefResult> {
     const date = businessDate();
     const errors: string[] = [];
 
@@ -244,9 +262,82 @@ export class ClientDayBriefService {
       `[client-day] ${date}: ${result.totalSent} sent across ${rows.length} client(s)${errors.length ? `; ${errors.length} error(s)` : ""}`,
     );
 
+    // D85 — untagged campaigns block signature QA and the tagger cannot
+    // guess (D77). The EOD brief is their daily human surface.
+    const untagged = campaigns
+      .filter(
+        (campaign) =>
+          typeof campaign.client_id !== "number" &&
+          !isAnyShellCampaign(campaign) &&
+          !isTerminalCampaignStatus(campaign.status),
+      )
+      .map((campaign) => ({
+        id: campaign.id,
+        name: String(campaign.name ?? campaign.id),
+      }));
+
+    const loadedDrafts = options.endOfDay
+      ? await this.collectLoadedDrafts(campaigns, errors)
+      : [];
+    if (loadedDrafts.length) {
+      result.loadedDrafts = loadedDrafts;
+    }
+
     if (options.alert !== false) {
-      await this.slack.notifyClientDayBrief(result);
+      await this.slack.notifyClientDayBrief({
+        ...result,
+        endOfDay: options.endOfDay === true,
+        staffingShorts: options.endOfDay
+          ? this.state.listLastStaffingShort()
+          : undefined,
+        untaggedCampaigns: options.endOfDay ? untagged : undefined,
+        loadedDrafts: options.endOfDay ? loadedDrafts : undefined,
+        canaryFleetDownSince: options.endOfDay
+          ? this.state.getCanaryFleetDown()?.since ?? null
+          : null,
+      });
     }
     return result;
+  }
+
+  /**
+   * D89 — DRAFT/DRAFTED campaigns that already have leads sitting in them
+   * and are not sending. Named on the EOD brief only. Does not import
+   * leads (D52) and does not START anyone (D40).
+   */
+  private async collectLoadedDrafts(
+    campaigns: SmartleadCampaign[],
+    errors: string[],
+  ): Promise<LoadedDraftRow[]> {
+    const drafts = campaigns.filter(
+      (campaign) =>
+        isDraftCampaignStatus(campaign.status) &&
+        !isAnyShellCampaign(campaign) &&
+        !isTerminalCampaignStatus(campaign.status),
+    );
+    const loaded: LoadedDraftRow[] = [];
+    for (const campaign of drafts) {
+      try {
+        let stats = parseCampaignLeadStats(
+          await this.smartlead.getCampaignStatistics(campaign.id).catch(() => null),
+        );
+        if (!stats) {
+          stats = parseCampaignLeadStats(
+            await this.smartlead.getCampaign(campaign.id).catch(() => null),
+          );
+        }
+        if (!stats || stats.remaining <= 0) continue;
+        loaded.push({
+          id: campaign.id,
+          name: String(campaign.name ?? campaign.id),
+          remaining: stats.remaining,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.push(`draft #${campaign.id}: ${message}`);
+      }
+      await sleep(150);
+    }
+    return loaded;
   }
 }

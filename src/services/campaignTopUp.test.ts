@@ -30,6 +30,20 @@ describe("isExcluded", () => {
     assert.equal(isExcluded(msrs, []), false);
   });
 
+  it("always excludes the paused pod-control shell (D56)", () => {
+    assert.equal(
+      isExcluded({ id: 99, name: "Pod control shell" }, []),
+      true,
+    );
+  });
+
+  it("always excludes a paused canary shell (D114)", () => {
+    assert.equal(
+      isExcluded({ id: 88, name: "Canary shell: #3479011 Parlay Sports Offer" }, []),
+      true,
+    );
+  });
+
   it("matches a name fragment case-insensitively", () => {
     assert.equal(isExcluded(msrs, ["msrs"]), true);
     assert.equal(isExcluded(msrs, ["MSRS"]), true);
@@ -93,6 +107,10 @@ function fakeState(
     },
     getHeldInbox: () => undefined,
     getRestingInbox: () => undefined,
+    getPoolMailbox: () => undefined,
+    getDomainHistory: () => undefined,
+    clearGenericSendStartedAt: () => undefined,
+    isCopyCanary: () => false,
     hasPendingResume: () => false,
     listPendingResumes: () => [],
     save: async () => undefined,
@@ -115,7 +133,7 @@ describe("CampaignTopUpService safety", () => {
     let addCalls = 0;
     const smartlead = {
       listCampaigns: async () => [
-        { id: 2, name: "Thin", status: "ACTIVE", client_id: 2 },
+        { id: 2, name: "Goliath Thin", status: "ACTIVE", client_id: 2 },
       ],
       listAllEmailAccounts: async () => [
         {
@@ -127,6 +145,15 @@ describe("CampaignTopUpService safety", () => {
           is_imap_success: true,
           campaign_ids: [],
         },
+        ...Array.from({ length: 100 }, (_, index) => ({
+          id: 300 + index,
+          from_email: `client-${index}@goliath.com`,
+          client_id: 2,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
+        })),
       ],
       listClients: async () => [{ id: 2, name: "Client B" }],
       addEmailAccountsToCampaign: async () => {
@@ -160,7 +187,7 @@ describe("CampaignTopUpService safety", () => {
     let addCalls = 0;
     const smartlead = {
       listCampaigns: async () => [
-        { id: 2, name: "Thin", status: "ACTIVE", client_id: 2 },
+        { id: 2, name: "Goliath Thin", status: "ACTIVE", client_id: 2 },
       ],
       listAllEmailAccounts: async () => [
         {
@@ -174,10 +201,20 @@ describe("CampaignTopUpService safety", () => {
         ...Array.from({ length: 49 }, (_, index) => ({
           id: 200 + index,
           from_email: `dead-${index}@x.com`,
+          client_id: 2,
           type: "GMAIL",
           is_smtp_success: false,
           is_imap_success: false,
           campaign_ids: [2],
+        })),
+        ...Array.from({ length: 51 }, (_, index) => ({
+          id: 400 + index,
+          from_email: `live-${index}@goliath.com`,
+          client_id: 2,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
         })),
       ],
       listClients: async () => [{ id: 2, name: "Client B" }],
@@ -197,7 +234,7 @@ describe("CampaignTopUpService safety", () => {
     const result = await service.run();
     assert.equal(addCalls, 1);
     assert.equal(result.assigned.length, 1);
-    // 49 disconnected + 1 placed still leaves shortfall of 49 staffable.
+    // 100 client inboxes → floor 50. 49 disconnected + 1 placed ⇒ short 49.
     assert.equal(result.unfilled[0]?.shortBy, 49);
   });
 
@@ -223,8 +260,8 @@ describe("CampaignTopUpService safety", () => {
     let brandingAttempts = 0;
     const smartlead = {
       listCampaigns: async () => [
-        { id: 1, name: "Donor", status: "ACTIVE", client_id: 1 },
-        { id: 2, name: "Receiver", status: "ACTIVE", client_id: 2 },
+        { id: 1, name: "Goliath Donor", status: "ACTIVE", client_id: 1 },
+        { id: 2, name: "Goliath Receiver", status: "ACTIVE", client_id: 2 },
       ],
       listAllEmailAccounts: async () => [
         {
@@ -237,10 +274,17 @@ describe("CampaignTopUpService safety", () => {
           campaign_ids: [1],
         },
         ...donorAccounts,
+        ...Array.from({ length: 100 }, (_, index) => ({
+          id: 500 + index,
+          from_email: `goliath-${index}@client-b.info`,
+          client_id: 2,
+          type: "GMAIL",
+          campaign_ids: [],
+        })),
       ],
       listClients: async () => [
-        { id: 1, name: "Client A" },
-        { id: 2, name: "Client B" },
+        { id: 1, name: "Goliath A" },
+        { id: 2, name: "Goliath B" },
       ],
       addEmailAccountsToCampaign: async (campaignId: number) => {
         events.push(`add:${campaignId}`);
@@ -269,7 +313,7 @@ describe("CampaignTopUpService safety", () => {
     assert.deepEqual(events.slice(0, 6), [
       "add:2",
       "remove:1",
-      "identity:Move Sender\nClient B",
+      "identity:Move Sender\nGoliath B",
       "remove:2",
       "add:1",
       "identity:Old signature",
@@ -283,5 +327,68 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(result.assigned[0]?.movedFrom[0], 1);
     assert.equal(current().assignedClientId, 2);
     assert.equal(current().status, "assigned");
+  });
+
+  it("pulls generics off non-Goliath campaigns and will not restaff them", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Spare",
+      lastName: "Sender",
+      status: "assigned",
+    };
+    const { state } = fakeState(pool);
+    const removed: number[][] = [];
+    let addCalls = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Vasco - Service", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        },
+        ...Array.from({ length: 80 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `vasco-${index}@vasco.com`,
+          client_id: 9,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        })),
+      ],
+      listClients: async () => [{ id: 9, name: "Vasco Warranty" }],
+      addEmailAccountsToCampaign: async () => {
+        addCalls += 1;
+      },
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(ids);
+        void campaignId;
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({ MIN_CAMPAIGN_SENDERS: "50" }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.deepEqual(removed.flat(), [10]);
+    assert.equal(addCalls, 0);
+    assert.equal(result.pulledGenerics[0]?.email, pool.email);
+    assert.equal(result.assigned.length, 0);
   });
 });

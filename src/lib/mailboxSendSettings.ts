@@ -40,3 +40,11 @@ export function needsMinTimeGap(
   const current = readMinTimeGapMins(account);
   return !(Number.isFinite(current) && current === targetGapMins);
 }
+
+/** Smartlead reports warmup on as warmup_details.status === ACTIVE. */
+export function mailboxWarmupIsOn(
+  account: Pick<SmartleadAccountWithCampaigns, "warmup_details">,
+): boolean {
+  const status = String(account.warmup_details?.status ?? "").toUpperCase();
+  return status === "ACTIVE";
+}

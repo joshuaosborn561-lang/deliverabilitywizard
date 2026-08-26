@@ -6,6 +6,7 @@ import {
   isActiveCampaignStatus,
   isPrewarmedGeneric,
   owedWarmupDays,
+  warmupClockStartedAt,
   warmupStartedAt,
 } from "../services/warmupGate.js";
 
@@ -113,21 +114,53 @@ describe("warmupGate helpers", () => {
     );
   });
 
-  it("owes 21 days for fresh inboxes and 14 for pre-warmed fleets", () => {
+  it("owes 21 days for fresh inboxes; pre-warmed follow campaignMinWarmupDays", () => {
     assert.equal(
       owedWarmupDays(false, {
-        campaignMinWarmupDays: 14,
+        campaignMinWarmupDays: 21,
         freshInboxWarmupDays: 21,
       }),
       21,
     );
     assert.equal(
       owedWarmupDays(true, {
-        campaignMinWarmupDays: 14,
+        campaignMinWarmupDays: 21,
         freshInboxWarmupDays: 21,
       }),
-      14,
+      21,
     );
+  });
+
+  it("prefers the InboxKit import stamp over Smartlead's warmup record", () => {
+    const started = warmupClockStartedAt(
+      {
+        id: 1,
+        created_at: "2026-01-01T00:00:00.000Z",
+        warmup_details: { created_at: "2026-01-01T00:00:00.000Z" },
+      },
+      "cold@pool.info",
+      {
+        getPoolMailbox: () =>
+          ({
+            email: "cold@pool.info",
+            warmedAt: "2026-08-10T00:00:00.000Z",
+          }) as never,
+      },
+    );
+    assert.equal(started, "2026-08-10T00:00:00.000Z");
+  });
+
+  it("falls back to Smartlead when the mailbox is not in the pool", () => {
+    const started = warmupClockStartedAt(
+      {
+        id: 2,
+        created_at: "2026-01-01T00:00:00.000Z",
+        warmup_details: { created_at: "2026-06-01T00:00:00.000Z" },
+      },
+      "client@brand.com",
+      { getPoolMailbox: () => undefined },
+    );
+    assert.equal(started, "2026-06-01T00:00:00.000Z");
   });
 
   it("does not exempt unrelated client mailboxes", () => {

@@ -310,4 +310,23 @@ describe("SpendGateway", () => {
     assert.equal(sent.length, 0);
     assert.equal(state.getSpendApproval("buy-4"), undefined);
   });
+
+  it("Josh Slack tap writes an approved spend row without a second Slack ask", async () => {
+    const state = fakeState();
+    const { sent, client } = fakeSlack();
+    const gateway = new SpendGateway(state, client, true);
+    const request = {
+      key: "porkbun:isolation:getcrosslaunchco.info",
+      scope: "generic_pool" as const,
+      kind: "porkbun_domain",
+      description: "Replacement sending domain",
+    };
+    const decision = await gateway.recordOwnerApproved(request, "Josh");
+    assert.equal(decision.approved, true);
+    assert.equal(decision.record.status, "approved");
+    assert.equal(decision.record.decidedBy, "Josh");
+    assert.equal(sent.length, 0);
+    await gateway.consume(decision, request);
+    assert.equal(state.getSpendApproval(request.key)?.status, "consumed");
+  });
 });

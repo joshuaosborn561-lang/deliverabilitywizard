@@ -9,6 +9,7 @@ describe("CampaignBounceInvestigateService", () => {
     const removed: Array<{ campaignId: number; ids: number[] }> = [];
     const state = {
       getPendingResume: () => undefined,
+      markCopySuspect: () => undefined,
     };
     const smartlead = {
       listCampaigns: async () => [

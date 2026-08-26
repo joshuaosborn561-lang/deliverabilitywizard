@@ -23,13 +23,30 @@ const BASE_URL = "https://smartdelivery.smartlead.ai/api/v1/";
 /** SmartDelivery returns ~10 rows when `limit` is omitted; page in this size. */
 export const DEFAULT_TEST_LIST_LIMIT = 100;
 
+export interface PlacementSequenceStep {
+  seq_number: number;
+  seq_delay_details?: { delayInDays: number };
+  variant?: boolean;
+  variant_label?: string;
+  subject: string;
+  email_body: string;
+}
+
+export interface PlacementSequence {
+  campaign_name: string;
+  steps: PlacementSequenceStep[];
+}
+
 export interface CreateManualPlacementInput {
   test_name: string;
   description?: string;
   spam_filters: string[];
   link_checker: boolean;
-  campaign_id: number;
-  sequence_mapping_id: number;
+  /** Optional when `sequence` supplies the body (pod controls / isolation). */
+  campaign_id?: number;
+  sequence_mapping_id?: number;
+  sequence?: PlacementSequence;
+  folder_id?: number | string;
   provider_ids?: number[];
   sender_accounts: string[];
   all_email_sent_without_time_gap?: boolean;
@@ -287,6 +304,158 @@ export class SmartDeliveryClient {
       `spam-test/report/${spamTestId}/sender-account-wise`,
     );
   }
+
+  listFolders(): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, "spam-test/folder");
+  }
+
+  createFolder(name: string): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, "spam-test/folder", {
+      method: "POST",
+      body: { name },
+    });
+  }
+
+  deleteTests(spamTestIds: Array<string | number>): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, "spam-test/delete", {
+      method: "POST",
+      body: { spam_test_ids: spamTestIds },
+    });
+  }
+
+  getSpamFilterDetails(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/spam-filter-details`,
+    );
+  }
+
+  getEmailContent(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/email-content`,
+    );
+  }
+
+  getGroupwiseReport(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/groupwise`,
+    );
+  }
+
+  getDkimDetails(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/dkim-details`,
+    );
+  }
+
+  getSpfDetails(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/spf-details`,
+    );
+  }
+
+  getRdnsDetails(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/rdns-details`,
+    );
+  }
+
+  getIpAnalytics(spamTestId: string | number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `spam-test/report/${spamTestId}/ip-analytics`,
+    );
+  }
+}
+
+export function folderIdOf(raw: unknown): string | number | undefined {
+  if (raw == null) return undefined;
+  if (typeof raw === "number" || typeof raw === "string") return raw;
+  if (typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const nested = obj.data ?? obj.result ?? obj.folder ?? obj;
+  if (nested && typeof nested === "object") {
+    const row = nested as Record<string, unknown>;
+    const id = row.id ?? row.folder_id ?? row.spam_test_folder_id;
+    if (typeof id === "number" || typeof id === "string") return id;
+  }
+  const id = obj.id ?? obj.folder_id;
+  return typeof id === "number" || typeof id === "string" ? id : undefined;
+}
+
+export function flaggedTermsFromSpamFilter(raw: unknown): string[] {
+  const terms: string[] = [];
+  const walk = (value: unknown, depth = 0): void => {
+    if (depth > 6 || value == null) return;
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (trimmed && trimmed.length < 80 && !/^https?:/i.test(trimmed)) {
+        terms.push(trimmed);
+      }
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item, depth + 1);
+      return;
+    }
+    if (typeof value === "object") {
+      const obj = value as Record<string, unknown>;
+      for (const key of [
+        "term",
+        "word",
+        "phrase",
+        "trigger",
+        "name",
+        "filter",
+        "rule",
+      ]) {
+        if (typeof obj[key] === "string") walk(obj[key], depth + 1);
+      }
+      for (const [key, nested] of Object.entries(obj)) {
+        if (
+          /term|word|phrase|trigger|spam|filter|rule|keyword/i.test(key)
+        ) {
+          walk(nested, depth + 1);
+        }
+      }
+    }
+  };
+  walk(raw);
+  return [...new Set(terms.map((term) => term.toLowerCase()))];
+}
+
+export function parseCampaignEmailContent(raw: unknown): {
+  subject?: string;
+  body?: string;
+} {
+  if (!raw || typeof raw !== "object") return {};
+  const obj = raw as Record<string, unknown>;
+  const nested =
+    (obj.data as Record<string, unknown> | undefined) ??
+    (obj.result as Record<string, unknown> | undefined) ??
+    obj;
+  const subject = String(
+    nested.subject ?? nested.email_subject ?? nested.subject_line ?? "",
+  ).trim();
+  const body = String(
+    nested.email_body ?? nested.body ?? nested.content ?? nested.html ?? "",
+  ).trim();
+  return {
+    subject: subject || undefined,
+    body: body || undefined,
+  };
 }
 
 function collectIntegerIds(value: unknown, depth = 0): number[] {

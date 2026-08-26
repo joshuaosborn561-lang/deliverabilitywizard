@@ -1,21 +1,62 @@
+import { readFileSync } from "node:fs";
 import {
   humanizeAlertError,
   isBenignOpsNoise,
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
+import { slackActionHref } from "../lib/slackActionLink.js";
+import {
+  slackAllowed,
+  slackKindForIsolationAction,
+  type SlackAllowKind,
+} from "../lib/slackAllow.js";
+import { isolationActionValue } from "../lib/slackSignature.js";
 
 export interface SlackCredentials {
   webhookUrl?: string;
   botToken?: string;
+  /** If this file exists, it wins over botToken (new Slack app install). */
+  botTokenFile?: string;
   channelId?: string;
   channelLabel: string;
+  /** Used to sign /slack/action links so buttons work even when posted by another bot. */
+  actionLinkSecret?: string;
+  publicBaseUrl?: string;
+}
+
+export function readSlackBotToken(creds: SlackCredentials): string {
+  const file = creds.botTokenFile?.trim();
+  if (file) {
+    try {
+      const fromFile = readFileSync(file, "utf8").trim();
+      if (fromFile) return fromFile;
+    } catch {
+      // File missing until Josh installs the new Slack app.
+    }
+  }
+  return creds.botToken?.trim() ?? "";
 }
 
 export class SlackClient {
   constructor(private readonly creds: SlackCredentials) {}
 
-  async send(text: string, blocks?: unknown[]): Promise<void> {
-    if (this.creds.botToken) {
+  /**
+   * D71 — only burned-domain replace, isolated-word replace, the EOD
+   * send/spam scoreboard, and the reply after Josh taps a button.
+   * Unclassified calls log and do not post.
+   */
+  async send(
+    text: string,
+    blocks?: unknown[],
+    kind?: SlackAllowKind,
+  ): Promise<void> {
+    if (!slackAllowed(kind)) {
+      console.log(
+        `[slack-quiet] dropped ${kind ?? "unclassified"}: ${text.replace(/\n/g, " ").slice(0, 200)}`,
+      );
+      return;
+    }
+    if (readSlackBotToken(this.creds)) {
       await this.sendViaBot(text, blocks);
       return;
     }
@@ -26,6 +67,10 @@ export class SlackClient {
     throw new Error(
       "Slack is not configured. Set SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN (+ SLACK_CHANNEL_ID).",
     );
+  }
+
+  async notifyActionResult(text: string): Promise<void> {
+    await this.send(text, undefined, "action_result");
   }
 
   private async sendViaWebhook(text: string, blocks?: unknown[]): Promise<void> {
@@ -65,7 +110,7 @@ export class SlackClient {
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${this.creds.botToken}`,
+        Authorization: `Bearer ${readSlackBotToken(this.creds)}`,
         "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(payload),
@@ -94,9 +139,9 @@ export class SlackClient {
 
     await this.send(
       [
-        `*Couldn't create placement tests — monthly quota is full*`,
+        `*Couldn't create placement tests — a cap we set is full*`,
         `Used ${details.used} of ${details.quota}. This batch needed ${details.needed} more.`,
-        `Nothing was created. Free quota or skip a campaign, then re-run.`,
+        `Nothing new was created. Raise the cap or skip a campaign, then try again.`,
         lines || undefined,
       ]
         .filter(Boolean)
@@ -122,6 +167,20 @@ export class SlackClient {
       genericSpare?: number;
     }>;
     errors: string[];
+    /** D64 — staffing picture only on the end-of-day brief. */
+    endOfDay?: boolean;
+    staffingShorts?: Array<{
+      name: string;
+      staffable: number;
+      shortBy: number;
+      status: string;
+    }>;
+    /** D85 — campaigns the tagger cannot match to a client (D77 forbids guessing). */
+    untaggedCampaigns?: Array<{ id: number; name: string }>;
+    /** D89 — DRAFT campaigns that already have leads and are not sending. */
+    loadedDrafts?: Array<{ id: number; name: string; remaining: number }>;
+    /** D85 — set when the unwarmed canary fleet has zero connected mailboxes. */
+    canaryFleetDownSince?: string | null;
   }): Promise<void> {
     const lines = [
       `*Client day — ${summary.date}*`,
@@ -129,33 +188,75 @@ export class SlackClient {
       "",
     ];
 
+    if (!summary.endOfDay) {
+      console.log(
+        `[slack-quiet] midday client-day ${summary.date} ${summary.totalSent} sent`,
+      );
+      return;
+    }
+
     for (const row of summary.rows.slice(0, 25)) {
-      const bounce =
-        row.bouncePercent == null ? "—" : `${row.bouncePercent.toFixed(1)}%`;
       const spam =
         row.spamPercent == null ? "—" : `${row.spamPercent.toFixed(1)}%`;
-      const restBits: string[] = [];
-      if (
-        row.activeInboxes ||
-        row.heldInboxes ||
-        row.restingInboxes ||
-        row.genericSpare
-      ) {
-        const piles = [
-          `${row.activeInboxes} on`,
-          `${row.restingInboxes ?? 0} off`,
-          `${row.genericSpare ?? 0} generic-spare`,
-        ];
-        if (row.heldInboxes) piles.push(`${row.heldInboxes} held`);
-        restBits.push(piles.join(" / "));
-      }
       lines.push(
-        `• *${row.clientName}* — ${row.sent.toLocaleString("en-US")} sent · ${bounce} bounce · ${spam} spam` +
-          (restBits.length ? ` · ${restBits.join("")}` : ""),
+        `• *${row.clientName}* — ${row.sent.toLocaleString("en-US")} sent · ${spam} spam`,
       );
     }
     if (summary.rows.length > 25) {
       lines.push(`• …and ${summary.rows.length - 25} more clients`);
+    }
+
+    // D64 — the staffing picture belongs on the EOD brief. (The field was
+    // plumbed through but never rendered until D85 — a silently dropped line.)
+    const shorts = (summary.staffingShorts ?? []).filter((s) => s.shortBy > 0);
+    if (shorts.length) {
+      lines.push(
+        "",
+        `Still short of senders at end of day (${shorts.length}):`,
+        ...shorts
+          .slice(0, 10)
+          .map(
+            (s) =>
+              `• ${s.name} — ${s.staffable} sending, ${s.shortBy} more needed (${s.status})`,
+          ),
+      );
+      if (shorts.length > 10) lines.push(`• …and ${shorts.length - 10} more`);
+    }
+
+    // D85 — campaigns with no client tag sit blocked at QA and I cannot
+    // guess the client (D77). Naming them daily is the escalation.
+    const untagged = summary.untaggedCampaigns ?? [];
+    if (untagged.length) {
+      lines.push(
+        "",
+        `No client tag (${untagged.length}) — QA stays blocked until someone tags them in Smartlead (campaign → client):`,
+        ...untagged.slice(0, 10).map((c) => `• ${c.name} (#${c.id})`),
+      );
+      if (untagged.length > 10) lines.push(`• …and ${untagged.length - 10} more`);
+    }
+
+    // D89 — leads sitting in draft, nothing going out.
+    const drafts = summary.loadedDrafts ?? [];
+    if (drafts.length) {
+      lines.push(
+        "",
+        `Leads loaded, not sending (${drafts.length}):`,
+        ...drafts
+          .slice(0, 10)
+          .map(
+            (c) =>
+              `• ${c.name} (#${c.id}) — about ${c.remaining.toLocaleString("en-US")} lead${c.remaining === 1 ? "" : "s"} sitting in draft`,
+          ),
+      );
+      if (drafts.length > 10) lines.push(`• …and ${drafts.length - 10} more`);
+    }
+
+    // D85 — one line for the fleet, not 48 findings.
+    if (summary.canaryFleetDownSince) {
+      lines.push(
+        "",
+        `Unwarmed canary fleet has zero connected mailboxes (since ${summary.canaryFleetDownSince.slice(0, 10)}). Placement measurement is blind — reconnect the fleet in Smartlead or approve a fleet buy.`,
+      );
     }
 
     const seriousErrors = summary.errors
@@ -169,7 +270,7 @@ export class SlackClient {
       );
     }
 
-    await this.send(lines.join("\n"));
+    await this.send(lines.join("\n"), undefined, "eod_summary");
   }
 
   /**
@@ -532,12 +633,12 @@ export class SlackClient {
         ...scoreLines,
         ...authLines,
         weakSenderCount
-          ? `\n_${weakSenderCount} sender${weakSenderCount === 1 ? "" : "s"} under ${details.remediationThreshold ?? 80}% — see client day brief for fleet bounce/spam; remediation handles pulls._`
+          ? `\n_${weakSenderCount} inbox${weakSenderCount === 1 ? "" : "es"} on this test landed below ${details.remediationThreshold ?? 80}% in their own mailbox type (Gmail or Outlook). Check the daily client note for bounce/spam. You don't need to pull them by hand._`
           : undefined,
         "",
         details.autoRemediation
-          ? `Senders under ${details.remediationThreshold ?? 80}% same-ESP are pulled off campaigns automatically, warmed for ${details.holdDays ?? 14} days, and covered by an ESP-matched generic with the client's signature. No action needed unless I flag a burned domain.`
-          : `Auto-remediation is OFF — these need manual handling.`,
+          ? `Inboxes under ${details.remediationThreshold ?? 80}% in their own mailbox type come off automatically, warm for ${details.holdDays ?? 14} days, and get a matching spare with the client's name. No action needed unless I flag a burned domain.`
+          : `Automatic pull is off — these need a person to handle them.`,
       ]
         .filter((x): x is string => Boolean(x))
         .join("\n"),
@@ -585,7 +686,7 @@ export class SlackClient {
           : undefined,
         ...failed,
         summary.inboxkitReexports > 0
-          ? `Also re-queued ${summary.inboxkitReexports} failed InboxKit→Smartlead exports.`
+          ? `Also retried ${summary.inboxkitReexports} failed InboxKit export${summary.inboxkitReexports === 1 ? "" : "s"} into Smartlead.`
           : undefined,
         (() => {
           const serious = summary.errors
@@ -601,6 +702,8 @@ export class SlackClient {
       ]
         .filter(Boolean)
         .join("\n"),
+      undefined,
+      "action_result",
     );
   }
 
@@ -643,7 +746,7 @@ export class SlackClient {
     for (const [label, rows] of byCampaign) {
       const lines = rows.slice(0, 10).map((r) => {
         if (r.reason === "hold_until") {
-          return `• \`${r.email}\` — still on recovery hold until ${r.holdUntil}`;
+          return `• \`${r.email}\` — still sitting after a bad test until ${r.holdUntil}`;
         }
         const days =
           r.daysWarmed == null ? "?" : `${r.daysWarmed.toFixed(0)}`;
@@ -677,7 +780,7 @@ export class SlackClient {
           ? `${under.length} hadn't finished the 14-day warmup.`
           : undefined,
         held.length
-          ? `${held.length} still had a HOLD recovery tag.`
+          ? `${held.length} ${held.length === 1 ? "was" : "were"} still on a 2-week recovery sit after a bad inbox or bounce test.`
           : undefined,
         summary.pausedCampaigns.length
           ? `Paused campaign(s) that would have been empty: ${summary.pausedCampaigns.join(", ")}`
@@ -714,7 +817,7 @@ export class SlackClient {
       [
         `*Stopped recurring placement tests*`,
         summary.stopped.length
-          ? `${summary.stopped.length} test${summary.stopped.length === 1 ? "" : "s"} stopped because the campaign is no longer active — this stops them from burning test runs.`
+          ? `${summary.stopped.length} test${summary.stopped.length === 1 ? "" : "s"} stopped because the campaign is no longer active — no point testing a campaign that isn't sending.`
           : undefined,
         ...summary.stopped
           .slice(0, 12)
@@ -914,5 +1017,271 @@ export class SlackClient {
     }
 
     await this.send(parts.filter(Boolean).join("\n"));
+  }
+
+  async notifyIsolationVerdict(details: {
+    campaignName: string;
+    clientName?: string;
+    podName?: string;
+    dateLabel?: string;
+    verdict: "INFRA" | "COPY" | "INCONCLUSIVE" | "HEALTHY";
+    reason: string;
+    repliesFrom?: number;
+    repliesTo?: number;
+    oooFrom?: number;
+    oooTo?: number;
+    bounceFlat?: boolean;
+    teardownStarted?: boolean;
+    infraSummary?: string;
+    proof?: string;
+  }): Promise<void> {
+    const who = [details.clientName, details.campaignName, details.podName]
+      .filter(Boolean)
+      .join(" / ");
+    const watch =
+      details.repliesFrom != null && details.repliesTo != null
+        ? `Replies ${details.repliesFrom} → ${details.repliesTo}` +
+          (details.oooFrom != null && details.oooTo != null
+            ? `, out-of-office ${details.oooFrom} → ${details.oooTo}`
+            : "") +
+          (details.bounceFlat ? ", bounces flat." : ".")
+        : undefined;
+
+    let verdictLine: string;
+    if (details.verdict === "COPY") {
+      verdictLine = details.teardownStarted
+        ? "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes. The word hunt is already running. I will not edit the live email until you tap Make the changes."
+        : "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes landed, so this is the copy, not the inboxes.";
+    } else if (details.verdict === "INFRA") {
+      verdictLine =
+        "This campaign is in spam. That is a flag — something is wrong. The known-good email from the same inboxes also landed in spam, so this is the inboxes, not the copy. Do not rewrite the email.";
+    } else if (details.verdict === "HEALTHY") {
+      verdictLine = "Campaign and standing inbox test both look fine.";
+    } else {
+      verdictLine =
+        details.reason ||
+        "This campaign is in spam. That is a flag — either the inboxes or the copy. I need another known-good reading before I pick one.";
+    }
+
+    await this.send(
+      [
+        `*${who || details.campaignName}*${details.dateLabel ? ` / ${details.dateLabel}` : ""}`,
+        watch,
+        verdictLine,
+        details.infraSummary,
+        details.proof,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  async notifyCopyIsolation(details: {
+    campaignName: string;
+    recovered?: Array<{ element: string; kind: string }>;
+    unchanged?: string[];
+    noneRecovered?: boolean;
+    waiting?: boolean;
+    missingRig?: boolean;
+  }): Promise<void> {
+    if (details.missingRig) {
+      await this.send(
+        [
+          `*${details.campaignName}* — copy problem, word hunt waiting.`,
+          "The standing inbox test says the inboxes are fine. We still need the low-rep test domain set (two mailboxes, never attached to a campaign) before we can isolate the word. We did not change the live email.",
+        ].join("\n"),
+      );
+      return;
+    }
+    if (details.waiting) {
+      await this.send(
+        `*${details.campaignName}* — copy word hunt is in flight. Same-day tests from the low-rep domain; we will post what recovered. We are not editing the live email.`,
+      );
+      return;
+    }
+    if (details.noneRecovered) {
+      await this.send(
+        [
+          `*${details.campaignName}* — no single change put this back in the inbox.`,
+          "Likely the whole message shape, not one word. We did not change the live email.",
+        ].join("\n"),
+      );
+      return;
+    }
+    const recovered = details.recovered ?? [];
+    await this.send(
+      [
+        `*${details.campaignName}* — copy word hunt.`,
+        recovered.length
+          ? `Recovered when we changed: ${recovered
+              .map((row) => `*${row.element}*`)
+              .join(", ")}.`
+          : undefined,
+        details.unchanged?.length
+          ? `No change: ${details.unchanged.slice(0, 8).join(", ")}.`
+          : undefined,
+        "Recommended: edit the live sequence to match the change that landed. We did not edit it.",
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  async notifyPodControls(details: {
+    pods: number;
+    testsCreated: number;
+    sendersRead: number;
+    kill: number;
+    watch: number;
+    errors: string[];
+  }): Promise<void> {
+    if (
+      !details.testsCreated &&
+      !details.kill &&
+      !details.watch &&
+      !details.errors.length
+    ) {
+      return;
+    }
+    await this.send(
+      [
+        "*Standing inbox tests*",
+        details.testsCreated
+          ? `Started ${details.testsCreated} test${details.testsCreated === 1 ? "" : "s"} across ${details.pods} inbox group${details.pods === 1 ? "" : "s"}. Every inbox in the group is on the test.`
+          : `Read ${details.sendersRead} inbox${details.sendersRead === 1 ? "" : "es"} on the standing tests.`,
+        details.kill
+          ? `${details.kill} inbox${details.kill === 1 ? "" : "es"} failed the standing test more than once — worth a cull look. We did not pull them.`
+          : undefined,
+        details.watch
+          ? `${details.watch} more ${details.watch === 1 ? "inbox is" : "inboxes are"} on a watch after one fail.`
+          : undefined,
+        details.errors.length
+          ? `What went wrong: ${details.errors.slice(0, 5).join("; ")}`
+          : undefined,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join("\n"),
+    );
+  }
+
+  async notifyOooDetectionOff(campaigns: Array<{ id: number; name: string }>): Promise<void> {
+    if (!campaigns.length) return;
+    await this.send(
+      [
+        "Out-of-office detection is off on these campaigns, so the silent-delivery watch is blind:",
+        ...campaigns.slice(0, 12).map((c) => `• ${c.name} (#${c.id})`),
+        "Turn it on in Smartlead if you want that alert. We did not change campaign settings.",
+      ].join("\n"),
+    );
+  }
+
+  async notifyIsolationAction(details: {
+    title: string;
+    proof: string;
+    actionId: string;
+    kind:
+      | "retire_domain"
+      | "buy_domains"
+      | "buy_canary_fleet"
+      | "swap_copy"
+      | "generic_backfill"
+      | "add_signature_tag";
+    who: string;
+  }): Promise<void> {
+    const approveLabel =
+      details.kind === "swap_copy"
+        ? "Make the changes"
+        : details.kind === "add_signature_tag"
+          ? "Add %signature%"
+        : details.kind === "buy_domains"
+          ? "Buy replacements"
+          : details.kind === "buy_canary_fleet"
+            ? "Buy canary fleet"
+            : details.kind === "generic_backfill"
+              ? "Allow generics"
+              : "Retire this domain";
+    const text = [
+      `*${details.title}*`,
+      details.proof,
+      "",
+      details.kind === "buy_domains"
+        ? "Cayden cannot approve a purchase. Josh: tap the button (opens a confirm page) or open Railway → /ops."
+        : details.kind === "buy_canary_fleet"
+          ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
+          : details.kind === "generic_backfill"
+            ? "Josh: tap Allow generics (opens a confirm page) to let pool generics backfill this campaign. Cayden cannot approve this."
+          : details.kind === "add_signature_tag"
+            ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
+          : details.kind === "retire_domain"
+            ? "Josh: tap the button (opens a confirm page) to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
+            : "Josh or Cayden: tap Make the changes (opens a confirm page). I will apply that one suggested edit and nothing else.",
+    ].join("\n");
+    const approveValue = isolationActionValue(
+      details.kind,
+      details.actionId,
+      "approve",
+    );
+    const denyValue = isolationActionValue(details.kind, details.actionId, "deny");
+    const secret = this.creds.actionLinkSecret?.trim();
+    const base = this.creds.publicBaseUrl?.trim();
+    const approveUrl =
+      secret && base
+        ? slackActionHref({
+            baseUrl: base,
+            secret,
+            id: details.actionId,
+            decision: "approve",
+          })
+        : undefined;
+    const denyUrl =
+      secret && base
+        ? slackActionHref({
+            baseUrl: base,
+            secret,
+            id: details.actionId,
+            decision: "deny",
+          })
+        : undefined;
+    const kind = slackKindForIsolationAction(details.kind);
+    if (!kind) {
+      console.log(
+        `[slack-quiet] dropped isolation ${details.kind}: ${details.title}`,
+      );
+      return;
+    }
+    await this.send(text, [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text },
+      },
+      {
+        type: "actions",
+        elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: approveLabel },
+            style: "primary",
+            action_id: "isolation_approve",
+            value: approveValue,
+            ...(approveUrl ? { url: approveUrl } : {}),
+          },
+          {
+            type: "button",
+            text: { type: "plain_text", text: "Not now" },
+            action_id: "isolation_deny",
+            value: denyValue,
+            ...(denyUrl ? { url: denyUrl } : {}),
+          },
+        ],
+      },
+    ], kind);
+  }
+
+  async notifyLeadRunout(details: { text: string }): Promise<void> {
+    await this.send(details.text);
+  }
+
+  async notifySendingInfra(details: { text: string }): Promise<void> {
+    await this.send(details.text);
   }
 }

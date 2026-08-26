@@ -16,6 +16,12 @@ const ConfigSchema = z.object({
   slackBotToken: z.string().default(""),
   slackChannelId: z.string().default(""),
   slackChannel: z.string().default("#deliverability"),
+  slackClientId: z.string().default(""),
+  slackClientSecret: z.string().default(""),
+  slackBotTokenFile: z.string().default("/data/slack-bot-token"),
+  slackOauthRedirectUri: z.string().default(
+    "https://deliverabilitywizard-production.up.railway.app/slack/oauth",
+  ),
   inboxkitApiKey: z.string().default(""),
   inboxkitWorkspaceId: z.string().default(""),
   /** Dedicated InboxKit workspace for the 75 generic recovery-pool mailboxes */
@@ -86,15 +92,47 @@ const ConfigSchema = z.object({
   minSameEspSamples: z.coerce.number().int().positive().default(3),
   /** Warm a pulled inbox this long before it may go back on campaigns (2 weeks). */
   recoveryHoldDays: z.coerce.number().int().positive().default(14),
-  /** Pull a sender off campaigns above this bounce rate (percent). */
   /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
+  /**
+   * D81 — POC clients (Goliath today) may receive generics without a
+   * per-campaign Slack tap. Everyone else needs Josh's Slack approve.
+   */
+  pocClientNamePatterns: z
+    .string()
+    .default("goliath")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * Leftover D58 name list. D81 uses pocClientNamePatterns + Slack
+   * approval. Kept so existing env does not surprise us.
+   */
+  genericStaffNamePatterns: z
+    .string()
+    .default("goliath")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   enableCampaignTopUp: boolFromEnv(true),
   /**
    * Fast staffing loop: reconnect → mailbox settings → refill/unpause.
    * Measure (placement/remediation/DNS) stays on the slower monitor cron.
    */
   enableCampaignHealth: boolFromEnv(true),
+  /**
+   * D81 — first-seen campaign audit + hourly sweep (pods, sigs, canaries).
+   * Does not START, import leads, or spend. Slack only to ask Josh to
+   * approve generic backfill.
+   */
+  enableCampaignCheck: boolFromEnv(true),
+  cronCampaignCheck: z.string().default("0 * * * *"),
   /**
    * D39 — separate SmartDelivery tests for held/pulled mailboxes (off campaigns).
    */
@@ -119,6 +157,109 @@ const ConfigSchema = z.object({
    * successful pass.
    */
   enableRestBaselineRebuild: boolFromEnv(true),
+  /**
+   * D59 — one-shot: wipe every leftover unhealthy mark (holds, HOLD-UNTIL,
+   * kill tags, rest veto scores) so D43/D58 can staff from a clean slate.
+   */
+  enableUnhealthyReset: boolFromEnv(true),
+  /**
+   * D61 — one-shot: Vasco down to 40 (same mix, all send). Wipe GXA / MSRS
+   * / Nieto from Smartlead and InboxKit.
+   */
+  enableClientWipe: boolFromEnv(true),
+  vascoKeepCount: z.coerce.number().int().min(0).default(40),
+  wipeClientPatterns: z
+    .string()
+    .default("gxa,msrs,nieto")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * Leftover D61 full-send list. D82: nobody is a full-send exception.
+   * Client wipe still finds Vasco via its own default patterns when empty.
+   */
+  fullSendClientPatterns: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * D48 — standing per-pod control tests (fixed control email, per-sender
+   * read). Tests are unlimited (D45); this does not wait for seed approval.
+   */
+  enablePodControls: boolFromEnv(true),
+  /**
+   * D56 — pinned Smartlead id for the paused known-good shell. 0 means
+   * find-or-create by name (`Pod control shell`).
+   */
+  podControlShellCampaignId: z.coerce.number().int().nonnegative().default(0),
+  /** Low-rep isolation domain weekly baseline + copy teardown senders. */
+  enableIsolationRig: boolFromEnv(true),
+  /** Infra-vs-copy lookup from standing controls. */
+  enableIsolationBranch: boolFromEnv(true),
+  /** One-variable copy teardown; starts on its own when the verdict is copy. */
+  enableCopyIsolation: boolFromEnv(true),
+  /** Daily replies + out-of-office collapse watch. */
+  enableDeliveryWatch: boolFromEnv(true),
+  /**
+   * D52 — Slack when an ACTIVE campaign is halfway / three-quarters /
+   * out of leads. Never imports. Campaign audit does not watch this number.
+   */
+  enableLeadRunout: boolFromEnv(true),
+  /**
+   * D53 — one census of sending IPs from placement reports we already pull.
+   */
+  enableSendingInfraCensus: boolFromEnv(true),
+  isolationDomain: z.string().default(""),
+  isolationMailboxIds: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => Number(x.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  isolationMailboxEmails: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  isolationVariantCap: z.coerce.number().int().positive().max(20).default(8),
+  cronDeliveryWatch: z.string().default("0 13 * * *"),
+  /** Slack signing secret so button clicks can be verified. */
+  slackSigningSecret: z.string().default(""),
+  slackJoshUserIds: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    ),
+  slackCaydenUserIds: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim())
+        .filter(Boolean),
+    ),
+  isolationBuyParentDomain: z.string().default("crosslaunchco.com"),
+  isolationMailboxesPerBuyDomain: z.coerce.number().int().positive().max(10).default(3),
   /** Minimum share of each ESP (Google / Microsoft) when topping up to 50. */
   campaignEspMixMinPercent: z.coerce.number().int().min(0).max(50).default(30),
   cronHealth: z.string().default("*/15 * * * *"),
@@ -135,24 +276,70 @@ const ConfigSchema = z.object({
     .string()
     .default("")
     .transform((v) => v.split(",").map((x) => x.trim()).filter(Boolean)),
+  /** Leftover D5 reading. D79 retired the per-sender pull; do not treat this as live. */
   bounceRateThreshold: z.coerce.number().min(0).max(100).default(5),
   /**
-   * D41 — Slack/investigate warn below the 5% pull. Does not rotate.
-   * D5's bounceRateThreshold stays the sender-pull line.
+   * D41 — Slack/investigate warn. Does not rotate.
+   * D79 retired D5's per-sender 5%/50 pull; this 5% is a leftover reading.
    */
   bounceRateWarnThreshold: z.coerce.number().min(0).max(100).default(2),
   /**
    * Aggregate sender bounce on a PAUSED campaign that triggers investigation
-   * (D29). Separate from per-sender rotation (bounceRateThreshold).
+   * (D29). Not a live per-sender pull (D79).
    */
   campaignBounceInvestigateThreshold: z.coerce
     .number()
     .min(0)
     .max(100)
     .default(7),
+  /**
+   * Leftover D78 env. D80 does not write Smartlead 20/7 from campaign names.
+   * Kept so a Railway leftover does not crash boot.
+   */
+  under1kBounceAutopausePercent: z.coerce.number().min(1).max(100).default(20),
+  /**
+   * D80 — after our autostop has scanned, write Smartlead
+   * bounce_autopause_threshold to 100 (off). Not a rule to turn it on.
+   */
+  enableBounceAutopauseConverge: boolFromEnv(true),
+  smartleadBounceAutopauseOffPercent: z.coerce
+    .number()
+    .min(1)
+    .max(100)
+    .default(100),
+  /** D80 — our campaign bounce pause. Smartlead's own autopause stays off. */
+  enableCampaignBounceAutostop: boolFromEnv(true),
+  cronBounceAutostop: z.string().default("*/10 * * * *"),
+  bounceAutostopMinSent: z.coerce.number().int().min(0).default(100),
+  bounceAutostopHighVolumeSent: z.coerce.number().int().min(0).default(500),
+  bounceAutostopMidPercent: z.coerce.number().min(0).max(100).default(20),
+  bounceAutostopHighPercent: z.coerce.number().min(0).max(100).default(7),
+  /**
+   * D90 — live pause: over 10% bounce after 1k leads emailed, or more
+   * than 10 new bounces in the last 10 minutes. Old 20/7 env above is leftover.
+   */
+  bouncePauseMinLeads: z.coerce.number().int().min(0).default(1000),
+  bouncePauseRatePercent: z.coerce.number().min(0).max(100).default(10),
+  bounceBurstCount: z.coerce.number().int().min(0).default(10),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
-  enableBounceRotation: boolFromEnv(true),
+  /**
+   * D51 / D79 — there is no per-sender bounce pull. Default off.
+   * Placement pull is already behind enableRemediation (false).
+   */
+  enableBounceRotation: boolFromEnv(false),
+  /**
+   * D51 — master for placement / bounce / HOLD-UNTIL removals from ACTIVE
+   * campaigns. Off: the only automatic live pull is Josh killing a mailbox
+   * (domain retire) and health backfilling.
+   */
+  enableLegacyMailboxPulls: boolFromEnv(false),
+  /**
+   * D51 — keep this many still-warming pool generics on each ACTIVE campaign
+   * sending the live sequence (extra to the 50 staffable floor).
+   */
+  enableCopyCanary: boolFromEnv(true),
+  copyCanaryPerCampaign: z.coerce.number().int().min(0).max(10).default(3),
   /**
    * Pre-warmed generic mailboxes that live outside the .info pool plan, matched
    * against Smartlead by email address or by from_name (e.g. "Harmony Norris").
@@ -183,18 +370,47 @@ const ConfigSchema = z.object({
     ),
   /** Sub in warmed generics while originals recover (requires pool inventory in state). */
   enableRecoveryPool: boolFromEnv(false),
-  /** Days of Smartlead-only warmup before a generic is free for swaps. */
-  poolWarmupDays: z.coerce.number().int().positive().default(14),
   /**
-   * Pull mailboxes off ACTIVE campaigns until they have warmed this many days.
-   * Also strips active HOLD-UNTIL-* tagged accounts from ACTIVE campaigns.
+   * Days from InboxKit import before a generic is free for live send / swaps.
+   * Clock is `warmedAt` at import, not Smartlead's warmup record (D1).
+   * Duration is 21 days (D50; superseded D1's 14).
+   */
+  poolWarmupDays: z.coerce.number().int().positive().default(21),
+  /**
+   * D105 — 21-day live-send gate is on. Canary fleet and pre-warmed
+   * fleets stay exempt. Placement / bounce pulls stay off (D51).
    */
   enableWarmupGate: boolFromEnv(true),
-  campaignMinWarmupDays: z.coerce.number().int().positive().default(14),
+  /**
+   * D106 — same-ESP inbox % a campaign needs before auto-START
+   * (qa-unpause). Morning activate (D109) ignores this once.
+   */
+  launchInboxThreshold: z.coerce.number().min(0).max(100).default(85),
+  /** D107 — leftover old-client campaigns to delete. */
+  oldClientCampaignIds: z
+    .string()
+    .default("3437329,3628940,3628943")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((part) => Number(part.trim()))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  /** D109 — name fragments for the morning START book. */
+  morningActivatePatterns: z
+    .string()
+    .default("goliath,bcp,bolder cyber,peterson,parlay,techevo,tech evo")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
   /**
    * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
-   * a live campaign. Pre-warmed fleets stay on campaignMinWarmupDays / exempt.
-   * Do not change poolWarmupDays or campaignMinWarmupDays defaults (D1).
+   * a live campaign. Pre-warmed fleets stay exempt. D50 aligned the pool
+   * and campaign-min clocks to the same 21 days.
    */
   freshInboxWarmupDays: z.coerce.number().int().positive().default(21),
   /** Porkbun domain spend cap per client per UTC month (USD). */
@@ -323,6 +539,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     slackBotToken: env.SLACK_BOT_TOKEN ?? "",
     slackChannelId: env.SLACK_CHANNEL_ID ?? "",
     slackChannel: env.SLACK_CHANNEL ?? env.SLACK_CHANNEL_ID ?? "#deliverability",
+    slackClientId: env.SLACK_CLIENT_ID ?? "",
+    slackClientSecret: env.SLACK_CLIENT_SECRET ?? "",
+    slackBotTokenFile: env.SLACK_BOT_TOKEN_FILE ?? "/data/slack-bot-token",
+    slackOauthRedirectUri:
+      env.SLACK_OAUTH_REDIRECT_URI ??
+      "https://deliverabilitywizard-production.up.railway.app/slack/oauth",
     inboxkitApiKey: env.INBOXKIT_API_KEY ?? "",
     inboxkitWorkspaceId: env.INBOXKIT_WORKSPACE_ID ?? "",
     genericPoolWorkspaceId:
@@ -352,14 +574,42 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     recoveryHoldDays: env.RECOVERY_HOLD_DAYS ?? "14",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
+    pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath",
+    genericStaffNamePatterns: env.GENERIC_STAFF_NAME_PATTERNS ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
+    enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,
+    cronCampaignCheck: env.CRON_CAMPAIGN_CHECK ?? "0 * * * *",
     enableHeldPlacementTests: env.ENABLE_HELD_PLACEMENT_TESTS,
     enableClientRest: env.ENABLE_CLIENT_REST,
     enableRestPlacementTests: env.ENABLE_REST_PLACEMENT_TESTS,
     enableGenericSendRest: env.ENABLE_GENERIC_SEND_REST,
     genericSendRestDays: env.GENERIC_SEND_REST_DAYS ?? "14",
     enableRestBaselineRebuild: env.ENABLE_REST_BASELINE_REBUILD,
+    enableUnhealthyReset: env.ENABLE_UNHEALTHY_RESET,
+    enableClientWipe: env.ENABLE_CLIENT_WIPE,
+    vascoKeepCount: env.VASCO_KEEP_COUNT ?? "40",
+    wipeClientPatterns: env.WIPE_CLIENT_PATTERNS ?? "gxa,msrs,nieto",
+    fullSendClientPatterns: env.FULL_SEND_CLIENT_PATTERNS ?? "",
+    enablePodControls: env.ENABLE_POD_CONTROLS,
+    podControlShellCampaignId: env.POD_CONTROL_SHELL_CAMPAIGN_ID ?? "0",
+    enableIsolationRig: env.ENABLE_ISOLATION_RIG,
+    enableIsolationBranch: env.ENABLE_ISOLATION_BRANCH,
+    enableCopyIsolation: env.ENABLE_COPY_ISOLATION,
+    enableDeliveryWatch: env.ENABLE_DELIVERY_WATCH,
+    enableLeadRunout: env.ENABLE_LEAD_RUNOUT,
+    enableSendingInfraCensus: env.ENABLE_SENDING_INFRA_CENSUS,
+    isolationDomain: env.ISOLATION_DOMAIN ?? "",
+    isolationMailboxIds: env.ISOLATION_MAILBOX_IDS ?? "",
+    isolationMailboxEmails: env.ISOLATION_MAILBOX_EMAILS ?? "",
+    isolationVariantCap: env.ISOLATION_VARIANT_CAP ?? "8",
+    cronDeliveryWatch: env.CRON_DELIVERY_WATCH ?? "0 13 * * *",
+    slackSigningSecret: env.SLACK_SIGNING_SECRET ?? "",
+    slackJoshUserIds: env.SLACK_JOSH_USER_ID ?? "",
+    slackCaydenUserIds: env.SLACK_CAYDEN_USER_ID ?? "",
+    isolationBuyParentDomain:
+      env.ISOLATION_BUY_PARENT_DOMAIN ?? "crosslaunchco.com",
+    isolationMailboxesPerBuyDomain: env.ISOLATION_MAILBOXES_PER_BUY_DOMAIN ?? "3",
     campaignEspMixMinPercent: env.CAMPAIGN_ESP_MIX_MIN_PERCENT ?? "30",
     cronHealth: env.CRON_HEALTH ?? "*/15 * * * *",
     messagePerDay: env.MESSAGE_PER_DAY ?? "30",
@@ -370,17 +620,39 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     bounceRateWarnThreshold: env.BOUNCE_RATE_WARN_THRESHOLD ?? "2",
     campaignBounceInvestigateThreshold:
       env.CAMPAIGN_BOUNCE_INVESTIGATE_THRESHOLD ?? "7",
+    under1kBounceAutopausePercent:
+      env.UNDER_1K_BOUNCE_AUTOPAUSE_PERCENT ?? "20",
+    enableBounceAutopauseConverge: env.ENABLE_BOUNCE_AUTOPAUSE_CONVERGE,
+    smartleadBounceAutopauseOffPercent:
+      env.SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT ?? "100",
+    enableCampaignBounceAutostop: env.ENABLE_CAMPAIGN_BOUNCE_AUTOSTOP,
+    cronBounceAutostop: env.CRON_BOUNCE_AUTOSTOP ?? "*/10 * * * *",
+    bounceAutostopMinSent: env.BOUNCE_AUTOSTOP_MIN_SENT ?? "100",
+    bounceAutostopHighVolumeSent: env.BOUNCE_AUTOSTOP_HIGH_VOLUME_SENT ?? "500",
+    bounceAutostopMidPercent: env.BOUNCE_AUTOSTOP_MID_PERCENT ?? "20",
+    bounceAutostopHighPercent: env.BOUNCE_AUTOSTOP_HIGH_PERCENT ?? "7",
+    bouncePauseMinLeads: env.BOUNCE_PAUSE_MIN_LEADS ?? "1000",
+    bouncePauseRatePercent: env.BOUNCE_PAUSE_RATE_PERCENT ?? "10",
+    bounceBurstCount: env.BOUNCE_BURST_COUNT ?? "10",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableBounceRotation: env.ENABLE_BOUNCE_ROTATION,
+    enableLegacyMailboxPulls: env.ENABLE_LEGACY_MAILBOX_PULLS,
+    enableCopyCanary: env.ENABLE_COPY_CANARY,
+    copyCanaryPerCampaign: env.COPY_CANARY_PER_CAMPAIGN ?? "3",
     extraGenericMailboxes:
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     extraGenericDomains:
       env.EXTRA_GENERIC_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",
     enableRecoveryPool: env.ENABLE_RECOVERY_POOL,
-    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "14",
+    poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
-    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "14",
+    launchInboxThreshold: env.LAUNCH_INBOX_THRESHOLD ?? "85",
+    oldClientCampaignIds: env.OLD_CLIENT_CAMPAIGN_IDS ?? "3437329,3628940,3628943",
+    morningActivatePatterns:
+      env.MORNING_ACTIVATE_PATTERNS ??
+      "goliath,bcp,bolder cyber,peterson,parlay,techevo,tech evo",
+    campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "21",
     freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",
     clientMailboxMonthlyCap: env.CLIENT_MAILBOX_MONTHLY_CAP ?? "25",

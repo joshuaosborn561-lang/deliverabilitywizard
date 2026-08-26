@@ -1,5 +1,7 @@
 import { apiRequest, sleep } from "../lib/http.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
+import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
+import { sequencesForWrite } from "../lib/signatureQa.js";
 import type {
   SmartleadCampaign,
   SmartleadEmailAccount,
@@ -31,12 +33,25 @@ export interface SmartleadClientRecord {
 
 export class SmartleadClient {
   private mutationQueue: MutationQueue | null = null;
+  private isolationAccountIds = new Set<number>();
 
   constructor(private readonly apiKey: string) {}
 
+  /** D48 — isolation-domain mailbox IDs may never join a campaign. */
+  setIsolationDenylist(accountIds: number[]): void {
+    this.isolationAccountIds = new Set(
+      accountIds.filter((id) => Number.isFinite(id) && id > 0),
+    );
+  }
+
+  isolationDenylistIds(): number[] {
+    return [...this.isolationAccountIds];
+  }
+
   /**
-   * Optional serialiser for mutating calls. When set, writes share one queue
-   * so overlapping health/monitor/top-up work cannot stampede Smartlead.
+   * Serialiser for Smartlead reads AND writes. Inventory fetches (the 429
+   * source) share the same gap as mutations so overlapping boot kicks and
+   * the 15-minute sweep cannot stampede the key (D89).
    */
   setMutationQueue(queue: MutationQueue | null): void {
     this.mutationQueue = queue;
@@ -47,9 +62,11 @@ export class SmartleadClient {
   }
 
   listCampaigns(clientId?: number): Promise<SmartleadCampaign[]> {
-    return apiRequest<SmartleadCampaign[]>(BASE_URL, this.apiKey, "campaigns/", {
-      query: clientId === undefined ? undefined : { client_id: clientId },
-    });
+    return this.mutate(() =>
+      apiRequest<SmartleadCampaign[]>(BASE_URL, this.apiKey, "campaigns/", {
+        query: clientId === undefined ? undefined : { client_id: clientId },
+      }),
+    );
   }
 
   /**
@@ -99,7 +116,9 @@ export class SmartleadClient {
   }
 
   listClients(): Promise<SmartleadClientRecord[]> {
-    return apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/");
+    return this.mutate(() =>
+      apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/"),
+    );
   }
 
   getCampaign(campaignId: number): Promise<SmartleadCampaign> {
@@ -160,7 +179,29 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * Write sequence steps/variants. Only used after a human approves a
+   * one-word copy swap (D49).
+   */
+  updateCampaignSequences(
+    campaignId: number,
+    sequences: SmartleadSequence[],
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/sequences`, {
+        method: "POST",
+        body: { sequences: sequencesForWrite(sequences) },
+      }),
+    );
+  }
+
   async listAllEmailAccounts(options: {
+    fetchCampaigns?: boolean;
+  } = {}): Promise<SmartleadAccountWithCampaigns[]> {
+    return this.mutate(() => this.listAllEmailAccountsUnqueued(options));
+  }
+
+  private async listAllEmailAccountsUnqueued(options: {
     fetchCampaigns?: boolean;
   } = {}): Promise<SmartleadAccountWithCampaigns[]> {
     const out: SmartleadAccountWithCampaigns[] = [];
@@ -183,7 +224,7 @@ export class SmartleadClient {
       out.push(...rows);
       if (rows.length < limit) break;
       offset += limit;
-      await sleep(150);
+      await sleep(400);
     }
     return out;
   }
@@ -200,10 +241,68 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * D115 / D118 — instrumentation only. Canary shells need one dummy
+   * lead before SmartDelivery will schedule. Never call this for a
+   * live client campaign (D52).
+   */
+  addLeadsToCampaign(
+    campaignId: number,
+    leadList: Array<{
+      email: string;
+      first_name?: string;
+      last_name?: string;
+    }>,
+  ): Promise<{
+    added_count?: number;
+    skipped_count?: number;
+    skipped_leads?: unknown;
+    upload_count?: number;
+    already_added_to_campaign?: number;
+    total_leads?: number | string;
+    lead_ids?: number[];
+    success?: boolean;
+  }> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+        method: "POST",
+        body: {
+          lead_list: leadList,
+          settings: {
+            ignore_duplicate_leads_in_other_campaign: true,
+            ignore_global_block_list: true,
+            ignore_unsubscribe_list: true,
+            ignore_community_bounce_list: true,
+            return_lead_ids: true,
+          },
+        },
+      }),
+    );
+  }
+
+  getCampaignLeads(
+    campaignId: number,
+    query: { limit?: number; offset?: number } = {},
+  ): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+      query: {
+        limit: query.limit ?? 1,
+        offset: query.offset ?? 0,
+      },
+    });
+  }
+
   addEmailAccountsToCampaign(
     campaignId: number,
     emailAccountIds: number[],
   ): Promise<unknown> {
+    try {
+      assertNotIsolationAccountIds(emailAccountIds, {
+        accountIds: this.isolationAccountIds,
+      });
+    } catch (error) {
+      return Promise.reject(error);
+    }
     return this.mutate(() =>
       apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
         method: "POST",
@@ -212,10 +311,77 @@ export class SmartleadClient {
     );
   }
 
+  getCampaignStatistics(campaignId: number): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`);
+  }
+
+  getCampaignSettings(campaignId: number): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`);
+  }
+
+  updateCampaignSettings(
+    campaignId: number,
+    settings: Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`, {
+        method: "POST",
+        body: settings,
+      }),
+    );
+  }
+
+  /** D77 — assign the Smartlead client tag on a campaign. */
+  setCampaignClientId(campaignId: number, clientId: number): Promise<unknown> {
+    return this.updateCampaignSettings(campaignId, { client_id: clientId });
+  }
+
+  getDayWiseOverallStats(options: {
+    startDate: string;
+    endDate: string;
+  }): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, "analytics/day-wise-overall-stats", {
+      query: { start_date: options.startDate, end_date: options.endDate },
+    });
+  }
+
+  getDayWisePositiveReplyStats(options: {
+    startDate: string;
+    endDate: string;
+  }): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      "analytics/day-wise-positive-reply-stats",
+      { query: { start_date: options.startDate, end_date: options.endDate } },
+    );
+  }
+
+  getDomainWiseHealthMetrics(options: {
+    startDate: string;
+    endDate: string;
+  }): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      "analytics/mailbox/domain-wise-health-metrics",
+      { query: { start_date: options.startDate, end_date: options.endDate } },
+    );
+  }
+
   deleteEmailAccount(emailAccountId: number): Promise<unknown> {
     return this.mutate(() =>
       apiRequest(BASE_URL, this.apiKey, `email-accounts/${emailAccountId}`, {
         method: "DELETE",
+      }),
+    );
+  }
+
+  createCampaign(name: string): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, "campaigns/create", {
+        method: "POST",
+        body: { name },
       }),
     );
   }
@@ -228,6 +394,14 @@ export class SmartleadClient {
       apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/status`, {
         method: "POST",
         body: { status },
+      }),
+    );
+  }
+
+  deleteCampaign(campaignId: number): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}`, {
+        method: "DELETE",
       }),
     );
   }

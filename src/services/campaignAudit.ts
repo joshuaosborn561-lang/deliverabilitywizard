@@ -5,11 +5,28 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
   campaignIdsOf,
+  clientDisplayName,
   type SmartleadAccountWithCampaigns,
+  type SmartleadClientRecord,
 } from "../clients/smartlead.js";
+import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import { sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
+import {
+  clientBrandList,
+  findForeignBrand,
+  missingSignatureTag,
+  sequenceCopyHay,
+  signatureHay,
+} from "../lib/signatureQa.js";
+import {
+  countClientInboxesByKey,
+  staffFloorForCampaign,
+} from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
+import type { SmartleadCampaign } from "../types/index.js";
 
 /**
  * Standing audit of live campaigns: sender headcount and placement-test cover.
@@ -28,7 +45,9 @@ export interface CampaignAuditRow {
   senders: number;
   /** Connected + inboxing senders that count toward the D25 floor. */
   staffable: number;
-  /** Staffable senders still needed to reach the configured floor. */
+  /** Half this client's inboxes (D58 / D82). */
+  floor: number;
+  /** Staffable senders still needed to reach that floor. */
   shortBy: number;
   hasTest: boolean;
   /** Sending domains in use, commonest first — a campaign's brand identity. */
@@ -44,10 +63,18 @@ export interface SupplyForecast {
   heldUntil: Array<{ date: string; count: number }>;
 }
 
+export interface SignatureQaIssue {
+  campaignId: number;
+  campaignName: string;
+  kind: "mailbox_sig" | "missing_signature_tag" | "foreign_brand_in_copy";
+  detail: string;
+}
+
 export interface CampaignAuditResult {
   campaigns: CampaignAuditRow[];
   untested: CampaignAuditRow[];
   understaffed: CampaignAuditRow[];
+  signatureIssues: SignatureQaIssue[];
   totalShortfall: number;
   supply: SupplyForecast;
 }
@@ -71,11 +98,20 @@ export class CampaignAuditService {
     private readonly state: StateStore,
   ) {}
 
-  async run(minSenders: number): Promise<CampaignAuditResult> {
-    const [campaigns, accounts] = await Promise.all([
+  async run(_legacyMinSenders?: number): Promise<CampaignAuditResult> {
+    const [campaigns, accounts, clients] = await Promise.all([
       this.smartlead.listCampaigns(),
       this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
+      this.smartlead.listClients().catch(() => [] as SmartleadClientRecord[]),
     ]);
+    const brandByClientId = new Map<number, string>();
+    for (const client of clients) {
+      brandByClientId.set(
+        client.id,
+        brandFromClientDisplayName(clientDisplayName(client)),
+      );
+    }
+    const allBrands = clientBrandList(clients);
 
     const senderCounts = new Map<number, number>();
     const staffableCounts = new Map<number, number>();
@@ -126,18 +162,33 @@ export class CampaignAuditService {
       console.warn("[campaign-audit] could not list tests", error);
     }
 
+    const clientInboxCounts = countClientInboxesByKey(
+      accounts as SmartleadAccountWithCampaigns[],
+      campaigns as SmartleadCampaign[],
+      clients,
+      this.config,
+      this.state,
+    );
+
     const rows: CampaignAuditRow[] = campaigns
       .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
+      .filter((c) => !isAnyShellCampaign(c))
       .map((c) => {
         const senders = senderCounts.get(c.id) ?? 0;
         const staffable = staffableCounts.get(c.id) ?? 0;
+        const clientName =
+          typeof c.client_id === "number"
+            ? clientDisplayName(clients.find((row) => row.id === c.client_id))
+            : "";
+        const floor = staffFloorForCampaign(c, clientInboxCounts, clientName);
         return {
           id: c.id,
           name: String(c.name ?? `campaign ${c.id}`),
           status: String(c.status ?? ""),
           senders,
           staffable,
-          shortBy: Math.max(0, minSenders - staffable),
+          floor,
+          shortBy: Math.max(0, floor - staffable),
           hasTest: tested.has(String(c.id)),
           domains: [...(domainsByCampaign.get(c.id) ?? new Map())]
             .map(([domain, count]) => ({ domain, count }))
@@ -167,16 +218,23 @@ export class CampaignAuditService {
 
     const untested = rows.filter((r) => !r.hasTest);
     const understaffed = rows.filter((r) => r.shortBy > 0);
+    const signatureIssues = await this.auditSignatures({
+      campaigns: campaigns as SmartleadCampaign[],
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      brandByClientId,
+      allBrands,
+    });
     const result: CampaignAuditResult = {
       campaigns: rows,
       untested,
       understaffed,
+      signatureIssues,
       totalShortfall: understaffed.reduce((sum, r) => sum + r.shortBy, 0),
       supply,
     };
 
     console.log(
-      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under ${minSenders} staffable (short ${result.totalShortfall} total)`,
+      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their half-client floor (short ${result.totalShortfall} total); ${signatureIssues.length} signature QA miss(es)`,
     );
     for (const r of rows) {
       const brands = r.domains
@@ -184,7 +242,7 @@ export class CampaignAuditService {
         .map((d) => `${d.domain}:${d.count}`)
         .join(" ");
       console.log(
-        `[campaign-audit]   #${r.id} ${r.name} — staffable ${r.staffable}/${minSenders} (membership ${r.senders})${r.shortBy ? ` short ${r.shortBy}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
+        `[campaign-audit]   #${r.id} ${r.name} — staffable ${r.staffable}/${r.floor} (membership ${r.senders})${r.shortBy ? ` short ${r.shortBy}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
       );
     }
     const idle = [...idleByDomain.entries()].sort((a, b) => b[1] - a[1]);
@@ -229,5 +287,87 @@ export class CampaignAuditService {
     await this.state.save();
 
     return result;
+  }
+
+  private async auditSignatures(input: {
+    campaigns: SmartleadCampaign[];
+    accounts: SmartleadAccountWithCampaigns[];
+    brandByClientId: Map<number, string>;
+    allBrands: string[];
+  }): Promise<SignatureQaIssue[]> {
+    const issues: SignatureQaIssue[] = [];
+    const live = input.campaigns.filter((campaign) => {
+      if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
+      return !isAnyShellCampaign(campaign);
+    });
+
+    for (const campaign of live) {
+      const expected =
+        typeof campaign.client_id === "number"
+          ? input.brandByClientId.get(campaign.client_id) ?? ""
+          : "";
+      if (!expected) continue;
+
+      for (const account of input.accounts) {
+        if (!campaignIdsOf(account).includes(campaign.id)) continue;
+        const email = accountEmail(account);
+        if (!email) continue;
+        const hay = signatureHay({
+          fromName: account.from_name,
+          signature: account.signature,
+        });
+        const foreign = findForeignBrand(hay, expected, input.allBrands);
+        if (!foreign) continue;
+        const detail = `${email} carries ${foreign} (expected ${expected})`;
+        issues.push({
+          campaignId: campaign.id,
+          campaignName: String(campaign.name ?? campaign.id),
+          kind: "mailbox_sig",
+          detail,
+        });
+        console.log(
+          `[campaign-audit] SIG-MISMATCH #${campaign.id} ${campaign.name} — ${detail}`,
+        );
+      }
+
+      try {
+        const sequences = await this.smartlead.getCampaignSequences(campaign.id);
+        await sleep(80);
+        for (const row of sequenceCopyHay(sequences ?? [])) {
+          if (missingSignatureTag(row.text)) {
+            const detail = `${row.label} is missing %signature%`;
+            issues.push({
+              campaignId: campaign.id,
+              campaignName: String(campaign.name ?? campaign.id),
+              kind: "missing_signature_tag",
+              detail,
+            });
+            console.log(
+              `[campaign-audit] SIG-MISSING-TAG #${campaign.id} ${campaign.name} — ${detail}`,
+            );
+          }
+          const foreign = findForeignBrand(row.text, expected, input.allBrands);
+          if (foreign) {
+            const detail = `${row.label} has ${foreign} in the copy`;
+            issues.push({
+              campaignId: campaign.id,
+              campaignName: String(campaign.name ?? campaign.id),
+              kind: "foreign_brand_in_copy",
+              detail,
+            });
+            console.log(
+              `[campaign-audit] SIG-FOREIGN-COPY #${campaign.id} ${campaign.name} — ${detail}`,
+            );
+          }
+        }
+      } catch (error) {
+        console.warn(
+          `[campaign-audit] could not read sequences for #${campaign.id}`,
+          error,
+        );
+      }
+    }
+
+    return issues;
   }
 }

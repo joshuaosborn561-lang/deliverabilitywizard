@@ -3,6 +3,7 @@ import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
+  campaignIdsOf,
   clientDisplayName,
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
@@ -10,14 +11,21 @@ import {
 import { sleep } from "../lib/http.js";
 import {
   brandFromClientDisplayName,
-  desiredMailboxSignature,
-} from "../lib/mailboxSignature.js";
+  clientBrandList,
+  findForeignBrand,
+} from "../lib/clientBrand.js";
+import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
+import { signatureHay } from "../lib/signatureQa.js";
+import type { SmartleadCampaign } from "../types/index.js";
 import {
+  mailboxWarmupIsOn,
   needsMinTimeGap,
   readMessagePerDay,
   readMinTimeGapMins,
 } from "../lib/mailboxSendSettings.js";
 import { totalDailySendCeiling } from "../lib/sendCeiling.js";
+import type { StateStore } from "../state/store.js";
+import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
 /**
  * Hold every mailbox at the agreed sending settings.
@@ -27,8 +35,10 @@ import { totalDailySendCeiling } from "../lib/sendCeiling.js";
  * by InboxKit arrives on whatever default it happened to get. Nothing
  * reconciled them, so the fleet drifted.
  *
- * Gap + daily volume (D24/D30) run on every health pass. Signatures/warmup
- * stay on the slower full converge so a fleet rewrite cannot starve staffing.
+ * Gap + daily volume (D24/D30) run on every health pass. Canary-fleet
+ * warmup-off (D83) runs on that same pass. Signatures and everyone-else
+ * warmup stay on the slower full converge so a fleet rewrite cannot
+ * starve staffing.
  */
 
 export type MailboxSettingsMode = "gap" | "full";
@@ -41,6 +51,8 @@ export interface MailboxSettingsResult {
   minGapSet: number;
   signatureSet: number;
   warmupEnabled: number;
+  /** D83 — unwarmed canary fleet had warmup turned off. */
+  warmupDisabled: number;
   errors: string[];
 }
 
@@ -52,17 +64,22 @@ export class MailboxSettingsService {
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly slack: SlackClient,
+    private readonly store?: StateStore,
   ) {}
 
   /** D30/D24 only — safe to run every health cron. */
   async runGapEnforce(
-    opts: { dryRun?: boolean } = {},
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
   ): Promise<MailboxSettingsResult> {
     return this.run({ ...opts, mode: "gap" });
   }
 
   async run(
-    opts: { dryRun?: boolean; mode?: MailboxSettingsMode } = {},
+    opts: {
+      dryRun?: boolean;
+      mode?: MailboxSettingsMode;
+      inventory?: InventorySnapshot;
+    } = {},
   ): Promise<MailboxSettingsResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const mode: MailboxSettingsMode = opts.mode ?? "full";
@@ -74,6 +91,7 @@ export class MailboxSettingsService {
       minGapSet: 0,
       signatureSet: 0,
       warmupEnabled: 0,
+      warmupDisabled: 0,
       errors: [],
     };
 
@@ -85,27 +103,27 @@ export class MailboxSettingsService {
     // UI: "Message Per Day (Warmups not included)" — write MESSAGE_PER_DAY (D24).
     const target = totalDailySendCeiling(this.config);
     const targetGap = this.config.mailboxMinTimeGapMins;
-    const accounts = (await this.smartlead.listAllEmailAccounts({
-      fetchCampaigns: false,
-    })) as SmartleadAccountWithCampaigns[];
+    const { accounts, clients, campaigns } =
+      opts.inventory ?? (await fetchInventory(this.smartlead));
     result.scanned = accounts.length;
 
     const brandByClientId = new Map<number, string>();
-    if (mode === "full") {
-      const clients = await this.smartlead
-        .listClients()
-        .catch(() => [] as SmartleadClientRecord[]);
-      for (const client of clients) {
-        brandByClientId.set(
-          client.id,
-          brandFromClientDisplayName(clientDisplayName(client)),
-        );
-      }
+    for (const client of clients) {
+      brandByClientId.set(
+        client.id,
+        brandFromClientDisplayName(clientDisplayName(client)),
+      );
     }
+    const allBrands = clientBrandList(clients);
+    const campaignById = new Map(
+      (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
+    );
 
     console.log(
       `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to ${target}/day, min gap ${targetGap}m` +
-        (mode === "full" ? ", signatures/warmup" : " (gap+volume only)"),
+        (mode === "full"
+          ? ", signatures/warmup"
+          : " (gap+volume; foreign-brand sigs; canary warmup off)"),
     );
 
     let consecutiveFailures = 0;
@@ -123,29 +141,49 @@ export class MailboxSettingsService {
       let needsSignature = false;
       let desiredSig: string | null = null;
       let needsWarmup = false;
+      let needsWarmupOff = false;
+      const canary = this.store?.isCopyCanary(email) ?? false;
+      const warmupOn = mailboxWarmupIsOn(account);
+      if (canary && warmupOn) needsWarmupOff = true;
 
+      const clientBrand = sendingBrandForAccount(
+        account,
+        campaignById,
+        brandByClientId,
+      );
+      const otherBrands = allBrands.filter((brand) => brand !== clientBrand);
+      const hay = signatureHay({
+        fromName: account.from_name,
+        signature: account.signature,
+      });
+      const foreign = clientBrand
+        ? findForeignBrand(hay, clientBrand, allBrands)
+        : null;
+      desiredSig = desiredMailboxSignature({
+        fromName: account.from_name,
+        signature: account.signature,
+        clientBrand,
+        otherClientBrands: otherBrands,
+      });
       if (mode === "full") {
-        const clientId =
-          typeof account.client_id === "number" && Number.isFinite(account.client_id)
-            ? account.client_id
-            : null;
-        const clientBrand =
-          clientId != null ? brandByClientId.get(clientId) ?? "" : "";
-        desiredSig = desiredMailboxSignature({
-          fromName: account.from_name,
-          signature: account.signature,
-          clientBrand,
-        });
         needsSignature =
           desiredSig != null && (account.signature ?? "") !== desiredSig;
 
-        const warmup = (account as { warmup_details?: { status?: string } | null })
-          .warmup_details;
-        needsWarmup =
-          !warmup || String(warmup.status ?? "").toUpperCase() !== "ACTIVE";
+        needsWarmup = !canary && !warmupOn;
+      } else if (foreign && desiredSig && (account.signature ?? "") !== desiredSig) {
+        // D74 — do not wait six hours to pull a Peterson line off a Goliath send.
+        needsSignature = true;
       }
 
-      if (!needsLimit && !needsGap && !needsSignature && !needsWarmup) continue;
+      if (
+        !needsLimit &&
+        !needsGap &&
+        !needsSignature &&
+        !needsWarmup &&
+        !needsWarmupOff
+      ) {
+        continue;
+      }
 
       try {
         if (!dryRun && (needsLimit || needsGap || needsSignature)) {
@@ -163,6 +201,17 @@ export class MailboxSettingsService {
         if (needsLimit) result.sendLimitSet += 1;
         if (needsGap) result.minGapSet += 1;
         if (needsSignature) result.signatureSet += 1;
+
+        if (!dryRun && needsWarmupOff) {
+          await this.smartlead.configureWarmup(account.id, {
+            warmup_enabled: false,
+            total_warmup_per_day: this.config.warmupTotalPerDay,
+            daily_rampup: this.config.warmupDailyRampup,
+            reply_rate_percentage: this.config.warmupReplyRatePercentage,
+          });
+          await sleep(150);
+        }
+        if (needsWarmupOff) result.warmupDisabled += 1;
 
         if (mode === "full" && !dryRun && needsWarmup) {
           await this.smartlead.configureWarmup(account.id, {
@@ -191,7 +240,7 @@ export class MailboxSettingsService {
     }
 
     console.log(
-      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→${target}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s), ${result.errors.length} error(s)`,
+      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→${target}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) on, ${result.warmupDisabled} canary warmup(s) off, ${result.errors.length} error(s)`,
     );
     for (const e of result.errors.slice(0, 10)) {
       console.log(`[mailbox-settings]   error: ${e}`);
@@ -200,7 +249,7 @@ export class MailboxSettingsService {
     if (!dryRun && result.minGapSet > 0) {
       try {
         await this.slack.send(
-          `*Mailbox min-gap drift fixed (D30)*\n${result.minGapSet} mailbox(es) were missing the ${targetGap}-minute Minimum time gap — set now. Gap is enforced on every health pass so this should not recur.`,
+          `*Sending pace*\n${result.minGapSet} inbox${result.minGapSet === 1 ? "" : "es"} ${result.minGapSet === 1 ? "was" : "were"} sending closer together than ${targetGap} minutes. Set back to ${targetGap} minutes. We check this every staffing pass.`,
         );
       } catch (error) {
         console.warn("[mailbox-settings] Slack gap alert failed", error);
@@ -217,7 +266,14 @@ export class MailboxSettingsService {
     ) {
       try {
         await this.slack.send(
-          `Mailbox settings: ${result.sendLimitSet}→${target}/day (warmups not included), ${result.minGapSet}→${targetGap}m gap, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) (of ${result.scanned} scanned).`,
+          [
+            `*Inbox settings*`,
+            `${result.sendLimitSet} inbox${result.sendLimitSet === 1 ? "" : "es"} set to ${target} campaign emails/day.`,
+            `${result.minGapSet} set to ${targetGap} minutes apart.`,
+            `${result.signatureSet} signature${result.signatureSet === 1 ? "" : "s"} set to name + company.`,
+            `${result.warmupEnabled} warmup${result.warmupEnabled === 1 ? "" : "s"} turned on.`,
+            `(Looked at ${result.scanned}.)`,
+          ].join("\n"),
         );
       } catch (error) {
         console.warn("[mailbox-settings] Slack notify failed", error);
@@ -229,3 +285,28 @@ export class MailboxSettingsService {
 }
 
 export { readMessagePerDay, readMinTimeGapMins, needsMinTimeGap };
+
+/** Brand the mailbox is actually sending as: live campaign client, else mailbox client. */
+export function sendingBrandForAccount(
+  account: SmartleadAccountWithCampaigns,
+  campaignById: Map<number, SmartleadCampaign>,
+  brandByClientId: Map<number, string>,
+): string {
+  const campaignBrands = new Set<string>();
+  for (const id of campaignIdsOf(account)) {
+    const campaign = campaignById.get(id);
+    if (!campaign) continue;
+    if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
+    const brand =
+      typeof campaign.client_id === "number"
+        ? brandByClientId.get(campaign.client_id)
+        : undefined;
+    if (brand) campaignBrands.add(brand);
+  }
+  if (campaignBrands.size === 1) return [...campaignBrands][0]!;
+  const clientId =
+    typeof account.client_id === "number" && Number.isFinite(account.client_id)
+      ? account.client_id
+      : null;
+  return (clientId != null ? brandByClientId.get(clientId) : undefined) ?? "";
+}

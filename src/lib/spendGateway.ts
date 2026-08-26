@@ -37,6 +37,9 @@ export interface SpendDecision {
  * as "pending" and Slack is notified; the caller must treat it as not
  * approved and skip the spend. Only a state record with status "approved"
  * (set only by that endpoint) authorizes the spend.
+ *
+ * D49: Josh tapping Buy replacements in Slack is the same owner approval.
+ * `recordOwnerApproved` writes that ledger row so we do not ask twice.
  */
 export class SpendGateway {
   constructor(
@@ -103,6 +106,46 @@ export class SpendGateway {
     }
 
     return { approved: existing.status === "approved", record: existing };
+  }
+
+  /**
+   * Josh already approved this spend (Slack button or /ops isolation).
+   * Writes an approved ledger row so the purchase can consume it (D4/D49).
+   */
+  async recordOwnerApproved(
+    req: SpendRequest,
+    decidedBy: string,
+  ): Promise<SpendDecision> {
+    const capFailure = this.checkClientCaps(req);
+    if (capFailure) {
+      throw new Error(`Spend blocked by monthly cap: ${capFailure}`);
+    }
+    const existing =
+      this.state.getLatestSpendApprovalForRequest(req.key) ??
+      this.state.getSpendApproval(req.key);
+    if (existing?.status === "approved") {
+      return { approved: true, record: existing };
+    }
+    if (existing?.status === "consumed") {
+      return this.recordOwnerApproved(
+        { ...req, key: `${req.key}:cycle:${Date.now()}` },
+        decidedBy,
+      );
+    }
+    const record: SpendApprovalRecord = {
+      id: req.key,
+      requestKey: req.key,
+      kind: req.kind,
+      description: req.description,
+      detail: req.detail ?? {},
+      requestedAt: new Date().toISOString(),
+      status: "approved",
+      decidedAt: new Date().toISOString(),
+      decidedBy,
+    };
+    this.state.upsertSpendApproval(record);
+    await this.state.save();
+    return { approved: true, record };
   }
 
   /**

@@ -11,10 +11,7 @@ import {
 } from "../clients/smartdelivery.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
-import {
-  isHeldRecoveryTestName,
-  isRestRecoveryTestName,
-} from "./heldPlacementTests.js";
+
 import {
   campaignIdFromCanaryTestName,
   isCanaryCopyTestName,
@@ -37,13 +34,18 @@ export interface TestReconcileResult {
   errors: string[];
 }
 
+/** D39/D129 — retired held/rest recovery instrumentation is stopped on sight. */
+export function isRetiredRecoveryTestName(name: string | undefined): boolean {
+  const value = String(name ?? "");
+  return /^(Held|Rest) recovery:/i.test(value);
+}
+
 /**
  * Keeps recurring placement tests aligned with campaign state: an automated
  * test should only keep running while its campaign is active. Runs with the
  * monitor cron so a campaign paused between scans stops billing test runs.
- *
- * Held-recovery tests (D39) are an exception: they keep running while any of
- * their mailboxes are still held, even if the sequence-shell campaign pauses.
+ * Leftover D39 "Held recovery:" / "Rest recovery:" tests are stopped on
+ * sight (D129) — left running they masquerade as campaign coverage (D121).
  */
 export class TestReconciler {
   constructor(
@@ -132,45 +134,15 @@ export class TestReconciler {
         continue;
       }
 
-      // D39 held-recovery tests: keep while any mailbox is still held, even if
-      // the sequence-shell campaign is no longer ACTIVE.
-      const heldRecord = this.state.getHeldPlacementTest(testId);
-      const restRecord = this.state.getRestPlacementTest(testId);
-      const isHeldRecovery =
-        Boolean(heldRecord) || isHeldRecoveryTestName(test.test_name);
-      const isRestRecovery =
-        Boolean(restRecord) || isRestRecoveryTestName(test.test_name);
+      // D129 — the held/rest recovery instrumentation is retired. A leftover
+      // test is stopped so it cannot read as live campaign coverage (D121).
+      const isRetiredRecovery = isRetiredRecoveryTestName(test.test_name);
       if (isIsolationManagedTestName(test.test_name)) {
         result.keptActive += 1;
         continue;
       }
-      if (isHeldRecovery) {
-        const heldEmails = new Set(
-          this.state.listHeldInboxes().map((h) => h.email.toLowerCase()),
-        );
-        const emails = heldRecord?.emails ?? [];
-        const stillHeld =
-          emails.length === 0
-            ? heldEmails.size > 0 // name-matched without state: keep if any holds exist
-            : emails.some((e) => heldEmails.has(e.toLowerCase()));
-        if (stillHeld) {
-          result.keptActive += 1;
-          continue;
-        }
-        // No longer held — fall through to stop (free the quota slot).
-      } else if (isRestRecovery) {
-        const restEmails = new Set(
-          this.state.listRestingInboxes().map((h) => h.email.toLowerCase()),
-        );
-        const emails = restRecord?.emails ?? [];
-        const stillResting =
-          emails.length === 0
-            ? restEmails.size > 0
-            : emails.some((e) => restEmails.has(e.toLowerCase()));
-        if (stillResting) {
-          result.keptActive += 1;
-          continue;
-        }
+      if (isRetiredRecovery) {
+        // fall through to stop
       } else if (activeStatuses.has(status)) {
         result.keptActive += 1;
         continue;

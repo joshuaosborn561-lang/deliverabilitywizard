@@ -41,7 +41,6 @@ import {
 import { SpendGateway } from "./lib/spendGateway.js";
 import { CampaignScanner } from "./services/campaignScanner.js";
 import { ResultMonitor } from "./services/resultMonitor.js";
-import { RemediationService } from "./services/remediation.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
 import { CampaignCheckService } from "./services/campaignCheck.js";
@@ -54,19 +53,14 @@ import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
 import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
-import { HeldPlacementTestService } from "./services/heldPlacementTests.js";
 import { ClientRestService } from "./services/clientRest.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
-import { RestBaselineRebuildService } from "./services/restBaselineRebuild.js";
-import { UnhealthyResetService } from "./services/unhealthyReset.js";
-import { ClientWipeService } from "./services/clientWipe.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
 import { PoolProvisioner } from "./services/poolProvisioner.js";
 import { AccountReconnectService } from "./services/accountReconnect.js";
 import { WarmupGateService } from "./services/warmupGate.js";
 import { TestReconciler } from "./services/testReconciler.js";
 import { PlacementAuditService } from "./services/placementAudit.js";
-import { BcpClientRestoreService } from "./services/bcpClientRestore.js";
 import {
   FleetSummaryService,
   PlacementResultsService,
@@ -75,10 +69,6 @@ import { CursorCloudClient } from "./clients/cursorCloud.js";
 import { OpsAuth } from "./ops/auth.js";
 import { CursorAssistantService } from "./ops/cursorAssistant.js";
 import { createOpsRouter } from "./ops/router.js";
-import {
-  ManualRotationService,
-  type RotationResult,
-} from "./ops/manualRotation.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
 import { PodControlService } from "./services/podControls.js";
@@ -94,7 +84,6 @@ import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { OldClientTeardownService } from "./services/oldClientTeardown.js";
-import { MorningActivateService } from "./services/morningActivate.js";
 import { canonBoard } from "./lib/canonCompliance.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -103,6 +92,19 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const state = new StateStore(config.stateFilePath);
   await state.load();
+  // D130 — the hold/swap rotation system is retired (kill-only, D51/D59).
+  // Residue in these maps only suppresses staffing; drain it once, loudly.
+  {
+    const heldResidue = Object.keys(state.get().heldInboxes).length;
+    const swapResidue = state.clearAllSwaps();
+    const holdCleared = state.clearAllHeldInboxes();
+    if (heldResidue || swapResidue) {
+      console.warn(
+        `[boot] D130 drain: cleared ${holdCleared} leftover hold record(s) and ${swapResidue} swap reservation(s) — freed inboxes rejoin staffing on the next health pass`,
+      );
+      await state.save();
+    }
+  }
 
   const secretsReady = configIsReady(config);
   if (!secretsReady) {
@@ -139,15 +141,6 @@ async function main(): Promise<void> {
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, smartlead, slack, state);
   const spendGateway = new SpendGateway(state, slack, config.requireSpendApproval);
-  const remediation = new RemediationService(
-    config,
-    smartlead,
-    smartDelivery,
-    inboxkit,
-    slack,
-    state,
-    spendGateway,
-  );
   const poolProvisioner = new PoolProvisioner(
     config,
     inboxkit,
@@ -178,17 +171,9 @@ async function main(): Promise<void> {
     slack,
     state,
   );
-  const bcpClientRestore = new BcpClientRestoreService(
-    config,
-    smartlead,
-    smartDelivery,
-    slack,
-    state,
-  );
 
   let scanInFlight: Promise<unknown> | null = null;
   let monitorInFlight: Promise<unknown> | null = null;
-  let remediationInFlight: Promise<unknown> | null = null;
   let poolInFlight: Promise<unknown> | null = null;
   let reconnectInFlight: Promise<unknown> | null = null;
   let warmupGateInFlight: Promise<unknown> | null = null;
@@ -196,7 +181,6 @@ async function main(): Promise<void> {
   let topUpInFlight: Promise<unknown> | null = null;
   let healthInFlight: Promise<unknown> | null = null;
   let bounceAutostopInFlight: Promise<unknown> | null = null;
-  let manualRotationInFlight: Promise<RotationResult> | null = null;
   let opsCheckInFlight: Promise<{
     monitor: unknown;
     dns: unknown;
@@ -222,40 +206,7 @@ async function main(): Promise<void> {
     return scanInFlight;
   };
 
-  const runRemediation = async () => {
-    assertRuntimeSecrets(config);
-    if (manualRotationInFlight) {
-      console.log(
-        "[remediation] Manual rotation active — skipping overlapping trigger",
-      );
-      return { skipped: true as const, reason: "manual-rotation-active" };
-    }
-    if (remediationInFlight) {
-      console.log("[remediation] Already running — skipping overlapping trigger");
-      return { skipped: true as const, reason: "already-running" };
-    }
-    remediationInFlight = (async () => {
-      const result = await remediation.run();
-      // Also fed by runMonitor for the cron path; without it here a direct
-      // /run?mode=remediate discarded its errors entirely.
-      feedBugRemediator(
-        "remediation",
-        (result as { errors?: string[] })?.errors ?? [],
-      );
-      return result;
-    })().finally(() => {
-      remediationInFlight = null;
-    });
-    return remediationInFlight;
-  };
-
   const runPoolProvision = async () => {
-    if (manualRotationInFlight) {
-      console.log(
-        "[pool-provision] Manual rotation active — skipping overlapping trigger",
-      );
-      return { skipped: true as const, reason: "manual-rotation-active" };
-    }
     if (healthInFlight) {
       console.log(
         "[pool-provision] Health pass running — skipping overlapping trigger",
@@ -341,32 +292,6 @@ async function main(): Promise<void> {
     slack,
     state,
   );
-  const restBaselineRebuild = new RestBaselineRebuildService(
-    config,
-    smartlead,
-    slack,
-    state,
-  );
-  const unhealthyReset = new UnhealthyResetService(
-    config,
-    smartlead,
-    slack,
-    state,
-  );
-  const wipeInboxkit = config.inboxkitApiKey
-    ? new InboxKitClient(
-        config.inboxkitApiKey,
-        undefined,
-        config.genericPoolWorkspaceId || undefined,
-      )
-    : null;
-  const clientWipe = new ClientWipeService(
-    config,
-    smartlead,
-    wipeInboxkit,
-    slack,
-    state,
-  );
   const copyCanary = new CopyCanaryService(
     config,
     smartlead,
@@ -387,7 +312,6 @@ async function main(): Promise<void> {
     state,
   );
   const oldClientTeardown = new OldClientTeardownService(config, smartlead, state);
-  const morningActivate = new MorningActivateService(config, smartlead, state);
   // D85 — the standalone BounceAutopauseService is retired. Autostop owns the
   // Smartlead autopause write (write-on-drift, D84); a second blind writer
   // was how the key starved into 429s.
@@ -404,13 +328,6 @@ async function main(): Promise<void> {
     campaignTopUp,
     clientFanOut,
     copyCanary,
-  );
-  const heldPlacementTests = new HeldPlacementTestService(
-    config,
-    smartlead,
-    smartDelivery,
-    slack,
-    state,
   );
   const isolationRig = new IsolationRigService(
     config,
@@ -502,12 +419,6 @@ async function main(): Promise<void> {
     config,
     smartlead,
     smartDelivery,
-    slack,
-    state,
-  );
-  const manualRotation = new ManualRotationService(
-    config,
-    smartlead,
     slack,
     state,
   );
@@ -625,29 +536,18 @@ async function main(): Promise<void> {
   };
 
   const runRestGates = async (inventory?: InventorySnapshot) => {
-    const unhealthy = config.enableUnhealthyReset
-      ? await stage("unhealthy-reset", () => unhealthyReset.run())
-      : null;
-    const wipe = config.enableClientWipe
-      ? await stage("client-wipe", () => clientWipe.run())
-      : null;
-    const restBaseline = config.enableRestBaselineRebuild
-      ? await stage("rest-baseline", () => restBaselineRebuild.run())
-      : null;
+    // D129 — the D44/D59/D61 one-shots ran in Aug 2026 and are deleted;
+    // rest gates are just the living D43 loops now.
     const restResult = config.enableClientRest
       ? await stage("client-rest", () => clientRest.run({ inventory }))
       : null;
     const genericRest = config.enableGenericSendRest
       ? await stage("generic-rest", () => genericSendRest.run({ inventory }))
       : null;
-    return { unhealthyReset: unhealthy, clientWipe: wipe, restBaseline, clientRest: restResult, genericRest };
+    return { clientRest: restResult, genericRest };
   };
 
   const runCampaignTopUp = async () => {
-    if (manualRotationInFlight) {
-      console.log("[top-up] Manual rotation active — skipping overlapping run");
-      return { skipped: true as const, reason: "manual-rotation-active" };
-    }
     if (topUpInFlight || healthInFlight) {
       console.log("[top-up] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
@@ -672,10 +572,6 @@ async function main(): Promise<void> {
    */
   const runHealth = async () => {
     assertRuntimeSecrets(config);
-    if (manualRotationInFlight) {
-      console.log("[health] Manual rotation active — skipping");
-      return { skipped: true as const, reason: "manual-rotation-active" };
-    }
     if (healthInFlight) {
       console.log("[health] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
@@ -716,10 +612,6 @@ async function main(): Promise<void> {
       if (config.enableWarmupGate) {
         await stage("warmup-gate", () => runWarmupGate(inventory));
       }
-
-      await stage("morning-activate", () =>
-        morningActivate.run({ inventory }),
-      );
 
       const healthResult = await stage("campaign-health", () =>
         campaignHealth.run({ inventory }),
@@ -804,9 +696,6 @@ async function main(): Promise<void> {
       await state.save();
 
       return {
-        unhealthyReset: rest.unhealthyReset,
-        clientWipe: rest.clientWipe,
-        restBaseline: rest.restBaseline,
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
         oneClient: oneClientResult,
@@ -837,25 +726,6 @@ async function main(): Promise<void> {
       bounceAutostopInFlight = null;
     });
     return bounceAutostopInFlight;
-  };
-
-  const runManualRotation = async (email: string) => {
-    if (
-      manualRotationInFlight ||
-      topUpInFlight ||
-      healthInFlight ||
-      poolInFlight ||
-      remediationInFlight ||
-      monitorInFlight
-    ) {
-      throw new Error(
-        "A campaign mutation is already running. Wait and preview the rotation again.",
-      );
-    }
-    manualRotationInFlight = manualRotation.execute(email).finally(() => {
-      manualRotationInFlight = null;
-    });
-    return manualRotationInFlight;
   };
 
   const runOpsDeliverability = async () => {
@@ -891,35 +761,6 @@ async function main(): Promise<void> {
         "monitor",
         (monitorResult as { errors?: string[] })?.errors ?? [],
       );
-      const shouldRemediate =
-        opts.remediate !== false &&
-        (config.enableRemediation || config.dryRun);
-      let remediationResult: unknown = null;
-      if (shouldRemediate) {
-        remediationResult = await runRemediation();
-        feedBugRemediator(
-          "remediation",
-          (remediationResult as { errors?: string[] })?.errors ?? [],
-        );
-      }
-      // D39: held/pulled mailboxes get their own SmartDelivery tests — they
-      // stay off live campaigns; the test only uses a campaign as sequence shell.
-      let heldTestsResult: unknown = null;
-      if (config.enableHeldPlacementTests) {
-        try {
-          heldTestsResult = await heldPlacementTests.run();
-        } catch (error) {
-          console.warn("[held-tests] failed", error);
-        }
-      }
-      let restTestsResult: unknown = null;
-      if (config.enableRestPlacementTests) {
-        try {
-          restTestsResult = await heldPlacementTests.runResting();
-        } catch (error) {
-          console.warn("[rest-tests] failed", error);
-        }
-      }
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
         warmupGateResult = await runWarmupGate();
@@ -1019,9 +860,6 @@ async function main(): Promise<void> {
       }
       return {
         monitor: monitorResult,
-        remediation: remediationResult,
-        heldPlacementTests: heldTestsResult,
-        restPlacementTests: restTestsResult,
         warmupGate: warmupGateResult,
         testReconcile: reconcileResult,
         dnsAudit: dnsAuditResult,
@@ -1609,8 +1447,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       config,
       auth: opsAuth,
       state,
-      rotation: manualRotation,
-      executeRotation: runManualRotation,
       cursorAssistant,
       isolationExecute,
       runtime: {
@@ -1695,7 +1531,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       canaryFleetDown: s.canaryFleetDown ?? null,
       stages,
       secretsConfigured: secretsReady,
-      remediationEnabled: config.enableRemediation,
       inboxkitConfigured: Boolean(config.inboxkitApiKey),
       lastScanAt: s.lastScanAt,
       lastMonitorAt: s.lastMonitorAt,
@@ -1723,7 +1558,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       remediationInboxThreshold: config.remediationInboxThreshold,
       scoreSameEspOnly: config.scoreSameEspOnly,
       minSameEspSamples: config.minSameEspSamples,
-      enableRecoveryPool: config.enableRecoveryPool,
       poolWarmupDays: config.poolWarmupDays,
       enableWarmupGate: config.enableWarmupGate,
       campaignMinWarmupDays: config.campaignMinWarmupDays,
@@ -1758,11 +1592,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         enableCampaignHealth: config.enableCampaignHealth,
         enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
         cronBounceAutostop: config.cronBounceAutostop,
-        enableHeldPlacementTests: config.enableHeldPlacementTests,
         enableClientRest: config.enableClientRest,
-        enableRestPlacementTests: config.enableRestPlacementTests,
         enableGenericSendRest: config.enableGenericSendRest,
-        enableRestBaselineRebuild: config.enableRestBaselineRebuild,
         freshInboxWarmupDays: config.freshInboxWarmupDays,
         bounceRateWarnThreshold: config.bounceRateWarnThreshold,
         cronPoolProvision: config.cronPoolProvision,
@@ -1778,12 +1609,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         remediationInboxThreshold: config.remediationInboxThreshold,
         scoreSameEspOnly: config.scoreSameEspOnly,
         minSameEspSamples: config.minSameEspSamples,
-        enableRemediation: config.enableRemediation,
-        enableRecoveryPool: config.enableRecoveryPool,
         enablePoolProvisioner: config.enablePoolProvisioner,
         enableAccountReconnect: config.enableAccountReconnect,
         enableWarmupGate: config.enableWarmupGate,
-        enableLegacyMailboxPulls: config.enableLegacyMailboxPulls,
         enableCopyCanary: config.enableCopyCanary,
         copyCanaryPerCampaign: config.copyCanaryPerCampaign,
         enableLeadRunout: config.enableLeadRunout,
@@ -1800,7 +1628,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         messagePerDay: config.messagePerDay,
         enableCampaignTopUp: config.enableCampaignTopUp,
         enforceMailboxSettings: config.enforceMailboxSettings,
-        enableBounceRotation: config.enableBounceRotation,
         bounceRateThreshold: config.bounceRateThreshold,
         minBounceSample: config.minBounceSample,
         opsUiEnabled: config.opsUiEnabled,
@@ -1876,7 +1703,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
       if (mode === "fan-out" || mode === "client-fanout") {
         assertRuntimeSecrets(config);
-        if (healthInFlight || topUpInFlight || manualRotationInFlight) {
+        if (healthInFlight || topUpInFlight) {
           res.json({
             ok: true,
             mode: "fan-out",
@@ -1889,48 +1716,10 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.json({ ok: true, mode: "fan-out", result: { ...rest, fanOut: result } });
         return;
       }
-      if (mode === "held-tests" || mode === "held-placement-tests") {
-        assertRuntimeSecrets(config);
-        const result = await heldPlacementTests.run();
-        res.json({ ok: true, mode: "held-tests", result });
-        return;
-      }
       if (mode === "client-rest" || mode === "rest") {
         assertRuntimeSecrets(config);
         const result = await clientRest.run();
         res.json({ ok: true, mode: "client-rest", result });
-        return;
-      }
-      if (
-        mode === "unhealthy-reset" ||
-        mode === "clear-holds" ||
-        mode === "start-clean"
-      ) {
-        assertRuntimeSecrets(config);
-        const result = await unhealthyReset.run();
-        res.json({ ok: true, mode: "unhealthy-reset", result });
-        return;
-      }
-      if (mode === "client-wipe" || mode === "vasco-trim") {
-        assertRuntimeSecrets(config);
-        const result = await clientWipe.run();
-        res.json({ ok: true, mode: "client-wipe", result });
-        return;
-      }
-      if (
-        mode === "rest-baseline" ||
-        mode === "hold-rebuild" ||
-        mode === "rest-baseline-rebuild"
-      ) {
-        assertRuntimeSecrets(config);
-        const result = await restBaselineRebuild.run();
-        res.json({ ok: true, mode: "rest-baseline", result });
-        return;
-      }
-      if (mode === "rest-tests" || mode === "rest-placement-tests") {
-        assertRuntimeSecrets(config);
-        const result = await heldPlacementTests.runResting();
-        res.json({ ok: true, mode: "rest-tests", result });
         return;
       }
       if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
@@ -1983,27 +1772,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await deliveryWatch.run();
         res.json({ ok: true, mode: "delivery-watch", result });
-        return;
-      }
-      if (mode === "remediate") {
-        const reset =
-          String(req.query.reset ?? req.body?.reset ?? "") === "1" ||
-          String(req.query.reset ?? req.body?.reset ?? "").toLowerCase() ===
-            "true";
-        if (reset) {
-          const cleared = state.clearInboxRemediations();
-          await state.save();
-          console.log(
-            `[remediation] Cleared ${cleared} inbox remediation dedupe keys before retry`,
-          );
-        }
-        const result = await runRemediation();
-        res.json({
-          ok: true,
-          mode: "remediate",
-          resetInboxDedupe: reset,
-          result,
-        });
         return;
       }
       if (mode === "pool" || mode === "pool-provision") {
@@ -2091,34 +1859,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             : new Date().toISOString().slice(0, 10);
         const result = await placementAudit.runSends(date);
         res.json({ ok: true, mode: "audit-sends", result });
-        return;
-      }
-      if (mode === "audit-bcp" || mode === "bcp-audit") {
-        assertRuntimeSecrets(config);
-        const result = await placementAudit.runBcpGenerics();
-        res.json({ ok: true, mode: "audit-bcp", result });
-        return;
-      }
-      if (
-        mode === "bcp-restore" ||
-        mode === "restore-bcp" ||
-        mode === "bcp-client-restore"
-      ) {
-        assertRuntimeSecrets(config);
-        const confirm = String(req.body?.confirm ?? "");
-        const dryRun =
-          req.body?.dryRun === true ||
-          req.body?.dryRun === "true" ||
-          confirm !== "RESTORE";
-        if (!dryRun && confirm !== "RESTORE") {
-          res.status(400).json({
-            ok: false,
-            error: 'Pass { "confirm": "RESTORE" } for a live run (or dryRun: true)',
-          });
-          return;
-        }
-        const result = await bcpClientRestore.run({ dryRun });
-        res.json({ ok: true, mode: "bcp-restore", dryRun, result });
         return;
       }
       if (mode === "audit-day" || mode === "day-audit") {
@@ -2258,9 +1998,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     // tests + sequences and raced attach (06:32:49–06:36:41 vs attach
     // 06:34–06:35). Read-only audit stays on the 6-hour monitor.
     if (secretsReady) {
-      void manualRotation.recoverStaleReservations().catch((error) => {
-        console.warn("[boot] stale reservation recover failed", error);
-      });
     }
     console.log(
       `[boot] Placement tests: ${config.autoPlacementTests ? `RECURRING every ${config.placementTestEveryDays}d while campaign in [${config.autoTestActiveStatuses.join(",")}]` : "one-off manual"}${config.enableTestReconciler ? " (auto-stop on inactive)" : ""}`,
@@ -2276,19 +2013,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Campaign bounce autostop (D90): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; pause over ${config.bouncePauseRatePercent}% after ${config.bouncePauseMinLeads} leads or >${config.bounceBurstCount} bounces/10m; Smartlead autopause off at ${config.smartleadBounceAutopauseOffPercent}%)` : "disabled"}`,
     );
     console.log(
-      `[boot] Held placement tests (D39): ${config.enableHeldPlacementTests ? "ENABLED (separate SmartDelivery tests for pulled mailboxes; not re-attached to campaigns)" : "disabled"}`,
-    );
-    console.log(
-      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}; hold rebuild (D44) ${config.enableRestBaselineRebuild ? (state.getRestBaselineRebuiltAt() ? `done ${state.getRestBaselineRebuiltAt()}` : "PENDING first health") : "disabled"}`,
+      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
       `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (half-client-inbox floor; generics on POC ${config.pocClientNamePatterns.join("/") || "nobody"} or Slack approve${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
-    );
-    console.log(
-      `[boot] Remediation: ${config.enableRemediation ? "ENABLED" : "disabled"} (threshold ${config.remediationInboxThreshold}%)`,
     );
     console.log(
       `[boot] Pool provisioner: ${config.enablePoolProvisioner ? `ENABLED (${config.cronPoolProvision})` : "disabled"} phase=${state.get().poolProvision.phase}`,
@@ -2300,7 +2031,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Warmup gate: ${config.enableWarmupGate ? `ENABLED (min ${config.campaignMinWarmupDays}d from InboxKit; canary/pre-warmed exempt; every health pass)` : "disabled"}`,
     );
     console.log(
-      `[boot] Live mailbox pull: ${config.enableLegacyMailboxPulls ? "LEGACY (placement/bounce/HOLD)" : "KILL-ONLY (domain retire + backfill)"}`,
+      `[boot] Live mailbox pull: KILL-ONLY (domain retire + 21-day gate + backfill; D51/D105/D130)`,
     );
     console.log(
       `[boot] Copy canaries: ${config.enableCopyCanary ? "ENABLED (dedicated 2-domain fleet, warmup off, off-campaign copy tests)" : "disabled"}`,
@@ -2323,9 +2054,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Sending infra census: ${config.enableSendingInfraCensus ? "ENABLED (placement-report IPs, logs only)" : "disabled"}`,
-    );
-    console.log(
-      `[boot] Client wipe (D61): ${config.enableClientWipe ? `ENABLED (Vasco keep ${config.vascoKeepCount}; wipe ${config.wipeClientPatterns.join("/") || "none"})` : "disabled"}`,
     );
     console.log(
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,

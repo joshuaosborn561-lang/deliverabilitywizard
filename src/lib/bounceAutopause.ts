@@ -1,14 +1,10 @@
 /**
  * Smartlead campaign settings helpers.
  *
- * D80 — do not turn Smartlead bounce auto-pause on. Writes use 100 (off).
- * Live pause is CampaignBounceAutostopService (100/20 then 500/7).
- * Name-band helpers remain for old campaign titles; they are not a
- * write rule.
+ * D80/D88 — do not turn Smartlead bounce auto-pause on; writes use 100
+ * (off). The Under-1k/Over-1k/Goliath name-band helpers were deleted
+ * (D129) — campaign names never pick a bounce threshold.
  */
-
-const UNDER_1K = /under[-_\s]?1k\b/i;
-const OVER_1K = /over[-_\s]?1k\b/i;
 
 const TRACK_REWRITE: Record<string, string> = {
   DONT_EMAIL_OPEN: "DONT_TRACK_EMAIL_OPEN",
@@ -30,23 +26,6 @@ const SETTINGS_WRITE_KEYS = [
   "reactivateOOOwithDelay",
   "ai_categorisation_options",
 ] as const;
-
-export function isUnder1kCampaign(name: string): boolean {
-  return UNDER_1K.test(name) && !OVER_1K.test(name);
-}
-
-export function isOver1kCampaign(name: string): boolean {
-  return OVER_1K.test(name);
-}
-
-export function isGoliathCampaign(name: string): boolean {
-  return /goliath/i.test(name);
-}
-
-/** D80 — Smartlead autopause stays off. Name bands are not a write rule. */
-export function desiredBounceAutopausePercent(_name?: string): number {
-  return 100;
-}
 
 export function unwrapCampaignSettings(settings: unknown): Record<string, unknown> {
   if (!settings || typeof settings !== "object" || Array.isArray(settings)) {

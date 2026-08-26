@@ -74,25 +74,6 @@ describe("Slack copy is plain English (D47)", () => {
       errors: [],
       actions: [{ email: "a@x.com", message: "ok", reauthenticated: true }],
     });
-    await client.notifyRemediation({
-      dryRun: false,
-      blacklistedDomains: [],
-      deletedSmartleadAccounts: [],
-      purgedInboxKitDomains: [],
-      recoveredInboxes: [
-        {
-          id: 1,
-          email: "weak@x.com",
-          inboxRate: 40,
-          scoredSameEsp: true,
-          removedFromCampaigns: [1],
-          clientName: "Acme",
-        },
-      ],
-      clientActions: [],
-      pausedCampaigns: [],
-      errors: [],
-    });
     await client.notifyClientDayBrief({
       date: "2026-08-21",
       totalSent: 100,

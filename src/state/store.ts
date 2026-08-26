@@ -157,14 +157,10 @@ export interface AppState {
   remediatedKeys: Record<string, string>;
   /** Inboxes held off campaigns until holdUntil (ISO date or datetime) */
   heldInboxes: Record<string, HeldInboxRecord>;
-  /** D39 — separate placement tests for held/pulled mailboxes */
-  heldPlacementTests: Record<string, HeldPlacementTestRecord>;
   /** D41/D43 — client A/B resters and generics on the send-clock sit */
   restingInboxes: Record<string, RestingInboxRecord>;
   /** First time we saw a generic on a live campaign (send clock). */
   genericSendStartedAt: Record<string, string>;
-  /** D41 — separate placement tests for resting (off-week) client inboxes */
-  restPlacementTests: Record<string, HeldPlacementTestRecord>;
   /** Generic recovery-pool mailboxes (client-agnostic) */
   poolMailboxes: Record<string, PoolMailboxRecord>;
   /** Active original↔pool swaps */
@@ -194,24 +190,8 @@ export interface AppState {
    * auto-resumed once staffed again (D25).
    */
   pendingResumes: Record<string, PendingResumeRecord>;
-  /**
-   * D44 — ISO time the one-shot hold rebuild finished. Empty means it has
-   * not run yet and the next health pass should.
-   */
-  restBaselineRebuiltAt: string | null;
-  /**
-   * D59 — ISO time the one-shot unhealthy-mark wipe finished. Empty means
-   * the next health pass should still run it.
-   */
-  unhealthyResetAt: string | null;
-  /**
-   * D61 — ISO time Vasco trim + GXA/MSRS/Nieto wipe finished.
-   */
-  clientWipeAt: string | null;
   /** D107 — leftover Nieto / MSRS / Positive campaigns deleted. */
   oldClientTeardownAt: string | null;
-  /** D109 — morning START of the live book. */
-  morningActivateAt: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
   /** D81 — first-seen campaign audit + hourly sweep records. */
@@ -325,15 +305,6 @@ export interface RestingInboxRecord {
   lastSameEspInbox: number | null;
 }
 
-/** D39 — SmartDelivery test covering held/pulled mailboxes (off campaigns). */
-export interface HeldPlacementTestRecord {
-  testId: string;
-  emails: string[];
-  /** Campaign id used only as the sequence shell — senders are not re-attached. */
-  campaignId: number;
-  createdAt: string;
-}
-
 const EMPTY_POOL_PROVISION: PoolProvisionState = {
   phase: "idle",
 };
@@ -352,10 +323,8 @@ const EMPTY_STATE: AppState = {
   alertedKeys: {},
   remediatedKeys: {},
   heldInboxes: {},
-  heldPlacementTests: {},
   restingInboxes: {},
   genericSendStartedAt: {},
-  restPlacementTests: {},
   poolMailboxes: {},
   activeSwaps: {},
   clientMonthlyUsage: {},
@@ -366,11 +335,7 @@ const EMPTY_STATE: AppState = {
   opsCursorAgents: {},
   bugRemediations: {},
   pendingResumes: {},
-  restBaselineRebuiltAt: null,
-  unhealthyResetAt: null,
-  clientWipeAt: null,
   oldClientTeardownAt: null,
-  morningActivateAt: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
   campaignChecks: {},
   genericBackfillApprovals: {},
@@ -393,6 +358,13 @@ export class StateStore {
     try {
       const raw = await readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as AppState;
+      // D129 — keep a boot-time copy of the last good state so a bad write
+      // or a drain gone wrong can be rolled back from the same volume.
+      try {
+        await writeFile(`${this.filePath}.boot-backup.json`, raw, "utf8");
+      } catch (backupError) {
+        console.warn("[state] boot backup failed", backupError);
+      }
       this.state = {
         ...structuredClone(EMPTY_STATE),
         ...parsed,
@@ -400,10 +372,8 @@ export class StateStore {
         alertedKeys: parsed.alertedKeys ?? {},
         remediatedKeys: parsed.remediatedKeys ?? {},
         heldInboxes: parsed.heldInboxes ?? {},
-        heldPlacementTests: parsed.heldPlacementTests ?? {},
         restingInboxes: parsed.restingInboxes ?? {},
         genericSendStartedAt: parsed.genericSendStartedAt ?? {},
-        restPlacementTests: parsed.restPlacementTests ?? {},
         poolMailboxes: parsed.poolMailboxes ?? {},
         activeSwaps: parsed.activeSwaps ?? {},
         clientMonthlyUsage: parsed.clientMonthlyUsage ?? {},
@@ -422,11 +392,7 @@ export class StateStore {
         lastStaffingShort: Array.isArray(parsed.lastStaffingShort)
           ? parsed.lastStaffingShort
           : [],
-        restBaselineRebuiltAt: parsed.restBaselineRebuiltAt ?? null,
-        unhealthyResetAt: parsed.unhealthyResetAt ?? null,
-        clientWipeAt: parsed.clientWipeAt ?? null,
         oldClientTeardownAt: parsed.oldClientTeardownAt ?? null,
-        morningActivateAt: parsed.morningActivateAt ?? null,
         isolation: normalizeIsolationState(parsed.isolation),
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
@@ -519,22 +485,6 @@ export class StateStore {
     return n;
   }
 
-  getUnhealthyResetAt(): string | null {
-    return this.state.unhealthyResetAt;
-  }
-
-  markUnhealthyReset(iso: string): void {
-    this.state.unhealthyResetAt = iso;
-  }
-
-  getClientWipeAt(): string | null {
-    return this.state.clientWipeAt;
-  }
-
-  markClientWipe(iso: string): void {
-    this.state.clientWipeAt = iso;
-  }
-
   getOldClientTeardownAt(): string | null {
     return this.state.oldClientTeardownAt;
   }
@@ -543,60 +493,10 @@ export class StateStore {
     this.state.oldClientTeardownAt = iso;
   }
 
-  getMorningActivateAt(): string | null {
-    return this.state.morningActivateAt;
-  }
-
-  setMorningActivateAt(iso: string): void {
-    this.state.morningActivateAt = iso;
-  }
-
   clearMailboxControls(): number {
     const n = Object.keys(this.state.isolation.mailboxResults).length;
     this.state.isolation.mailboxResults = {};
     return n;
-  }
-
-  clearHeldPlacementTests(): number {
-    const n = Object.keys(this.state.heldPlacementTests).length;
-    this.state.heldPlacementTests = {};
-    return n;
-  }
-
-  /** D59 — old same-ESP scores are not a reason to keep a B-pod box off. */
-  clearClientRestProof(): number {
-    let cleared = 0;
-    for (const row of Object.values(this.state.restingInboxes)) {
-      if (row.kind === "generic") continue;
-      if (row.lastSameEspInbox == null) continue;
-      row.lastSameEspInbox = null;
-      cleared += 1;
-    }
-    return cleared;
-  }
-
-  getRestBaselineRebuiltAt(): string | null {
-    return this.state.restBaselineRebuiltAt;
-  }
-
-  markRestBaselineRebuilt(iso: string): void {
-    this.state.restBaselineRebuiltAt = iso;
-  }
-
-  markHeldPlacementTest(record: HeldPlacementTestRecord): void {
-    this.state.heldPlacementTests[record.testId] = record;
-  }
-
-  getHeldPlacementTest(testId: string): HeldPlacementTestRecord | undefined {
-    return this.state.heldPlacementTests[testId];
-  }
-
-  listHeldPlacementTests(): HeldPlacementTestRecord[] {
-    return Object.values(this.state.heldPlacementTests);
-  }
-
-  clearHeldPlacementTest(testId: string): void {
-    delete this.state.heldPlacementTests[testId];
   }
 
   markRestingInbox(record: RestingInboxRecord): void {
@@ -628,26 +528,6 @@ export class StateStore {
 
   clearGenericSendStartedAt(email: string): void {
     delete this.state.genericSendStartedAt[email.toLowerCase()];
-  }
-
-  markRestPlacementTest(record: HeldPlacementTestRecord): void {
-    this.state.restPlacementTests[record.testId] = record;
-  }
-
-  getRestPlacementTest(testId: string): HeldPlacementTestRecord | undefined {
-    return this.state.restPlacementTests[testId];
-  }
-
-  listRestPlacementTests(): HeldPlacementTestRecord[] {
-    return Object.values(this.state.restPlacementTests);
-  }
-
-  clearRestPlacementTest(testId: string): void {
-    delete this.state.restPlacementTests[testId];
-  }
-
-  clearInboxRemediation(email: string): void {
-    delete this.state.remediatedKeys[`remediate-inbox:${email.toLowerCase()}`];
   }
 
   /** Drop inbox-recovery dedupe keys so a follow-up run can retry rate-limited work. */
@@ -876,6 +756,13 @@ export class StateStore {
       if (match) return match;
     }
     return undefined;
+  }
+
+  /** D130 — drain every leftover swap reservation; nothing writes them now. */
+  clearAllSwaps(): number {
+    const n = Object.keys(this.state.activeSwaps).length;
+    this.state.activeSwaps = {};
+    return n;
   }
 
   markSwap(record: ActiveSwapRecord): void {

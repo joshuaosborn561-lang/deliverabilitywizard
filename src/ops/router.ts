@@ -6,10 +6,6 @@ import type { OpsAuth, OpsRole, OpsSession } from "./auth.js";
 import { campaignSetupPrompt } from "./campaignSetupPrompt.js";
 import { classifyOpsMessage, opsHelp } from "./policy.js";
 import type { CursorAssistantService } from "./cursorAssistant.js";
-import type {
-  ManualRotationService,
-  RotationResult,
-} from "./manualRotation.js";
 import type { IsolationExecuteService } from "../services/isolationExecute.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
 
@@ -38,8 +34,6 @@ export function createOpsRouter(opts: {
   config: AppConfig;
   auth: OpsAuth;
   state: StateStore;
-  rotation: ManualRotationService;
-  executeRotation: (email: string) => Promise<RotationResult>;
   runtime: OpsRuntime;
   cursorAssistant?: CursorAssistantService | null;
   isolationExecute?: IsolationExecuteService;
@@ -236,7 +230,6 @@ export function createOpsRouter(opts: {
         lastRuns: {
           scan: state.lastScanAt,
           monitor: state.lastMonitorAt,
-          remediation: state.lastRemediationAt,
           reconnect: state.lastReconnectAt,
           warmupGate: state.lastWarmupGateAt,
           health: state.lastHealthAt,
@@ -257,7 +250,6 @@ export function createOpsRouter(opts: {
           mailboxDailyCap: opts.config.messagePerDay,
           warmupDays: opts.config.poolWarmupDays,
           freshInboxWarmupDays: opts.config.freshInboxWarmupDays,
-          recoveryHoldDays: opts.config.recoveryHoldDays,
           inboxThreshold: opts.config.remediationInboxThreshold,
           bounceThreshold: opts.config.bounceRateThreshold,
           bounceWarnThreshold: opts.config.bounceRateWarnThreshold,
@@ -268,8 +260,6 @@ export function createOpsRouter(opts: {
           clientRest: opts.config.enableClientRest,
           genericSendRestDays: opts.config.genericSendRestDays,
           espMixMinPercent: opts.config.campaignEspMixMinPercent,
-          restBaselineRebuild: opts.config.enableRestBaselineRebuild,
-          restBaselineRebuiltAt: state.restBaselineRebuiltAt ?? null,
         },
         pendingApprovals:
           req.opsSession!.role === "owner" ? pendingApprovals : undefined,
@@ -486,7 +476,7 @@ export function createOpsRouter(opts: {
     const respond = (
       text: string,
       data?: unknown,
-      confirmation?: { type: "rotate"; email: string },
+      confirmation?: never,
     ) => res.json({ message: text, data, confirmation });
 
     try {
@@ -578,36 +568,6 @@ export function createOpsRouter(opts: {
             refreshApprovals: true,
           });
           return;
-        case "rotate": {
-          const preview = await opts.rotation.preview(intent.email);
-          await audit(
-            session,
-            "rotation-preview",
-            preview.allowed ? "success" : "denied",
-            intent.email,
-            preview.allowed ? "safe to confirm" : preview.reasons.join("; "),
-          );
-          if (!preview.allowed) {
-            respond(
-              `Rotation is blocked:\n${preview.reasons.map((reason) => `• ${reason}`).join("\n")}`,
-              preview,
-            );
-            return;
-          }
-          respond(
-            [
-              `Rotation preview for ${preview.email}:`,
-              `• Replacement: ${preview.replacement?.email} (${preview.platform})`,
-              `• Campaigns: ${preview.campaigns.map((campaign) => `#${campaign.id} ${campaign.name}`).join(", ")}`,
-              `• Original warms until ${preview.holdUntil}`,
-              "",
-              "Nothing has changed yet. Use Confirm rotation to execute after revalidation.",
-            ].join("\n"),
-            preview,
-            { type: "rotate", email: preview.email },
-          );
-          return;
-        }
         case "deliverability":
         case "dns":
         case "campaigns":
@@ -648,52 +608,6 @@ export function createOpsRouter(opts: {
     }
   });
 
-  router.post("/rotate", async (req: AuthenticatedRequest, res) => {
-    const session = req.opsSession!;
-    const email = String(req.body?.email ?? "").trim().toLowerCase();
-    if (req.body?.confirm !== "ROTATE") {
-      res.status(400).json({ error: "Type ROTATE to confirm" });
-      return;
-    }
-    try {
-      await audit(
-        session,
-        "rotation-confirmed",
-        "success",
-        email,
-        "Operator confirmed rotation after preview",
-        true,
-      );
-    } catch (error) {
-      res.status(503).json({ error: safeMessage(error) });
-      return;
-    }
-    const lock = `rotate:${email}`;
-    if (actionLocks.has(lock)) {
-      res.status(409).json({ error: "Rotation is already running" });
-      return;
-    }
-    actionLocks.add(lock);
-    try {
-      const result: RotationResult = await opts.executeRotation(email);
-      await audit(
-        session,
-        "rotation-execute",
-        result.completed ? "success" : result.errors.length ? "error" : "denied",
-        email,
-        result.completed
-          ? `replacement ${result.preview.replacement?.email}`
-          : [...result.preview.reasons, ...result.errors].join("; "),
-      );
-      res.status(result.completed ? 200 : 409).json({ result });
-    } catch (error) {
-      const message = safeMessage(error);
-      await audit(session, "rotation-execute", "error", email, message);
-      res.status(500).json({ error: message });
-    } finally {
-      actionLocks.delete(lock);
-    }
-  });
 
   return router;
 }

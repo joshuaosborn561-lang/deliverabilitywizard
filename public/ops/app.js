@@ -99,7 +99,6 @@ async function loadDashboard(force = false) {
   const count = (value) => (value == null ? "—" : value);
   const cards = [
     ["Sending mailboxes", count(data.fleet.sendingMailboxes), data.fleet.activeCampaigns == null ? "Live Smartlead count unavailable" : `Across ${data.fleet.activeCampaigns} active campaigns`],
-    ["In recovery", data.fleet.mailboxesInRecovery, `${data.policy.recoveryHoldDays}-day recovery hold`],
     ["Resting (off-week)", data.pool.restingInboxes || 0, data.policy.clientRest ? "Per-client A/B · generics on send clock" : "Sender rest is off"],
     ["Total mailboxes", count(data.fleet.totalMailboxes), "All Smartlead accounts"],
     ["Available generics", data.pool.byStatus.available || 0, `${data.pool.total} total pool records`],
@@ -136,7 +135,6 @@ async function loadDashboard(force = false) {
   const runNames = {
     scan: "Placement scan",
     monitor: "Result monitor",
-    remediation: "Remediation",
     reconnect: "Reconnect",
     warmupGate: "Warmup gate",
     health: "Campaign health / rest",
@@ -286,15 +284,6 @@ function addMessage(role, text, confirmation) {
   bubble.append(linkify(text));
   bubble.append(make("small", "", role === "assistant" ? "Deliverability Ops" : state.user.username));
   messages.append(bubble);
-  if (confirmation?.type === "rotate") {
-    const card = make("div", "confirm-card");
-    card.append(make("strong", "", "Confirm one-mailbox rotation"));
-    const description = make("p", "muted", `Revalidates all safety rules, then rotates ${confirmation.email}.`);
-    const button = make("button", "", "Confirm rotation");
-    button.addEventListener("click", () => executeRotation(confirmation.email, button));
-    card.append(description, button);
-    messages.append(card);
-  }
   messages.scrollTop = messages.scrollHeight;
   return bubble;
 }
@@ -341,7 +330,7 @@ async function sendChat(message) {
   switchPanel("chat");
   addMessage("user", message);
   const looksFreeform =
-    !/^(help|commands|status|check |audit |reconnect|rotate |approvals)/i.test(
+    !/^(help|commands|status|check |audit |reconnect|approvals)/i.test(
       message.trim(),
     );
   const loading = addMessage(
@@ -417,27 +406,6 @@ function summarizeData(data) {
   return "";
 }
 
-async function executeRotation(email, button) {
-  if (!window.confirm(`Rotate ${email}? This removes it from active campaigns and holds it for recovery.`)) return;
-  button.disabled = true;
-  button.textContent = "Rotating…";
-  try {
-    const response = await api("/rotate", {
-      method: "POST",
-      body: JSON.stringify({ email, confirm: "ROTATE" }),
-    });
-    addMessage(
-      "assistant",
-      `Rotation completed. ${email} is warming until ${response.result.preview.holdUntil}; ${response.result.preview.replacement.email} is covering its campaigns.`,
-    );
-    button.closest(".confirm-card").remove();
-    await loadDashboard();
-  } catch (error) {
-    addMessage("assistant", `Rotation did not complete: ${error.message}`);
-    button.disabled = false;
-    button.textContent = "Confirm rotation";
-  }
-}
 
 function isolationKindLabel(kind) {
   if (kind === "buy_domains") return "Buy replacements";

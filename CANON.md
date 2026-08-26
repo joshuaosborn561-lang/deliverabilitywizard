@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D128** (2026-08-26). One page of current truth. When a new
+Canon as of **D130** (2026-08-26). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -66,8 +66,8 @@ Slack speaks only when a human decision is needed or the day is done.
   ~14 days of live send, then sit ~14, then supply again (D43).
 - **Generics** staff only a POC client (currently Goliath) or a campaign Josh
   Slack-approved (D81/D82). Cross-client top-up is a compensated **move**;
-  same-client is additive. A pool mailbox reserved by an active recovery swap
-  is not supply (D14).
+  same-client is additive. (The old recovery-swap system and its
+  reservations are deleted, D130.)
 - **Retired domains stay off** live campaigns forever; replacements owe the
   21 days (D65).
 

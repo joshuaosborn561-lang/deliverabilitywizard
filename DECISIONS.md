@@ -144,6 +144,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D126 | Live |
 | D127 | Live — the canon rebuild |
 | D128 | Live |
+| D129 | Live — the deletion pass |
+| D130 | Live — the engine teardown |
 
 ---
 
@@ -3064,3 +3066,87 @@ can auto-START. Accepted: launching unproven is what D106 exists to stop.
 **Guards.** owner-intent D128 (no hold_until pull; qa-unpause reads the
 stamp and the bar; the brief has no bands); D7 guard rewritten to absence
 form; D80 guard trimmed to the loop + off-write.
+
+---
+
+## D129 — Defuse the time bombs: retired machinery is deleted, not parked
+
+**Decision.** Everything the canon audit marked retired-but-wired or
+completed is deleted from the tree:
+
+- **D39 held/rest recovery tests** (`heldPlacementTests.ts`, its state keys,
+  flags, and `/run` modes). The test reconciler now **stops** a leftover
+  `Held recovery:` / `Rest recovery:` SmartDelivery test on sight — left
+  running they masquerade as live campaign coverage (D121). Off-week
+  coverage lives on the pod-control shell (D56).
+- **The four one-shots** — hold rebuild (D44), unhealthy reset (D59), the
+  destructive Vasco/GXA/MSRS/Nieto client wipe (D61), and the flag-less
+  morning START (D109) — all ran in Aug 2026 and existed only as
+  state-stamp no-ops that would re-fire in full on a lost state file.
+- **The never-wired D29 hunt** (`campaignBounceInvestigate.ts`, 282 lines
+  of retired pulls and copy guesses one import away from resurrection).
+- **Dead lib halves**: the D28/D36 provider-split copy classifier, the
+  20/7 band helpers (D88), the Under-1k/Over-1k/Goliath name-band helpers,
+  the D85/D87/D89 bulk-signature-ask machinery (legacy tapped buttons still
+  execute, D97), the rest-restore veto stub (D59), the never-constructed
+  `SendVolumeService` class, and 16 orphaned config knobs including
+  `MIN_CAMPAIGN_SENDERS`-adjacent band/wipe/full-send/investigate vars.
+
+Guards for retired decisions flip to **absence form** (the file must not
+exist / the pattern must not reappear), matching the D79/D88/D91/D97 house
+style. The state store now writes a `state.json.boot-backup.json` copy of
+the last good state at every boot so the Phase 3 drain (and any bad write)
+can be rolled back from the same volume.
+
+**Why.** D127 §2: dead rules get removed, never flag-parked. The audit
+showed `clientWipe` would re-delete client fleets and `morningActivate`
+would re-START the book past the launch bar if `/data/state.json` were
+ever lost — insurance nobody wanted, priced in production risk.
+
+**Tradeoff.** Historical `/run` modes (`held-tests`, `client-wipe`,
+`rest-baseline`, …) return unknown-mode errors now. Accepted: they were
+loaded guns, and the ledger keeps the record of what they did.
+
+**Guards.** owner-intent D129 (deletion census via absence checks on every
+file above); rewritten D28/D36/D39/D40/D41/D44/D59/D61/D69/D80/D82/D88/D109
+blocks; meta-guards unchanged.
+
+---
+
+## D130 — The rotation engine is gone
+
+**Decision.** The pre-canon rotation engine and everything only it used is
+deleted: `remediation.ts` (1,831 lines — per-sender bounce/placement pulls,
+HOLD-UNTIL writers, 14-day hold release, the 2% bounce Slack, the direct
+blacklist teardown), `recoveryPool.ts`, the `/ops` manual-rotation service
+and its Rotate button/chat intent (now a plain-English denial), the
+BCP-named restore service (fan-out owns BCP, D99), the hold/placement
+rotation libs, the burn-checklist lib, and the `remediate` / `bcp-restore`
+/ `held-tests`-era `/run` modes. Config loses `ENABLE_REMEDIATION`,
+`ENABLE_RECOVERY_POOL`, `ENABLE_BOUNCE_ROTATION`,
+`ENABLE_LEGACY_MAILBOX_PULLS`, and `RECOVERY_HOLD_DAYS` — the off-switches
+die with the machinery they switched, so no env var can resurrect a pull.
+
+**The burned-domain flow is untouched and was never in that engine**:
+pod-control known-good readings → `DomainLifecycleService` (one fail =
+buy-ahead ask, two consecutive = retire ask, receipts attached) →
+Josh's Slack tap → execution. Kill-only stands (D51/D105).
+
+**One-time drain at boot**: leftover `heldInboxes` / `activeSwaps` residue
+is cleared loudly — those records only suppressed staffing (D59); freed
+inboxes rejoin on the next health pass. The state keys remain (readers are
+now permanently-empty no-ops slated for the Phase 5 sweep). Four Slack
+formatters with zero callers are deleted; the remaining quiet formatters
+(calls the D71 gate drops) go with Phase 5.
+
+**Why.** D127 §2. The engine was one env var from re-benching senders on
+the retired 80%/5% rules, its manual-rotation path still wrote HOLD tags,
+and its `/ops` button advertised a rotation canon forbids.
+
+**Tradeoff.** 80% / 5% / 2% remain pure readings with no actor behind
+them anywhere. A genuinely burned mailbox waits for its domain's
+known-good verdict and Josh's tap. Accepted — that is D49/D51 verbatim.
+
+**Guards.** owner-intent D130 (absence census); flipped
+D5/D6/D32/D41/D50/D51/D69/D79/D93 blocks; ops policy denies rotate with
+the kill-only explanation.

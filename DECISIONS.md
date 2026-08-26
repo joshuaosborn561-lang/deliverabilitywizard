@@ -2318,3 +2318,23 @@ is not allowed` (SalesGlider Nurture, Parlay2, Culture Fits, Positive).
 Accepted: we add it when a write needs it. Whack-a-mole omit is worse.
 
 **Guards.** sequencesForWrite allowlist; owner-intent D103.
+---
+
+## D104 — Sequence writes send variants, not sequence_variants
+
+**Decision.** GET `/sequences` returns `sequence_variants`. POST
+`/sequences` rejects that key (`"sequences[0].sequence_variants" is
+not allowed`). `sequencesForWrite` remaps GET variants onto `variants`
+and never sends `sequence_variants`. The tag append is unchanged
+(D92). D103's writable allowlist still stands.
+
+**Why.** Live 2026-08-26 after #121: leftover `%signature%` writes
+cleared timestamps and `email_campaign_id`, then died on
+`sequence_variants` (SalesGlider Nurture, Parlay2, Culture Fits,
+Positive).
+
+**Tradeoff.** If Smartlead later requires `seq_variants` instead of
+`variants`, we rename once. Accepted: GET and POST already disagree.
+
+**Guards.** sequencesForWrite remaps sequence_variants → variants;
+owner-intent D104.

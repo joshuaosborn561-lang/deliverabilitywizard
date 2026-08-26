@@ -3215,6 +3215,30 @@ describe("owner intent — D103 sequence writes keep only writable fields", () =
   });
 });
 
+describe("owner intent — D104 sequence writes remap sequence_variants", () => {
+  it("D104: GET sequence_variants become POST variants", async () => {
+    const qa = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/signatureQa.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      qa,
+      /out\.variants/,
+      stop(
+        "GET sequence_variants remap to variants on write (D104).",
+        "sequencesForWrite no longer emits variants from sequence_variants.",
+      ),
+    );
+    assert.match(
+      qa,
+      /key === "sequence_variants"\) continue/,
+      stop(
+        "POST must not send sequence_variants (D104).",
+        "sequencesForWrite still forwards the GET key.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D100 canary schedule needs campaign_id", () => {
   it("D100: canary attach sends campaign_id; senders stay off the campaign", async () => {
     const canary = await import("node:fs/promises").then((fs) =>

@@ -132,13 +132,21 @@ describe("one-click signature fix (D85)", () => {
     assert.equal("created_at" in written[0]!, false);
     assert.equal("updated_at" in written[0]!, false);
     assert.equal("email_campaign_id" in written[0]!, false);
-    assert.equal("created_at" in (written[0]!.sequence_variants![0] as object), false);
+    assert.equal("sequence_variants" in written[0]!, false);
     assert.equal(
-      "email_campaign_id" in (written[0]!.sequence_variants![0] as object),
+      "created_at" in (written[0]!.variants![0] as object),
+      false,
+    );
+    assert.equal(
+      "email_campaign_id" in (written[0]!.variants![0] as object),
       false,
     );
     assert.equal(written[0]!.id, 1);
     assert.equal(written[0]!.email_body, "<div>Hi</div><div>%signature%</div>");
+    assert.equal(
+      written[0]!.variants![0]!.email_body,
+      "<div>Hi</div><div>%signature%</div>",
+    );
     assert.deepEqual(written[0]!.seq_delay_details, { delayInDays: 0 });
   });
 });

@@ -222,6 +222,21 @@ export function classifyFailure(
     };
   }
 
+  // Smartlead listed senders that SmartDelivery rejects as not on the
+  // campaign (membership lag / mid-scan rest or fan-out). Next scan retries;
+  // a remediator cannot attach mailboxes. Was fingerprinting per-campaign as
+  // unknown:scan:…sender and relaunching.
+  if (/sender email accounts?.+not used in the campaign/i.test(lower)) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "sender-not-in-campaign"),
+      autoRemediate: false,
+      summary:
+        "SmartDelivery rejected senders not (yet) on the campaign (membership drift)",
+      raw: text,
+    };
+  }
+
   if (
     /smartdelivery access|api access is not active|invalid api key|unauthorized/i.test(
       lower,

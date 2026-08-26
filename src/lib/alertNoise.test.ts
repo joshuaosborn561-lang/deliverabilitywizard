@@ -8,6 +8,7 @@ import {
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
+  isSenderNotInCampaignNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
 
@@ -75,6 +76,15 @@ describe("alert noise", () => {
       isBurnChecklistNoise("delete SL account x@y.com: connection reset"),
       false,
     );
+  });
+
+  it("treats SmartDelivery sender-not-in-campaign as benign ops noise", () => {
+    const message =
+      "Failed creating tests for campaign 3701207: Sender email accounts minh.nguyen@useculturefits.info, omar.hassan@proculturefits.info not used in the campaign";
+    assert.equal(isSenderNotInCampaignNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /membership lag/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

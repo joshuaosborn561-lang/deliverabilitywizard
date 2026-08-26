@@ -273,7 +273,11 @@ export class CampaignCheckService {
         findings = findings.filter(
           (finding) => finding.kind !== "missing_signature_tag",
         );
-        sigFixed.push({ name, brand: sigApplied.brand });
+        // D95 — tell Josh the first time we write a campaign. A leftover
+        // backfill already notified does not ping again every pass.
+        if (!record.sigAutoWrittenAt) {
+          sigFixed.push({ name, brand: sigApplied.brand });
+        }
       }
       const passed = firstCheckPassed(findings);
       const next: CampaignCheckRecord = {
@@ -281,6 +285,7 @@ export class CampaignCheckService {
         name,
         lastKind: kind,
         findings: findings.map(formatFinding),
+        sigAutoWrittenAt: sigApplied ? now : record.sigAutoWrittenAt,
       };
       if (kind === "first") {
         next.firstCheckAt = now;
@@ -322,6 +327,10 @@ export class CampaignCheckService {
           ...sigFixed.map((row) => `• ${row.name}`),
         ].join("\n"),
       );
+    } else if (sigFixed.length) {
+      console.log(
+        `[campaign-check] signatures written=${sigFixed.length} (no Slack client)`,
+      );
     }
 
     await this.state.save();
@@ -353,7 +362,9 @@ export class CampaignCheckService {
   /**
    * D92 — missing signature is written, not asked. Appends `%signature%`
    * (mailbox expands it to First Last / client brand) and sets the
-   * mailbox signature to that two-line pair. Slack after, not before.
+   * mailbox signature to that two-line pair. Slack once per campaign
+   * the first time we write it (D95) — a leftover backfill does not
+   * re-ping every health / hourly pass.
    */
   private async autoApplySignature(input: {
     campaignId: number;

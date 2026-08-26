@@ -2116,3 +2116,22 @@ is named. Accepted: that is the only leftover human step.
 
 **Guards.** Health still calls runReconnect; notifyReconnect uses
 action_result; owner-intent D94.
+---
+
+## D95 — Signature Slack is once per campaign, not every pass
+
+**Decision.** D92 still writes First Last / client name and still
+Slacks `action_result` the first time a campaign is auto-fixed.
+A leftover backfill already told does not Slack again on the next
+health or hourly pass. The write still happens if the tag is
+missing. New campaigns still Slack when they are written.
+
+**Why.** Josh (2026-08-26): "you can tell me when you do it you
+were just alerting me a bunch just now i assume from backfill."
+
+**Tradeoff.** If someone later strips `%signature%` off a campaign
+we already wrote, we put it back and stay quiet. Accepted: that
+is a re-touch, not a first write.
+
+**Guards.** campaignCheck records `sigAutoWrittenAt` and still
+calls notifyActionResult; owner-intent D95.

@@ -64,4 +64,6 @@ export interface CampaignCheckRecord {
   lastSweepAt: string | null;
   lastKind: "first" | "hourly";
   findings: string[];
+  /** D95 — first auto-write already told Josh. Re-writes stay quiet. */
+  sigAutoWrittenAt?: string | null;
 }

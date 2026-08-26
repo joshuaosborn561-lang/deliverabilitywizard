@@ -3026,6 +3026,30 @@ describe("owner intent — D93 word hunt is ESP-fail + known-good clean", () => 
   });
 });
 
+describe("owner intent — D95 signature Slack once per campaign", () => {
+  it("D95: first write Slacks; a leftover backfill does not re-ping", async () => {
+    const check = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      check,
+      /sigAutoWrittenAt/,
+      stop(
+        "A leftover signature write does not Slack again (D95).",
+        "campaignCheck.ts no longer records sigAutoWrittenAt.",
+      ),
+    );
+    assert.match(
+      check,
+      /notifyActionResult/,
+      stop(
+        "Josh still gets told the first time a signature is written (D92/D95).",
+        "campaignCheck.ts no longer Slacks after a new signature write.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D94 reconnect DCD mailboxes", () => {
   it("D94: health reconnects; Slack uses action_result", async () => {
     const index = await import("node:fs/promises").then((fs) =>

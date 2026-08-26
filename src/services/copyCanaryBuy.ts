@@ -240,12 +240,33 @@ export class CopyCanaryBuyService {
         : []),
     ]);
 
-    const candidates: Array<{
+    // Client inboxes are also bought through this workspace. Anything that
+    // already lives in Smartlead with a client or campaign memberships is
+    // client supply, not a fresh canary buy.
+    const takenInSmartlead = new Set<string>();
+    try {
+      const accounts = await this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: true,
+      });
+      for (const account of accounts) {
+        const email = accountEmail(account)?.toLowerCase();
+        if (!email) continue;
+        const clientTied = typeof account.client_id === "number";
+        const onCampaigns =
+          Array.isArray(account.campaign_ids) && account.campaign_ids.length > 0;
+        if (clientTied || onCampaigns) takenInSmartlead.add(email);
+      }
+    } catch (error) {
+      console.warn("[copy-canary-adopt] could not read Smartlead accounts", error);
+    }
+
+    let candidates: Array<{
       email: string;
       domain: string;
       platform: "GOOGLE" | "MICROSOFT";
       firstName: string;
       lastName: string;
+      createdAtMs: number | null;
     }> = [];
     for (const row of rows) {
       const domain = (row.domain_name || row.domain || "").toLowerCase();
@@ -257,8 +278,16 @@ export class CopyCanaryBuyService {
       ).toLowerCase();
       if (!email || !domain) continue;
       if (planDomains.has(domain) || excludedDomains.has(domain)) continue;
+      if (takenInSmartlead.has(email)) continue;
       const existing = this.store.getPoolMailbox(email);
       if (existing && !existing.copyCanary) continue;
+      const raw = row as Record<string, unknown>;
+      const createdRaw =
+        raw.created_at ?? raw.createdAt ?? raw.created ?? raw.purchased_at;
+      const createdAtMs =
+        typeof createdRaw === "string" || typeof createdRaw === "number"
+          ? Date.parse(String(createdRaw))
+          : Number.NaN;
       candidates.push({
         email,
         domain,
@@ -267,10 +296,27 @@ export class CopyCanaryBuyService {
           : "GOOGLE",
         firstName: row.first_name || username || "Canary",
         lastName: row.last_name || "Box",
+        createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
       });
     }
 
+    // "I just bought these" — when InboxKit reports creation times, a recent
+    // buy beats leftovers from months ago.
+    const RECENT_BUY_MS = 7 * 24 * 60 * 60 * 1000;
+    if (
+      candidates.length > COPY_CANARY_FLEET_SIZE &&
+      candidates.some((c) => c.createdAtMs != null)
+    ) {
+      const recent = candidates.filter(
+        (c) => c.createdAtMs != null && Date.now() - c.createdAtMs < RECENT_BUY_MS,
+      );
+      if (recent.length) candidates = recent;
+    }
+
     const found = candidates.map((c) => c.email);
+    console.log(
+      `[copy-canary-adopt] ${candidates.length} candidate(s): ${found.slice(0, 12).join(", ") || "none"}`,
+    );
     if (!candidates.length) {
       return {
         found,
@@ -282,6 +328,9 @@ export class CopyCanaryBuyService {
       };
     }
     if (candidates.length > COPY_CANARY_FLEET_SIZE * 2) {
+      console.warn(
+        `[copy-canary-adopt] too many candidates (${candidates.length}) — adopting none. Domains: ${[...new Set(candidates.map((c) => c.domain))].slice(0, 20).join(", ")}`,
+      );
       return {
         found,
         adopted: [],

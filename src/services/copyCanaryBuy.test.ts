@@ -405,6 +405,36 @@ describe("manual fleet adoption (D86)", () => {
     assert.match(deferred!.reason ?? "", /in flight/);
   });
 
+  it("a client inbox bought through the same workspace is never adopted", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-client-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const clientRow = {
+      username: "sam",
+      domain_name: "parlaytech1.info",
+      platform: "GOOGLE",
+      uid: "c1",
+    };
+    const service = makeService({
+      state,
+      inboxkitRows: [...manualRows, clientRow],
+      smartleadAccounts: [
+        // Client-tied in Smartlead — client supply, not a canary.
+        { id: 500, from_email: "sam@parlaytech1.info", client_id: 777 },
+        ...manualEmails.map((email, index) => ({
+          id: 9200 + index,
+          from_email: email,
+        })),
+      ],
+      warmupCalls: [],
+    });
+    const result = await service.adoptManualPurchase();
+    assert.ok(result);
+    assert.deepEqual([...result!.adopted].sort(), [...manualEmails].sort());
+    assert.equal(state.getPoolMailbox("sam@parlaytech1.info"), undefined);
+  });
+
   it("adopts nothing when the candidate set is too big to be a fleet buy", async () => {
     const state = new StateStore(
       `/tmp/canary-adopt-many-${process.pid}-${Date.now()}.json`,

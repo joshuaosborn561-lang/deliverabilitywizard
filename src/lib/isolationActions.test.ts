@@ -5,6 +5,7 @@ import { StateStore } from "../state/store.js";
 import {
   buildIsolationAction,
   coveredSignatureCampaigns,
+  dismissPendingSignatureAsks,
   remindPendingIsolationActions,
   requestIsolationAction,
   supersedePendingSingleSignatureAsks,
@@ -50,6 +51,24 @@ describe("isolation Slack reminds", () => {
     assert.ok(first);
     assert.equal(second, null);
     assert.deepEqual(notified, [action.id]);
+  });
+
+  it("D97: leftover Add %signature% asks are dismissed and never re-posted", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const leftover = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "%signature% missing on SalesGlider Nurture",
+      proof: "#3122546 SalesGlider Nurture is blocked at QA",
+      detail: { campaignId: 3122546 },
+    });
+    store.upsertIsolationAction(leftover);
+    const dropped = dismissPendingSignatureAsks(store);
+    const count = await remindPendingIsolationActions({ store, slack });
+    assert.equal(dropped, 1);
+    assert.equal(count, 0);
+    assert.deepEqual(notified, []);
+    assert.equal(store.pendingIsolationActions().length, 0);
   });
 
   it("re-posts pending buttons without creating a new ask", async () => {

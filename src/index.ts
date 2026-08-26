@@ -25,7 +25,10 @@ import {
   slackInstallHref,
   verifySlackActionLink,
 } from "./lib/slackActionLink.js";
-import { remindPendingIsolationActions } from "./lib/isolationActions.js";
+import {
+  dismissPendingSignatureAsks,
+  remindPendingIsolationActions,
+} from "./lib/isolationActions.js";
 import {
   exchangeSlackOauth,
   writeSlackBotTokenFile,
@@ -1205,7 +1208,17 @@ async function main(): Promise<void> {
 
   // Old Slack buttons were posted by another bot, so taps never arrived.
   // Re-send pending asks with signed /slack/action links after deploy.
+  // D97 — leftover Add %signature% asks are dismissed, not re-posted.
   setTimeout(() => {
+    const dropped = dismissPendingSignatureAsks(state);
+    if (dropped) {
+      console.log(
+        `[slack] Dismissed ${dropped} leftover signature ask(s) (D97)`,
+      );
+      void state.save().catch((error) => {
+        console.error("[slack] could not persist signature-ask dismiss", error);
+      });
+    }
     void remindPendingIsolationActions({ store: state, slack })
       .then((count) => {
         if (count) {

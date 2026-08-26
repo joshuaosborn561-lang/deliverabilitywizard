@@ -3026,6 +3026,42 @@ describe("owner intent — D93 word hunt is ESP-fail + known-good clean", () => 
   });
 });
 
+describe("owner intent — D97 leftover signature Slack asks retired", () => {
+  it("D97: Add %signature% is not a Slack allow kind and remind dismisses leftovers", async () => {
+    const { slackKindForIsolationAction } = await import("../lib/slackAllow.js");
+    assert.equal(
+      slackKindForIsolationAction("add_signature_tag"),
+      null,
+      stop(
+        "Add %signature% is not a Slack button (D97).",
+        "add_signature_tag is mapped back onto copy_word and will post again.",
+      ),
+    );
+    const actions = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/isolationActions.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      actions,
+      /dismissPendingSignatureAsks/,
+      stop(
+        "Leftover signature asks are dismissed, not re-posted (D97).",
+        "isolationActions.ts lost dismissPendingSignatureAsks.",
+      ),
+    );
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      index,
+      /dismissPendingSignatureAsks/,
+      stop(
+        "Boot dismisses leftover signature asks before the deploy remind (D97).",
+        "index.ts no longer dismisses leftover Add %signature% asks.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D95 signature Slack once per campaign", () => {
   it("D95: first write Slacks; a leftover backfill does not re-ping", async () => {
     const check = await import("node:fs/promises").then((fs) =>

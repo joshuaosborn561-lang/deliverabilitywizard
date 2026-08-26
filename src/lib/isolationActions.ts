@@ -121,11 +121,36 @@ export async function notifyIsolationActionRecord(
   });
 }
 
+/**
+ * D97 — leftover Add %signature% buttons are retired. The checker writes
+ * the tag (D92). A deploy remind must not re-post them.
+ */
+export function dismissPendingSignatureAsks(
+  store: StateStore,
+  now = new Date().toISOString(),
+): number {
+  let dismissed = 0;
+  for (const action of store.listIsolationActions()) {
+    if (action.kind !== "add_signature_tag") continue;
+    if (action.status !== "pending") continue;
+    store.upsertIsolationAction({
+      ...action,
+      status: "denied",
+      decidedAt: now,
+      decidedBy: "system",
+      error: "Signatures write themselves (D92). Slack ask retired (D97).",
+    });
+    dismissed += 1;
+  }
+  return dismissed;
+}
+
 /** Re-send Slack buttons for pending asks. Does not create or approve anything. */
 export async function remindPendingIsolationActions(input: {
   store: StateStore;
   slack: SlackClient;
 }): Promise<number> {
+  dismissPendingSignatureAsks(input.store);
   const pending = input.store.pendingIsolationActions();
   const boughtCanary = input.store
     .listIsolationActions()
@@ -137,6 +162,7 @@ export async function remindPendingIsolationActions(input: {
   let posted = 0;
   for (const action of pending) {
     if (action.kind === "buy_canary_fleet" && boughtCanary) continue;
+    if (action.kind === "add_signature_tag") continue;
     await notifyIsolationActionRecord(input.slack, action);
     posted += 1;
   }

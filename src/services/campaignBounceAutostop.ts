@@ -8,7 +8,7 @@ import {
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
 import { readBounceAutopausePercent } from "../lib/bounceAutopause.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -108,7 +108,7 @@ export class CampaignBounceAutostopService {
     const nowMs = Date.now();
     const nowIso = new Date(nowMs).toISOString();
     const active = campaigns.filter((campaign) => {
-      if (isPodControlShellCampaign(campaign, this.config.podControlShellCampaignId)) {
+      if (isAnyShellCampaign(campaign, this.config.podControlShellCampaignId)) {
         return false;
       }
       return String(campaign.status ?? "").toUpperCase() === "ACTIVE";
@@ -214,7 +214,7 @@ export class CampaignBounceAutostopService {
     const offNumber = Number(off);
     const living = campaigns.filter(
       (campaign) =>
-        !isPodControlShellCampaign(campaign, this.config.podControlShellCampaignId) &&
+        !isAnyShellCampaign(campaign, this.config.podControlShellCampaignId) &&
         !isTerminalCampaignStatus(campaign.status),
     );
 

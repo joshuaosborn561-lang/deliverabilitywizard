@@ -16,7 +16,7 @@ import {
 import { sleep } from "../lib/http.js";
 import { isClientInbox } from "../lib/clientInbox.js";
 import { parseCampaignLeadStats } from "../lib/leadRunout.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { businessDate } from "./sendVolume.js";
 import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { overallSplit } from "./resultMonitor.js";
@@ -268,7 +268,7 @@ export class ClientDayBriefService {
       .filter(
         (campaign) =>
           typeof campaign.client_id !== "number" &&
-          !isPodControlShellCampaign(campaign) &&
+          !isAnyShellCampaign(campaign) &&
           !isTerminalCampaignStatus(campaign.status),
       )
       .map((campaign) => ({
@@ -312,7 +312,7 @@ export class ClientDayBriefService {
     const drafts = campaigns.filter(
       (campaign) =>
         isDraftCampaignStatus(campaign.status) &&
-        !isPodControlShellCampaign(campaign) &&
+        !isAnyShellCampaign(campaign) &&
         !isTerminalCampaignStatus(campaign.status),
     );
     const loaded: LoadedDraftRow[] = [];

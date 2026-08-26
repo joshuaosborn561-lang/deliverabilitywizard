@@ -2109,7 +2109,7 @@ describe("owner intent — D77 client tag and QA unpause", () => {
     );
     assert.match(
       unpause,
-      /isPodControlShellCampaign/,
+      /isAnyShellCampaign|isPodControlShellCampaign/,
       stop(
         "The pod-control shell stays paused (D56 / D77).",
         "unpauseAfterSigQa.ts no longer skips the shell.",
@@ -3254,28 +3254,44 @@ describe("owner intent — D107 old-client campaigns are deleted", () => {
   });
 });
 
-describe("owner intent — D113 canary schedule is off-campaign", () => {
-  it("D113: canary POST sends sequence and omits campaign_id", async () => {
+describe("owner intent — D114 canary tests hang on a paused shell", () => {
+  it("D114: canary POST uses the shell campaign_id, never the live one", async () => {
     const canary = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
     );
     assert.match(
       canary,
-      /offCampaignSenders:\s*true/,
+      /ensureCanaryShell/,
       stop(
-        "Canary tests stay off-campaign (D113).",
-        "copyCanary.ts lost offCampaignSenders.",
+        "Canary tests hang on a paused per-campaign shell (D114).",
+        "copyCanary.ts no longer ensures a canary shell.",
       ),
     );
-    const placement = await import("node:fs/promises").then((fs) =>
-      fs.readFile(new URL("../lib/isolationPlacement.ts", import.meta.url), "utf8"),
+    assert.match(
+      canary,
+      /campaignId:\s*shell\.campaignId/,
+      stop(
+        "Schedule sends the shell campaign_id (D114).",
+        "copyCanary.ts no longer posts the shell campaign_id.",
+      ),
+    );
+    assert.doesNotMatch(
+      canary,
+      /offCampaignSenders:\s*true/,
+      stop(
+        "D113's omit-campaign_id POST is superseded (D114).",
+        "copyCanary.ts still marks the test off-campaign.",
+      ),
+    );
+    const shell = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/canaryShell.ts", import.meta.url), "utf8"),
     );
     assert.match(
-      placement,
-      /offCampaignSenders/,
+      shell,
+      /isCanaryShellCampaign/,
       stop(
-        "Off-campaign payload sends sequence, not campaign_id (D113).",
-        "isolationManualPayload lost the off-campaign branch.",
+        "Canary shells are identified so morning START cannot launch them (D114).",
+        "isCanaryShellCampaign is gone.",
       ),
     );
   });
@@ -3408,31 +3424,31 @@ describe("owner intent — D110 sequence writes send seq_variants", () => {
 });
 
 describe("owner intent — D100 canary schedule needs campaign_id", () => {
-  it("D100/D113: canary senders stay off the campaign (D113 dropped campaign_id)", async () => {
+  it("D100/D114: canary senders stay off the live campaign", async () => {
     const canary = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
     );
     assert.match(
       canary,
-      /never adds canaries to campaigns|must not add canaries|These inboxes are not on the live campaign/,
+      /not the live campaign|paused canary shell|paused shells, not live/,
       stop(
-        "Canary senders stay off live campaigns (D55/D100/D113).",
-        "copyCanary.ts lost the off-campaign guarantee.",
+        "Canary senders stay off live campaigns (D55/D100/D114).",
+        "copyCanary.ts lost the off-live-campaign guarantee.",
       ),
     );
     assert.match(
       canary,
-      /offCampaignSenders:\s*true/,
+      /campaignId:\s*shell\.campaignId/,
       stop(
-        "Canary schedule is off-campaign (D113). campaign_id bound senders to the campaign.",
-        "copyCanary.ts no longer marks the test off-campaign.",
+        "Schedule still sends a campaign_id (D100) — the shell's, not the live one (D114).",
+        "copyCanary.ts no longer posts campaign_id.",
       ),
     );
   });
 });
 
 describe("owner intent — D102 canary schedule needs sequence_mapping_id", () => {
-  it("D102/D113: canary still reads campaign copy; POST no longer sends mapping id", async () => {
+  it("D102/D114: canary still reads campaign copy and posts the shell mapping id", async () => {
     const canary = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
     );
@@ -3440,16 +3456,16 @@ describe("owner intent — D102 canary schedule needs sequence_mapping_id", () =
       canary,
       /loadCampaignCopy/,
       stop(
-        "Canary still reads campaign sequences for the copy body (D102/D113).",
+        "Canary still reads campaign sequences for the copy body (D102/D114).",
         "copyCanary.ts no longer loads campaign copy.",
       ),
     );
     assert.match(
       canary,
-      /offCampaignSenders:\s*true/,
+      /sequenceMappingId:\s*shell\.sequenceMappingId/,
       stop(
-        "Canary POST is off-campaign (D113).",
-        "copyCanary.ts no longer marks the test off-campaign.",
+        "Canary POST sends the shell sequence_mapping_id (D102/D114).",
+        "copyCanary.ts no longer posts a mapping id.",
       ),
     );
   });

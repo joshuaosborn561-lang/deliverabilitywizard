@@ -10,7 +10,7 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
@@ -172,7 +172,7 @@ export class CampaignAuditService {
 
     const rows: CampaignAuditRow[] = campaigns
       .filter((c) => String(c.status ?? "").toUpperCase() === "ACTIVE")
-      .filter((c) => !isPodControlShellCampaign(c))
+      .filter((c) => !isAnyShellCampaign(c))
       .map((c) => {
         const senders = senderCounts.get(c.id) ?? 0;
         const staffable = staffableCounts.get(c.id) ?? 0;
@@ -298,7 +298,7 @@ export class CampaignAuditService {
     const issues: SignatureQaIssue[] = [];
     const live = input.campaigns.filter((campaign) => {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
-      return !isPodControlShellCampaign(campaign);
+      return !isAnyShellCampaign(campaign);
     });
 
     for (const campaign of live) {

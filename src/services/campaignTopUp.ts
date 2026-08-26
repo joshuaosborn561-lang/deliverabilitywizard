@@ -22,7 +22,7 @@ import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 import {
@@ -73,7 +73,7 @@ export function isExcluded(
   campaign: { id: number; name?: string | null },
   patterns: string[],
 ): boolean {
-  if (isPodControlShellCampaign(campaign)) return true;
+  if (isAnyShellCampaign(campaign)) return true;
   if (!patterns.length) return false;
   const name = String(campaign.name ?? "").toLowerCase();
   const id = String(campaign.id);
@@ -675,7 +675,7 @@ export class CampaignTopUpService {
       const remaining: number[] = [];
       for (const campaignId of campaignIdsOf(account)) {
         const campaign = input.campaignById.get(campaignId);
-        if (!campaign || isPodControlShellCampaign(campaign)) {
+        if (!campaign || isAnyShellCampaign(campaign)) {
           remaining.push(campaignId);
           continue;
         }
@@ -723,7 +723,7 @@ export class CampaignTopUpService {
         if (
           ids.some((id) => {
             const campaign = input.campaignById.get(id);
-            if (!campaign || isPodControlShellCampaign(campaign)) return false;
+            if (!campaign || isAnyShellCampaign(campaign)) return false;
             return String(campaign.status ?? "").toUpperCase() === "ACTIVE";
           })
         ) {

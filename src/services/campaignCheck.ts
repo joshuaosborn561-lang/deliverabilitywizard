@@ -42,7 +42,7 @@ import {
 } from "../lib/oneClient.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { isPocClient } from "../lib/pocClient.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   appendSignatureTag,
   clientBrandList,
@@ -470,14 +470,14 @@ export class CampaignCheckService {
     const { campaign } = input;
     const name = String(campaign.name ?? campaign.id);
     const status = String(campaign.status ?? "").toUpperCase();
-    const shell = isPodControlShellCampaign(campaign);
+    const shell = isAnyShellCampaign(campaign);
     const excluded = isExcluded(campaign, this.config.topUpExcludeCampaigns);
 
     if (shell) {
       if (status !== "PAUSED") {
         findings.push({
           kind: "shell_not_paused",
-          detail: `pod control shell is ${status || "unknown"} — must stay PAUSED`,
+          detail: `instrumentation shell is ${status || "unknown"} — must stay PAUSED`,
         });
       }
       return findings;
@@ -552,7 +552,7 @@ export class CampaignCheckService {
         return {
           campaignId: id,
           clientId: typeof other?.client_id === "number" ? other.client_id : null,
-          shell: other ? isPodControlShellCampaign(other) : false,
+          shell: other ? isAnyShellCampaign(other) : false,
         };
       });
       const owner = ownerClientId(account.client_id, memberships, {

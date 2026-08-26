@@ -37,8 +37,10 @@ import {
   campaignIdFromCanaryTestName,
   isCanaryCopyTestName,
 } from "../lib/isolationNames.js";
+import { isCanaryShellCampaign } from "../lib/canaryShell.js";
 import { copySequence, isolationManualPayload } from "../lib/isolationPlacement.js";
 import { sleep } from "../lib/http.js";
+import { ensureCanaryShell } from "./canaryShell.js";
 import {
   buildPoolSignature,
   poolEspFromSmartleadType,
@@ -131,7 +133,7 @@ export class CopyCanaryService {
         ),
     );
     this.syncFleetAccountIds(accountByEmail);
-    await this.detachFromCampaigns(accountByEmail, dryRun, result);
+    await this.detachFromCampaigns(campaigns, accountByEmail, dryRun, result);
 
     const picks = this.fleetReady(accountByEmail);
     if (!picks.length) {
@@ -143,6 +145,7 @@ export class CopyCanaryService {
     await this.keepWarmupOff(picks, dryRun);
 
     const active = campaigns.filter((campaign) => {
+      if (isCanaryShellCampaign(campaign)) return false;
       const status = String(campaign.status ?? "").toUpperCase();
       if (status !== "ACTIVE") return false;
       return !isExcluded(campaign, this.config.topUpExcludeCampaigns);
@@ -174,6 +177,7 @@ export class CopyCanaryService {
       try {
         const testId = await this.ensureCopyTest(
           campaign,
+          campaigns,
           picks,
           dryRun,
           listed,
@@ -209,7 +213,7 @@ export class CopyCanaryService {
 
     if (result.attached.length) {
       console.log(
-        `[copy-canary] ${result.testsEnsured} campaign-copy test(s); canaries stay off live campaigns`,
+        `[copy-canary] ${result.testsEnsured} campaign-copy test(s); canaries sit on paused shells, not live campaigns`,
       );
     }
     await this.state.save();
@@ -314,16 +318,21 @@ export class CopyCanaryService {
   }
 
   private async detachFromCampaigns(
+    campaigns: SmartleadCampaign[],
     accountByEmail: Map<string, SmartleadAccountWithCampaigns>,
     dryRun: boolean,
     result: CopyCanaryAttachResult,
   ): Promise<void> {
     const fleet = this.state.getCopyCanaryFleet();
     if (!fleet) return;
+    const shellIds = new Set(
+      campaigns.filter((row) => isCanaryShellCampaign(row)).map((row) => row.id),
+    );
     for (const email of fleet.emails) {
       const account = accountByEmail.get(email);
       if (!account) continue;
       for (const campaignId of campaignIdsOf(account)) {
+        if (shellIds.has(campaignId)) continue;
         try {
           if (!dryRun) {
             await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
@@ -374,6 +383,7 @@ export class CopyCanaryService {
 
   private async ensureCopyTest(
     campaign: SmartleadCampaign,
+    campaigns: SmartleadCampaign[],
     picks: PoolMailboxRecord[],
     dryRun: boolean,
     listed: unknown,
@@ -415,12 +425,29 @@ export class CopyCanaryService {
       );
     }
     const senderAccounts = picks.map((row) => row.email.toLowerCase());
+    const senderAccountIds = picks
+      .map((row) => row.smartleadAccountId)
+      .filter((id): id is number => typeof id === "number" && id > 0);
+    // D114 — schedule requires campaign_id and those senders must sit
+    // on it. Hang the test on a paused canary shell (D56 pattern),
+    // never the live campaign (D55).
+    const shell = await ensureCanaryShell({
+      smartlead: this.smartlead,
+      campaigns,
+      live: campaign,
+      subject: copy.subject || "",
+      bodyHtml: copy.bodyHtml,
+      senderAccountIds,
+      dryRun,
+      sequenceNumber: this.config.sequenceNumber,
+    });
     const payload = isolationManualPayload({
       testName: canaryCopyTestName(campaign.id, campaign.name),
       description: [
         "Dedicated unwarmed canary fleet.",
-        "These inboxes are not on the live campaign.",
-        `Campaign ID: ${campaign.id}`,
+        "These inboxes sit on a paused canary shell, not the live campaign.",
+        `Live campaign ID: ${campaign.id}`,
+        `Canary shell ID: ${shell.campaignId}`,
       ].join("\n"),
       senderAccounts,
       sequence: copySequence(
@@ -429,9 +456,8 @@ export class CopyCanaryService {
         copy.bodyHtml,
       ),
       providerIds,
-      // D113 — campaign_id + mapping id require senders on that
-      // campaign. Canaries stay off it (D55). Send the copy body.
-      offCampaignSenders: true,
+      campaignId: shell.campaignId,
+      sequenceMappingId: shell.sequenceMappingId,
     });
 
     if (dryRun) return `dry-run-canary-${campaign.id}`;

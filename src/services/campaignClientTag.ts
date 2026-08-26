@@ -2,7 +2,7 @@ import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { type SmartleadClientRecord } from "../clients/smartlead.js";
 import { matchClientForCampaign } from "../lib/campaignClient.js";
-import { isPodControlShellCampaign } from "../lib/podControlShell.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import type { InventorySnapshot } from "./inventory.js";
@@ -50,7 +50,7 @@ export class CampaignClientTagService {
 
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
-      if (isPodControlShellCampaign(campaign)) {
+      if (isAnyShellCampaign(campaign)) {
         result.skipped.push(`#${campaign.id} shell — no client tag`);
         continue;
       }

@@ -22,6 +22,9 @@ const SIX_HOURLY_MS = (6 * 60 + 45) * 60 * 1000;
 
 export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   // Canon sweep — every 15 minutes (D84).
+  // Umbrella record for the whole pass (recorded directly at the end of
+  // runHealth, not through stage()) — "a full pass completed end-to-end".
+  "health-pass": HEALTH_MS,
   inventory: HEALTH_MS,
   reconnect: HEALTH_MS,
   "client-rest": HEALTH_MS,

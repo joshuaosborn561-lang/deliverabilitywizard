@@ -528,7 +528,10 @@ describe("CampaignCheckService", () => {
     assert.equal(mailboxSigs[0], "Leila Sanchez\nGoliath Cybersecurity");
     assert.equal(told.length, 0, "mailbox-only rewrite is not the D92 sequence Slack");
     assert.equal(result.firstPassed, 1);
-    assert.equal(state.getCampaignCheck(78)?.sigAutoWrittenAt, null);
+    assert.ok(
+      !state.getCampaignCheck(78)?.sigAutoWrittenAt,
+      "mailbox-only rewrite does not stamp the D95 sequence-tag clock",
+    );
   });
 
   it("D92: several campaigns get one Slack after, not a button each", async () => {

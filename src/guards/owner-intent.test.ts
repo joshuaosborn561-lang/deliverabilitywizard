@@ -3254,6 +3254,30 @@ describe("owner intent — D107 old-client campaigns are deleted", () => {
   });
 });
 
+describe("owner intent — D112 canary schedule omits sequence", () => {
+  it("D112: schedule sends mapping id, not a custom sequence body", async () => {
+    const placement = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/isolationPlacement.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      placement,
+      /sequenceMappingId != null/,
+      stop(
+        "Canary schedule omits sequence when sequence_mapping_id is set (D112).",
+        "isolationManualPayload still always sends sequence.",
+      ),
+    );
+    assert.match(
+      placement,
+      /sequence_mapping_id: input.sequenceMappingId/,
+      stop(
+        "Canary schedule still sends sequence_mapping_id (D102/D112).",
+        "isolationManualPayload dropped sequence_mapping_id.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D111 old-client teardown retries leftovers", () => {
   it("D111: teardown keeps deleting remaining Nieto / MSRS / Positive", async () => {
     const teardown = await import("node:fs/promises").then((fs) =>

@@ -2472,3 +2472,23 @@ each pass (then STOP). Accepted: Josh wanted them gone.
 
 **Guards.** no one-shot skip while targets remain;
 owner-intent D111.
+---
+
+## D112 — Canary schedule omits sequence when mapping id is set
+
+**Decision.** SmartDelivery `/spam-test/schedule` gets
+`campaign_id` + `sequence_mapping_id` and does **not** get a
+custom `sequence` body. Isolation variant tests with no
+mapping id still send `sequence`.
+
+**Why.** Live 2026-08-26 after #122: canary attach died on
+`"sequence" is not allowed` (66 campaigns). Pod-control
+already strips `sequence` (D56). Campaign-copy canaries
+were still sending both.
+
+**Tradeoff.** The test uses the campaign's mapped step, not
+a rebuilt body. Accepted: that is the copy we wanted to
+test.
+
+**Guards.** isolationManualPayload omits sequence when
+mapping id is set; owner-intent D112.

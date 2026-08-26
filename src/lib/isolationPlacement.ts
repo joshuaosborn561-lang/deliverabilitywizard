@@ -62,15 +62,17 @@ export function isolationManualPayload(input: {
     spam_filters: ["spam_assassin"],
     link_checker: input.linkChecker ?? false,
     sender_accounts: input.senderAccounts,
-    sequence: input.sequence,
     all_email_sent_without_time_gap: false,
     min_time_btwn_emails: 5,
     min_time_unit: "minutes",
     is_warmup: false,
     ...(input.campaignId ? { campaign_id: input.campaignId } : {}),
+    // D112 — /spam-test/schedule rejects `sequence` when campaign_id +
+    // sequence_mapping_id are set (live canary attach 2026-08-26).
+    // Custom-body tests (isolation variants, no mapping) still send it.
     ...(input.sequenceMappingId != null
       ? { sequence_mapping_id: input.sequenceMappingId }
-      : {}),
+      : { sequence: input.sequence }),
     ...(input.folderId !== undefined ? { folder_id: input.folderId } : {}),
     ...(input.providerIds.length ? { provider_ids: input.providerIds } : {}),
   };

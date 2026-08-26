@@ -145,12 +145,15 @@ in the sequence, no foreign brand in copy, one-client membership,
 pod-control shell stays paused, generics only on a **POC** client or after
 Josh Slack-approves a backfill. Goliath is marked POC. Bounce pause
 is not this checker (D90). Missing signature is written on the spot
-(D92). It stays on that first-check until it passes.
+(D92). Slack the first time we write a campaign; a leftover
+backfill does not re-ping every pass (D95). It stays on that
+first-check until it passes.
 
 After it passes, an **hourly sweep** watches pod/shell, mailbox signatures,
 client tag, one-client, **active canaries for each serving inbox and
 campaign**, and the floor (**half that client's inboxes**). Logs are
-`[campaign-check]`. Slack is Allow generics plus “I added the signature.”
+`[campaign-check]`. Slack is Allow generics plus “I added the
+signature” the first time we write that campaign (D95).
 This does not START a campaign, import leads, spend, or pull a mailbox.
 
 ## Canon sweep (D84)
@@ -184,7 +187,8 @@ sweep, not a fact of life:
 - **Missing `%signature%`** is written automatically (D92): the tag is
   appended and the mailbox signature is set to First Last / client
   name (Goliath Cybersecurity, SalesGlider Growth Partners, …). Slack
-  after the write, not a button to approve it.
+  the first time we write a campaign, not a button and not every
+  leftover backfill pass (D92/D95).
 - **Untagged campaigns** the tagger cannot uniquely match (D77 forbids
   guessing) are named on the end-of-day brief until a human tags them in
   Smartlead.

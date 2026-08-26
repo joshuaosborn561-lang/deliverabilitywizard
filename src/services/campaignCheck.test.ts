@@ -508,6 +508,48 @@ describe("CampaignCheckService", () => {
     assert.match(told[0]!, /2 campaigns/);
   });
 
+  it("D95: a leftover backfill does not Slack again on the next pass", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const told: string[] = [];
+    const wrote: number[] = [];
+    const slack = {
+      notifyActionResult: async (text: string) => {
+        told.push(text);
+      },
+    } as never;
+    const sl = {
+      listCampaigns: async () => [
+        { id: 90, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+      ],
+      updateCampaignSequences: async (id: number) => {
+        wrote.push(id);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      sl,
+      delivery(),
+      state,
+      slack,
+    );
+
+    await service.run({ mode: "all" });
+    assert.equal(wrote.length, 1);
+    assert.equal(told.length, 1);
+    assert.ok(state.getCampaignCheck(90)?.sigAutoWrittenAt);
+
+    await service.run({ mode: "all" });
+    assert.equal(wrote.length, 2, "the write still happens if the tag is still missing");
+    assert.equal(told.length, 1, "the leftover campaign does not Slack again");
+  });
+
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {
     const make = async (status: string) => {
       const store = new StateStore(stateFile());

@@ -163,6 +163,59 @@ describe("IsolationExecuteService", () => {
     assert.equal(sequences[0]!.sequence_variants[0]!.subject, "hey");
   });
 
+  it("a bulk signature approve fixes every listed campaign in one tap (D87)", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-exec-sig-bulk-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "%signature% missing on 2 campaigns",
+      proof: "bulk",
+      detail: {
+        campaignIds: [42, 43],
+        campaigns: [
+          { id: 42, name: "SalesGlider" },
+          { id: 43, name: "Positive" },
+        ],
+      },
+    });
+    state.upsertIsolationAction(action);
+    const written = new Map<number, unknown>();
+    const svc = new IsolationExecuteService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        getCampaignSequences: async (id: number) => [
+          {
+            id: 1,
+            seq_number: 1,
+            email_body: `<div>campaign ${id} body</div>`,
+          },
+        ],
+        updateCampaignSequences: async (id: number, sequences: unknown) => {
+          written.set(id, sequences);
+        },
+      } as never,
+      { send: async () => undefined } as never,
+      state,
+      { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const result = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(state.getIsolationAction(action.id)?.status, "executed");
+    assert.deepEqual([...written.keys()].sort(), [42, 43]);
+    for (const id of [42, 43]) {
+      const sequences = written.get(id) as Array<{ email_body: string }>;
+      assert.equal(
+        sequences[0]!.email_body,
+        `<div>campaign ${id} body</div><br><br>%signature%`,
+      );
+    }
+  });
+
   it("a signature ask on already-tagged copy writes nothing", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-sig-noop-${process.pid}-${Date.now()}.json`,

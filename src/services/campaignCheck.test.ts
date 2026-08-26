@@ -448,6 +448,56 @@ describe("CampaignCheckService", () => {
     assert.equal(Number(action?.detail.campaignId), 77);
   });
 
+  it("D87: several blocked campaigns get ONE bulk %signature% ask, not one each", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const asked: Array<{ kind: string }> = [];
+    const slack = {
+      notifyIsolationAction: async (details: { kind: string }) => {
+        asked.push({ kind: details.kind });
+      },
+    } as never;
+    const service = new CampaignCheckService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 81, name: "SalesGlider Nurture", status: "ACTIVE", client_id: 548611 },
+          { id: 82, name: "Parlay2 Sports Offer", status: "ACTIVE", client_id: 548611 },
+          { id: 83, name: "Positive", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [goliath],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+        ],
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+      slack,
+    );
+
+    await service.run({ mode: "all" });
+    assert.equal(asked.length, 1, "three blocked campaigns must be one bulk ask");
+    const action = state
+      .listIsolationActions()
+      .find((row) => row.kind === "add_signature_tag");
+    assert.ok(action);
+    assert.deepEqual(
+      [...((action?.detail.campaignIds as number[]) ?? [])].sort(),
+      [81, 82, 83],
+    );
+
+    // A second sweep re-finds the same campaigns — covered, no new ask.
+    await service.run({ mode: "all" });
+    assert.equal(asked.length, 1, "covered campaigns must not re-ask");
+    assert.equal(
+      state
+        .listIsolationActions()
+        .filter((row) => row.kind === "add_signature_tag").length,
+      1,
+    );
+  });
+
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {
     const make = async (status: string) => {
       const store = new StateStore(stateFile());

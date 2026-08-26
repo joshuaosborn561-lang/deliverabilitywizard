@@ -518,4 +518,59 @@ describe("CopyCanaryService", () => {
     assert.equal(result.testsEnsured, 1);
     assert.equal(state.getCopyCanaryTestId(5), "existing-1");
   });
+
+  it("D119: list failure still seeds the shell and does not schedule", async () => {
+    const state = new StateStore(
+      `/tmp/copy-canary-seed-list-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    seedFleet(state);
+    const seeded: string[] = [];
+    let created = 0;
+    let listCalls = 0;
+    const shells = shellSmartlead({
+      listCampaigns: async () => [
+        { id: 4, name: "Live A", status: "ACTIVE", client_id: 2 },
+        { id: 104, name: "Canary shell: #4 Live A", status: "PAUSED" },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 11, from_email: "g1@canary-g.info", type: "GMAIL", campaign_ids: [] },
+        { id: 12, from_email: "o1@canary-o.info", type: "OUTLOOK", campaign_ids: [] },
+      ],
+      addLeadsToCampaign: async (
+        _campaignId: number,
+        leads: Array<{ email: string }>,
+      ) => {
+        seeded.push(leads[0]!.email);
+        return { upload_count: 1 };
+      },
+    });
+
+    const result = await new CopyCanaryService(
+      loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),
+      shells.api as unknown as SmartleadClient,
+      {
+        listTests: async () => {
+          listCalls += 1;
+          throw new Error("Rate limit exceeded");
+        },
+        resolveProviderIds: async () => [2, 20],
+        createAutomatedPlacement: async () => {
+          created += 1;
+          return { id: "new-1" };
+        },
+      } as unknown as SmartDeliveryClient,
+      slackStub(),
+      state,
+    ).attach({ dryRun: false });
+
+    assert.equal(listCalls, 3, "listTests is retried before giving up");
+    assert.deepEqual(seeded, ["canary.instrumentation@getcrosslaunchco.info"]);
+    assert.equal(created, 0, "D98: list failure still must not spawn a test");
+    assert.equal(result.testsEnsured, 0);
+    assert.equal(
+      result.errors.some((row) => row.includes("could not list SmartDelivery tests")),
+      true,
+    );
+  });
 });

@@ -3327,6 +3327,40 @@ describe("owner intent — D117 seed a real canary inbox then pause", () => {
   });
 });
 
+describe("owner intent — D119 seed shells when SmartDelivery list fails", () => {
+  it("D119: list is retried; list-fail still seeds the shell and does not schedule", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canary = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canary,
+      /listTestsRetrying/,
+      stop(
+        "SmartDelivery listTests is retried before attach gives up (D119).",
+        "copyCanary.ts no longer retries listTests.",
+      ),
+    );
+    assert.match(
+      canary,
+      /seedCanaryShell\(campaign, campaigns, picks, dryRun\);\s*throw new Error\("could not list SmartDelivery tests"\)/,
+      stop(
+        "A list failure still plants the shell lead (D119).",
+        "copyCanary.ts throws on list-fail before seeding again.",
+      ),
+    );
+    assert.match(
+      canary,
+      /if \(existing\) return existing;/,
+      stop(
+        "A stored canary is still reused when the list is down (D98/D119).",
+        "copyCanary.ts no longer reuses the stored test id on list-fail.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D118 parse the real import and seed a non-sender", () => {
   it("D118: non-sender seed, upload_count accepted, raw import logged", async () => {
     const { readFile } = await import("node:fs/promises");

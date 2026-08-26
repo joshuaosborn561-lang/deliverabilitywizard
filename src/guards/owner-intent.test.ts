@@ -3254,6 +3254,33 @@ describe("owner intent — D107 old-client campaigns are deleted", () => {
   });
 });
 
+describe("owner intent — D113 canary schedule is off-campaign", () => {
+  it("D113: canary POST sends sequence and omits campaign_id", async () => {
+    const canary = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      canary,
+      /offCampaignSenders:\s*true/,
+      stop(
+        "Canary tests stay off-campaign (D113).",
+        "copyCanary.ts lost offCampaignSenders.",
+      ),
+    );
+    const placement = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../lib/isolationPlacement.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      placement,
+      /offCampaignSenders/,
+      stop(
+        "Off-campaign payload sends sequence, not campaign_id (D113).",
+        "isolationManualPayload lost the off-campaign branch.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D112 canary schedule omits sequence", () => {
   it("D112: schedule sends mapping id, not a custom sequence body", async () => {
     const placement = await import("node:fs/promises").then((fs) =>
@@ -3263,7 +3290,7 @@ describe("owner intent — D112 canary schedule omits sequence", () => {
       placement,
       /sequenceMappingId != null/,
       stop(
-        "Canary schedule omits sequence when sequence_mapping_id is set (D112).",
+        "Campaign-bound schedule omits sequence when sequence_mapping_id is set (D112).",
         "isolationManualPayload still always sends sequence.",
       ),
     );
@@ -3381,48 +3408,48 @@ describe("owner intent — D110 sequence writes send seq_variants", () => {
 });
 
 describe("owner intent — D100 canary schedule needs campaign_id", () => {
-  it("D100: canary attach sends campaign_id; senders stay off the campaign", async () => {
+  it("D100/D113: canary senders stay off the campaign (D113 dropped campaign_id)", async () => {
     const canary = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
     );
     assert.match(
       canary,
-      /campaignId:\s*campaign\.id/,
+      /never adds canaries to campaigns|must not add canaries|These inboxes are not on the live campaign/,
       stop(
-        "Canary schedule sends campaign_id (D100).",
-        "copyCanary.ts creates a SmartDelivery test without campaign_id.",
+        "Canary senders stay off live campaigns (D55/D100/D113).",
+        "copyCanary.ts lost the off-campaign guarantee.",
       ),
     );
     assert.match(
       canary,
-      /never adds canaries to campaigns|must not add canaries|These inboxes are not on the live campaign/,
+      /offCampaignSenders:\s*true/,
       stop(
-        "Canary senders stay off live campaigns (D55/D100).",
-        "copyCanary.ts lost the off-campaign guarantee.",
+        "Canary schedule is off-campaign (D113). campaign_id bound senders to the campaign.",
+        "copyCanary.ts no longer marks the test off-campaign.",
       ),
     );
   });
 });
 
 describe("owner intent — D102 canary schedule needs sequence_mapping_id", () => {
-  it("D102: canary attach sends sequence_mapping_id from the campaign sequence", async () => {
+  it("D102/D113: canary still reads campaign copy; POST no longer sends mapping id", async () => {
     const canary = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8"),
     );
     assert.match(
       canary,
-      /sequenceMappingId:\s*copy\.sequenceMappingId/,
+      /loadCampaignCopy/,
       stop(
-        "Canary schedule sends sequence_mapping_id (D102).",
-        "copyCanary.ts creates a SmartDelivery test without sequence_mapping_id.",
+        "Canary still reads campaign sequences for the copy body (D102/D113).",
+        "copyCanary.ts no longer loads campaign copy.",
       ),
     );
     assert.match(
       canary,
-      /sequenceMappingIdOf/,
+      /offCampaignSenders:\s*true/,
       stop(
-        "Canary mapping id comes from the campaign sequence (D102).",
-        "copyCanary.ts no longer reads sequenceMappingIdOf.",
+        "Canary POST is off-campaign (D113).",
+        "copyCanary.ts no longer marks the test off-campaign.",
       ),
     );
   });

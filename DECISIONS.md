@@ -2492,3 +2492,25 @@ test.
 
 **Guards.** isolationManualPayload omits sequence when
 mapping id is set; owner-intent D112.
+---
+
+## D113 — Canary schedule is off-campaign
+
+**Decision.** Copy-canary SmartDelivery tests send a custom
+`sequence` body and do **not** send `campaign_id` or
+`sequence_mapping_id`. Canary senders stay off the live
+campaign (D55). Campaign-bound tests (pod-control, daily
+scan) still send mapping id and omit `sequence` (D112).
+
+This supersedes D100 / D102 for canary POST only.
+
+**Why.** Live 2026-08-26 after #124: omitting `sequence`
+(D112) died on "Sender email accounts … not used in the
+campaign" (getcrosslaunchco.info canary fleet).
+`campaign_id` binds senders to that campaign. Canaries
+cannot join it.
+
+**Tradeoff.** Schedule no longer carries the mapping id.
+Accepted: the body is the campaign copy we loaded.
+
+**Guards.** offCampaignSenders; owner-intent D113.

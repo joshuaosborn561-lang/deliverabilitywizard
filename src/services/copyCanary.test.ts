@@ -147,18 +147,17 @@ describe("CopyCanaryService", () => {
     assert.deepEqual(removed, [{ campaignId: 4, ids: [11] }]);
     assert.equal(created.length, 2);
     assert.ok(created.every((row) => row.name?.startsWith("Canary copy:")));
-    assert.deepEqual(
-      created.map((row) => row.campaignId).sort((a, b) => (a ?? 0) - (b ?? 0)),
-      [4, 5],
-      "schedule requires campaign_id even though canaries stay off the campaign",
+    assert.ok(
+      created.every((row) => row.campaignId === undefined),
+      "canary schedule omits campaign_id so off-campaign senders are allowed (D113)",
     );
     assert.ok(
-      created.every((row) => row.sequenceMappingId === 1),
-      "schedule requires sequence_mapping_id from the campaign sequence",
+      created.every((row) => row.sequenceMappingId === undefined),
+      "canary schedule omits sequence_mapping_id (D113)",
     );
     assert.ok(
-      created.every((row) => row.sequence === undefined),
-      "schedule omits sequence when sequence_mapping_id is set (D112)",
+      created.every((row) => row.sequence != null),
+      "canary schedule sends the campaign-copy sequence body (D113)",
     );
     assert.deepEqual(created[0]?.senders.sort(), [
       "g1@canary-g.info",
@@ -340,13 +339,13 @@ describe("CopyCanaryService", () => {
     assert.ok(!created[0]?.includes("hot@crosslaunchco.com"));
   });
 
-  it("D102: ensureCopyTest fails loudly when the sequence has no mapping id", async () => {
+  it("D113: a sequence with no mapping id still schedules off-campaign copy", async () => {
     const state = new StateStore(
       `/tmp/copy-canary-nomap-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
     seedFleet(state);
-    const created: unknown[] = [];
+    const created: Array<{ campaignId?: number; sequence?: unknown }> = [];
     const smartlead = {
       listCampaigns: async () => [
         { id: 5, name: "Live", status: "ACTIVE", client_id: 2 },
@@ -370,20 +369,24 @@ describe("CopyCanaryService", () => {
       {
         listTests: async () => [],
         resolveProviderIds: async () => [2, 20],
-        createAutomatedPlacement: async () => {
-          created.push(true);
-          throw new Error("should not create");
+        createAutomatedPlacement: async (payload: {
+          campaign_id?: number;
+          sequence?: unknown;
+        }) => {
+          created.push({
+            campaignId: payload.campaign_id,
+            sequence: payload.sequence,
+          });
+          return { id: "t-nomap" };
         },
       } as unknown as SmartDeliveryClient,
       slackStub(),
       state,
     ).attach({ dryRun: false });
 
-    assert.equal(created.length, 0);
-    assert.equal(result.testsEnsured, 0);
-    assert.ok(
-      result.errors.some((row) => row.includes("no sequence_mapping_id")),
-    );
+    assert.equal(result.testsEnsured, 1);
+    assert.equal(created[0]?.campaignId, undefined);
+    assert.ok(created[0]?.sequence);
   });
 
   it("D98: ensureCopyTest fails loudly when no provider ids resolve", async () => {

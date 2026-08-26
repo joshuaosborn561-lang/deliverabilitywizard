@@ -55,7 +55,27 @@ export function isolationManualPayload(input: {
   campaignId?: number;
   sequenceMappingId?: number;
   linkChecker?: boolean;
+  /** D113 — canary senders stay off the campaign (D55). */
+  offCampaignSenders?: boolean;
 }): CreateManualPlacementInput {
+  // D113 — campaign_id + mapping id bind senders to that campaign.
+  // Off-campaign canaries must send a custom sequence body instead.
+  if (input.offCampaignSenders) {
+    return {
+      test_name: input.testName,
+      description: input.description,
+      spam_filters: ["spam_assassin"],
+      link_checker: input.linkChecker ?? false,
+      sender_accounts: input.senderAccounts,
+      sequence: input.sequence,
+      all_email_sent_without_time_gap: false,
+      min_time_btwn_emails: 5,
+      min_time_unit: "minutes",
+      is_warmup: false,
+      ...(input.folderId !== undefined ? { folder_id: input.folderId } : {}),
+      ...(input.providerIds.length ? { provider_ids: input.providerIds } : {}),
+    };
+  }
   return {
     test_name: input.testName,
     description: input.description,

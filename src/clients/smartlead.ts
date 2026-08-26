@@ -565,33 +565,6 @@ export class SmartleadClient {
     return { id, name };
   }
 
-  /**
-   * Ensure a HOLD-UNTIL-YYYY-MM-DD tag exists and return its id.
-   */
-  async ensureHoldUntilTag(holdUntilIsoDate: string): Promise<{
-    id: number;
-    name: string;
-  }> {
-    const name = `HOLD-UNTIL-${holdUntilIsoDate}`;
-    const existing = await this.listTags();
-    const match = existing.find(
-      (t) => t.name.trim().toUpperCase() === name.toUpperCase(),
-    );
-    if (match) return { id: match.id, name: match.name };
-
-    const created = await this.createTag(name, "#FF8A65");
-    const id = created.data?.id;
-    if (!id) {
-      // Race: another process may have created it
-      const again = await this.listTags();
-      const retry = again.find(
-        (t) => t.name.trim().toUpperCase() === name.toUpperCase(),
-      );
-      if (retry) return { id: retry.id, name: retry.name };
-      throw new Error(`Failed to create Smartlead tag ${name}`);
-    }
-    return { id, name };
-  }
 }
 
 export function accountEmail(account: SmartleadEmailAccount): string | undefined {

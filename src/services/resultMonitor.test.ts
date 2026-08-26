@@ -66,7 +66,6 @@ type Captured = {
     email: string;
     inboxPercent: number;
     scoredSameEsp?: boolean;
-    willRemediate?: boolean;
   }>;
 };
 
@@ -111,8 +110,6 @@ describe("ResultMonitor same-ESP alert scoring", () => {
     // Same-ESP (Microsoft seeds only) — all three inboxed.
     assert.equal(sender.inboxPercent, 100);
     assert.equal(sender.scoredSameEsp, true);
-    // 100% is above the 80% threshold, so no rotation should be promised.
-    assert.equal(sender.willRemediate, false);
   });
 
   it("falls back to blended scoring when Smartlead types are unavailable", async () => {

@@ -241,7 +241,6 @@ export class ResultMonitor {
       email: string;
       inboxPercent: number;
       scoredSameEsp?: boolean;
-      willRemediate?: boolean;
     }> = [];
     let authFailures: Array<{
       email: string;
@@ -258,8 +257,6 @@ export class ResultMonitor {
         email: row.email,
         inboxPercent: row.inboxRate,
         scoredSameEsp: row.scoredSameEsp,
-        // D51/D130 — pulls are kill-only; nothing auto-remediates a sender.
-        willRemediate: false,
       }));
       authFailures = parseSenderAuthResults(senderRaw)
         .map((row) => ({
@@ -278,7 +275,6 @@ export class ResultMonitor {
       testId,
       threshold: this.config.deliverabilityThreshold,
       providers,
-      autoRemediation: false,
       overall: overallSplit(rows),
       senders,
       authFailures,

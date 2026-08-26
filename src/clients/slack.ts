@@ -151,7 +151,7 @@ export class SlackClient {
 
   /**
    * Top-line fleet volume by client. Sent / bounce% / spam% for the day, plus
-   * active vs held (pulled) client-inbox counts (D39). Replaces per-mailbox lists.
+   * active vs resting client-inbox counts (D39/D43). Replaces per-mailbox lists.
    */
   async notifyClientDayBrief(summary: {
     date: string;
@@ -421,7 +421,6 @@ export class SlackClient {
       testId: undefined,
       threshold: details.threshold,
       providers: [{ name: details.label, inboxPercent: details.score }],
-      autoRemediation: true,
     });
   }
 
@@ -430,8 +429,6 @@ export class SlackClient {
     testId?: string;
     threshold: number;
     providers: Array<{ name: string; inboxPercent: number }>;
-    /** When true, tell the user we're handling weak inboxes automatically */
-    autoRemediation?: boolean;
     /** Overall inbox/tab/spam split for the whole test. */
     overall?: { inboxPercent: number; tabPercent: number; spamPercent: number };
     /** Per-sender placement, worst first. */
@@ -439,7 +436,6 @@ export class SlackClient {
       email: string;
       inboxPercent: number;
       scoredSameEsp?: boolean;
-      willRemediate?: boolean;
     }>;
     /** Senders whose SPF or DKIM is failing on every seed. */
     authFailures?: Array<{
@@ -448,7 +444,6 @@ export class SlackClient {
       dkimFailing: boolean;
     }>;
     remediationThreshold?: number;
-    holdDays?: number;
   }): Promise<void> {
     const weak = details.providers.filter(
       (p) => p.inboxPercent < details.threshold,
@@ -524,12 +519,10 @@ export class SlackClient {
         ...scoreLines,
         ...authLines,
         weakSenderCount
-          ? `\n_${weakSenderCount} inbox${weakSenderCount === 1 ? "" : "es"} on this test landed below ${details.remediationThreshold ?? 80}% in their own mailbox type (Gmail or Outlook). Check the daily client note for bounce/spam. You don't need to pull them by hand._`
+          ? `\n_${weakSenderCount} inbox${weakSenderCount === 1 ? "" : "es"} on this test landed below ${details.remediationThreshold ?? 80}% in their own mailbox type (Gmail or Outlook). Check the daily client note for bounce/spam._`
           : undefined,
         "",
-        details.autoRemediation
-          ? `Inboxes under ${details.remediationThreshold ?? 80}% in their own mailbox type come off automatically, warm for ${details.holdDays ?? 14} days, and get a matching spare with the client's name. No action needed unless I flag a burned domain.`
-          : `Automatic pull is off — these need a person to handle them.`,
+        `I don't pull inboxes automatically — if a domain turns out burned, the spam investigation flags it and asks before buying a replacement.`,
       ]
         .filter((x): x is string => Boolean(x))
         .join("\n"),
@@ -613,7 +606,6 @@ export class SlackClient {
       email: string;
       reason: string;
       daysWarmed: number | null;
-      holdUntil?: string;
     }>;
     errors: string[];
   }): Promise<void> {
@@ -626,7 +618,6 @@ export class SlackClient {
     if (summary.removed === 0 && seriousErrors.length === 0) return;
 
     const under = summary.removals.filter((r) => r.reason === "under_warmed");
-    const held = summary.removals.filter((r) => r.reason === "hold_until");
 
     const byCampaign = new Map<string, typeof summary.removals>();
     for (const row of summary.removals) {
@@ -639,9 +630,6 @@ export class SlackClient {
     const campaignBlocks: string[] = [];
     for (const [label, rows] of byCampaign) {
       const lines = rows.slice(0, 10).map((r) => {
-        if (r.reason === "hold_until") {
-          return `• \`${r.email}\` — still sitting after a bad test until ${r.holdUntil}`;
-        }
         const days =
           r.daysWarmed == null ? "?" : `${r.daysWarmed.toFixed(0)}`;
         return `• \`${r.email}\` — only warmed ${days} days (need ${owedDays})`;
@@ -672,9 +660,6 @@ export class SlackClient {
         `*Pulled not-ready mailboxes off live campaigns*`,
         under.length
           ? `${under.length} hadn't finished the ${owedDays}-day warmup.`
-          : undefined,
-        held.length
-          ? `${held.length} ${held.length === 1 ? "was" : "were"} still on a 2-week recovery sit after a bad inbox or bounce test.`
           : undefined,
         summary.pausedCampaigns.length
           ? `Paused campaign(s) that would have been empty: ${summary.pausedCampaigns.join(", ")}`

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { POD_CONTROL_SHELL_NAME } from "./podControlShell.js";
 import {
+  CANARY_SHELL_SEED_EMAIL,
   canaryShellName,
   isAnyShellCampaign,
   isCanaryShellCampaign,
@@ -27,5 +28,9 @@ describe("canary shell identity", () => {
       true,
     );
     assert.equal(isAnyShellCampaign({ id: 3, name: "Goliath L2" }), false);
+    assert.equal(
+      CANARY_SHELL_SEED_EMAIL,
+      "canary.shell.seed@getcrosslaunchco.info",
+    );
   });
 });

@@ -2551,3 +2551,29 @@ D56 already proved the shell pattern.
 **Guards.** isCanaryShellCampaign / isAnyShellCampaign;
 ensureCanaryShell; copyCanary never adds to a live campaign;
 owner-intent D114.
+
+---
+
+## D115 — Canary shells get one dummy seed lead
+
+**Decision.** Each paused canary shell is given **one dummy
+lead** (`canary.shell.seed@getcrosslaunchco.info`) so
+SmartDelivery `/spam-test/schedule` will accept it. The shell
+stays **PAUSED**. Placement tests still send to seed inboxes,
+not this contact. The same address may sit on every canary
+shell (`ignore_duplicate_leads_in_other_campaign`).
+
+This is not a client list import. Lead runout still never
+imports or extends a live campaign (D52). `addLeadsToCampaign`
+is only called from `canaryShell.ts`.
+
+**Why.** Live 2026-08-26 after #126: D114 created the shells
+and then every attach died on "No leads available for the
+selected or lower sequence".
+
+**Tradeoff.** One unused contact per shell. Accepted: the
+schedule API requires a lead on that campaign, and starting
+the shell is already blocked.
+
+**Guards.** CANARY_SHELL_SEED_EMAIL; seedShellLead;
+owner-intent D115.

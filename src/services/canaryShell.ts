@@ -5,6 +5,7 @@ import {
 } from "../clients/smartlead.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import {
+  CANARY_SHELL_SEED_EMAIL,
   canaryShellName,
   isCanaryShellCampaign,
   liveCampaignIdFromCanaryShellName,
@@ -81,6 +82,7 @@ export async function ensureCanaryShell(input: {
 
   if (!input.dryRun) {
     await writeLiveCopy(input, campaign.id);
+    await seedShellLead(input.smartlead, campaign.id);
   }
 
   const sequences = await input.smartlead.getCampaignSequences(campaign.id);
@@ -174,6 +176,20 @@ function sequencesForCopy(
       email_body: bodyHtml,
     };
   });
+}
+
+async function seedShellLead(
+  smartlead: SmartleadClient,
+  campaignId: number,
+): Promise<void> {
+  await smartlead.addLeadsToCampaign(campaignId, [
+    {
+      email: CANARY_SHELL_SEED_EMAIL,
+      first_name: "Canary",
+      last_name: "Shell",
+    },
+  ]);
+  await sleep(WRITE_GAP_MS);
 }
 
 async function syncCanaryMembers(

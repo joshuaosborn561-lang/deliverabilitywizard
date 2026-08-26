@@ -4,6 +4,9 @@ import { isPodControlShellCampaign } from "./podControlShell.js";
 
 export const CANARY_SHELL_PREFIX = "Canary shell:";
 
+/** D115 — one dummy contact so SmartDelivery will schedule. Shell stays PAUSED. */
+export const CANARY_SHELL_SEED_EMAIL = "canary.shell.seed@getcrosslaunchco.info";
+
 export function canaryShellName(
   liveCampaignId: number,
   liveCampaignName?: string,

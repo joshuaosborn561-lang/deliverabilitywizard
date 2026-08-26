@@ -38,6 +38,7 @@ function shellSmartlead(extra: Record<string, unknown> = {}) {
       ],
       updateCampaignSequences: async () => undefined,
       updateCampaignStatus: async () => undefined,
+      addLeadsToCampaign: async () => undefined,
       getCampaignEmailAccounts: async () => [],
       addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
         added.push({ campaignId, ids });

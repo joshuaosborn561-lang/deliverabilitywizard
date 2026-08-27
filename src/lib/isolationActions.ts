@@ -78,6 +78,28 @@ function samePending(
   );
 }
 
+/**
+ * D146/D148 refinement — a domain retired in the last week keeps bouncing
+ * stale pre-retire sends into the ledger; those samples must not re-open
+ * a "Retire X" ask for a domain that is already retired (live 22:10Z on
+ * 8/27: techevolutionhub.info got a second ask two hours after Josh
+ * executed its first).
+ */
+export function domainRecentlyRetired(
+  store: StateStore,
+  domain: string,
+  now = Date.now(),
+): boolean {
+  return store.listIsolationActions().some(
+    (row) =>
+      row.kind === "retire_domain" &&
+      row.status === "executed" &&
+      String(row.detail.domain ?? "").toLowerCase() === domain.toLowerCase() &&
+      now - Date.parse(String(row.executedAt ?? row.decidedAt ?? "")) <
+        7 * 24 * 60 * 60 * 1000,
+  );
+}
+
 export async function requestIsolationAction(input: {
   store: StateStore;
   slack: Pick<SlackClient, "notifyIsolationAction">;

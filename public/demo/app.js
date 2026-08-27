@@ -8,8 +8,8 @@
   };
 
   const els = {
+    viewEyebrow: document.getElementById("view-eyebrow"),
     viewTitle: document.getElementById("view-title"),
-    viewSub: document.getElementById("view-sub"),
     replyCount: document.getElementById("reply-count"),
     railNote: document.getElementById("rail-note"),
     filter: document.getElementById("filter"),
@@ -33,10 +33,8 @@
       .replaceAll('"', "&quot;");
   }
 
-  /** Highlight already-redacted emails / ████ blocks for visual blur. */
   function decorateBody(text) {
-    const escaped = escapeHtml(text);
-    return escaped
+    return escapeHtml(text)
       .replace(
         /[A-Za-z0-9•]+\@[A-Za-z0-9•]+\.[A-Za-z]+/g,
         (m) => `<span class="blur-email">${m}</span>`,
@@ -55,21 +53,18 @@
     document.querySelectorAll(".nav-item").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === view);
     });
-    els.viewCampaigns.classList.toggle("hidden", view !== "campaigns");
-    els.viewReplies.classList.toggle("hidden", view !== "replies");
+    els.viewCampaigns.classList.toggle("active", view === "campaigns");
+    els.viewReplies.classList.toggle("active", view === "replies");
+    els.viewEyebrow.textContent =
+      view === "campaigns" ? "Restored clients" : "Inbound replies";
     els.viewTitle.textContent = view === "campaigns" ? "Campaigns" : "Replies";
-    els.viewSub.textContent =
-      view === "campaigns"
-        ? "Pre-delete totals from the Supabase mirror · restored shells are PAUSED in Smartlead"
-        : "Real inbound replies · prospect emails and offer terms blurred";
     els.filter.placeholder =
       view === "campaigns" ? "Filter campaigns…" : "Filter replies…";
     render();
   }
 
   function repliesVisible() {
-    const list = state.data?.replies || [];
-    return list.filter((r) => {
+    return (state.data?.replies || []).filter((r) => {
       if (
         state.campaignFocus != null &&
         r.campaignOldId !== state.campaignFocus
@@ -109,7 +104,7 @@
     ]
       .map(
         ([label, value]) =>
-          `<div class="stat"><span>${label}</span><strong>${fmt(value)}</strong></div>`,
+          `<div class="kpi"><span>${label}</span><strong>${fmt(value)}</strong></div>`,
       )
       .join("");
   }
@@ -120,13 +115,13 @@
     );
     els.campaignRows.innerHTML = rows
       .map((c) => {
-        const status = (c.status || "COMPLETED").toLowerCase();
+        const drafted = String(c.status || "").toUpperCase() === "DRAFTED";
         return `<tr>
           <td>
             <span class="campaign-name">${escapeHtml(c.name)}</span>
             <span class="campaign-ids">#${c.oldId} → #${c.newId}</span>
           </td>
-          <td><span class="badge ${escapeHtml(status)}">${escapeHtml(c.status || "COMPLETED")}</span></td>
+          <td><span class="status-pill ${drafted ? "drafted" : ""}">${escapeHtml(c.status || "COMPLETED")}</span></td>
           <td class="num">${fmt(c.leads)}</td>
           <td class="num">${fmt(c.sent)}</td>
           <td class="num">${fmt(c.replied)}</td>
@@ -143,19 +138,20 @@
     els.replyCount.textContent = String((state.data.replies || []).length);
     if (!list.length) {
       els.threadList.innerHTML =
-        '<div class="empty" style="padding:24px">No replies match.</div>';
-      els.threadPane.innerHTML = '<div class="empty">Select a reply</div>';
+        '<div class="empty muted" style="padding:24px">No replies match.</div>';
+      els.threadPane.innerHTML =
+        '<div class="empty muted">Select a reply</div>';
       return;
     }
     if (state.selectedReply >= list.length) state.selectedReply = 0;
     els.threadList.innerHTML = list
       .map((r, i) => {
         const catClass =
-          r.category === "Positive Reply" ? "positive" : "interested";
+          r.category === "Positive Reply" ? "" : "interested";
         return `<button type="button" class="thread-item ${i === state.selectedReply ? "active" : ""}" data-reply="${i}">
           <div class="who">
             <strong>${escapeHtml(r.fromName)}${r.company ? ` · ${escapeHtml(r.company)}` : ""}</strong>
-            <span class="badge ${catClass}">${escapeHtml(r.category)}</span>
+            <span class="cat ${catClass}">${escapeHtml(r.category)}</span>
           </div>
           <div class="meta">${escapeHtml(r.campaignName)} · <span class="blur-email">${escapeHtml(r.fromEmailMasked)}</span></div>
           <div class="preview">${escapeHtml(r.body)}</div>
@@ -170,11 +166,12 @@
           timeStyle: "short",
         })
       : "";
+    const catClass = r.category === "Positive Reply" ? "" : "interested";
     els.threadPane.innerHTML = `
       <div class="thread-head">
-        <h2>${escapeHtml(r.subject)}</h2>
+        <h3>${escapeHtml(r.subject)}</h3>
         <div class="row">
-          <span class="badge ${r.category === "Positive Reply" ? "positive" : "interested"}">${escapeHtml(r.category)}</span>
+          <span class="cat ${catClass}">${escapeHtml(r.category)}</span>
           <span>${escapeHtml(r.fromName)}</span>
           <span class="blur-email">${escapeHtml(r.fromEmailMasked)}</span>
           <span>${escapeHtml(r.campaignName)}</span>
@@ -230,6 +227,7 @@
       setView("campaigns");
     })
     .catch((err) => {
-      els.viewSub.textContent = `Failed to load demo data: ${err.message}`;
+      els.viewTitle.textContent = "Failed to load";
+      els.railNote.textContent = String(err.message || err);
     });
 })();

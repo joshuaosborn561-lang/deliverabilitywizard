@@ -3,85 +3,100 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Campaigns · Restore demo</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="color-scheme" content="dark" />
+    <title>Deliverability Wizard · Campaign archive</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div class="noise"></div>
+
     <div class="app">
-      <aside class="rail">
-        <div class="rail-brand">
-          <span class="mark">SL</span>
-          <div>
-            <strong>Smartlead</strong>
-            <small>restore demo</small>
+      <aside class="sidebar">
+        <div>
+          <div class="logo-row">
+            <div class="brand-mark small">DW</div>
+            <div>
+              <strong>Deliverability</strong>
+              <span>Campaign archive</span>
+            </div>
           </div>
+          <nav>
+            <button type="button" class="nav-item active" data-view="campaigns">
+              Campaigns
+            </button>
+            <button type="button" class="nav-item" data-view="replies">
+              Replies <span class="badge" id="reply-count">0</span>
+            </button>
+          </nav>
         </div>
-        <nav class="rail-nav">
-          <button type="button" class="nav-item active" data-view="campaigns">
-            Campaigns
-          </button>
-          <button type="button" class="nav-item" data-view="replies">
-            Replies
-            <span class="pill" id="reply-count">0</span>
-          </button>
-        </nav>
-        <p class="rail-note" id="rail-note"></p>
+        <div class="sidebar-footer">
+          <div class="user-chip">
+            <span>J</span>
+            <div>
+              <strong>Archive demo</strong>
+              <small>pre-delete mirror</small>
+            </div>
+          </div>
+          <p class="fine-print" id="rail-note"></p>
+        </div>
       </aside>
 
-      <main class="main">
-        <header class="top">
+      <main>
+        <header class="topbar">
           <div>
-            <h1 id="view-title">Campaigns</h1>
-            <p class="sub" id="view-sub">
-              Pre-delete totals from the Supabase mirror · restored shells are
-              PAUSED in Smartlead
-            </p>
+            <p class="eyebrow" id="view-eyebrow">Restored clients</p>
+            <h2 id="view-title">Campaigns</h2>
           </div>
-          <div class="top-actions">
+          <div class="top-right">
             <label class="search">
               <span class="sr">Filter</span>
               <input id="filter" type="search" placeholder="Filter…" />
             </label>
+            <div class="health-pill"><span></span> Demo · redacted</div>
           </div>
         </header>
 
-        <section id="view-campaigns" class="view">
-          <div class="stat-row" id="stat-row"></div>
-          <div class="table-wrap">
-            <table class="campaign-table">
-              <thead>
-                <tr>
-                  <th>Campaign</th>
-                  <th>Status</th>
-                  <th>Leads</th>
-                  <th>Sent</th>
-                  <th>Replied</th>
-                  <th>Positive</th>
-                  <th>Bounced</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="campaign-rows"></tbody>
-            </table>
-          </div>
+        <section id="view-campaigns" class="panel active">
+          <div id="stat-row" class="kpi-grid"></div>
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Supabase mirror</p>
+                <h3>Nieto · MSRS · Positive</h3>
+              </div>
+              <span class="muted">Sent / reply totals from before the delete</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Campaign</th>
+                    <th>Status</th>
+                    <th>Leads</th>
+                    <th>Sent</th>
+                    <th>Replied</th>
+                    <th>Positive</th>
+                    <th>Bounced</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="campaign-rows"></tbody>
+              </table>
+            </div>
+          </article>
         </section>
 
-        <section id="view-replies" class="view hidden">
+        <section id="view-replies" class="panel">
           <div class="inbox">
-            <aside class="thread-list" id="thread-list"></aside>
-            <article class="thread-pane" id="thread-pane">
-              <div class="empty">Select a reply</div>
+            <aside class="surface thread-list" id="thread-list"></aside>
+            <article class="surface thread-pane" id="thread-pane">
+              <div class="empty muted">Select a reply</div>
             </article>
           </div>
         </section>
       </main>
     </div>
-    <script src="./app.js"></script>
+
+    <script src="./app.js" defer></script>
   </body>
 </html>

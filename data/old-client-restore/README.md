@@ -18,7 +18,7 @@ campaigns Smartlead permanently deleted on 2026-08-26.
 - Prospect emails, phones, links, and offer terms (airpods / tickets /
   Astros / etc.) redacted to `••••` / `████` in `public/demo/data.json`
 
-Open `https://<host>/demo?token=<RUN_TOKEN>` (cookie set for asset loads).
+Open **https://deliverabilitywizard-production.up.railway.app/demo** after deploy.
 Local preview without Railway: `python3 -m http.server --directory public/demo`.
 
 Rebuild data after a fresh dump:

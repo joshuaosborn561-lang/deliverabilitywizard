@@ -3,36 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Campaigns · Restore demo</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="color-scheme" content="dark" />
+    <title>Deliverability Wizard · Campaign archive</title>
     <style>
 :root {
-  --bg: #f3f5f8;
-  --panel: #ffffff;
-  --rail: #0f1724;
-  --rail-text: #d7dee8;
-  --rail-muted: #8b97a8;
-  --line: #e4e8ee;
-  --text: #152033;
-  --muted: #66758a;
-  --accent: #2f6fed;
-  --accent-soft: #eaf1ff;
-  --good: #128a5e;
-  --good-soft: #e5f7ef;
-  --warn: #b86a00;
-  --warn-soft: #fff3df;
-  --danger: #c23b45;
-  --danger-soft: #fdeced;
-  --blur: #9aa3b2;
-  --shadow: 0 18px 40px rgb(21 32 51 / 8%);
-  --radius: 14px;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --sans: "DM Sans", "Segoe UI", sans-serif;
+  --bg: #090d12;
+  --panel: #10161e;
+  --panel-2: #151d27;
+  --line: #24303d;
+  --text: #edf2f7;
+  --muted: #8c9aaa;
+  --accent: #58e6a9;
+  --accent-2: #6da7ff;
+  --warn: #ffc968;
+  --danger: #ff7b83;
+  --shadow: 0 24px 80px rgb(0 0 0 / 28%);
 }
 
 * {
@@ -43,12 +28,11 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background:
-    radial-gradient(circle at 0% 0%, #dfe9ff 0, transparent 28rem),
-    radial-gradient(circle at 100% 0%, #dff5ea 0, transparent 24rem),
-    var(--bg);
+  background: var(--bg);
   color: var(--text);
-  font-family: var(--sans);
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
 }
 
 button,
@@ -72,248 +56,359 @@ button {
   clip: rect(0 0 0 0);
 }
 
-.app {
-  display: grid;
-  grid-template-columns: 220px 1fr;
-  min-height: 100vh;
+.noise {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.2;
+  background:
+    radial-gradient(circle at 14% 2%, rgb(88 230 169 / 12%), transparent 28rem),
+    radial-gradient(circle at 90% 90%, rgb(109 167 255 / 10%), transparent 32rem);
 }
 
-.rail {
-  background: linear-gradient(180deg, #121b2b, #0c1320 70%);
-  color: var(--rail-text);
-  padding: 22px 16px;
+.app {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  border-right: 1px solid var(--line);
+  background: rgb(12 17 23 / 94%);
+  padding: 24px 18px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  justify-content: space-between;
 }
 
-.rail-brand {
+.logo-row {
   display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 12px;
+  padding: 0 8px 28px;
 }
 
-.rail-brand .mark {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+.logo-row strong,
+.logo-row span {
+  display: block;
+}
+
+.logo-row span {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.brand-mark {
+  width: 52px;
+  height: 52px;
   display: grid;
   place-items: center;
-  background: linear-gradient(145deg, #3b82f6, #1d4ed8);
-  color: white;
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  border-radius: 15px;
+  background: var(--accent);
+  color: #062318;
+  font-weight: 900;
+  letter-spacing: -0.06em;
 }
 
-.rail-brand strong {
-  display: block;
-  font-size: 15px;
+.brand-mark.small {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  font-size: 13px;
 }
 
-.rail-brand small {
-  color: var(--rail-muted);
-  font-size: 12px;
-}
-
-.rail-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+nav {
+  display: grid;
+  gap: 4px;
 }
 
 .nav-item {
-  appearance: none;
   border: 0;
   background: transparent;
-  color: var(--rail-text);
+  color: #93a2b2;
   text-align: left;
   padding: 11px 12px;
   border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  font-weight: 700;
 }
 
 .nav-item:hover,
 .nav-item.active {
-  background: rgb(255 255 255 / 8%);
+  background: var(--panel-2);
+  color: var(--text);
 }
 
-.pill {
-  background: var(--accent);
-  color: white;
+.badge {
+  float: right;
+  min-width: 20px;
+  padding: 2px 6px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  min-width: 1.6rem;
   text-align: center;
+  background: rgb(88 230 169 / 15%);
+  color: var(--accent);
+  font-size: 10px;
 }
 
-.rail-note {
-  margin-top: auto;
-  color: var(--rail-muted);
-  font-size: 12px;
-  line-height: 1.45;
+.sidebar-footer {
+  display: grid;
+  gap: 14px;
 }
 
-.main {
-  padding: 28px 32px 40px;
-}
-
-.top {
+.user-chip {
   display: flex;
-  justify-content: space-between;
-  gap: 20px;
-  align-items: end;
-  margin-bottom: 22px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
 }
 
-.top h1 {
-  margin: 0 0 6px;
-  font-size: 28px;
-  letter-spacing: -0.03em;
+.user-chip > span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #223142;
+  color: var(--accent);
+  font-weight: 900;
 }
 
-.sub {
-  margin: 0;
+.user-chip strong,
+.user-chip small {
+  display: block;
+}
+
+.user-chip small {
   color: var(--muted);
-  max-width: 46rem;
-  line-height: 1.45;
+}
+
+.fine-print {
+  color: #697686;
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  padding: 0 4px;
+}
+
+main {
+  min-width: 0;
+  padding: 28px clamp(20px, 4vw, 54px) 54px;
+}
+
+.topbar {
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 26px;
+}
+
+.top-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h2 {
+  margin-bottom: 0;
+  font-size: 28px;
+  letter-spacing: -0.035em;
+}
+
+h3 {
+  margin-bottom: 0;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.health-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9cabb8;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.health-pill span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent);
 }
 
 .search input {
-  width: min(280px, 100%);
+  width: min(260px, 70vw);
   border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 999px;
-  padding: 10px 14px;
+  background: #0c1117;
+  color: var(--text);
+  border-radius: 12px;
+  padding: 11px 14px;
   outline: none;
 }
 
 .search input:focus {
-  border-color: #9db7f5;
-  box-shadow: 0 0 0 3px rgb(47 111 237 / 12%);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgb(88 230 169 / 10%);
 }
 
-.stat-row {
+.panel {
+  display: none;
+}
+
+.panel.active {
+  display: block;
+}
+
+.kpi-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
-.stat {
-  background: var(--panel);
+.kpi {
+  min-height: 118px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  box-shadow: var(--shadow);
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 20px;
 }
 
-.stat span {
+.kpi span {
   display: block;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  margin-bottom: 8px;
 }
 
-.stat strong {
-  font-size: 28px;
-  letter-spacing: -0.03em;
+.kpi strong {
+  display: block;
+  margin-top: 18px;
+  font-size: 32px;
+  letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
 }
 
-.table-wrap {
-  background: var(--panel);
+.surface {
   border: 1px solid var(--line);
+  background: var(--panel);
   border-radius: 16px;
-  overflow: auto;
-  box-shadow: var(--shadow);
+  padding: 22px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 10%);
 }
 
-.campaign-table {
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.table-wrap {
+  overflow: auto;
+}
+
+.data-table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
 }
 
-.campaign-table th,
-.campaign-table td {
-  padding: 14px 16px;
+.data-table th,
+.data-table td {
+  padding: 13px 12px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
 }
 
-.campaign-table th {
+.data-table th {
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  background: #f8fafc;
+  font-weight: 700;
 }
 
-.campaign-table tr:last-child td {
+.data-table tr:last-child td {
   border-bottom: 0;
 }
 
-.campaign-table tbody tr:hover {
-  background: #f7f9fc;
+.data-table tbody tr:hover {
+  background: rgb(21 29 39 / 70%);
 }
 
 .campaign-name {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .campaign-ids {
   display: block;
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--muted);
-  font-family: var(--mono);
   font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.badge {
+.status-pill {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
   padding: 4px 9px;
   font-size: 12px;
-  font-weight: 600;
-}
-
-.badge.completed,
-.badge.positive {
-  background: var(--good-soft);
-  color: var(--good);
-}
-
-.badge.paused,
-.badge.interested {
-  background: var(--accent-soft);
+  font-weight: 700;
+  background: rgb(88 230 169 / 12%);
   color: var(--accent);
 }
 
-.badge.drafted {
-  background: #eef1f5;
+.status-pill.drafted {
+  background: rgb(140 154 170 / 12%);
   color: var(--muted);
 }
 
 .num {
   font-variant-numeric: tabular-nums;
-  font-family: var(--mono);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 13px;
 }
 
 .num.pos {
-  color: var(--good);
-  font-weight: 600;
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .num.bounce {
@@ -324,8 +419,8 @@ button {
   appearance: none;
   border: 0;
   background: transparent;
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--accent-2);
+  font-weight: 700;
   padding: 0;
 }
 
@@ -336,16 +431,8 @@ button {
   min-height: calc(100vh - 160px);
 }
 
-.thread-list,
-.thread-pane {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: var(--shadow);
-  overflow: hidden;
-}
-
 .thread-list {
+  padding: 0;
   overflow: auto;
   max-height: calc(100vh - 160px);
 }
@@ -356,15 +443,16 @@ button {
   border: 0;
   border-bottom: 1px solid var(--line);
   background: transparent;
+  color: inherit;
   text-align: left;
   padding: 14px 16px;
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
 
 .thread-item:hover,
 .thread-item.active {
-  background: #f5f8ff;
+  background: var(--panel-2);
 }
 
 .thread-item .who {
@@ -384,13 +472,28 @@ button {
 }
 
 .thread-item .preview {
-  color: #445066;
+  color: #b7c2cd;
   font-size: 13px;
-  line-height: 1.35;
+  line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.cat {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgb(88 230 169 / 12%);
+  color: var(--accent);
+}
+
+.cat.interested {
+  background: rgb(109 167 255 / 14%);
+  color: var(--accent-2);
 }
 
 .thread-pane {
@@ -402,24 +505,21 @@ button {
 
 .thread-pane .empty {
   margin: auto;
-  color: var(--muted);
 }
 
 .thread-head {
-  padding: 20px 24px 16px;
+  padding: 22px 24px 16px;
   border-bottom: 1px solid var(--line);
 }
 
-.thread-head h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
-  letter-spacing: -0.02em;
+.thread-head h3 {
+  margin-bottom: 10px;
 }
 
 .thread-head .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 16px;
+  gap: 10px 14px;
   color: var(--muted);
   font-size: 13px;
   align-items: center;
@@ -427,24 +527,24 @@ button {
 
 .blur-email {
   display: inline-block;
-  font-family: var(--mono);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   letter-spacing: 0.04em;
   color: transparent;
-  text-shadow: 0 0 7px var(--blur);
-  background: linear-gradient(90deg, #d7dde7, #eef1f5);
+  text-shadow: 0 0 8px #8c9aaa;
+  background: #1a2330;
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 0 5px;
   user-select: none;
 }
 
 .offer-redact {
   display: inline-block;
-  background: #1f2937;
-  color: #1f2937;
+  background: #0c1117;
+  color: #0c1117;
   border-radius: 3px;
-  padding: 0 2px;
+  padding: 0 3px;
   user-select: none;
-  filter: blur(4px);
+  filter: blur(5px);
 }
 
 .thread-body {
@@ -453,6 +553,7 @@ button {
   line-height: 1.55;
   font-size: 15px;
   overflow: auto;
+  color: #dce4ee;
 }
 
 @media (max-width: 980px) {
@@ -460,22 +561,14 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .rail {
-    flex-direction: row;
-    align-items: center;
-    gap: 16px;
-    padding: 14px 16px;
+  .sidebar {
+    position: relative;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
 
-  .rail-nav {
-    flex-direction: row;
-  }
-
-  .rail-note {
-    display: none;
-  }
-
-  .stat-row {
+  .kpi-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -491,75 +584,95 @@ button {
 </style>
   </head>
   <body>
+    <div class="noise"></div>
+
     <div class="app">
-      <aside class="rail">
-        <div class="rail-brand">
-          <span class="mark">SL</span>
-          <div>
-            <strong>Smartlead</strong>
-            <small>restore demo</small>
+      <aside class="sidebar">
+        <div>
+          <div class="logo-row">
+            <div class="brand-mark small">DW</div>
+            <div>
+              <strong>Deliverability</strong>
+              <span>Campaign archive</span>
+            </div>
           </div>
+          <nav>
+            <button type="button" class="nav-item active" data-view="campaigns">
+              Campaigns
+            </button>
+            <button type="button" class="nav-item" data-view="replies">
+              Replies <span class="badge" id="reply-count">0</span>
+            </button>
+          </nav>
         </div>
-        <nav class="rail-nav">
-          <button type="button" class="nav-item active" data-view="campaigns">
-            Campaigns
-          </button>
-          <button type="button" class="nav-item" data-view="replies">
-            Replies
-            <span class="pill" id="reply-count">0</span>
-          </button>
-        </nav>
-        <p class="rail-note" id="rail-note"></p>
+        <div class="sidebar-footer">
+          <div class="user-chip">
+            <span>J</span>
+            <div>
+              <strong>Archive demo</strong>
+              <small>pre-delete mirror</small>
+            </div>
+          </div>
+          <p class="fine-print" id="rail-note"></p>
+        </div>
       </aside>
 
-      <main class="main">
-        <header class="top">
+      <main>
+        <header class="topbar">
           <div>
-            <h1 id="view-title">Campaigns</h1>
-            <p class="sub" id="view-sub">
-              Pre-delete totals from the Supabase mirror · restored shells are
-              PAUSED in Smartlead
-            </p>
+            <p class="eyebrow" id="view-eyebrow">Restored clients</p>
+            <h2 id="view-title">Campaigns</h2>
           </div>
-          <div class="top-actions">
+          <div class="top-right">
             <label class="search">
               <span class="sr">Filter</span>
               <input id="filter" type="search" placeholder="Filter…" />
             </label>
+            <div class="health-pill"><span></span> Demo · redacted</div>
           </div>
         </header>
 
-        <section id="view-campaigns" class="view">
-          <div class="stat-row" id="stat-row"></div>
-          <div class="table-wrap">
-            <table class="campaign-table">
-              <thead>
-                <tr>
-                  <th>Campaign</th>
-                  <th>Status</th>
-                  <th>Leads</th>
-                  <th>Sent</th>
-                  <th>Replied</th>
-                  <th>Positive</th>
-                  <th>Bounced</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="campaign-rows"></tbody>
-            </table>
-          </div>
+        <section id="view-campaigns" class="panel active">
+          <div id="stat-row" class="kpi-grid"></div>
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Supabase mirror</p>
+                <h3>Nieto · MSRS · Positive</h3>
+              </div>
+              <span class="muted">Sent / reply totals from before the delete</span>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Campaign</th>
+                    <th>Status</th>
+                    <th>Leads</th>
+                    <th>Sent</th>
+                    <th>Replied</th>
+                    <th>Positive</th>
+                    <th>Bounced</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="campaign-rows"></tbody>
+              </table>
+            </div>
+          </article>
         </section>
 
-        <section id="view-replies" class="view hidden">
+        <section id="view-replies" class="panel">
           <div class="inbox">
-            <aside class="thread-list" id="thread-list"></aside>
-            <article class="thread-pane" id="thread-pane">
-              <div class="empty">Select a reply</div>
+            <aside class="surface thread-list" id="thread-list"></aside>
+            <article class="surface thread-pane" id="thread-pane">
+              <div class="empty muted">Select a reply</div>
             </article>
           </div>
         </section>
       </main>
     </div>
+
     <script>
 window.__DEMO_DATA__ = {
   "title": "Campaign restore demo",
@@ -1795,8 +1908,8 @@ window.__DEMO_DATA__ = {
   };
 
   const els = {
+    viewEyebrow: document.getElementById("view-eyebrow"),
     viewTitle: document.getElementById("view-title"),
-    viewSub: document.getElementById("view-sub"),
     replyCount: document.getElementById("reply-count"),
     railNote: document.getElementById("rail-note"),
     filter: document.getElementById("filter"),
@@ -1820,10 +1933,8 @@ window.__DEMO_DATA__ = {
       .replaceAll('"', "&quot;");
   }
 
-  /** Highlight already-redacted emails / ████ blocks for visual blur. */
   function decorateBody(text) {
-    const escaped = escapeHtml(text);
-    return escaped
+    return escapeHtml(text)
       .replace(
         /[A-Za-z0-9•]+\@[A-Za-z0-9•]+\.[A-Za-z]+/g,
         (m) => `<span class="blur-email">${m}</span>`,
@@ -1842,21 +1953,18 @@ window.__DEMO_DATA__ = {
     document.querySelectorAll(".nav-item").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.view === view);
     });
-    els.viewCampaigns.classList.toggle("hidden", view !== "campaigns");
-    els.viewReplies.classList.toggle("hidden", view !== "replies");
+    els.viewCampaigns.classList.toggle("active", view === "campaigns");
+    els.viewReplies.classList.toggle("active", view === "replies");
+    els.viewEyebrow.textContent =
+      view === "campaigns" ? "Restored clients" : "Inbound replies";
     els.viewTitle.textContent = view === "campaigns" ? "Campaigns" : "Replies";
-    els.viewSub.textContent =
-      view === "campaigns"
-        ? "Pre-delete totals from the Supabase mirror · restored shells are PAUSED in Smartlead"
-        : "Real inbound replies · prospect emails and offer terms blurred";
     els.filter.placeholder =
       view === "campaigns" ? "Filter campaigns…" : "Filter replies…";
     render();
   }
 
   function repliesVisible() {
-    const list = state.data?.replies || [];
-    return list.filter((r) => {
+    return (state.data?.replies || []).filter((r) => {
       if (
         state.campaignFocus != null &&
         r.campaignOldId !== state.campaignFocus
@@ -1896,7 +2004,7 @@ window.__DEMO_DATA__ = {
     ]
       .map(
         ([label, value]) =>
-          `<div class="stat"><span>${label}</span><strong>${fmt(value)}</strong></div>`,
+          `<div class="kpi"><span>${label}</span><strong>${fmt(value)}</strong></div>`,
       )
       .join("");
   }
@@ -1907,13 +2015,13 @@ window.__DEMO_DATA__ = {
     );
     els.campaignRows.innerHTML = rows
       .map((c) => {
-        const status = (c.status || "COMPLETED").toLowerCase();
+        const drafted = String(c.status || "").toUpperCase() === "DRAFTED";
         return `<tr>
           <td>
             <span class="campaign-name">${escapeHtml(c.name)}</span>
             <span class="campaign-ids">#${c.oldId} → #${c.newId}</span>
           </td>
-          <td><span class="badge ${escapeHtml(status)}">${escapeHtml(c.status || "COMPLETED")}</span></td>
+          <td><span class="status-pill ${drafted ? "drafted" : ""}">${escapeHtml(c.status || "COMPLETED")}</span></td>
           <td class="num">${fmt(c.leads)}</td>
           <td class="num">${fmt(c.sent)}</td>
           <td class="num">${fmt(c.replied)}</td>
@@ -1930,19 +2038,20 @@ window.__DEMO_DATA__ = {
     els.replyCount.textContent = String((state.data.replies || []).length);
     if (!list.length) {
       els.threadList.innerHTML =
-        '<div class="empty" style="padding:24px">No replies match.</div>';
-      els.threadPane.innerHTML = '<div class="empty">Select a reply</div>';
+        '<div class="empty muted" style="padding:24px">No replies match.</div>';
+      els.threadPane.innerHTML =
+        '<div class="empty muted">Select a reply</div>';
       return;
     }
     if (state.selectedReply >= list.length) state.selectedReply = 0;
     els.threadList.innerHTML = list
       .map((r, i) => {
         const catClass =
-          r.category === "Positive Reply" ? "positive" : "interested";
+          r.category === "Positive Reply" ? "" : "interested";
         return `<button type="button" class="thread-item ${i === state.selectedReply ? "active" : ""}" data-reply="${i}">
           <div class="who">
             <strong>${escapeHtml(r.fromName)}${r.company ? ` · ${escapeHtml(r.company)}` : ""}</strong>
-            <span class="badge ${catClass}">${escapeHtml(r.category)}</span>
+            <span class="cat ${catClass}">${escapeHtml(r.category)}</span>
           </div>
           <div class="meta">${escapeHtml(r.campaignName)} · <span class="blur-email">${escapeHtml(r.fromEmailMasked)}</span></div>
           <div class="preview">${escapeHtml(r.body)}</div>
@@ -1957,11 +2066,12 @@ window.__DEMO_DATA__ = {
           timeStyle: "short",
         })
       : "";
+    const catClass = r.category === "Positive Reply" ? "" : "interested";
     els.threadPane.innerHTML = `
       <div class="thread-head">
-        <h2>${escapeHtml(r.subject)}</h2>
+        <h3>${escapeHtml(r.subject)}</h3>
         <div class="row">
-          <span class="badge ${r.category === "Positive Reply" ? "positive" : "interested"}">${escapeHtml(r.category)}</span>
+          <span class="cat ${catClass}">${escapeHtml(r.category)}</span>
           <span>${escapeHtml(r.fromName)}</span>
           <span class="blur-email">${escapeHtml(r.fromEmailMasked)}</span>
           <span>${escapeHtml(r.campaignName)}</span>
@@ -2015,7 +2125,8 @@ window.__DEMO_DATA__ = {
       setView("campaigns");
     })
     .catch((err) => {
-      els.viewSub.textContent = `Failed to load demo data: ${err.message}`;
+      els.viewTitle.textContent = "Failed to load";
+      els.railNote.textContent = String(err.message || err);
     });
 })();
 

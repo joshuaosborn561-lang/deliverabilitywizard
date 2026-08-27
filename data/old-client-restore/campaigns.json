@@ -312,12 +312,14 @@
         },
         "seq_variants": [
           {
-            "subject": "",
-            "email_body": "",
+            "subject": "quick note",
+            "email_body": "<div>{{first_name}},</div>",
             "variant_label": "A"
           }
         ],
-        "source": "sequence_steps"
+        "source": "placeholder_empty_step",
+        "email_body": "<div>{{first_name}},</div>",
+        "subject": "quick note"
       },
       {
         "seq_number": 2,
@@ -331,7 +333,9 @@
             "variant_label": "A"
           }
         ],
-        "source": "sequence_steps"
+        "source": "sequence_steps",
+        "email_body": "<div>MCP bump</div>",
+        "subject": ""
       }
     ]
   }

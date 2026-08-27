@@ -436,6 +436,26 @@ export class SmartleadClient {
   }
 
   /**
+   * D144 restore — set a lead's campaign lifecycle status
+   * (COMPLETED / BOUNCED / INTERESTED / …). Used only when rebuilding
+   * deleted campaigns from the Supabase mirror; not a live-send path.
+   */
+  updateLeadStatus(
+    campaignId: number,
+    leadId: number,
+    status: string,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(
+        BASE_URL,
+        this.apiKey,
+        `campaigns/${campaignId}/leads/${leadId}/status`,
+        { method: "PATCH", body: { status } },
+      ),
+    );
+  }
+
+  /**
    * Daily sending ceiling for a mailbox.
    *
    * Written as `max_email_per_day` (POST); Smartlead rejects `message_per_day`

@@ -235,22 +235,18 @@ describe("D148 — bounces are investigated, remediated and re-queued, never pau
         restoreCampaignLead: async () => undefined,
       }) as never;
 
-    // Campaign 7 — sender_blocked, its domain's retire ask still pending.
-    state.upsertIsolationAction({
-      id: "ask-1",
-      kind: "retire_domain",
-      status: "pending",
-      title: "Retire burned.info",
-      proof: "550 5.1.8",
-      detail: { domain: "burned.info" },
-      allowed: "owner",
-      requestedAt: iso(T0),
-    });
+    // Campaign 7 — the scan itself discovers the 5.1.8 and opens the
+    // retire ask (D146/D148); the pending ask then holds the resend.
+    const asks: Array<{ title: string; kind: string }> = [];
     const blockedService = new BounceResurrectionService(
       loadConfig({ DRY_RUN: "false" }),
       mkSl("lead@x.com", BLOCKED_NDR, "flagged@burned.info"),
       state,
-      undefined,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async (ask: { title: string; kind: string }) =>
+          void asks.push(ask),
+      } as never,
       () => now,
     );
     blockedService.noteIncident(
@@ -267,21 +263,21 @@ describe("D148 — bounces are investigated, remediated and re-queued, never pau
     // lead is the unresolved block, not the calendar.
     now = Date.parse("2026-08-28T01:00:00.000Z");
     await blockedService.work();
+    assert.equal(asks.length, 1, "the scan opens the burned-domain ask itself");
+    assert.match(asks[0]!.title, /burned\.info/);
+    const pendingAsk = state
+      .listIsolationActions()
+      .find(
+        (row) =>
+          row.kind === "retire_domain" && row.detail.domain === "burned.info",
+      );
+    assert.equal(pendingAsk?.status, "pending");
     assert.deepEqual(deleted, [], "an unresolved sender block holds the resend");
     assert.equal(state.getBounceResurrectionJob(7)?.deferred.length, 1);
     assert.equal(state.getBounceResurrectionJob(7)?.deferred[0]?.domain, "burned.info");
 
     // Josh resolves the ask (retired, or unblocked in Defender + Cancel).
-    state.upsertIsolationAction({
-      id: "ask-1",
-      kind: "retire_domain",
-      status: "executed",
-      title: "Retire burned.info",
-      proof: "550 5.1.8",
-      detail: { domain: "burned.info" },
-      allowed: "owner",
-      requestedAt: iso(T0),
-    });
+    state.upsertIsolationAction({ ...pendingAsk!, status: "executed" });
     await blockedService.work();
     assert.deepEqual(deleted, [7], "a resolved block releases the resend");
     assert.equal(state.getBounceResurrectionJob(7)?.done, true);

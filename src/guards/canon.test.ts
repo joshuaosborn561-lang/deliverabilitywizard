@@ -3057,6 +3057,14 @@ describe("owner intent — D148 nothing pauses: investigate, remediate, re-add",
         "bounceResurrection.ts lost the orphan-verdict sweep; the 8/27 stale-branch deploy would have silently forfeited four campaigns' resends.",
       ),
     );
+    assert.match(
+      service,
+      /requestIsolationAction/,
+      stop(
+        "A 5.1.8 found during the incident re-scan opens the same retire ask a burst sample would (D146/D148) — the 8/27 live block was classified pre-D146 and the burst path never saw it.",
+        "bounceResurrection.ts no longer opens the burned-domain ask from the scan; a scan-discovered block would resend with no ask to gate it.",
+      ),
+    );
 
     const autostop = await read("../services/campaignBounceAutostop.ts");
     assert.match(

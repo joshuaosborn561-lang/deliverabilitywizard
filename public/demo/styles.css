@@ -211,6 +211,88 @@ main {
   justify-content: flex-end;
 }
 
+.client-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: #aab6c3;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chip:hover {
+  border-color: #425267;
+  color: var(--text);
+}
+
+.chip.active {
+  border-color: rgb(88 230 169 / 35%);
+  background: rgb(88 230 169 / 12%);
+  color: var(--accent);
+}
+
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ghost {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: #aab6c3;
+  border-radius: 10px;
+  padding: 9px 12px;
+}
+
+.ghost:hover {
+  border-color: #425267;
+  color: var(--text);
+}
+
+.compact {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+.client-tag {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  font-weight: 700;
+  background: rgb(109 167 255 / 12%);
+  color: var(--accent-2);
+}
+
+.danger-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--danger);
+  font-weight: 700;
+  padding: 0;
+  margin-left: 12px;
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.table-empty {
+  margin: 18px 0 0;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: var(--accent);

@@ -48,6 +48,7 @@
             <h2 id="view-title">Campaigns</h2>
           </div>
           <div class="top-right">
+            <div class="client-filters" id="client-filters" role="group" aria-label="Filter by client"></div>
             <label class="search">
               <span class="sr">Filter</span>
               <input id="filter" type="search" placeholder="Filter…" />
@@ -64,12 +65,18 @@
                 <p class="eyebrow">Supabase mirror</p>
                 <h3>Nieto · MSRS · Positive</h3>
               </div>
-              <span class="muted">Sent / reply totals from before the delete</span>
+              <div class="heading-actions">
+                <span class="muted" id="hidden-count"></span>
+                <button type="button" id="restore-hidden" class="ghost compact hidden">
+                  Restore hidden
+                </button>
+              </div>
             </div>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
+                    <th>Client</th>
                     <th>Campaign</th>
                     <th>Status</th>
                     <th>Leads</th>
@@ -82,6 +89,9 @@
                 </thead>
                 <tbody id="campaign-rows"></tbody>
               </table>
+              <p id="campaigns-empty" class="muted table-empty hidden">
+                No campaigns match this filter.
+              </p>
             </div>
           </article>
         </section>

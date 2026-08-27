@@ -305,7 +305,7 @@ export class BounceResurrectionService {
     if (mutated) await this.state.save();
     if (result.classified || result.requeued || result.errors.length) {
       console.log(
-        `[bounce-resurrect] jobs=${result.jobs} classified=${result.classified} requeued=${result.requeued} stayedDead=${result.skippedDead} errors=${result.errors.length}`,
+        `[bounce-resurrect] jobs=${result.jobs} classified=${result.classified} requeued=${result.requeued} stayedDead=${result.skippedDead} errors=${result.errors.length}${result.errors.length ? ` — ${result.errors.slice(0, 3).join(" | ")}` : ""}`,
       );
     }
     return result;
@@ -455,6 +455,15 @@ export class BounceResurrectionService {
     let starved = false;
     for (let i = 0; i < job.deferred.length; i += 1) {
       const entry = job.deferred[i]!;
+      // Replay safety: a tick that dies mid-flush keeps its remaining
+      // entries, and the survivors can include a lead whose resend
+      // already went out before the failure (live 19:31Z on 8/27:
+      // bjohnson@ was re-queued twice this way). The ledger, not the
+      // deferred list, is the truth about who already went.
+      if (this.state.wasLeadResurrected(job.campaignId, entry.email)) {
+        job.skippedOther += 1;
+        continue;
+      }
       if (!this.gateOpen(entry, job, nowMs)) {
         keep.push(entry);
         continue;
@@ -466,27 +475,36 @@ export class BounceResurrectionService {
       }
 
       budget -= 1;
-      const lead = (await this.smartlead.fetchLeadByEmail(
-        entry.email,
-      )) as Record<string, unknown> | null;
-      const leadId = Number(lead?.id);
-      if (!lead || !Number.isFinite(leadId)) {
-        job.skippedOther += 1;
-        continue;
+      try {
+        const lead = (await this.smartlead.fetchLeadByEmail(
+          entry.email,
+        )) as Record<string, unknown> | null;
+        const leadId = Number(lead?.id);
+        if (!lead || !Number.isFinite(leadId)) {
+          job.skippedOther += 1;
+          continue;
+        }
+        await this.smartlead.deleteCampaignLead(job.campaignId, leadId);
+        await sleep(WRITE_GAP_MS);
+        await this.smartlead.restoreCampaignLead(
+          job.campaignId,
+          restorableLead(entry.email, lead),
+        );
+        await sleep(WRITE_GAP_MS);
+        this.state.markLeadResurrected(job.campaignId, entry.email);
+        job.requeued += 1;
+        result.requeued += 1;
+        console.log(
+          `[bounce-resurrect] re-queued ${entry.email} on #${job.campaignId} (${entry.cls} remediated)`,
+        );
+      } catch (error) {
+        // One rate-limited lead must not abort the whole flush — keep the
+        // entry for the next tick and move on.
+        keep.push(entry);
+        result.errors.push(
+          `#${job.campaignId} ${entry.email}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
-      await this.smartlead.deleteCampaignLead(job.campaignId, leadId);
-      await sleep(WRITE_GAP_MS);
-      await this.smartlead.restoreCampaignLead(
-        job.campaignId,
-        restorableLead(entry.email, lead),
-      );
-      await sleep(WRITE_GAP_MS);
-      this.state.markLeadResurrected(job.campaignId, entry.email);
-      job.requeued += 1;
-      result.requeued += 1;
-      console.log(
-        `[bounce-resurrect] re-queued ${entry.email} on #${job.campaignId} (${entry.cls} remediated)`,
-      );
     }
     job.deferred = keep;
 

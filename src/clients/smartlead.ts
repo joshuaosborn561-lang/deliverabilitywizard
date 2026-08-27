@@ -330,6 +330,54 @@ export class SmartleadClient {
     });
   }
 
+  /**
+   * D147 — drop one lead's association with a campaign so a resend can
+   * start it fresh. Only the bounce-resurrection flow calls this, and
+   * only for a lead whose own NDR proved the bounce was the sender's
+   * fault; the lead is re-added immediately after.
+   */
+  deleteCampaignLead(
+    campaignId: number,
+    leadId: number | string,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(
+        BASE_URL,
+        this.apiKey,
+        `campaigns/${campaignId}/leads/${leadId}`,
+        { method: "DELETE" },
+      ),
+    );
+  }
+
+  /**
+   * D147 — re-add a lead Josh already imported whose send failed for
+   * sender-side reasons (capped tenant, blocked sender, content block).
+   * This is a RESEND of an existing lead, never lead sourcing (D52
+   * untouched), so unlike the shell helper it RESPECTS the block,
+   * unsubscribe and community-bounce lists — a lead suppressed since
+   * import stays out.
+   */
+  restoreCampaignLead(
+    campaignId: number,
+    lead: { email: string } & Record<string, unknown>,
+  ): Promise<unknown> {
+    return this.mutate(() =>
+      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+        method: "POST",
+        body: {
+          lead_list: [lead],
+          settings: {
+            ignore_duplicate_leads_in_other_campaign: true,
+            ignore_global_block_list: false,
+            ignore_unsubscribe_list: false,
+            ignore_community_bounce_list: false,
+          },
+        },
+      }),
+    );
+  }
+
   /** D140 — the per-lead thread; NDR replies carry the SMTP bounce reason. */
   getLeadMessageHistory(campaignId: number, leadId: number | string): Promise<unknown> {
     return apiRequest(

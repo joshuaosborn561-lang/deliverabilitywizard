@@ -17,6 +17,23 @@ export type BounceClass =
   | "content_block"
   | "other";
 
+/** D140/D147 — the NDR reply in a lead's message history, if any. */
+export function ndrBodyFromHistory(history: unknown): string | null {
+  const rows = Array.isArray(
+    (history as { history?: unknown[] } | null)?.history,
+  )
+    ? ((history as { history: Array<Record<string, unknown>> }).history ?? [])
+    : [];
+  const ndr = rows.find(
+    (entry) =>
+      String(entry.type ?? "").toUpperCase() === "REPLY" &&
+      /delivery has failed|mail delivery|undeliverable|returned/i.test(
+        String(entry.email_body ?? ""),
+      ),
+  );
+  return ndr ? String(ndr.email_body ?? "") : null;
+}
+
 /** Order matters: the tenant-cap text also contains generic 550 markers. */
 export function classifyBounceText(text: string): BounceClass {
   const hay = text.toLowerCase();

@@ -11,9 +11,14 @@ campaigns Smartlead permanently deleted on 2026-08-26.
 
 ```bash
 # After D144 is on main (teardown gone):
+unset RAILWAY_TOKEN RAILWAY_API_TOKEN   # bad injected token breaks railway run
 railway run -- npx tsx scripts/restore-old-clients.ts          # dry-run
 railway run -- npx tsx scripts/restore-old-clients.ts --apply  # create + sequences + PAUSE
 railway run -- npx tsx scripts/restore-old-clients.ts --apply --leads
+railway run -- npx tsx scripts/restore-lead-categories.ts --apply  # Interested / Positive Reply / etc.
 ```
+
+Category writes move the lead-stats panel. Campaign header **sent**
+cannot be restored — see `ANALYTICS.md`.
 
 Never START from this script (D40).

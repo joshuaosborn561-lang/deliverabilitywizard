@@ -1,9 +1,16 @@
 # Restored campaign analytics (from Supabase mirror, pre-delete)
 
-Smartlead DELETE wiped campaign analytics permanently. These are the
-real numbers from `campaignintelligence.public.sends` as of the last
-sync before/around the delete. Use for the YouTube video overlay if
-the Smartlead UI still shows zeros.
+## What Smartlead will show after restore
+
+| UI field | Restorable via API? | How |
+|---|---|---|
+| Lead categories (Interested / Positive Reply / OOO / bounce category, …) | **Yes** | `POST /campaigns/{id}/leads/{leadId}/category` — applied from Supabase dump |
+| Campaign header **sent / open / click / reply** | **No** | Read-only counters from real send events. DELETE wiped them; no write endpoint. Lead `status` is rejected (`"status" is not allowed`); PATCH `…/status` 404s on this account. |
+| Bounce **category** on leads | Yes (as category_id `9`) | Does **not** rewrite the header bounce/sent counters |
+
+Use the table below as the YouTube overlay for sent / replied / bounced.
+Positive/interested counts in the lead-stats panel should match the
+category restore once it finishes.
 
 | Old id | New id | Campaign | Sent | Replied | Positive | Bounced |
 |---|---|---|---|---|---|---|
@@ -18,6 +25,10 @@ the Smartlead UI still shows zeros.
 | 3628940 | 3867944 | MSRS2 Ticket Offer Property Manager | 5,108 | 101 | 0 | 124 |
 | 3628943 | 3867945 | Positive | 0 | 0 | 0 | 0 |
 
-Leads are being re-imported; lead statuses (COMPLETED / BOUNCED /
-INTERESTED) can be pushed afterward. Sent/open/reply counters in the
-Smartlead campaign header cannot.
+Source: `campaignintelligence.public.sends` (last sync around delete).
+
+```bash
+# Re-apply categories from leads.json (idempotent):
+unset RAILWAY_TOKEN RAILWAY_API_TOKEN
+railway run -- npx tsx scripts/restore-lead-categories.ts --apply
+```

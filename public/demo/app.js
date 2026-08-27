@@ -47,12 +47,17 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify([...state.hiddenIds]));
   }
 
-  function clientOf(name) {
-    const n = String(name || "").toLowerCase();
-    if (n.includes("nieto")) return "Nieto";
-    if (n.includes("msrs")) return "MSRS";
-    if (n.includes("positive")) return "Positive";
-    return "Other";
+  function clientLabel(keyOrCampaign) {
+    if (keyOrCampaign && typeof keyOrCampaign === "object") {
+      return keyOrCampaign.client || "Client";
+    }
+    const clients = state.data?.clients || [];
+    const hit = clients.find((c) => c.key === keyOrCampaign);
+    return hit?.label || "Client";
+  }
+
+  function clientKeyOf(item) {
+    return item.clientKey || "X";
   }
 
   function fmt(n) {
@@ -73,7 +78,16 @@
         /[A-Za-z0-9•]+\@[A-Za-z0-9•]+\.[A-Za-z]+/g,
         (m) => `<span class="blur-email">${m}</span>`,
       )
-      .replace(/████+/g, (m) => `<span class="offer-redact">${m}</span>`);
+      .replace(/█+/g, (m) => `<span class="offer-redact">${m}</span>`);
+  }
+
+  function blurSubject(text) {
+    const raw = String(text || "████████");
+    return `<span class="blur-subject" title="Subject hidden">${escapeHtml(raw)}</span>`;
+  }
+
+  function blurClient(label) {
+    return `<span class="blur-client" title="Client hidden">${escapeHtml(label)}</span>`;
   }
 
   function matchesText(hay) {
@@ -82,16 +96,16 @@
     return hay.toLowerCase().includes(q);
   }
 
-  function matchesClient(name) {
+  function matchesClient(item) {
     if (state.client === "all") return true;
-    return clientOf(name) === state.client;
+    return clientKeyOf(item) === state.client;
   }
 
   function visibleCampaigns() {
     return (state.data?.campaigns || []).filter((c) => {
       if (state.hiddenIds.has(Number(c.oldId))) return false;
-      if (!matchesClient(c.name)) return false;
-      return matchesText(`${c.name} ${c.oldId} ${c.newId} ${clientOf(c.name)}`);
+      if (!matchesClient(c)) return false;
+      return matchesText(`${c.name} ${c.oldId} ${c.newId} ${c.client}`);
     });
   }
 
@@ -119,38 +133,38 @@
       ) {
         return false;
       }
-      if (!matchesClient(r.campaignName)) return false;
+      if (!matchesClient(r)) return false;
       return matchesText(
         [
           r.campaignName,
-          clientOf(r.campaignName),
+          r.client,
           r.category,
           r.fromName,
           r.company,
-          r.subject,
           r.body,
-        ].join(" "),
+          r.outreach?.body,
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
     });
   }
 
   function renderClientFilters() {
-    const clients = [
-      "all",
-      ...new Set(
-        (state.data?.campaigns || [])
-          .filter((c) => !state.hiddenIds.has(Number(c.oldId)))
-          .map((c) => clientOf(c.name)),
-      ),
-    ];
-    // Keep stable order
-    const order = ["all", "Nieto", "MSRS", "Positive", "Other"];
-    clients.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-    els.clientFilters.innerHTML = clients
-      .map((client) => {
-        const label = client === "all" ? "All clients" : client;
-        const active = state.client === client ? "active" : "";
-        return `<button type="button" class="chip ${active}" data-client="${escapeHtml(client)}">${escapeHtml(label)}</button>`;
+    const clients = state.data?.clients || [];
+    const keys = ["all", ...clients.map((c) => c.key)];
+    els.clientFilters.innerHTML = keys
+      .map((key) => {
+        const label =
+          key === "all"
+            ? "All clients"
+            : clients.find((c) => c.key === key)?.label || key;
+        const active = state.client === key ? "active" : "";
+        const shown =
+          key === "all"
+            ? escapeHtml(label)
+            : `<span class="blur-client">${escapeHtml(label)}</span>`;
+        return `<button type="button" class="chip ${active}" data-client="${escapeHtml(key)}">${shown}</button>`;
       })
       .join("");
   }
@@ -194,9 +208,8 @@
     els.campaignRows.innerHTML = rows
       .map((c) => {
         const drafted = String(c.status || "").toUpperCase() === "DRAFTED";
-        const client = clientOf(c.name);
         return `<tr>
-          <td><span class="client-tag">${escapeHtml(client)}</span></td>
+          <td>${blurClient(c.client || "Client")}</td>
           <td>
             <span class="campaign-name">${escapeHtml(c.name)}</span>
             <span class="campaign-ids">#${c.oldId} → #${c.newId}</span>
@@ -216,6 +229,25 @@
         </tr>`;
       })
       .join("");
+  }
+
+  function renderMessageBubble(msg, kind) {
+    if (!msg) return "";
+    const label = kind === "outreach" ? "Your outreach" : "Their reply";
+    const when = msg.at
+      ? new Date(msg.at).toLocaleString("en-US", {
+          dateStyle: "medium",
+          timeStyle: "short",
+        })
+      : "";
+    return `<div class="msg ${kind}">
+      <div class="msg-meta">
+        <strong>${label}</strong>
+        <span>${blurSubject(msg.subject)}</span>
+        <span>${escapeHtml(when)}</span>
+      </div>
+      <div class="msg-body">${decorateBody(msg.body || "")}</div>
+    </div>`;
   }
 
   function renderReplies() {
@@ -241,7 +273,7 @@
             <strong>${escapeHtml(r.fromName)}${r.company ? ` · ${escapeHtml(r.company)}` : ""}</strong>
             <span class="cat ${catClass}">${escapeHtml(r.category)}</span>
           </div>
-          <div class="meta"><span class="client-tag">${escapeHtml(clientOf(r.campaignName))}</span> · ${escapeHtml(r.campaignName)} · <span class="blur-email">${escapeHtml(r.fromEmailMasked)}</span></div>
+          <div class="meta">${blurClient(r.client || "Client")} · ${blurSubject(r.subject)} · <span class="blur-email">${escapeHtml(r.fromEmailMasked)}</span></div>
           <div class="preview">${escapeHtml(r.body)}</div>
         </button>`;
       })
@@ -255,19 +287,26 @@
         })
       : "";
     const catClass = r.category === "Positive Reply" ? "" : "interested";
+    const replyMsg = r.reply || {
+      subject: r.subject,
+      body: r.body,
+      at: r.at,
+    };
     els.threadPane.innerHTML = `
       <div class="thread-head">
-        <h3>${escapeHtml(r.subject)}</h3>
+        <h3>${blurSubject(r.subject)}</h3>
         <div class="row">
           <span class="cat ${catClass}">${escapeHtml(r.category)}</span>
-          <span class="client-tag">${escapeHtml(clientOf(r.campaignName))}</span>
+          ${blurClient(r.client || "Client")}
           <span>${escapeHtml(r.fromName)}</span>
           <span class="blur-email">${escapeHtml(r.fromEmailMasked)}</span>
-          <span>${escapeHtml(r.campaignName)}</span>
           <span>${escapeHtml(when)}</span>
         </div>
       </div>
-      <div class="thread-body">${decorateBody(r.body)}</div>`;
+      <div class="thread-thread">
+        ${renderMessageBubble(r.outreach, "outreach")}
+        ${renderMessageBubble(replyMsg, "reply")}
+      </div>`;
   }
 
   function render() {

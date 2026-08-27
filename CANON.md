@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D142** (2026-08-27). One page of current truth. When a new
+Canon as of **D143** (2026-08-27). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -23,7 +23,7 @@ Slack speaks only when a human decision is needed or the day is done.
 | Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → old-client teardown retry (D111) → stage watchdog + `canonCompliant` yes/no (D108) |
 | Bounce loop | 10 min | Pause an ACTIVE campaign only on a REAL burst: >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141). A tripped counter samples the bounced rows first (retrying while the analytics ledger lags); a ledger dump of stale bounces logs loudly and never pauses; unreadable rows defer to the next tick. The D90 lifetime-rate rule is retired — verified lists never bounce like that. Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift (D80/D84/D88; one forced full-fleet off-write ran under D124). Never touches COMPLETED/STOPPED; a bounce pause is stamped so qa-unpause never fights it, and is not a pendingResume (D40/D128). A real pause classifies the sampled SMTP reasons — tenant-rate-limit / invalid-recipient / content-block — a Microsoft tenant hitting its daily cap Slacks once per tenant per day; everything else stays in logs (D140). |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). Reads the shared account book, never its own fetch (D132). |
-| Monitor | Slower cadence | Placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), POD-A/POD-B tag converge on client mailboxes (D135), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
+| Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. |
 
@@ -33,7 +33,12 @@ Slack speaks only when a human decision is needed or the day is done.
   (`warmedAt` stamped at import) before live campaign send (D1 clock, D50
   duration). Never derive it from Smartlead's `warmup_details`. The warmup
   gate is **ON** and pulls an under-21-day mailbox off ACTIVE campaigns on
-  the health pass (D105).
+  the health pass (D105). The gate ledgers every pull per membership: the
+  same membership pulled 3+ times in 24h means a writer **outside this
+  app** keeps re-adding it — logged every pass and named on the EOD brief
+  for a human to switch off; the gate keeps pulling meanwhile, but the
+  warmup re-enable write happens at most once per account per day instead
+  of on every pull (D143).
 - **Exempt from that clock**: pre-warmed fleets — every mailbox on
   `PREWARMED_DOMAINS` (crosslaunchco.com, crossscaleco.com,
   cleartechco.com) and every from-name fleet in `EXTRA_GENERIC_MAILBOXES`
@@ -165,7 +170,9 @@ Exactly three pages plus receipts (D71, D47 plain English):
    also lets generics cover the campaigns it cut (D134).
 2. **Isolated spam word** — the word, the edit, *Make the changes*.
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
-   campaigns, loaded DRAFTs, and domains needing a human (D85/D89/D136).
+   campaigns, loaded DRAFTs, domains needing a human, and under-warmed
+   inboxes an outside writer keeps re-adding after gate pulls
+   (D85/D89/D136/D143).
 Plus `action_result` confirmations: a tapped button finished, a signature
 was auto-written (first time per campaign only, D92/D95), a reconnect
 happened or hard-failed (D94). Everything else — staffing, rest, DNS,
@@ -189,7 +196,11 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
 - **Domain→client**: the audit first makes the CONFIDENT fixes itself —
   a generic-fleet box with no client_id joins the Generic marker, and an
   unmapped domain whose base carries exactly one client's distinctive
-  token attaches to that client (D142). Everything else — split_clients
+  token attaches to that client (D142) — but a box that still owes warmup
+  days is not attach supply: the client_id write is deferred (EOD-brief
+  advisory says so) until the 21-day clock is served, because handing a
+  2-day-old box a client_id on 8/27 let an outside writer staff it
+  straight onto live campaigns (D143). Everything else — split_clients
   always, ambiguous or token-less domains — is an advisory: logs plus one
   EOD-brief section, never a guess, and a box already carrying a real
   client_id is never rewritten (D136/D142). Generic fleets, BCP domains,

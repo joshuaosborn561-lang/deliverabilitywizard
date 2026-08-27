@@ -180,6 +180,13 @@ export class SlackClient {
     loadedDrafts?: Array<{ id: number; name: string; remaining: number }>;
     /** D136 — sending domains whose client story needs a human. */
     domainAdvisories?: Array<{ domain: string; kind: string; note: string }>;
+    /** D143 — memberships an outside writer keeps re-adding after gate pulls. */
+    warmupBoomerangs?: Array<{
+      email: string;
+      campaignId: number;
+      campaignName: string;
+      count: number;
+    }>;
     /** D85 — set when the unwarmed canary fleet has zero connected mailboxes. */
     canaryFleetDownSince?: string | null;
   }): Promise<void> {
@@ -250,6 +257,31 @@ export class SlackClient {
       if (domainAdvisories.length > 10) {
         lines.push(`• …and ${domainAdvisories.length - 10} more`);
       }
+    }
+
+    // D143 — the warmup gate keeps pulling these and something outside this
+    // app keeps putting them back. Grouped per mailbox so 7 boxes on 12
+    // campaigns read as 7 lines, not 84.
+    const boomerangs = summary.warmupBoomerangs ?? [];
+    if (boomerangs.length) {
+      const byEmail = new Map<string, { pulls: number; campaigns: number }>();
+      for (const row of boomerangs) {
+        const entry = byEmail.get(row.email) ?? { pulls: 0, campaigns: 0 };
+        entry.pulls = Math.max(entry.pulls, row.count);
+        entry.campaigns += 1;
+        byEmail.set(row.email, entry);
+      }
+      lines.push(
+        "",
+        `Something outside this app keeps re-adding under-warmed inboxes (${byEmail.size} mailbox${byEmail.size === 1 ? "" : "es"}). I pull them off every pass and they come back within minutes — check InboxKit campaign assignment (or any other automation) and switch it off:`,
+        ...[...byEmail.entries()]
+          .slice(0, 8)
+          .map(
+            ([email, entry]) =>
+              `• \`${email}\` — re-added ${entry.pulls}× in 24h across ${entry.campaigns} campaign${entry.campaigns === 1 ? "" : "s"}`,
+          ),
+      );
+      if (byEmail.size > 8) lines.push(`• …and ${byEmail.size - 8} more`);
     }
 
     // D89 — leads sitting in draft, nothing going out.

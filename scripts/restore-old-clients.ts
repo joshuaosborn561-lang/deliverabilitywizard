@@ -25,8 +25,8 @@ import type { SmartleadSequence } from "../src/types/index.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DATA_DIR = path.join(ROOT, "data", "old-client-restore");
-const WRITE_GAP_MS = 500;
-const LEAD_BATCH = 100;
+const WRITE_GAP_MS = 800;
+const LEAD_BATCH = 350;
 
 interface RestoreSequence extends Omit<SmartleadSequence, "id"> {
   id?: number;
@@ -125,13 +125,35 @@ async function main() {
     let newId = map[key];
     const named = byName.get(nameKey);
 
-    if (named && (!newId || named.id === newId)) {
+    if (named) {
       newId = named.id;
       map[key] = newId;
       console.log(
         `[restore-old-clients] reuse #${newId} for old #${campaign.oldId} ${campaign.name}`,
       );
-    } else if (!newId) {
+    } else if (newId) {
+      // Stale map entries from a failed earlier pass — verify before reuse.
+      try {
+        const got = await smartlead.getCampaign(newId);
+        if (!got || !(got as { id?: number }).id) {
+          console.warn(
+            `[restore-old-clients] map id #${newId} gone — recreating ${campaign.name}`,
+          );
+          delete map[key];
+          newId = undefined as unknown as number;
+          saveMap(map);
+        }
+      } catch {
+        console.warn(
+          `[restore-old-clients] map id #${newId} 404 — recreating ${campaign.name}`,
+        );
+        delete map[key];
+        newId = undefined as unknown as number;
+        saveMap(map);
+      }
+    }
+
+    if (!newId) {
       if (!args.apply) {
         console.log(
           `[restore-old-clients] would create ${campaign.name} (${campaign.sequences.length} steps)`,
@@ -144,6 +166,7 @@ async function main() {
         throw new Error(`createCampaign returned no id for ${campaign.name}`);
       }
       map[key] = newId;
+      byName.set(nameKey, { id: newId, name: campaign.name, status: "DRAFTED" });
       saveMap(map);
       console.log(
         `[restore-old-clients] created #${newId} for old #${campaign.oldId} ${campaign.name}`,
@@ -154,16 +177,31 @@ async function main() {
     if (!args.apply) continue;
 
     if (campaign.sequences.length) {
-      const sequences = campaign.sequences.map((step, index) => {
-        const { source: _source, ...rest } = step;
+      // New campaigns: Smartlead wants id:0 for brand-new steps (canaryShell /
+      // podControlShell). A real id that does not exist 500s with
+      // "Sequence N was not found".
+      const sequences = campaign.sequences.map((step) => {
+        const variant = step.seq_variants?.[0];
+        const subject = ((variant?.subject ?? step.subject ?? "").trim()) || "follow up";
+        const email_body =
+          ((variant?.email_body ?? step.email_body ?? "").trim()) ||
+          "<div>{{first_name}},</div>";
+        const delay =
+          step.seq_delay_details?.delay_in_days ??
+          step.seq_delay_details?.delayInDays ??
+          1;
         return {
-          id: rest.id ?? index + 1,
-          seq_number: rest.seq_number,
-          subject: rest.subject,
-          email_body: rest.email_body,
-          seq_delay_details: rest.seq_delay_details,
-          seq_variants: rest.seq_variants,
-        } satisfies SmartleadSequence;
+          id: 0,
+          seq_number: step.seq_number,
+          seq_delay_details: { delay_in_days: delay, delayInDays: delay },
+          subject,
+          email_body,
+          seq_variants: (step.seq_variants ?? []).map((v) => ({
+            subject: (v.subject ?? subject) || "follow up",
+            email_body: (v.email_body ?? email_body) || "<div>{{first_name}},</div>",
+            variant_label: v.variant_label ?? "A",
+          })),
+        } as unknown as SmartleadSequence;
       });
       await smartlead.updateCampaignSequences(newId!, sequences);
       console.log(

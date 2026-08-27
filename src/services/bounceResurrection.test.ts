@@ -313,6 +313,84 @@ describe("D148 — bounces are investigated, remediated and re-queued, never pau
     assert.ok(state.getBounceResurrectionJob(8)?.copyEditedAt);
   });
 
+  it("the flush is replay-safe: the ledger blocks a re-flush and one failed lead does not abort the pass", async () => {
+    const state = store();
+    await state.load();
+    // Past midnight relative to the bounced sends — both gates open.
+    let now = Date.parse("2026-08-28T01:00:00.000Z");
+    const deleted: string[] = [];
+    let failFetchFor: string | null = "alpha@x.com";
+    const service = new BounceResurrectionService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listBouncedSendStats: async () => ({
+          total_stats: "2",
+          data: [
+            { lead_email: "alpha@x.com", sent_time: iso(T0 - 60 * 60 * 1000) },
+            { lead_email: "beta@x.com", sent_time: iso(T0 - 60 * 60 * 1000) },
+          ],
+        }),
+        fetchLeadByEmail: async (email: string) => {
+          if (email === failFetchFor) throw new Error("HTTP 429");
+          return { id: email === "alpha@x.com" ? 51 : 52 };
+        },
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "s@salesgliderset.info" },
+            { type: "REPLY", email_body: TENANT_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async (_id: number, leadId: number) => {
+          deleted.push(String(leadId));
+        },
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      undefined,
+      () => now,
+    );
+
+    // Scan needs the leads readable — let the fetch succeed during scan.
+    failFetchFor = null;
+    service.noteIncident({ id: 11, name: "Replay" }, tenantVerdict(11, iso(T0)));
+    // Scan-only pass while the gate is shut (same day as the sends).
+    now = T0;
+    await service.work();
+    assert.equal(state.getBounceResurrectionJob(11)?.deferred.length, 2);
+
+    // Gate opens; alpha's flush read 429s — beta still goes out, alpha
+    // stays parked, and the pass reports the error instead of dying.
+    now = Date.parse("2026-08-28T01:00:00.000Z");
+    failFetchFor = "alpha@x.com";
+    const partial = await service.work();
+    assert.deepEqual(deleted, ["52"], "beta flushed despite alpha's 429");
+    assert.equal(partial.errors.length, 1);
+    assert.match(partial.errors[0]!, /alpha@x\.com.*429/);
+    let job = state.getBounceResurrectionJob(11);
+    assert.equal(job?.deferred.length, 1);
+    assert.equal(job?.deferred[0]?.email, "alpha@x.com");
+
+    // Replay safety: beta sneaks back into the deferred list (the shape a
+    // mid-flush crash leaves behind) — the ledger blocks the second send.
+    job = state.getBounceResurrectionJob(11)!;
+    job.deferred.push({
+      email: "beta@x.com",
+      cls: "tenant_rate_limit",
+      domain: "salesgliderset.info",
+      sentAt: iso(T0 - 60 * 60 * 1000),
+    });
+    state.upsertBounceResurrectionJob(job);
+    failFetchFor = null;
+    await service.work();
+    assert.deepEqual(
+      deleted,
+      ["52", "51"],
+      "alpha flushed on retry; beta was NOT re-queued a second time",
+    );
+    assert.equal(state.getBounceResurrectionJob(11)?.done, true);
+  });
+
   it("a gate that never opens expires after 7 days and the receipt says so", async () => {
     const state = store();
     await state.load();

@@ -378,6 +378,60 @@ describe("D148 — bounces are investigated, remediated and re-queued, never pau
     assert.match(sent[0]!, /expired un-resent/);
   });
 
+  it("a fresh sender-fault verdict with no incident record re-opens via the sweep", async () => {
+    const state = store();
+    await state.load();
+    let now = T0;
+    const deleted: number[] = [];
+    const service = new BounceResurrectionService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listBouncedSendStats: async () => ({
+          total_stats: "1",
+          data: [
+            { lead_email: "lead@x.com", sent_time: iso(T0 - 2 * 60 * 60 * 1000) },
+          ],
+        }),
+        fetchLeadByEmail: async () => ({ id: 41 }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "s@salesgliderset.info" },
+            { type: "REPLY", email_body: TENANT_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async (campaignId: number) => {
+          deleted.push(campaignId);
+        },
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      undefined,
+      () => now,
+    );
+
+    // The 2026-08-27 shape: a stale-branch deploy cleared the pause stamp
+    // before the incident could open — only the verdict remains.
+    state.setBounceVerdict(tenantVerdict(12, iso(T0 - 60 * 60 * 1000)));
+    // A verdict older than the lookback stays closed.
+    state.setBounceVerdict(tenantVerdict(13, iso(T0 - 30 * 60 * 60 * 1000)));
+
+    await service.work();
+    const job = state.getBounceResurrectionJob(12);
+    assert.ok(job, "the sweep re-opens the missing incident");
+    assert.equal(job!.deferred.length, 1, "its leads classify and park as usual");
+    assert.equal(
+      state.getBounceResurrectionJob(13),
+      undefined,
+      "a >24h verdict stays closed",
+    );
+
+    // After midnight the parked lead flushes like any other.
+    now = Date.parse("2026-08-28T01:00:00.000Z");
+    await service.work();
+    assert.deepEqual(deleted, [12]);
+  });
+
   it("pre-D148 transition: a stamped pause restarted by a human still opens its job", async () => {
     const state = store();
     await state.load();

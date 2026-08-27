@@ -3172,14 +3172,39 @@ describe("owner intent — D106 85% launch bar is a live START gate", () => {
   });
 });
 
-describe("owner intent — D107 old-client campaigns are deleted", () => {
-  it("D107: Nieto / MSRS2 / Positive ids are the teardown list", () => {
-    assert.deepEqual(
-      defaults.oldClientCampaignIds,
-      [3437329, 3628940, 3628943],
+describe("owner intent — D107/D111 retired by D144: old-client teardown is gone", () => {
+  it("D144: oldClientTeardown.ts does not exist", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/oldClientTeardown.ts", import.meta.url)),
       stop(
-        "Those three leftover campaigns are deleted (D107).",
-        `OLD_CLIENT_CAMPAIGN_IDS is now ${defaults.oldClientCampaignIds.join(",")}.`,
+        "Old-client teardown is retired so restores are not re-deleted (D144).",
+        "oldClientTeardown.ts exists again — D107/D111 delete gun is back.",
+      ),
+    );
+  });
+
+  it("D144: health no longer runs an old-client stage", async () => {
+    const index = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      index,
+      /OldClientTeardownService|stage\("old-client"/,
+      stop(
+        "Health must not delete Nieto / MSRS / Positive campaigns (D144).",
+        "index.ts wired old-client teardown back into the health pass.",
+      ),
+    );
+  });
+
+  it("D144: OLD_CLIENT_CAMPAIGN_IDS config knob is gone", () => {
+    assert.equal(
+      "oldClientCampaignIds" in defaults,
+      false,
+      stop(
+        "The teardown id list is gone with the teardown (D144).",
+        "oldClientCampaignIds is back on AppConfig.",
       ),
     );
   });
@@ -3630,25 +3655,14 @@ describe("owner intent — D112 canary schedule omits sequence", () => {
   });
 });
 
-describe("owner intent — D111 old-client teardown retries leftovers", () => {
-  it("D111: teardown keeps deleting remaining Nieto / MSRS / Positive", async () => {
-    const teardown = await import("node:fs/promises").then((fs) =>
-      fs.readFile(new URL("../services/oldClientTeardown.ts", import.meta.url), "utf8"),
-    );
-    assert.doesNotMatch(
-      teardown,
-      /if \(this\.state\.getOldClientTeardownAt\(\)\)/,
+describe("owner intent — D111 superseded by D144", () => {
+  it("D111: retry-delete machinery is gone (D144)", async () => {
+    const { access } = await import("node:fs/promises");
+    await assert.rejects(
+      access(new URL("../services/oldClientTeardown.ts", import.meta.url)),
       stop(
-        "Leftover old-client campaigns keep being deleted (D111).",
-        "oldClientTeardown one-shot-skips after the first pass again.",
-      ),
-    );
-    assert.match(
-      teardown,
-      /if \(!targets\.length\)/,
-      stop(
-        "Teardown only skips when no old-client campaigns remain (D111).",
-        "oldClientTeardown no longer gates on remaining targets.",
+        "D111's retry delete is retired with the teardown (D144).",
+        "oldClientTeardown.ts exists again.",
       ),
     );
   });

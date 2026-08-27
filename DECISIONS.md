@@ -122,11 +122,11 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D104 | Superseded by D110 |
 | D105 | Live |
 | D106 | Live |
-| D107 | Live — one-shot skip superseded by D111 |
+| D107 | Superseded by D144 — teardown deleted; Josh restoring from Supabase |
 | D108 | Live |
 | D109 | Historical one-shot (ran 2026-08-26) |
 | D110 | Live |
-| D111 | Live |
+| D111 | Superseded by D144 — teardown deleted; Josh restoring from Supabase |
 | D112 | Live for campaign-bound tests — canary clause superseded by D113/D114 |
 | D113 | Superseded by D114 (its reason survives) |
 | D114 | Live |
@@ -159,6 +159,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D141 | Live | Bounce pause is a real burst only — sampled sends <24h; ledger dumps never pause; the lifetime-rate rule is retired |
 | D142 | Live | Generic is a pool (client record), pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
+| D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
 
 ---
 
@@ -3681,3 +3682,30 @@ records pulls and skips the redundant warmup re-enable on repeat pulls
 removals, one configureWarmup, boomerang listed at 3); the EOD brief
 renders the boomerang section; pod-tags stage precedes monitor-results
 in the monitor sequence.
+
+---
+
+## D144 — Old-client teardown retired; restore from Supabase
+
+**Decision.** Delete `OldClientTeardownService` and its health-pass
+stage. Stop matching / deleting Nieto / MSRS / Positive campaigns.
+Josh is restoring those campaigns from the
+`campaignintelligence` Supabase mirror (`public.campaigns`,
+`sequence_steps`, `leads`, `messages`). Recreated campaigns stay
+PAUSED until he says otherwise — do not auto-START (D40).
+
+**Why.** Josh (2026-08-27): "i am an absolute moron for telling you
+to delete my old campaigns....is there any way you can get them
+back?" then "i saved them in supabase!!! theyre gone from smartlead
+tho". Smartlead DELETE is permanent. Leaving D111 live would delete
+any restored campaign on the next health pass.
+
+**Tradeoff.** A future leftover with those names is no longer
+auto-cleaned. Accepted: he wants them back, and the delete gun was
+the blocker.
+
+**Supersedes.** D107, D111.
+
+**Guards.** absence of `oldClientTeardown.ts`; health has no
+`old-client` stage; no `oldClientCampaignIds` config; owner-intent
+D144.

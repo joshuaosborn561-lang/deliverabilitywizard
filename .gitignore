@@ -5,6 +5,8 @@ dist/
 !.env.example
 data/state.json
 data/local-state.json
+data/old-client-restore/leads.json
+data/old-client-restore/restore-map.json
 run-result.json
 *.log
 .DS_Store

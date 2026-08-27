@@ -83,7 +83,6 @@ import { DomainLifecycleService } from "./services/domainLifecycle.js";
 import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
-import { OldClientTeardownService } from "./services/oldClientTeardown.js";
 import { canonBoard } from "./lib/canonCompliance.js";
 import { STAGE_OVERDUE_WINDOWS_MS } from "./lib/stageWindows.js";
 import { PodTagService } from "./services/podTags.js";
@@ -331,7 +330,6 @@ async function main(): Promise<void> {
     smartDelivery,
     state,
   );
-  const oldClientTeardown = new OldClientTeardownService(config, smartlead, state);
   // D85 — the standalone BounceAutopauseService is retired. Autostop owns the
   // Smartlead autopause write (write-on-drift, D84); a second blind writer
   // was how the key starved into 429s.
@@ -633,10 +631,6 @@ async function main(): Promise<void> {
         await state.save();
         return { skipped: true as const, reason: "inventory-failed" };
       }
-
-      await stage("old-client", () =>
-        oldClientTeardown.run({ campaigns: inventory.campaigns }),
-      );
 
       const rest = await runRestGates(inventory);
 

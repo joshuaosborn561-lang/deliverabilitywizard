@@ -311,16 +311,6 @@ const ConfigSchema = z.object({
    * (qa-unpause). Morning activate (D109) ignores this once.
    */
   launchInboxThreshold: z.coerce.number().min(0).max(100).default(85),
-  /** D107 — leftover old-client campaigns to delete. */
-  oldClientCampaignIds: z
-    .string()
-    .default("3437329,3628940,3628943")
-    .transform((s) =>
-      s
-        .split(",")
-        .map((part) => Number(part.trim()))
-        .filter((id) => Number.isFinite(id) && id > 0),
-    ),
   campaignMinWarmupDays: z.coerce.number().int().positive().default(21),
   /**
    * D41 — non-prewarmed (fresh InboxKit) inboxes owe this many days before
@@ -542,7 +532,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,
     launchInboxThreshold: env.LAUNCH_INBOX_THRESHOLD ?? "85",
-    oldClientCampaignIds: env.OLD_CLIENT_CAMPAIGN_IDS ?? "3437329,3628940,3628943",
     campaignMinWarmupDays: env.MIN_CAMPAIGN_WARMUP_DAYS ?? "21",
     freshInboxWarmupDays: env.FRESH_INBOX_WARMUP_DAYS ?? "21",
     clientDomainBudgetUsd: env.CLIENT_DOMAIN_BUDGET_USD ?? "25",

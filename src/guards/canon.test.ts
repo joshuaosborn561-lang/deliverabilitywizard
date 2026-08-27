@@ -2850,8 +2850,8 @@ describe("owner intent — D143 the gate must win or escalate", () => {
   });
 });
 
-describe("owner intent — D145 a sender block is its own diagnosis", () => {
-  it("D145: 5.1.8 classifies sender_blocked and the page never waits for dominance", async () => {
+describe("owner intent — D145/D146 a sender block is a burned domain", () => {
+  it("D145/D146: 5.1.8 classifies sender_blocked and opens the retire ask, never waiting for dominance", async () => {
     const { classifyBounceText } = await import("../lib/bounceReason.js");
     assert.equal(
       classifyBounceText(
@@ -2873,16 +2873,27 @@ describe("owner intent — D145 a sender block is its own diagnosis", () => {
       autostop,
       /sample\.bounceClass === "sender_blocked"/,
       stop(
-        "The sender-block page reads the SAMPLES, never the dominant class (D145) — a minority 5.1.8 under a tenant-cap wave still pages.",
-        "campaignBounceAutostop.ts gates the sender-block alert on the dominant verdict again.",
+        "The sender-block trigger reads the SAMPLES, never the dominant class (D145) — a minority 5.1.8 under a tenant-cap wave still acts.",
+        "campaignBounceAutostop.ts gates the sender-block response on the dominant verdict again.",
+      ),
+    );
+    // D146 — Josh: "that bad outbound sender should just trigger a burned
+    // domain." The response is the standard retire ask (tap = approval),
+    // not an FYI page.
+    assert.match(
+      autostop,
+      /requestIsolationAction/,
+      stop(
+        "A sender block feeds the burned-domain flow (D146).",
+        "campaignBounceAutostop.ts no longer opens an isolation action for a blocked sender.",
       ),
     );
     assert.match(
       autostop,
-      /sender-blocked:\$\{sender\}:\$\{day\}/,
+      /kind: "retire_domain"/,
       stop(
-        "The sender-block page dedupes once per sender per day (D145).",
-        "campaignBounceAutostop.ts lost the per-sender-per-day dedupe key.",
+        "The blocked sender's domain gets the standard retire ask with buttons (D146/D49).",
+        "campaignBounceAutostop.ts downgraded the sender-block response to something other than the retire_domain ask.",
       ),
     );
   });

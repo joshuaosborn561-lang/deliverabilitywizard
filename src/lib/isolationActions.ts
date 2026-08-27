@@ -80,7 +80,7 @@ function samePending(
 
 export async function requestIsolationAction(input: {
   store: StateStore;
-  slack: SlackClient;
+  slack: Pick<SlackClient, "notifyIsolationAction">;
   action: IsolationActionRecord;
 }): Promise<IsolationActionRecord | null> {
   const existing = input.store
@@ -93,7 +93,7 @@ export async function requestIsolationAction(input: {
 }
 
 export async function notifyIsolationActionRecord(
-  slack: SlackClient,
+  slack: Pick<SlackClient, "notifyIsolationAction">,
   action: IsolationActionRecord,
 ): Promise<void> {
   await slack.notifyIsolationAction({
@@ -133,7 +133,7 @@ export function dismissPendingSignatureAsks(
 /** Re-send Slack buttons for pending asks. Does not create or approve anything. */
 export async function remindPendingIsolationActions(input: {
   store: StateStore;
-  slack: SlackClient;
+  slack: Pick<SlackClient, "notifyIsolationAction">;
 }): Promise<number> {
   dismissPendingSignatureAsks(input.store);
   const pending = input.store.pendingIsolationActions();

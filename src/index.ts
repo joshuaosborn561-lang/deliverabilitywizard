@@ -1654,6 +1654,54 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     }),
   );
 
+  // YouTube / restore demo: Smartlead-ish campaign board + redacted reply
+  // inbox baked from the Supabase mirror. Emails and offer terms are already
+  // masked in public/demo/data.json; still gate on RUN_TOKEN like /status.
+  const demoPublicDir = path.resolve(__dirname, "../public/demo");
+  const DEMO_COOKIE = "dw_demo";
+  app.use("/demo", (req, res, next) => {
+    if (!config.runToken) {
+      res
+        .status(503)
+        .type("text")
+        .send("Demo UI disabled until RUN_TOKEN is configured.");
+      return;
+    }
+    const qToken =
+      typeof req.query.token === "string" ? req.query.token : "";
+    const headerToken = req.get("x-run-token") || "";
+    const cookieToken = String(
+      (req.headers.cookie || "")
+        .split(";")
+        .map((p) => p.trim())
+        .find((p) => p.startsWith(`${DEMO_COOKIE}=`))
+        ?.slice(DEMO_COOKIE.length + 1) || "",
+    );
+    const provided = qToken || headerToken || cookieToken;
+    if (provided !== config.runToken) {
+      res
+        .status(401)
+        .type("text")
+        .send("Unauthorized. Open /demo?token=… with RUN_TOKEN.");
+      return;
+    }
+    if (qToken === config.runToken || headerToken === config.runToken) {
+      res.setHeader(
+        "Set-Cookie",
+        `${DEMO_COOKIE}=${encodeURIComponent(config.runToken)}; Path=/demo; HttpOnly; SameSite=Lax; Secure`,
+      );
+    }
+    next();
+  });
+  app.use(
+    "/demo",
+    express.static(demoPublicDir, {
+      index: "index.html",
+      etag: true,
+      maxAge: 0,
+    }),
+  );
+
   // Operational state contains mailbox addresses, client assignments and
   // spend decisions. Sensitive/read-write routes are disabled entirely when
   // RUN_TOKEN is missing rather than silently becoming public.

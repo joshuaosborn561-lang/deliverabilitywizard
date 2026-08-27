@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Campaigns · Restore demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="rail">
+        <div class="rail-brand">
+          <span class="mark">SL</span>
+          <div>
+            <strong>Smartlead</strong>
+            <small>restore demo</small>
+          </div>
+        </div>
+        <nav class="rail-nav">
+          <button type="button" class="nav-item active" data-view="campaigns">
+            Campaigns
+          </button>
+          <button type="button" class="nav-item" data-view="replies">
+            Replies
+            <span class="pill" id="reply-count">0</span>
+          </button>
+        </nav>
+        <p class="rail-note" id="rail-note"></p>
+      </aside>
+
+      <main class="main">
+        <header class="top">
+          <div>
+            <h1 id="view-title">Campaigns</h1>
+            <p class="sub" id="view-sub">
+              Pre-delete totals from the Supabase mirror · restored shells are
+              PAUSED in Smartlead
+            </p>
+          </div>
+          <div class="top-actions">
+            <label class="search">
+              <span class="sr">Filter</span>
+              <input id="filter" type="search" placeholder="Filter…" />
+            </label>
+          </div>
+        </header>
+
+        <section id="view-campaigns" class="view">
+          <div class="stat-row" id="stat-row"></div>
+          <div class="table-wrap">
+            <table class="campaign-table">
+              <thead>
+                <tr>
+                  <th>Campaign</th>
+                  <th>Status</th>
+                  <th>Leads</th>
+                  <th>Sent</th>
+                  <th>Replied</th>
+                  <th>Positive</th>
+                  <th>Bounced</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="campaign-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="view-replies" class="view hidden">
+          <div class="inbox">
+            <aside class="thread-list" id="thread-list"></aside>
+            <article class="thread-pane" id="thread-pane">
+              <div class="empty">Select a reply</div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

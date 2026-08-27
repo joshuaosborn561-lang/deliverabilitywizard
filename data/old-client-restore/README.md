@@ -9,6 +9,26 @@ campaigns Smartlead permanently deleted on 2026-08-26.
 | `leads.json` | 18,318 lead emails (gitignored — re-export from Supabase) |
 | `restore-map.json` | old Smartlead id → new id after apply (gitignored) |
 
+## Video demo UI
+
+`/demo` is a Smartlead-ish campaign board + reply inbox:
+
+- Campaign sent / replied / positive / bounced from `ANALYTICS.md`
+- Real inbound reply bodies from Supabase `messages` / `reply_examples`
+- Prospect emails, phones, links, and offer terms (airpods / tickets /
+  Astros / etc.) redacted to `••••` / `████` in `public/demo/data.json`
+
+Open `https://<host>/demo?token=<RUN_TOKEN>` (cookie set for asset loads).
+Local preview without Railway: `python3 -m http.server --directory public/demo`.
+
+Rebuild data after a fresh dump:
+
+```bash
+python3 scripts/build-demo-dashboard-data.py \
+  --messages /path/to/messages-mcp.json \
+  --examples /path/to/examples-mcp.json
+```
+
 ```bash
 # After D144 is on main (teardown gone):
 unset RAILWAY_TOKEN RAILWAY_API_TOKEN   # bad injected token breaks railway run

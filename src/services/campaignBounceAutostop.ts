@@ -32,6 +32,13 @@ import type { SmartleadCampaign } from "../types/index.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 350;
 const ANALYTICS_START = "2020-01-01";
+/**
+ * D148 — while an incident is open, repeat bursts inside this window fold
+ * into it silently (no re-classify, no repeat Slack): a capped tenant
+ * keeps bouncing every tick until midnight and one receipt an hour is
+ * signal, six a hour is noise.
+ */
+const BURST_REALERT_MS = 60 * 60 * 1000;
 /** Read-verify the off threshold this often; the 10m loop only fills gaps. */
 const AUTOPAUSE_VERIFY_EVERY_MS = 6 * 60 * 60 * 1000;
 /** The bounced-rows ledger can lag the counter — wait this long between reads. */
@@ -45,7 +52,7 @@ export function isTerminalCampaignStatus(status: unknown): boolean {
   return s === "COMPLETED" || s === "STOPPED";
 }
 
-export interface BounceAutostopPause {
+export interface BounceBurstFinding {
   campaignId: number;
   campaignName: string;
   sent: number;
@@ -59,12 +66,13 @@ export interface BounceAutostopPause {
 export interface CampaignBounceAutostopResult {
   dryRun: boolean;
   scanned: number;
-  paused: BounceAutostopPause[];
+  /** Real fresh bursts found this tick — investigated, never paused (D148). */
+  bursts: BounceBurstFinding[];
   skipped: number;
   /** Burst trips that turned out to be ledger dumps of stale bounces (D141). */
   ledgerDumps: number;
   smartleadDisabled: number;
-  /** D147 — incident leads re-queued for a resend this tick. */
+  /** D147/D148 — incident leads re-queued for a resend this tick. */
   resurrected?: number;
   errors: string[];
 }
@@ -93,19 +101,22 @@ function mergeSendBounce(...payloads: unknown[]): {
 }
 
 /**
- * D141 — pause ACTIVE campaigns only on a REAL bounce burst: more than 10
- * new bounces in the last 10 minutes whose sampled sends actually happened
- * inside the last 24h. Smartlead's ledger batch-records old bounces days
+ * D141/D148 — a REAL bounce burst (more than 10 new bounces in the last
+ * 10 minutes whose sampled sends actually happened inside the last 24h)
+ * is investigated, remediated and re-queued — NEVER paused. Josh: "i
+ * dont want anything paused anymore — we should be investigating,
+ * remediating and readding." A burst classifies the sampled SMTP reasons
+ * (D140), Slacks one receipt naming the verdict and the plan, routes the
+ * remediation (tenant-cap page D140, retire ask D146, bad-list callout),
+ * and opens a resurrection incident when the verdict blames the sender
+ * (D147/D148) — repeat bursts inside the hour fold into the open
+ * incident silently. Smartlead's ledger batch-records old bounces days
  * late, so a tripped counter first samples the bounced rows (retrying
- * while the ledger lags) — a dump of stale bounces logs loudly and never
- * pauses. The D90 lifetime-rate rule (>10% after 1k) is retired: verified
- * lists never bounce like that, so it only ever fired on artifacts. Does
- * not START anyone (D40). D88's 20/7 bands stay retired; D91 retired the
- * paused-campaign hunt. After the scan, Smartlead
- * bounce_autopause_threshold is converged to 100 (off). A pause is
- * stamped (D128) so qa-unpause never fights it — only a human STARTs a
- * bounce-paused campaign. A real pause classifies the sampled SMTP
- * reasons (D140).
+ * while the ledger lags) — a dump of stale bounces logs loudly and does
+ * nothing. The D90 lifetime-rate rule (>10% after 1k) stays retired.
+ * Does not START anyone (D40) and does not pause anyone (D148) — pauses
+ * belong to humans in both directions. After the scan, Smartlead
+ * bounce_autopause_threshold is converged to 100 (off).
  */
 export class CampaignBounceAutostopService {
   private readonly resurrection?: BounceResurrectionService;
@@ -116,11 +127,12 @@ export class CampaignBounceAutostopService {
     private readonly state?: StateStore,
     private readonly slack?: Pick<SlackClient, "send" | "notifyIsolationAction">,
     resurrection?: BounceResurrectionService,
+    private readonly clock: () => number = Date.now,
   ) {
     this.resurrection =
       resurrection ??
       (state
-        ? new BounceResurrectionService(config, smartlead, state, slack)
+        ? new BounceResurrectionService(config, smartlead, state, slack, clock)
         : undefined);
   }
 
@@ -129,7 +141,7 @@ export class CampaignBounceAutostopService {
     const result: CampaignBounceAutostopResult = {
       dryRun,
       scanned: 0,
-      paused: [],
+      bursts: [],
       skipped: 0,
       ledgerDumps: 0,
       smartleadDisabled: 0,
@@ -149,8 +161,8 @@ export class CampaignBounceAutostopService {
       return result;
     }
 
-    const end = ymdUtc(new Date());
-    const nowMs = Date.now();
+    const nowMs = this.clock();
+    const end = ymdUtc(new Date(nowMs));
     const nowIso = new Date(nowMs).toISOString();
     const active = campaigns.filter((campaign) => {
       if (isAnyShellCampaign(campaign, this.config.podControlShellCampaignId)) {
@@ -161,10 +173,10 @@ export class CampaignBounceAutostopService {
 
     for (const campaign of active) {
       result.scanned += 1;
-      // ACTIVE means any earlier bounce pause was resolved by a human
-      // START — the stamp has served its purpose (D128). D147: that START
-      // is also the remediation signal, so the resurrection job opens
-      // here, before the stamp clears.
+      // Pre-D148 transition: deploys before D148 stamped their pauses.
+      // ACTIVE with a stamp means a human STARTed one of those campaigns —
+      // the stored verdict still owes its resend (D147), so the incident
+      // opens here, right before the stamp drains. New code never stamps.
       if (this.state?.isBouncePaused?.(campaign.id)) {
         try {
           this.resurrection?.noteRestart({
@@ -208,6 +220,29 @@ export class CampaignBounceAutostopService {
           continue;
         }
 
+        // D148 — while this campaign's incident is open and recently
+        // reported, a re-trip is the same wave still burning: consume the
+        // delta, widen the incident window, stay quiet. One receipt an
+        // hour is signal; one every tick is noise.
+        const openJob = this.state?.getBounceResurrectionJob?.(campaign.id);
+        if (
+          openJob &&
+          !openJob.done &&
+          nowMs - Date.parse(openJob.lastBurstAt) < BURST_REALERT_MS
+        ) {
+          this.state?.setBounceSnapshot(campaign.id, {
+            bounced: bounces,
+            sent,
+            at: nowIso,
+          });
+          if (!dryRun) this.resurrection?.extendIncident(campaign.id);
+          console.log(
+            `[bounce-autostop] burst on #${campaign.id} ${campaign.name} folded into the open incident (+${burst.delta} in 10m; D148)`,
+          );
+          result.skipped += 1;
+          continue;
+        }
+
         // D141 — a tripped counter is a suspicion, not a verdict. Sample
         // the bounced rows first: only sends that actually happened in the
         // last 24h count as a live burst; a ledger dump of stale bounces
@@ -240,7 +275,7 @@ export class CampaignBounceAutostopService {
           continue;
         }
 
-        const finding: BounceAutostopPause = {
+        const finding: BounceBurstFinding = {
           campaignId: campaign.id,
           campaignName: String(campaign.name ?? campaign.id),
           sent,
@@ -250,17 +285,11 @@ export class CampaignBounceAutostopService {
           burstBounces: burst.delta,
         };
         console.log(
-          `[bounce-autostop] PAUSE #${finding.campaignId} ${finding.campaignName} burst=${finding.burstBounces} new bounces in 10m (${recency.fresh} sampled sends <24h old) sent=${sent}${dryRun ? " (dry-run)" : ""}`,
+          `[bounce-autostop] BURST #${finding.campaignId} ${finding.campaignName} burst=${finding.burstBounces} new bounces in 10m (${recency.fresh} sampled sends <24h old) sent=${sent} — investigating, not pausing (D148)${dryRun ? " (dry-run)" : ""}`,
         );
-        if (!dryRun) {
-          await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
-          // D128 — stamp the pause so qa-unpause cannot START it back up;
-          // a bounce pause waits for a human (D141/D40).
-          this.state?.markBouncePaused(campaign.id, nowIso);
-        }
-        result.paused.push(finding);
+        result.bursts.push(finding);
         // D140 — a bounce count is a symptom; read the actual SMTP reasons
-        // before anyone blames the list. Never let diagnosis break the pause.
+        // before anyone blames the list. Diagnosis failure never kills the scan.
         try {
           finding.verdict = await this.classifyRecentBounces(
             campaign.id,
@@ -271,6 +300,26 @@ export class CampaignBounceAutostopService {
           console.warn(
             `[bounce-autostop] verdict #${campaign.id} unreadable: ${error instanceof Error ? error.message : String(error)}`,
           );
+        }
+        // D148 — the verdict decides the plan: a sender-fault incident
+        // opens (its leads re-queue as each remediation lands); a bad
+        // list is Josh's call and re-queues nothing.
+        if (!dryRun && finding.verdict) {
+          this.resurrection?.noteIncident(
+            { id: campaign.id, name: finding.campaignName },
+            finding.verdict,
+          );
+        }
+        if (!dryRun && this.slack) {
+          try {
+            await this.slack.send(
+              burstReceiptText(finding),
+              undefined,
+              "action_result",
+            );
+          } catch (error) {
+            console.warn("[bounce-autostop] burst receipt failed", error);
+          }
         }
         await sleep(WRITE_GAP_MS);
       } catch (error) {
@@ -287,8 +336,8 @@ export class CampaignBounceAutostopService {
       await this.state?.save();
     }
 
-    // D147 — work the open resurrection jobs (rate-budgeted; a failure
-    // here must never break the bounce loop).
+    // D147/D148 — work the open resurrection jobs (rate-budgeted; a
+    // failure here must never break the bounce loop).
     if (!dryRun && this.resurrection) {
       try {
         const revived = await this.resurrection.work();
@@ -303,7 +352,7 @@ export class CampaignBounceAutostopService {
     }
 
     console.log(
-      `[bounce-autostop] scanned=${result.scanned} paused=${result.paused.length} skipped=${result.skipped} smartleadOff=${result.smartleadDisabled} errors=${result.errors.length}`,
+      `[bounce-autostop] scanned=${result.scanned} bursts=${result.bursts.length} skipped=${result.skipped} smartleadOff=${result.smartleadDisabled} errors=${result.errors.length}`,
     );
     return result;
   }
@@ -578,4 +627,42 @@ export class CampaignBounceAutostopService {
       this.state?.setAutopauseForceAllAt(new Date().toISOString());
     }
   }
+}
+
+/**
+ * D148 — the burst receipt IS the investigation Josh asked for: what
+ * bounced, why, and what happens next. One per incident per hour.
+ */
+export function burstReceiptText(finding: BounceBurstFinding): string {
+  const lines = [
+    `*Bounce burst on ${finding.campaignName} — ${finding.burstBounces ?? finding.bounces} new bounces in 10 minutes.*`,
+  ];
+  const verdict = finding.verdict;
+  if (!verdict || verdict.dominant == null) {
+    lines.push(
+      "Bounce reasons unreadable this tick — the loop keeps sampling. Nothing pauses (D148); the campaign keeps sending.",
+    );
+    return lines.join("\n");
+  }
+  lines.push(
+    `Verdict: ${verdict.summary}${verdict.senderDomains.length ? ` — senders ${verdict.senderDomains.join(", ")}` : ""}`,
+  );
+  const plans: Record<string, string> = {
+    tenant_rate_limit:
+      "The tenant's Microsoft daily allowance is exhausted. The capped leads re-queue automatically once it resets at midnight UTC; real bad addresses stay dead.",
+    sender_blocked:
+      "Microsoft flagged the sender for outbound spam — the domain's retire ask is open in this channel. Its leads re-queue once you resolve it (Retire, or unblock in Defender and Cancel).",
+    content_block:
+      "Microsoft is blocking the message content. Edit the campaign's copy and the bounced leads re-queue on their own.",
+    invalid_recipient:
+      "These look like real bad addresses — nothing gets re-queued. The list source needs a look.",
+  };
+  lines.push(
+    plans[verdict.dominant] ??
+      "Investigating — each lead's own bounce reason decides whether it re-queues.",
+  );
+  lines.push(
+    "Nothing pauses (D148) — the campaign keeps sending while the incident works itself off.",
+  );
+  return lines.join("\n");
 }

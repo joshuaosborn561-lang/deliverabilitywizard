@@ -378,6 +378,20 @@ export class SmartleadClient {
     );
   }
 
+  /**
+   * D148 — the campaign's sequence steps, each carrying updated_at; the
+   * content-block resurrection gate reads whether the copy changed after
+   * an incident opened.
+   */
+  fetchCampaignSequences(campaignId: number): Promise<unknown> {
+    return apiRequest(
+      BASE_URL,
+      this.apiKey,
+      `campaigns/${campaignId}/sequences`,
+      {},
+    );
+  }
+
   /** D140 — the per-lead thread; NDR replies carry the SMTP bounce reason. */
   getLeadMessageHistory(campaignId: number, leadId: number | string): Promise<unknown> {
     return apiRequest(

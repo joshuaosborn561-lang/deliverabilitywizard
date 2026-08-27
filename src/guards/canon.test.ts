@@ -2428,7 +2428,7 @@ describe("owner intent — D86 hand-bought canary fleet is adopted", () => {
   });
 });
 
-describe("owner intent — D141 bounce pause is a real burst, never a ledger dump", () => {
+describe("owner intent — D141 a bounce burst is fresh sends, never a ledger dump", () => {
   it("D141: burst-only, recency-gated; the D90 lifetime-rate rule stays retired", async () => {
     const read = (path: string) =>
       import("node:fs/promises").then((fs) =>
@@ -2532,8 +2532,8 @@ describe("owner intent — D141 bounce pause is a real burst, never a ledger dum
       autostop,
       /freshBounceSamples\(rows, nowMs\)/,
       stop(
-        "A tripped burst samples the bounced rows and pauses only on fresh sends (D141).",
-        "campaignBounceAutostop.ts pauses on the counter delta alone again.",
+        "A tripped burst samples the bounced rows and acts only on fresh sends (D141).",
+        "campaignBounceAutostop.ts acts on the counter delta alone again.",
       ),
     );
     assert.match(
@@ -2560,19 +2560,29 @@ describe("owner intent — D141 bounce pause is a real burst, never a ledger dum
         "campaignBounceAutostop.ts reads the ledger once and gives up again.",
       ),
     );
-    assert.match(
+    // D148 — Josh: "i dont want anything paused anymore." A real burst is
+    // investigated, remediated and re-queued; the campaign keeps running.
+    assert.doesNotMatch(
       autostop,
-      /updateCampaignStatus\(campaign\.id, "PAUSED"\)/,
+      /updateCampaignStatus\([^)]*PAUSED/,
       stop(
-        "A real burst pauses the campaign (D141).",
-        "campaignBounceAutostop.ts no longer writes PAUSED.",
+        "The bounce loop never pauses a campaign (D148, Josh 2026-08-27).",
+        "campaignBounceAutostop.ts writes PAUSED again — that reverses D148 and needs Josh.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /markBouncePaused/,
+      stop(
+        "No new pause stamps — the loop only drains pre-D148 stamps (D148).",
+        "campaignBounceAutostop.ts stamps bounce pauses again.",
       ),
     );
     assert.doesNotMatch(
       autostop,
       /updateCampaignStatus\([^)]*START/,
       stop(
-        "A bounce pause is not auto-resumed (D40/D141).",
+        "Pauses belong to humans in both directions (D40/D148).",
         "campaignBounceAutostop.ts STARTs a campaign again.",
       ),
     );
@@ -2961,15 +2971,100 @@ describe("owner intent — D147 a remediated bounce is a resend", () => {
       ),
     );
 
-    // The trigger is the human START (D40): the bounce loop opens the job
-    // exactly where the stamp clears on a restarted campaign.
+    // D148 moved the trigger: the burst itself opens the incident — with
+    // no pause there is no restart to wait for. The stamp-drain hook
+    // still owes the resend for pre-D148 pauses a human STARTs.
     const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /noteIncident/,
+      stop(
+        "A sender-fault burst opens the resurrection incident on the spot (D147/D148).",
+        "campaignBounceAutostop.ts no longer opens the incident from the burst verdict.",
+      ),
+    );
     assert.match(
       autostop,
       /isBouncePaused\?\?*\.?\(?.{0,20}campaign\.id\)?[\s\S]{0,400}noteRestart/,
       stop(
-        "The human START of a bounce-paused campaign is the remediation signal (D147/D40).",
-        "campaignBounceAutostop.ts no longer opens the resurrection job on restart.",
+        "A pre-D148 stamped pause a human STARTs still owes its resend (D147).",
+        "campaignBounceAutostop.ts dropped the stamp-drain hook while old stamps may remain.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D148 nothing pauses: investigate, remediate, re-add", () => {
+  it("D148: the remediation gates decide the resend — cap reset, resolved retire ask, edited copy", async () => {
+    const { tenantGateOpen } = await import("../services/bounceResurrection.js");
+    assert.equal(
+      tenantGateOpen(
+        "2026-08-27T15:00:00.000Z",
+        Date.parse("2026-08-27T23:59:00Z"),
+      ),
+      false,
+      stop(
+        "A capped lead never resends into the same exhausted cap (D148).",
+        "tenantGateOpen opens on the bounce's own UTC day — that is a guaranteed re-bounce and burns the lead's one resend.",
+      ),
+    );
+    assert.equal(
+      tenantGateOpen(
+        "2026-08-27T15:00:00.000Z",
+        Date.parse("2026-08-28T00:10:00Z"),
+      ),
+      true,
+      stop(
+        "Midnight UTC resets the tenant cap — the resend goes out then (D148).",
+        "tenantGateOpen stays shut after the cap reset; capped leads would expire unsent.",
+      ),
+    );
+
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+    const service = await read("../services/bounceResurrection.ts");
+    assert.match(
+      service,
+      /status === "pending"/,
+      stop(
+        "A blocked sender's leads wait for its retire ask to be resolved (D148/D146).",
+        "bounceResurrection.ts no longer consults the pending retire ask before resending.",
+      ),
+    );
+    assert.match(
+      service,
+      /fetchCampaignSequences/,
+      stop(
+        "Content-blocked leads resend only after the copy actually changed (D148).",
+        "bounceResurrection.ts no longer reads the sequence edit stamp — unchanged copy would re-bounce on purpose.",
+      ),
+    );
+    assert.match(
+      service,
+      /DEFER_EXPIRY_MS/,
+      stop(
+        "A gate that never opens expires and is reported, never held forever (D148).",
+        "bounceResurrection.ts lost the 7-day deferral expiry.",
+      ),
+    );
+
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /burstReceiptText/,
+      stop(
+        "The burst receipt IS the investigation Josh asked for — what bounced, why, what happens next (D148).",
+        "campaignBounceAutostop.ts no longer Slacks the burst finding; with no pause and no receipt a burst would be invisible.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /BURST_REALERT_MS/,
+      stop(
+        "A still-burning wave folds into its open incident — one receipt an hour, not one per tick (D148).",
+        "campaignBounceAutostop.ts lost the burst fold-in cooldown.",
       ),
     );
   });
@@ -4204,18 +4299,9 @@ describe("owner intent — D128 live paths obey the ledger", () => {
         "unpauseAfterSigQa.ts no longer reads the launch bar.",
       ),
     );
-    const autostop = await readFile(
-      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
-      "utf8",
-    );
-    assert.match(
-      autostop,
-      /markBouncePaused/,
-      stop(
-        "The bounce loop stamps its pauses so nothing auto-STARTs them (D90/D128).",
-        "campaignBounceAutostop.ts no longer stamps bounce pauses.",
-      ),
-    );
+    // (The autostop pause-stamp pin retired with the pause itself — D148:
+    // the loop never pauses, so there is nothing new to stamp. qa-unpause
+    // keeps consulting the stamp while pre-D148 stamps drain.)
     const prompt = await readFile(
       new URL("../ops/campaignSetupPrompt.ts", import.meta.url),
       "utf8",
@@ -4597,7 +4683,7 @@ describe("owner intent — D139 staffing honors the warmup clock", () => {
 });
 
 describe("owner intent — D140 bounce reasons are read, not guessed", () => {
-  it("D140: a bounce pause classifies the SMTP reasons; a tenant cap alerts once per day", async () => {
+  it("D140: a bounce burst classifies the SMTP reasons; a tenant cap alerts once per day", async () => {
     const { readFile } = await import("node:fs/promises");
     const lib = await readFile(
       new URL("../lib/bounceReason.ts", import.meta.url),
@@ -4619,8 +4705,8 @@ describe("owner intent — D140 bounce reasons are read, not guessed", () => {
       loop,
       /classifyRecentBounces/,
       stop(
-        "A bounce pause reads the actual SMTP reasons before anyone blames the list (D140).",
-        "campaignBounceAutostop.ts pauses blind again.",
+        "A bounce burst reads the actual SMTP reasons before anyone blames the list (D140).",
+        "campaignBounceAutostop.ts acts blind again.",
       ),
     );
     assert.match(

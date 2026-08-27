@@ -69,7 +69,8 @@ lives in `src/config.ts`; the load-bearing ones:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MIN_CAMPAIGN_WARMUP_DAYS` / `FRESH_INBOX_WARMUP_DAYS` | `21` | Warmup owed from InboxKit import before live send |
-| `EXTRA_GENERIC_DOMAINS` | crosslaunchco.com, crossscaleco.com, cleartechco.com | Pre-warmed fleets exempt from the 21 days |
+| `EXTRA_GENERIC_DOMAINS` | 6 fleet domains | Generic-pool membership (staffing supply) — does NOT skip warmup |
+| `PREWARMED_DOMAINS` | crosslaunchco.com, crossscaleco.com, cleartechco.com | The only warmup exemption; granted by Josh alone |
 | `MESSAGE_PER_DAY` | `30` | Campaign sends per mailbox per day (warmups excluded) |
 | `MAILBOX_MIN_TIME_GAP_MINS` | `10` | Minimum send gap, converged at mailbox AND campaign level |
 | `CAMPAIGN_ESP_MIX_MIN_PERCENT` | `30` | Minimum Google / Microsoft share when topping up |

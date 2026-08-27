@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D140** (2026-08-26). One page of current truth. When a new
+Canon as of **D142** (2026-08-27). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -21,7 +21,7 @@ Slack speaks only when a human decision is needed or the day is done.
 | Loop | Cadence | Owns |
 |---|---|---|
 | Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → old-client teardown retry (D111) → stage watchdog + `canonCompliant` yes/no (D108) |
-| Bounce loop | 10 min | Pause an ACTIVE campaign at >10% lifetime bounce with ≥1,000 leads emailed, or >10 new bounces inside the 10-minute window (D90). Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift (D80/D84/D88; one forced full-fleet off-write ran under D124). Never touches COMPLETED/STOPPED; a bounce pause is stamped so qa-unpause never fights it, and is not a pendingResume (D40/D128). On a pause the loop reads the actual SMTP bounce reasons and classifies tenant-rate-limit / invalid-recipient / content-block — a Microsoft tenant hitting its daily cap Slacks once per tenant per day; everything else stays in logs (D140). |
+| Bounce loop | 10 min | Pause an ACTIVE campaign only on a REAL burst: >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141). A tripped counter samples the bounced rows first (retrying while the analytics ledger lags); a ledger dump of stale bounces logs loudly and never pauses; unreadable rows defer to the next tick. The D90 lifetime-rate rule is retired — verified lists never bounce like that. Converge Smartlead `bounce_autopause_threshold` to 100 (off) on drift (D80/D84/D88; one forced full-fleet off-write ran under D124). Never touches COMPLETED/STOPPED; a bounce pause is stamped so qa-unpause never fights it, and is not a pendingResume (D40/D128). A real pause classifies the sampled SMTP reasons — tenant-rate-limit / invalid-recipient / content-block — a Microsoft tenant hitting its daily cap Slacks once per tenant per day; everything else stays in logs (D140). |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). Reads the shared account book, never its own fetch (D132). |
 | Monitor | Slower cadence | Placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), POD-A/POD-B tag converge on client mailboxes (D135), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
@@ -35,9 +35,12 @@ Slack speaks only when a human decision is needed or the day is done.
   gate is **ON** and pulls an under-21-day mailbox off ACTIVE campaigns on
   the health pass (D105).
 - **Exempt from that clock**: pre-warmed fleets — every mailbox on
-  `EXTRA_GENERIC_DOMAINS` (crosslaunchco.com, crossscaleco.com,
+  `PREWARMED_DOMAINS` (crosslaunchco.com, crossscaleco.com,
   cleartechco.com) and every from-name fleet in `EXTRA_GENERIC_MAILBOXES`
-  (D19); and the canary fleet (which never staffs anyway, D54).
+  (D19/D142); and the canary fleet (which never staffs anyway, D54).
+  Pre-warmed is a flag only Josh grants — generic-pool membership
+  (`EXTRA_GENERIC_DOMAINS`, which also carries the GetIntroduced /
+  QuickConnect fleets) never implies it (D142).
 - **Converged every pass**: 30 campaign sends/day (warmups excluded, D24),
   10-minute minimum gap (D30/D35) — held at BOTH levels: the mailbox field
   every health pass, and campaign `min_time_btwn_emails` written back to
@@ -74,7 +77,11 @@ Slack speaks only when a human decision is needed or the day is done.
   for humans, never read back by code (D135). Generics rest on their own clock:
   ~14 days of live send, then sit ~14, then supply again (D43).
 - **Generics** staff only a POC client (currently Goliath) or a campaign Josh
-  Slack-approved (D81/D82); a domain-retire tap auto-approves the ACTIVE
+  Slack-approved (D81/D82). "Generic" and "POC" exist as Smartlead client
+  records used purely as mailbox pools: a box assigned to either is a
+  generic to every classifier, and one-client never rewrites that
+  assignment; the mailbox-side owner re-point to POC is staged, not live
+  (D142); a domain-retire tap auto-approves the ACTIVE
   campaigns it pulled senders from, so volume never drops while the
   replacements warm (D134). Cross-client top-up is a compensated **move**;
   same-client is additive. (The old recovery-swap system and its
@@ -179,10 +186,14 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
 
 - **DNS**: audited against public resolvers every monitor pass; never writes
   DNS; findings stay in logs (D71).
-- **Domain→client**: a sending domain split across clients or mapped to
-  none is an advisory — logs plus one EOD-brief section; the audit never
-  guesses or writes a client (D136). Generic fleets, BCP domains, the
-  isolation domain, canaries and retired domains are exempt.
+- **Domain→client**: the audit first makes the CONFIDENT fixes itself —
+  a generic-fleet box with no client_id joins the Generic marker, and an
+  unmapped domain whose base carries exactly one client's distinctive
+  token attaches to that client (D142). Everything else — split_clients
+  always, ambiguous or token-less domains — is an advisory: logs plus one
+  EOD-brief section, never a guess, and a box already carrying a real
+  client_id is never rewritten (D136/D142). Generic fleets, BCP domains,
+  the isolation domain, canaries and retired domains are exempt.
 - **Lead runout**: log at half, three-quarters, done; never import; a
   working campaign running low is urgent in `/ops` (D52).
 - **Sending IPs**: census from placement reports we already pull; never buy

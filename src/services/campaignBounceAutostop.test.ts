@@ -11,8 +11,8 @@ function store(): StateStore {
   );
 }
 
-describe("CampaignBounceAutostopService (D90)", () => {
-  it("pauses over 10% after 1k leads, not on the old 20/7 bands", async () => {
+describe("CampaignBounceAutostopService (D141)", () => {
+  it("the lifetime rate never pauses — bad-looking rates are artifacts, not storms", async () => {
     const paused: number[] = [];
     const started: number[] = [];
     const settings: Array<{ id: number; threshold: unknown }> = [];
@@ -48,9 +48,12 @@ describe("CampaignBounceAutostopService (D90)", () => {
     );
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(result.paused.map((row) => row.campaignId), [3]);
-    assert.equal(result.paused[0]?.reason, "rate");
-    assert.deepEqual(paused, [3]);
+    assert.deepEqual(
+      result.paused,
+      [],
+      "a lifetime rate — even 10.1% after 1k — is not a pause (D141)",
+    );
+    assert.deepEqual(paused, []);
     assert.deepEqual(started, []);
     assert.equal(
       settings.every((row) => row.threshold === "100"),
@@ -60,7 +63,7 @@ describe("CampaignBounceAutostopService (D90)", () => {
     assert.ok(settings.some((row) => row.id === 6));
   });
 
-  it("pauses when more than 10 bounces land in the last 10 minutes", async () => {
+  it("pauses when more than 10 bounces land in 10 minutes from fresh sends", async () => {
     const paused: number[] = [];
     const state = store();
     state.setBounceSnapshot(8, {
@@ -84,6 +87,13 @@ describe("CampaignBounceAutostopService (D90)", () => {
         },
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
+        listBouncedSendStats: async () => ({
+          total_stats: "2",
+          data: [
+            { lead_email: "a@x.com", sent_time: new Date(Date.now() - 30 * 60 * 1000).toISOString() },
+            { lead_email: "b@x.com", sent_time: new Date(Date.now() - 45 * 60 * 1000).toISOString() },
+          ],
+        }),
       } as never,
       state,
     );
@@ -92,6 +102,88 @@ describe("CampaignBounceAutostopService (D90)", () => {
     assert.deepEqual(paused, [8]);
     assert.equal(result.paused[0]?.reason, "burst");
     assert.equal(result.paused[0]?.burstBounces, 12);
+  });
+
+  it("D141: a ledger dump of stale bounces never pauses — logged and consumed", async () => {
+    const paused: number[] = [];
+    const state = store();
+    state.setBounceSnapshot(8, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 8, name: "Backlog lands", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 641,
+          bounce_count: 15,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (id: number, status: string) => {
+          if (status === "PAUSED") paused.push(id);
+        },
+        getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
+        updateCampaignSettings: async () => undefined,
+        // The 2026-08-27 shape: sends days old, batch-recorded tonight.
+        listBouncedSendStats: async () => ({
+          total_stats: "12",
+          data: [
+            { lead_email: "a@x.com", sent_time: "2026-08-13T14:05:53.775Z" },
+            { lead_email: "b@x.com", sent_time: "2026-08-20T16:34:22.414Z" },
+          ],
+        }),
+      } as never,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(paused, [], "stale-send bounces are residue, not a storm");
+    assert.equal(result.ledgerDumps, 1);
+    assert.equal(
+      state.getBounceSnapshot(8)?.bounced,
+      15,
+      "the dump's delta is consumed so it cannot re-trip forever",
+    );
+  });
+
+  it("D141: unreadable bounced rows defer the decision — snapshot kept for the next tick", async () => {
+    const paused: number[] = [];
+    const state = store();
+    const staleAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    state.setBounceSnapshot(8, { bounced: 3, sent: 40, at: staleAt });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 8, name: "Ledger lagging", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 55,
+          bounce_count: 15,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (id: number, status: string) => {
+          if (status === "PAUSED") paused.push(id);
+        },
+        getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
+        updateCampaignSettings: async () => undefined,
+        listBouncedSendStats: async () => ({ total_stats: "0", data: [] }),
+      } as never,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(paused, [], "no pause on unverifiable data");
+    assert.equal(result.ledgerDumps, 0);
+    assert.equal(
+      state.getBounceSnapshot(8)?.bounced,
+      3,
+      "snapshot not consumed — the burst re-evaluates next tick",
+    );
   });
 
   it("does not burst-pause on the first snapshot or on exactly 10 new bounces", async () => {
@@ -294,8 +386,14 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
       listBouncedSendStats: async () => ({
         total_stats: "2",
         data: [
-          { lead_email: "a@target.com" },
-          { lead_email: "b@target.com" },
+          {
+            lead_email: "a@target.com",
+            sent_time: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+          },
+          {
+            lead_email: "b@target.com",
+            sent_time: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+          },
         ],
       }),
       fetchLeadByEmail: async (email: string) => ({

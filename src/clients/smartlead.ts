@@ -312,9 +312,13 @@ export class SmartleadClient {
   }
 
   /** D140 — bounced send rows only (server-side filter), few and cheap. */
-  listBouncedSendStats(campaignId: number, limit = 5): Promise<unknown> {
+  listBouncedSendStats(
+    campaignId: number,
+    limit = 5,
+    offset = 0,
+  ): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`, {
-      query: { email_status: "bounced", limit, offset: 0 },
+      query: { email_status: "bounced", limit, offset },
     });
   }
 
@@ -548,6 +552,42 @@ export class SmartleadClient {
       method: "DELETE",
       body: { email_account_ids: emailAccountIds, tag_ids: tagIds },
     });
+  }
+
+  /**
+   * D142 — ensure a client record with this exact name exists and return
+   * its id. Used for the Generic / POC marker clients; the email is a
+   * required Smartlead field, never mailed.
+   */
+  async ensureClient(name: string, email: string): Promise<number> {
+    const existing = await this.listClients();
+    const match = existing.find(
+      (client) =>
+        String(client.name ?? "").trim().toLowerCase() ===
+        name.trim().toLowerCase(),
+    );
+    if (match) return match.id;
+    const created = (await apiRequest(BASE_URL, this.apiKey, "client/save", {
+      method: "POST",
+      body: {
+        name,
+        email,
+        permission: ["reply_master_inbox"],
+        logo: name,
+        logo_url: null,
+      },
+    })) as { clientId?: number | string; id?: number | string };
+    const id = Number(created?.clientId ?? created?.id);
+    if (Number.isFinite(id)) return id;
+    // Race or shape drift: re-list and find by name.
+    const again = await this.listClients();
+    const retry = again.find(
+      (client) =>
+        String(client.name ?? "").trim().toLowerCase() ===
+        name.trim().toLowerCase(),
+    );
+    if (retry) return retry.id;
+    throw new Error(`Failed to create Smartlead client ${name}`);
   }
 
   /** Ensure a named tag exists and return its id (create with color if not). */

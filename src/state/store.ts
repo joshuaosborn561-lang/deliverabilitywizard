@@ -199,6 +199,8 @@ export interface AppState {
   /** D81 — Josh Slack-approved generic backfill, per campaign. */
   genericBackfillApprovals: Record<string, GenericBackfillApproval>;
   domainAdvisories: DomainClientAdvisory[];
+  /** D142 — Smartlead ids of the Generic / POC marker clients. */
+  markerClients: { genericId?: number; pocId?: number };
   /** D140 — last classified bounce verdict per campaign (id key). */
   bounceVerdicts: Record<string, BounceVerdictRecord>;
   /**
@@ -360,6 +362,7 @@ const EMPTY_STATE: AppState = {
   campaignChecks: {},
   genericBackfillApprovals: {},
   domainAdvisories: [],
+  markerClients: {},
   bounceVerdicts: {},
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
@@ -419,6 +422,7 @@ export class StateStore {
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
         domainAdvisories: parsed.domainAdvisories ?? [],
+        markerClients: parsed.markerClients ?? {},
         bounceVerdicts: parsed.bounceVerdicts ?? {},
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
@@ -1031,6 +1035,21 @@ export class StateStore {
 
   listDomainAdvisories(): DomainClientAdvisory[] {
     return this.state.domainAdvisories;
+  }
+
+  /** D142 — the Generic/POC marker clients are pools, never real clients. */
+  setMarkerClientIds(ids: { genericId?: number; pocId?: number }): void {
+    this.state.markerClients = { ...this.state.markerClients, ...ids };
+  }
+
+  getMarkerClientIds(): { genericId?: number; pocId?: number } {
+    return this.state.markerClients ?? {};
+  }
+
+  isMarkerClientId(id: number | null | undefined): boolean {
+    if (typeof id !== "number" || !Number.isFinite(id)) return false;
+    const { genericId, pocId } = this.state.markerClients ?? {};
+    return id === genericId || id === pocId;
   }
 
   approveGenericBackfill(record: GenericBackfillApproval): void {

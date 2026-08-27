@@ -33,7 +33,7 @@ export function isGenericPoolDomain(domain: string | undefined): boolean {
 export function isClientInbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
   email: string,
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
+  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
 ): boolean {
   const normalized = email.trim().toLowerCase();
@@ -49,7 +49,7 @@ export function isClientInbox(
 export function isRestEligibleMailbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
   email: string,
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
+  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
 ): boolean {
   return isClientInbox(account, email, config, state);
@@ -58,12 +58,27 @@ export function isRestEligibleMailbox(
 export function isGenericMailbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
   email: string,
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
-  state: Pick<StateStore, "getPoolMailbox">,
+  config: Pick<
+    AppConfig,
+    "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains"
+  >,
+  state: Pick<StateStore, "getPoolMailbox"> & {
+    isMarkerClientId?: StateStore["isMarkerClientId"];
+  },
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
-  if (isGenericPoolDomain(emailDomainOf(normalized))) return true;
+  const domain = emailDomainOf(normalized);
+  if (isGenericPoolDomain(domain)) return true;
+  // D142 — generic-pool membership by domain, independent of pre-warmed.
+  if (domain && config.extraGenericDomains.includes(domain)) return true;
+  // D142 — a box assigned to the Generic/POC marker client is a generic.
+  if (
+    typeof account.client_id === "number" &&
+    state.isMarkerClientId?.(account.client_id)
+  ) {
+    return true;
+  }
   if (state.getPoolMailbox(normalized)) return true;
   return isPrewarmedGeneric(account, normalized, config, state);
 }

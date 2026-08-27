@@ -42,12 +42,14 @@ export interface WarmupGateResult {
 export function isPrewarmedGeneric(
   account: Pick<SmartleadEmailAccount, "from_name">,
   email: string,
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
+  config: Pick<AppConfig, "extraGenericMailboxes" | "prewarmedDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
 ): boolean {
   const normalizedEmail = email.toLowerCase();
   const domain = normalizedEmail.split("@")[1] ?? "";
-  if (config.extraGenericDomains.includes(domain)) return true;
+  // D142 — pre-warmed is a policy flag Josh grants, never implied by
+  // generic-pool membership. Only PREWARMED_DOMAINS skips the clock.
+  if (config.prewarmedDomains.includes(domain)) return true;
   if (state.getPoolMailbox(normalizedEmail)?.prewarmed === true) return true;
   return config.extraGenericMailboxes.some(
     (identifier) =>
@@ -416,7 +418,7 @@ export function owesWarmup(
     AppConfig,
     | "campaignMinWarmupDays"
     | "freshInboxWarmupDays"
-    | "extraGenericDomains"
+    | "prewarmedDomains"
     | "extraGenericMailboxes"
   >,
   state: Pick<StateStore, "getPoolMailbox" | "isCopyCanary">,

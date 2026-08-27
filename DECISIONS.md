@@ -105,7 +105,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D87 | Superseded by D92/D97 |
 | D88 | Retired-record (no bounce bands) — live |
 | D89 | Live — signature-ask collapse superseded by D92/D97 |
-| D90 | Live |
+| D90 | Superseded by D141 — burst survives recency-gated; the lifetime-rate rule is retired |
 | D91 | Retired-record (no paused-campaign hunt) — live |
 | D92 | Live |
 | D93 | Live |
@@ -156,6 +156,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D138 | Live | Campaign-level min gap converged to the 10-minute floor |
 | D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
 | D140 | Live | A bounce pause reads the SMTP reasons; tenant caps alert once/day |
+| D141 | Live | Bounce pause is a real burst only — sampled sends <24h; ledger dumps never pause; the lifetime-rate rule is retired |
+| D142 | Live | Generic is a pool (client record), pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged |
 
 ---
 
@@ -3499,3 +3501,118 @@ pause path classifies; the tenant alert dedupes); classifier unit tests
 on the three real NDR shapes; integration test: a tenant-cap pause
 records the verdict, names the tenant, Slacks once, and a same-day
 second pause does not re-page.
+
+## D141 — A bounce pause is a real burst, never a ledger dump
+
+**Decision (Josh, 2026-08-27).** The bounce loop pauses an ACTIVE
+campaign on exactly one trip: more than 10 new bounces inside the
+10-minute snapshot window **whose sampled bounced sends actually
+happened in the last 24 hours**. When the counter delta trips, the loop
+first samples the campaign's bounced rows (both ends of the list,
+retrying up to three times ~90s apart while the analytics ledger lags),
+reads each row's `sent_time`, and:
+
+- **any sampled send under 24h old** → the burst is live: pause, stamp
+  (D128), classify the SMTP reasons (D140) from those same rows,
+  freshest first;
+- **no sampled send under 24h old** → the "burst" is Smartlead's
+  analytics ledger batch-recording old bounces: log it loudly
+  (`ledger dump … no pause`), consume the delta, pause nothing;
+- **rows unreadable after every retry** → defer: keep the previous
+  snapshot so the delta re-evaluates (and re-samples) on the next
+  10-minute tick instead of being silently consumed.
+
+The D90 lifetime-rate rule (>10% after 1,000 leads) is **retired**, and
+its `BOUNCE_PAUSE_MIN_LEADS` / `BOUNCE_PAUSE_RATE_PERCENT` knobs are
+deleted with it. Everything else D90 carried stays: only ACTIVE
+campaigns, never COMPLETED/STOPPED, never a START (D40), Smartlead's
+native autopause converged to 100 (D80/D124), the pause stamp (D128).
+
+**Why.** 2026-08-27 01:10Z: the loop paused Peterson C2 (#3798230) on
+"12 new bounces in 10 minutes." Every one of those 12 bounced sends was
+sent 2026-08-13 to 08-24 — Smartlead's ledger materialised a two-week
+backlog in one batch and the delta read it as a live storm. Lifetime
+truth: 12 bounces on 641 sends, 1.9%. Josh: the burst rule exists to
+catch a missing send gap machine-gunning, Gmail/Outlook batch-rejecting
+a template, and a Microsoft tenant blowing its daily cap (5.7.233) —
+all of which bounce FRESH sends; and the lifetime-rate rule protects
+against lists he never loads ("I'm never gonna have a super crappy
+list" — every list is verified before load), so it only ever fired on
+artifacts. The D140 sampler also read the ledger the same second the
+pause fired and logged "no samples readable"; the same rows were
+readable 35 minutes later — hence the retry.
+
+**Supersedes.** D90 (the rate trip and the unguarded burst; the rest of
+its posture is restated above and lives on). The D140 classifier now
+receives the recency sample's rows instead of re-reading the ledger.
+
+**Guards.** canon D141 (rate knobs and `shouldPauseCampaignForBounceRate`
+stay deleted; `freshBounceSamples` gates the pause; the dump branch and
+the unreadable-defer branch exist; retry constant present; still no
+START). Lib tests pin the 2026-08-27 false-positive shape reading as
+zero fresh; service tests cover live-burst pause, ledger-dump no-pause
+with consumed delta, and unreadable-defer with preserved snapshot.
+
+## D142 — Generic is a pool; pre-warmed is a grant; confident domains attach themselves
+
+**Decision (Josh, 2026-08-27).** Three connected calls:
+
+1. **Generic ≠ pre-warmed.** `EXTRA_GENERIC_DOMAINS` is generic-pool
+   membership only (staffing supply on the generic clocks). A new knob
+   `PREWARMED_DOMAINS` is the ONLY source of the warmup exemption, and
+   only Josh adds to it — "assume nothing's pre-warmed when it gets in
+   there; I'll tell you." Defaults: generic = the three fleets plus
+   getintroducedapp.com / appgetintroduced.com / appquickconnectsales.com
+   (Josh: "those should be in the generic pile", boxes confirmed warmed
+   ≥21d so the clock passes them on age); pre-warmed = the three
+   original fleets (crosslaunchco / crossscaleco / cleartechco, D19).
+2. **Generic and POC are Smartlead client records** used as mailbox
+   pools. The audit pass ensures both exist and stamps their ids in
+   state; a box assigned to either is a generic to every classifier
+   (pods, floors, fan-out, rest, one-client) — never a client inbox,
+   never an A/B pod. One-client treats a marker client_id as a
+   deliberate assignment it must not rewrite.
+3. **Confident unmapped domains auto-attach** (amends D136's
+   never-writes): a generic-fleet box with NO client_id is assigned to
+   the Generic marker; an unmapped domain whose base name contains
+   exactly one client's distinctive token (salesglider→SalesGlider,
+   parlay→Parlay Tech, culturefits→Culture Fits) has its unassigned
+   boxes attached to that client. Everything else — split_clients
+   always, ambiguous or token-less domains (cornerstoneearthworks…)
+   — stays an advisory on the EOD brief. A box already carrying a real
+   client_id is never rewritten by this pass. Writes are 1s-spaced and
+   capped at 40 per pass.
+
+**Staged, not built (needs its own entry before going live):** pointing
+the mailbox-side generic OWNER at the POC marker ("for inbox sake, it's
+POC"). One-client currently resolves the generic owner from
+POC_CLIENT_NAME_PATTERNS (Goliath) and pulls memberships foreign to
+that owner — flipping the owner to an empty POC record would pull every
+generic off its Goliath campaigns. The re-point ships only together
+with membership logic that governs generics by campaignMayTakeGenerics
+instead of owner equality.
+
+**Why.** The D136 audit surfaced ~24 unmapped domains on its first live
+pass (2026-08-27 00:22Z). Josh's answers: GetIntroduced/QuickConnect
+are generics; salesglider* belongs to SalesGlider, parlay* to Parlay;
+"you can auto attach them if you're confident"; and the old
+EXTRA_GENERIC_DOMAINS conflation would have silently granted warmup
+exemptions to anything joining the pool — exactly what he does not
+want ("pre warm should only say: we don't need to enforce warm up
+policy on this").
+
+**Supersedes / amends.** Amends D19 (the prewarmed-by-domain list moves
+to PREWARMED_DOMAINS; the three fleets carry over). Amends D136 (the
+audit may WRITE the confident set; advisory otherwise). D76's owner
+re-point to the POC marker is explicitly deferred.
+
+**Guards.** canon D142: the two default lists differ exactly as decided;
+a generic-pool domain is not pre-warmed; marker client_ids read as
+generics; one-client's markerOwned exemption present; pool registration
+of pre-warmed fleets reads PREWARMED_DOMAINS; the staged POC re-point
+is pinned staged (owner still from patterns). D136 guard rewritten: all
+writes go through confidentClientForDomain, boxes with a real client_id
+untouched, split_clients never written. Unit tests: token matcher
+(stop-words, markers excluded, unique-match-only) and the audit attach
+pass (orphan→Generic, salesglider→SalesGlider, cornerstone stays
+advisory, split untouched, markers ensured + stamped).

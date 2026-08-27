@@ -237,8 +237,6 @@ const ConfigSchema = z.object({
    * D90 — live pause: over 10% bounce after 1k leads emailed, or more
    * than 10 new bounces in the last 10 minutes (D88 retired the 20/7 bands).
    */
-  bouncePauseMinLeads: z.coerce.number().int().min(0).default(1000),
-  bouncePauseRatePercent: z.coerce.number().min(0).max(100).default(10),
   bounceBurstCount: z.coerce.number().int().min(0).default(10),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
@@ -266,8 +264,29 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
-  /** Explicit domains whose whole fleet was purchased pre-warmed. */
+  /**
+   * D142 — generic-pool membership by domain. Generic does NOT mean
+   * pre-warmed: these fleets are staffing supply on the generic clocks,
+   * and each box still owes its warmup unless its domain is ALSO in
+   * PREWARMED_DOMAINS below.
+   */
   extraGenericDomains: z
+    .string()
+    .default(
+      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com",
+    )
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * D142 — the ONLY meaning of pre-warmed: skip the warmup clock. Granted
+   * by Josh alone; a domain landing in the generic pool is assumed NOT
+   * pre-warmed until he says so.
+   */
+  prewarmedDomains: z
     .string()
     .default("crosslaunchco.com,crossscaleco.com,cleartechco.com")
     .transform((s) =>
@@ -508,8 +527,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT ?? "100",
     enableCampaignBounceAutostop: env.ENABLE_CAMPAIGN_BOUNCE_AUTOSTOP,
     cronBounceAutostop: env.CRON_BOUNCE_AUTOSTOP ?? "*/10 * * * *",
-    bouncePauseMinLeads: env.BOUNCE_PAUSE_MIN_LEADS ?? "1000",
-    bouncePauseRatePercent: env.BOUNCE_PAUSE_RATE_PERCENT ?? "10",
     bounceBurstCount: env.BOUNCE_BURST_COUNT ?? "10",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableCopyCanary: env.ENABLE_COPY_CANARY,
@@ -518,6 +535,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     extraGenericDomains:
       env.EXTRA_GENERIC_DOMAINS ??
+      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com",
+    prewarmedDomains:
+      env.PREWARMED_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,

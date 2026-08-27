@@ -1,24 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  freshBounceSamples,
   shouldPauseCampaignForBounceBurst,
-  shouldPauseCampaignForBounceRate,
 } from "./campaignBouncePause.js";
 
-describe("D90 bounce pause trips", () => {
-  it("rate needs 1k leads and strictly more than 10%", () => {
-    assert.equal(shouldPauseCampaignForBounceRate(999, 200), false);
-    assert.equal(shouldPauseCampaignForBounceRate(1000, 100), false);
-    assert.equal(shouldPauseCampaignForBounceRate(1000, 101), true);
-    assert.equal(shouldPauseCampaignForBounceRate(2000, 200), false);
-    assert.equal(shouldPauseCampaignForBounceRate(2000, 201), true);
-  });
-
-  it("the old 20/7 mid-volume sample does not trip the rate rule", () => {
-    assert.equal(shouldPauseCampaignForBounceRate(150, 40), false);
-    assert.equal(shouldPauseCampaignForBounceRate(500, 40), false);
-  });
-
+describe("D141 bounce pause trips", () => {
   it("burst is more than 10 new bounces inside the snapshot window", () => {
     const now = Date.parse("2026-08-26T02:10:00.000Z");
     const prev = {
@@ -46,5 +33,43 @@ describe("D90 bounce pause trips", () => {
       ),
       { trip: false, delta: 0 },
     );
+  });
+
+  it("splits live bounced sends from ledger residue on sent_time", () => {
+    // The 2026-08-27 false positive: a two-week backlog batch-recorded as
+    // "12 new bounces in 10 minutes" while every send was days old.
+    const now = Date.parse("2026-08-27T01:10:00.000Z");
+    const stale = freshBounceSamples(
+      [
+        { sent_time: "2026-08-13T14:05:53.775Z" },
+        { sent_time: "2026-08-20T16:34:22.414Z" },
+        { sent_time: "2026-08-24T17:06:36.434Z" },
+        { no_sent_time: true },
+      ],
+      now,
+    );
+    assert.deepEqual(stale, {
+      readable: 3,
+      fresh: 0,
+      newestSentAt: "2026-08-24T17:06:36.434Z",
+    });
+
+    const mixed = freshBounceSamples(
+      [
+        { sent_time: "2026-08-13T14:05:53.775Z" },
+        { sent_time: "2026-08-27T00:55:00.000Z" },
+      ],
+      now,
+    );
+    assert.equal(mixed.fresh, 1);
+    assert.equal(mixed.readable, 2);
+  });
+
+  it("reads nothing into rows without a parseable sent_time", () => {
+    assert.deepEqual(freshBounceSamples([{}, { sent_time: "garbage" }], 0), {
+      readable: 0,
+      fresh: 0,
+      newestSentAt: null,
+    });
   });
 });

@@ -11,8 +11,8 @@ import {
 import { statsFromAnalytics, ymdUtc } from "../lib/campaignDayStats.js";
 import { SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT } from "../lib/campaignBounceAutostop.js";
 import {
+  freshBounceSamples,
   shouldPauseCampaignForBounceBurst,
-  shouldPauseCampaignForBounceRate,
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
 import {
@@ -29,6 +29,10 @@ const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 350;
 const ANALYTICS_START = "2020-01-01";
 /** Read-verify the off threshold this often; the 10m loop only fills gaps. */
 const AUTOPAUSE_VERIFY_EVERY_MS = 6 * 60 * 60 * 1000;
+/** The bounced-rows ledger can lag the counter — wait this long between reads. */
+const SAMPLE_RETRY_MS = process.env.NODE_TEST_CONTEXT ? 0 : 90 * 1000;
+const SAMPLE_ATTEMPTS = 3;
+const SAMPLE_PAGE = 15;
 
 /** COMPLETED / STOPPED campaigns never send again — stop touching them. */
 export function isTerminalCampaignStatus(status: unknown): boolean {
@@ -52,6 +56,8 @@ export interface CampaignBounceAutostopResult {
   scanned: number;
   paused: BounceAutostopPause[];
   skipped: number;
+  /** Burst trips that turned out to be ledger dumps of stale bounces (D141). */
+  ledgerDumps: number;
   smartleadDisabled: number;
   errors: string[];
 }
@@ -80,12 +86,19 @@ function mergeSendBounce(...payloads: unknown[]): {
 }
 
 /**
- * D90 — pause ACTIVE campaigns over 10% bounce after 1k leads emailed, or
- * more than 10 new bounces in the last 10 minutes. Does not START anyone
- * (D40). D88's 20%/7% bands stay retired; D91 retired the paused-campaign
- * hunt. After the scan, Smartlead bounce_autopause_threshold is converged
- * to 100 (off). A pause is stamped (D128) so qa-unpause never fights it —
- * only a human STARTs a bounce-paused campaign.
+ * D141 — pause ACTIVE campaigns only on a REAL bounce burst: more than 10
+ * new bounces in the last 10 minutes whose sampled sends actually happened
+ * inside the last 24h. Smartlead's ledger batch-records old bounces days
+ * late, so a tripped counter first samples the bounced rows (retrying
+ * while the ledger lags) — a dump of stale bounces logs loudly and never
+ * pauses. The D90 lifetime-rate rule (>10% after 1k) is retired: verified
+ * lists never bounce like that, so it only ever fired on artifacts. Does
+ * not START anyone (D40). D88's 20/7 bands stay retired; D91 retired the
+ * paused-campaign hunt. After the scan, Smartlead
+ * bounce_autopause_threshold is converged to 100 (off). A pause is
+ * stamped (D128) so qa-unpause never fights it — only a human STARTs a
+ * bounce-paused campaign. A real pause classifies the sampled SMTP
+ * reasons (D140).
  */
 export class CampaignBounceAutostopService {
   constructor(
@@ -102,6 +115,7 @@ export class CampaignBounceAutostopService {
       scanned: 0,
       paused: [],
       skipped: 0,
+      ledgerDumps: 0,
       smartleadDisabled: 0,
       errors: [],
     };
@@ -152,25 +166,45 @@ export class CampaignBounceAutostopService {
           nowMs,
           this.config.bounceBurstCount,
         );
-        const rate = shouldPauseCampaignForBounceRate(
-          sent,
-          bounces,
-          this.config.bouncePauseMinLeads,
-          this.config.bouncePauseRatePercent,
-        );
-        const reason: BouncePauseReason | null = burst.trip
-          ? "burst"
-          : rate
-            ? "rate"
-            : null;
 
+        if (!burst.trip) {
+          this.state?.setBounceSnapshot(campaign.id, {
+            bounced: bounces,
+            sent,
+            at: nowIso,
+          });
+          result.skipped += 1;
+          continue;
+        }
+
+        // D141 — a tripped counter is a suspicion, not a verdict. Sample
+        // the bounced rows first: only sends that actually happened in the
+        // last 24h count as a live burst; a ledger dump of stale bounces
+        // never pauses anyone.
+        const rows = await this.sampleBouncedRows(campaign.id);
+        if (rows == null) {
+          // Rows unreadable while the ledger lags: keep the previous
+          // snapshot so the delta re-evaluates (and re-samples) next tick
+          // instead of being silently consumed.
+          console.warn(
+            `[bounce-autostop] burst on #${campaign.id} ${campaign.name}: +${burst.delta} in 10m but bounced rows unreadable — no pause, re-checking next tick (D141)`,
+          );
+          result.skipped += 1;
+          continue;
+        }
+
+        const recency = freshBounceSamples(rows, nowMs);
         this.state?.setBounceSnapshot(campaign.id, {
           bounced: bounces,
           sent,
           at: nowIso,
         });
 
-        if (!reason) {
+        if (recency.fresh === 0) {
+          result.ledgerDumps += 1;
+          console.log(
+            `[bounce-autostop] burst on #${campaign.id} ${campaign.name} is a ledger dump: +${burst.delta} recorded in 10m, ${recency.readable} rows sampled, newest send ${recency.newestSentAt ?? "unknown"}, none inside 24h — no pause (D141)`,
+          );
           result.skipped += 1;
           continue;
         }
@@ -181,25 +215,27 @@ export class CampaignBounceAutostopService {
           sent,
           bounces,
           bounceRate,
-          reason,
-          burstBounces: burst.trip ? burst.delta : undefined,
+          reason: "burst" satisfies BouncePauseReason,
+          burstBounces: burst.delta,
         };
         console.log(
-          reason === "burst"
-            ? `[bounce-autostop] PAUSE #${finding.campaignId} ${finding.campaignName} burst=${finding.burstBounces} new bounces in 10m sent=${sent}${dryRun ? " (dry-run)" : ""}`
-            : `[bounce-autostop] PAUSE #${finding.campaignId} ${finding.campaignName} sent=${sent} bounce=${bounceRate.toFixed(2)}% (over 10% after 1k)${dryRun ? " (dry-run)" : ""}`,
+          `[bounce-autostop] PAUSE #${finding.campaignId} ${finding.campaignName} burst=${finding.burstBounces} new bounces in 10m (${recency.fresh} sampled sends <24h old) sent=${sent}${dryRun ? " (dry-run)" : ""}`,
         );
         if (!dryRun) {
           await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
           // D128 — stamp the pause so qa-unpause cannot START it back up;
-          // a bounce pause waits for a human (D90/D40).
+          // a bounce pause waits for a human (D141/D40).
           this.state?.markBouncePaused(campaign.id, nowIso);
         }
         result.paused.push(finding);
         // D140 — a bounce count is a symptom; read the actual SMTP reasons
         // before anyone blames the list. Never let diagnosis break the pause.
         try {
-          finding.verdict = await this.classifyRecentBounces(campaign.id, dryRun);
+          finding.verdict = await this.classifyRecentBounces(
+            campaign.id,
+            dryRun,
+            rows,
+          );
         } catch (error) {
           console.warn(
             `[bounce-autostop] verdict #${campaign.id} unreadable: ${error instanceof Error ? error.message : String(error)}`,
@@ -238,22 +274,66 @@ export class CampaignBounceAutostopService {
    * other settings so the write actually lands.
    */
   /**
+   * D141 — fetch bounced-send rows for the recency gate, retrying while
+   * the analytics ledger lags the counter (the D140 first run read the
+   * ledger the same second the pause fired and saw nothing; the rows were
+   * there minutes later). Row ordering is unspecified, so read both ends:
+   * the first page and, when the total is bigger, the last page. Returns
+   * null when no rows are readable after every attempt.
+   */
+  private async sampleBouncedRows(
+    campaignId: number,
+  ): Promise<Array<Record<string, unknown>> | null> {
+    for (let attempt = 0; attempt < SAMPLE_ATTEMPTS; attempt += 1) {
+      if (attempt > 0) await sleep(SAMPLE_RETRY_MS);
+      try {
+        const first = (await this.smartlead.listBouncedSendStats(
+          campaignId,
+          SAMPLE_PAGE,
+        )) as { total_stats?: unknown; data?: unknown[] };
+        const rows = Array.isArray(first?.data)
+          ? ([...first.data] as Array<Record<string, unknown>>)
+          : [];
+        const total = Number(first?.total_stats ?? rows.length);
+        if (Number.isFinite(total) && total > SAMPLE_PAGE) {
+          await sleep(WRITE_GAP_MS);
+          const last = (await this.smartlead.listBouncedSendStats(
+            campaignId,
+            SAMPLE_PAGE,
+            Math.max(0, Math.floor(total) - SAMPLE_PAGE),
+          )) as { data?: unknown[] };
+          if (Array.isArray(last?.data)) {
+            rows.push(...(last.data as Array<Record<string, unknown>>));
+          }
+        }
+        if (rows.length) return rows;
+      } catch {
+        // transient read failure — retry on the next attempt
+      }
+    }
+    return null;
+  }
+
+  /**
    * D140 — sample the campaign's bounced sends, read each NDR's SMTP
    * reason, classify, remember, and — for a Microsoft tenant hitting its
    * daily external-recipient cap — Slack once per tenant per day. A
-   * content-block verdict is recorded for the canary-diagnosis follow-up
-   * (D141); an invalid-recipient wave points at the list.
+   * content-block verdict is recorded for the canary-diagnosis follow-up;
+   * an invalid-recipient wave points at the list. Rows come from the D141
+   * recency sample so the ledger is read once per pause.
    */
   private async classifyRecentBounces(
     campaignId: number,
     dryRun: boolean,
+    rows: Array<Record<string, unknown>>,
   ): Promise<BounceVerdictRecord | undefined> {
-    const raw = await this.smartlead.listBouncedSendStats(campaignId, 4);
-    const rows = Array.isArray((raw as { data?: unknown[] })?.data)
-      ? ((raw as { data: Array<Record<string, unknown>> }).data ?? [])
-      : [];
     const samples: BounceSample[] = [];
-    for (const row of rows.slice(0, 4)) {
+    const byRecency = [...rows].sort(
+      (a, b) =>
+        (Date.parse(String(b.sent_time ?? "")) || 0) -
+        (Date.parse(String(a.sent_time ?? "")) || 0),
+    );
+    for (const row of byRecency.slice(0, 4)) {
       const leadEmail = String(row.lead_email ?? "");
       if (!leadEmail) continue;
       try {

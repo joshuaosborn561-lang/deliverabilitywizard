@@ -91,4 +91,77 @@ describe("DomainClientAuditService (D136)", () => {
     assert.equal(advisories.length, 0);
     assert.equal(state.listDomainAdvisories().length, 0);
   });
+
+  it("D142: ensures the markers and attaches only the confident cases", async () => {
+    const state = new StateStore(
+      `/tmp/dw-domain-attach-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const clients = [
+      { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      { id: 418274, name: "Randy Haba", logo: "Parlay Tech" },
+      { id: 100, name: "Acme" },
+      { id: 200, name: "Bcorp" },
+    ];
+    const accounts = [
+      // generic-fleet orphan → Generic marker
+      { id: 1, from_email: "a@getintroducedapp.com", client_id: null, campaign_ids: [] },
+      // generic-fleet box already owned by a real client → untouched
+      { id: 2, from_email: "b@getintroducedapp.com", client_id: 100, campaign_ids: [] },
+      // unmapped domain with exactly one client token → SalesGlider
+      { id: 3, from_email: "u@salesgliderbox.info", client_id: null, campaign_ids: [] },
+      // unmapped domain with no client token → stays a human question
+      { id: 4, from_email: "c@cornerstoneearthworksmy.info", client_id: null, campaign_ids: [] },
+      // split-clients domain → advisory only, never written
+      { id: 5, from_email: "x@splitdomain.info", client_id: 100, campaign_ids: [] },
+      { id: 6, from_email: "y@splitdomain.info", client_id: 200, campaign_ids: [] },
+    ];
+
+    const created: string[] = [];
+    const writes: Array<{ id: number; client_id: unknown }> = [];
+    const smartlead = {
+      ensureClient: async (name: string) => {
+        created.push(name);
+        return name === "Generic" ? 900001 : 900002;
+      },
+      updateEmailAccount: async (
+        id: number,
+        fields: { client_id?: number | null },
+      ) => {
+        writes.push({ id, client_id: fields.client_id });
+      },
+    };
+
+    const service = new DomainClientAuditService(
+      loadConfig({ DRY_RUN: "false" }),
+      state,
+      bookWith([], accounts, clients),
+      smartlead as never,
+      async () => {},
+    );
+    const { advisories, attached } = await service.run();
+
+    assert.deepEqual(created.sort(), ["Generic", "POC"]);
+    assert.deepEqual(state.getMarkerClientIds(), {
+      genericId: 900001,
+      pocId: 900002,
+    });
+    assert.deepEqual(
+      writes.sort((a, b) => a.id - b.id),
+      [
+        { id: 1, client_id: 900001 },
+        { id: 3, client_id: 345263 },
+      ],
+      "only the orphan generic and the confident salesglider box are written",
+    );
+    assert.ok(
+      attached.some((row) => row.clientName === "Generic" && row.mailboxes === 1),
+    );
+    assert.ok(attached.some((row) => row.clientName === "SalesGlider"));
+    const byDomain = new Map(advisories.map((row) => [row.domain, row.kind]));
+    assert.equal(byDomain.get("cornerstoneearthworksmy.info"), "unmapped");
+    assert.equal(byDomain.get("splitdomain.info"), "split_clients");
+    assert.equal(byDomain.size, 2);
+  });
 });

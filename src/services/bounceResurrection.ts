@@ -2,12 +2,17 @@ import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import {
+  bounceReasonSnippet,
   classifyBounceText,
   ndrBodyFromHistory,
   type BounceClass,
 } from "../lib/bounceReason.js";
 import { ymdUtc } from "../lib/campaignDayStats.js";
 import { sleep } from "../lib/http.js";
+import {
+  buildIsolationAction,
+  requestIsolationAction,
+} from "../lib/isolationActions.js";
 import type {
   BounceResurrectionJob,
   BounceVerdictRecord,
@@ -107,7 +112,10 @@ export class BounceResurrectionService {
       | "restoreCampaignLead"
     >,
     private readonly state: StateStore,
-    private readonly slack?: Pick<SlackClient, "send">,
+    private readonly slack?: Pick<
+      SlackClient,
+      "send" | "notifyIsolationAction"
+    >,
     private readonly clock: () => number = Date.now,
   ) {}
 
@@ -398,13 +406,17 @@ export class BounceResurrectionService {
           continue;
         }
 
+        const domain = senderDomainFromHistory(history);
         job.deferred.push({
           email,
           cls: bounceClass,
-          domain: senderDomainFromHistory(history),
+          domain,
           sentAt: sentIso,
         });
         job.offset += 1;
+        if (bounceClass === "sender_blocked" && ndr) {
+          await this.openSenderBlockAsk(job.campaignId, email, domain, ndr);
+        }
         console.log(
           `[bounce-resurrect] parked ${email} on #${job.campaignId} (${bounceClass}) until its remediation gate opens`,
         );
@@ -484,6 +496,51 @@ export class BounceResurrectionService {
       await this.sendReceipt(job);
     }
     return budget;
+  }
+
+  /**
+   * D146/D148 — a 5.1.8 found during the incident re-scan is the same
+   * burned-domain signal as one found in a burst sample: the block never
+   * resets on its own, so the retire ask opens here too. (The 8/27 live
+   * block was classified before D146 shipped, so the burst path never saw
+   * it as sender_blocked.) The pending ask is also what holds this
+   * lead's resend gate until Josh resolves it.
+   */
+  private async openSenderBlockAsk(
+    campaignId: number,
+    leadEmail: string,
+    domain: string | null,
+    ndr: string,
+  ): Promise<void> {
+    if (!domain) return;
+    const slack = this.slack;
+    if (!slack || typeof slack.notifyIsolationAction !== "function") return;
+    try {
+      const opened = await requestIsolationAction({
+        store: this.state,
+        slack,
+        action: buildIsolationAction({
+          kind: "retire_domain",
+          title: `Retire ${domain} — Microsoft flagged it as a bad outbound sender`,
+          proof: [
+            `Found while re-queueing incident bounces: ${leadEmail} on campaign #${campaignId} bounced 550 5.1.8 from a ${domain} sender.`,
+            `"${bounceReasonSnippet(ndr).slice(0, 160)}"`,
+            "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead. The lead re-queues once this ask is resolved.",
+          ].join("\n"),
+          detail: { domain },
+        }),
+      });
+      if (opened) {
+        console.log(
+          `[bounce-resurrect] burned-domain ask opened for ${domain} — sender block found in the incident scan (D146/D148)`,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[bounce-resurrect] retire ask for ${domain} failed to open`,
+        error,
+      );
+    }
   }
 
   private gateOpen(

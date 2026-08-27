@@ -254,8 +254,20 @@ export class WarmupGateService {
           remainingIds.delete(removal.accountId);
           result.removed += 1;
           result.removals.push(removal);
+          this.state.recordWarmupGatePull({
+            accountId: removal.accountId,
+            campaignId: campaign.id,
+            email: removal.email,
+            campaignName: removal.campaignName,
+          });
 
-          if (removal.reason === "under_warmed") {
+          // D143 — one re-enable per account per day. The 8/27 fight (an
+          // outside writer re-adding 84 memberships every pass) had this
+          // rewriting identical warmup settings 84 times per 15 minutes.
+          if (
+            removal.reason === "under_warmed" &&
+            !this.state.warmupEnsuredRecently(removal.accountId)
+          ) {
             try {
               await this.smartlead.configureWarmup(removal.accountId, {
                 warmup_enabled: true,
@@ -263,6 +275,7 @@ export class WarmupGateService {
                 daily_rampup: this.config.warmupDailyRampup,
                 reply_rate_percentage: this.config.warmupReplyRatePercentage,
               });
+              this.state.markWarmupEnsured(removal.accountId);
             } catch (warmupError) {
               const message =
                 warmupError instanceof Error
@@ -296,6 +309,12 @@ export class WarmupGateService {
               remainingIds.delete(removal.accountId);
               result.removed += 1;
               result.removals.push(removal);
+              this.state.recordWarmupGatePull({
+                accountId: removal.accountId,
+                campaignId: campaign.id,
+                email: removal.email,
+                campaignName: removal.campaignName,
+              });
               continue;
             } catch (retryError) {
               const retryMsg =
@@ -315,6 +334,17 @@ export class WarmupGateService {
           );
         }
       }
+    }
+
+    // D143 — a membership this gate already removed can only be back because
+    // something outside this app re-added it. Say so once per pass, loudly;
+    // the EOD brief carries the human ask.
+    const boomerangs = this.state.listWarmupGateBoomerangs();
+    if (boomerangs.length) {
+      const top = boomerangs[0]!;
+      console.warn(
+        `[warmup-gate] boomerang: ${boomerangs.length} membership(s) re-added from outside this app after removal (top: ${top.email} on #${top.campaignId} ×${top.count} in 24h) — see the EOD brief (D143)`,
+      );
     }
 
     this.state.setLastWarmupGateAt(new Date().toISOString());

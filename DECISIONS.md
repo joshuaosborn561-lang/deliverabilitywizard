@@ -158,6 +158,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D140 | Live | A bounce pause reads the SMTP reasons; tenant caps alert once/day |
 | D141 | Live | Bounce pause is a real burst only — sampled sends <24h; ledger dumps never pause; the lifetime-rate rule is retired |
 | D142 | Live | Generic is a pool (client record), pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged |
+| D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 
 ---
 
@@ -3616,3 +3617,67 @@ untouched, split_clients never written. Unit tests: token matcher
 (stop-words, markers excluded, unique-match-only) and the audit attach
 pass (orphan→Generic, salesglider→SalesGlider, cornerstone stays
 advisory, split untouched, markers ensured + stamped).
+
+## D143 — The gate must win or escalate: warmup owed is not attach supply, boomerang pulls page the EOD brief
+
+**Decision (Claude under Josh's standing delegation, 2026-08-27).**
+A D98 fix-in-session; no prior decision reversed — D142's attach is
+narrowed in sequence, not in intent.
+
+**The incident.** At 06:20Z the D142 confident attach gave the ten
+Aug-25 InboxKit imports on winparlay/hqparlay/myparlay/proparlay/
+topparlay.info their Parlay Tech `client_id`. Within 20 minutes a
+writer OUTSIDE this app staffed them onto all ~12 ACTIVE Parlay
+campaigns (memberships 19→24 per campaign, the half-client-inbox floor
+rose 20→25). From 06:40Z the warmup gate pulled ~84 memberships every
+15-minute pass and the outside writer re-added them within minutes,
+every cycle, for six hours: `under_warmed` findings 43→85 (the 43 was
+the same fight over the older getparlay/tryparlay imports), ~170
+mutations per pass (84 removes + 84 warmup re-enables) burning the
+shared 200-req/min Smartlead budget, and pod-tags 429ing its third
+consecutive monitor pass. Live checks proved the gate's removals DO
+stick (campaign 3847850 dropped to 18 members after a pull) and that no
+service in this repo or the Railway fleet re-adds them — the fan-out
+skipped every one of these boxes all day (`owes warmup (D139)`), top-up
+assigned none, one-client restores generics only. The re-adder is
+outside: InboxKit campaign assignment or another automation keyed on
+`client_id`.
+
+1. **Warmup owed is not attach supply** (extends D139 to client
+   attachment): the confident domain→client attach defers any box that
+   still owes warmup days — the EOD brief carries a "matches X,
+   deferred until warmed" advisory and the attach happens on a later
+   pass once the 21-day clock is served. Generic-marker attaches stay
+   immediate (the marker owns no campaigns; there is nothing to staff).
+2. **The gate ledgers every pull per membership**
+   (`accountId:campaignId`, rolling 24h window). A membership pulled 3+
+   times in 24h is a **boomerang**: something outside this app is
+   re-adding it. The gate logs the fact once per pass and the EOD brief
+   names the mailboxes (grouped, not 84 rows) with the ask: switch that
+   writer off. The gate keeps pulling meanwhile — canon does not yield.
+3. **The warmup re-enable write dedupes**: at most one
+   `configureWarmup` per account per 24h, not one per pull. During the
+   fight this alone removes ~84 pointless writes per pass.
+4. **Pod-tags runs FIRST in the monitor sequence** (pre-committed D135
+   escalation: "move pod-tags to the front of the monitor sequence").
+   Ninth in line it lost the whole rate window to placement pulls and
+   429'd three consecutive passes (00:22, 06:20, 12:17Z) even with
+   spaced writes and retries:7.
+
+**Why.** The 21-day clock (D1/D50/D105) is only real if the gate wins.
+An unwinnable pull/re-add war violates it silently while ALSO melting
+the rate budget every other loop depends on. And D139 already ruled
+that staffing must not hand the gate its next pull — a client_id write
+that lets an outside staffer do the same thing is the same hole.
+
+**Supersedes / amends.** Amends D142 (confident attach defers
+warmup-owing boxes; everything else unchanged). Extends D139. Completes
+D135's escalation path.
+
+**Guards.** canon D143: domainClientAudit consults owesWarmup before a
+confident attach and defers young boxes (behavioral test); the gate
+records pulls and skips the redundant warmup re-enable on repeat pulls
+(behavioral test: two passes over the same re-added inventory → two
+removals, one configureWarmup, boomerang listed at 3); the EOD brief
+renders the boomerang section; pod-tags stage precedes monitor-results
+in the monitor sequence.

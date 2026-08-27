@@ -19,6 +19,7 @@ import { sleep } from "../lib/http.js";
 import type { DomainClientAdvisory } from "../state/store.js";
 import type { StateStore } from "../state/store.js";
 import type { InventoryBook } from "./inventory.js";
+import { owesWarmup } from "./warmupGate.js";
 
 /** Client-id writes per pass — the rest converges on later passes. */
 const ATTACH_CAP = 40;
@@ -167,10 +168,21 @@ export class DomainClientAuditService {
           ? confidentClientForDomain(domain, clients)
           : null;
         if (match && !this.config.dryRun && writesLeft > 0) {
+          // D143 — a box that still owes warmup days is not attach supply.
+          // Handing winparlay.info a client_id on 8/27 is what let an
+          // outside writer staff 2-day-old boxes onto live campaigns; the
+          // mapping waits until the box may legally serve.
+          const unassigned = domainAccounts.filter(
+            (account) => account.client_id == null,
+          );
+          const ready = unassigned.filter((account) => {
+            const email = accountEmail(account)?.toLowerCase() ?? "";
+            return !owesWarmup(account, email, this.config, this.state);
+          });
+          const deferred = unassigned.length - ready.length;
           let done = 0;
-          for (const account of domainAccounts) {
+          for (const account of ready) {
             if (writesLeft <= 0) break;
-            if (account.client_id != null) continue;
             try {
               await this.smartlead!.updateEmailAccount(account.id, {
                 client_id: match.clientId,
@@ -193,8 +205,19 @@ export class DomainClientAuditService {
             console.log(
               `[domain-client] attached ${done} mailbox(es) on ${domain} → ${match.clientName} (confident match, D142)`,
             );
-            continue;
           }
+          if (deferred > 0) {
+            advisories.push({
+              domain,
+              kind: "unmapped",
+              note: `${deferred} mailbox(es) match ${match.clientName} but still owe the 21-day warmup — attach happens when it is served (D143)`,
+              at: now,
+            });
+            console.log(
+              `[domain-client] deferred ${deferred} mailbox(es) on ${domain} → ${match.clientName} until warmup is served (D143)`,
+            );
+          }
+          if (done || deferred > 0) continue;
         }
         advisories.push({
           domain,

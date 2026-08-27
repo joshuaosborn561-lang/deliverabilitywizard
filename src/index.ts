@@ -801,6 +801,13 @@ async function main(): Promise<void> {
       // D131 — every monitor stage is watchdogged like the health pass:
       // a silent 429 death shows up in stageHealth instead of a swallowed
       // console.warn (D84 covered only the 15-minute loop).
+      // D135/D143 — pod-tags spends the fresh rate window FIRST. Ninth in
+      // line it lost the whole window to placement pulls and 429'd three
+      // consecutive passes (00:22, 06:20, 12:17 on 2026-08-27) even with
+      // spaced writes and ~91s of retry runway.
+      if (config.enablePodControls) {
+        await stage("pod-tags", () => podTags.run());
+      }
       const monitorResult = await stage("monitor-results", () => monitor.run());
       feedBugRemediator(
         "monitor",
@@ -836,7 +843,6 @@ async function main(): Promise<void> {
       let podControlResult: unknown = null;
       if (config.enablePodControls) {
         podControlResult = await stage("pod-controls", () => podControls.run());
-        await stage("pod-tags", () => podTags.run());
         await stage("domain-client-audit", () => domainClientAudit.run());
       await stage("domain-lifecycle", () => domainLifecycle.run());
         await stage("isolation-buy-resume", () => isolationBuy.resume());

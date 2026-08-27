@@ -104,18 +104,22 @@ describe("DomainClientAuditService (D136)", () => {
       { id: 100, name: "Acme" },
       { id: 200, name: "Bcorp" },
     ];
+    const warmed = new Date(Date.now() - 60 * 86_400_000).toISOString();
+    const young = new Date(Date.now() - 2 * 86_400_000).toISOString();
     const accounts = [
-      // generic-fleet orphan → Generic marker
+      // generic-fleet orphan → Generic marker (immediate — markers own no campaigns)
       { id: 1, from_email: "a@getintroducedapp.com", client_id: null, campaign_ids: [] },
       // generic-fleet box already owned by a real client → untouched
       { id: 2, from_email: "b@getintroducedapp.com", client_id: 100, campaign_ids: [] },
-      // unmapped domain with exactly one client token → SalesGlider
-      { id: 3, from_email: "u@salesgliderbox.info", client_id: null, campaign_ids: [] },
+      // unmapped domain with exactly one client token, clock served → SalesGlider
+      { id: 3, from_email: "u@salesgliderbox.info", client_id: null, campaign_ids: [], created_at: warmed },
       // unmapped domain with no client token → stays a human question
       { id: 4, from_email: "c@cornerstoneearthworksmy.info", client_id: null, campaign_ids: [] },
       // split-clients domain → advisory only, never written
       { id: 5, from_email: "x@splitdomain.info", client_id: 100, campaign_ids: [] },
       { id: 6, from_email: "y@splitdomain.info", client_id: 200, campaign_ids: [] },
+      // D143 — confident match but the box still owes warmup days → deferred
+      { id: 7, from_email: "n@salesgliderfresh.info", client_id: null, campaign_ids: [], created_at: young },
     ];
 
     const created: string[] = [];
@@ -153,7 +157,7 @@ describe("DomainClientAuditService (D136)", () => {
         { id: 1, client_id: 900001 },
         { id: 3, client_id: 345263 },
       ],
-      "only the orphan generic and the confident salesglider box are written",
+      "only the orphan generic and the warmed confident salesglider box are written",
     );
     assert.ok(
       attached.some((row) => row.clientName === "Generic" && row.mailboxes === 1),
@@ -162,6 +166,12 @@ describe("DomainClientAuditService (D136)", () => {
     const byDomain = new Map(advisories.map((row) => [row.domain, row.kind]));
     assert.equal(byDomain.get("cornerstoneearthworksmy.info"), "unmapped");
     assert.equal(byDomain.get("splitdomain.info"), "split_clients");
-    assert.equal(byDomain.size, 2);
+    // D143 — the young box's confident match waits out its 21 days.
+    assert.equal(byDomain.get("salesgliderfresh.info"), "unmapped");
+    const deferredNote = advisories.find(
+      (row) => row.domain === "salesgliderfresh.info",
+    )?.note;
+    assert.match(deferredNote ?? "", /owe the 21-day warmup/);
+    assert.equal(byDomain.size, 3);
   });
 });

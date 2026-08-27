@@ -2683,6 +2683,173 @@ describe("owner intent — D142 generic is a pool, pre-warmed is a grant", () =>
   });
 });
 
+describe("owner intent — D143 the gate must win or escalate", () => {
+  it("D143: young boxes get no client_id; boomerangs are ledgered and briefed; pod-tags goes first", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    // The confident attach consults the warmup clock before writing —
+    // a client_id on a 2-day-old box is what armed the external
+    // re-adder on 2026-08-27.
+    const audit = await read("../services/domainClientAudit.ts");
+    assert.match(
+      audit,
+      /owesWarmup\(/,
+      stop(
+        "A box that owes warmup days is not attach supply (D143).",
+        "domainClientAudit.ts writes client_id without consulting owesWarmup.",
+      ),
+    );
+
+    const gate = await read("../services/warmupGate.ts");
+    assert.match(
+      gate,
+      /recordWarmupGatePull/,
+      stop(
+        "Every gate pull is counted so external re-adds are visible (D143).",
+        "warmupGate.ts no longer records pulls in the boomerang ledger.",
+      ),
+    );
+    assert.match(
+      gate,
+      /warmupEnsuredRecently/,
+      stop(
+        "The warmup re-enable writes once per account per day, not per pull (D143).",
+        "warmupGate.ts rewrites identical warmup settings on every pull again — 84 writes per pass during the 8/27 fight.",
+      ),
+    );
+
+    const brief = await read("../services/clientDayBrief.ts");
+    assert.match(
+      brief,
+      /listWarmupGateBoomerangs/,
+      stop(
+        "External re-adds are a human ask on the EOD brief (D143).",
+        "clientDayBrief.ts no longer hands the boomerang ledger to Slack.",
+      ),
+    );
+
+    // Pod-tags spends the fresh monitor rate window first: ninth in line
+    // it 429'd three consecutive passes (00:22, 06:20, 12:17Z on 8/27)
+    // even with spaced writes and retries:7.
+    const index = await read("../index.ts");
+    const monitorBody = index.slice(
+      index.indexOf("monitorInFlight = (async () =>"),
+    );
+    const tagsAt = monitorBody.indexOf('stage("pod-tags"');
+    const resultsAt = monitorBody.indexOf('stage("monitor-results"');
+    assert.ok(
+      tagsAt >= 0 && resultsAt >= 0 && tagsAt < resultsAt,
+      stop(
+        "Pod-tags runs before placement pulls in the monitor (D135/D143).",
+        "index.ts runs pod-tags after monitor-results again.",
+      ),
+    );
+  });
+
+  it("D143: re-added inventory — pulls repeat, the warmup write does not, boomerang lists at three", async () => {
+    const { StateStore } = await import("../state/store.js");
+    const { WarmupGateService } = await import("../services/warmupGate.js");
+    const state = new StateStore(
+      `/tmp/dw-gate-boomerang-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const now = Date.now();
+    const inventory = {
+      campaigns: [{ id: 1, name: "Parlay One", status: "ACTIVE" }],
+      accounts: [
+        {
+          id: 11,
+          from_email: "young@newfleet.info",
+          from_name: "Young Box",
+          created_at: new Date(now - 2 * 86_400_000).toISOString(),
+          campaign_ids: [1],
+        },
+        {
+          id: 12,
+          from_email: "old@newfleet.info",
+          from_name: "Old Box",
+          created_at: new Date(now - 60 * 86_400_000).toISOString(),
+          campaign_ids: [1],
+        },
+      ],
+      clients: [],
+      fetchedAt: now,
+    } as never;
+
+    const removes: Array<{ campaignId: number; ids: number[] }> = [];
+    let warmupWrites = 0;
+    const smartlead = {
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removes.push({ campaignId, ids });
+      },
+      configureWarmup: async () => {
+        warmupWrites += 1;
+      },
+      getEmailAccount: async () => {
+        throw new Error("detail fetch not expected — created_at is present");
+      },
+      updateCampaignStatus: async () => {
+        throw new Error("pause not expected — another sender remains");
+      },
+    } as never;
+    const slack = { notifyWarmupGate: async () => {} } as never;
+
+    const service = new WarmupGateService(
+      loadConfig({ DRY_RUN: "false" }),
+      smartlead,
+      slack,
+      state,
+    );
+    // The same inventory three passes running — exactly what an external
+    // re-adder produces: the gate removed the box, something put it back.
+    for (let pass = 0; pass < 3; pass += 1) {
+      const result = await service.run({ inventory });
+      assert.equal(
+        result.removed,
+        1,
+        stop(
+          "The gate keeps pulling a re-added under-warmed box (D105/D143).",
+          `pass ${pass + 1} removed ${result.removed}.`,
+        ),
+      );
+    }
+    assert.deepEqual(
+      removes.map((row) => row.ids),
+      [[11], [11], [11]],
+      stop(
+        "Only the under-warmed box is pulled, every pass (D143).",
+        "The gate stopped pulling, or pulled the warmed box.",
+      ),
+    );
+    assert.equal(
+      warmupWrites,
+      1,
+      stop(
+        "One warmup re-enable per account per day (D143).",
+        `configureWarmup ran ${warmupWrites} times across three pulls of the same box.`,
+      ),
+    );
+    const boomerangs = state.listWarmupGateBoomerangs();
+    assert.equal(
+      boomerangs.length,
+      1,
+      stop(
+        "Three pulls of one membership in 24h is a boomerang (D143).",
+        `listWarmupGateBoomerangs returned ${boomerangs.length} row(s).`,
+      ),
+    );
+    assert.equal(boomerangs[0]!.email, "young@newfleet.info");
+    assert.equal(boomerangs[0]!.count, 3);
+  });
+});
+
 describe("owner intent — D89 leftover canon holes", () => {
   it("D89: living known-good, queued reads, attach-after-adopt, bulk collapse, drafts on EOD", async () => {
     const read = (path: string) =>

@@ -287,6 +287,11 @@ export class ClientDayBriefService {
         domainAdvisories: options.endOfDay
           ? this.state.listDomainAdvisories()
           : undefined,
+        // D143 — memberships an outside writer keeps re-adding after the
+        // warmup gate pulls them; only a human can switch that writer off.
+        warmupBoomerangs: options.endOfDay
+          ? this.state.listWarmupGateBoomerangs()
+          : undefined,
         loadedDrafts: options.endOfDay ? loadedDrafts : undefined,
         canaryFleetDownSince: options.endOfDay
           ? this.state.getCanaryFleetDown()?.since ?? null

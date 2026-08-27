@@ -201,6 +201,10 @@ export interface AppState {
   domainAdvisories: DomainClientAdvisory[];
   /** D142 — Smartlead ids of the Generic / POC marker clients. */
   markerClients: { genericId?: number; pocId?: number };
+  /** D143 — repeat gate pulls per accountId:campaignId (external re-add detector). */
+  warmupGatePulls: Record<string, WarmupGatePullRecord>;
+  /** D143 — last warmup re-enable write per accountId (skip the 84/pass rewrites). */
+  warmupEnsuredAt: Record<string, string>;
   /** D140 — last classified bounce verdict per campaign (id key). */
   bounceVerdicts: Record<string, BounceVerdictRecord>;
   /**
@@ -316,6 +320,23 @@ export interface DomainClientAdvisory {
   at: string;
 }
 
+/** D143 — one membership the warmup gate pulled, counted across re-adds. */
+export interface WarmupGatePullRecord {
+  email: string;
+  campaignId: number;
+  campaignName: string;
+  /** Pulls inside the rolling 24h window starting at firstAt. */
+  count: number;
+  firstAt: string;
+  lastAt: string;
+}
+
+/** D143 — a membership pulled this often in 24h is being re-added from outside. */
+export const WARMUP_BOOMERANG_MIN_COUNT = 3;
+export const WARMUP_BOOMERANG_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** D143 — how long one warmup re-enable write is trusted before rewriting. */
+export const WARMUP_ENSURE_TTL_MS = 24 * 60 * 60 * 1000;
+
 export interface RestingInboxRecord {
   accountId: number;
   email: string;
@@ -363,6 +384,8 @@ const EMPTY_STATE: AppState = {
   genericBackfillApprovals: {},
   domainAdvisories: [],
   markerClients: {},
+  warmupGatePulls: {},
+  warmupEnsuredAt: {},
   bounceVerdicts: {},
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
@@ -1050,6 +1073,88 @@ export class StateStore {
     if (typeof id !== "number" || !Number.isFinite(id)) return false;
     const { genericId, pocId } = this.state.markerClients ?? {};
     return id === genericId || id === pocId;
+  }
+
+  /**
+   * D143 — count the gate pulling the same membership again. A membership
+   * the gate keeps removing can only reappear because something outside
+   * this app adds it back; the count is the detector. Entries expire two
+   * windows after their last pull.
+   */
+  recordWarmupGatePull(
+    row: {
+      accountId: number;
+      campaignId: number;
+      email: string;
+      campaignName: string;
+    },
+    now = Date.now(),
+  ): number {
+    for (const [key, rec] of Object.entries(this.state.warmupGatePulls)) {
+      const last = Date.parse(rec.lastAt);
+      if (!Number.isFinite(last) || now - last > 2 * WARMUP_BOOMERANG_WINDOW_MS) {
+        delete this.state.warmupGatePulls[key];
+      }
+    }
+    const key = `${row.accountId}:${row.campaignId}`;
+    const nowIso = new Date(now).toISOString();
+    const prior = this.state.warmupGatePulls[key];
+    const windowOpen =
+      prior != null &&
+      Number.isFinite(Date.parse(prior.firstAt)) &&
+      now - Date.parse(prior.firstAt) <= WARMUP_BOOMERANG_WINDOW_MS;
+    const next: WarmupGatePullRecord = windowOpen
+      ? {
+          ...prior,
+          email: row.email,
+          campaignName: row.campaignName,
+          count: prior.count + 1,
+          lastAt: nowIso,
+        }
+      : {
+          email: row.email,
+          campaignId: row.campaignId,
+          campaignName: row.campaignName,
+          count: 1,
+          firstAt: nowIso,
+          lastAt: nowIso,
+        };
+    this.state.warmupGatePulls[key] = next;
+    return next.count;
+  }
+
+  /** D143 — memberships pulled ≥ minCount times inside the live 24h window. */
+  listWarmupGateBoomerangs(
+    minCount = WARMUP_BOOMERANG_MIN_COUNT,
+    now = Date.now(),
+  ): WarmupGatePullRecord[] {
+    return Object.values(this.state.warmupGatePulls)
+      .filter((rec) => {
+        const last = Date.parse(rec.lastAt);
+        return (
+          rec.count >= minCount &&
+          Number.isFinite(last) &&
+          now - last <= WARMUP_BOOMERANG_WINDOW_MS
+        );
+      })
+      .map((rec) => ({ ...rec }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  /** D143 — warmup re-enable already written for this account recently. */
+  warmupEnsuredRecently(accountId: number, now = Date.now()): boolean {
+    const at = Date.parse(this.state.warmupEnsuredAt[String(accountId)] ?? "");
+    return Number.isFinite(at) && now - at <= WARMUP_ENSURE_TTL_MS;
+  }
+
+  markWarmupEnsured(accountId: number, now = Date.now()): void {
+    for (const [key, iso] of Object.entries(this.state.warmupEnsuredAt)) {
+      const at = Date.parse(iso);
+      if (!Number.isFinite(at) || now - at > 2 * WARMUP_ENSURE_TTL_MS) {
+        delete this.state.warmupEnsuredAt[key];
+      }
+    }
+    this.state.warmupEnsuredAt[String(accountId)] = new Date(now).toISOString();
   }
 
   approveGenericBackfill(record: GenericBackfillApproval): void {

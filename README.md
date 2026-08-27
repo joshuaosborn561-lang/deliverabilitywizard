@@ -30,7 +30,7 @@ to look. Behaviour questions end at CANON.md.
 | Canon sweep (health) | every 15 min | One shared Smartlead inventory fetch, reconnect, client A/B rest + generic send clock, 21-day warmup gate, fan-out / top-up, mailbox settings converge, signature fixes, placement-test backfill |
 | Bounce loop | every 10 min | Pause over 10% lifetime bounce after 1k leads, or >10 new bounces in 10 min; classify the NDRs (tenant cap / bad recipients / content block); keep Smartlead's native auto-pause off |
 | Campaign check | hourly | Re-inspect blocked first-checks, shells, signatures, staffing floor, campaign min-gap converge |
-| Monitor | every 6 h | Placement pulls, DNS advisory audit, canary adoption, campaign audit, POD tags, domain→client advisory |
+| Monitor | every 6 h | POD tags first (so decoration writes are not starved by placement pulls), then placement pulls, DNS advisory audit, canary adoption, campaign audit, domain→client advisory |
 | EOD brief | once a day (New York) | Per-client sends + spam scoreboard, untagged campaigns, loaded DRAFTs, domains needing a human |
 | Boot | on deploy | Canary attach at 90 s only — everything else waits for its cron |
 

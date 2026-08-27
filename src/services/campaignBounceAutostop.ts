@@ -22,6 +22,7 @@ import {
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   buildIsolationAction,
+  domainRecentlyRetired,
   requestIsolationAction,
 } from "../lib/isolationActions.js";
 import { sleep } from "../lib/http.js";
@@ -523,6 +524,9 @@ export class CampaignBounceAutostopService {
         blockedByDomain.set(domain, set);
       }
       for (const [domain, senders] of blockedByDomain) {
+        // Stale pre-retire bounces must not re-ask for a domain Josh
+        // already retired (D146/D148 refinement).
+        if (domainRecentlyRetired(store, domain)) continue;
         const snippet =
           samples.find(
             (sample) =>

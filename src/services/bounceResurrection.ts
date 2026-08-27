@@ -11,6 +11,7 @@ import { ymdUtc } from "../lib/campaignDayStats.js";
 import { sleep } from "../lib/http.js";
 import {
   buildIsolationAction,
+  domainRecentlyRetired,
   requestIsolationAction,
 } from "../lib/isolationActions.js";
 import type {
@@ -531,6 +532,9 @@ export class BounceResurrectionService {
     ndr: string,
   ): Promise<void> {
     if (!domain) return;
+    // Stale pre-retire bounces must not re-ask for a domain Josh already
+    // retired (D146/D148 refinement).
+    if (domainRecentlyRetired(this.state, domain, this.clock())) return;
     const slack = this.slack;
     if (!slack || typeof slack.notifyIsolationAction !== "function") return;
     try {

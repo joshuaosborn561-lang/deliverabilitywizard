@@ -607,5 +607,46 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
         .filter((row) => row.kind === "retire_domain").length,
       1,
     );
+
+    // Josh executes the retire. Stale pre-retire sends keep bouncing into
+    // the ledger — a burst an hour later (cooldown expired, full classify)
+    // must NOT re-ask for the already-retired domain.
+    const executedAsk = state
+      .listIsolationActions()
+      .find((row) => row.kind === "retire_domain")!;
+    state.upsertIsolationAction({
+      ...executedAsk,
+      status: "executed",
+      executedAt: new Date(FIXED_T).toISOString(),
+    });
+    const LATER = FIXED_T + 61 * 60 * 1000;
+    state.setBounceSnapshot(9, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(LATER - 10 * 60 * 1000).toISOString(),
+    });
+    const statusWrites3: string[] = [];
+    const third = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      mkBlockedSl(statusWrites3),
+      state,
+      slackFake,
+      undefined,
+      () => LATER,
+    );
+    await third.run({ dryRun: false });
+    assert.deepEqual(statusWrites3, []);
+    assert.equal(
+      asks.length,
+      1,
+      "a freshly retired domain is never re-asked (D146/D148 refinement)",
+    );
+    assert.equal(
+      state
+        .listIsolationActions()
+        .filter((row) => row.kind === "retire_domain").length,
+      1,
+      "no second retire_domain record either",
+    );
   });
 });

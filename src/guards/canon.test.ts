@@ -2428,64 +2428,47 @@ describe("owner intent — D86 hand-bought canary fleet is adopted", () => {
   });
 });
 
-describe("owner intent — D90 bounce pause is 10% after 1k or 10-in-10m", () => {
-  it("D90: pause over 10% after 1k leads, or more than 10 bounces in 10 minutes", async () => {
+describe("owner intent — D141 bounce pause is a real burst, never a ledger dump", () => {
+  it("D141: burst-only, recency-gated; the D90 lifetime-rate rule stays retired", async () => {
     const read = (path: string) =>
       import("node:fs/promises").then((fs) =>
         fs.readFile(new URL(path, import.meta.url), "utf8"),
       );
 
     assert.equal(
-      defaults.bouncePauseMinLeads,
-      1000,
-      stop(
-        "Rate pause needs 1,000 leads emailed (D90).",
-        `Min leads is now ${defaults.bouncePauseMinLeads}.`,
-      ),
-    );
-    assert.equal(
-      defaults.bouncePauseRatePercent,
-      10,
-      stop(
-        "Rate pause is over 10% (D90).",
-        `Rate is now ${defaults.bouncePauseRatePercent}%.`,
-      ),
-    );
-    assert.equal(
       defaults.bounceBurstCount,
       10,
       stop(
-        "Burst pause is more than 10 new bounces in 10 minutes (D90).",
+        "Burst pause is more than 10 new bounces in 10 minutes (D141).",
         `Burst count is now ${defaults.bounceBurstCount}.`,
       ),
     );
+    assert.ok(
+      !("bouncePauseMinLeads" in defaults) &&
+        !("bouncePauseRatePercent" in defaults),
+      stop(
+        "The lifetime-rate pause is retired — verified lists never bounce like that (D141, Josh 2026-08-27).",
+        "config grew the D90 rate knobs back.",
+      ),
+    );
 
-    const { shouldPauseCampaignForBounceRate, shouldPauseCampaignForBounceBurst } =
-      await import("../lib/campaignBouncePause.js");
+    const pauseLib = (await import("../lib/campaignBouncePause.js")) as Record<
+      string,
+      unknown
+    >;
     assert.equal(
-      shouldPauseCampaignForBounceRate(1000, 100),
+      "shouldPauseCampaignForBounceRate" in pauseLib,
       false,
       stop(
-        "Exactly 10% after 1k must not pause (D90).",
-        "shouldPauseCampaignForBounceRate now trips at 10% exactly.",
+        "The rate trip is deleted, not parked (D141).",
+        "campaignBouncePause.ts exports shouldPauseCampaignForBounceRate again.",
       ),
     );
-    assert.equal(
-      shouldPauseCampaignForBounceRate(1000, 101),
-      true,
-      stop(
-        "Over 10% after 1k pauses (D90).",
-        "shouldPauseCampaignForBounceRate no longer trips at 101/1000.",
-      ),
-    );
-    assert.equal(
-      shouldPauseCampaignForBounceRate(150, 40),
-      false,
-      stop(
-        "The old 20/7 mid-volume sample is not a pause (D88/D90).",
-        "A 150-send 20%+ campaign is being paused on the retired band.",
-      ),
-    );
+    const { shouldPauseCampaignForBounceBurst, freshBounceSamples } =
+      pauseLib as {
+        shouldPauseCampaignForBounceBurst: typeof import("../lib/campaignBouncePause.js").shouldPauseCampaignForBounceBurst;
+        freshBounceSamples: typeof import("../lib/campaignBouncePause.js").freshBounceSamples;
+      };
     const now = Date.parse("2026-08-26T02:10:00.000Z");
     assert.equal(
       shouldPauseCampaignForBounceBurst(
@@ -2495,33 +2478,93 @@ describe("owner intent — D90 bounce pause is 10% after 1k or 10-in-10m", () =>
       ).trip,
       true,
       stop(
-        "More than 10 new bounces in 10 minutes pauses (D90).",
+        "More than 10 new bounces in 10 minutes trips the burst (D141).",
         "The burst helper no longer trips on +11 in 10 minutes.",
+      ),
+    );
+    // The 2026-08-27 false positive: 12 bounces batch-recorded whose sends
+    // were 3-14 days old must read as zero fresh.
+    const staleOnly = freshBounceSamples(
+      [
+        { sent_time: "2026-08-13T14:05:53.775Z" },
+        { sent_time: "2026-08-20T16:34:22.414Z" },
+      ],
+      Date.parse("2026-08-27T01:10:00.000Z"),
+    );
+    assert.equal(
+      staleOnly.fresh,
+      0,
+      stop(
+        "A bounced send older than 24h is ledger residue, not a live burst (D141).",
+        "freshBounceSamples counts stale sends as fresh.",
+      ),
+    );
+    assert.equal(
+      freshBounceSamples(
+        [{ sent_time: "2026-08-27T00:50:00.000Z" }],
+        Date.parse("2026-08-27T01:10:00.000Z"),
+      ).fresh,
+      1,
+      stop(
+        "A bounced send from the last 24h counts as live (D141).",
+        "freshBounceSamples no longer sees a fresh send.",
       ),
     );
 
     const autostop = await read("../services/campaignBounceAutostop.ts");
-    assert.match(
+    assert.doesNotMatch(
       autostop,
       /shouldPauseCampaignForBounceRate/,
       stop(
-        "The 10-minute loop uses the D90 rate trip (D90).",
-        "campaignBounceAutostop.ts lost the 10%/1k pause.",
+        "The 10-minute loop has no lifetime-rate pause (D141).",
+        "campaignBounceAutostop.ts calls the retired rate trip.",
       ),
     );
     assert.match(
       autostop,
       /shouldPauseCampaignForBounceBurst/,
       stop(
-        "The 10-minute loop uses the D90 burst trip (D90).",
-        "campaignBounceAutostop.ts lost the 10-bounces-in-10-minutes pause.",
+        "The 10-minute loop uses the burst trip (D141).",
+        "campaignBounceAutostop.ts lost the 10-bounces-in-10-minutes trip.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /freshBounceSamples\(rows, nowMs\)/,
+      stop(
+        "A tripped burst samples the bounced rows and pauses only on fresh sends (D141).",
+        "campaignBounceAutostop.ts pauses on the counter delta alone again.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /recency\.fresh === 0/,
+      stop(
+        "A ledger dump of stale bounces logs and never pauses (D141).",
+        "campaignBounceAutostop.ts lost the dump branch.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /rows == null/,
+      stop(
+        "Unreadable rows defer the decision to the next tick — the snapshot is not consumed (D141).",
+        "campaignBounceAutostop.ts no longer re-checks when the ledger lags.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /SAMPLE_ATTEMPTS/,
+      stop(
+        "The bounced-rows read retries while the ledger lags (D141; the D140 first run bailed in the same second).",
+        "campaignBounceAutostop.ts reads the ledger once and gives up again.",
       ),
     );
     assert.match(
       autostop,
       /updateCampaignStatus\(campaign\.id, "PAUSED"\)/,
       stop(
-        "A D90 trip pauses the campaign (D90).",
+        "A real burst pauses the campaign (D141).",
         "campaignBounceAutostop.ts no longer writes PAUSED.",
       ),
     );
@@ -2529,7 +2572,7 @@ describe("owner intent — D90 bounce pause is 10% after 1k or 10-in-10m", () =>
       autostop,
       /updateCampaignStatus\([^)]*START/,
       stop(
-        "A bounce pause is not auto-resumed (D40/D90).",
+        "A bounce pause is not auto-resumed (D40/D141).",
         "campaignBounceAutostop.ts STARTs a campaign again.",
       ),
     );

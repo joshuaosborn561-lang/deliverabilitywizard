@@ -312,9 +312,13 @@ export class SmartleadClient {
   }
 
   /** D140 — bounced send rows only (server-side filter), few and cheap. */
-  listBouncedSendStats(campaignId: number, limit = 5): Promise<unknown> {
+  listBouncedSendStats(
+    campaignId: number,
+    limit = 5,
+    offset = 0,
+  ): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`, {
-      query: { email_status: "bounced", limit, offset: 0 },
+      query: { email_status: "bounced", limit, offset },
     });
   }
 

@@ -237,8 +237,6 @@ const ConfigSchema = z.object({
    * D90 — live pause: over 10% bounce after 1k leads emailed, or more
    * than 10 new bounces in the last 10 minutes (D88 retired the 20/7 bands).
    */
-  bouncePauseMinLeads: z.coerce.number().int().min(0).default(1000),
-  bouncePauseRatePercent: z.coerce.number().min(0).max(100).default(10),
   bounceBurstCount: z.coerce.number().int().min(0).default(10),
   /** Minimum sends before a bounce rate is treated as evidence. */
   minBounceSample: z.coerce.number().int().min(0).default(50),
@@ -508,8 +506,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT ?? "100",
     enableCampaignBounceAutostop: env.ENABLE_CAMPAIGN_BOUNCE_AUTOSTOP,
     cronBounceAutostop: env.CRON_BOUNCE_AUTOSTOP ?? "*/10 * * * *",
-    bouncePauseMinLeads: env.BOUNCE_PAUSE_MIN_LEADS ?? "1000",
-    bouncePauseRatePercent: env.BOUNCE_PAUSE_RATE_PERCENT ?? "10",
     bounceBurstCount: env.BOUNCE_BURST_COUNT ?? "10",
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableCopyCanary: env.ENABLE_COPY_CANARY,

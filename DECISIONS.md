@@ -105,7 +105,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D87 | Superseded by D92/D97 |
 | D88 | Retired-record (no bounce bands) — live |
 | D89 | Live — signature-ask collapse superseded by D92/D97 |
-| D90 | Live |
+| D90 | Superseded by D141 — burst survives recency-gated; the lifetime-rate rule is retired |
 | D91 | Retired-record (no paused-campaign hunt) — live |
 | D92 | Live |
 | D93 | Live |
@@ -156,6 +156,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D138 | Live | Campaign-level min gap converged to the 10-minute floor |
 | D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
 | D140 | Live | A bounce pause reads the SMTP reasons; tenant caps alert once/day |
+| D141 | Live | Bounce pause is a real burst only — sampled sends <24h; ledger dumps never pause; the lifetime-rate rule is retired |
 
 ---
 
@@ -3499,3 +3500,54 @@ pause path classifies; the tenant alert dedupes); classifier unit tests
 on the three real NDR shapes; integration test: a tenant-cap pause
 records the verdict, names the tenant, Slacks once, and a same-day
 second pause does not re-page.
+
+## D141 — A bounce pause is a real burst, never a ledger dump
+
+**Decision (Josh, 2026-08-27).** The bounce loop pauses an ACTIVE
+campaign on exactly one trip: more than 10 new bounces inside the
+10-minute snapshot window **whose sampled bounced sends actually
+happened in the last 24 hours**. When the counter delta trips, the loop
+first samples the campaign's bounced rows (both ends of the list,
+retrying up to three times ~90s apart while the analytics ledger lags),
+reads each row's `sent_time`, and:
+
+- **any sampled send under 24h old** → the burst is live: pause, stamp
+  (D128), classify the SMTP reasons (D140) from those same rows,
+  freshest first;
+- **no sampled send under 24h old** → the "burst" is Smartlead's
+  analytics ledger batch-recording old bounces: log it loudly
+  (`ledger dump … no pause`), consume the delta, pause nothing;
+- **rows unreadable after every retry** → defer: keep the previous
+  snapshot so the delta re-evaluates (and re-samples) on the next
+  10-minute tick instead of being silently consumed.
+
+The D90 lifetime-rate rule (>10% after 1,000 leads) is **retired**, and
+its `BOUNCE_PAUSE_MIN_LEADS` / `BOUNCE_PAUSE_RATE_PERCENT` knobs are
+deleted with it. Everything else D90 carried stays: only ACTIVE
+campaigns, never COMPLETED/STOPPED, never a START (D40), Smartlead's
+native autopause converged to 100 (D80/D124), the pause stamp (D128).
+
+**Why.** 2026-08-27 01:10Z: the loop paused Peterson C2 (#3798230) on
+"12 new bounces in 10 minutes." Every one of those 12 bounced sends was
+sent 2026-08-13 to 08-24 — Smartlead's ledger materialised a two-week
+backlog in one batch and the delta read it as a live storm. Lifetime
+truth: 12 bounces on 641 sends, 1.9%. Josh: the burst rule exists to
+catch a missing send gap machine-gunning, Gmail/Outlook batch-rejecting
+a template, and a Microsoft tenant blowing its daily cap (5.7.233) —
+all of which bounce FRESH sends; and the lifetime-rate rule protects
+against lists he never loads ("I'm never gonna have a super crappy
+list" — every list is verified before load), so it only ever fired on
+artifacts. The D140 sampler also read the ledger the same second the
+pause fired and logged "no samples readable"; the same rows were
+readable 35 minutes later — hence the retry.
+
+**Supersedes.** D90 (the rate trip and the unguarded burst; the rest of
+its posture is restated above and lives on). The D140 classifier now
+receives the recency sample's rows instead of re-reading the ledger.
+
+**Guards.** canon D141 (rate knobs and `shouldPauseCampaignForBounceRate`
+stay deleted; `freshBounceSamples` gates the pause; the dump branch and
+the unreadable-defer branch exist; retry constant present; still no
+START). Lib tests pin the 2026-08-27 false-positive shape reading as
+zero fresh; service tests cover live-burst pause, ledger-dump no-pause
+with consumed delta, and unreadable-defer with preserved snapshot.

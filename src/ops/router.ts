@@ -252,7 +252,7 @@ export function createOpsRouter(opts: {
           bounceWarnThreshold: opts.config.bounceRateWarnThreshold,
           bounceMinSample: opts.config.minBounceSample,
           bounceAutostop: opts.config.enableCampaignBounceAutostop
-            ? `over ${opts.config.bouncePauseRatePercent}% after ${opts.config.bouncePauseMinLeads.toLocaleString()} leads, or >${opts.config.bounceBurstCount} bounces in 10 min`
+            ? `>${opts.config.bounceBurstCount} bounces in 10 min from sends under 24h old (ledger dumps never pause)`
             : "off",
           clientRest: opts.config.enableClientRest,
           genericSendRestDays: opts.config.genericSendRestDays,

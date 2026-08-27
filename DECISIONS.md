@@ -143,7 +143,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D125 | Live |
 | D126 | Live |
 | D127 | Live — the canon rebuild |
-| D128 | Live |
+| D128 | Live — pause-stamp writes retired with D148 (the loop never pauses); qa-unpause keeps reading the stamp while pre-D148 stamps drain |
 | D129 | Live — the deletion pass |
 | D130 | Live — the engine teardown |
 | D131 | Live |
@@ -155,14 +155,15 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
 | D138 | Live | Campaign-level min gap converged to the 10-minute floor |
 | D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
-| D140 | Live | A bounce pause reads the SMTP reasons; tenant caps alert once/day |
-| D141 | Live | Bounce pause is a real burst only — sampled sends <24h; ledger dumps never pause; the lifetime-rate rule is retired |
+| D140 | Live | A bounce burst reads the SMTP reasons; tenant caps alert once/day |
+| D141 | Amended by D148 | Burst detection lives (sampled sends <24h; ledger dumps inert; lifetime-rate retired); the pause action is retired — a burst investigates, remediates, re-queues |
 | D142 | Live | Generic is a pool (client record), pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
 | D145 | Amended by D146 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146) |
 | D146 | Live | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the dedupe |
-| D147 | Live | A restarted sender-fault bounce pause re-queues the incident's leads for a resend — per-lead NDR gate, suppression respected, once per lead per campaign |
+| D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
+| D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
 
 ---
 
@@ -3833,3 +3834,67 @@ ignore_unsubscribe_list false) and the resurrection path never calls
 the shell-only addLeadsToCampaign. Service tests: sender-fault lead
 re-queued with merge fields, bad address stays dead, out-of-window
 skipped, once-per-lead across a second incident, dry-run inert.
+
+## D148 — Nothing pauses: investigate, remediate, re-add
+
+**Decision (Josh, 2026-08-27).** "I dont want anything paused
+anymore... we should be investigating remediating and readding."
+
+Context: the burst rule (D141) had bounce-paused four SG Engagers
+campaigns in one afternoon — all four verdicts were the tenant cap /
+sender block, none were the lists. The pause protected reputation but
+stopped the top of funnel and demanded a human restart for bounces the
+system already knew how to diagnose (D140), route (D146) and repair
+(D147). Josh's call: keep the investigation, drop the pause.
+
+1. **The bounce loop never pauses a campaign.** The D141 detection is
+   unchanged (burst >10 new bounces/10m, sampled sends <24h, ledger
+   dumps inert), but a real burst now classifies the SMTP reasons,
+   Slacks ONE `action_result` receipt naming the campaign, the burst
+   size, the verdict and the plan, routes the remediation it already
+   knows (tenant-cap page D140, retire ask D146, bad-list callout), and
+   opens the resurrection incident on the spot when the verdict blames
+   the sender. A repeat trip inside the hour folds into the open
+   incident silently (window widens; no re-classify, no re-page).
+   Pauses belong to humans in both directions (D40 untouched): the loop
+   STARTs no one and PAUSEs no one. No new pause stamps are written;
+   the D128 stamp map only drains pre-D148 stamps (a human START of one
+   still opens its D147 job during the transition).
+2. **The resend trigger is the remediation itself, not a restart.**
+   D147's job now scans the incident window first (classify + park:
+   each lead's own NDR still decides, bad addresses stay dead, once per
+   lead per campaign), then flushes each parked lead when its class's
+   gate opens:
+   - `tenant_rate_limit` — the next UTC day after the lead's bounced
+     send (Microsoft's cap has reset; resending same-day is a
+     guaranteed re-bounce that burns the lead's one resend);
+   - `sender_blocked` — the domain's retire ask (D146) is resolved:
+     executed (domain retired, healthy senders remain) or denied (Josh
+     unblocked the sender in Defender and tapped Cancel);
+   - `content_block` — the campaign's sequence shows an edit after the
+     incident opened (Smartlead sequences carry `updated_at`) — copy
+     that did not change would just bounce again.
+   A gate that never opens expires after 7 days: the leads are dropped
+   and the receipt says so. Flush waves receipt once per wave, not per
+   lead.
+3. **What still pauses.** Humans (D40), and the warmup gate's
+   last-sender rule (a campaign with zero remaining senders cannot send
+   anyway) — that is inventory protection, not bounce response, and is
+   not touched here.
+
+**Supersedes / amends.** Amends D141 (pause action retired; detection
+kept) and D147 (trigger moved; mechanics kept). Trims D128 (no new
+pause stamps; qa-unpause still consults the stamp while pre-D148 stamps
+drain). D40, D52, D140, D145, D146 untouched.
+
+**Guards.** owner-intent D148: `tenantGateOpen` shut on the bounce's
+UTC day / open after midnight UTC; bounceResurrection.ts consults the
+pending retire ask and `fetchCampaignSequences` and keeps
+`DEFER_EXPIRY_MS`; campaignBounceAutostop.ts carries `burstReceiptText`
+and `BURST_REALERT_MS`, and (in the D141 block) must NOT match
+`updateCampaignStatus(... PAUSED)`, `markBouncePaused`, or a START.
+Service tests: burst → no status write + receipt + incident; same-day
+tenant lead parked, flushed after midnight UTC; sender_blocked held on
+a pending ask and released on resolution; content_block held until the
+sequence edit stamp moves; 7-day expiry receipt; pre-D148 stamp drain
+still opens its job.

@@ -11,8 +11,8 @@ function store(): StateStore {
   );
 }
 
-describe("CampaignBounceAutostopService (D141)", () => {
-  it("the lifetime rate never pauses — bad-looking rates are artifacts, not storms", async () => {
+describe("CampaignBounceAutostopService (D141/D148)", () => {
+  it("the lifetime rate never trips — bad-looking rates are artifacts, not storms", async () => {
     const paused: number[] = [];
     const started: number[] = [];
     const settings: Array<{ id: number; threshold: unknown }> = [];
@@ -49,9 +49,9 @@ describe("CampaignBounceAutostopService (D141)", () => {
 
     const result = await service.run({ dryRun: false });
     assert.deepEqual(
-      result.paused,
+      result.bursts,
       [],
-      "a lifetime rate — even 10.1% after 1k — is not a pause (D141)",
+      "a lifetime rate — even 10.1% after 1k — is not a burst (D141)",
     );
     assert.deepEqual(paused, []);
     assert.deepEqual(started, []);
@@ -63,8 +63,9 @@ describe("CampaignBounceAutostopService (D141)", () => {
     assert.ok(settings.some((row) => row.id === 6));
   });
 
-  it("pauses when more than 10 bounces land in 10 minutes from fresh sends", async () => {
-    const paused: number[] = [];
+  it("D148: a real burst is investigated and receipted — the campaign keeps running", async () => {
+    const statusWrites: string[] = [];
+    const sent: string[] = [];
     const state = store();
     state.setBounceSnapshot(8, {
       bounced: 3,
@@ -82,8 +83,8 @@ describe("CampaignBounceAutostopService (D141)", () => {
           bounce_count: 15,
         }),
         getCampaignStatistics: async () => ({}),
-        updateCampaignStatus: async (id: number, status: string) => {
-          if (status === "PAUSED") paused.push(id);
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
         },
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
@@ -96,16 +97,29 @@ describe("CampaignBounceAutostopService (D141)", () => {
         }),
       } as never,
       state,
+      { send: async (text: string) => void sent.push(text) } as never,
     );
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(paused, [8]);
-    assert.equal(result.paused[0]?.reason, "burst");
-    assert.equal(result.paused[0]?.burstBounces, 12);
+    assert.deepEqual(statusWrites, [], "nothing pauses anymore (D148)");
+    assert.equal(result.bursts[0]?.reason, "burst");
+    assert.equal(result.bursts[0]?.burstBounces, 12);
+    assert.equal(sent.length, 1, "the burst itself is receipted");
+    assert.match(sent[0]!, /Bounce burst on Burst/);
+    assert.match(
+      sent[0]!,
+      /unreadable this tick/,
+      "no readable NDRs here — the receipt says the loop keeps sampling",
+    );
+    assert.equal(
+      state.getBounceResurrectionJob(8),
+      undefined,
+      "an unreadable verdict opens no incident",
+    );
   });
 
-  it("D141: a ledger dump of stale bounces never pauses — logged and consumed", async () => {
-    const paused: number[] = [];
+  it("D141: a ledger dump of stale bounces never acts — logged and consumed", async () => {
+    const statusWrites: string[] = [];
     const state = store();
     state.setBounceSnapshot(8, {
       bounced: 3,
@@ -123,8 +137,8 @@ describe("CampaignBounceAutostopService (D141)", () => {
           bounce_count: 15,
         }),
         getCampaignStatistics: async () => ({}),
-        updateCampaignStatus: async (id: number, status: string) => {
-          if (status === "PAUSED") paused.push(id);
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
         },
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
@@ -141,7 +155,8 @@ describe("CampaignBounceAutostopService (D141)", () => {
     );
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(paused, [], "stale-send bounces are residue, not a storm");
+    assert.deepEqual(statusWrites, [], "stale-send bounces are residue, not a storm");
+    assert.deepEqual(result.bursts, []);
     assert.equal(result.ledgerDumps, 1);
     assert.equal(
       state.getBounceSnapshot(8)?.bounced,
@@ -151,7 +166,6 @@ describe("CampaignBounceAutostopService (D141)", () => {
   });
 
   it("D141: unreadable bounced rows defer the decision — snapshot kept for the next tick", async () => {
-    const paused: number[] = [];
     const state = store();
     const staleAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     state.setBounceSnapshot(8, { bounced: 3, sent: 40, at: staleAt });
@@ -166,9 +180,7 @@ describe("CampaignBounceAutostopService (D141)", () => {
           bounce_count: 15,
         }),
         getCampaignStatistics: async () => ({}),
-        updateCampaignStatus: async (id: number, status: string) => {
-          if (status === "PAUSED") paused.push(id);
-        },
+        updateCampaignStatus: async () => undefined,
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
         listBouncedSendStats: async () => ({ total_stats: "0", data: [] }),
@@ -177,7 +189,7 @@ describe("CampaignBounceAutostopService (D141)", () => {
     );
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(paused, [], "no pause on unverifiable data");
+    assert.deepEqual(result.bursts, [], "no action on unverifiable data");
     assert.equal(result.ledgerDumps, 0);
     assert.equal(
       state.getBounceSnapshot(8)?.bounced,
@@ -186,8 +198,7 @@ describe("CampaignBounceAutostopService (D141)", () => {
     );
   });
 
-  it("does not burst-pause on the first snapshot or on exactly 10 new bounces", async () => {
-    const paused: number[] = [];
+  it("does not trip on the first snapshot or on exactly 10 new bounces", async () => {
     const state = store();
     const service = new CampaignBounceAutostopService(
       loadConfig({ DRY_RUN: "false" }),
@@ -200,17 +211,15 @@ describe("CampaignBounceAutostopService (D141)", () => {
           bounce_count: 12,
         }),
         getCampaignStatistics: async () => ({}),
-        updateCampaignStatus: async (id: number, status: string) => {
-          if (status === "PAUSED") paused.push(id);
-        },
+        updateCampaignStatus: async () => undefined,
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
       } as never,
       state,
     );
 
-    await service.run({ dryRun: false });
-    assert.deepEqual(paused, []);
+    const first = await service.run({ dryRun: false });
+    assert.deepEqual(first.bursts, []);
     assert.ok(state.getBounceSnapshot(8));
 
     state.setBounceSnapshot(8, {
@@ -218,16 +227,17 @@ describe("CampaignBounceAutostopService (D141)", () => {
       sent: 30,
       at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
     });
-    await service.run({ dryRun: false });
-    assert.deepEqual(paused, [], "exactly 10 new bounces must not pause");
+    const second = await service.run({ dryRun: false });
+    assert.deepEqual(second.bursts, [], "exactly 10 new bounces must not trip");
   });
 
-  it("never STARTs a campaign and does not touch pendingResumes", async () => {
+  it("never writes a campaign status — no START (D40), no PAUSE (D148)", async () => {
     const src = await readFile(
       new URL("./campaignBounceAutostop.ts", import.meta.url),
       "utf8",
     );
     assert.equal(/updateCampaignStatus\([^)]*START/.test(src), false);
+    assert.equal(/updateCampaignStatus\([^)]*PAUSED/.test(src), false);
     assert.equal(/hasPendingResume|markPendingResume|clearPendingResume/.test(src), false);
   });
 
@@ -251,7 +261,6 @@ describe("CampaignBounceAutostopService (D141)", () => {
       },
       getBounceSnapshot: () => undefined,
       setBounceSnapshot: () => undefined,
-      markBouncePaused: () => undefined,
       clearBouncePaused: () => undefined,
       save: async () => undefined,
     } as never;
@@ -315,7 +324,6 @@ describe("CampaignBounceAutostopService (D141)", () => {
       },
       getBounceSnapshot: () => undefined,
       setBounceSnapshot: () => undefined,
-      markBouncePaused: () => undefined,
       clearBouncePaused: () => undefined,
       save: async () => undefined,
     } as never;
@@ -366,11 +374,13 @@ describe("CampaignBounceAutostopService (D141)", () => {
   });
 });
 
-describe("D140 — a pause reads the SMTP reasons before anyone blames the list", () => {
+describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", () => {
   const NDR =
     "<html>Delivery has failed to these recipients. Remote server returned '550 5.7.233 - Your message can't be sent because your tenant has exceeded its daily limit for sending email to external recipients (tenant external recipient rate limit).'</html>";
+  // Mid-day UTC so the tenant gate is deterministically shut during the run.
+  const FIXED_T = Date.parse("2026-08-27T15:00:00.000Z");
 
-  const mkSl = (paused: number[]) =>
+  const mkSl = (statusWrites: string[]) =>
     ({
       listCampaigns: async () => [{ id: 8, name: "Burst", status: "ACTIVE" }],
       getCampaignAnalyticsByDate: async () => ({
@@ -378,8 +388,8 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
         bounce_count: 15,
       }),
       getCampaignStatistics: async () => ({}),
-      updateCampaignStatus: async (id: number, status: string) => {
-        if (status === "PAUSED") paused.push(id);
+      updateCampaignStatus: async (_id: number, status: string) => {
+        statusWrites.push(status);
       },
       getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
       updateCampaignSettings: async () => undefined,
@@ -388,11 +398,11 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
         data: [
           {
             lead_email: "a@target.com",
-            sent_time: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+            sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
           },
           {
             lead_email: "b@target.com",
-            sent_time: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+            sent_time: new Date(FIXED_T - 25 * 60 * 1000).toISOString(),
           },
         ],
       }),
@@ -405,50 +415,72 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
           { type: "REPLY", email_body: NDR },
         ],
       }),
+      fetchCampaignSequences: async () => [],
+      deleteCampaignLead: async () => undefined,
+      restoreCampaignLead: async () => undefined,
     }) as never;
 
-  it("classifies a tenant-cap pause and Slacks once per tenant per day", async () => {
-    const paused: number[] = [];
+  it("classifies a tenant-cap burst, pages once, opens the incident; the re-trip folds silently", async () => {
+    const statusWrites: string[] = [];
     const sent: string[] = [];
     const state = store();
     state.setBounceSnapshot(8, {
       bounced: 3,
       sent: 40,
-      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
     });
     const service = new CampaignBounceAutostopService(
       loadConfig({ DRY_RUN: "false" }),
-      mkSl(paused),
+      mkSl(statusWrites),
       state,
       { send: async (text: string) => void sent.push(text) } as never,
+      undefined,
+      () => FIXED_T,
     );
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(paused, [8]);
-    const verdict = result.paused[0]?.verdict;
+    assert.deepEqual(statusWrites, [], "no pause (D148)");
+    const verdict = result.bursts[0]?.verdict;
     assert.equal(verdict?.dominant, "tenant_rate_limit");
     assert.deepEqual(verdict?.senderDomains, ["cleartechco.com"]);
     assert.equal(state.getBounceVerdict(8)?.dominant, "tenant_rate_limit");
-    assert.equal(sent.length, 1, "one tenant alert");
-    assert.match(sent[0]!, /cleartechco\.com/);
-    assert.match(sent[0]!, /5\.7\.233/);
+    assert.equal(
+      sent.filter((text) => /hit its Microsoft daily sending cap/.test(text)).length,
+      1,
+      "one tenant page",
+    );
+    assert.equal(
+      sent.filter((text) => /Bounce burst on Burst/.test(text)).length,
+      1,
+      "one burst receipt naming the plan",
+    );
+    const job = state.getBounceResurrectionJob(8);
+    assert.ok(job, "a sender-fault burst opens the resurrection incident (D148)");
 
-    // same day, another pause on the same tenant → no second Slack
-    const paused2: number[] = [];
+    // Same wave still burning ten minutes later: everything folds into the
+    // open incident — no second receipt, no second classification pass.
+    const sentBefore = sent.length;
     state.setBounceSnapshot(8, {
       bounced: 3,
       sent: 40,
-      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
     });
-    state.clearBouncePaused(8);
     const again = new CampaignBounceAutostopService(
       loadConfig({ DRY_RUN: "false" }),
-      mkSl(paused2),
+      mkSl(statusWrites),
       state,
       { send: async (text: string) => void sent.push(text) } as never,
+      undefined,
+      () => FIXED_T,
     );
-    await again.run({ dryRun: false });
-    assert.deepEqual(paused2, [8], "the second pause really happened");
-    assert.equal(sent.length, 1, "the tenant alert dedupes per day");
+    const second = await again.run({ dryRun: false });
+    assert.deepEqual(statusWrites, []);
+    assert.deepEqual(second.bursts, [], "the re-trip folded into the open incident");
+    assert.equal(sent.length, sentBefore, "no repeat Slack inside the hour");
+    const foldedJob = state.getBounceResurrectionJob(8);
+    assert.ok(
+      Date.parse(foldedJob!.windowEnd) >= Date.parse(job!.windowEnd),
+      "the incident window widened to cover the new bounces",
+    );
   });
 
   it("D145/D146: one 5.1.8 sample opens the burned-domain retire ask even under a tenant-cap wave", async () => {
@@ -458,7 +490,7 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
       "<html>Delivery has failed. Remote server returned '550 5.7.233 - Your message can't be sent because your tenant has exceeded its daily limit for sending email to external recipients (tenant external recipient rate limit).'</html>";
     const BLOCKED_NDR =
       "<html>Delivery has failed. Remote server returned '550 5.1.8 Access denied, bad outbound sender AS(42004)'</html>";
-    const mkBlockedSl = (paused: number[]) =>
+    const mkBlockedSl = (statusWrites: string[]) =>
       ({
         listCampaigns: async () => [{ id: 9, name: "Engagers", status: "ACTIVE" }],
         getCampaignAnalyticsByDate: async () => ({
@@ -466,8 +498,8 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
           bounce_count: 18,
         }),
         getCampaignStatistics: async () => ({}),
-        updateCampaignStatus: async (id: number, status: string) => {
-          if (status === "PAUSED") paused.push(id);
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
         },
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
@@ -476,11 +508,11 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
           data: [
             {
               lead_email: "a@target.com",
-              sent_time: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+              sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
             },
             {
               lead_email: "b@target.com",
-              sent_time: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+              sent_time: new Date(FIXED_T - 25 * 60 * 1000).toISOString(),
             },
           ],
         }),
@@ -499,9 +531,12 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
                   { type: "REPLY", email_body: BLOCKED_NDR },
                 ],
         }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
       }) as never;
 
-    const paused: number[] = [];
+    const statusWrites: string[] = [];
     const sent: string[] = [];
     const asks: Array<{ title: string; proof: string; kind: string }> = [];
     const slackFake = {
@@ -516,16 +551,18 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
     state.setBounceSnapshot(9, {
       bounced: 3,
       sent: 40,
-      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
     });
     const service = new CampaignBounceAutostopService(
       loadConfig({ DRY_RUN: "false" }),
-      mkBlockedSl(paused),
+      mkBlockedSl(statusWrites),
       state,
       slackFake,
+      undefined,
+      () => FIXED_T,
     );
     await service.run({ dryRun: false });
-    assert.deepEqual(paused, [9]);
+    assert.deepEqual(statusWrites, [], "no pause (D148)");
     // D146 — the block feeds the burned-domain flow, not a plain page.
     assert.equal(asks.length, 1, "one retire ask for the blocked domain");
     assert.equal(asks[0]!.kind, "retire_domain");
@@ -541,24 +578,28 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
       );
     assert.equal(pending.length, 1);
     assert.equal(pending[0]!.status, "pending");
+    assert.ok(
+      state.getBounceResurrectionJob(9),
+      "the mixed-class incident opens too — the 5.1.8 lead waits on the ask",
+    );
 
-    // another pause with the same blocked sender → the pending ask holds,
-    // no duplicate
-    const paused2: number[] = [];
+    // the same wave ten minutes later folds — the pending ask holds alone
+    const statusWrites2: string[] = [];
     state.setBounceSnapshot(9, {
       bounced: 3,
       sent: 40,
-      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
     });
-    state.clearBouncePaused(9);
     const again = new CampaignBounceAutostopService(
       loadConfig({ DRY_RUN: "false" }),
-      mkBlockedSl(paused2),
+      mkBlockedSl(statusWrites2),
       state,
       slackFake,
+      undefined,
+      () => FIXED_T,
     );
     await again.run({ dryRun: false });
-    assert.deepEqual(paused2, [9], "the second pause really happened");
+    assert.deepEqual(statusWrites2, []);
     assert.equal(asks.length, 1, "the pending ask dedupes the re-ask");
     assert.equal(
       state

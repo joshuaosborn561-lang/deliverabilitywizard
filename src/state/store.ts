@@ -233,7 +233,8 @@ export interface AppState {
   /**
    * D128 — campaigns the D90 bounce loop paused (id → ISO). qa-unpause never
    * STARTs a stamped campaign; the stamp clears when a human STARTs it and
-   * the loop sees it ACTIVE again.
+   * the loop sees it ACTIVE again. D148 retired the pause itself, so no new
+   * stamps are written — this map only drains pre-D148 stamps.
    */
   bouncePausedCampaigns: Record<string, string>;
   /** D84 — per-stage watchdog: last success / failure per named loop. */
@@ -324,22 +325,46 @@ export interface DomainClientAdvisory {
   at: string;
 }
 
-/** D147 — one restarted bounce-paused campaign whose incident bounces are being re-queued. */
+/** D148 — one parked sender-fault lead waiting for its remediation gate. */
+export interface DeferredResurrectionLead {
+  email: string;
+  /** The lead's OWN NDR class — decides which remediation gate applies. */
+  cls: string;
+  /** Sending mailbox domain (the sender_blocked gate reads its retire ask). */
+  domain: string | null;
+  /** When the bounced send happened (the tenant gate waits out its UTC day). */
+  sentAt: string;
+}
+
+/** D147/D148 — one bounce incident whose sender-fault leads get re-queued. */
 export interface BounceResurrectionJob {
   campaignId: number;
   campaignName: string;
-  /** The bounce-pause stamp that defined the incident. */
-  pausedAt: string;
-  /** When the loop saw the human START (job creation). */
-  restartedAt: string;
+  /** When the incident opened (burst classified, or a legacy restart seen). */
+  openedAt: string;
+  /** Bounced sends inside [windowStart, windowEnd] belong to the incident. */
+  windowStart: string;
+  windowEnd: string;
+  /** Last burst fold-in — receipts and re-classification cool down on this. */
+  lastBurstAt: string;
   verdictSummary: string;
   /** Paging cursor into the campaign's bounced rows. */
   offset: number;
+  /** Every row paged and classified; only deferred flushes remain. */
+  scanDone: boolean;
+  /** Sender-fault leads parked until their class's remediation gate opens. */
+  deferred: DeferredResurrectionLead[];
+  /** Stamped once the campaign's copy is seen edited after openedAt. */
+  copyEditedAt?: string | null;
   requeued: number;
+  /** How much of `requeued` the Slack receipt has already announced. */
+  receipted: number;
   /** Bounces whose own NDR said bad address / unreadable — stay dead. */
   skippedDead: number;
   /** Out-of-window, already-resurrected, or unresolvable rows. */
   skippedOther: number;
+  /** Deferred leads dropped because their gate never opened before expiry. */
+  dropped: number;
   done: boolean;
 }
 
@@ -1009,7 +1034,11 @@ export class StateStore {
     this.state.bounceSnapshots[String(campaignId)] = snapshot;
   }
 
-  /** D128 — the D90 loop paused this campaign; only a human STARTs it. */
+  /**
+   * D128 — the D90 loop paused this campaign; only a human STARTs it.
+   * D148: the loop never pauses anymore, so nothing in src/ writes new
+   * stamps — kept for the pre-D148 stamp drain and tests.
+   */
   markBouncePaused(campaignId: number, atIso: string): void {
     this.state.bouncePausedCampaigns[String(campaignId)] = atIso;
   }
@@ -1018,7 +1047,7 @@ export class StateStore {
     return this.state.bouncePausedCampaigns[String(campaignId)];
   }
 
-  /** D147 — resurrection job bookkeeping for one restarted campaign. */
+  /** D147/D148 — resurrection bookkeeping for one campaign's incident. */
   upsertBounceResurrectionJob(job: BounceResurrectionJob): void {
     this.state.bounceResurrectionJobs[String(job.campaignId)] = { ...job };
   }

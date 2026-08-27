@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { apiRequest, sleep } from "../lib/http.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
@@ -523,7 +524,10 @@ export class SmartleadClient {
   }
 
   listTags(): Promise<Array<{ id: number; name: string; color?: string }>> {
-    return apiRequest(BASE_URL, this.apiKey, "email-accounts/tags");
+    // D135/D142 — decoration-tier read: outlast a spent rate-limit window.
+    return apiRequest(BASE_URL, this.apiKey, "email-accounts/tags", {
+      retries: 7,
+    });
   }
 
   createTag(
@@ -531,6 +535,7 @@ export class SmartleadClient {
     color = "#FF8A65",
   ): Promise<{ ok?: boolean; data?: { id: number; name: string; color?: string } }> {
     return apiRequest(BASE_URL, this.apiKey, "tags", {
+      retries: 7,
       method: "POST",
       body: { name, color },
     });
@@ -541,6 +546,7 @@ export class SmartleadClient {
    */
   assignTags(emailAccountIds: number[], tagIds: number[]): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, "email-accounts/tag-mapping", {
+      retries: 7,
       method: "POST",
       body: { email_account_ids: emailAccountIds, tag_ids: tagIds },
     });
@@ -549,6 +555,7 @@ export class SmartleadClient {
   /** Remove tag associations from email accounts (does not delete the tags). */
   removeTags(emailAccountIds: number[], tagIds: number[]): Promise<unknown> {
     return apiRequest(BASE_URL, this.apiKey, "email-accounts/tag-mapping", {
+      retries: 7,
       method: "DELETE",
       body: { email_account_ids: emailAccountIds, tag_ids: tagIds },
     });
@@ -567,14 +574,17 @@ export class SmartleadClient {
         name.trim().toLowerCase(),
     );
     if (match) return match.id;
+    // Smartlead's insert requires a password (never used — the marker has
+    // no portal login) and 500s on logo_url: null. Found live 2026-08-27.
     const created = (await apiRequest(BASE_URL, this.apiKey, "client/save", {
       method: "POST",
+      retries: 7,
       body: {
         name,
         email,
         permission: ["reply_master_inbox"],
         logo: name,
-        logo_url: null,
+        password: `mk-${randomUUID()}`,
       },
     })) as { clientId?: number | string; id?: number | string };
     const id = Number(created?.clientId ?? created?.id);

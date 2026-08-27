@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
+import { sleep } from "../lib/http.js";
 import { tagNames } from "./warmupGate.js";
 import { loadPods } from "./podControls.js";
 import type { InventoryBook } from "./inventory.js";
@@ -33,6 +34,8 @@ export class PodTagService {
     >,
     private readonly state: StateStore,
     private readonly book: InventoryBook,
+    /** Space between tag writes — the first fleet-wide burst 429'd (D135). */
+    private readonly pause: () => Promise<void> = () => sleep(1000),
   ) {}
 
   async run(): Promise<PodTagResult> {
@@ -81,18 +84,22 @@ export class PodTagService {
       for (const batch of chunk(assignA, TAG_BATCH)) {
         await this.smartlead.assignTags(batch, [tagA.id]);
         assigned += batch.length;
+        await this.pause();
       }
       for (const batch of chunk(assignB, TAG_BATCH)) {
         await this.smartlead.assignTags(batch, [tagB.id]);
         assigned += batch.length;
+        await this.pause();
       }
       for (const batch of chunk(dropA, TAG_BATCH)) {
         await this.smartlead.removeTags(batch, [tagA.id]);
         removed += batch.length;
+        await this.pause();
       }
       for (const batch of chunk(dropB, TAG_BATCH)) {
         await this.smartlead.removeTags(batch, [tagB.id]);
         removed += batch.length;
+        await this.pause();
       }
     }
     console.log(

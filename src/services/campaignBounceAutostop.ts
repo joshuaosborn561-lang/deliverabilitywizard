@@ -25,6 +25,7 @@ import {
   requestIsolationAction,
 } from "../lib/isolationActions.js";
 import { sleep } from "../lib/http.js";
+import { BounceResurrectionService } from "./bounceResurrection.js";
 import type { BounceVerdictRecord } from "../state/store.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -63,6 +64,8 @@ export interface CampaignBounceAutostopResult {
   /** Burst trips that turned out to be ledger dumps of stale bounces (D141). */
   ledgerDumps: number;
   smartleadDisabled: number;
+  /** D147 — incident leads re-queued for a resend this tick. */
+  resurrected?: number;
   errors: string[];
 }
 
@@ -105,12 +108,21 @@ function mergeSendBounce(...payloads: unknown[]): {
  * reasons (D140).
  */
 export class CampaignBounceAutostopService {
+  private readonly resurrection?: BounceResurrectionService;
+
   constructor(
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly state?: StateStore,
     private readonly slack?: Pick<SlackClient, "send" | "notifyIsolationAction">,
-  ) {}
+    resurrection?: BounceResurrectionService,
+  ) {
+    this.resurrection =
+      resurrection ??
+      (state
+        ? new BounceResurrectionService(config, smartlead, state, slack)
+        : undefined);
+  }
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignBounceAutostopResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
@@ -150,7 +162,22 @@ export class CampaignBounceAutostopService {
     for (const campaign of active) {
       result.scanned += 1;
       // ACTIVE means any earlier bounce pause was resolved by a human
-      // START — the stamp has served its purpose (D128).
+      // START — the stamp has served its purpose (D128). D147: that START
+      // is also the remediation signal, so the resurrection job opens
+      // here, before the stamp clears.
+      if (this.state?.isBouncePaused?.(campaign.id)) {
+        try {
+          this.resurrection?.noteRestart({
+            id: campaign.id,
+            name: String(campaign.name ?? campaign.id),
+          });
+        } catch (error) {
+          console.warn(
+            `[bounce-resurrect] noteRestart #${campaign.id} failed`,
+            error,
+          );
+        }
+      }
       this.state?.clearBouncePaused(campaign.id);
       try {
         const analytics = await this.smartlead
@@ -258,6 +285,21 @@ export class CampaignBounceAutostopService {
 
     if (!dryRun) {
       await this.state?.save();
+    }
+
+    // D147 — work the open resurrection jobs (rate-budgeted; a failure
+    // here must never break the bounce loop).
+    if (!dryRun && this.resurrection) {
+      try {
+        const revived = await this.resurrection.work();
+        result.resurrected = revived.requeued;
+        for (const message of revived.errors) {
+          result.errors.push(`resurrect ${message}`);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`resurrect: ${message}`);
+      }
     }
 
     console.log(

@@ -2899,6 +2899,82 @@ describe("owner intent — D145/D146 a sender block is a burned domain", () => {
   });
 });
 
+describe("owner intent — D147 a remediated bounce is a resend", () => {
+  it("D147: the resend is NDR-gated, once per lead, suppression-respecting, never lead sourcing", async () => {
+    const { RESURRECTABLE_CLASSES } = await import(
+      "../services/bounceResurrection.js"
+    );
+    assert.deepEqual(
+      [...RESURRECTABLE_CLASSES].sort(),
+      ["content_block", "sender_blocked", "tenant_rate_limit"],
+      stop(
+        "Only sender-fault bounces come back — a bad address stays dead (D147, Josh: 'inbox rate level or a copy problem we solve').",
+        "RESURRECTABLE_CLASSES changed; resending invalid recipients is a fresh hard bounce on purpose.",
+      ),
+    );
+
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+    const service = await read("../services/bounceResurrection.ts");
+    assert.match(
+      service,
+      /ndrBodyFromHistory/,
+      stop(
+        "Each lead's OWN bounce reason gates its resend (D147).",
+        "bounceResurrection.ts no longer re-reads the per-lead NDR before re-queueing.",
+      ),
+    );
+    assert.match(
+      service,
+      /wasLeadResurrected/,
+      stop(
+        "One resurrection per lead per campaign — a recurring cap must not become a resend loop (D147).",
+        "bounceResurrection.ts lost the once-per-lead ledger check.",
+      ),
+    );
+    assert.doesNotMatch(
+      service,
+      /addLeadsToCampaign/,
+      stop(
+        "Resurrection re-sends leads Josh already imported via restoreCampaignLead; the shell-only import helper stays shell-only (D147/D52/D118).",
+        "bounceResurrection.ts calls addLeadsToCampaign.",
+      ),
+    );
+
+    const client = await read("../clients/smartlead.ts");
+    assert.match(
+      client,
+      /restoreCampaignLead[\s\S]{0,900}ignore_global_block_list: false/,
+      stop(
+        "A re-queued lead still honors the block list (D147).",
+        "restoreCampaignLead ignores the global block list.",
+      ),
+    );
+    assert.match(
+      client,
+      /restoreCampaignLead[\s\S]{0,900}ignore_unsubscribe_list: false/,
+      stop(
+        "Someone who unsubscribed since import stays out (D147).",
+        "restoreCampaignLead ignores the unsubscribe list.",
+      ),
+    );
+
+    // The trigger is the human START (D40): the bounce loop opens the job
+    // exactly where the stamp clears on a restarted campaign.
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /isBouncePaused\?\?*\.?\(?.{0,20}campaign\.id\)?[\s\S]{0,400}noteRestart/,
+      stop(
+        "The human START of a bounce-paused campaign is the remediation signal (D147/D40).",
+        "campaignBounceAutostop.ts no longer opens the resurrection job on restart.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D89 leftover canon holes", () => {
   it("D89: living known-good, queued reads, attach-after-adopt, bulk collapse, drafts on EOD", async () => {
     const read = (path: string) =>

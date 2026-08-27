@@ -201,6 +201,10 @@ export interface AppState {
   domainAdvisories: DomainClientAdvisory[];
   /** D142 — Smartlead ids of the Generic / POC marker clients. */
   markerClients: { genericId?: number; pocId?: number };
+  /** D147 — restarted bounce-paused campaigns whose incident leads are being re-queued. */
+  bounceResurrectionJobs: Record<string, BounceResurrectionJob>;
+  /** D147 — campaignId:email → when that lead was re-queued (once per lead per campaign). */
+  resurrectedLeads: Record<string, string>;
   /** D143 — repeat gate pulls per accountId:campaignId (external re-add detector). */
   warmupGatePulls: Record<string, WarmupGatePullRecord>;
   /** D143 — last warmup re-enable write per accountId (skip the 84/pass rewrites). */
@@ -320,6 +324,25 @@ export interface DomainClientAdvisory {
   at: string;
 }
 
+/** D147 — one restarted bounce-paused campaign whose incident bounces are being re-queued. */
+export interface BounceResurrectionJob {
+  campaignId: number;
+  campaignName: string;
+  /** The bounce-pause stamp that defined the incident. */
+  pausedAt: string;
+  /** When the loop saw the human START (job creation). */
+  restartedAt: string;
+  verdictSummary: string;
+  /** Paging cursor into the campaign's bounced rows. */
+  offset: number;
+  requeued: number;
+  /** Bounces whose own NDR said bad address / unreadable — stay dead. */
+  skippedDead: number;
+  /** Out-of-window, already-resurrected, or unresolvable rows. */
+  skippedOther: number;
+  done: boolean;
+}
+
 /** D143 — one membership the warmup gate pulled, counted across re-adds. */
 export interface WarmupGatePullRecord {
   email: string;
@@ -384,6 +407,8 @@ const EMPTY_STATE: AppState = {
   genericBackfillApprovals: {},
   domainAdvisories: [],
   markerClients: {},
+  bounceResurrectionJobs: {},
+  resurrectedLeads: {},
   warmupGatePulls: {},
   warmupEnsuredAt: {},
   bounceVerdicts: {},
@@ -987,6 +1012,48 @@ export class StateStore {
   /** D128 — the D90 loop paused this campaign; only a human STARTs it. */
   markBouncePaused(campaignId: number, atIso: string): void {
     this.state.bouncePausedCampaigns[String(campaignId)] = atIso;
+  }
+
+  getBouncePausedAt(campaignId: number): string | undefined {
+    return this.state.bouncePausedCampaigns[String(campaignId)];
+  }
+
+  /** D147 — resurrection job bookkeeping for one restarted campaign. */
+  upsertBounceResurrectionJob(job: BounceResurrectionJob): void {
+    this.state.bounceResurrectionJobs[String(job.campaignId)] = { ...job };
+  }
+
+  getBounceResurrectionJob(
+    campaignId: number,
+  ): BounceResurrectionJob | undefined {
+    const job = this.state.bounceResurrectionJobs[String(campaignId)];
+    return job ? { ...job } : undefined;
+  }
+
+  listBounceResurrectionJobs(): BounceResurrectionJob[] {
+    return Object.values(this.state.bounceResurrectionJobs).map((job) => ({
+      ...job,
+    }));
+  }
+
+  /** D147 — a lead is re-queued at most once per campaign (ledger prunes at 45d). */
+  wasLeadResurrected(campaignId: number, email: string): boolean {
+    return `${campaignId}:${email.toLowerCase()}` in this.state.resurrectedLeads;
+  }
+
+  markLeadResurrected(
+    campaignId: number,
+    email: string,
+    now = Date.now(),
+  ): void {
+    for (const [key, iso] of Object.entries(this.state.resurrectedLeads)) {
+      const at = Date.parse(iso);
+      if (!Number.isFinite(at) || now - at > 45 * 24 * 60 * 60 * 1000) {
+        delete this.state.resurrectedLeads[key];
+      }
+    }
+    this.state.resurrectedLeads[`${campaignId}:${email.toLowerCase()}`] =
+      new Date(now).toISOString();
   }
 
   clearBouncePaused(campaignId: number): void {

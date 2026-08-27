@@ -162,6 +162,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
 | D145 | Amended by D146 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146) |
 | D146 | Live | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the dedupe |
+| D147 | Live | A restarted sender-fault bounce pause re-queues the incident's leads for a resend — per-lead NDR gate, suppression respected, once per lead per campaign |
 
 ---
 
@@ -3781,3 +3782,54 @@ opens `kind: "retire_domain"` via requestIsolationAction. Service test:
 tenant-cap wave + one blocked sender → exactly one pending retire ask
 for the sender's domain, held (not duplicated) across a same-day second
 pause.
+
+## D147 — A remediated sender-fault bounce is a resend, not a tombstone
+
+**Decision (Josh, 2026-08-27).** "If a bounce is due to an inbox rate
+level or a copy problem we solve, after it is remediated put those
+leads back on the campaign so we resend."
+
+Until now a bounce ended the lead's journey no matter whose fault it
+was — a lead refused by a capped tenant (5.7.233), a Microsoft-blocked
+sender (5.1.8), or a content block was as dead as a bad address, even
+though the recipient was fine.
+
+1. **The remediation signal is the human START.** A bounce-paused
+   campaign only goes ACTIVE again when a human STARTs it (D40/D128).
+   When the bounce loop sees that restart and the incident's stored
+   verdict (D140) blamed the sender — tenant_rate_limit /
+   sender_blocked / content_block, dominant or present in the summary —
+   it opens a resurrection job for that campaign. A bad-list verdict
+   opens nothing.
+2. **Each lead's own NDR gates the resend.** The job pages the
+   campaign's bounced rows whose sends fall in the incident window
+   (pause minus 24h → restart), re-reads each lead's message history,
+   and re-queues only leads whose own bounce classifies as
+   sender-fault. invalid_recipient and unreadable bounces stay dead —
+   resending a bad address is a fresh hard bounce on purpose.
+3. **The resend is delete + re-add**: the lead's campaign association
+   is dropped and the same lead (merge fields carried over) re-added so
+   the sequence starts fresh. The re-add RESPECTS the block,
+   unsubscribe, and community-bounce lists — someone suppressed since
+   import stays out. This re-sends leads Josh already imported; it
+   never sources leads (D52 untouched, and the shell-only
+   addLeadsToCampaign helper is not used).
+4. **Once per lead per campaign** (45-day ledger): a chronically capped
+   tenant can never turn this into a resend loop. Work is budgeted (20
+   lead reads per 10-minute tick) so a big incident drains over a few
+   ticks without touching the shared rate window. One `action_result`
+   Slack receipt per finished job says how many went back and how many
+   stayed dead.
+
+**Supersedes / amends.** Extends D140/D141's pause diagnosis into
+recovery. D40 untouched (nothing STARTs a campaign here — the job only
+opens BECAUSE a human already did). D52 untouched.
+
+**Guards.** canon D147: RESURRECTABLE_CLASSES is exactly the three
+sender-fault classes; the service consults the per-lead NDR
+(ndrBodyFromHistory + classifyBounceText) and the once-per-lead ledger;
+restoreCampaignLead respects suppression (ignore_global_block_list /
+ignore_unsubscribe_list false) and the resurrection path never calls
+the shell-only addLeadsToCampaign. Service tests: sender-fault lead
+re-queued with merge fields, bad address stays dead, out-of-window
+skipped, once-per-lead across a second incident, dry-run inert.

@@ -1,0 +1,338 @@
+[
+  {
+    "oldId": 3110622,
+    "name": "Nieto RB2B",
+    "priorStatus": "COMPLETED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "nieto website",
+            "email_body": "<div>Hey&nbsp;{{first_name}},&nbsp;</div><div><br></div><div>Saw you were on the site- thanks!</div><div><br></div><div>Were you looking for anything specific?</div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3201244,
+    "name": "Nieto Houston Floodzones",
+    "priorStatus": "COMPLETED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "{{first_name}}?",
+            "email_body": "<div>Hi {{first_name}},&nbsp;</div><div><br></div><div>If I could back up your Google and M365 for 30 days on me, would that be worth it?&nbsp;</div><div><br></div><div>I'm sure you know you are in a top-10 Houston flood zone.&nbsp;</div><div><br></div><div>We help Houston area companies specifically with their disaster prep, so IT is fully redundant and any flood is a non issue.</div><div><br></div><div>We just worked with a company HQ'd in the top 10 — they had zero redundancy before we connected. Now they are fully redundant, and a flood would mean minimal downtime.&nbsp;</div><div><br></div><div> Can I share more?&nbsp;</div><div><br></div><div>%signature%</div><div><br></div><div>PS- Google and M365 don't backup natively. That case study assumed they were protected, but they weren't.</div><div><br></div><div><br></div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "message_fallback"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{{first_name}}, I built a tool that would show you how long every 15 minutes in downtime would take to fix.</div><div><br></div><div>Can I send it over?</div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "message_fallback"
+      }
+    ]
+  },
+  {
+    "oldId": 3201308,
+    "name": "Nieto MSPs 20-200",
+    "priorStatus": "COMPLETED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "it help",
+            "email_body": "<div>Hi {{first_name}},</div><div><br></div><div>What if you could qualify an MSP in 5 minutes, would that be worth it?</div><div><br></div><div>No discovery calls, no scoping sessions, no budget conversations. Just answer a few questions, get a straight answer.</div><div><br></div><div>Most IT decision makers would consider switching MSPs but the qualification process alone kills the momentum.</div><div> Budget alignment, technical fit, SLA expectations.</div><div><br></div><div>We built something to cut through all of that— you tell us your budget and your biggest IT headache. It tells you straight up whether we're a fit.</div><div><br></div><div>Want me to send it over?</div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "message_fallback"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{{first_name}},&nbsp;</div><div><br></div><div>Made you a loom of how this works. 2 minutes.</div><div><br></div><div>Should I send the link?</div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3201381,
+    "name": "Nieto Spring",
+    "priorStatus": "COMPLETED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "{{Team_Nickname}} tickets",
+            "email_body": "<div>Hey&nbsp;{{first_name}},</div><div><br></div><div>I have a couple extra {{Team_Nickname}} tickets- want them on me?</div><div><br></div><div>We run an MSP here in Spring and wanted to give these to the IT community here.</div><div><br></div><div>Actually, we just helped the Tejano Center downtown with their entire environment.</div><div><br></div><div>Tickets are yours either way, just for an intro meeting.</div><div><br></div><div>Worth it?</div><div><br></div><div>%signature%</div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "message_fallback"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{{first_name}},&nbsp;</div><div><br></div><div>I have a couple other case studies I just put together.</div><div><br></div><div>They range from cyber to networking to cloud to helpdesk.</div><div><br></div><div>Can I send a Houston based one over?</div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3429214,
+    "name": "Nieto Law Firms",
+    "priorStatus": "COMPLETED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "{{Team_Nickname}} tickets",
+            "email_body": "<div>{Hi|Hey|Hello} {{first_name}},</div><div><br></div><div>{I've got|I have} a {couple|few} {extra|spare} {{Team_Nickname}} tickets — {want them|would you like them|interested}, on me?</div><div><br></div><div>We're an MSP that has been around for {30 years|three decades} - we {worked with|partnered with|helped} another law firm that {grew|scaled} from 8 to 300 attorneys and was hiring people {just|solely|specifically} to deposit 300+ checks a day.&nbsp;</div><div><br></div><div>We {built them|created} a scanner that {drops|routes|sends} every check {straight|directly} into QuickBooks and their ERP — so they {stopped adding headcount|didn't need to hire more staff} for it.</div><div><br></div><div>Tickets are yours {regardless|either way} just to {explore|connect|chat} - {no switching anything|no pressure to switch anything}.</div><div>&nbsp;</div><div>{Worth a reply?|Worth a quick chat?|Open to connecting?}</div><div><br></div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{{first_name}}, {the tickets still stand regardless|tickets are still yours either way|the offer for the tickets still stands}.</div><div><br></div><div>If your {team's|firm is} losing hours to anything manual — {check entry, document intake, billing|like check entry, document routing, or billing} — that's usually the first thing we automate. We build it; you keep {whoever you've already got|your existing team|your current staff}.</div><div><br></div><div>{Want me to send the tickets over?|Should I send the tickets your way?|Would you like me to transfer those tickets?}</div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3429333,
+    "name": "Nieto Astros Offer/Proprietary Tech",
+    "priorStatus": "COMPLETED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "my treat",
+            "email_body": "<div>Hi {{first_name}},</div><div><br></div><div>Interested in a complimentary 90-day cybersecurity assessment of {{company_name}}, on us?</div><div><br></div><div>Over 90 days we monitor what actually gets companies breached — who's missing MFA, logins from places they shouldn't be, tenant permissions, and whether your backups are actually running. You keep the findings either way.</div><div><br></div><div>We operate a local MSP in Houston. We recently helped a local company from scattered data to actionable reporting in just two days.</div><div><br></div><div>No switching, no obligation. If you're solid, we'll tell you.</div><div><br></div><div>Should I get this set up?</div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "message_fallback"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{{first_name}},</div><div><br></div><div> </div><div>Thought I would send a case study: </div><div><br></div><div>We just did a law firm that went from 8 to 300 attorneys and was hiring people just to deposit checks — built them a scanner that drops straight intoQuickBooks and their ERP.</div><div><br></div><div>Would you like to see that in more detail?</div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3437329,
+    "name": "Nieto Sports or Airpods Offer/Proprietary Tech",
+    "priorStatus": "PAUSED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "{{Team_Nickname}} tickets",
+            "email_body": "<div>{Hi|Hey|Hello} {{first_name}},</div><div><br></div><div>{I've got|I have} a {couple|few} {extra|spare} {{Team_Nickname}} tickets — {want them|would you like them|interested}, on me?</div><div><br></div><div>We're an MSP that has been around for {30 years|three decades} - we {worked with|partnered with|helped} another law firm that {grew|scaled} from 8 to 300 attorneys and was hiring people {just|solely|specifically} to deposit 300+ checks a day.&nbsp;</div><div><br></div><div>We {built them|created} a scanner that {drops|routes|sends} every check {straight|directly} into QuickBooks and their ERP — so they {stopped adding headcount|didn't need to hire more staff} for it.</div><div><br></div><div>Tickets are yours {regardless|either way} just to {explore|connect|chat} - {no switching anything|no pressure to switch anything}.</div><div>&nbsp;</div><div>{Worth a reply?|Worth a quick chat?|Open to connecting?}</div><div><br></div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sibling_template"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{{first_name}},</div><div><br></div><div> </div><div>Thought I would send a case study: </div><div><br></div><div>We just did a law firm that went from 8 to 300 attorneys and was hiring people just to deposit checks — built them a scanner that drops straight intoQuickBooks and their ERP.</div><div><br></div><div>Would you like to see that in more detail?</div><div><br></div><div>%signature%</div><div><br></div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3563069,
+    "name": "MSRS Ticket Offer Propert Manager",
+    "priorStatus": "COMPLETED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "{{Team_Nickname}} tix",
+            "email_body": "<div>Hi {{first_name}},</div><br><div>I've got a couple {{Team_Nickname}} tickets — want them, on me?</div><br><div>We are a roofing systems company that only does commercial properties, both around {{location}} and in the broader South.</div><br><div>We reroofed Delta's baggage facility at Hartsfield-Jackson — 278k sq ft around active airport security. They invited us back for more projects.</div><br><div>We've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.</div><br><div>Worth a 20-minute call to see if we're a fit?</div><br><div>%signature%</div><br><div>P.S. Tickets are yours just for your time.</div><br><br>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "message_fallback"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{Hi|Hey} {{first_name}}, {tickets still stand|the tickets are still yours}.</div><br><div>You might be like Tractor Supply, {another client of ours|a client we work with} — we roofed their entire 901k sq ft distribution center with 12k linear feet of rooftop metal. Plus we maintain it.</div><br><div>The clients we work with best don't wait for a leak — they treat their building like {any other revenue-protecting investment|an asset, not a liability}.</div><br><div>{Open to it?|Worth a reply?}</div><br><div>%signature%</div><br>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3628940,
+    "name": "MSRS2 Ticket Offer Property Manager",
+    "priorStatus": "ACTIVE",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 1
+        },
+        "seq_variants": [
+          {
+            "subject": "{{Team_Nickname}} tix",
+            "email_body": "<div>Hi {{first_name}},</div><br><div>I've got a couple {{Team_Nickname}} tickets — want them, on me?</div><br><div>We are a roofing systems company that only does commercial properties, both around {{location}} and in the broader South.</div><br><div>We reroofed Delta's baggage facility at Hartsfield-Jackson — 278k sq ft around active airport security. They invited us back for more projects.</div><br><div>We've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.</div><br><div>Worth a 20-minute call to see if we're a fit?</div><br><div>%signature%</div><br><div>P.S. Tickets are yours just for your time.</div><br><br>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "message_fallback"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>{Hi|Hey} {{first_name}}, {tickets still stand|the tickets are still yours}.</div><br><div>You might be like Tractor Supply, {another client of ours|a client we work with} — we roofed their entire 901k sq ft distribution center with 12k linear feet of rooftop metal. Plus we maintain it.</div><br><div>The clients we work with best don't wait for a leak — they treat their building like {any other revenue-protecting investment|an asset, not a liability}.</div><br><div>{Open to it?|Worth a reply?}</div><br><div>%signature%</div><br>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  },
+  {
+    "oldId": 3628943,
+    "name": "Positive",
+    "priorStatus": "DRAFTED",
+    "sequences": [
+      {
+        "seq_number": 1,
+        "seq_delay_details": {
+          "delay_in_days": 0
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      },
+      {
+        "seq_number": 2,
+        "seq_delay_details": {
+          "delay_in_days": 2
+        },
+        "seq_variants": [
+          {
+            "subject": "",
+            "email_body": "<div>MCP bump</div>",
+            "variant_label": "A"
+          }
+        ],
+        "source": "sequence_steps"
+      }
+    ]
+  }
+]

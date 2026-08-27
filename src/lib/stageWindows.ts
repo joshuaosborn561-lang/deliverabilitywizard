@@ -30,7 +30,6 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "client-rest": HEALTH_MS,
   "generic-rest": HEALTH_MS,
   "warmup-gate": HEALTH_MS, // also re-run by the monitor; shares this key
-  "old-client": HEALTH_MS,
   "client-tag": HEALTH_MS,
   "one-client": HEALTH_MS,
   "qa-unpause": HEALTH_MS,

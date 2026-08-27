@@ -450,4 +450,98 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
     assert.deepEqual(paused2, [8], "the second pause really happened");
     assert.equal(sent.length, 1, "the tenant alert dedupes per day");
   });
+
+  it("D145: one 5.1.8 sample pages the blocked sender even under a tenant-cap wave", async () => {
+    // The real 8/27 shape: tenant caps dominate the samples, one sender
+    // is spam-blocked. Dominant-gated alerting would have stayed silent.
+    const TENANT_NDR =
+      "<html>Delivery has failed. Remote server returned '550 5.7.233 - Your message can't be sent because your tenant has exceeded its daily limit for sending email to external recipients (tenant external recipient rate limit).'</html>";
+    const BLOCKED_NDR =
+      "<html>Delivery has failed. Remote server returned '550 5.1.8 Access denied, bad outbound sender AS(42004)'</html>";
+    const mkBlockedSl = (paused: number[]) =>
+      ({
+        listCampaigns: async () => [{ id: 9, name: "Engagers", status: "ACTIVE" }],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 60,
+          bounce_count: 18,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (id: number, status: string) => {
+          if (status === "PAUSED") paused.push(id);
+        },
+        getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
+        updateCampaignSettings: async () => undefined,
+        listBouncedSendStats: async () => ({
+          total_stats: "2",
+          data: [
+            {
+              lead_email: "a@target.com",
+              sent_time: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+            },
+            {
+              lead_email: "b@target.com",
+              sent_time: new Date(Date.now() - 25 * 60 * 1000).toISOString(),
+            },
+          ],
+        }),
+        fetchLeadByEmail: async (email: string) => ({
+          id: email === "a@target.com" ? 111 : 222,
+        }),
+        getLeadMessageHistory: async (leadId: number) => ({
+          history:
+            leadId === 111
+              ? [
+                  { type: "SENT", from: "ok@salesgliderset.info" },
+                  { type: "REPLY", email_body: TENANT_NDR },
+                ]
+              : [
+                  { type: "SENT", from: "flagged@salesgliderrun.com" },
+                  { type: "REPLY", email_body: BLOCKED_NDR },
+                ],
+        }),
+      }) as never;
+
+    const paused: number[] = [];
+    const sent: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(9, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      mkBlockedSl(paused),
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+    );
+    await service.run({ dryRun: false });
+    assert.deepEqual(paused, [9]);
+    const blockedAlert = sent.find((text) => /5\.1\.8/.test(text));
+    assert.ok(blockedAlert, "the sender block pages even as a minority sample");
+    assert.match(blockedAlert!, /flagged@salesgliderrun\.com/);
+    assert.match(blockedAlert!, /does NOT reset/i);
+
+    // same day, another pause with the same blocked sender → no second page
+    const paused2: number[] = [];
+    state.setBounceSnapshot(9, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    state.clearBouncePaused(9);
+    const again = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      mkBlockedSl(paused2),
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+    );
+    await again.run({ dryRun: false });
+    assert.deepEqual(paused2, [9], "the second pause really happened");
+    assert.equal(
+      sent.filter((text) => /5\.1\.8/.test(text)).length,
+      1,
+      "the sender-block alert dedupes per sender per day",
+    );
+  });
 });

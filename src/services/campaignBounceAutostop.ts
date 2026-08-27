@@ -404,6 +404,37 @@ export class CampaignBounceAutostopService {
         );
       }
     }
+    // D145 — a 5.1.8 "bad outbound sender" is Microsoft flagging that
+    // mailbox for outbound spam. It never resets on its own, so even one
+    // sample pages the burned-domain lane (once per sender per day) —
+    // never gated on being the dominant class: on 8/27 the live block was
+    // a minority sample under a tenant-cap wave and would have stayed
+    // silent.
+    if (!dryRun && this.slack && this.state) {
+      const day = new Date().toISOString().slice(0, 10);
+      const blockedSenders = new Set(
+        samples
+          .filter(
+            (sample) =>
+              sample.bounceClass === "sender_blocked" && sample.senderEmail,
+          )
+          .map((sample) => sample.senderEmail!.toLowerCase()),
+      );
+      for (const sender of blockedSenders) {
+        const key = `sender-blocked:${sender}:${day}`;
+        if (this.state.hasAlert(key)) continue;
+        this.state.markAlert(key);
+        await this.slack.send(
+          [
+            `*Microsoft has flagged \`${sender}\` as a bad outbound sender (550 5.1.8).*`,
+            `That is an outbound-spam block on the mailbox itself, not a daily cap — it does NOT reset at midnight. First seen on campaign #${campaignId}.`,
+            "Fix: unblock the account in Microsoft 365 Defender → Review → Restricted entities and slow its sending, or replace the mailbox. Repeated blocks burn the domain.",
+          ].join("\n"),
+          undefined,
+          "burned_domain",
+        );
+      }
+    }
     return record;
   }
 

@@ -12,6 +12,7 @@
 
 export type BounceClass =
   | "tenant_rate_limit"
+  | "sender_blocked"
   | "invalid_recipient"
   | "content_block"
   | "other";
@@ -26,6 +27,19 @@ export function classifyBounceText(text: string): BounceClass {
     /external recipient rate limit/.test(hay)
   ) {
     return "tenant_rate_limit";
+  }
+  // D145 — Microsoft's outbound spam filter restricting the SENDER
+  // (550 5.1.8 "Access denied, bad outbound sender AS(42004)"). Must run
+  // before invalid_recipient: the generic 5.1.x pattern below used to
+  // swallow it, and on 2026-08-27 a live sender block on the SG Engagers
+  // fleet was filed as a bad email address. A sender block does not
+  // reset at midnight the way the tenant cap does.
+  if (
+    /5\.1\.8\b/.test(hay) ||
+    /bad outbound sender/.test(hay) ||
+    /blocked from sending|restricted from sending|restricted entit/.test(hay)
+  ) {
+    return "sender_blocked";
   }
   if (
     /5\.1\.[0-9]/.test(hay) ||

@@ -2850,6 +2850,44 @@ describe("owner intent — D143 the gate must win or escalate", () => {
   });
 });
 
+describe("owner intent — D145 a sender block is its own diagnosis", () => {
+  it("D145: 5.1.8 classifies sender_blocked and the page never waits for dominance", async () => {
+    const { classifyBounceText } = await import("../lib/bounceReason.js");
+    assert.equal(
+      classifyBounceText(
+        "550 5.1.8 Access denied, bad outbound sender AS(42004)",
+      ),
+      "sender_blocked",
+      stop(
+        "A 5.1.8 outbound-spam block is the SENDER flagged, not a bad recipient (D145).",
+        "classifyBounceText files 5.1.8 as something else again — on 8/27 that hid a live Microsoft block behind 'invalid_recipient'.",
+      ),
+    );
+
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /sample\.bounceClass === "sender_blocked"/,
+      stop(
+        "The sender-block page reads the SAMPLES, never the dominant class (D145) — a minority 5.1.8 under a tenant-cap wave still pages.",
+        "campaignBounceAutostop.ts gates the sender-block alert on the dominant verdict again.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /sender-blocked:\$\{sender\}:\$\{day\}/,
+      stop(
+        "The sender-block page dedupes once per sender per day (D145).",
+        "campaignBounceAutostop.ts lost the per-sender-per-day dedupe key.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D89 leftover canon holes", () => {
   it("D89: living known-good, queued reads, attach-after-adopt, bulk collapse, drafts on EOD", async () => {
     const read = (path: string) =>

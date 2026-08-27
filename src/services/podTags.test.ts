@@ -81,6 +81,7 @@ describe("PodTagService (D135)", () => {
         [{ id: 50, name: "Client campaign", status: "ACTIVE", client_id: 9 }],
         accounts,
       ),
+      async () => {},
     );
 
     const result = await service.run();
@@ -145,6 +146,7 @@ describe("PodTagService (D135)", () => {
         [{ id: 50, name: "Client campaign", status: "ACTIVE", client_id: 9 }],
         accounts,
       ),
+      async () => {},
     );
     const result = await service.run();
     assert.deepEqual(result, { assigned: 0, removed: 0 });

@@ -20,6 +20,10 @@ import {
   readBounceAutopausePercent,
 } from "../lib/bounceAutopause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import {
+  buildIsolationAction,
+  requestIsolationAction,
+} from "../lib/isolationActions.js";
 import { sleep } from "../lib/http.js";
 import type { BounceVerdictRecord } from "../state/store.js";
 import type { StateStore } from "../state/store.js";
@@ -105,7 +109,7 @@ export class CampaignBounceAutostopService {
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly state?: StateStore,
-    private readonly slack?: Pick<SlackClient, "send">,
+    private readonly slack?: Pick<SlackClient, "send" | "notifyIsolationAction">,
   ) {}
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignBounceAutostopResult> {
@@ -404,35 +408,57 @@ export class CampaignBounceAutostopService {
         );
       }
     }
-    // D145 — a 5.1.8 "bad outbound sender" is Microsoft flagging that
-    // mailbox for outbound spam. It never resets on its own, so even one
-    // sample pages the burned-domain lane (once per sender per day) —
-    // never gated on being the dominant class: on 8/27 the live block was
-    // a minority sample under a tenant-cap wave and would have stayed
-    // silent.
+    // D145/D146 — a 5.1.8 "bad outbound sender" is Microsoft flagging a
+    // mailbox for outbound spam. Josh: "that bad outbound sender should
+    // just trigger a burned domain" — the domain goes straight into the
+    // standard burned-domain flow (receipts + retire button; the tap is
+    // the approval, D49/D134), not a plain FYI page. Never gated on being
+    // the dominant class: the 8/27 live block was a minority sample under
+    // a tenant-cap wave. One pending ask per domain (samePending); the
+    // block itself never resets on its own.
     if (!dryRun && this.slack && this.state) {
-      const day = new Date().toISOString().slice(0, 10);
-      const blockedSenders = new Set(
-        samples
-          .filter(
+      const store = this.state;
+      const slack = this.slack;
+      const blockedByDomain = new Map<string, Set<string>>();
+      for (const sample of samples) {
+        if (sample.bounceClass !== "sender_blocked" || !sample.senderEmail) {
+          continue;
+        }
+        const sender = sample.senderEmail.toLowerCase();
+        const domain = sender.split("@")[1];
+        if (!domain) continue;
+        const set = blockedByDomain.get(domain) ?? new Set<string>();
+        set.add(sender);
+        blockedByDomain.set(domain, set);
+      }
+      for (const [domain, senders] of blockedByDomain) {
+        const snippet =
+          samples.find(
             (sample) =>
-              sample.bounceClass === "sender_blocked" && sample.senderEmail,
-          )
-          .map((sample) => sample.senderEmail!.toLowerCase()),
-      );
-      for (const sender of blockedSenders) {
-        const key = `sender-blocked:${sender}:${day}`;
-        if (this.state.hasAlert(key)) continue;
-        this.state.markAlert(key);
-        await this.slack.send(
-          [
-            `*Microsoft has flagged \`${sender}\` as a bad outbound sender (550 5.1.8).*`,
-            `That is an outbound-spam block on the mailbox itself, not a daily cap — it does NOT reset at midnight. First seen on campaign #${campaignId}.`,
-            "Fix: unblock the account in Microsoft 365 Defender → Review → Restricted entities and slow its sending, or replace the mailbox. Repeated blocks burn the domain.",
-          ].join("\n"),
-          undefined,
-          "burned_domain",
-        );
+              sample.bounceClass === "sender_blocked" &&
+              sample.senderEmail?.toLowerCase().split("@")[1] === domain,
+          )?.snippet ?? "550 5.1.8 bad outbound sender";
+        const opened = await requestIsolationAction({
+          store,
+          slack,
+          action: buildIsolationAction({
+            kind: "retire_domain",
+            title: `Retire ${domain} — Microsoft flagged it as a bad outbound sender`,
+            proof: [
+              `Microsoft's outbound spam filter blocked ${[...senders]
+                .map((sender) => `\`${sender}\``)
+                .join(", ")} (550 5.1.8) — first seen on campaign #${campaignId}.`,
+              `"${snippet.slice(0, 160)}"`,
+              "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead.",
+            ].join("\n"),
+            detail: { domain },
+          }),
+        });
+        if (opened) {
+          console.log(
+            `[bounce-autostop] burned-domain ask opened for ${domain} — sender blocked (D146)`,
+          );
+        }
       }
     }
     return record;

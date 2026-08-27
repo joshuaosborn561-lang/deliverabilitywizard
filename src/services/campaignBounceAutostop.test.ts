@@ -451,7 +451,7 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
     assert.equal(sent.length, 1, "the tenant alert dedupes per day");
   });
 
-  it("D145: one 5.1.8 sample pages the blocked sender even under a tenant-cap wave", async () => {
+  it("D145/D146: one 5.1.8 sample opens the burned-domain retire ask even under a tenant-cap wave", async () => {
     // The real 8/27 shape: tenant caps dominate the samples, one sender
     // is spam-blocked. Dominant-gated alerting would have stayed silent.
     const TENANT_NDR =
@@ -503,6 +503,15 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
 
     const paused: number[] = [];
     const sent: string[] = [];
+    const asks: Array<{ title: string; proof: string; kind: string }> = [];
+    const slackFake = {
+      send: async (text: string) => void sent.push(text),
+      notifyIsolationAction: async (ask: {
+        title: string;
+        proof: string;
+        kind: string;
+      }) => void asks.push(ask),
+    } as never;
     const state = store();
     state.setBounceSnapshot(9, {
       bounced: 3,
@@ -513,16 +522,28 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
       loadConfig({ DRY_RUN: "false" }),
       mkBlockedSl(paused),
       state,
-      { send: async (text: string) => void sent.push(text) } as never,
+      slackFake,
     );
     await service.run({ dryRun: false });
     assert.deepEqual(paused, [9]);
-    const blockedAlert = sent.find((text) => /5\.1\.8/.test(text));
-    assert.ok(blockedAlert, "the sender block pages even as a minority sample");
-    assert.match(blockedAlert!, /flagged@salesgliderrun\.com/);
-    assert.match(blockedAlert!, /does NOT reset/i);
+    // D146 — the block feeds the burned-domain flow, not a plain page.
+    assert.equal(asks.length, 1, "one retire ask for the blocked domain");
+    assert.equal(asks[0]!.kind, "retire_domain");
+    assert.match(asks[0]!.title, /salesgliderrun\.com/);
+    assert.match(asks[0]!.proof, /5\.1\.8/);
+    assert.match(asks[0]!.proof, /flagged@salesgliderrun\.com/);
+    const pending = state
+      .listIsolationActions()
+      .filter(
+        (row) =>
+          row.kind === "retire_domain" &&
+          row.detail.domain === "salesgliderrun.com",
+      );
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0]!.status, "pending");
 
-    // same day, another pause with the same blocked sender → no second page
+    // another pause with the same blocked sender → the pending ask holds,
+    // no duplicate
     const paused2: number[] = [];
     state.setBounceSnapshot(9, {
       bounced: 3,
@@ -534,14 +555,16 @@ describe("D140 — a pause reads the SMTP reasons before anyone blames the list"
       loadConfig({ DRY_RUN: "false" }),
       mkBlockedSl(paused2),
       state,
-      { send: async (text: string) => void sent.push(text) } as never,
+      slackFake,
     );
     await again.run({ dryRun: false });
     assert.deepEqual(paused2, [9], "the second pause really happened");
+    assert.equal(asks.length, 1, "the pending ask dedupes the re-ask");
     assert.equal(
-      sent.filter((text) => /5\.1\.8/.test(text)).length,
+      state
+        .listIsolationActions()
+        .filter((row) => row.kind === "retire_domain").length,
       1,
-      "the sender-block alert dedupes per sender per day",
     );
   });
 });

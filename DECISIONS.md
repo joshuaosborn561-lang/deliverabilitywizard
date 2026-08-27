@@ -160,7 +160,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D142 | Live | Generic is a pool (client record), pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
-| D145 | Live | 5.1.8 outbound-spam blocks classify sender_blocked and page on any sample, once per sender per day |
+| D145 | Amended by D146 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146) |
+| D146 | Live | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the dedupe |
 
 ---
 
@@ -3746,3 +3747,37 @@ sample (source pin: the alert reads `samples`, not `dominant`); once
 per sender per day. Unit test on the real string; service test with the
 real 8/27 shape (tenant wave + one blocked sender) incl. same-day
 dedupe.
+
+## D146 — A blocked sender is a burned domain: 5.1.8 opens the retire ask
+
+**Decision (Josh, 2026-08-27).** "That bad outbound sender should just
+trigger a burned domain... this is the kind of detail I want when
+something bounces/spams."
+
+A `sender_blocked` sample (D145) no longer emits an informational page:
+the blocked sender's **domain goes into the standard burned-domain
+flow** — a `retire_domain` isolation ask on the burned-domain lane with
+the receipts (blocked mailbox(es), the 5.1.8 snippet, the campaign it
+surfaced on) and the Cancel/Retire buttons. The tap is the approval
+(D49/D60): retire pulls the domain's inboxes off ACTIVE campaigns,
+auto-approves generic backfill for the campaigns it cut (D134), and the
+replacement buy stays spend-gated. Still triggered by ANY sample, never
+the dominant class (D145). Dedupe is the pending ask itself — one open
+ask per domain (samePending); an answered ask can reopen on fresh
+evidence from a later pause, which is correct: a sender still blocked
+after a deny is new information. The proof text tells Josh the
+alternative to retiring: unblock the mailbox in Defender's Restricted
+entities.
+
+**Supersedes / amends.** Amends D145 (the emission: FYI page → retire
+ask; classifier and any-sample trigger stand). Extends D49's
+burned-domain triggers: two consecutive known-good placement fails OR a
+Microsoft outbound-spam block. D71 untouched (same lane, and retire
+asks were already page one).
+
+**Guards.** canon D145/D146: the real AS(42004) NDR classifies
+sender_blocked; the autostop branch reads samples (never dominant) and
+opens `kind: "retire_domain"` via requestIsolationAction. Service test:
+tenant-cap wave + one blocked sender → exactly one pending retire ask
+for the sender's domain, held (not duplicated) across a same-day second
+pause.

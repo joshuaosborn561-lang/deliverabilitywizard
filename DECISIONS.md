@@ -160,6 +160,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D142 | Live | Generic is a pool (client record), pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
+| D145 | Live | 5.1.8 outbound-spam blocks classify sender_blocked and page on any sample, once per sender per day |
 
 ---
 
@@ -3709,3 +3710,39 @@ the blocker.
 **Guards.** absence of `oldClientTeardown.ts`; health has no
 `old-client` stage; no `oldClientCampaignIds` config; owner-intent
 D144.
+
+## D145 — A 5.1.8 outbound-spam block is its own diagnosis and always pages
+
+**Decision (Claude under Josh's standing delegation, 2026-08-27).**
+A D98 fix-in-session extending D140; nothing reversed.
+
+**The incident.** The 15:50Z bounce pauses on SG PE Engagers (#3847995)
+and SG Staffing Engagers (#3847993) sampled `550 5.7.233` tenant caps
+across the salesglider* fleet — and one `550 5.1.8 Access denied, bad
+outbound sender AS(42004)`. The D140 classifier's generic `5.1.x`
+pattern filed that as **invalid_recipient**, which is exactly wrong:
+5.1.8 is Microsoft's outbound spam filter restricting the SENDING
+mailbox. Unlike the tenant cap it never resets at midnight — the
+account sits in Defender's Restricted entities until a human unblocks
+it — and repeated blocks burn the domain. It was also a minority sample
+under the tenant-cap wave, so even a correctly-classified
+dominant-gated alert would have stayed silent.
+
+1. New bounce class **`sender_blocked`**, classified before
+   invalid_recipient: `5.1.8`, "bad outbound sender", "blocked from
+   sending", "restricted from sending / restricted entities".
+2. **Any** sender_blocked sample pages the burned-domain lane — never
+   gated on being the dominant class — once per sender mailbox per day,
+   naming the mailbox and the Defender unblock path.
+3. The tenant-cap alert (D140) is unchanged.
+
+**Supersedes / amends.** Extends D140's classifier and alerting; D71's
+Slack contract is untouched (same burned-domain lane the tenant alert
+already rides).
+
+**Guards.** canon D145: the real AS(42004) NDR classifies
+sender_blocked (never invalid_recipient); the autostop pages on any
+sample (source pin: the alert reads `samples`, not `dominant`); once
+per sender per day. Unit test on the real string; service test with the
+real 8/27 shape (tenant wave + one blocked sender) incl. same-day
+dedupe.

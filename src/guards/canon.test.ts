@@ -3049,6 +3049,14 @@ describe("owner intent — D148 nothing pauses: investigate, remediate, re-add",
         "bounceResurrection.ts lost the 7-day deferral expiry.",
       ),
     );
+    assert.match(
+      service,
+      /sweepOrphanVerdicts/,
+      stop(
+        "A fresh sender-fault verdict with no incident re-opens — a deploy race cannot eat a resend (D148).",
+        "bounceResurrection.ts lost the orphan-verdict sweep; the 8/27 stale-branch deploy would have silently forfeited four campaigns' resends.",
+      ),
+    );
 
     const autostop = await read("../services/campaignBounceAutostop.ts");
     assert.match(

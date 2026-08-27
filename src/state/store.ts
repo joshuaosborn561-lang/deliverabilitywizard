@@ -1147,6 +1147,10 @@ export class StateStore {
     return this.state.bounceVerdicts[String(campaignId)];
   }
 
+  listBounceVerdicts(): BounceVerdictRecord[] {
+    return Object.values(this.state.bounceVerdicts);
+  }
+
   /** D136 — the monitor's domain→client audit replaces the full list each pass. */
   setDomainAdvisories(advisories: DomainClientAdvisory[]): void {
     this.state.domainAdvisories = advisories;

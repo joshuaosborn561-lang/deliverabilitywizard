@@ -220,6 +220,50 @@ export class BounceResurrectionService {
     );
   }
 
+  /**
+   * D148 transition safety — a fresh sender-fault verdict whose campaign
+   * has NO incident record at all gets its incident opened here. The
+   * burst normally opens the incident in the same pass that stores the
+   * verdict, but a deploy race can eat that step: on 2026-08-27 a
+   * stale-branch deploy cleared the four Engagers pause stamps without
+   * opening their jobs, which would have silently forfeited their
+   * resends.
+   */
+  private sweepOrphanVerdicts(): void {
+    const nowMs = this.clock();
+    for (const verdict of this.state.listBounceVerdicts()) {
+      if (!verdictBlamesSender(verdict)) continue;
+      const at = Date.parse(verdict.at);
+      if (!Number.isFinite(at) || nowMs - at > RESURRECTION_LOOKBACK_MS) {
+        continue;
+      }
+      if (this.state.getBounceResurrectionJob(verdict.campaignId)) continue;
+      const nowIso = new Date(nowMs).toISOString();
+      this.state.upsertBounceResurrectionJob({
+        campaignId: verdict.campaignId,
+        campaignName: `#${verdict.campaignId}`,
+        openedAt: nowIso,
+        windowStart: new Date(at - RESURRECTION_LOOKBACK_MS).toISOString(),
+        windowEnd: nowIso,
+        lastBurstAt: nowIso,
+        verdictSummary: verdict.summary,
+        offset: 0,
+        scanDone: false,
+        deferred: [],
+        copyEditedAt: null,
+        requeued: 0,
+        receipted: 0,
+        skippedDead: 0,
+        skippedOther: 0,
+        dropped: 0,
+        done: false,
+      });
+      console.log(
+        `[bounce-resurrect] #${verdict.campaignId} sender-fault verdict (${verdict.summary}) had no incident — opened from the verdict sweep (D148)`,
+      );
+    }
+  }
+
   /** Work every open job inside the per-tick budget. */
   async work(): Promise<BounceResurrectionWorkResult> {
     const result: BounceResurrectionWorkResult = {
@@ -230,6 +274,7 @@ export class BounceResurrectionService {
       errors: [],
     };
     if (this.config.dryRun) return result;
+    this.sweepOrphanVerdicts();
     const jobs = this.state
       .listBounceResurrectionJobs()
       .filter((job) => !job.done);

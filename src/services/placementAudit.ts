@@ -18,7 +18,7 @@ import { isBcpCampaignName } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
 import { parseSenderBounceStats } from "../lib/bounceRate.js";
 import { totalDailySendCeiling } from "../lib/sendCeiling.js";
-import { isPrewarmedGeneric } from "./warmupGate.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
 import type { StateStore } from "../state/store.js";
 
 export type PlacementDriftKind =
@@ -659,7 +659,9 @@ export class PlacementAuditService {
       const pool = this.state.getPoolMailbox(email);
       let reason: BcpGenericHit["reason"] | null = null;
       if (pool) reason = "pool";
-      else if (isPrewarmedGeneric(account, email, this.config, this.state)) {
+      else if (isGenericMailbox(account, email, this.config, this.state)) {
+        // D142 — any generic (pre-warmed fleet, generic-domain fleet, or
+        // marker-client box) covering BCP is reported the same way.
         const domain = email.split("@")[1] ?? "";
         reason = this.config.extraGenericDomains.includes(domain)
           ? "prewarmed_domain"

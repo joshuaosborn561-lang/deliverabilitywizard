@@ -388,6 +388,7 @@ async function main(): Promise<void> {
     config,
     state,
     inventoryBook,
+    smartlead,
   );
   const porkbun =
     config.porkbunApiKey && config.porkbunSecretApiKey

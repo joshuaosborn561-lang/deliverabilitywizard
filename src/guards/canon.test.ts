@@ -2579,6 +2579,110 @@ describe("owner intent — D141 bounce pause is a real burst, never a ledger dum
   });
 });
 
+describe("owner intent — D142 generic is a pool, pre-warmed is a grant", () => {
+  it("D142: the two lists are separate; markers are generics; the POC re-point stays staged", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    // Pre-warmed is granted by Josh alone — the generic pool never implies it.
+    assert.deepEqual(
+      defaults.prewarmedDomains,
+      ["crosslaunchco.com", "crossscaleco.com", "cleartechco.com"],
+      stop(
+        "Pre-warmed means only what Josh granted (D142).",
+        `PREWARMED_DOMAINS default is now ${defaults.prewarmedDomains.join(",")}.`,
+      ),
+    );
+    for (const domain of [
+      "getintroducedapp.com",
+      "appgetintroduced.com",
+      "appquickconnectsales.com",
+    ]) {
+      assert.ok(
+        defaults.extraGenericDomains.includes(domain) &&
+          !defaults.prewarmedDomains.includes(domain),
+        stop(
+          "GetIntroduced/QuickConnect are generic pool, NOT pre-warmed (D142, Josh 2026-08-27).",
+          `${domain} drifted out of the generic pool or into the pre-warmed grant.`,
+        ),
+      );
+    }
+
+    const { isPrewarmedGeneric } = await import("../services/warmupGate.js");
+    assert.equal(
+      isPrewarmedGeneric(
+        { from_name: "Any Body" },
+        "a@getintroducedapp.com",
+        {
+          extraGenericMailboxes: [],
+          prewarmedDomains: defaults.prewarmedDomains,
+        },
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      stop(
+        "A generic-pool domain does not skip the warmup clock (D142).",
+        "isPrewarmedGeneric treats generic membership as a warmup exemption again.",
+      ),
+    );
+
+    const { isGenericMailbox } = await import("../lib/clientInbox.js");
+    assert.equal(
+      isGenericMailbox(
+        { client_id: 777, from_name: "Any Body" },
+        "a@someclientdomain.com",
+        {
+          extraGenericMailboxes: [],
+          extraGenericDomains: [],
+          prewarmedDomains: [],
+        },
+        {
+          getPoolMailbox: () => undefined,
+          isMarkerClientId: (id: number | null | undefined) => id === 777,
+        },
+      ),
+      true,
+      stop(
+        "A box assigned to the Generic/POC marker client is a generic (D142).",
+        "isGenericMailbox no longer recognises marker-client ids.",
+      ),
+    );
+
+    const oneClient = await read("../services/oneClientMembership.ts");
+    assert.match(
+      oneClient,
+      /markerOwned/,
+      stop(
+        "A Generic/POC client_id is a deliberate assignment one-client must not rewrite (D142).",
+        "oneClientMembership.ts reverts marker-owned boxes to the POC client again.",
+      ),
+    );
+
+    const provisioner = await read("../services/poolProvisioner.ts");
+    assert.match(
+      provisioner,
+      /new Set\(this\.config\.prewarmedDomains\)/,
+      stop(
+        "Pool registration of pre-warmed fleets reads PREWARMED_DOMAINS (D142).",
+        "poolProvisioner.ts registers the whole generic pool as pre-warmed.",
+      ),
+    );
+
+    // The staged half: mailbox-side POC ownership re-point is NOT live —
+    // one-client still resolves the generic owner from the POC patterns.
+    assert.match(
+      oneClient,
+      /pocClientId\(clients, this\.config\.pocClientNamePatterns\)/,
+      stop(
+        "The POC mailbox-owner re-point is a staged decision awaiting its own entry (D142).",
+        "oneClientMembership.ts changed the generic owner source without a decision.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D89 leftover canon holes", () => {
   it("D89: living known-good, queued reads, attach-after-adopt, bulk collapse, drafts on EOD", async () => {
     const read = (path: string) =>
@@ -4018,12 +4122,31 @@ describe("owner intent — D135/D136 fleet visibility", () => {
       new URL("../services/domainClientAudit.ts", import.meta.url),
       "utf8",
     );
+    // D142 amended D136: a CONFIDENT match (exactly one client token in
+    // the domain base, or a generic-fleet orphan → the Generic marker)
+    // attaches; everything else is still an advisory, never a guess.
+    assert.match(
+      audit,
+      /confidentClientForDomain/,
+      stop(
+        "Attaches happen only through the confident matcher (D142).",
+        "domainClientAudit.ts writes client ids without the confident gate.",
+      ),
+    );
+    assert.match(
+      audit,
+      /account\.client_id == null/,
+      stop(
+        "A box already carrying a real client_id is never rewritten by the audit (D142 — the POC re-point is a staged decision, not this pass).",
+        "domainClientAudit.ts overwrites existing client assignments.",
+      ),
+    );
     assert.doesNotMatch(
       audit,
-      /updateEmailAccount|updateCampaign|client_id\s*[:=]\s*[^n]/,
+      /kind: "split_clients"[\s\S]{0,400}updateEmailAccount/,
       stop(
-        "The domain→client audit never writes a client mapping (D136).",
-        "domainClientAudit.ts assigns clients instead of asking a human.",
+        "split_clients is always a human question (D136/D142).",
+        "domainClientAudit.ts writes on a split-clients domain.",
       ),
     );
     assert.match(

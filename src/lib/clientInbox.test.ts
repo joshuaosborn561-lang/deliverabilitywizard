@@ -9,6 +9,7 @@ import {
 const fleet = {
   extraGenericMailboxes: ["harmony norris"],
   extraGenericDomains: ["crosslaunchco.com", "crossscaleco.com", "cleartechco.com"],
+        prewarmedDomains: [],
 };
 
 describe("isClientInbox", () => {

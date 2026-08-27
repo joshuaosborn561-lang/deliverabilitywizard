@@ -554,6 +554,42 @@ export class SmartleadClient {
     });
   }
 
+  /**
+   * D142 — ensure a client record with this exact name exists and return
+   * its id. Used for the Generic / POC marker clients; the email is a
+   * required Smartlead field, never mailed.
+   */
+  async ensureClient(name: string, email: string): Promise<number> {
+    const existing = await this.listClients();
+    const match = existing.find(
+      (client) =>
+        String(client.name ?? "").trim().toLowerCase() ===
+        name.trim().toLowerCase(),
+    );
+    if (match) return match.id;
+    const created = (await apiRequest(BASE_URL, this.apiKey, "client/save", {
+      method: "POST",
+      body: {
+        name,
+        email,
+        permission: ["reply_master_inbox"],
+        logo: name,
+        logo_url: null,
+      },
+    })) as { clientId?: number | string; id?: number | string };
+    const id = Number(created?.clientId ?? created?.id);
+    if (Number.isFinite(id)) return id;
+    // Race or shape drift: re-list and find by name.
+    const again = await this.listClients();
+    const retry = again.find(
+      (client) =>
+        String(client.name ?? "").trim().toLowerCase() ===
+        name.trim().toLowerCase(),
+    );
+    if (retry) return retry.id;
+    throw new Error(`Failed to create Smartlead client ${name}`);
+  }
+
   /** Ensure a named tag exists and return its id (create with color if not). */
   async ensureTag(name: string, color: string): Promise<{ id: number; name: string }> {
     const existing = await this.listTags();

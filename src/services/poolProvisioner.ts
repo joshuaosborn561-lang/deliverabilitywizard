@@ -829,7 +829,10 @@ export class PoolProvisioner {
     const out = { registered: [] as string[], unmatched: [] as string[], errors: [] as string[] };
     let inService = 0;
     const wanted = this.config.extraGenericMailboxes;
-    const wantedDomains = new Set(this.config.extraGenericDomains);
+    // D142 — this step registers PRE-WARMED fleets into the pool; the wider
+    // generic-domain list is staffing membership only and never implies
+    // a warmed clock.
+    const wantedDomains = new Set(this.config.prewarmedDomains);
     if (!wanted.length && !wantedDomains.size) return out;
 
     let accounts: SmartleadAccountWithCampaigns[];

@@ -50,6 +50,8 @@ interface AccountPlan {
   pull: number[];
   restore: number[];
   signature?: string;
+  /** D142 — marker-client boxes keep their Generic/POC client_id. */
+  keepClientId?: boolean;
 }
 
 /**
@@ -140,6 +142,12 @@ export class OneClientMembershipService {
       result.examined += 1;
 
       const generic = isGenericMailbox(account, email, this.config, this.state);
+      // D142 — a Generic/POC marker client_id is a deliberate pool
+      // assignment, not a leftover tag: never rewrite it back to the POC
+      // client's id. Memberships still resolve through the POC owner.
+      const markerOwned =
+        typeof account.client_id === "number" &&
+        this.state.isMarkerClientId(account.client_id);
       const owner = ownerClientId(account.client_id, memberships, {
         generic,
         genericOwnerId,
@@ -155,11 +163,13 @@ export class OneClientMembershipService {
       );
       const leftoverTagged =
         generic &&
+        !markerOwned &&
         typeof genericOwnerId === "number" &&
         typeof account.client_id === "number" &&
         account.client_id !== genericOwnerId;
       const needsGoliathIdentity =
         generic &&
+        !markerOwned &&
         typeof genericOwnerId === "number" &&
         account.client_id !== genericOwnerId;
       // Shell-only leftover-tagged generics (Aarav after the first pass)
@@ -200,6 +210,7 @@ export class OneClientMembershipService {
         pull,
         restore,
         signature: needsSignature && desired ? desired : undefined,
+        keepClientId: markerOwned,
       });
     }
 
@@ -284,7 +295,8 @@ export class OneClientMembershipService {
         if (!dryRun) {
           await this.smartlead.updateEmailAccount(plan.accountId, {
             signature: plan.signature,
-            client_id: plan.owner,
+            // D142 — never overwrite a deliberate Generic/POC assignment.
+            ...(plan.keepClientId ? {} : { client_id: plan.owner }),
           });
           await sleep(WRITE_GAP_MS);
         }

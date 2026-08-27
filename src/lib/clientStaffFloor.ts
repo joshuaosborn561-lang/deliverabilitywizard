@@ -47,7 +47,7 @@ export function countClientInboxesByKey(
   accounts: SmartleadAccountWithCampaigns[],
   campaigns: SmartleadCampaign[],
   clients: SmartleadClientRecord[],
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">,
+  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
   state: FloorCountState,
 ): Map<string, number> {
   const campaignClientById = new Map(

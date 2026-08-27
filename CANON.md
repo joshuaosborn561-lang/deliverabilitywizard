@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D141** (2026-08-27). One page of current truth. When a new
+Canon as of **D142** (2026-08-27). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -35,9 +35,12 @@ Slack speaks only when a human decision is needed or the day is done.
   gate is **ON** and pulls an under-21-day mailbox off ACTIVE campaigns on
   the health pass (D105).
 - **Exempt from that clock**: pre-warmed fleets — every mailbox on
-  `EXTRA_GENERIC_DOMAINS` (crosslaunchco.com, crossscaleco.com,
+  `PREWARMED_DOMAINS` (crosslaunchco.com, crossscaleco.com,
   cleartechco.com) and every from-name fleet in `EXTRA_GENERIC_MAILBOXES`
-  (D19); and the canary fleet (which never staffs anyway, D54).
+  (D19/D142); and the canary fleet (which never staffs anyway, D54).
+  Pre-warmed is a flag only Josh grants — generic-pool membership
+  (`EXTRA_GENERIC_DOMAINS`, which also carries the GetIntroduced /
+  QuickConnect fleets) never implies it (D142).
 - **Converged every pass**: 30 campaign sends/day (warmups excluded, D24),
   10-minute minimum gap (D30/D35) — held at BOTH levels: the mailbox field
   every health pass, and campaign `min_time_btwn_emails` written back to
@@ -74,7 +77,11 @@ Slack speaks only when a human decision is needed or the day is done.
   for humans, never read back by code (D135). Generics rest on their own clock:
   ~14 days of live send, then sit ~14, then supply again (D43).
 - **Generics** staff only a POC client (currently Goliath) or a campaign Josh
-  Slack-approved (D81/D82); a domain-retire tap auto-approves the ACTIVE
+  Slack-approved (D81/D82). "Generic" and "POC" exist as Smartlead client
+  records used purely as mailbox pools: a box assigned to either is a
+  generic to every classifier, and one-client never rewrites that
+  assignment; the mailbox-side owner re-point to POC is staged, not live
+  (D142); a domain-retire tap auto-approves the ACTIVE
   campaigns it pulled senders from, so volume never drops while the
   replacements warm (D134). Cross-client top-up is a compensated **move**;
   same-client is additive. (The old recovery-swap system and its
@@ -179,10 +186,14 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
 
 - **DNS**: audited against public resolvers every monitor pass; never writes
   DNS; findings stay in logs (D71).
-- **Domain→client**: a sending domain split across clients or mapped to
-  none is an advisory — logs plus one EOD-brief section; the audit never
-  guesses or writes a client (D136). Generic fleets, BCP domains, the
-  isolation domain, canaries and retired domains are exempt.
+- **Domain→client**: the audit first makes the CONFIDENT fixes itself —
+  a generic-fleet box with no client_id joins the Generic marker, and an
+  unmapped domain whose base carries exactly one client's distinctive
+  token attaches to that client (D142). Everything else — split_clients
+  always, ambiguous or token-less domains — is an advisory: logs plus one
+  EOD-brief section, never a guess, and a box already carrying a real
+  client_id is never rewritten (D136/D142). Generic fleets, BCP domains,
+  the isolation domain, canaries and retired domains are exempt.
 - **Lead runout**: log at half, three-quarters, done; never import; a
   working campaign running low is urgent in `/ops` (D52).
 - **Sending IPs**: census from placement reports we already pull; never buy

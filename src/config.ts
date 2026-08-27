@@ -264,8 +264,29 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
-  /** Explicit domains whose whole fleet was purchased pre-warmed. */
+  /**
+   * D142 — generic-pool membership by domain. Generic does NOT mean
+   * pre-warmed: these fleets are staffing supply on the generic clocks,
+   * and each box still owes its warmup unless its domain is ALSO in
+   * PREWARMED_DOMAINS below.
+   */
   extraGenericDomains: z
+    .string()
+    .default(
+      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com",
+    )
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * D142 — the ONLY meaning of pre-warmed: skip the warmup clock. Granted
+   * by Josh alone; a domain landing in the generic pool is assumed NOT
+   * pre-warmed until he says so.
+   */
+  prewarmedDomains: z
     .string()
     .default("crosslaunchco.com,crossscaleco.com,cleartechco.com")
     .transform((s) =>
@@ -514,6 +535,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     extraGenericDomains:
       env.EXTRA_GENERIC_DOMAINS ??
+      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com",
+    prewarmedDomains:
+      env.PREWARMED_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",
     poolWarmupDays: env.POOL_WARMUP_DAYS ?? "21",
     enableWarmupGate: env.ENABLE_WARMUP_GATE,

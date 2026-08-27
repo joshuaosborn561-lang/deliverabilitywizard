@@ -21,6 +21,7 @@ describe("pods", () => {
       config: {
         extraGenericMailboxes: ["harmony norris"],
         extraGenericDomains: ["crosslaunchco.com"],
+        prewarmedDomains: [],
       },
       state: state(["spare@crosslaunchco.com"]),
       isolation: {

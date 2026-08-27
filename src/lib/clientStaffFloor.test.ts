@@ -58,6 +58,7 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       {
         extraGenericMailboxes: [],
         extraGenericDomains: ["crosslaunchco.com"],
+        prewarmedDomains: [],
       },
       { getPoolMailbox: () => undefined },
     );
@@ -99,7 +100,7 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       ],
       [{ id: 1, name: "BCP Healthcare", status: "ACTIVE", client_id: 9 }],
       [{ id: 9, name: "BCP" }],
-      { extraGenericMailboxes: [], extraGenericDomains: [] },
+      { extraGenericMailboxes: [], extraGenericDomains: [], prewarmedDomains: [] },
       { getPoolMailbox: () => undefined },
     );
     assert.equal(counts.get(clientCountKey(9)), 3, "expired hold counts again");

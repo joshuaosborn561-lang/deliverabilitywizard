@@ -44,7 +44,7 @@ export function genericPodId(kind: "sending" | "resting"): string {
 
 export function buildPods(input: {
   accounts: PodAccountInput[];
-  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains">;
+  config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">;
   state: Pick<StateStore, "getPoolMailbox">;
   isolation: Pick<IsolationDenylist, "emails" | "domain">;
   now?: Date;

@@ -323,7 +323,7 @@ export class SlackClient {
       }
       lines.push(
         "",
-        `Something outside this app keeps re-adding under-warmed inboxes (${byEmail.size} mailbox${byEmail.size === 1 ? "" : "es"}). I pull them off every pass and they come back within minutes — check InboxKit campaign assignment (or any other automation) and switch it off:`,
+        `Something outside this app keeps re-adding under-warmed inboxes (${byEmail.size} mailbox${byEmail.size === 1 ? "" : "es"}). I pull them off every pass and they come back within minutes — if this persists after D154, check for a real outside writer; client A/B rest no longer re-staffs under-warmed boxes:`,
         ...[...byEmail.entries()]
           .slice(0, 8)
           .map(

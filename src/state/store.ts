@@ -228,6 +228,14 @@ export interface AppState {
    * already says off.
    */
   autopauseForceAllAt: string | null;
+  /**
+   * D80/D84 — last time we *read* bounce_autopause_threshold off the
+   * campaign object (GET campaign, because GET settings 404s). Null means
+   * the next bounce-autostop pass still owes a confirm: the D84 cache plus
+   * an unreadable GET used to skip every campaign and leave Smartlead's
+   * native pause on.
+   */
+  autopauseCampaignGetAt: string | null;
   /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
   bounceSnapshots: Record<string, { bounced: number; sent: number; at: string }>;
   /**
@@ -442,6 +450,7 @@ const EMPTY_STATE: AppState = {
   smartleadAutopauseOff: {},
   lastAutopauseVerifyAt: null,
   autopauseForceAllAt: null,
+  autopauseCampaignGetAt: null,
   bounceSnapshots: {},
   bouncePausedCampaigns: {},
   stageHealth: {},
@@ -503,6 +512,7 @@ export class StateStore {
         smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
         lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
         autopauseForceAllAt: parsed.autopauseForceAllAt ?? null,
+        autopauseCampaignGetAt: parsed.autopauseCampaignGetAt ?? null,
         bounceSnapshots: parsed.bounceSnapshots ?? {},
         bouncePausedCampaigns: parsed.bouncePausedCampaigns ?? {},
         stageHealth: parsed.stageHealth ?? {},
@@ -1023,6 +1033,15 @@ export class StateStore {
 
   setAutopauseForceAllAt(iso: string): void {
     this.state.autopauseForceAllAt = iso;
+  }
+
+  /** D80/D84 — last confirm-read of bounce_autopause_threshold via GET campaign. */
+  getAutopauseCampaignGetAt(): string | null {
+    return this.state.autopauseCampaignGetAt;
+  }
+
+  setAutopauseCampaignGetAt(iso: string): void {
+    this.state.autopauseCampaignGetAt = iso;
   }
 
   getBounceSnapshot(

@@ -4277,6 +4277,22 @@ describe("owner intent — D124 force Smartlead autopause off once", () => {
         "campaignBounceAutostop.ts no longer converges to the off percent.",
       ),
     );
+    assert.match(
+      autostop,
+      /loadBounceAutopauseSettings|getCampaign/,
+      stop(
+        "Confirm Smartlead autopause off via GET campaign when GET settings 404s (D80/D124).",
+        "campaignBounceAutostop.ts no longer reads the campaign object for the threshold.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /current == null \|\| current === offNumber/,
+      stop(
+        "An unreadable bounce_autopause_threshold is treated as on, not off (D80/D84).",
+        "campaignBounceAutostop.ts skips the off-write when the GET 404s again.",
+      ),
+    );
   });
 });
 

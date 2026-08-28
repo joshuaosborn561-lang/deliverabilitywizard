@@ -17,6 +17,7 @@ import {
 } from "../lib/campaignBouncePause.js";
 import {
   campaignSettingsWriteBody,
+  loadBounceAutopauseSettings,
   readBounceAutopausePercent,
 } from "../lib/bounceAutopause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -580,28 +581,41 @@ export class CampaignBounceAutostopService {
       !lastVerify ||
       Date.now() - Date.parse(lastVerify) >= AUTOPAUSE_VERIFY_EVERY_MS;
     const forceAll = !this.state?.getAutopauseForceAllAt();
+    // D80/D84 — GET /settings 404s here. A 404 used to count as "already
+    // off" and skip the write, which is how Smartlead's native pause stayed
+    // on after D124. Null confirm stamp = this pass still owes a campaign
+    // GET (production state will not have the field).
+    const confirmDue =
+      typeof this.state?.getAutopauseCampaignGetAt === "function"
+        ? !this.state.getAutopauseCampaignGetAt()
+        : false;
 
     let disableErrors = 0;
     for (const campaign of living) {
       const alreadyOff = this.state?.getAutopauseOffAt(campaign.id);
-      if (!forceAll && alreadyOff && !verifyDue) continue;
+      if (!forceAll && alreadyOff && !verifyDue && !confirmDue) continue;
       try {
-        // GET /campaigns/{id}/settings 404s on this Smartlead account.
-        // Only spend a read on the 6h verify; force/first write is POST-only.
-        let settings: unknown = null;
-        if (!forceAll && alreadyOff && verifyDue) {
-          settings = await this.smartlead
-            .getCampaignSettings(campaign.id)
-            .catch(() => null);
-          await sleep(120);
-          const current = readBounceAutopausePercent(settings);
-          if (current == null || current === offNumber) continue;
+        const settings = await loadBounceAutopauseSettings(
+          this.smartlead,
+          campaign.id,
+        );
+        await sleep(process.env.NODE_TEST_CONTEXT ? 0 : 120);
+        const current = readBounceAutopausePercent(settings);
+        if (!forceAll && current === offNumber) {
+          this.state?.markAutopauseOff(campaign.id);
+          continue;
+        }
+        if (current != null && current !== offNumber) {
           console.log(
             `[bounce-autostop] drift on #${campaign.id} ${campaign.name}: autopause ${current}% → ${off}%${dryRun ? " (dry-run)" : ""}`,
           );
         } else if (forceAll) {
           console.log(
             `[bounce-autostop] force autopause off #${campaign.id} ${campaign.name} → ${off}%${dryRun ? " (dry-run)" : ""}`,
+          );
+        } else if (current == null) {
+          console.log(
+            `[bounce-autostop] unread autopause on #${campaign.id} ${campaign.name}: treating as on, writing ${off}% (D80)${dryRun ? " (dry-run)" : ""}`,
           );
         } else {
           console.log(
@@ -624,8 +638,9 @@ export class CampaignBounceAutostopService {
       }
     }
 
-    if (verifyDue && !dryRun) {
+    if ((verifyDue || confirmDue) && !dryRun) {
       this.state?.setLastAutopauseVerifyAt(new Date().toISOString());
+      this.state?.setAutopauseCampaignGetAt?.(new Date().toISOString());
     }
     if (forceAll && !dryRun && disableErrors === 0) {
       this.state?.setAutopauseForceAllAt(new Date().toISOString());

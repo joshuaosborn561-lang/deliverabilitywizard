@@ -411,7 +411,7 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     );
   });
 
-  it("D134: retiring a domain approves generic backfill for the campaigns it cut", async () => {
+  it("D134/D150: retiring a domain approves generic backfill and buys an ESP-matched replacement", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-retire-${process.pid}-${Date.now()}.json`,
     );
@@ -424,15 +424,26 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     });
     state.upsertIsolationAction(action);
     const removed: Array<[number, number[]]> = [];
+    const buyCalls: unknown[] = [];
     const sl = {
       listCampaigns: async () => [
         { id: 10, name: "Goliath X", status: "ACTIVE" },
         { id: 11, name: "Old thing", status: "PAUSED" },
       ],
       listAllEmailAccounts: async () => [
-        { id: 21, from_email: "a@burned.info", campaign_ids: [10, 11] },
-        { id: 22, from_email: "b@burned.info", campaign_ids: [10] },
-        { id: 23, from_email: "safe@clean.info", campaign_ids: [10] },
+        {
+          id: 21,
+          from_email: "a@burned.info",
+          type: "OUTLOOK",
+          campaign_ids: [10, 11],
+        },
+        {
+          id: 22,
+          from_email: "b@burned.info",
+          type: "OUTLOOK",
+          campaign_ids: [10],
+        },
+        { id: 23, from_email: "safe@clean.info", type: "GMAIL", campaign_ids: [10] },
       ],
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
@@ -446,7 +457,16 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       sl as never,
       { send: async () => undefined } as never,
       state,
-      {} as never,
+      {
+        run: async (buyAction: { detail: Record<string, unknown> }) => {
+          buyCalls.push(buyAction.detail);
+          return {
+            domains: ["fresh.info"],
+            mailboxesOrdered: 3,
+            awaitingNameservers: false,
+          };
+        },
+      } as never,
     );
 
     const outcome = await svc.decide(action.id, "approve", {
@@ -465,6 +485,16 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       state.getGenericBackfillApproval(11),
       undefined,
       "a paused campaign gets no approval",
+    );
+    assert.equal(buyCalls.length, 1, "D150: retire also buys the replacement");
+    const detail = buyCalls[0] as {
+      platforms?: string[];
+      espMix?: { GOOGLE: number; MICROSOFT: number };
+    };
+    assert.deepEqual(detail.espMix, { GOOGLE: 0, MICROSOFT: 2 });
+    assert.ok(
+      detail.platforms?.every((p) => p === "MICROSOFT"),
+      `replacement mailboxes match retired ESP mix: ${detail.platforms}`,
     );
   });
 });

@@ -180,6 +180,8 @@ export interface IsolationState {
   lastPodControlAt: string | null;
   /** D56 — paused known-good shell campaign id. */
   shellCampaignId: number | null;
+  /** D151 — paused shell that owns word-hunt variant placements. */
+  wordHuntShellCampaignId: number | null;
   lastDeliveryWatchAt: string | null;
   lastRigBaselineAt: string | null;
   domainHistory: Record<string, DomainControlHistoryRecord>;
@@ -201,6 +203,7 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   copyCanaryFleet: null,
   lastPodControlAt: null,
   shellCampaignId: null,
+  wordHuntShellCampaignId: null,
   lastDeliveryWatchAt: null,
   lastRigBaselineAt: null,
   domainHistory: {},
@@ -229,6 +232,11 @@ export function normalizeIsolationState(
     shellCampaignId:
       typeof raw?.shellCampaignId === "number" && raw.shellCampaignId > 0
         ? raw.shellCampaignId
+        : null,
+    wordHuntShellCampaignId:
+      typeof raw?.wordHuntShellCampaignId === "number" &&
+      raw.wordHuntShellCampaignId > 0
+        ? raw.wordHuntShellCampaignId
         : null,
     lastDeliveryWatchAt: raw?.lastDeliveryWatchAt ?? null,
     lastRigBaselineAt: raw?.lastRigBaselineAt ?? null,

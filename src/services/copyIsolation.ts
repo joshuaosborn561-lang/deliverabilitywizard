@@ -28,6 +28,10 @@ import {
   requestIsolationAction,
   suggestedCopySwap,
 } from "../lib/isolationActions.js";
+import {
+  ensureWordHuntShell,
+  writeWordHuntVariantSequences,
+} from "../lib/wordHuntShell.js";
 import type { IsolationRunRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import type { IsolationRigService } from "./isolationRig.js";
@@ -118,41 +122,89 @@ export class CopyIsolationService {
       return result;
     }
 
+    // D151 — one shell, N sequence steps (one deletion each), then fire
+    // every SmartDelivery test in parallel. Overwriting a single sequence
+    // serially made every test share the last body.
+    const shell = dryRun
+      ? { campaignId: 0 }
+      : await ensureWordHuntShell({
+          config: this.config,
+          smartlead: this.smartlead,
+          state: this.state,
+          isolationEmails: emails,
+        });
+    const providerIds = dryRun
+      ? this.config.providerIds
+      : await this.smartDelivery.resolveProviderIds(this.config.providerIds);
+    if (!dryRun && !providerIds.length) {
+      result.errors.push(
+        "no SmartDelivery provider_ids — resolve PROVIDER_IDS or seed providers",
+      );
+      return result;
+    }
     const folderId = this.state.getIsolation().folders.teardowns;
-    const created = dryRun
-      ? variants.map((variant, index) =>
-          this.recordVariant(run, variant, `dry-run-${index}`),
-        )
-      : await Promise.all(
-          variants.map(async (variant, index) => {
-            const createdTest = await this.smartDelivery.createManualPlacement(
-              isolationManualPayload({
-                testName: isolationVariantTestName(
-                  run.campaignId,
-                  variant.kind,
-                  index,
-                ),
-                description: [
-                  `${ISOLATION_FOLDER_NAME} — one variable only.`,
-                  `Campaign ${run.campaignId}`,
-                  `${variant.kind}: ${variant.element}`,
-                ].join("\n"),
-                senderAccounts: emails,
-                sequence: copySequence(
-                  "Isolation variant",
-                  variant.subject,
-                  /<[a-z][\s\S]*>/i.test(variant.body)
-                    ? variant.body
-                    : htmlFromPlain(variant.body),
-                ),
-                folderId,
-                providerIds: this.config.providerIds,
-                linkChecker: variant.kind === "link" ? false : true,
-              }),
-            );
-            return this.recordVariant(run, variant, String(createdTest.id));
+    const bodies = variants.map((variant) => ({
+      variant,
+      bodyHtml: /<[a-z][\s\S]*>/i.test(variant.body)
+        ? variant.body
+        : htmlFromPlain(variant.body),
+    }));
+    if (dryRun) {
+      const created = bodies.map(({ variant }, index) =>
+        this.recordVariant(run, variant, `dry-run-${index}`),
+      );
+      result.started = true;
+      result.waiting = true;
+      this.state.upsertIsolationRun({
+        ...run,
+        teardownStarted: true,
+        seedsConsumed: (run.seedsConsumed ?? 0) + created.length,
+        updatedAt: new Date().toISOString(),
+      });
+      await this.state.save();
+      return result;
+    }
+
+    const mappingIds = await writeWordHuntVariantSequences({
+      smartlead: this.smartlead,
+      campaignId: shell.campaignId,
+      variants: bodies.map(({ variant, bodyHtml }) => ({
+        subject: variant.subject,
+        bodyHtml,
+      })),
+    });
+    const created = await Promise.all(
+      bodies.map(async ({ variant, bodyHtml }, index) => {
+        const sequenceMappingId = mappingIds[index]!;
+        const createdTest = await this.smartDelivery.createManualPlacement(
+          isolationManualPayload({
+            testName: isolationVariantTestName(
+              run.campaignId,
+              variant.kind,
+              index,
+            ),
+            description: [
+              `${ISOLATION_FOLDER_NAME} — one variable only.`,
+              `Live campaign ${run.campaignId}`,
+              `Word-hunt shell ${shell.campaignId} seq ${index + 1}`,
+              `${variant.kind}: ${variant.element}`,
+            ].join("\n"),
+            senderAccounts: emails,
+            sequence: copySequence(
+              "Isolation variant",
+              variant.subject,
+              bodyHtml,
+            ),
+            folderId,
+            providerIds,
+            campaignId: shell.campaignId,
+            sequenceMappingId,
+            linkChecker: variant.kind === "link" ? false : true,
           }),
         );
+        return this.recordVariant(run, variant, String(createdTest.id));
+      }),
+    );
 
     result.started = true;
     result.waiting = true;

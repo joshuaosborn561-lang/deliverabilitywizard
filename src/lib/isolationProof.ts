@@ -38,13 +38,16 @@ export function copySwapProof(input: {
   swap: string;
   controlLanded: boolean;
 }): string {
-  const edit = input.swap.trim()
-    ? input.swap.trim()
-    : "delete that word";
+  const hasSwap = Boolean(input.swap.trim());
+  const edit = hasSwap ? input.swap.trim() : "delete that phrase";
+  const phrase = input.element.replace(/\n/g, " ").slice(0, 400);
   return [
-    `It was the word *${input.element}*.`,
-    `Suggested edit: *${edit}*.`,
-    "Make the changes? One tap deletes/replaces it across every ACTIVE campaign that carries it (D133).",
+    `Campaign: *${input.campaignName}*.`,
+    `Replacing this exact phrase/word: *${phrase}*.`,
+    hasSwap
+      ? `Suggested edit (keeps the line’s job, drops the spam trigger): *${edit}*.`
+      : `Suggested edit: *${edit}*.`,
+    "Use suggested edit, or Write my own edit to type a different replacement. One tap applies fleet-wide on every ACTIVE campaign that still carries that phrase (D133).",
     `Known-good email from the same inboxes ${input.controlLanded ? "landed" : "did not land"} — this is the copy, not dead inboxes. I have not edited the live email.`,
   ].join("\n");
 }

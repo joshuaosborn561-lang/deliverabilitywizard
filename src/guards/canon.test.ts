@@ -1107,18 +1107,18 @@ describe("owner intent — D69 copy Slack is the word and a one-click edit", () 
     });
     assert.match(
       proof,
-      /It was the word \*free\*/,
+      /Replacing this exact phrase\/word: \*free\*/,
       stop(
-        "The Slack names the word (D69).",
-        "copySwapProof no longer says it was this word.",
+        "The Slack names the exact phrase being replaced (D69/D153).",
+        "copySwapProof no longer names the find phrase.",
       ),
     );
     assert.match(
       proof,
-      /Make the changes\?/,
+      /Write my own edit|Use suggested edit|Make the changes/,
       stop(
-        "The Slack asks to make the changes (D69).",
-        "copySwapProof no longer asks Make the changes?",
+        "The Slack asks for a human tap to apply the edit (D69/D153).",
+        "copySwapProof no longer asks for a tap.",
       ),
     );
   });
@@ -4625,6 +4625,22 @@ describe("owner intent — D133/D134 the taps act fleet-wide", () => {
         "isolationExecute.ts lost the retire provenance on approvals.",
       ),
     );
+    assert.match(
+      exec,
+      /platformsMatchingEspMix|espMixFromAccountTypes/,
+      stop(
+        "A retire tap buys an ESP-matched replacement in the same swoop (D150).",
+        "isolationExecute.ts retires without matching ESPs on the buy.",
+      ),
+    );
+    assert.match(
+      exec,
+      /this\.buy\.run/,
+      stop(
+        "A retire tap runs the replacement buy — Josh's tap is the spend approval (D150).",
+        "isolationExecute.ts no longer buys on retire.",
+      ),
+    );
     const actions = await readFile(
       new URL("../lib/isolationActions.ts", import.meta.url),
       "utf8",
@@ -4635,6 +4651,172 @@ describe("owner intent — D133/D134 the taps act fleet-wide", () => {
       stop(
         "One pending ask per word — the tap covers the fleet (D133).",
         "isolationActions.ts dedupes word swaps per campaign again.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D151 word hunt rides a paused shell", () => {
+  it("D151: copy isolation schedules off the word-hunt shell mapping", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const copy = await readFile(
+      new URL("../services/copyIsolation.ts", import.meta.url),
+      "utf8",
+    );
+    const shell = await readFile(
+      new URL("../lib/wordHuntShell.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      shell,
+      /WORD_HUNT_SHELL_NAME|ensureWordHuntShell/,
+      stop(
+        "Word hunt has a paused shell helper like canaries (D151).",
+        "wordHuntShell.ts is missing.",
+      ),
+    );
+    assert.match(
+      shell,
+      /writeWordHuntVariantSequences/,
+      stop(
+        "Word hunt writes every deletion as its own shell sequence step (D151).",
+        "wordHuntShell.ts lost the parallel multi-seq write.",
+      ),
+    );
+    assert.match(
+      copy,
+      /writeWordHuntVariantSequences/,
+      stop(
+        "Copy isolation arms the word-hunt shell before scheduling (D151).",
+        "copyIsolation.ts went back to sequence-only manual posts.",
+      ),
+    );
+    assert.match(
+      copy,
+      /Promise\.all/,
+      stop(
+        "Word-hunt placements fire in parallel once the shell sequences exist (D151).",
+        "copyIsolation.ts schedules deletions serially again.",
+      ),
+    );
+    assert.match(
+      copy,
+      /resolveProviderIds/,
+      stop(
+        "Word-hunt placements resolve provider_ids (D151).",
+        "copyIsolation.ts no longer resolves providers.",
+      ),
+    );
+  });
+
+  it("D151: word-hunt Slack progress uses copy_word so completion is not quiet-dropped", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const block = slack.slice(
+      slack.indexOf("async notifyCopyIsolation"),
+      slack.indexOf("async notifyPodControls"),
+    );
+    assert.match(
+      block,
+      /"copy_word"/,
+      stop(
+        "notifyCopyIsolation must send as copy_word or D71 drops hunt completion (D151).",
+        "slack.ts notifyCopyIsolation still posts unclassified.",
+      ),
+    );
+  });
+
+  it("D152: suggested swap keeps inboxing for gift-bait openers", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actions,
+      /Air Pods|gift-bait|pen-test work/,
+      stop(
+        "Gift-bait openers get a substitute, not a blank delete (D152).",
+        "suggestedCopySwap lost the Air Pods / gift-bait branch.",
+      ),
+    );
+    const proof = await readFile(
+      new URL("../lib/isolationProof.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      proof,
+      /keeps the line/,
+      stop(
+        "The Make the changes proof says the edit keeps the line's job (D152).",
+        "copySwapProof still only says delete.",
+      ),
+    );
+  });
+
+  it("D153: Write my own edit button opens a modal that names the find phrase", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      slack,
+      /Write my own edit/,
+      stop(
+        "swap_copy Slack ask offers Write my own edit (D153).",
+        "notifyIsolationAction lost the custom-edit button.",
+      ),
+    );
+    assert.match(
+      slack,
+      /SWAP_EDIT_ACTION_ID|isolation_swap_edit/,
+      stop(
+        "Write my own edit is a native interactive button (D153).",
+        "slack.ts no longer wires isolation_swap_edit.",
+      ),
+    );
+    assert.match(
+      slack,
+      /openSwapEditModal|views\.open|viewsOpen/,
+      stop(
+        "Custom edit opens a Slack modal via views.open (D153).",
+        "SlackClient lost viewsOpen / openSwapEditModal.",
+      ),
+    );
+    const modal = await readFile(
+      new URL("../lib/slackSwapEdit.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      modal,
+      /Replacing this exact phrase\/word/,
+      stop(
+        "The edit modal labels the exact find phrase (D153).",
+        "slackSwapEdit.ts lost the Replacing this exact phrase/word label.",
+      ),
+    );
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      index,
+      /view_submission/,
+      stop(
+        "/slack/interactions handles the edit modal submit (D153).",
+        "index.ts interactions handler has no view_submission branch.",
+      ),
+    );
+    assert.match(
+      index,
+      /decision === "edit"|parsed\.decision === "edit"/,
+      stop(
+        "/slack/interactions opens the modal on the edit button (D153).",
+        "index.ts interactions handler does not branch on edit.",
       ),
     );
   });

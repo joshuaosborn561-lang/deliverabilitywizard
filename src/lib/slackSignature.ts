@@ -20,13 +20,17 @@ export function slackSignatureValid(input: {
   return timingSafeEqual(expected, got);
 }
 
-export function isolationActionValue(kind: string, id: string, decision: "approve" | "deny"): string {
+export function isolationActionValue(
+  kind: string,
+  id: string,
+  decision: "approve" | "deny" | "edit",
+): string {
   return `${kind}:${id}:${decision}`;
 }
 
 export function parseIsolationActionValue(
   value: string,
-): { kind: string; id: string; decision: "approve" | "deny" } | undefined {
+): { kind: string; id: string; decision: "approve" | "deny" | "edit" } | undefined {
   const lastColon = value.lastIndexOf(":");
   if (lastColon <= 0) return undefined;
   const decision = value.slice(lastColon + 1);
@@ -35,6 +39,12 @@ export function parseIsolationActionValue(
   if (firstColon <= 0) return undefined;
   const kind = rest.slice(0, firstColon);
   const id = rest.slice(firstColon + 1);
-  if (!kind || !id || (decision !== "approve" && decision !== "deny")) return undefined;
+  if (
+    !kind ||
+    !id ||
+    (decision !== "approve" && decision !== "deny" && decision !== "edit")
+  ) {
+    return undefined;
+  }
   return { kind, id, decision };
 }

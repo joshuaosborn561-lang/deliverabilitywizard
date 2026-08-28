@@ -11,6 +11,10 @@ import {
   type SlackAllowKind,
 } from "../lib/slackAllow.js";
 import { isolationActionValue } from "../lib/slackSignature.js";
+import {
+  SWAP_EDIT_ACTION_ID,
+  swapEditModalView,
+} from "../lib/slackSwapEdit.js";
 
 export interface SlackCredentials {
   webhookUrl?: string;
@@ -71,6 +75,52 @@ export class SlackClient {
 
   async notifyActionResult(text: string): Promise<void> {
     await this.send(text, undefined, "action_result");
+  }
+
+  /**
+   * D153 — open the "Write my own edit" modal. Needs a trigger_id from a
+   * block_actions payload within ~3s (Slack rule).
+   */
+  async viewsOpen(
+    triggerId: string,
+    view: Record<string, unknown>,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const token = readSlackBotToken(this.creds);
+    if (!token) {
+      return { ok: false, error: "Slack bot token missing — cannot open modal" };
+    }
+    const response = await fetch("https://slack.com/api/views.open", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({ trigger_id: triggerId, view }),
+    });
+    const body = (await response.json()) as { ok?: boolean; error?: string };
+    if (!response.ok || !body.ok) {
+      return { ok: false, error: body.error || `HTTP ${response.status}` };
+    }
+    return { ok: true };
+  }
+
+  /** D153 — modal that shows the exact find phrase, then Josh's replacement. */
+  async openSwapEditModal(opts: {
+    triggerId: string;
+    actionId: string;
+    element: string;
+    suggestedSwap: string;
+    campaignName?: string;
+  }): Promise<{ ok: boolean; error?: string }> {
+    return this.viewsOpen(
+      opts.triggerId,
+      swapEditModalView({
+        actionId: opts.actionId,
+        element: opts.element,
+        suggestedSwap: opts.suggestedSwap,
+        campaignName: opts.campaignName,
+      }),
+    );
   }
 
   private async sendViaWebhook(text: string, blocks?: unknown[]): Promise<void> {
@@ -821,18 +871,25 @@ export class SlackClient {
     waiting?: boolean;
     missingRig?: boolean;
   }): Promise<void> {
+    // D71 — word-hunt progress/results are copy_word traffic (same lane as
+    // the Make the changes ask). Unclassified send() was silently dropped,
+    // so hunt completion never reached Slack.
     if (details.missingRig) {
       await this.send(
         [
           `*${details.campaignName}* — copy problem, word hunt waiting.`,
           "The standing inbox test says the inboxes are fine. We still need the low-rep test domain set (two mailboxes, never attached to a campaign) before we can isolate the word. We did not change the live email.",
         ].join("\n"),
+        undefined,
+        "copy_word",
       );
       return;
     }
     if (details.waiting) {
       await this.send(
         `*${details.campaignName}* — copy word hunt is in flight. Same-day tests from the low-rep domain; we will post what recovered. We are not editing the live email.`,
+        undefined,
+        "copy_word",
       );
       return;
     }
@@ -842,6 +899,8 @@ export class SlackClient {
           `*${details.campaignName}* — no single change put this back in the inbox.`,
           "Likely the whole message shape, not one word. We did not change the live email.",
         ].join("\n"),
+        undefined,
+        "copy_word",
       );
       return;
     }
@@ -861,6 +920,8 @@ export class SlackClient {
       ]
         .filter((line): line is string => Boolean(line))
         .join("\n"),
+      undefined,
+      "copy_word",
     );
   }
 
@@ -925,10 +986,14 @@ export class SlackClient {
       | "generic_backfill"
       | "add_signature_tag";
     who: string;
+    /** D153 — exact find phrase for swap_copy (shown in message + modal). */
+    element?: string;
+    suggestedSwap?: string;
+    campaignName?: string;
   }): Promise<void> {
     const approveLabel =
       details.kind === "swap_copy"
-        ? "Make the changes"
+        ? "Use suggested edit"
         : details.kind === "add_signature_tag"
           ? "Add %signature%"
         : details.kind === "buy_domains"
@@ -938,9 +1003,21 @@ export class SlackClient {
             : details.kind === "generic_backfill"
               ? "Allow generics"
               : "Retire this domain";
+    const findPhrase = details.element?.trim() ?? "";
+    const suggested = details.suggestedSwap ?? "";
     const text = [
       `*${details.title}*`,
       details.proof,
+      details.kind === "swap_copy" && findPhrase
+        ? [
+            "",
+            "*Replacing this exact phrase/word:*",
+            `\`\`\`${findPhrase.slice(0, 2800)}\`\`\``,
+            suggested.trim()
+              ? `*Suggested edit:* ${suggested.trim()}`
+              : "*Suggested edit:* delete that phrase",
+          ].join("\n")
+        : undefined,
       "",
       details.kind === "buy_domains"
         ? "Cayden cannot approve a purchase. Josh: tap the button (opens a confirm page) or open Railway → /ops."
@@ -951,15 +1028,22 @@ export class SlackClient {
           : details.kind === "add_signature_tag"
             ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
           : details.kind === "retire_domain"
-            ? "Josh: tap the button (opens a confirm page) to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
-            : "Josh or Cayden: tap Make the changes (opens a confirm page). I will make that one word edit across every active campaign carrying it, and nothing else (D133).",
-    ].join("\n");
+            ? "Josh: tap the button (opens a confirm page) to retire. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix, and lets generics cover the campaigns until those warm (D150). Cayden cannot approve this."
+            : "Josh or Cayden: *Use suggested edit* applies the suggestion above fleet-wide (D133). *Write my own edit* opens a Slack form that shows the exact phrase again so you can type a different replacement.",
+    ]
+      .filter((line): line is string => line !== undefined)
+      .join("\n");
     const approveValue = isolationActionValue(
       details.kind,
       details.actionId,
       "approve",
     );
     const denyValue = isolationActionValue(details.kind, details.actionId, "deny");
+    const editValue = isolationActionValue(
+      details.kind,
+      details.actionId,
+      "edit",
+    );
     const secret = this.creds.actionLinkSecret?.trim();
     const base = this.creds.publicBaseUrl?.trim();
     const approveUrl =
@@ -987,32 +1071,47 @@ export class SlackClient {
       );
       return;
     }
-    await this.send(text, [
+    const elements: Array<Record<string, unknown>> = [
       {
-        type: "section",
-        text: { type: "mrkdwn", text },
+        type: "button",
+        text: { type: "plain_text", text: approveLabel },
+        style: "primary",
+        action_id: "isolation_approve",
+        value: approveValue,
+        ...(approveUrl ? { url: approveUrl } : {}),
       },
-      {
-        type: "actions",
-        elements: [
-          {
-            type: "button",
-            text: { type: "plain_text", text: approveLabel },
-            style: "primary",
-            action_id: "isolation_approve",
-            value: approveValue,
-            ...(approveUrl ? { url: approveUrl } : {}),
-          },
-          {
-            type: "button",
-            text: { type: "plain_text", text: "Not now" },
-            action_id: "isolation_deny",
-            value: denyValue,
-            ...(denyUrl ? { url: denyUrl } : {}),
-          },
-        ],
-      },
-    ], kind);
+    ];
+    // D153 — native interactive button (no url). URL buttons skip
+    // /slack/interactions, so they cannot open a modal.
+    if (details.kind === "swap_copy" && findPhrase) {
+      elements.push({
+        type: "button",
+        text: { type: "plain_text", text: "Write my own edit" },
+        action_id: SWAP_EDIT_ACTION_ID,
+        value: editValue,
+      });
+    }
+    elements.push({
+      type: "button",
+      text: { type: "plain_text", text: "Not now" },
+      action_id: "isolation_deny",
+      value: denyValue,
+      ...(denyUrl ? { url: denyUrl } : {}),
+    });
+    await this.send(
+      text,
+      [
+        {
+          type: "section",
+          text: { type: "mrkdwn", text },
+        },
+        {
+          type: "actions",
+          elements,
+        },
+      ],
+      kind,
+    );
   }
 
   async notifyLeadRunout(details: { text: string }): Promise<void> {

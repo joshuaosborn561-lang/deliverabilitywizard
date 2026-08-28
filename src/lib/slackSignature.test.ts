@@ -56,5 +56,11 @@ describe("slack signature", () => {
         decision: "approve",
       },
     );
+    assert.deepEqual(
+      parseIsolationActionValue(
+        isolationActionValue("swap_copy", "swap_copy-1", "edit"),
+      ),
+      { kind: "swap_copy", id: "swap_copy-1", decision: "edit" },
+    );
   });
 });

@@ -42,4 +42,54 @@ describe("isolation Slack URL buttons", () => {
     });
     assert.deepEqual(verified, { ok: true, decision: "approve" });
   });
+
+  it("D153: swap_copy offers Write my own edit without a URL (modal path)", async () => {
+    const client = new SlackClient({
+      channelLabel: "#test",
+      actionLinkSecret: "secret",
+      publicBaseUrl: "https://example.test",
+    });
+    let text = "";
+    let blocks: unknown[] | undefined;
+    (client as unknown as {
+      send: (t: string, next?: unknown[], _kind?: string) => Promise<void>;
+    }).send = async (t, next) => {
+      text = t;
+      blocks = next;
+    };
+
+    await client.notifyIsolationAction({
+      title: "It was Air Pods on Goliath",
+      proof: "Hunt recovered when that opener was gone.",
+      actionId: "swap_copy-1",
+      kind: "swap_copy",
+      who: "Josh or Cayden",
+      element:
+        "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+      suggestedSwap: "Quick note from our pen-test work.",
+      campaignName: "Goliath Education Receipts - Large Public",
+    });
+
+    assert.match(text, /Replacing this exact phrase\/word/);
+    assert.match(text, /Air Pods/);
+    assert.match(text, /Write my own edit/);
+    const actions = (
+      blocks as Array<{
+        elements?: Array<{
+          url?: string;
+          action_id?: string;
+          text?: { text?: string };
+          value?: string;
+        }>;
+      }>
+    )[1]?.elements;
+    assert.equal(actions?.length, 3);
+    assert.equal(actions?.[0]?.text?.text, "Use suggested edit");
+    assert.ok(actions?.[0]?.url, "suggested edit still uses confirm-page URL");
+    assert.equal(actions?.[1]?.text?.text, "Write my own edit");
+    assert.equal(actions?.[1]?.action_id, "isolation_swap_edit");
+    assert.equal(actions?.[1]?.url, undefined, "modal button must not set url");
+    assert.match(actions?.[1]?.value ?? "", /:edit$/);
+    assert.equal(actions?.[2]?.text?.text, "Not now");
+  });
 });

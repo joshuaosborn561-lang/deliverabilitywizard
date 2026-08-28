@@ -3086,6 +3086,143 @@ describe("owner intent — D148 nothing pauses: investigate, remediate, re-add",
   });
 });
 
+describe("owner intent — D149 alerts and watches live on Railway", () => {
+  it("D149: ops_alert is an allowed Slack kind", async () => {
+    const { slackAllowed } = await import("../lib/slackAllow.js");
+    assert.equal(
+      slackAllowed("ops_alert"),
+      true,
+      stop(
+        "The machine pages its own anomalies to Slack instead of waiting for someone to read the logs (D149).",
+        "slackAllowed('ops_alert') is false — stage-watchdog and deploy-identity pages are being quiet-dropped.",
+      ),
+    );
+  });
+
+  it("D149: one overdue judgement, and the health pass pages it", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const index = await read("../index.ts");
+    assert.match(
+      index,
+      /overdueStages\(/,
+      stop(
+        "The log scoreboard and the Slack pager share one overdue judgement (D149).",
+        "index.ts no longer uses overdueStages for the scoreboard.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /const STAGE_OVERDUE_MS/,
+      stop(
+        "There is exactly one overdue judgement, in src/lib/stageWindows.ts (D149).",
+        "index.ts grew its own overdue window again — the pager and the log can now disagree.",
+      ),
+    );
+    assert.match(
+      index,
+      /alertStageAnomalies/,
+      stop(
+        "The health pass pages stage anomalies to Slack (D149).",
+        "index.ts no longer calls alertStageAnomalies — the watch fell back to logs someone must come read.",
+      ),
+    );
+
+    const ops = await read("../services/opsAlerts.ts");
+    assert.match(
+      ops,
+      /"ops_alert"/,
+      stop(
+        "Stage pages carry the ops_alert kind (D149).",
+        "opsAlerts.ts sends unclassified — slack-quiet drops it silently.",
+      ),
+    );
+    assert.match(
+      ops,
+      /setStageAlert/,
+      stop(
+        "One page per overdue episode, stamped in state (D149).",
+        "opsAlerts.ts no longer stamps episodes — it would page every 15 minutes.",
+      ),
+    );
+  });
+
+  it("D149: overdue judgement honours per-stage cadence and event-driven stages", async () => {
+    const { overdueStages, STAGE_OVERDUE_WINDOWS_MS } = await import(
+      "../lib/stageWindows.js"
+    );
+    assert.equal(
+      STAGE_OVERDUE_WINDOWS_MS["pod-cover"],
+      null,
+      stop(
+        "pod-cover is event-driven and never overdue (D131).",
+        "The registry lost pod-cover's null window.",
+      ),
+    );
+    const now = Date.now();
+    const rows = overdueStages(
+      {
+        "dns-audit": {
+          lastOkAt: new Date(now - 8 * 3600 * 1000).toISOString(),
+          consecutiveFailures: 1,
+          lastError: "HTTP 429",
+        },
+        "pod-cover": { lastOkAt: null, consecutiveFailures: 5, lastError: "boom" },
+        reconnect: {
+          lastOkAt: new Date(now - 60 * 1000).toISOString(),
+          consecutiveFailures: 0,
+          lastError: null,
+        },
+      },
+      now,
+    );
+    assert.deepEqual(
+      rows.map((r) => r.name),
+      ["dns-audit"],
+      stop(
+        "A 6-hour stage silent for 8h is overdue; an event-driven stage never is; a fresh stage is not (D131/D149).",
+        "overdueStages misjudged the registry windows.",
+      ),
+    );
+  });
+
+  it("D149: boot reads its own deploy identity and pages when it is wrong", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+    const index = await read("../index.ts");
+    assert.match(
+      index,
+      /readDeployIdentity/,
+      stop(
+        "Boot logs which build is live (D149).",
+        "index.ts no longer reads the deploy identity at boot.",
+      ),
+    );
+    assert.match(
+      index,
+      /deployIdentityProblem/,
+      stop(
+        "A metadata-less or non-main build pages Slack at boot (D149).",
+        "index.ts no longer checks the deploy identity for problems.",
+      ),
+    );
+    const lib = await read("../lib/deployIdentity.ts");
+    assert.match(
+      lib,
+      /RAILWAY_GIT_COMMIT_SHA/,
+      stop(
+        "Identity comes from Railway's injected git metadata (D149).",
+        "deployIdentity.ts stopped reading RAILWAY_GIT_COMMIT_SHA.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D89 leftover canon holes", () => {
   it("D89: living known-good, queued reads, attach-after-adopt, bulk collapse, drafts on EOD", async () => {
     const read = (path: string) =>

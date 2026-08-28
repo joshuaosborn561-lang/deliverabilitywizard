@@ -239,6 +239,8 @@ export interface AppState {
   bouncePausedCampaigns: Record<string, string>;
   /** D84 — per-stage watchdog: last success / failure per named loop. */
   stageHealth: Record<string, StageHealthRecord>;
+  /** D149 — overdue stages currently paged to Slack (name → ISO paged-at). */
+  stageAlertedAt: Record<string, string>;
   /**
    * D85 — zero connected unwarmed-canary mailboxes, reported once instead of
    * as a finding on every ACTIVE campaign. Null when the fleet has at least
@@ -443,6 +445,7 @@ const EMPTY_STATE: AppState = {
   bounceSnapshots: {},
   bouncePausedCampaigns: {},
   stageHealth: {},
+  stageAlertedAt: {},
   canaryFleetDown: null,
 };
 
@@ -503,6 +506,7 @@ export class StateStore {
         bounceSnapshots: parsed.bounceSnapshots ?? {},
         bouncePausedCampaigns: parsed.bouncePausedCampaigns ?? {},
         stageHealth: parsed.stageHealth ?? {},
+        stageAlertedAt: parsed.stageAlertedAt ?? {},
         canaryFleetDown: parsed.canaryFleetDown ?? null,
       };
     } catch (error) {
@@ -1123,6 +1127,20 @@ export class StateStore {
   /** D131 — a stage deleted from the code must not alarm from its record. */
   dropStageHealth(name: string): void {
     delete this.state.stageHealth[name];
+    delete this.state.stageAlertedAt[name];
+  }
+
+  /** D149 — one Slack page per overdue episode; the stamp IS the episode. */
+  listStageAlerts(): Record<string, string> {
+    return this.state.stageAlertedAt;
+  }
+
+  setStageAlert(name: string, at: string): void {
+    this.state.stageAlertedAt[name] = at;
+  }
+
+  clearStageAlert(name: string): void {
+    delete this.state.stageAlertedAt[name];
   }
 
   /** D85 — one fleet-level fact instead of a finding per campaign. */

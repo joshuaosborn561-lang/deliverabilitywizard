@@ -164,6 +164,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D146 | Live | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the dedupe |
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
 | D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
+| D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
 
 ---
 
@@ -3898,3 +3899,58 @@ tenant lead parked, flushed after midnight UTC; sender_blocked held on
 a pending ask and released on resolution; content_block held until the
 sequence edit stamp moves; 7-day expiry receipt; pre-D148 stamp drain
 still opens its job.
+
+## D149 — Alerts and watches live on Railway, not in a chat session
+
+**Decision (Josh, 2026-08-28).** "Need alerts and watches to live on
+railway not this env."
+
+Context: after D148 the 15-minute alert watch ran as scheduled Claude
+session check-ins reading Railway logs — the watchdog told a chat
+session, and the chat session told a human. That coverage dies with the
+session's container and lives outside the repo. The app already
+computes everything the watch was reading; it now pages Slack itself.
+
+1. **The stage watchdog pages Slack.** `overdueStages`
+   (src/lib/stageWindows.ts) is the single overdue judgement, shared by
+   the log scoreboard and the pager so they can never disagree. On
+   every health pass, a stage newly overdue pages ONCE (`ops_alert`
+   kind), stays silent while the episode lasts (stamped in
+   `stageAlertedAt`), and posts one recovery note when it succeeds
+   again. A page that fails to send is retried next pass instead of
+   going silent; dry-run logs instead of paging. The D131 ghost-stage
+   prune clears the episode stamp with the record.
+2. **Boot checks its own deploy identity.** Railway injects
+   RAILWAY_GIT_* metadata into GitHub-push builds; the 2026-08-27
+   stale-snapshot redeployer's builds carried none (rebuilds of a
+   deleted branch's snapshot kept overwriting main until the service
+   source was pointed back at main). Boot logs the
+   commit/branch/deployment, publishes them on `/health` (`deploy`),
+   and pages `ops_alert` when the metadata is missing or the branch is
+   not main. Known limit: a stale snapshot runs OLD code and cannot
+   self-report — this catches a wrong source whenever new code boots;
+   Railway's own deploy webhook (dashboard → project settings) is the
+   belt-and-braces a human can add on top.
+3. **`ops_alert` joins the D71 allowlist.** Slack stays three pages
+   plus receipts plus EOD; an ops alert is the machine reporting itself
+   broken, which is exactly the "human decision needed" traffic D71
+   kept Slack for.
+4. **The chat-session watch is retired.** The four 15-minute alert
+   Routines are deleted once this is live. Chat sessions investigate
+   when paged; they are not the pager. The campaign-watchdog service
+   (separate Railway project) keeps its counters log-only until its
+   source lands in a repo.
+
+**Supersedes / amends.** Amends D71 (adds the `ops_alert` kind). Amends
+the D84/D131 stage watchdog from log-only to paging. No Smartlead or
+sending behaviour changes.
+
+**Guards.** owner-intent D149: `slackAllowed("ops_alert")`;
+`overdueStages` is the one overdue judgement (index.ts uses it and may
+not grow its own window); index.ts calls `alertStageAnomalies` and
+`readDeployIdentity`/`deployIdentityProblem`; deployIdentity.ts reads
+RAILWAY_GIT_COMMIT_SHA. Service tests: one page per episode; recovery
+note once, then quiet; failed page retried; event-driven (null-window)
+stage never pages; dry-run inert; D131 prune clears the stamp; identity
+problems for missing metadata / non-main branch, clean on a main push,
+null off Railway.

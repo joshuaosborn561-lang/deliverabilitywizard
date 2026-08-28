@@ -4728,6 +4728,34 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
       ),
     );
   });
+
+  it("D152: suggested swap keeps inboxing for gift-bait openers", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actions,
+      /Air Pods|gift-bait|pen-test work/,
+      stop(
+        "Gift-bait openers get a substitute, not a blank delete (D152).",
+        "suggestedCopySwap lost the Air Pods / gift-bait branch.",
+      ),
+    );
+    const proof = await readFile(
+      new URL("../lib/isolationProof.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      proof,
+      /keeps the line/,
+      stop(
+        "The Make the changes proof says the edit keeps the line's job (D152).",
+        "copySwapProof still only says delete.",
+      ),
+    );
+  });
 });
 
 describe("owner intent — D135/D136 fleet visibility", () => {

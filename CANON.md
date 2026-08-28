@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D151** (2026-08-28). One page of current truth. When a new
+Canon as of **D152** (2026-08-28). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -158,11 +158,11 @@ Slack speaks only when a human decision is needed or the day is done.
     overrides) (D137).
   - No unwarmed reading yet → wait. Do not hunt.
 - The hunt runs autonomously; Slack fires **once** when it has the word:
-  receipts, the suggested edit, one *Make the changes* button (D69) — and
-  that one tap deletes/replaces the word across **every ACTIVE campaign
-  carrying it**, all steps and variants, shells excluded (D133). A
-  provider-split guess is never Slacked and never benches senders (D28/D36
-  are dead as drivers).
+  receipts, a **substitute edit that keeps the line’s job** (not a blank
+  delete — D152), one *Make the changes* button (D69) — and that one tap
+  deletes/replaces across **every ACTIVE campaign carrying it**, all steps
+  and variants, shells excluded (D133). A provider-split guess is never
+  Slacked and never benches senders (D28/D36 are dead as drivers).
 - Domains are judged on the known-good email only. Two consecutive
   domain-level fails → ask Josh to retire (Slack button). Fleet domains die
   fleet-wide only on 3+ inbox fails (D49). A blacklist hit alone burns
@@ -176,7 +176,8 @@ Exactly three pages plus receipts (D71, D47 plain English):
 1. **Burned domain** — receipts + cancel/replace buttons; the retire tap
    pulls, buys the ESP-matched replacement, and lets generics cover the
    campaigns it cut (D134/D150).
-2. **Isolated spam word** — the word, the edit, *Make the changes*.
+2. **Isolated spam word** — the word, a substitute that keeps inboxing
+   (D152), *Make the changes*.
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed
    inboxes an outside writer keeps re-adding after gate pulls

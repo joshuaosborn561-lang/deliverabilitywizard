@@ -7,6 +7,7 @@ import {
   dismissPendingSignatureAsks,
   remindPendingIsolationActions,
   requestIsolationAction,
+  suggestedCopySwap,
 } from "./isolationActions.js";
 
 function slackCapture() {
@@ -186,5 +187,20 @@ describe("D137 — a denied isolation-domain buy also never re-asks", () => {
     });
     assert.equal(again, null, "a deny is an answer, not a snooze");
     assert.equal(notified.length, 1);
+  });
+});
+
+describe("suggestedCopySwap — D152 keep inboxing", () => {
+  it("proposes a substitute for gift-bait openers instead of blank delete", () => {
+    const swap = suggestedCopySwap(
+      "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+    );
+    assert.match(swap, /pen-test|Quick note|useful/i);
+    assert.notEqual(swap, "");
+  });
+
+  it("still deletes pure spam tokens", () => {
+    assert.equal(suggestedCopySwap("winner"), "");
+    assert.equal(suggestedCopySwap("free"), "complimentary");
   });
 });

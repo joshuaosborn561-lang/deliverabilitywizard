@@ -192,14 +192,56 @@ export function signatureCampaignIdsOf(action: {
   return ids;
 }
 
+/**
+ * D152 — propose a substitute that still does the job of the line and
+ * stayed (or should stay) out of spam. Blank delete is a last resort for
+ * pure spam tokens (winner / congratulations), never the default for an
+ * opener, offer, or CTA the campaign still needs.
+ */
 export function suggestedCopySwap(element: string): string {
-  const key = element.trim().toLowerCase();
+  const trimmed = element.trim();
+  const key = trimmed.toLowerCase();
   const synonyms: Record<string, string> = {
     free: "complimentary",
-    guaranteed: "included",
+    guaranteed: "we stand behind",
+    guarantee: "we stand behind",
+    "act now": "when you have a minute",
+    "limited time": "when you have a minute",
+    "click here": "here",
+    "risk-free": "no surprise",
+    "risk free": "no surprise",
+    // Pure spam tokens — removing them is the edit.
     winner: "",
     winners: "",
     congratulations: "",
   };
-  return synonyms[key] ?? "";
+  if (Object.prototype.hasOwnProperty.call(synonyms, key)) {
+    return synonyms[key]!;
+  }
+
+  // Gift / physical-bait openers: keep the greeting job, drop the bait.
+  if (
+    /\bair\s*pods?\b/i.test(trimmed) ||
+    /\bairpods\b/i.test(trimmed) ||
+    /\b(pair of|extra|spare).{0,40}\b(tickets?|gift|air\s*pods?)\b/i.test(
+      trimmed,
+    ) ||
+    /\bi('ve| have) got\b.{0,80}\b(for you|with your name)/i.test(trimmed)
+  ) {
+    return "{Quick note|Had something useful} from our school-district pen-test work.";
+  }
+
+  // Closing CTA / softscript gift lines — keep a soft ask, drop the bait.
+  if (
+    /\b(come either way|are yours either way)\b/i.test(trimmed) ||
+    /\bps[-—:].{0,40}\b(air\s*pods?|tickets?|gift)\b/i.test(trimmed)
+  ) {
+    return "Happy to send the receipts report if useful.";
+  }
+
+  // Generic long phrase: do not default to delete — leave a short bridge.
+  if (trimmed.length > 40 || /\s/.test(trimmed)) {
+    return "Quick note —";
+  }
+  return "";
 }

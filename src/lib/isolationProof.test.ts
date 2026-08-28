@@ -27,6 +27,7 @@ describe("isolation proof", () => {
     });
     assert.match(text, /It was the word \*free\*/);
     assert.match(text, /complimentary/);
+    assert.match(text, /keeps the line/);
     assert.match(text, /Make the changes\?/);
   });
 });

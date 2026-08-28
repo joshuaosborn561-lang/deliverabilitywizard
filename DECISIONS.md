@@ -167,6 +167,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
 | D150 | Live | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
+| D152 | Live | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
 
 ---
 
@@ -4018,3 +4019,24 @@ mapping rules stay).
 `writeWordHuntVariantSequence`; `copyIsolation` sends shell
 `campaign_id` + `sequence_mapping_id` + `provider_ids`. Behavioral
 test: hunt create payload carries those three.
+
+## D152 — Word hunt proposes a substitute that keeps inboxing
+
+**Decision (Josh, 2026-08-28).** "ok so good finding but you need to
+propose a change that keeps inboxing not just delete it."
+
+When a deletion variant recovers, the Make the changes ask must propose
+a **replacement** that still does the job of that line (opener, CTA,
+offer hook) without the spam trigger — not a blank delete. Blank delete
+stays only for pure spam tokens (`winner`, `congratulations`).
+
+Gift / physical-bait openers (Air Pods, spare tickets, "I've got … for
+you") swap to a value-first bridge. The hunt still *measures* by
+deletion; the human tap applies the substitute fleet-wide (D133).
+
+**Supersedes / amends.** Extends D69/D133/D151 (finding stays; the
+recommended edit is a substitute).
+
+**Guards.** `suggestedCopySwap` returns a non-empty substitute for
+Air-Pods / gift-bait openers; `copySwapProof` says the edit keeps the
+line's job. Unit tests on the Goliath Air Pods opener string.

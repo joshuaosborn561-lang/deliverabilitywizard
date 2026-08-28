@@ -23,17 +23,24 @@ describe("copy isolation", () => {
       updateCampaignStatus: async () => {
         writes.push("status");
       },
+      createCampaign: async () => ({ id: 99, name: "DW Word Hunt Shell" }),
+      listCampaigns: async () => [
+        { id: 99, name: "DW Word Hunt Shell", status: "PAUSED" },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 9, from_email: "lab@iso.test", campaign_ids: [99] },
+      ],
+      getCampaignLeads: async () => ({ data: [{ id: 1 }] }),
+      addLeadsToCampaign: async () => ({ added_count: 1 }),
       getCampaignSequences: async () => [
         {
-          id: 1,
+          id: 77,
           seq_number: 1,
           subject: "Free consult this week",
           email_body: "We have a free consult. https://book.example.test/x",
         },
       ],
-      listAllEmailAccounts: async () => [
-        { id: 9, from_email: "lab@iso.test" },
-      ],
+      updateCampaignSequences: async () => undefined,
       isolationDenylistIds: () => [9],
       setIsolationDenylist: () => undefined,
     };
@@ -43,6 +50,7 @@ describe("copy isolation", () => {
         created.push(payload);
         return { id: `t${created.length}` };
       },
+      resolveProviderIds: async () => [2, 20, 21],
       getSpamFilterDetails: async () => [],
       getEmailContent: async () => ({}),
       getProviderwiseReport: async () => ({ result: [] }),
@@ -83,13 +91,13 @@ describe("copy isolation", () => {
     assert.equal(writes.length, 0);
     assert.equal(result.started, true);
     assert.ok(created.length >= 1);
-    assert.equal(
-      (created[0] as { sequence?: { steps?: Array<{ email_body?: string }> } })
-        .sequence?.steps?.[0]?.email_body?.includes("free") === false ||
-        created.some((row) =>
-          JSON.stringify(row).toLowerCase().includes("complimentary"),
-        ),
-      true,
-    );
+    const first = created[0] as {
+      campaign_id?: number;
+      sequence_mapping_id?: number;
+      provider_ids?: number[];
+    };
+    assert.equal(first.campaign_id, 99, "D151: word hunt rides the shell");
+    assert.equal(first.sequence_mapping_id, 77);
+    assert.deepEqual(first.provider_ids, [2, 20, 21]);
   });
 });

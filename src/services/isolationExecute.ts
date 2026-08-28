@@ -11,8 +11,15 @@ import { sleep } from "../lib/http.js";
 import type { InventoryBook } from "./inventory.js";
 import type { SmartleadSequence } from "../types/index.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
-import { signatureCampaignIdsOf } from "../lib/isolationActions.js";
+import {
+  buildIsolationAction,
+  signatureCampaignIdsOf,
+} from "../lib/isolationActions.js";
 import { appendSignatureTag } from "../lib/signatureQa.js";
+import {
+  espMixFromAccountTypes,
+  platformsMatchingEspMix,
+} from "../lib/retireEspMix.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import { slackKindForIsolationAction } from "../lib/slackAllow.js";
@@ -171,6 +178,61 @@ export class IsolationExecuteService {
       });
       backfilled += 1;
     }
+
+    // D150 — same tap also buys the replacement domain with ESP-matched
+    // mailboxes. Josh's retire approve is the spend approval; do not open a
+    // second buy ask. Failures after the pull still leave D134 backfill on.
+    const espMix = espMixFromAccountTypes(onDomain.map((account) => account.type));
+    const platforms = platformsMatchingEspMix(
+      espMix,
+      this.config.isolationMailboxesPerBuyDomain,
+    );
+    let buySummary: string | undefined;
+    try {
+      const buyAction = buildIsolationAction({
+        kind: "buy_domains",
+        title: `Replacement for retired ${domain}`,
+        proof: action.proof,
+        detail: {
+          domain,
+          quantity: 1,
+          parentDomain: this.config.isolationBuyParentDomain,
+          espMix,
+          platforms,
+          retiredDomain: domain,
+        },
+      });
+      buyAction.status = "approved";
+      buyAction.decidedAt = new Date().toISOString();
+      buyAction.decidedBy = action.decidedBy ?? "Josh";
+      this.state.upsertIsolationAction(buyAction);
+      const result = await this.buy.run(buyAction);
+      this.state.upsertIsolationAction({
+        ...this.state.getIsolationAction(buyAction.id)!,
+        status: "executed",
+        executedAt: new Date().toISOString(),
+        detail: {
+          ...buyAction.detail,
+          domains: result.domains,
+          phase: result.awaitingNameservers ? "awaiting_mailboxes" : "complete",
+        },
+      });
+      buySummary = [
+        `Bought replacement ${result.domains.join(", ") || "domain"} with ${platforms.join("/") || "mixed"} mailboxes to match the retired mix (G${espMix.GOOGLE}/M${espMix.MICROSOFT}).`,
+        result.mailboxesOrdered
+          ? `${result.mailboxesOrdered} mailbox${result.mailboxesOrdered === 1 ? "" : "es"} ordered — they owe 21 days before live send.`
+          : undefined,
+        result.awaitingNameservers
+          ? "Nameservers are still catching up; I will finish the mailbox order myself — no second tap."
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" ");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      buySummary = `Replacement buy failed after the pull: ${message}. Generics may still cover; I will need another tap to buy.`;
+    }
+
     await this.announce(
       "retire_domain",
       [
@@ -179,6 +241,7 @@ export class IsolationExecuteService {
         cutCampaignIds.size
           ? `Generics may cover the ${cutCampaignIds.size} campaign(s) that lost senders until the replacements finish their 21 days (D134)${backfilled < cutCampaignIds.size ? " — some already had approval" : ""}.`
           : undefined,
+        buySummary,
         "Health will fill those campaigns from clean spare inboxes on its own.",
         action.proof,
       ]

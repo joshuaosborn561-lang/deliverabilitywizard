@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D149** (2026-08-28). One page of current truth. When a new
+Canon as of **D151** (2026-08-28). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -86,11 +86,12 @@ Slack speaks only when a human decision is needed or the day is done.
   records used purely as mailbox pools: a box assigned to either is a
   generic to every classifier, and one-client never rewrites that
   assignment; the mailbox-side owner re-point to POC is staged, not live
-  (D142); a domain-retire tap auto-approves the ACTIVE
-  campaigns it pulled senders from, so volume never drops while the
-  replacements warm (D134). Cross-client top-up is a compensated **move**;
-  same-client is additive. (The old recovery-swap system and its
-  reservations are deleted, D130.)
+  (D142); a domain-retire tap is one fell swoop (D150): pull the burned
+  inboxes, buy a replacement domain whose Google/Outlook mailbox mix
+  matches what was retired, and auto-approve generics to cover the ACTIVE
+  campaigns it cut until those replacements warm (D134). Cross-client
+  top-up is a compensated **move**; same-client is additive. (The old
+  recovery-swap system and its reservations are deleted, D130.)
 - **Retired domains stay off** live campaigns forever; replacements owe the
   21 days (D65).
 
@@ -147,10 +148,14 @@ Slack speaks only when a human decision is needed or the day is done.
   - Known-good also failing an ESP → **infra**, not a word.
   - Unwarmed canaries land the copy while live senders fail → infra.
   - Campaign copy fails an ESP, known-good fine everywhere, unwarmed canaries
-    also fail that copy → **word hunt** (deletion tests on the isolation rig).
-    An unarmed rig asks Josh once to buy its isolation domain — the tap is
-    the approval, the buy is spend-gated, and the bought domain arms the
-    rig from state (`ISOLATION_DOMAIN` still overrides) (D137).
+    also fail that copy → **word hunt** (deletion tests on the isolation
+    rig). Variants ride a paused **DW Word Hunt Shell** with the isolation
+    mailboxes attached — SmartDelivery now requires `campaign_id` +
+    `sequence_mapping_id` + `provider_ids`, so custom-sequence-only posts
+    are dead (D151). An unarmed rig asks Josh once to buy its isolation
+    domain — the tap is the approval, the buy is spend-gated, and the
+    bought domain arms the rig from state (`ISOLATION_DOMAIN` still
+    overrides) (D137).
   - No unwarmed reading yet → wait. Do not hunt.
 - The hunt runs autonomously; Slack fires **once** when it has the word:
   receipts, the suggested edit, one *Make the changes* button (D69) — and
@@ -169,7 +174,8 @@ Slack speaks only when a human decision is needed or the day is done.
 
 Exactly three pages plus receipts (D71, D47 plain English):
 1. **Burned domain** — receipts + cancel/replace buttons; the retire tap
-   also lets generics cover the campaigns it cut (D134).
+   pulls, buys the ESP-matched replacement, and lets generics cover the
+   campaigns it cut (D134/D150).
 2. **Isolated spam word** — the word, the edit, *Make the changes*.
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed
@@ -187,8 +193,10 @@ are dead (D97); the fix is written automatically as
 
 ## Spend and the human loop
 
-Three human moments (D49): **retire a domain** (Josh), **buy
-domains/mailboxes** (Josh; Slack tap is the approval, asked once — D60),
+Three human moments (D49): **retire a domain** (Josh — one tap is pull +
+ESP-matched replacement buy + D134 backfill, D150), **buy
+domains/mailboxes** (Josh; Slack tap is the approval, asked once — D60;
+fail-#1 buy-ahead still exists until the domain actually retires),
 **change live copy** (Josh or Cayden, one word per tap, applied fleet-wide — D133). Everything else is
 autonomous. `REQUIRE_SPEND_APPROVAL` stays on; approvals are single-use,
 client spend carries the $25 domain / 25 mailbox monthly caps (D4/D15).

@@ -4625,6 +4625,22 @@ describe("owner intent — D133/D134 the taps act fleet-wide", () => {
         "isolationExecute.ts lost the retire provenance on approvals.",
       ),
     );
+    assert.match(
+      exec,
+      /platformsMatchingEspMix|espMixFromAccountTypes/,
+      stop(
+        "A retire tap buys an ESP-matched replacement in the same swoop (D150).",
+        "isolationExecute.ts retires without matching ESPs on the buy.",
+      ),
+    );
+    assert.match(
+      exec,
+      /this\.buy\.run/,
+      stop(
+        "A retire tap runs the replacement buy — Josh's tap is the spend approval (D150).",
+        "isolationExecute.ts no longer buys on retire.",
+      ),
+    );
     const actions = await readFile(
       new URL("../lib/isolationActions.ts", import.meta.url),
       "utf8",
@@ -4635,6 +4651,52 @@ describe("owner intent — D133/D134 the taps act fleet-wide", () => {
       stop(
         "One pending ask per word — the tap covers the fleet (D133).",
         "isolationActions.ts dedupes word swaps per campaign again.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D151 word hunt rides a paused shell", () => {
+  it("D151: copy isolation schedules off the word-hunt shell mapping", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const copy = await readFile(
+      new URL("../services/copyIsolation.ts", import.meta.url),
+      "utf8",
+    );
+    const shell = await readFile(
+      new URL("../lib/wordHuntShell.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      shell,
+      /WORD_HUNT_SHELL_NAME|ensureWordHuntShell/,
+      stop(
+        "Word hunt has a paused shell helper like canaries (D151).",
+        "wordHuntShell.ts is missing.",
+      ),
+    );
+    assert.match(
+      copy,
+      /ensureWordHuntShell/,
+      stop(
+        "Copy isolation arms the word-hunt shell before scheduling (D151).",
+        "copyIsolation.ts went back to sequence-only manual posts.",
+      ),
+    );
+    assert.match(
+      copy,
+      /sequenceMappingId/,
+      stop(
+        "Word-hunt placements send sequence_mapping_id (D151).",
+        "copyIsolation.ts dropped the mapping id.",
+      ),
+    );
+    assert.match(
+      copy,
+      /resolveProviderIds/,
+      stop(
+        "Word-hunt placements resolve provider_ids (D151).",
+        "copyIsolation.ts no longer resolves providers.",
       ),
     );
   });

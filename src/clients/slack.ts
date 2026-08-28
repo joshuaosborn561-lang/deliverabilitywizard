@@ -951,7 +951,7 @@ export class SlackClient {
           : details.kind === "add_signature_tag"
             ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
           : details.kind === "retire_domain"
-            ? "Josh: tap the button (opens a confirm page) to retire. I will pull every inbox on that domain and fill the campaigns. Cayden cannot approve this."
+            ? "Josh: tap the button (opens a confirm page) to retire. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix, and lets generics cover the campaigns until those warm (D150). Cayden cannot approve this."
             : "Josh or Cayden: tap Make the changes (opens a confirm page). I will make that one word edit across every active campaign carrying it, and nothing else (D133).",
     ].join("\n");
     const approveValue = isolationActionValue(

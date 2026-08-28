@@ -3,6 +3,7 @@ import { PorkbunClient } from "../clients/porkbun.js";
 import type { AppConfig } from "../config.js";
 import { generateDomainSpins } from "../lib/domainNaming.js";
 import { pickUniquePersonNames } from "../lib/personNames.js";
+import { platformsFromActionDetail } from "../lib/retireEspMix.js";
 import type { SpendGateway } from "../lib/spendGateway.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
@@ -176,42 +177,56 @@ export class IsolationBuyService {
     const taken = new Set<string>();
     for (const [index, domain] of domains.entries()) {
       if (!ready.has(domain.toLowerCase())) continue;
-      const platform: "GOOGLE" | "MICROSOFT" =
-        index % 2 === 0 ? "GOOGLE" : "MICROSOFT";
-      const names = pickUniquePersonNames(perDomain, seed, taken);
-      seed += perDomain + 11;
-      const batch = names.map((name) => ({
-        ...name,
-        platform,
-        domain_name: domain,
-      }));
-      const spendReq = {
-        key: `inboxkit:isolation:${domain}:${platform}:n${perDomain}`,
-        scope: "generic_pool" as const,
-        kind: "inboxkit_mailbox_purchase",
-        description: `Mailboxes on replacement domain ${domain} (${platform}).`,
-        detail: { domain, platform, count: perDomain, actionId: action.id },
-      };
-      const decision = await this.spend.recordOwnerApproved(spendReq, decidedBy);
-      await this.inboxkit.buyMailboxes(batch, {
-        workspaceId: workspaceId || undefined,
-        useWalletBalance: true,
-        idempotencyKey: spendReq.key,
-      });
-      await this.spend.consume(decision, spendReq);
-      const now = new Date().toISOString();
-      for (const name of names) {
-        this.store.upsertPoolMailbox({
-          email: `${name.username}@${domain}`.toLowerCase(),
-          domain: domain.toLowerCase(),
-          platform,
-          firstName: name.first_name,
-          lastName: name.last_name,
-          status: "warming",
-          warmedAt: now,
-        });
+      const platforms =
+        platformsFromActionDetail(action.detail, perDomain) ??
+        Array.from({ length: perDomain }, (_, i) =>
+          (index + i) % 2 === 0 ? ("GOOGLE" as const) : ("MICROSOFT" as const),
+        );
+      // One InboxKit order per platform group so a mixed-ESP domain stays
+      // one domain with Google + Microsoft mailboxes (D150).
+      const byPlatform = new Map<"GOOGLE" | "MICROSOFT", number>();
+      for (const platform of platforms.slice(0, perDomain)) {
+        byPlatform.set(platform, (byPlatform.get(platform) ?? 0) + 1);
       }
-      ordered += names.length;
+      if (!byPlatform.size) {
+        byPlatform.set(index % 2 === 0 ? "GOOGLE" : "MICROSOFT", perDomain);
+      }
+      for (const [platform, count] of byPlatform) {
+        const names = pickUniquePersonNames(count, seed, taken);
+        seed += count + 11;
+        const batch = names.map((name) => ({
+          ...name,
+          platform,
+          domain_name: domain,
+        }));
+        const spendReq = {
+          key: `inboxkit:isolation:${domain}:${platform}:n${count}`,
+          scope: "generic_pool" as const,
+          kind: "inboxkit_mailbox_purchase",
+          description: `Mailboxes on replacement domain ${domain} (${platform}).`,
+          detail: { domain, platform, count, actionId: action.id },
+        };
+        const decision = await this.spend.recordOwnerApproved(spendReq, decidedBy);
+        await this.inboxkit.buyMailboxes(batch, {
+          workspaceId: workspaceId || undefined,
+          useWalletBalance: true,
+          idempotencyKey: spendReq.key,
+        });
+        await this.spend.consume(decision, spendReq);
+        const now = new Date().toISOString();
+        for (const name of names) {
+          this.store.upsertPoolMailbox({
+            email: `${name.username}@${domain}`.toLowerCase(),
+            domain: domain.toLowerCase(),
+            platform,
+            firstName: name.first_name,
+            lastName: name.last_name,
+            status: "warming",
+            warmedAt: now,
+          });
+        }
+        ordered += names.length;
+      }
     }
     return { ordered, awaitingNameservers: pending.length > 0 };
   }

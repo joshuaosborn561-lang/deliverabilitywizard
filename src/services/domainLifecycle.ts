@@ -110,7 +110,13 @@ export class DomainLifecycleService {
             kind: "retire_domain",
             title: `Retire ${domain}`,
             proof,
-            detail: { domain },
+            detail: {
+              domain,
+              // D150 — the retire tap is also the replacement buy + ESP match
+              // + D134 backfill. Quantity/parent ride along so execute has them.
+              quantity: 1,
+              parentDomain: this.config.isolationBuyParentDomain,
+            },
           }),
         });
         if (opened) result.retire += 1;

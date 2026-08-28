@@ -165,6 +165,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
 | D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
+| D150 | Live | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
+| D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
 
 ---
 
@@ -3954,3 +3956,65 @@ note once, then quiet; failed page retried; event-driven (null-window)
 stage never pages; dry-run inert; D131 prune clears the stamp; identity
 problems for missing metadata / non-main branch, clean on a main push,
 null off Railway.
+
+## D150 — Retire is one fell swoop: pull + ESP-matched buy + backfill
+
+**Decision (Josh, 2026-08-28).** "you need to always figure out the
+replacement domain, inbox and matching esps and make it all one fell
+swoop. backfill is part of the fell swoop."
+
+Approving a `retire_domain` ask does all three in that tap:
+
+1. Pull every inbox on the burned domain off ACTIVE campaigns (existing).
+2. Approve generic backfill for the campaigns that lost senders (D134).
+3. **Buy the replacement domain and order mailboxes whose Google /
+   Outlook mix mirrors the retired domain's Smartlead account types** —
+   Josh's retire tap is the spend approval (D4/D60). No second buy ask.
+
+ESP matching uses `poolEspFromSmartleadType` on the retired mailboxes
+and orders that mix onto the new domain (one domain, mixed platforms
+when both ESPs were present). Fail-#1 buy-ahead asks remain for the
+watch window; a retire that fires without a prior buy still purchases
+here so volume and ESP shape recover without another human round-trip.
+
+**Supersedes / amends.** Extends D134 (backfill stays; buy joins the
+same tap). Amends D49's "retire" and "buy" as separate human moments
+when the trigger is a domain retire — buy-ahead on fail #1 is
+unchanged.
+
+**Guards.** owner-intent D150: `isolationExecute.retire` calls the buy
+pipeline with `espMix`/`platforms`; `platformsMatchingEspMix` /
+`platformsFromActionDetail` exist; Slack retire copy names the
+fell-swoop. Behavioral test: Outlook-only retired domain → Microsoft
+replacement platforms + D134 approval.
+
+## D151 — Word hunt rides a paused shell (SmartDelivery requires mapping)
+
+**Decision (Josh under standing "run the word hunt" ask, 2026-08-28).**
+SmartDelivery `POST /spam-test/manual` now requires `campaign_id`,
+`sequence_mapping_id`, and `provider_ids`, and the sender emails must
+already sit on that campaign. Custom-sequence-only placement posts —
+what copy isolation used — fail with `"campaign_id" is required` /
+`"sequence_mapping_id" is required`.
+
+Word-hunt variants therefore mirror the canary/pod-control shell
+pattern:
+
+1. One paused **DW Word Hunt Shell** owns the isolation mailboxes.
+2. A non-sender seed lead so SmartDelivery will schedule (D118/D120).
+3. Each variant is written onto the shell sequence; the placement uses
+   that shell's `campaign_id` + `sequence_mapping_id` + resolved
+   `provider_ids`.
+
+D69/D93/D137 intent is unchanged — only the SmartDelivery attach shape
+moved. The isolation-domain buy still arms the rig; mailboxes must also
+land in Smartlead (export) before `rigEmails()` sees them.
+
+**Supersedes / amends.** Implements D69/D137 against the current
+SmartDelivery contract. Does not reverse D112/D113 (canary off-campaign
+mapping rules stay).
+
+**Guards.** owner-intent D151: `ensureWordHuntShell` /
+`writeWordHuntVariantSequence`; `copyIsolation` sends shell
+`campaign_id` + `sequence_mapping_id` + `provider_ids`. Behavioral
+test: hunt create payload carries those three.

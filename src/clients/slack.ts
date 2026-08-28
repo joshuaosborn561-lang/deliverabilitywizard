@@ -821,18 +821,25 @@ export class SlackClient {
     waiting?: boolean;
     missingRig?: boolean;
   }): Promise<void> {
+    // D71 — word-hunt progress/results are copy_word traffic (same lane as
+    // the Make the changes ask). Unclassified send() was silently dropped,
+    // so hunt completion never reached Slack.
     if (details.missingRig) {
       await this.send(
         [
           `*${details.campaignName}* — copy problem, word hunt waiting.`,
           "The standing inbox test says the inboxes are fine. We still need the low-rep test domain set (two mailboxes, never attached to a campaign) before we can isolate the word. We did not change the live email.",
         ].join("\n"),
+        undefined,
+        "copy_word",
       );
       return;
     }
     if (details.waiting) {
       await this.send(
         `*${details.campaignName}* — copy word hunt is in flight. Same-day tests from the low-rep domain; we will post what recovered. We are not editing the live email.`,
+        undefined,
+        "copy_word",
       );
       return;
     }
@@ -842,6 +849,8 @@ export class SlackClient {
           `*${details.campaignName}* — no single change put this back in the inbox.`,
           "Likely the whole message shape, not one word. We did not change the live email.",
         ].join("\n"),
+        undefined,
+        "copy_word",
       );
       return;
     }
@@ -861,6 +870,8 @@ export class SlackClient {
       ]
         .filter((line): line is string => Boolean(line))
         .join("\n"),
+      undefined,
+      "copy_word",
     );
   }
 

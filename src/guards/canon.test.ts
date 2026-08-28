@@ -4708,6 +4708,26 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
       ),
     );
   });
+
+  it("D151: word-hunt Slack progress uses copy_word so completion is not quiet-dropped", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const block = slack.slice(
+      slack.indexOf("async notifyCopyIsolation"),
+      slack.indexOf("async notifyPodControls"),
+    );
+    assert.match(
+      block,
+      /"copy_word"/,
+      stop(
+        "notifyCopyIsolation must send as copy_word or D71 drops hunt completion (D151).",
+        "slack.ts notifyCopyIsolation still posts unclassified.",
+      ),
+    );
+  });
 });
 
 describe("owner intent — D135/D136 fleet visibility", () => {

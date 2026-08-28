@@ -5,6 +5,7 @@ export interface SmartleadCampaign {
   created_at?: string;
   updated_at?: string;
   client_id?: number | null;
+  bounce_autopause_threshold?: number | string | null;
 }
 
 export interface SmartleadEmailAccount {

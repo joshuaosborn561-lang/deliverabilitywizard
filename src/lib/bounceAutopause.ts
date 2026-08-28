@@ -57,6 +57,23 @@ export function readBounceAutopausePercent(settings: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * D80/D124 — GET /campaigns/{id}/settings 404s on this Smartlead account,
+ * so a missing read is not "already off". Prefer settings when it actually
+ * carries the threshold; otherwise the campaign GET (which does work).
+ */
+export async function loadBounceAutopauseSettings(
+  smartlead: {
+    getCampaignSettings: (campaignId: number) => Promise<unknown>;
+    getCampaign: (campaignId: number) => Promise<unknown>;
+  },
+  campaignId: number,
+): Promise<unknown> {
+  const settings = await smartlead.getCampaignSettings(campaignId).catch(() => null);
+  if (readBounceAutopausePercent(settings) != null) return settings;
+  return smartlead.getCampaign(campaignId).catch(() => null);
+}
+
 export function sanitizeTrackSettings(values: unknown): string[] | undefined {
   if (!Array.isArray(values)) return undefined;
   return values.map((value) => {

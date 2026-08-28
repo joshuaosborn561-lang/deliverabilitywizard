@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   campaignSettingsWriteBody,
+  loadBounceAutopauseSettings,
   readBounceAutopausePercent,
 } from "./bounceAutopause.js";
 
@@ -31,5 +32,33 @@ describe("campaignSettingsWriteBody", () => {
       "DONT_TRACK_LINK_CLICK",
     ]);
     assert.equal(body.bounce_autopause_threshold, "20");
+  });
+});
+
+describe("loadBounceAutopauseSettings (D80/D124)", () => {
+  it("falls back to GET campaign when GET settings 404s or omits the threshold", async () => {
+    const fromCampaign = await loadBounceAutopauseSettings(
+      {
+        getCampaignSettings: async () => {
+          throw new Error("HTTP 404");
+        },
+        getCampaign: async () => ({ bounce_autopause_threshold: "5" }),
+      },
+      1,
+    );
+    assert.equal(readBounceAutopausePercent(fromCampaign), 5);
+
+    const unread = await loadBounceAutopauseSettings(
+      {
+        getCampaignSettings: async () => {
+          throw new Error("HTTP 404");
+        },
+        getCampaign: async () => {
+          throw new Error("HTTP 404");
+        },
+      },
+      2,
+    );
+    assert.equal(readBounceAutopausePercent(unread), null);
   });
 });

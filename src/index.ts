@@ -84,7 +84,13 @@ import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { canonBoard } from "./lib/canonCompliance.js";
-import { STAGE_OVERDUE_WINDOWS_MS } from "./lib/stageWindows.js";
+import { STAGE_OVERDUE_WINDOWS_MS, overdueStages } from "./lib/stageWindows.js";
+import { alertStageAnomalies } from "./services/opsAlerts.js";
+import {
+  deployIdentityLine,
+  deployIdentityProblem,
+  readDeployIdentity,
+} from "./lib/deployIdentity.js";
 import { PodTagService } from "./services/podTags.js";
 import { DomainClientAuditService } from "./services/domainClientAudit.js";
 
@@ -121,6 +127,10 @@ async function main(): Promise<void> {
       await state.save();
     }
   }
+
+  // D149 — who am I? Railway injects git metadata into GitHub-push builds;
+  // a build without it is the stale-snapshot redeployer's signature.
+  const deployIdentity = readDeployIdentity();
 
   const secretsReady = configIsReady(config);
   if (!secretsReady) {
@@ -532,12 +542,6 @@ async function main(): Promise<void> {
     }
   };
 
-  /**
-   * Fallback for a stage that runs but is missing from the D131 registry
-   * (the guard suite catches that; this keeps the runtime honest meanwhile).
-   */
-  const STAGE_OVERDUE_MS = 45 * 60 * 1000;
-
   const logCanonScoreboard = (): void => {
     const counts = new Map<string, number>();
     for (const record of state.listCampaignChecks()) {
@@ -557,21 +561,12 @@ async function main(): Promise<void> {
         `[canon] canary fleet DOWN since ${fleetDown.since} (${fleetDown.fleetSize} known email(s), 0 connected) — placement measurement is blind`,
       );
     }
-    const now = Date.now();
-    for (const [name, row] of Object.entries(state.listStageHealth())) {
-      // D131 — overdue is judged against the stage's own cadence; an
-      // event-driven stage (window null) is never overdue.
-      const window =
-        name in STAGE_OVERDUE_WINDOWS_MS
-          ? STAGE_OVERDUE_WINDOWS_MS[name]
-          : STAGE_OVERDUE_MS;
-      if (window == null) continue;
-      const lastOk = row.lastOkAt ? Date.parse(row.lastOkAt) : null;
-      if (lastOk == null || now - lastOk > window) {
-        console.warn(
-          `[watchdog] stage ${name} OVERDUE — last ok ${row.lastOkAt ?? "never"}; failures=${row.consecutiveFailures}; lastError=${row.lastError ?? "none"}`,
-        );
-      }
+    // D131/D149 — overdue is judged against the stage's own cadence by
+    // overdueStages, the same judgement the Slack pager uses.
+    for (const row of overdueStages(state.listStageHealth())) {
+      console.warn(
+        `[watchdog] stage ${row.name} OVERDUE — last ok ${row.lastOkAt ?? "never"}; failures=${row.consecutiveFailures}; lastError=${row.lastError ?? "none"}`,
+      );
     }
   };
 
@@ -731,6 +726,9 @@ async function main(): Promise<void> {
         );
       }
       state.recordStageOk("health-pass", passMs);
+      // D149 — the watch lives here, not in a chat session: page Slack
+      // once per overdue-stage episode, and once again on recovery.
+      await alertStageAnomalies({ store: state, slack, dryRun: config.dryRun });
       await state.save();
 
       return {
@@ -1535,6 +1533,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       canonNo: board.campaigns.filter((row) => !row.yes).length,
       canaryFleetDown: s.canaryFleetDown ?? null,
       stages,
+      deploy: deployIdentity,
       secretsConfigured: secretsReady,
       inboxkitConfigured: Boolean(config.inboxkitApiKey),
       lastScanAt: s.lastScanAt,
@@ -1997,6 +1996,26 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     console.log(
       `[boot] Deliverability Wizard listening on ${config.host}:${config.port}`,
     );
+    console.log(
+      `[boot] Deploy identity (D149): ${deployIdentityLine(deployIdentity)}`,
+    );
+    {
+      const identityProblem = deployIdentityProblem(deployIdentity);
+      if (identityProblem) {
+        console.error(`[watchdog] deploy identity: ${identityProblem}`);
+        if (secretsReady && !config.dryRun) {
+          void slack
+            .send(
+              `:rotating_light: Deploy identity (D149): ${identityProblem}. If nobody deployed this on purpose, the stale-snapshot redeployer is back — check the Railway activity log and point the service back at main.`,
+              undefined,
+              "ops_alert",
+            )
+            .catch((error) =>
+              console.warn("[watchdog] deploy identity page failed", error),
+            );
+        }
+      }
+    }
     console.log(`[boot] Scan cron: ${config.cronScan}`);
     // D122 — no boot campaign-audit. It lists campaigns + accounts +
     // tests + sequences and raced attach (06:32:49–06:36:41 vs attach
@@ -2051,7 +2070,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
     );
     console.log(
-      "[boot] Slack (D71): burned-domain replace, isolated-word replace, EOD sends/spam only",
+      "[boot] Slack (D71/D149): burned-domain replace, isolated-word replace, EOD sends/spam, ops alerts (stage watchdog + deploy identity)",
     );
     console.log(
       `[boot] Lead runout: ${config.enableLeadRunout ? "ENABLED (half / three-quarters / done, logs only, no import)" : "disabled"}`,

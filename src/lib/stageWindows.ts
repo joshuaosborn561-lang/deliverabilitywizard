@@ -20,6 +20,54 @@ const HEALTH_MS = 45 * 60 * 1000;
 /** 6-hour cadence (monitor loop, full mailbox-settings converge) plus grace. */
 const SIX_HOURLY_MS = (6 * 60 + 45) * 60 * 1000;
 
+/** Fallback for a stage that runs but is missing from the registry below. */
+export const STAGE_FALLBACK_OVERDUE_MS = 45 * 60 * 1000;
+
+export interface OverdueStage {
+  name: string;
+  lastOkAt: string | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+  windowMs: number;
+}
+
+/**
+ * D131/D149 — the one place "overdue" is judged, shared by the log
+ * scoreboard and the Slack pager so the two can never disagree. An
+ * event-driven stage (window null) is never overdue.
+ */
+export function overdueStages(
+  stageHealth: Record<
+    string,
+    {
+      lastOkAt: string | null;
+      consecutiveFailures: number;
+      lastError: string | null;
+    }
+  >,
+  now = Date.now(),
+): OverdueStage[] {
+  const out: OverdueStage[] = [];
+  for (const [name, row] of Object.entries(stageHealth)) {
+    const windowMs =
+      name in STAGE_OVERDUE_WINDOWS_MS
+        ? STAGE_OVERDUE_WINDOWS_MS[name]
+        : STAGE_FALLBACK_OVERDUE_MS;
+    if (windowMs == null) continue;
+    const lastOk = row.lastOkAt ? Date.parse(row.lastOkAt) : null;
+    if (lastOk == null || now - lastOk > windowMs) {
+      out.push({
+        name,
+        lastOkAt: row.lastOkAt,
+        consecutiveFailures: row.consecutiveFailures,
+        lastError: row.lastError,
+        windowMs,
+      });
+    }
+  }
+  return out;
+}
+
 export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   // Canon sweep — every 15 minutes (D84).
   // Umbrella record for the whole pass (recorded directly at the end of

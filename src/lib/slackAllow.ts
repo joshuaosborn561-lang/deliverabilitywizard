@@ -1,6 +1,8 @@
 /**
  * D71 — Slack is only deliverability flags plus one end-of-day scoreboard.
- * Everything else stays in logs /ops.
+ * Everything else stays in logs /ops. D149 adds `ops_alert`: the machine
+ * reporting itself broken (overdue watchdog stage, wrong deploy identity)
+ * pages Slack instead of waiting for someone to come read the logs.
  */
 export const SLACK_ALLOW_KINDS = [
   "burned_domain",
@@ -8,6 +10,7 @@ export const SLACK_ALLOW_KINDS = [
   "eod_summary",
   "action_result",
   "generic_backfill",
+  "ops_alert",
 ] as const;
 
 export type SlackAllowKind = (typeof SLACK_ALLOW_KINDS)[number];
@@ -18,7 +21,8 @@ export function slackAllowed(kind?: SlackAllowKind | null): boolean {
     kind === "copy_word" ||
     kind === "eod_summary" ||
     kind === "action_result" ||
-    kind === "generic_backfill"
+    kind === "generic_backfill" ||
+    kind === "ops_alert"
   );
 }
 

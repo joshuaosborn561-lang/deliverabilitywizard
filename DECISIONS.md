@@ -168,6 +168,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D150 | Live | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
 | D152 | Live | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
+| D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
 
 ---
 
@@ -4040,3 +4041,27 @@ recommended edit is a substitute).
 **Guards.** `suggestedCopySwap` returns a non-empty substitute for
 Air-Pods / gift-bait openers; `copySwapProof` says the edit keeps the
 line's job. Unit tests on the Goliath Air Pods opener string.
+
+## D153 — Write my own edit on the word-hunt Slack ask
+
+**Decision (Josh, 2026-08-28).** "create a button with that app that
+let's me add my own edit in slack. be sure to be clear about the phrase
+or word i am replacing"
+
+The swap_copy Slack ask shows the **exact find phrase** (message +
+modal), offers **Use suggested edit** (D152 substitute) and **Write my
+own edit**. The latter is a native interactive button (no URL — URL
+buttons cannot open modals) that `views.open`s a form. The form labels
+"Replacing this exact phrase/word" with the find string in a code block,
+then a multiline "Replace it with" input (blank = delete). Submit stamps
+`detail.swap` and runs the same D133 fleet apply as approve. Josh or
+Cayden. The confirm-page path for Use suggested edit also shows the
+phrase and lets the replacement be edited before Apply.
+
+**Supersedes / amends.** Extends D69/D133/D152 (human still taps; the
+replacement text can be theirs).
+
+**Guards.** `notifyIsolationAction` for `swap_copy` includes
+`isolation_swap_edit` without a `url`; modal builder shows
+"Replacing this exact phrase/word"; `/slack/interactions` handles
+`edit` + `view_submission` for `isolation_swap_edit`.

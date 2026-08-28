@@ -21,6 +21,12 @@ import {
   slackSignatureValid,
 } from "./lib/slackSignature.js";
 import {
+  SWAP_EDIT_CALLBACK_ID,
+  SWAP_EDIT_INPUT_BLOCK_ID,
+  swapTextFromViewSubmission,
+} from "./lib/slackSwapEdit.js";
+import { copySwapProof } from "./lib/isolationProof.js";
+import {
   publicBaseUrlFromEnv,
   slackInstallHref,
   verifySlackActionLink,
@@ -1120,7 +1126,16 @@ async function main(): Promise<void> {
     title: string;
     body: string;
     form?: { id: string; decision: string; exp: string; sig: string };
+    /** D153 — optional custom swap on the confirm page for swap_copy. */
+    swapEdit?: { element: string; suggested: string };
   }): string => {
+    const swapFields =
+      opts.form && opts.swapEdit && opts.form.decision === "approve"
+        ? `<p style="margin:1rem 0 .4rem;color:#94a3b8;font-size:.85rem;"><strong>Replacing this exact phrase/word:</strong></p>
+<pre style="white-space:pre-wrap;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.75rem;color:#e2e8f0;font-size:.85rem;">${escapeHtml(opts.swapEdit.element)}</pre>
+<label style="display:block;margin:1rem 0 .4rem;color:#94a3b8;font-size:.85rem;">Replace it with (edit freely — blank deletes the phrase)</label>
+<textarea name="swap" rows="4" style="width:100%;box-sizing:border-box;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:.75rem;font:inherit;">${escapeHtml(opts.swapEdit.suggested)}</textarea>`
+        : "";
     const form = opts.form
       ? `<form method="post" action="/slack/action">
 <input type="hidden" name="id" value="${escapeHtml(opts.form.id)}" />
@@ -1128,7 +1143,8 @@ async function main(): Promise<void> {
 <input type="hidden" name="exp" value="${escapeHtml(opts.form.exp)}" />
 <input type="hidden" name="sig" value="${escapeHtml(opts.form.sig)}" />
 <input type="hidden" name="confirm" value="1" />
-<button type="submit">${opts.form.decision === "approve" ? "Confirm" : "Confirm deny"}</button>
+${swapFields}
+<button type="submit">${opts.form.decision === "approve" ? (opts.swapEdit ? "Apply this edit" : "Confirm") : "Confirm deny"}</button>
 </form>`
       : "";
     return `<!doctype html>
@@ -1139,7 +1155,7 @@ body{font-family:ui-sans-serif,system-ui,sans-serif;background:#0f172a;color:#e2
 main{max-width:36rem;margin:0 auto;background:#1e293b;border:1px solid #334155;border-radius:12px;padding:1.5rem;}
 h1{font-size:1.25rem;margin:0 0 .75rem;}
 p{line-height:1.5;color:#cbd5e1;white-space:pre-wrap;}
-button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem 1.1rem;font-weight:700;cursor:pointer;}
+button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem 1.1rem;font-weight:700;cursor:pointer;margin-top:1rem;}
 </style></head><body><main><h1>${escapeHtml(opts.title)}</h1><p>${escapeHtml(opts.body)}</p>${form}</main></body></html>`;
   };
 
@@ -1148,7 +1164,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (kind === "buy_isolation_domain") return "Buy it and arm the rig";
     if (kind === "buy_domains") return "Buy replacements";
     if (kind === "retire_domain") return "Retire this domain";
-    if (kind === "swap_copy") return "Make the changes";
+    if (kind === "swap_copy") return "Edit the copy";
     if (kind === "generic_backfill") return "Allow generics";
     if (kind === "add_signature_tag") return "Add %signature%";
     return kind;
@@ -1233,11 +1249,22 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       parsed.decision === "approve"
         ? `This will ${title.toLowerCase()} now.${spendNote}`
         : "This will deny the request. Nothing will be bought or retired.";
+    const swapEdit =
+      pending.kind === "swap_copy" && parsed.decision === "approve"
+        ? {
+            element: String(pending.detail.element ?? ""),
+            suggested: String(pending.detail.swap ?? ""),
+          }
+        : undefined;
     res.type("html").send(
       slackActionHtml({
         title: pending.title || title,
         body: [pending.proof, verb].filter(Boolean).join("\n\n"),
         form: parsed,
+        swapEdit:
+          swapEdit && swapEdit.element
+            ? swapEdit
+            : undefined,
       }),
     );
   });
@@ -1262,6 +1289,28 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         return;
       }
       try {
+        const pending = state.getIsolationAction(parsed.id);
+        if (
+          pending &&
+          pending.kind === "swap_copy" &&
+          pending.status === "pending" &&
+          parsed.decision === "approve" &&
+          typeof req.body?.swap === "string"
+        ) {
+          const swap = String(req.body.swap);
+          state.upsertIsolationAction({
+            ...pending,
+            detail: { ...pending.detail, swap },
+            proof: copySwapProof({
+              campaignName: String(
+                pending.detail.campaignName ?? pending.title,
+              ),
+              element: String(pending.detail.element ?? ""),
+              swap,
+              controlLanded: true,
+            }),
+          });
+        }
         const result = await isolationExecute.decide(
           parsed.id,
           parsed.decision,
@@ -1316,17 +1365,23 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           return;
         }
         const payload = JSON.parse(payloadRaw) as {
+          type?: string;
+          trigger_id?: string;
           user?: { id?: string; name?: string; username?: string };
-          actions?: Array<{ value?: string }>;
+          actions?: Array<{ action_id?: string; value?: string }>;
+          view?: {
+            callback_id?: string;
+            private_metadata?: string;
+            state?: {
+              values?: Record<
+                string,
+                Record<string, { value?: string | null } | undefined> | undefined
+              >;
+            };
+          };
           response_url?: string;
         };
-        const parsed = parseIsolationActionValue(
-          payload.actions?.[0]?.value ?? "",
-        );
-        if (!parsed) {
-          res.status(200).json({ text: "That button is not one I handle." });
-          return;
-        }
+
         const role = slackRoleOf(
           payload.user?.id,
           config.slackJoshUserIds,
@@ -1338,9 +1393,132 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             : role === "operator"
               ? "Cayden"
               : payload.user?.name || payload.user?.username || "unknown";
+
+        // D153 — modal submit: stamp Josh's swap onto the pending ask, then approve.
+        if (payload.type === "view_submission") {
+          if (payload.view?.callback_id !== SWAP_EDIT_CALLBACK_ID) {
+            res.status(200).json({ text: "That form is not one I handle." });
+            return;
+          }
+          const actionId = String(payload.view.private_metadata ?? "").trim();
+          const pending = state.getIsolationAction(actionId);
+          if (!pending || pending.kind !== "swap_copy" || pending.status !== "pending") {
+            res.status(200).json({
+              response_action: "errors",
+              errors: {
+                [SWAP_EDIT_INPUT_BLOCK_ID]:
+                  "That copy-edit ask is no longer pending. Ask the Wizard to re-post it.",
+              },
+            });
+            return;
+          }
+          if (role !== "owner" && role !== "operator") {
+            res.status(200).json({
+              response_action: "errors",
+              errors: {
+                [SWAP_EDIT_INPUT_BLOCK_ID]:
+                  "Only Josh or Cayden can apply a copy edit from Slack.",
+              },
+            });
+            return;
+          }
+          const swap = swapTextFromViewSubmission(payload.view);
+          const element = String(pending.detail.element ?? "");
+          const campaignName = String(
+            pending.detail.campaignName ?? pending.title,
+          );
+          state.upsertIsolationAction({
+            ...pending,
+            detail: { ...pending.detail, swap },
+            proof: copySwapProof({
+              campaignName,
+              element,
+              swap,
+              controlLanded: true,
+            }),
+          });
+          // Ack the modal closed immediately; apply async (D133 can take >3s).
+          res.status(200).json({ response_action: "clear" });
+          void isolationExecute
+            .decide(actionId, "approve", { name, role })
+            .then(async (result) => {
+              await slack.notifyActionResult(result.message);
+            })
+            .catch((error) => {
+              console.error("[slack-interactions] swap edit apply failed", error);
+            });
+          return;
+        }
+
+        if (payload.type && payload.type !== "block_actions") {
+          res.status(200).json({ text: "That interaction is not one I handle." });
+          return;
+        }
+
+        const parsed = parseIsolationActionValue(
+          payload.actions?.[0]?.value ?? "",
+        );
+        if (!parsed) {
+          res.status(200).json({ text: "That button is not one I handle." });
+          return;
+        }
         console.log(
           `[slack-interactions] kind=${parsed.kind} decision=${parsed.decision} role=${role}`,
         );
+
+        // D153 — open the Write my own edit modal (must use trigger_id <3s).
+        if (parsed.decision === "edit") {
+          if (parsed.kind !== "swap_copy") {
+            res.status(200).json({ text: "Custom edit is only for copy swaps." });
+            return;
+          }
+          if (role !== "owner" && role !== "operator") {
+            res.status(200).json({
+              text: "Only Josh or Cayden can write a custom copy edit.",
+            });
+            return;
+          }
+          const pending = state.getIsolationAction(parsed.id);
+          if (!pending || pending.kind !== "swap_copy" || pending.status !== "pending") {
+            res.status(200).json({
+              text: "That copy-edit ask is no longer pending.",
+            });
+            return;
+          }
+          const element = String(pending.detail.element ?? "").trim();
+          if (!element) {
+            res.status(200).json({
+              text: "That ask is missing the phrase to replace — re-run the word hunt.",
+            });
+            return;
+          }
+          if (!payload.trigger_id) {
+            res.status(200).json({
+              text: "Slack did not send a trigger_id — try again from the button.",
+            });
+            return;
+          }
+          const opened = await slack.openSwapEditModal({
+            triggerId: payload.trigger_id,
+            actionId: pending.id,
+            element,
+            suggestedSwap: String(pending.detail.swap ?? ""),
+            campaignName:
+              typeof pending.detail.campaignName === "string"
+                ? pending.detail.campaignName
+                : undefined,
+          });
+          if (!opened.ok) {
+            console.warn("[slack-interactions] views.open failed", opened.error);
+            res.status(200).json({
+              text: `Could not open the edit form (${opened.error ?? "unknown"}). Check the Wizard Slack app has views.open, or use /ops.`,
+            });
+            return;
+          }
+          res.status(200).send();
+          return;
+        }
+
         if (
           (role === "unknown" || role === "operator") &&
           (parsed.kind === "buy_domains" ||
@@ -1353,6 +1531,10 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
                 ? "Only Josh can approve a purchase or a retire. The confirm page is the same rule."
                 : "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
           });
+          return;
+        }
+        if (parsed.decision !== "approve" && parsed.decision !== "deny") {
+          res.status(200).json({ text: "That button is not one I handle." });
           return;
         }
         // Slack requires an answer in 3s. Buying domains takes longer, so

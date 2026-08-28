@@ -124,7 +124,17 @@ export async function notifyIsolationActionRecord(
     actionId: action.id,
     kind: action.kind,
     who:
-      action.kind === "swap_copy" ? "Josh or Cayden" : "Josh",
+      action.kind === "swap_copy" || action.kind === "add_signature_tag"
+        ? "Josh or Cayden"
+        : "Josh",
+    element:
+      typeof action.detail.element === "string" ? action.detail.element : undefined,
+    suggestedSwap:
+      typeof action.detail.swap === "string" ? action.detail.swap : undefined,
+    campaignName:
+      typeof action.detail.campaignName === "string"
+        ? action.detail.campaignName
+        : undefined,
   });
 }
 

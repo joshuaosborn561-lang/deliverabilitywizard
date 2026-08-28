@@ -1107,18 +1107,18 @@ describe("owner intent — D69 copy Slack is the word and a one-click edit", () 
     });
     assert.match(
       proof,
-      /It was the word \*free\*/,
+      /Replacing this exact phrase\/word: \*free\*/,
       stop(
-        "The Slack names the word (D69).",
-        "copySwapProof no longer says it was this word.",
+        "The Slack names the exact phrase being replaced (D69/D153).",
+        "copySwapProof no longer names the find phrase.",
       ),
     );
     assert.match(
       proof,
-      /Make the changes\?/,
+      /Write my own edit|Use suggested edit|Make the changes/,
       stop(
-        "The Slack asks to make the changes (D69).",
-        "copySwapProof no longer asks Make the changes?",
+        "The Slack asks for a human tap to apply the edit (D69/D153).",
+        "copySwapProof no longer asks for a tap.",
       ),
     );
   });
@@ -4753,6 +4753,70 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
       stop(
         "The Make the changes proof says the edit keeps the line's job (D152).",
         "copySwapProof still only says delete.",
+      ),
+    );
+  });
+
+  it("D153: Write my own edit button opens a modal that names the find phrase", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      slack,
+      /Write my own edit/,
+      stop(
+        "swap_copy Slack ask offers Write my own edit (D153).",
+        "notifyIsolationAction lost the custom-edit button.",
+      ),
+    );
+    assert.match(
+      slack,
+      /SWAP_EDIT_ACTION_ID|isolation_swap_edit/,
+      stop(
+        "Write my own edit is a native interactive button (D153).",
+        "slack.ts no longer wires isolation_swap_edit.",
+      ),
+    );
+    assert.match(
+      slack,
+      /openSwapEditModal|views\.open|viewsOpen/,
+      stop(
+        "Custom edit opens a Slack modal via views.open (D153).",
+        "SlackClient lost viewsOpen / openSwapEditModal.",
+      ),
+    );
+    const modal = await readFile(
+      new URL("../lib/slackSwapEdit.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      modal,
+      /Replacing this exact phrase\/word/,
+      stop(
+        "The edit modal labels the exact find phrase (D153).",
+        "slackSwapEdit.ts lost the Replacing this exact phrase/word label.",
+      ),
+    );
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      index,
+      /view_submission/,
+      stop(
+        "/slack/interactions handles the edit modal submit (D153).",
+        "index.ts interactions handler has no view_submission branch.",
+      ),
+    );
+    assert.match(
+      index,
+      /decision === "edit"|parsed\.decision === "edit"/,
+      stop(
+        "/slack/interactions opens the modal on the edit button (D153).",
+        "index.ts interactions handler does not branch on edit.",
       ),
     );
   });

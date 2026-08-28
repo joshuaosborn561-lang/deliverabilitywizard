@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  matchClientForCampaign,
-  restoredClientBrand,
-} from "./campaignClient.js";
+import { matchClientForCampaign } from "./campaignClient.js";
 
 const clients = [
   { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
@@ -42,7 +39,7 @@ describe("matchClientForCampaign (D77)", () => {
     );
   });
 
-  it("assigns MSRS from a 4-letter logo including MSRS2 names", () => {
+  it("assigns MSRS from a 4-letter logo including MSRS2 names (D77)", () => {
     const withMsrs = [
       ...clients,
       { id: 446286, name: "Randy Gaines", logo: "MSRS" },
@@ -57,7 +54,12 @@ describe("matchClientForCampaign (D77)", () => {
     );
   });
 
-  it("assigns Nieto and Positive when those clients exist", () => {
+  it("assigns Nieto and Positive only when those Smartlead clients exist (D77/D85)", () => {
+    assert.equal(
+      matchClientForCampaign("Nieto RB2B", clients),
+      null,
+      "no unique match — D85 leaves this for a human, does not invent a client",
+    );
     const withRestored = [
       ...clients,
       { id: 10, name: "Nieto", logo: "Nieto" },
@@ -71,13 +73,5 @@ describe("matchClientForCampaign (D77)", () => {
       10,
     );
     assert.equal(matchClientForCampaign("Positive", withRestored)?.id, 11);
-  });
-
-  it("names the D144 restored brands and no one else", () => {
-    assert.equal(restoredClientBrand("Nieto RB2B")?.brand, "Nieto");
-    assert.equal(restoredClientBrand("MSRS2 Ticket Offer Property Manager")?.brand, "MSRS");
-    assert.equal(restoredClientBrand("Positive")?.brand, "Positive");
-    assert.equal(restoredClientBrand("Goliath Displacement M"), null);
-    assert.equal(restoredClientBrand("Pod control shell"), null);
   });
 });

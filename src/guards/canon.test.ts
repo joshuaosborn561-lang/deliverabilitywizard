@@ -1873,12 +1873,12 @@ describe("owner intent — D77 client tag and QA unpause", () => {
         "campaignClientTag.ts no longer assigns client_id.",
       ),
     );
-    assert.match(
+    assert.doesNotMatch(
       tagSrc,
       /ensureClient/,
       stop(
-        "Restored Nieto / MSRS / Positive campaigns get a client row if Smartlead lost it (D144), then the D77 tag.",
-        "campaignClientTag.ts no longer ensures the restored-client rows.",
+        "D85: no unique name match stays on the EOD brief until a human tags in Smartlead — the tagger does not create a client row.",
+        "campaignClientTag.ts started calling ensureClient, which invents a client instead of escalating (D85).",
       ),
     );
     const unpause = await import("node:fs/promises").then((fs) =>

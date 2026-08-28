@@ -65,39 +65,6 @@ export function numericClientId(value: unknown): number | null {
   return null;
 }
 
-/**
- * D144 restored Nieto / MSRS / Positive campaigns after D61 wiped their
- * inboxes — and often the Smartlead client row too. The tagger may
- * ensure these three (only) so a unique name match has something to
- * write. Anything else stays on the EOD brief (D85).
- */
-export const RESTORED_CLIENT_BRANDS = [
-  {
-    brand: "Nieto",
-    email: "nieto-client@salesglidergrowth.com",
-    pattern: /\bnieto\b/i,
-  },
-  {
-    brand: "MSRS",
-    email: "msrs-client@salesglidergrowth.com",
-    pattern: /\bmsrs\d*\b/i,
-  },
-  {
-    brand: "Positive",
-    email: "positive-client@salesglidergrowth.com",
-    pattern: /^positive\b/i,
-  },
-] as const;
-
-export function restoredClientBrand(
-  campaignName: string,
-): (typeof RESTORED_CLIENT_BRANDS)[number] | null {
-  const hits = RESTORED_CLIENT_BRANDS.filter((row) =>
-    row.pattern.test(String(campaignName ?? "")),
-  );
-  return hits.length === 1 ? hits[0]! : null;
-}
-
 /** Unique Smartlead client whose brand appears in the campaign name. */
 export function matchClientForCampaign(
   campaignName: string,

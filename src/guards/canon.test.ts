@@ -4676,8 +4676,16 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
       ),
     );
     assert.match(
+      shell,
+      /writeWordHuntVariantSequences/,
+      stop(
+        "Word hunt writes every deletion as its own shell sequence step (D151).",
+        "wordHuntShell.ts lost the parallel multi-seq write.",
+      ),
+    );
+    assert.match(
       copy,
-      /ensureWordHuntShell/,
+      /writeWordHuntVariantSequences/,
       stop(
         "Copy isolation arms the word-hunt shell before scheduling (D151).",
         "copyIsolation.ts went back to sequence-only manual posts.",
@@ -4685,10 +4693,10 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
     );
     assert.match(
       copy,
-      /sequenceMappingId/,
+      /Promise\.all/,
       stop(
-        "Word-hunt placements send sequence_mapping_id (D151).",
-        "copyIsolation.ts dropped the mapping id.",
+        "Word-hunt placements fire in parallel once the shell sequences exist (D151).",
+        "copyIsolation.ts schedules deletions serially again.",
       ),
     );
     assert.match(

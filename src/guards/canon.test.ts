@@ -1873,6 +1873,14 @@ describe("owner intent — D77 client tag and QA unpause", () => {
         "campaignClientTag.ts no longer assigns client_id.",
       ),
     );
+    assert.match(
+      tagSrc,
+      /ensureClient/,
+      stop(
+        "Restored Nieto / MSRS / Positive campaigns get a client row if Smartlead lost it (D144), then the D77 tag.",
+        "campaignClientTag.ts no longer ensures the restored-client rows.",
+      ),
+    );
     const unpause = await import("node:fs/promises").then((fs) =>
       fs.readFile(
         new URL("../services/unpauseAfterSigQa.ts", import.meta.url),

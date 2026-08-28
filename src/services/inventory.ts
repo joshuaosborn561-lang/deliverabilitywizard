@@ -3,6 +3,7 @@ import type {
   SmartleadClient,
   SmartleadClientRecord,
 } from "../clients/smartlead.js";
+import { numericClientId } from "../lib/campaignClient.js";
 import type { SmartleadCampaign } from "../types/index.js";
 
 /**
@@ -24,6 +25,18 @@ export interface InventorySnapshot {
   accounts: SmartleadAccountWithCampaigns[];
   clients: SmartleadClientRecord[];
   fetchedAt: number;
+}
+
+/** Smartlead sometimes serializes client_id as a string on list payloads. */
+export function coerceInventoryClientIds(snapshot: InventorySnapshot): void {
+  for (const campaign of snapshot.campaigns) {
+    const id = numericClientId(campaign.client_id);
+    campaign.client_id = id;
+  }
+  for (const account of snapshot.accounts) {
+    const id = numericClientId(account.client_id);
+    account.client_id = id;
+  }
 }
 
 export const INVENTORY_429_ATTEMPTS = 3;
@@ -57,12 +70,14 @@ export async function fetchInventory(
           ? smartlead.listClients().catch(() => [] as SmartleadClientRecord[])
           : Promise.resolve([] as SmartleadClientRecord[]),
       ]);
-      return {
+      const snapshot: InventorySnapshot = {
         campaigns: campaigns as SmartleadCampaign[],
         accounts: accounts as SmartleadAccountWithCampaigns[],
         clients,
         fetchedAt: Date.now(),
       };
+      coerceInventoryClientIds(snapshot);
+      return snapshot;
     } catch (error) {
       lastError = error;
       if (!isSmartleadRateLimit(error) || attempt === attempts) {

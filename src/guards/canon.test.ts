@@ -5002,6 +5002,18 @@ describe("owner intent — D139 staffing honors the warmup clock", () => {
         "campaignTopUp.ts staffs under-warmed pool inboxes again.",
       ),
     );
+    const clientRest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      clientRest,
+      /owesWarmup/,
+      stop(
+        "Client A/B on-week restore must not re-staff under-warmed inboxes (D139/D154).",
+        "clientRest.ts restores under-warmed boxes onto every ACTIVE client campaign again.",
+      ),
+    );
     const slack = await readFile(
       new URL("../clients/slack.ts", import.meta.url),
       "utf8",

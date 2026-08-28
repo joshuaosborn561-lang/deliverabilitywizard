@@ -169,6 +169,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
 | D152 | Live | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
 | D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
+| D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
 
 ---
 
@@ -4065,3 +4066,37 @@ replacement text can be theirs).
 `isolation_swap_edit` without a `url`; modal builder shows
 "Replacing this exact phrase/word"; `/slack/interactions` handles
 `edit` + `view_submission` for `isolation_swap_edit`.
+
+## D154 — Client A/B rest was the Parlay/Culturefits boomerang
+
+**Decision (Josh, 2026-08-28).** "There should not be a client
+assignment sync anymore… dig in and figure out what's going on within
+this app. Like audit, do a proper audit."
+
+**Audit.** The EOD "Something outside this app keeps re-adding
+under-warmed inboxes" (D143) was wrong about the writer. Live pattern
+(tryparlay/getparlay across ~16 campaigns; culturefits across 1) matched
+"put every on-week client inbox on every ACTIVE client campaign." That
+is **`ClientRestService`** (D43/D59), which runs at the start of every
+health pass — *before* the warmup gate — and had **no `owesWarmup`
+check**. Fan-out and top-up already skip under-warmed (D139). One-client
+restore only re-adds generics. InboxKit in this repo only exports
+mailboxes; it does not assign campaigns. Claude alert Routines (D149)
+were read-only.
+
+Pass order: client-rest **adds** under-warmed on-week boxes → gate
+**pulls** them → next health pass client-rest adds them again. Ledgered
+as boomerangs and blamed on an outside sync.
+
+**Fix.** On-week restore skips any inbox that `owesWarmup` (same clock
+as the gate). Off-week benching is unchanged. Staffing model reminder:
+floor stays half the client's inboxes (D58/D82); A/B rest is the pod
+rotation (D43); under-warmed boxes are not staff.
+
+**Supersedes / amends.** Corrects D143's "outside this app" attribution
+for this failure mode. Extends D139 to client-rest. Does not reverse
+D26/D43/D59 for *warmed* on-week boxes.
+
+**Guards.** `clientRest.ts` calls `owesWarmup` before on-week
+`addEmailAccountsToCampaign`; behavioral test: under-warmed on-week
+Parlay-shaped inbox is skipped, not restored.

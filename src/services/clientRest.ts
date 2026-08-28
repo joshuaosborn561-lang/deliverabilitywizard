@@ -26,11 +26,17 @@ import {
   recordMembership,
   type InventorySnapshot,
 } from "./inventory.js";
-import { activeHoldUntilDate, tagNames } from "./warmupGate.js";
+import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
 
 /**
  * D43 — per-client A/B rest. Half of that client's inboxes sit for two
  * weeks (off live campaigns, warmup on). Generics are not in this loop.
+ *
+ * D154 — on-week restore must not re-staff inboxes that still owe warmup.
+ * Health runs client-rest *before* the warmup gate every pass; without this
+ * check, under-warmed Parlay/Culturefits boxes were put back on every
+ * ACTIVE client campaign each cycle (the D143 "boomerang"), then pulled
+ * again — an in-app fight, not an outside sync.
  */
 
 export interface ClientRestResult {
@@ -256,6 +262,14 @@ export class ClientRestService {
             result.benched.push({ email, campaignIds: removed });
           }
         }
+        continue;
+      }
+
+      // D154 / D139 — under-warmed inboxes are not on-week staff. Restoring
+      // them onto every ACTIVE client campaign handed the warmup gate its
+      // next pull every health pass (Parlay ×16, Culturefits ×1).
+      if (owesWarmup(account, email, this.config, this.state)) {
+        result.skipped.push(`${email}: owes warmup (D139)`);
         continue;
       }
 

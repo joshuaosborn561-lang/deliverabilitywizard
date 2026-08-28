@@ -10,6 +10,11 @@ import {
   isExcludedOnlyMembership,
 } from "./clientRest.js";
 
+/** Old enough that owesWarmup is false under the 21-day clock. */
+const WARMED = "2025-01-01T00:00:00.000Z";
+/** Still inside the 21-day owe window relative to wall clock (owesWarmup uses Date.now). */
+const YOUNG = new Date(Date.now() - 3 * 86_400_000).toISOString();
+
 describe("isExcludedOnlyMembership", () => {
   it("does not treat a leftover campaign id as excluded (D63)", () => {
     const byId = new Map([
@@ -77,6 +82,7 @@ describe("ClientRestService", () => {
           from_email,
           client_id: 9,
           campaign_ids: [1, 2],
+          created_at: WARMED,
           is_smtp_success: true,
           is_imap_success: true,
         })),
@@ -143,12 +149,14 @@ describe("ClientRestService", () => {
           from_email: onEmail,
           client_id: 9,
           campaign_ids: [],
+          created_at: WARMED,
         },
         {
           id: 21,
           from_email: "z@client.info",
           client_id: 9,
           campaign_ids: [1],
+          created_at: WARMED,
         },
       ],
       addEmailAccountsToCampaign: async (
@@ -202,12 +210,14 @@ describe("ClientRestService", () => {
           client_id: 9,
           from_name: "Pool User",
           campaign_ids: [1],
+          created_at: WARMED,
         },
         {
           id: 56,
           from_email: "keeper@client.info",
           client_id: 9,
           campaign_ids: [1],
+          created_at: WARMED,
         },
       ],
       removeEmailAccountsFromCampaign: async () => {
@@ -251,12 +261,14 @@ describe("ClientRestService", () => {
           from_email: idle,
           client_id: 9,
           campaign_ids: [],
+          created_at: WARMED,
         },
         {
           id: 21,
           from_email: "z@client.info",
           client_id: 9,
           campaign_ids: [1, 2],
+          created_at: WARMED,
         },
       ],
       addEmailAccountsToCampaign: async (
@@ -305,12 +317,14 @@ describe("ClientRestService", () => {
           from_email: idle,
           client_id: 9,
           campaign_ids: [9999],
+          created_at: WARMED,
         },
         {
           id: 21,
           from_email: "z@client.info",
           client_id: 9,
           campaign_ids: [1],
+          created_at: WARMED,
         },
       ],
       addEmailAccountsToCampaign: async (
@@ -359,12 +373,14 @@ describe("ClientRestService", () => {
           from_email: idle,
           client_id: 9,
           campaign_ids: [3841904],
+          created_at: WARMED,
         },
         {
           id: 21,
           from_email: "z@client.info",
           client_id: 9,
           campaign_ids: [1],
+          created_at: WARMED,
         },
       ],
       addEmailAccountsToCampaign: async (
@@ -389,5 +405,72 @@ describe("ClientRestService", () => {
       "shell-only on-week inbox must be restored to live campaigns",
     );
     assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
+  });
+
+  it("D154: does not put an under-warmed on-week inbox back on every client campaign", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const young = "a@client.info";
+    assert.equal(assignClientCohorts([young, "z@client.info"]).get(young), "A");
+    assert.equal(isOffWeek("A", now), false);
+
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-young-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Parlay A", status: "ACTIVE", client_id: 5 },
+        { id: 2, name: "Parlay B", status: "ACTIVE", client_id: 5 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: young,
+          client_id: 5,
+          campaign_ids: [],
+          created_at: YOUNG,
+          warmup_details: { created_at: YOUNG },
+        },
+        {
+          id: 21,
+          from_email: "z@client.info",
+          client_id: 5,
+          campaign_ids: [1, 2],
+          created_at: WARMED,
+          warmup_details: { created_at: WARMED },
+        },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.equal(
+      adds.filter((row) => row[1].includes(20)).length,
+      0,
+      "under-warmed on-week must not be re-added to client campaigns",
+    );
+    assert.ok(
+      result.skipped.some((row) => row.includes("owes warmup")),
+      "skip reason must name the warmup clock",
+    );
+    assert.equal(
+      result.restored.some((row) => row.email === young),
+      false,
+    );
   });
 });

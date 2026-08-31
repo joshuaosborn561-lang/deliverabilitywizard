@@ -361,6 +361,13 @@ export class CampaignBounceAutostopService {
     console.log(
       `[bounce-autostop] scanned=${result.scanned} bursts=${result.bursts.length} skipped=${result.skipped} smartleadOff=${result.smartleadDisabled} errors=${result.errors.length}`,
     );
+    if (result.errors.length) {
+      // A counted-but-nameless error hid a stuck per-campaign write on
+      // 2026-08-31 — say which campaign and why, like the other loops do.
+      console.warn(
+        `[bounce-autostop] errors ${result.errors.slice(0, 5).join(" | ")}${result.errors.length > 5 ? ` | … and ${result.errors.length - 5} more` : ""}`,
+      );
+    }
     return result;
   }
 

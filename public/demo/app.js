@@ -78,7 +78,8 @@
         /[A-Za-z0-9•]+\@[A-Za-z0-9•]+\.[A-Za-z]+/g,
         (m) => `<span class="blur-email">${m}</span>`,
       )
-      .replace(/█+/g, (m) => `<span class="offer-redact">${m}</span>`);
+      // Remaining █ blocks are client signatures / stray redactionsacts — blur them.
+      .replace(/█+/g, (m) => `<span class="blur-signature">${m}</span>`);
   }
 
   function blurSubject(text) {
@@ -176,15 +177,17 @@
         acc.sent += c.sent || 0;
         acc.replied += c.replied || 0;
         acc.positive += c.positive || 0;
+        acc.interested += c.interested || 0;
         acc.bounced += c.bounced || 0;
         return acc;
       },
-      { sent: 0, replied: 0, positive: 0, bounced: 0 },
+      { sent: 0, replied: 0, positive: 0, interested: 0, bounced: 0 },
     );
     els.statRow.innerHTML = [
       ["Sent", totals.sent],
       ["Replied", totals.replied],
       ["Positive", totals.positive],
+      ["Interested", totals.interested],
       ["Bounced", totals.bounced],
     ]
       .map(
@@ -219,6 +222,7 @@
           <td class="num">${fmt(c.sent)}</td>
           <td class="num">${fmt(c.replied)}</td>
           <td class="num pos">${fmt(c.positive)}</td>
+          <td class="num pos">${fmt(c.interested)}</td>
           <td class="num bounce">${fmt(c.bounced)}</td>
           <td>
             <div class="row-actions">

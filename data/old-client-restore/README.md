@@ -13,10 +13,13 @@ campaigns Smartlead permanently deleted on 2026-08-26.
 
 `/demo` is a Smartlead-ish campaign board + reply inbox:
 
-- Campaign sent / replied / positive / bounced from `ANALYTICS.md`
+- Campaign sent / replied / positive / interested / bounced (positive +
+  interested backfilled from the lead-category mirror)
 - Real inbound reply bodies from Supabase `messages` / `reply_examples`
-- Prospect emails, phones, links, and offer terms (airpods / tickets /
-  Astros / etc.) redacted to `••••` / `████` in `public/demo/data.json`
+- Prospect emails, phones, links, and client signatures redacted; offer
+  wording (tickets / Air Pods / flood zones) is shown
+- After rebuilding, run `python3 scripts/patch-demo-dashboard.py` to
+  restore offer tokens and backfill Positive / Interested counts
 
 Open **https://deliverabilitywizard-production.up.railway.app/demo** after deploy.
 Local preview without Railway: `python3 -m http.server --directory public/demo`.

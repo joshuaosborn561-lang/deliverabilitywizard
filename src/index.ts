@@ -1654,6 +1654,19 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     }),
   );
 
+  // YouTube / restore demo: DW-styled campaign archive + redacted reply
+  // inbox. Prospect emails and offer terms are already masked in
+  // public/demo/data.json — served publicly so Josh has a clickable URL.
+  const demoPublicDir = path.resolve(__dirname, "../public/demo");
+  app.use(
+    "/demo",
+    express.static(demoPublicDir, {
+      index: "index.html",
+      etag: true,
+      maxAge: 0,
+    }),
+  );
+
   // Operational state contains mailbox addresses, client assignments and
   // spend decisions. Sensitive/read-write routes are disabled entirely when
   // RUN_TOKEN is missing rather than silently becoming public.

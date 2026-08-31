@@ -1,0 +1,1487 @@
+{
+  "title": "Campaign archive",
+  "note": "Real threads from the pre-delete mirror. Subjects, client names, prospect emails, and offer terms are redacted for the recording.",
+  "clients": [
+    {
+      "key": "A",
+      "label": "Client A"
+    },
+    {
+      "key": "B",
+      "label": "Client B"
+    },
+    {
+      "key": "C",
+      "label": "Client C"
+    }
+  ],
+  "campaigns": [
+    {
+      "oldId": 3110622,
+      "newId": 3867914,
+      "name": "Client A \u00b7 RB2B",
+      "client": "Client A",
+      "sent": 133,
+      "replied": 0,
+      "positive": 0,
+      "bounced": 14,
+      "status": "COMPLETED",
+      "clientKey": "A",
+      "leads": 131,
+      "categories": {
+        "Sender Originated Bounce": 7
+      }
+    },
+    {
+      "oldId": 3201244,
+      "newId": 3867917,
+      "name": "Client A \u00b7 \u2588\u2588\u2588\u2588zones",
+      "client": "Client A",
+      "sent": 1318,
+      "replied": 10,
+      "positive": 0,
+      "bounced": 14,
+      "status": "COMPLETED",
+      "clientKey": "A",
+      "leads": 507,
+      "categories": {
+        "Out Of Office": 5,
+        "Sender Originated Bounce": 6,
+        "Interested": 1
+      }
+    },
+    {
+      "oldId": 3201308,
+      "newId": 3867918,
+      "name": "Client A \u00b7 MSPs 20-200",
+      "client": "Client A",
+      "sent": 26956,
+      "replied": 295,
+      "positive": 0,
+      "bounced": 157,
+      "status": "COMPLETED",
+      "clientKey": "A",
+      "leads": 8715,
+      "categories": {
+        "Out Of Office": 162,
+        "Not Interested": 35,
+        "Sender Originated Bounce": 60,
+        "Interested": 1
+      }
+    },
+    {
+      "oldId": 3201381,
+      "newId": 3867919,
+      "name": "Client A \u00b7 Spring",
+      "client": "Client A",
+      "sent": 3602,
+      "replied": 64,
+      "positive": 0,
+      "bounced": 56,
+      "status": "COMPLETED",
+      "clientKey": "A",
+      "leads": 1154,
+      "categories": {
+        "Sender Originated Bounce": 23,
+        "Out Of Office": 31,
+        "Uncategorizable by Ai": 1,
+        "Not Interested": 8,
+        "Interested": 1
+      }
+    },
+    {
+      "oldId": 3429214,
+      "newId": 3867921,
+      "name": "Client A \u00b7 Law Firms",
+      "client": "Client A",
+      "sent": 2238,
+      "replied": 36,
+      "positive": 0,
+      "bounced": 59,
+      "status": "COMPLETED",
+      "clientKey": "A",
+      "leads": 983,
+      "categories": {
+        "Sender Originated Bounce": 47,
+        "Out Of Office": 21,
+        "Do Not Contact": 3,
+        "Interested": 2
+      }
+    },
+    {
+      "oldId": 3429333,
+      "newId": 3867922,
+      "name": "Client A \u00b7 Baseball Offer",
+      "client": "Client A",
+      "sent": 1740,
+      "replied": 28,
+      "positive": 0,
+      "bounced": 33,
+      "status": "COMPLETED",
+      "clientKey": "A",
+      "leads": 0,
+      "categories": {}
+    },
+    {
+      "oldId": 3437329,
+      "newId": 3867923,
+      "name": "Client A \u00b7 Sports / Merch Offer",
+      "client": "Client A",
+      "sent": 4031,
+      "replied": 31,
+      "positive": 1,
+      "bounced": 99,
+      "status": "COMPLETED",
+      "clientKey": "A",
+      "leads": 1586,
+      "categories": {
+        "Sender Originated Bounce": 43,
+        "Out Of Office": 15,
+        "Positive Reply": 1
+      }
+    },
+    {
+      "oldId": 3563069,
+      "newId": 3867925,
+      "name": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "sent": 5592,
+      "replied": 183,
+      "positive": 22,
+      "bounced": 39,
+      "status": "COMPLETED",
+      "clientKey": "B",
+      "leads": 2735,
+      "categories": {
+        "Out Of Office": 81,
+        "Sender Originated Bounce": 26,
+        "Positive Reply": 21,
+        "Not Interested": 20,
+        "Interested": 6
+      }
+    },
+    {
+      "oldId": 3628940,
+      "newId": 3867944,
+      "name": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "sent": 5108,
+      "replied": 101,
+      "positive": 0,
+      "bounced": 124,
+      "status": "COMPLETED",
+      "clientKey": "B",
+      "leads": 2507,
+      "categories": {
+        "Out Of Office": 53,
+        "Interested": 13,
+        "Not Interested": 17,
+        "Sender Originated Bounce": 32
+      }
+    },
+    {
+      "oldId": 3628943,
+      "newId": 3867945,
+      "name": "Client C \u00b7 Draft",
+      "client": "Client C",
+      "sent": 0,
+      "replied": 0,
+      "positive": 0,
+      "bounced": 0,
+      "status": "DRAFTED",
+      "clientKey": "C",
+      "leads": 0,
+      "categories": {}
+    }
+  ],
+  "replies": [
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Nancy",
+      "fromEmailMasked": "n\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "YDBG | YourDay Balance Game",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Nancy,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around Atlanta and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nVivian Feeney\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.",
+        "at": "2026-06-29 12:28:33.701+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Thank you..what's the protocol for claiming the \u2588\u2588\u2588\u2588?\n\nIt's a Great Life,\n\nNancy Jamison, GOO\nYDBG Inc. | n\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com | \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\u00a0\u00a0\u00a0\n\nOn Mon, Jun 29, 2026, 12:48\u202fPM Vivian Feeney <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\nHey Nancy, thanks for getting back to me!\n\nDates are flexible you can pick. Do you own the properties you are maintaining?\n\nJust double checking. thanks!\n\n On Mon, Jun 29, 2026 at 04:45 PM UTC Nancy Jamison <n\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com> wrote:\n\nHi Vivian - thank you for reaching out! what is the date of the \u2588\u2588\u2588\u2588 please?\n\nOn Mon, Jun 29, 2026 at 8:28\u202fAM Vivian Feeney <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Nancy,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around Atlanta and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nVivian Feeney\n\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.\n\n--\n\nIt's a Great Life,\n\nNancy Jamison |\u00a0Chief Operating Officer\u00a0\u200b| PC Score 70\u200b",
+        "at": "2026-06-29 23:56:48+00",
+        "sequenceNumber": null
+      },
+      "body": "Thank you..what's the protocol for claiming the \u2588\u2588\u2588\u2588?\n\nIt's a Great Life,\n\nNancy Jamison, GOO\nYDBG Inc. | n\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com | \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\u00a0\u00a0\u00a0\n\nOn Mon, Jun 29, 2026, 12:48\u202fPM Vivian Feeney <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\nHey Nancy, thanks for getting back to me!\n\nDates are flexible you can pick. Do you own the properties you are maintaining?\n\nJust double checking. thanks!\n\n On Mon, Jun 29, 2026 at 04:45 PM UTC Nancy Jamison <n\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com> wrote:\n\nHi Vivian - thank you for reaching out! what is the date of the \u2588\u2588\u2588\u2588 please?\n\nOn Mon, Jun 29, 2026 at 8:28\u202fAM Vivian Feeney <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Nancy,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around Atlanta and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nVivian Feeney\n\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.\n\n--\n\nIt's a Great Life,\n\nNancy Jamison |\u00a0Chief Operating Officer\u00a0\u200b| PC Score 70\u200b",
+      "at": "2026-06-29 23:56:48+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Amber",
+      "fromEmailMasked": "a\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "AXIA Residential",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Amber,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Mansfield and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nEstelle Simonis\nMid-South Roof Systems",
+        "at": "2026-06-29 21:53:10.376+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Estelle!\u00a0\n\nI oversee Macon, McDonough and Stockbridge. I would love to set up a call.\u00a0\n\nAmber Bozeman | Senior Regional Manager\n\n400 Galleria Parkway SE, Suite 1720\n|\u00a0Atlanta, GA 30339\n\nPhone:\n(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nA\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\u00a0|",
+        "at": "2026-06-29 22:53:06+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hi Estelle!\u00a0\n\nI oversee Macon, McDonough and Stockbridge. I would love to set up a call.\u00a0\n\nAmber Bozeman | Senior Regional Manager\n\n400 Galleria Parkway SE, Suite 1720\n|\u00a0Atlanta, GA 30339\n\nPhone:\n(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nA\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\u00a0|",
+      "at": "2026-06-29 22:53:06+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Arlington",
+      "fromEmailMasked": "a\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org",
+      "company": "The Epiphany School of Global Studies",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Arlington,\n\nI've got a pair of Wolfpack \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Raleigh and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nMeredith Buckridge\nMid-South Roof Systems",
+        "at": "2026-06-29 12:29:03.997+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Tuesday would be great. I will be there working on all the summer improvements.\n\nWe are in New Bern, NC.\n\nOn Mon, Jun 29, 2026 at 4:13\u202fPM Meredith Buckridge <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\nYes we would absolutely be interested! Does Monday or Tuesday next week work?\u00a0\n\nI don't have visibility into that calendly so can't see if you booked...looking forward to chatting soon.\u00a0\n\n On Mon, Jun 29, 2026 at 08:06 PM UTC Arlington Tart <a\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:\n\nWe are looking at three roofs that need to be replaced with metal roofing, per our insurance company. So, the work is there for the right company. Thank you. Have a great day.\n\nBest Wishes,\n\nOn Mon, Jun 29, 2026 at 4:02\u202fPM Meredith Buckridge <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Arlington, thanks for getting back to me. Yes that would be great. Our sales director would actually be the right person for this. He is on PTO this week but back next. Here's his calendar: https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nMeredith Buckridge\nMid-South Roof Systems",
+        "at": "2026-06-29 21:27:00+00",
+        "sequenceNumber": null
+      },
+      "body": "Tuesday would be great. I will be there working on all the summer improvements.\n\nWe are in New Bern, NC.\n\nOn Mon, Jun 29, 2026 at 4:13\u202fPM Meredith Buckridge <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\nYes we would absolutely be interested! Does Monday or Tuesday next week work?\u00a0\n\nI don't have visibility into that calendly so can't see if you booked...looking forward to chatting soon.\u00a0\n\n On Mon, Jun 29, 2026 at 08:06 PM UTC Arlington Tart <a\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:\n\nWe are looking at three roofs that need to be replaced with metal roofing, per our insurance company. So, the work is there for the right company. Thank you. Have a great day.\n\nBest Wishes,\n\nOn Mon, Jun 29, 2026 at 4:02\u202fPM Meredith Buckridge <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Arlington, thanks for getting back to me. Yes that would be great. Our sales director would actually be the right person for this. He is on PTO this week but back next. Here's his calendar: https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nMeredith Buckridge\nMid-South Roof Systems",
+      "at": "2026-06-29 21:27:00+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Robyn",
+      "fromEmailMasked": "r\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Westmount Realty Capital, LLC",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Robyn,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Atlanta Metropolitan Area and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nVincent Schoen\nMid-South Roof Systems",
+        "at": "2026-06-29 21:01:00.652+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Vincent! Thank you so much for reaching out. Would love to get some information on mid \u2013 south. Feel free to shoot me an email or call anytime. Westmount does not have a huge presence in Atlanta, but we are definitely growing our portfolio.\n\nRobyn Johnson\n\nRegional Property Manager\n\nC:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nR\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\n3030 Business Park Drive, Suite D,\u00a0Norcross,\u00a0GA\u00a030071",
+        "at": "2026-06-29 21:16:57+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hey Vincent! Thank you so much for reaching out. Would love to get some information on mid \u2013 south. Feel free to shoot me an email or call anytime. Westmount does not have a huge presence in Atlanta, but we are definitely growing our portfolio.\n\nRobyn Johnson\n\nRegional Property Manager\n\nC:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nR\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\n3030 Business Park Drive, Suite D,\u00a0Norcross,\u00a0GA\u00a030071",
+      "at": "2026-06-29 21:16:57+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "David",
+      "fromEmailMasked": "d\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Rite Lite Signs & Architectural Elements",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey David,\n\nI've got a pair of Tar Heels \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Concord and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nDewey Reinger-Herzog\nMid-South Roof Systems",
+        "at": "2026-06-29 19:52:07.519+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "How much to seal my 30,000 sqft metal roof.\n\n\u00a0\n\n\u00a0\n\nDavid Catchpole\u00a0\u00a0(Founding Father)\n\n\u00a0\n\n\u00a0\n\n\u00a0\n\nD\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\nCell\u00a0\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\n\u00a0\n\nRiteLiteSigns.com",
+        "at": "2026-06-29 21:05:26+00",
+        "sequenceNumber": 1
+      },
+      "body": "How much to seal my 30,000 sqft metal roof.\n\n\u00a0\n\n\u00a0\n\nDavid Catchpole\u00a0\u00a0(Founding Father)\n\n\u00a0\n\n\u00a0\n\n\u00a0\n\nD\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\nCell\u00a0\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\n\u00a0\n\nRiteLiteSigns.com",
+      "at": "2026-06-29 21:05:26+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Shevenie",
+      "fromEmailMasked": "s\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org",
+      "company": "Veterans Empowerment Organization (VEO)",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Shevenie,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Atlanta Metropolitan Area and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nKara Leuschke\nMid-South Roof Systems",
+        "at": "2026-06-29 21:00:54.823+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Kara,\n\nThank you for your email and the kind offer. I am unable to receive gifts in my role at VEO. However, we have veterans that are in our program that would love to be sponsored to attend events. If you have interest in helping our veterans, please contact @Soyoung Juliano, who is the Director of Housing and Clinical Services.\n\nBest,\nShevenie\n\n-----Original Message-----\nFrom: Kara Leuschke\nSent: Monday, June 29, 2026 5:01 PM\nTo: Shevenie Page\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\nHi Shevenie,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Atlanta Metropolitan Area and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nKara Leuschke\nMid-South Roof Systems",
+        "at": "2026-06-29 21:05:13+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hi Kara,\n\nThank you for your email and the kind offer. I am unable to receive gifts in my role at VEO. However, we have veterans that are in our program that would love to be sponsored to attend events. If you have interest in helping our veterans, please contact @Soyoung Juliano, who is the Director of Housing and Clinical Services.\n\nBest,\nShevenie\n\n-----Original Message-----\nFrom: Kara Leuschke\nSent: Monday, June 29, 2026 5:01 PM\nTo: Shevenie Page\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\nHi Shevenie,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Atlanta Metropolitan Area and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nKara Leuschke\nMid-South Roof Systems",
+      "at": "2026-06-29 21:05:13+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Cori",
+      "fromEmailMasked": "c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "RangeWater Real Estate",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Cori,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Atlanta and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nAnne Raynor\nMid-South Roof Systems",
+        "at": "2026-06-29 19:38:08.561+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hello Anne,\u00a0\n\nThank you for reaching out and for the generous offer of the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588!\n\nI'd be happy to schedule a quick call to learn more about your services. When would be a good time for you? Let me know what works best, and I'll do my best to accommodate.\n\nI look forward to speaking with you.\n\nBest,\n\nCori Dyson\u00a0\n\nAssistant Manager |\nThe Linc Brookhaven\n\n4150 Ashford Dunwoody Road, Brookhaven, GA 30319|\nRangeWater Real Estate\n\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022|\nC\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+        "at": "2026-06-29 21:02:31+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hello Anne,\u00a0\n\nThank you for reaching out and for the generous offer of the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588!\n\nI'd be happy to schedule a quick call to learn more about your services. When would be a good time for you? Let me know what works best, and I'll do my best to accommodate.\n\nI look forward to speaking with you.\n\nBest,\n\nCori Dyson\u00a0\n\nAssistant Manager |\nThe Linc Brookhaven\n\n4150 Ashford Dunwoody Road, Brookhaven, GA 30319|\nRangeWater Real Estate\n\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022|\nC\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "at": "2026-06-29 21:02:31+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Jill",
+      "fromEmailMasked": "j\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org",
+      "company": "New Memphis",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Jill,\n\nI've got a couple Grizzlies \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Memphis and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nSadie Marks\nMid-South Roof Systems",
+        "at": "2026-06-29 20:24:48.961+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "New Memphis does not own the building; we're just the largest tenant, and branding was a perk. Anchor in Nashville owns the property.\n\n-----Original Message-----\nFrom: Sadie Marks\nSent: Monday, June 29, 2026 3:25 PM\nTo: Jill Turner\nSubject: Grizzlies \u2588\u2588\u2588\u2588\n\nHi Jill,\n\nI've got a couple Grizzlies \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Memphis and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nSadie Marks\nMid-South Roof Systems",
+        "at": "2026-06-29 20:27:00+00",
+        "sequenceNumber": 1
+      },
+      "body": "New Memphis does not own the building; we're just the largest tenant, and branding was a perk. Anchor in Nashville owns the property.\n\n-----Original Message-----\nFrom: Sadie Marks\nSent: Monday, June 29, 2026 3:25 PM\nTo: Jill Turner\nSubject: Grizzlies \u2588\u2588\u2588\u2588\n\nHi Jill,\n\nI've got a couple Grizzlies \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Memphis and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nSadie Marks\nMid-South Roof Systems",
+      "at": "2026-06-29 20:27:00+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Derrick",
+      "fromEmailMasked": "d\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "ZRS Management",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Derrick,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a roofing systems company that only does commercial properties, both around Atlanta Metropolitan Area and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. They invited us back for more projects.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nWorth a 20-minute call to see if we're a fit?\n\nBrandy Donnelly\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours just for your time.",
+        "at": "2026-06-29 20:08:45.022+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hello Brandy,\n\nI am available Tuesday - Friday between 1PM and 4PM, let me know when we can connect.\n\nThank you,\n\nDerrick McFadden |\u00a0Property\u00a0Manager \u00a0\nCove at Covington|12301 Town Center Blvd.\u00a0| Covington, GA 30014\n(P) \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 | www.CoveatCovingtonapts.com\n\n-----Original Message-----\nFrom: Brandy Donnelly\nSent: Monday, June 29, 2026 4:09 PM\nTo: Derrick McFadden\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\n[You don't often get email from b\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info. Learn why this is important at https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022 ]\n\nHi Derrick,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 - want them, on me?\n\nWe are a roofing systems company that only does commercial properties, both around Atlanta Metropolitan Area and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson - 278k sq ft around active airport security. They invited us back for more projects.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nWorth a 20-minute call to see if we're a fit?\n\nBrandy Donnelly\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours just for your time.",
+        "at": "2026-06-29 20:21:18+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hello Brandy,\n\nI am available Tuesday - Friday between 1PM and 4PM, let me know when we can connect.\n\nThank you,\n\nDerrick McFadden |\u00a0Property\u00a0Manager \u00a0\nCove at Covington|12301 Town Center Blvd.\u00a0| Covington, GA 30014\n(P) \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 | www.CoveatCovingtonapts.com\n\n-----Original Message-----\nFrom: Brandy Donnelly\nSent: Monday, June 29, 2026 4:09 PM\nTo: Derrick McFadden\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\n[You don't often get email from b\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info. Learn why this is important at https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022 ]\n\nHi Derrick,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 - want them, on me?\n\nWe are a roofing systems company that only does commercial properties, both around Atlanta Metropolitan Area and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson - 278k sq ft around active airport security. They invited us back for more projects.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nWorth a 20-minute call to see if we're a fit?\n\nBrandy Donnelly\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours just for your time.",
+      "at": "2026-06-29 20:21:18+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Crystal",
+      "fromEmailMasked": "c\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Fortis Property Management",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Crystal,\n\nI've got a couple Gamecocks \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a roofing systems company that only does commercial properties, both around Columbia and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. They invited us back for more projects.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nWorth a 20-minute call to see if we're a fit?\n\nDanielle Swaniawski\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours just for your time.",
+        "at": "2026-06-29 18:40:43.03+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Danielle,\n\nThank you for the offer for the \u2588\u2588\u2588\u2588, but I will decline.\u00a0 I do; however, need some roof work completed at one of our properties in Columbia.\u00a0 Would love to connect to see if you would be interested in taking a look.\n\n\u00a0\n\n\u00a0\n\n\u00a0\n\nCrystal Dukes\n\nRegional Property Manager",
+        "at": "2026-06-29 20:08:25+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hi Danielle,\n\nThank you for the offer for the \u2588\u2588\u2588\u2588, but I will decline.\u00a0 I do; however, need some roof work completed at one of our properties in Columbia.\u00a0 Would love to connect to see if you would be interested in taking a look.\n\n\u00a0\n\n\u00a0\n\n\u00a0\n\nCrystal Dukes\n\nRegional Property Manager",
+      "at": "2026-06-29 20:08:25+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Melynda",
+      "fromEmailMasked": "m\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Pinnacle Leasing and Management, LLC",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Melynda,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Atlanta and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nKrystal Schamberger\nMid-South Roof Systems",
+        "at": "2026-06-29 16:12:54.404+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Krystal,\n\nHa! That was a good subject line... yes, I'll take them lol. We are always in need of new vendors. Our portfolio is constantly expanding, and our team manages properties throughout the north-east/south-east. Although this week is a bit busy, we could schedule something for Thursday afternoon around 1:30PM.... let me know if that works for you\n\nThank you,\n\nMelynda Gaskins\nAssistant Property Manager\nPinnacle Leasing and Management, LLC",
+        "at": "2026-06-29 19:30:13+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hi Krystal,\n\nHa! That was a good subject line... yes, I'll take them lol. We are always in need of new vendors. Our portfolio is constantly expanding, and our team manages properties throughout the north-east/south-east. Although this week is a bit busy, we could schedule something for Thursday afternoon around 1:30PM.... let me know if that works for you\n\nThank you,\n\nMelynda Gaskins\nAssistant Property Manager\nPinnacle Leasing and Management, LLC",
+      "at": "2026-06-29 19:30:13+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Cody",
+      "fromEmailMasked": "c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Felker Day, Inc.",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Cody,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Duncan and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nKarla Kemmer\nMid-South Roof Systems",
+        "at": "2026-06-29 13:35:25.991+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "I booked for 3pm today. No one called me.\n\nCody Whitaker\nDirector of Facilities\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nC\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nFrom: Karla Kemmer <k\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\nSent: Monday, 29 June 2026 15:11:12\nTo: Cody Whitaker <c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\nSubject: RE: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\u00a0\n\nHey Cody,\n\nSorry for the confusion...yes he is on PTO this week but you can still book, he will be taking them.\u00a0\n\nAlso, we will send the \u2588\u2588\u2588\u2588 after the call...thanks for booking! Looking forward to it.\u00a0\n\nOn Mon, Jun 29, 2026 at 07:04 PM UTC Cody Whitaker <c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com> wrote:\n\nSo I schedule I call them get an email saying he his out on personal time?",
+        "at": "2026-06-29 19:12:08+00",
+        "sequenceNumber": null
+      },
+      "body": "I booked for 3pm today. No one called me.\n\nCody Whitaker\nDirector of Facilities\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nC\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nFrom: Karla Kemmer <k\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\nSent: Monday, 29 June 2026 15:11:12\nTo: Cody Whitaker <c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\nSubject: RE: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\u00a0\n\nHey Cody,\n\nSorry for the confusion...yes he is on PTO this week but you can still book, he will be taking them.\u00a0\n\nAlso, we will send the \u2588\u2588\u2588\u2588 after the call...thanks for booking! Looking forward to it.\u00a0\n\nOn Mon, Jun 29, 2026 at 07:04 PM UTC Cody Whitaker <c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com> wrote:\n\nSo I schedule I call them get an email saying he his out on personal time?",
+      "at": "2026-06-29 19:12:08+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Jessica",
+      "fromEmailMasked": "j\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Kotarides Companies",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Jessica,\n\nI've got a pair of Tar Heels \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Raleigh-durham-chapel Hill Area and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nRoland Wyman-Maggio\nMid-South Roof Systems",
+        "at": "2026-06-29 18:49:28.988+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hello Roland,\u00a0\n\nI can give you contact info of the correct person who can help onboard new vendors. I do not get to participate in that. As far as the \u2588\u2588\u2588\u2588 go, I would gladly accept them \ud83d\ude00\n\nLet me know\n\nSent via the Samsung Galaxy S24 Ultra, an AT&T 5G smartphone\n\nGet\nOutlook for Android\n\nFrom: Roland Wyman-Maggio <r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\n\nSent: Monday, 29 June 2026 14:49:26\n\nTo: Jessica Lewis <j\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\n\nSubject: Tar Heels \u2588\u2588\u2588\u2588\n\n\u00a0\n\nHey Jessica,\n\nI've got a pair of Tar Heels \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Raleigh-durham-chapel Hill Area and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nRoland Wyman-Maggio\n\nMid-South Roof Systems",
+        "at": "2026-06-29 19:11:46+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hello Roland,\u00a0\n\nI can give you contact info of the correct person who can help onboard new vendors. I do not get to participate in that. As far as the \u2588\u2588\u2588\u2588 go, I would gladly accept them \ud83d\ude00\n\nLet me know\n\nSent via the Samsung Galaxy S24 Ultra, an AT&T 5G smartphone\n\nGet\nOutlook for Android\n\nFrom: Roland Wyman-Maggio <r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\n\nSent: Monday, 29 June 2026 14:49:26\n\nTo: Jessica Lewis <j\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\n\nSubject: Tar Heels \u2588\u2588\u2588\u2588\n\n\u00a0\n\nHey Jessica,\n\nI've got a pair of Tar Heels \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Raleigh-durham-chapel Hill Area and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nRoland Wyman-Maggio\n\nMid-South Roof Systems",
+      "at": "2026-06-29 19:11:46+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Christina",
+      "fromEmailMasked": "c\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Pinnacle Leasing and Management, LLC",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Christina,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a roofing systems company that only does commercial properties, both around Kennesaw and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. They invited us back for more projects.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nWorth a 20-minute call to see if we're a fit?\n\nMindy Beier\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours just for your time.",
+        "at": "2026-06-29 17:08:05.421+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Mindy,\n\nI am available for the rest of the day until 5pm.\u00a0\n\nYou can give me a call.\u00a0\n\nThank you!\n\nChristina D'Errico\n\nAssistant Property Manager\n\nPinnacle Leasing and Management, LLC",
+        "at": "2026-06-29 19:04:13+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hi Mindy,\n\nI am available for the rest of the day until 5pm.\u00a0\n\nYou can give me a call.\u00a0\n\nThank you!\n\nChristina D'Errico\n\nAssistant Property Manager\n\nPinnacle Leasing and Management, LLC",
+      "at": "2026-06-29 19:04:13+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Bonnie",
+      "fromEmailMasked": "b\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "MEDIQ Urgent Care",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Bonnie,\n\nI've got a pair of Tar Heels \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around High Point and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nCarl Cremin\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.",
+        "at": "2026-06-29 18:47:50.805+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "We don't own our buildings, so I can't approve the roofing, but I will take the \u2588\u2588\u2588\u2588 \ud83d\ude0a\n\n-----Original Message-----\nFrom: Carl Cremin\nSent: Monday, June 29, 2026 2:48 PM\nTo: Bonnie Peterson\nSubject: Tar Heels \u2588\u2588\u2588\u2588\n\nHey Bonnie,\n\nI've got a pair of Tar Heels \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around High Point and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nCarl Cremin\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.",
+        "at": "2026-06-29 18:55:32+00",
+        "sequenceNumber": 1
+      },
+      "body": "We don't own our buildings, so I can't approve the roofing, but I will take the \u2588\u2588\u2588\u2588 \ud83d\ude0a\n\n-----Original Message-----\nFrom: Carl Cremin\nSent: Monday, June 29, 2026 2:48 PM\nTo: Bonnie Peterson\nSubject: Tar Heels \u2588\u2588\u2588\u2588\n\nHey Bonnie,\n\nI've got a pair of Tar Heels \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around High Point and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nCarl Cremin\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.",
+      "at": "2026-06-29 18:55:32+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Norman",
+      "fromEmailMasked": "n\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022.net",
+      "company": "Brentwood United Methodist Church",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Norman,\n\nI've got a pair of Commodores \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Old Hickory and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nChelsea Mosciski\nMid-South Roof Systems",
+        "at": "2026-06-29 16:44:52.715+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Chelsea,\nThank you for reaching out.\nI have your information on file and will definitely call when a project comes up that might fit your company.\n\nWe are always interested in enhancing the level of excellence regarding the \"big and small projects\" that present themselves.\nNorman\n\nFrom: Chelsea Mosciski <c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\nSent: Monday, June 29, 2026 11:44 AM\nTo: Norman Humber <n\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022.net>\nSubject: Commodores \u2588\u2588\u2588\u2588\n\u00a0\n\nIRONSCALES couldn't recognize this email as this is the first time you received an email from this sender chelseamosciski @ msrsresidential.info\n\nHey Norman,\n\nI've got a pair of Commodores \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Old Hickory and the South turn their building into a money-making asset, not just something to fix w",
+        "at": "2026-06-29 18:03:28+00",
+        "sequenceNumber": 1
+      },
+      "body": "Chelsea,\nThank you for reaching out.\nI have your information on file and will definitely call when a project comes up that might fit your company.\n\nWe are always interested in enhancing the level of excellence regarding the \"big and small projects\" that present themselves.\nNorman\n\nFrom: Chelsea Mosciski <c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\nSent: Monday, June 29, 2026 11:44 AM\nTo: Norman Humber <n\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022.net>\nSubject: Commodores \u2588\u2588\u2588\u2588\n\u00a0\n\nIRONSCALES couldn't recognize this email as this is the first time you received an email from this sender chelseamosciski @ msrsresidential.info\n\nHey Norman,\n\nI've got a pair of Commodores \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Old Hickory and the South turn their building into a money-making asset, not just something to fix w",
+      "at": "2026-06-29 18:03:28+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Brian",
+      "fromEmailMasked": "b\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Digital Ignite",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Brian,\n\nI've got a pair of RiverDogs \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Charleston and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nVincent Wintheiser\nMid-South Roof Systems",
+        "at": "2026-06-29 15:28:18.684+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "We lease our office space.\n\nBrian Cox\nChief Operating Officer\nT. +\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n635 Rutledge Ave, #201\n\nCharleston, SC 29403\n\nOn Mon, Jun 29, 2026 at 11:42\u202fAM Vincent Wintheiser <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Brian, thanks for getting back to me! I would actually have you talk to our sales director Randy, he would be the right person to talk through what makes sense for you. Just want to double check- do you all own your properties? Here's his calendar: https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nVincent Wintheiser\nMid-South Roof Systems",
+        "at": "2026-06-29 16:24:08+00",
+        "sequenceNumber": null
+      },
+      "body": "We lease our office space.\n\nBrian Cox\nChief Operating Officer\nT. +\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n635 Rutledge Ave, #201\n\nCharleston, SC 29403\n\nOn Mon, Jun 29, 2026 at 11:42\u202fAM Vincent Wintheiser <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Brian, thanks for getting back to me! I would actually have you talk to our sales director Randy, he would be the right person to talk through what makes sense for you. Just want to double check- do you all own your properties? Here's his calendar: https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nVincent Wintheiser\nMid-South Roof Systems",
+      "at": "2026-06-29 16:24:08+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Taylor",
+      "fromEmailMasked": "t\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.io",
+      "company": "Nxt Level",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Taylor,\n\nI've got a couple Commodores \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Brentwood and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nVincent Schoen\nMid-South Roof Systems",
+        "at": "2026-06-29 14:43:16.814+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "No thanks.\u00a0 Totally understood.\n\nTaylor Duncan\nCOO, Nxt Level\nnxtlevel.io\u00a0|\u00a0Connect on LinkedIn\nSeattle | San Francisco | New York | Nashville\nP: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nThis email and any attachments are confidential and intended only for the named recipient.\nIf you have received this message in error, please delete it and notify the sender.\nWe process personal data in line with our Privacy Policy .\u00a0https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\nNxt Level 5200 Maryland Way Ste. 200. Brentwood, TN 37027\n\nOn Mon, Jun 29, 2026 at 10:58\u202fAM Vincent Schoen <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:",
+        "at": "2026-06-29 15:58:48+00",
+        "sequenceNumber": null
+      },
+      "body": "No thanks.\u00a0 Totally understood.\n\nTaylor Duncan\nCOO, Nxt Level\nnxtlevel.io\u00a0|\u00a0Connect on LinkedIn\nSeattle | San Francisco | New York | Nashville\nP: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nThis email and any attachments are confidential and intended only for the named recipient.\nIf you have received this message in error, please delete it and notify the sender.\nWe process personal data in line with our Privacy Policy .\u00a0https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\nNxt Level 5200 Maryland Way Ste. 200. Brentwood, TN 37027\n\nOn Mon, Jun 29, 2026 at 10:58\u202fAM Vincent Schoen <v\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:",
+      "at": "2026-06-29 15:58:48+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Donna",
+      "fromEmailMasked": "d\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Haven Realty Capital",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Donna,\n\nI've got a couple Crimson Tide \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in Huntsville-decatur-albertville Area and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients use their building as a money-making asset, not just something to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nLarry Jerde\nMid-South Roof Systems",
+        "at": "2026-06-29 14:06:30.179+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Larry!\n\nWe actually have been looking for a vendor that can help with any roof\nrepairs, exc. We have this property in Huntsville, 2 properties in Franklin\nand 2 properties in Chattanooga.\n\n If you are not apart of the local apartment association, I'd love to\nintroduce you to Jen, and welcome you to learn more about our upcoming trade\nshow.\n\nDonna Skipworth\nProperty Manager - Twin Oaks Townhomes\nProperty Operations - Tennessee\nC: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nd\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\n-----Original Message-----\nFrom: Larry Jerde\nSent: Monday, June 29, 2026 9:06 AM\nTo: d\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nSubject: Crimson Tide \u2588\u2588\u2588\u2588\n\nHi Donna,\n\nI've got a couple Crimson Tide \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in\nHuntsville-decatur-albertville Area and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k\nsq ft expansion.\n\nWe help clients use their building as a money-making asset, not just\nsomething to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nLarry Jerde\nMid-South Roof Systems",
+        "at": "2026-06-29 14:33:23+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hey Larry!\n\nWe actually have been looking for a vendor that can help with any roof\nrepairs, exc. We have this property in Huntsville, 2 properties in Franklin\nand 2 properties in Chattanooga.\n\n If you are not apart of the local apartment association, I'd love to\nintroduce you to Jen, and welcome you to learn more about our upcoming trade\nshow.\n\nDonna Skipworth\nProperty Manager - Twin Oaks Townhomes\nProperty Operations - Tennessee\nC: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nd\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\n-----Original Message-----\nFrom: Larry Jerde\nSent: Monday, June 29, 2026 9:06 AM\nTo: d\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nSubject: Crimson Tide \u2588\u2588\u2588\u2588\n\nHi Donna,\n\nI've got a couple Crimson Tide \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in\nHuntsville-decatur-albertville Area and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k\nsq ft expansion.\n\nWe help clients use their building as a money-making asset, not just\nsomething to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nLarry Jerde\nMid-South Roof Systems",
+      "at": "2026-06-29 14:33:23+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "David",
+      "fromEmailMasked": "d\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Inline Lighting & Electric Supply Co.",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey David,\n\nI've got a pair of Lookouts \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Chattanooga and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nMarion Hoeger\nMid-South Roof Systems",
+        "at": "2026-06-29 13:35:22.586+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Good morning\u00a0Marion\n\nThank you for reaching out but unfortunately we lease our building and the\u00a0owner handles all of that.\n\nThanks\n\nDavid Hanks\nArea Facilities and Safety Manager\nInline Lighting & Electric Supply Co.\u00a0 Office: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\u00a0\u00a0\n\u00a0 Direct: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n \u00a06231 Lee Hwy Suite 101, Chattanooga, TN 37421\n\u00a0\u00a0\u00a0\u00a0\u00a0InlineElectric.com\u00a0\u00a0\u00a0InlineLighting.com",
+        "at": "2026-06-29 14:05:14+00",
+        "sequenceNumber": 1
+      },
+      "body": "Good morning\u00a0Marion\n\nThank you for reaching out but unfortunately we lease our building and the\u00a0owner handles all of that.\n\nThanks\n\nDavid Hanks\nArea Facilities and Safety Manager\nInline Lighting & Electric Supply Co.\u00a0 Office: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\u00a0\u00a0\n\u00a0 Direct: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n \u00a06231 Lee Hwy Suite 101, Chattanooga, TN 37421\n\u00a0\u00a0\u00a0\u00a0\u00a0InlineElectric.com\u00a0\u00a0\u00a0InlineLighting.com",
+      "at": "2026-06-29 14:05:14+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Positive Reply",
+      "fromName": "Natasha",
+      "fromEmailMasked": "n\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022.net",
+      "company": "SPM, LLC",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Natasha,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Birmingham and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nMack Orn\nMid-South Roof Systems",
+        "at": "2026-06-29 13:35:47.738+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Good Morning,\n\nYes, I would love the \u2588\u2588\u2588\u2588.\n\n\u00a0\nNatasha Mack\nProperty Manager\n600 Flint Mill Lane\nBessemer, AL 35022\n(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nN\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022.net\nbessemerplace.com\n\u00a0\nThis email message, including any attachments, may contain information\nthat is privileged or confidential. If you are not an intended recipient,\nplease be advised that any review, use, reproduction or distribution of this\nmessage is prohibited. If you have received this communication in error, please\ncompletely destroy all electronic and hard copies, and contact me by telephone\nor forward the original message to me.\u00a0\n-----Original Message-----\nFrom: Mack Orn\nSent: Monday, June 29, 2026 8:36 AM\nTo: Natasha\u00a0Mack\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\nHey Natasha,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Birmingham and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nMack Orn\nMid-South Roof Systems\n[External Email]",
+        "at": "2026-06-29 14:00:00+00",
+        "sequenceNumber": 1
+      },
+      "body": "Good Morning,\n\nYes, I would love the \u2588\u2588\u2588\u2588.\n\n\u00a0\nNatasha Mack\nProperty Manager\n600 Flint Mill Lane\nBessemer, AL 35022\n(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nN\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022.net\nbessemerplace.com\n\u00a0\nThis email message, including any attachments, may contain information\nthat is privileged or confidential. If you are not an intended recipient,\nplease be advised that any review, use, reproduction or distribution of this\nmessage is prohibited. If you have received this communication in error, please\ncompletely destroy all electronic and hard copies, and contact me by telephone\nor forward the original message to me.\u00a0\n-----Original Message-----\nFrom: Mack Orn\nSent: Monday, June 29, 2026 8:36 AM\nTo: Natasha\u00a0Mack\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\nHey Natasha,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Birmingham and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nMack Orn\nMid-South Roof Systems\n[External Email]",
+      "at": "2026-06-29 14:00:00+00"
+    },
+    {
+      "campaignOldId": 3437329,
+      "campaignNewId": 3867923,
+      "campaignName": "Client A \u00b7 Sports / Merch Offer",
+      "client": "Client A",
+      "clientKey": "A",
+      "category": "Positive Reply",
+      "fromName": "Brian",
+      "fromEmailMasked": "b\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org",
+      "company": "Chattanooga Area Food Bank",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Brian,\n\nI've got a brand new set of \u2588\u2588\u2588\u2588 4 \u2014 want them, on me?\n\nWe've run an MSP for 30 years and wanted to get these out to the IT community.\n\nWe just took a company from scattered data to usable reporting in two days.\n\n\u2588\u2588\u2588\u2588 are yours regardless - no strings attached.\n\nWorth a reply?\n\nmindy huels\n\u2588\u2588\u2588\u2588 Technology Partners",
+        "at": "2026-06-17 18:26:55.821+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Well, I sat at my desk from 1 - 1:30pm today in good faith and never received a call.\u00a0\n\nI look forwards to receiving the \u2588\u2588\u2588\u2588 that can be sent to:\n\nChattanooga Area Food Bank\n\nBrian Bender\n\n2009 Curtain Pole Rd\u2028\n\nChattanooga, TN 37406\n\nThanks!\n\nFrom: mindy huels <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org>\n\nSent: Wednesday, June 17, 2026 3:12 PM\n\nTo: Brian Bender <b\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org>\n\nSubject: RE: extra \u2588\u2588\u2588\u2588 for you\n\n\u00a0\n\nGreat! Hers a link to Luis' calendar, he is our CEO. Thanks!\n\nhttps://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nOn Wed, Jun 17, 2026 at 07:09 PM UTC Brian Bender <b\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:",
+        "at": "2026-06-18 17:32:04+00",
+        "sequenceNumber": null
+      },
+      "body": "Well, I sat at my desk from 1 - 1:30pm today in good faith and never received a call.\u00a0\n\nI look forwards to receiving the \u2588\u2588\u2588\u2588 that can be sent to:\n\nChattanooga Area Food Bank\n\nBrian Bender\n\n2009 Curtain Pole Rd\u2028\n\nChattanooga, TN 37406\n\nThanks!\n\nFrom: mindy huels <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org>\n\nSent: Wednesday, June 17, 2026 3:12 PM\n\nTo: Brian Bender <b\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org>\n\nSubject: RE: extra \u2588\u2588\u2588\u2588 for you\n\n\u00a0\n\nGreat! Hers a link to Luis' calendar, he is our CEO. Thanks!\n\nhttps://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nOn Wed, Jun 17, 2026 at 07:09 PM UTC Brian Bender <b\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:",
+      "at": "2026-06-18 17:32:04+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Aaron",
+      "fromEmailMasked": "a\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Charleston Battery",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Aaron,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around Mount Pleasant and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nRuben Mante\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.",
+        "at": "2026-07-13 19:50:21.978+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Mid morning today works!\u00a0\n\nAaron Tipton\nStadium & Field Operations Manager\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\na\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\nOn Thu, Jul 30, 2026 at 7:18\u202fPM Ruben Mante <r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Aaron, thanks for getting back to me! Great to hear, let's get something on the calendar.\n\nWould Friday mid-morning or Monday early afternoon work for a quick call? If neither fits your schedule, just let me know and I'll send over a link to book whatever time works best for you.\n\nJosh\n\nRuben Mante\nMid-South Roof Systems",
+        "at": "2026-07-31 11:27:03+00",
+        "sequenceNumber": null
+      },
+      "body": "Mid morning today works!\u00a0\n\nAaron Tipton\nStadium & Field Operations Manager\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\na\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\nOn Thu, Jul 30, 2026 at 7:18\u202fPM Ruben Mante <r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Aaron, thanks for getting back to me! Great to hear, let's get something on the calendar.\n\nWould Friday mid-morning or Monday early afternoon work for a quick call? If neither fits your schedule, just let me know and I'll send over a link to book whatever time works best for you.\n\nJosh\n\nRuben Mante\nMid-South Roof Systems",
+      "at": "2026-07-31 11:27:03+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Robert",
+      "fromEmailMasked": "r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Phoenix Senior Living",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Robert,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Conyers and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nGwen Bergstrom\nMid-South Roof Systems",
+        "at": "2026-06-29 17:47:35.254+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Sure please give me a call at \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022. Thanks\u00a0\n\nGet Outlook for iOS\nFrom: Gwen Bergstrom <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\nSent: Monday, 29 June 2026 13:47:32\nTo: Robert Nelson <r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\u00a0\n\n[You don't often get email from g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info. Learn why this is important at https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022 ]\n\n[EXTERNAL EMAIL] DO NOT CLICK links or attachments unless you recognize the sender and know the content is safe.\n\nHey Robert,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Conyers and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nGwen Bergstrom\nMid-South Roof Systems",
+        "at": "2026-07-20 19:33:59+00",
+        "sequenceNumber": 1
+      },
+      "body": "Sure please give me a call at \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022. Thanks\u00a0\n\nGet Outlook for iOS\nFrom: Gwen Bergstrom <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\nSent: Monday, 29 June 2026 13:47:32\nTo: Robert Nelson <r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\u00a0\n\n[You don't often get email from g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info. Learn why this is important at https://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022 ]\n\n[EXTERNAL EMAIL] DO NOT CLICK links or attachments unless you recognize the sender and know the content is safe.\n\nHey Robert,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Conyers and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nGwen Bergstrom\nMid-South Roof Systems",
+      "at": "2026-07-20 19:33:59+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Foster",
+      "fromEmailMasked": "f\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "EQT Real Estate",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Foster,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in Atlanta and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients use their building as a money-making asset, not just something to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nRuben Mante\nMid-South Roof Systems",
+        "at": "2026-07-13 18:33:49.325+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Ruben,\nI saw your email on my phone the other day, but for some reason I couldn't find it in my inbox afterward.\nI can always use more roofing contractors for potential roof replacement projects I have coming up in 2027. Thanks for sharing your contact information, I'll add your company to my vendor list.\nDo you have a PDF or company brochure that provides more information about your services? Also, what day are the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 for?\nThanks,\n\n\u00a0\nFoster Hopkins\nProperty Manager\nEQT Real Estate\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\n6285 Barfield Road, Suite 175\nAtlanta,\u00a0GA,\u00a030328\n\nwww.eqtgroup.com/real-estate",
+        "at": "2026-07-15 19:21:57+00",
+        "sequenceNumber": 2
+      },
+      "body": "Hey Ruben,\nI saw your email on my phone the other day, but for some reason I couldn't find it in my inbox afterward.\nI can always use more roofing contractors for potential roof replacement projects I have coming up in 2027. Thanks for sharing your contact information, I'll add your company to my vendor list.\nDo you have a PDF or company brochure that provides more information about your services? Also, what day are the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 for?\nThanks,\n\n\u00a0\nFoster Hopkins\nProperty Manager\nEQT Real Estate\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\n6285 Barfield Road, Suite 175\nAtlanta,\u00a0GA,\u00a030328\n\nwww.eqtgroup.com/real-estate",
+      "at": "2026-07-15 19:21:57+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Morgan",
+      "fromEmailMasked": "m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Casenta",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Morgan,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Birmingham and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nAlma Reynolds\nMid-South Roof Systems",
+        "at": "2026-07-13 15:34:59.272+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hello,\n\nWe are interested in the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588. You can email a pricing quote. I will provide the information to our corporate office. Thank you and have a wonderful day.\n\n\u200b\u200b\u200b\u200b\n\nMorgan\u00a0Washington",
+        "at": "2026-07-15 16:04:08+00",
+        "sequenceNumber": 2
+      },
+      "body": "Hello,\n\nWe are interested in the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588. You can email a pricing quote. I will provide the information to our corporate office. Thank you and have a wonderful day.\n\n\u200b\u200b\u200b\u200b\n\nMorgan\u00a0Washington",
+      "at": "2026-07-15 16:04:08+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Ryan",
+      "fromEmailMasked": "r\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.us",
+      "company": "Soapbox",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Ryan,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial roofing company that only does commercial properties, both around Marietta and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. We were invited back for more.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nOpen to a quick call?\n\nAdrian Smitham\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours regardless.",
+        "at": "2026-07-13 19:04:56.458+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Adrian,\n\nI\u2019m happy to talk with you. No \u2588\u2588\u2588\u2588 necessary. I\u2019m not sure I\u2019ll be able to help you though. Let me know a good time to jump on a quick call.\n\n\u2014-\n\nRyan Sellors\nChief Operating Officer\nSoapbox, LLC\n\nOn Tue, Jul 14, 2026 at 5:29\u202fPM Adrian Smitham <a\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Ryan, thanks for getting back to me. Did you see my earlier email? We are giving \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 in exchange for strategic conversations. Does that resonate?\n\nAdrian Smitham\nMid-South Roof Systems",
+        "at": "2026-07-15 15:31:17+00",
+        "sequenceNumber": null
+      },
+      "body": "Hey Adrian,\n\nI\u2019m happy to talk with you. No \u2588\u2588\u2588\u2588 necessary. I\u2019m not sure I\u2019ll be able to help you though. Let me know a good time to jump on a quick call.\n\n\u2014-\n\nRyan Sellors\nChief Operating Officer\nSoapbox, LLC\n\nOn Tue, Jul 14, 2026 at 5:29\u202fPM Adrian Smitham <a\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Ryan, thanks for getting back to me. Did you see my earlier email? We are giving \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 in exchange for strategic conversations. Does that resonate?\n\nAdrian Smitham\nMid-South Roof Systems",
+      "at": "2026-07-15 15:31:17+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Casey",
+      "fromEmailMasked": "c\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Vistelar",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Casey,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in Birmingham and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients use their building as a money-making asset, not just something to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nKelly Schulist\nMid-South Roof Systems",
+        "at": "2026-07-13 20:19:30.739+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "You can follow up on this one.\u00a0 This one is a dead end\n\nRandy Gaines\n\nSales Manager\n\nMid-South Roof Systems",
+        "at": "2026-07-15 15:25:26+00",
+        "sequenceNumber": null
+      },
+      "body": "You can follow up on this one.\u00a0 This one is a dead end\n\nRandy Gaines\n\nSales Manager\n\nMid-South Roof Systems",
+      "at": "2026-07-15 15:25:26+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Scott",
+      "fromEmailMasked": "s\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Forza Group",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Scott,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in Marietta and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients use their building as a money-making asset, not just something to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nMeredith Buckridge\nMid-South Roof Systems",
+        "at": "2026-07-13 12:48:52.335+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hello,\n\u00a0\nI am interested in the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588..\n\u00a0\n\nStephen Gibson, CPE\nDirector of Preconstruction\nc: \u00a0(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\no: \u00a0(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\ne: \u00a0s\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\n\u00a0\n100 Forza Way, Senoia GA 30276",
+        "at": "2026-07-15 15:06:17+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hello,\n\u00a0\nI am interested in the \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588..\n\u00a0\n\nStephen Gibson, CPE\nDirector of Preconstruction\nc: \u00a0(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\no: \u00a0(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\ne: \u00a0s\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\n\u00a0\n100 Forza Way, Senoia GA 30276",
+      "at": "2026-07-15 15:06:17+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Andy",
+      "fromEmailMasked": "a\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Realty Consultants Property Management",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Andy,\n\nI've got a couple Demon Deacons \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Advance and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nWinifred Koss\nMid-South Roof Systems",
+        "at": "2026-07-13 13:18:02.83+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Good morning! I am Andy Ashby, a residential property manager with Realty Consultants Property Management. I'd be glad to meet or speak over the phone. I manage mostly single-family homes and a few multifamily properties. Do you repair and replace single family homes as well?\nGo Deacs!\nThanks,\nAndy\n\nOn Wed, Jul 15, 2026 at 9:35\u202fAM Winifred Koss <w\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHi Andy, the \u2588\u2588\u2588\u2588 are still yours.\n\nYou might be like Tractor Supply, another client of ours \u2014 we roofed their entire 901k sq ft distribution center with 12k linear feet of rooftop metal. Plus we maintain it.\n\nThe clients we work with best don't wait for a leak \u2014 they treat their building like an asset, not a liability.\n\nOpen to it?\n\nWinifred Koss\n\nMid-South Roof Systems\n\nOn Mon, Jul 13, 2026 at 01:18 PM UTC Winifred Koss <w\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\n> Hi Andy,\n\n>\n\n> I've got a couple Demon Deacons \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\n>\n\n> We help commercial properties around Advance and the South use their building as a money-making asset, not just something to fix when it leaks.\n\n>\n\n> We've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\n>\n\n> Worth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\n>\n\n> P.S. Happy to assess your roof at no charge - no risk to try us.\n\n>\n\n> Winifred Koss\n\n> Mid-South Roof Systems\n\n--\n\nAndy Ashby\nProperty Manager, North Pod\np:(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 Office\na:2014-C New Garden Road, Greensboro, NC 27410\nw:www.rentrrc.com\u00a0e: aa",
+        "at": "2026-07-15 13:42:08+00",
+        "sequenceNumber": 2
+      },
+      "body": "Good morning! I am Andy Ashby, a residential property manager with Realty Consultants Property Management. I'd be glad to meet or speak over the phone. I manage mostly single-family homes and a few multifamily properties. Do you repair and replace single family homes as well?\nGo Deacs!\nThanks,\nAndy\n\nOn Wed, Jul 15, 2026 at 9:35\u202fAM Winifred Koss <w\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHi Andy, the \u2588\u2588\u2588\u2588 are still yours.\n\nYou might be like Tractor Supply, another client of ours \u2014 we roofed their entire 901k sq ft distribution center with 12k linear feet of rooftop metal. Plus we maintain it.\n\nThe clients we work with best don't wait for a leak \u2014 they treat their building like an asset, not a liability.\n\nOpen to it?\n\nWinifred Koss\n\nMid-South Roof Systems\n\nOn Mon, Jul 13, 2026 at 01:18 PM UTC Winifred Koss <w\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\n> Hi Andy,\n\n>\n\n> I've got a couple Demon Deacons \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\n>\n\n> We help commercial properties around Advance and the South use their building as a money-making asset, not just something to fix when it leaks.\n\n>\n\n> We've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\n>\n\n> Worth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\n>\n\n> P.S. Happy to assess your roof at no charge - no risk to try us.\n\n>\n\n> Winifred Koss\n\n> Mid-South Roof Systems\n\n--\n\nAndy Ashby\nProperty Manager, North Pod\np:(\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 Office\na:2014-C New Garden Road, Greensboro, NC 27410\nw:www.rentrrc.com\u00a0e: aa",
+      "at": "2026-07-15 13:42:08+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Matthew",
+      "fromEmailMasked": "m\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Cabins For You",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Matthew,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Cartersville and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nGwendolyn Frami\nMid-South Roof Systems",
+        "at": "2026-07-13 13:33:42+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Honestly, not sure what yall do so I\u2019m open to discuss either option.\u00a0\n\nThanks,\n\nMatthew Shadle\nChief Operating Officer\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 | Vacations\u00a0For YOU\u00a0\nBook a meeting\n\nOn Jul 13, 2026, at 5:31\u202fPM, Gwendolyn Frami <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\n\ufeff\nHaha awesome, sounds good!\n\nJust to clarify...did you want to talk about your portfolio of cabins or an HQ, or both?\n\n On Mon, Jul 13, 2026 at 09:04 PM UTC Matthew Shadle <m\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com> wrote:\n\nMy daughter has been begging to go to a \u2588\u2588\u2588\u2588 game, so I'll take the bait on this one!\u00a0\n\nThanks,\nMatthew\nBook a meeting\n\nOn Mon, Jul 13, 2026 at 9:33\u202fAM Gwendolyn Frami <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHi Matthew,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Cartersville and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nGwendolyn Frami\n\nMid-South Roof Systems\n\nCONFIDENTIALITY NOTICE: The information contained in this message and any attachment(s) is the property of Cabins for You, Inc. and its wholly owned subsidiaries and may be protected by state and federal laws governing disclosure of private information. It is intended solely for the use of the entity to whom this is addressed. If you are not the intended recipient, y",
+        "at": "2026-07-13 22:28:24+00",
+        "sequenceNumber": null
+      },
+      "body": "Honestly, not sure what yall do so I\u2019m open to discuss either option.\u00a0\n\nThanks,\n\nMatthew Shadle\nChief Operating Officer\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 | Vacations\u00a0For YOU\u00a0\nBook a meeting\n\nOn Jul 13, 2026, at 5:31\u202fPM, Gwendolyn Frami <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\n\n\ufeff\nHaha awesome, sounds good!\n\nJust to clarify...did you want to talk about your portfolio of cabins or an HQ, or both?\n\n On Mon, Jul 13, 2026 at 09:04 PM UTC Matthew Shadle <m\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com> wrote:\n\nMy daughter has been begging to go to a \u2588\u2588\u2588\u2588 game, so I'll take the bait on this one!\u00a0\n\nThanks,\nMatthew\nBook a meeting\n\nOn Mon, Jul 13, 2026 at 9:33\u202fAM Gwendolyn Frami <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHi Matthew,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Cartersville and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nGwendolyn Frami\n\nMid-South Roof Systems\n\nCONFIDENTIALITY NOTICE: The information contained in this message and any attachment(s) is the property of Cabins for You, Inc. and its wholly owned subsidiaries and may be protected by state and federal laws governing disclosure of private information. It is intended solely for the use of the entity to whom this is addressed. If you are not the intended recipient, y",
+      "at": "2026-07-13 22:28:24+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Karene",
+      "fromEmailMasked": "k\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Beacon Management Services",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Karene,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Atlanta and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nDouglas Rodriguez\nMid-South Roof Systems",
+        "at": "2026-07-13 18:47:21.757+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Yes, I would be interested.\u00a0\n\nThank you,\n\nKarene Craig\nCustomer Service Representative\n\nBeacon Management Services\n\nCustomer Service: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022, option 1\nAfter-Hours Emergency: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022, option 9\n\n1 Glenlake Pkwy, Suite 515, Atlanta, GA 30328",
+        "at": "2026-07-13 18:55:43+00",
+        "sequenceNumber": 1
+      },
+      "body": "Yes, I would be interested.\u00a0\n\nThank you,\n\nKarene Craig\nCustomer Service Representative\n\nBeacon Management Services\n\nCustomer Service: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022, option 1\nAfter-Hours Emergency: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022, option 9\n\n1 Glenlake Pkwy, Suite 515, Atlanta, GA 30328",
+      "at": "2026-07-13 18:55:43+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Luke",
+      "fromEmailMasked": "l\u2022\u2022\u2022@\u2022\u2022\u2022\u2022.co",
+      "company": "R1 Facility Services",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Luke,\n\nI've got a couple Tar Heels \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Charlotte and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nDouglas Rodriguez\nMid-South Roof Systems",
+        "at": "2026-07-13 16:05:36.529+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "I'd love some Tar Heel \u2588\u2588\u2588\u2588 but we don't have any physical buildings that we own, so this might not be a great fit!\u00a0\n\nThanks,\n\nLuke Glenn\nChief Operating Officer\nR1 Facility Services\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nOn Mon, Jul 13, 2026 at 12:05\u202fPM Douglas Rodriguez <d\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHi Luke,\n\nI've got a couple Tar Heels \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Charlotte and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nDouglas Rodriguez\n\nMid-South Roof Systems",
+        "at": "2026-07-13 16:06:43+00",
+        "sequenceNumber": 1
+      },
+      "body": "I'd love some Tar Heel \u2588\u2588\u2588\u2588 but we don't have any physical buildings that we own, so this might not be a great fit!\u00a0\n\nThanks,\n\nLuke Glenn\nChief Operating Officer\nR1 Facility Services\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nOn Mon, Jul 13, 2026 at 12:05\u202fPM Douglas Rodriguez <d\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHi Luke,\n\nI've got a couple Tar Heels \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Charlotte and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nDouglas Rodriguez\n\nMid-South Roof Systems",
+      "at": "2026-07-13 16:06:43+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Julio",
+      "fromEmailMasked": "j\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022.org",
+      "company": "Atlanta Community Food Bank",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Julio,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe help businesses around Jonesboro and the South turn their building into a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because they called us before they had a problem.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to take a look at no charge - no risk to try us.\n\nEnrique Pagac\nMid-South Roof Systems",
+        "at": "2026-07-13 12:50:56.529+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hello Enrique,\n\nThank you for reaching out and your interest in our business. We could definitely jump on a call when you are available, and if possible, could you also point me to your website.\n\nMy number is attached to the bottom of the email.\n\nBest,\n\nJulio Gonzalez\n\nManager I, Facilities\n\nP \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\u00a0 \u00a0\u00a0 M \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nW www.acfb.org\u00a0\u00a0\u00a0 E j\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022.org",
+        "at": "2026-07-13 13:47:30+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hello Enrique,\n\nThank you for reaching out and your interest in our business. We could definitely jump on a call when you are available, and if possible, could you also point me to your website.\n\nMy number is attached to the bottom of the email.\n\nBest,\n\nJulio Gonzalez\n\nManager I, Facilities\n\nP \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\u00a0 \u00a0\u00a0 M \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nW www.acfb.org\u00a0\u00a0\u00a0 E j\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022.org",
+      "at": "2026-07-13 13:47:30+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Ioana",
+      "fromEmailMasked": "i\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Community Management Associates",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Ioana,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Lawrenceville and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nChristina Mueller\nMid-South Roof Systems",
+        "at": "2026-07-13 13:36:02.698+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Yes I\u2019d be glad to take them\u00a0\n\nBest Regards,\u00a0\n\u00a0\nIoana Fields,\u00a0\nPortfolio Manager\ni\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nDirect Dial:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022|\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 x9285\nCMA Client Services\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022",
+        "at": "2026-07-13 13:47:10+00",
+        "sequenceNumber": 1
+      },
+      "body": "Yes I\u2019d be glad to take them\u00a0\n\nBest Regards,\u00a0\n\u00a0\nIoana Fields,\u00a0\nPortfolio Manager\ni\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nDirect Dial:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022|\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022 x9285\nCMA Client Services\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022",
+      "at": "2026-07-13 13:47:10+00"
+    },
+    {
+      "campaignOldId": 3628940,
+      "campaignNewId": 3867944,
+      "campaignName": "Client B \u00b7 Commercial Offer 2",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Kara",
+      "fromEmailMasked": "k\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "NAI G2 Commercial Real Estate",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Kara,\n\nI've got a pair of \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 on me if you want them?\n\nWe are a commercial only roofing company serving Columbus and the South.\n\nWe constructed Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients turn their building into a money-making asset, not just something to fix when it leaks.\n\nOpen to a quick call? \u2588\u2588\u2588\u2588 are yours regardless.\n\nVivian Feeney\nMid-South Roof Systems",
+        "at": "2026-07-13 12:16:54.646+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "What game? Show me proof and we can chat.\u00a0\n\nKind Regards,\n\nKara Maxwell\n\nProperty Manager\n\nNAI G2 Commercial Real Estate\n\n114 Enterprise Court\nColumbus, GA 31904",
+        "at": "2026-07-13 12:42:57+00",
+        "sequenceNumber": 1
+      },
+      "body": "What game? Show me proof and we can chat.\u00a0\n\nKind Regards,\n\nKara Maxwell\n\nProperty Manager\n\nNAI G2 Commercial Real Estate\n\n114 Enterprise Court\nColumbus, GA 31904",
+      "at": "2026-07-13 12:42:57+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Toni",
+      "fromEmailMasked": "t\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Branch Properties LLC",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Toni,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Cumming and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nMack Orn\nMid-South Roof Systems",
+        "at": "2026-06-29 12:31:47.761+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Mack,\n\nThanks for the follow up. I don't have a need for my commercial buildings right now but do have a smaller pool house job if you are interested in bidding on. It's in Cumming (that's where I live).\n\nIf so, let me know. Thanks!\n\nToni Traynor\nPROPERTY MANAGER\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nwww.branchprop.com\n3340 Peachtree Road, NE\nSuite 2775, Atlanta, GA 30326\n\nToni\u00a0Traynor\u200b\u200b\u200b\u200b\n\nPROPERTY\u00a0MANAGER\n\nO:\nD:\nC:",
+        "at": "2026-07-08 20:51:18+00",
+        "sequenceNumber": 2
+      },
+      "body": "Hey Mack,\n\nThanks for the follow up. I don't have a need for my commercial buildings right now but do have a smaller pool house job if you are interested in bidding on. It's in Cumming (that's where I live).\n\nIf so, let me know. Thanks!\n\nToni Traynor\nPROPERTY MANAGER\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nwww.branchprop.com\n3340 Peachtree Road, NE\nSuite 2775, Atlanta, GA 30326\n\nToni\u00a0Traynor\u200b\u200b\u200b\u200b\n\nPROPERTY\u00a0MANAGER\n\nO:\nD:\nC:",
+      "at": "2026-07-08 20:51:18+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Scott",
+      "fromEmailMasked": "s\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Newberry Tanks And Equipment, LLC",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Scott,\n\nI've got a couple Grizzlies \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe help commercial properties around Memphis Metropolitan Area and the South use their building as a money-making asset, not just something to fix when it leaks.\n\nWe've kept roofs over Lowe's, Chick-fil-A, Toyo Tire, and Delta running right for years \u2014 mostly because those clients called us before they had a problem.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nP.S. Happy to assess your roof at no charge - no risk to try us.\n\nGwendolyn Frami\nMid-South Roof Systems",
+        "at": "2026-06-29 20:41:13.117+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Gwendolyn - I had asked for some info to review before deciding if I want to set up a meeting.\u00a0 I appreciate your sales process, but would like something to review before committing time.\n\nFrom: Gwendolyn Frami <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\n\nSent: Thursday, July 2, 2026 08:38\n\nTo: Scott Landry <s\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\n\nSubject: RE: RE: Grizzlies \u2588\u2588\u2588\u2588\n\n\u00a0\n\nHey Scott, thanks for getting back to me. Totally get it, it\u2019s a busy time of year. Would you have time for a short meeting? This just helps us to be able to communicate most efficiently with you. Our CEO would be able to explain it all in a meeting. You\n can schedule it through the link. Here's his calendar:\nhttps://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nGwendolyn Frami\n\nMid-South Roof Systems",
+        "at": "2026-07-02 14:00:31+00",
+        "sequenceNumber": null
+      },
+      "body": "Gwendolyn - I had asked for some info to review before deciding if I want to set up a meeting.\u00a0 I appreciate your sales process, but would like something to review before committing time.\n\nFrom: Gwendolyn Frami <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info>\n\nSent: Thursday, July 2, 2026 08:38\n\nTo: Scott Landry <s\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\n\nSubject: RE: RE: Grizzlies \u2588\u2588\u2588\u2588\n\n\u00a0\n\nHey Scott, thanks for getting back to me. Totally get it, it\u2019s a busy time of year. Would you have time for a short meeting? This just helps us to be able to communicate most efficiently with you. Our CEO would be able to explain it all in a meeting. You\n can schedule it through the link. Here's his calendar:\nhttps://\u2022\u2022\u2022\u2022.com/\u2022\u2022\u2022\u2022\n\nGwendolyn Frami\n\nMid-South Roof Systems",
+      "at": "2026-07-02 14:00:31+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Tamara",
+      "fromEmailMasked": "t\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "RCG Ventures, LLC",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Tamara,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in Atlanta and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients use their building as a money-making asset, not just something to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nHazel Pagac\nMid-South Roof Systems",
+        "at": "2026-06-29 15:28:26.899+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Thank you. I'll check my PM's calendar and go from there.\u00a0\n\nThank you,\n\nTamara Barfield-Ratliff\nAssistant Property Operations Manager\nRCG Ventures, LLC\n3060 Peachtree Rd NW, Suite 400\nAtlanta, GA 30305",
+        "at": "2026-07-01 17:21:03+00",
+        "sequenceNumber": null
+      },
+      "body": "Thank you. I'll check my PM's calendar and go from there.\u00a0\n\nThank you,\n\nTamara Barfield-Ratliff\nAssistant Property Operations Manager\nRCG Ventures, LLC\n3060 Peachtree Rd NW, Suite 400\nAtlanta, GA 30305",
+      "at": "2026-07-01 17:21:03+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Marie",
+      "fromEmailMasked": "m\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Midlands Media Group",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Marie,\n\nI've got a couple Gamecocks \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a roofing systems company that only does commercial properties, both around Columbia and in the broader South.\n\nWe reroofed Delta's baggage facility at Hartsfield-Jackson \u2014 278k sq ft around active airport security. They invited us back for more projects.\n\nWe've done the same for Lowe's, Chick-fil-A, and Toyo Tire. Our clients treat their buildings as assets, and so do we.\n\nWorth a 20-minute call to see if we're a fit?\n\nGrady Schaefer\nMid-South Roof Systems\n\nP.S. \u2588\u2588\u2588\u2588 are yours just for your time.",
+        "at": "2026-06-29 12:42:03.22+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Good morning Grady!\u00a0\u00a0\n\nWe generally use companies that advertise with our media company - Is Mid-South interested in advertising here in the Midlands?\u00a0 It looks like you are growing in Carolinas.\u00a0 We'd love to help you grow your business here!\n\nMarie G. Stover\nChief Operating Officer\n\nMidlands Media Group\no \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\u00a0| m \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n2412 Main Street, Columbia SC 29201\n94.3 The Dude\u00a0| 93.1 The Lake |\u00a0ColaDaily | ColaDailyDeals | Cola Daily \u2588\u2588\u2588\u2588\n\n\u00a0\n\nOn Wed, Jul 1, 2026 at 9:19\u202fAM Grady Schaefer <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Marie, \u2588\u2588\u2588\u2588 still stand.\n\nYou might be like Tractor Supply, a client we work with \u2014 we roofed their entire 901k sq ft distribution center with 12k linear feet of rooftop metal. Plus we maintain it.\n\nThe clients we work with best don't wait for a leak \u2014 they treat their building like any other revenue-protecting investment.",
+        "at": "2026-07-01 13:45:30+00",
+        "sequenceNumber": 2
+      },
+      "body": "Good morning Grady!\u00a0\u00a0\n\nWe generally use companies that advertise with our media company - Is Mid-South interested in advertising here in the Midlands?\u00a0 It looks like you are growing in Carolinas.\u00a0 We'd love to help you grow your business here!\n\nMarie G. Stover\nChief Operating Officer\n\nMidlands Media Group\no \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\u00a0| m \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n2412 Main Street, Columbia SC 29201\n94.3 The Dude\u00a0| 93.1 The Lake |\u00a0ColaDaily | ColaDailyDeals | Cola Daily \u2588\u2588\u2588\u2588\n\n\u00a0\n\nOn Wed, Jul 1, 2026 at 9:19\u202fAM Grady Schaefer <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.info> wrote:\nHey Marie, \u2588\u2588\u2588\u2588 still stand.\n\nYou might be like Tractor Supply, a client we work with \u2014 we roofed their entire 901k sq ft distribution center with 12k linear feet of rooftop metal. Plus we maintain it.\n\nThe clients we work with best don't wait for a leak \u2014 they treat their building like any other revenue-protecting investment.",
+      "at": "2026-07-01 13:45:30+00"
+    },
+    {
+      "campaignOldId": 3563069,
+      "campaignNewId": 3867925,
+      "campaignName": "Client B \u00b7 Commercial Offer",
+      "client": "Client B",
+      "clientKey": "B",
+      "category": "Interested",
+      "fromName": "Nichole",
+      "fromEmailMasked": "n\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Lalani Ventures",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Nichole,\n\nI've got a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe are a commercial only roofing company working in Atlanta Metropolitan Area and the South.\n\nWe built Toyo Tire's original facility in GA, and just completed their 800k sq ft expansion.\n\nWe help clients use their building as a money-making asset, not just something to fix when it leaks.\n\nWorth a 20-minute call to see if we're a fit? \u2588\u2588\u2588\u2588 are yours regardless.\n\nDerrick Spinka\nMid-South Roof Systems",
+        "at": "2026-06-29 21:38:14.021+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Derrick,\n\nWe a consultation from a roofer on one of our buildings. Please give me a call \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022.\u00a0\n\nYes, I would enjoy a \u2588\u2588\u2588\u2588 game.",
+        "at": "2026-06-30 11:46:06+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hi Derrick,\n\nWe a consultation from a roofer on one of our buildings. Please give me a call \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022.\u00a0\n\nYes, I would enjoy a \u2588\u2588\u2588\u2588 game.",
+      "at": "2026-06-30 11:46:06+00"
+    },
+    {
+      "campaignOldId": 3429214,
+      "campaignNewId": 3867921,
+      "campaignName": "Client A \u00b7 Law Firms",
+      "client": "Client A",
+      "clientKey": "A",
+      "category": "Interested",
+      "fromName": "Paul",
+      "fromEmailMasked": "p\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Porzio, Bromberg & Newman, P.C.",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hello Paul,\n\nI've got a few extra Knicks \u2588\u2588\u2588\u2588 \u2014 want them, on me?\n\nWe're an MSP that has been around for 30 years - we helped another law firm that grew from 8 to 300 attorneys and was hiring people solely to deposit 300+ checks a day.\u00a0\n\nWe built them a scanner that drops every check straight into QuickBooks and their ERP \u2014 so they didn't need to hire more staff for it.\n\n\u2588\u2588\u2588\u2588 are yours regardless just to connect - no switching anything.\n\u00a0\nWorth a reply?\n\nroberto cormier\n\u2588\u2588\u2588\u2588 Technology Partners",
+        "at": "2026-06-01 15:26:59.923+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "RE: Knicks \u2588\u2588\u2588\u2588\n\nThank you for checking, Roberto!\u00a0 We have well-automated processes for what you describe \u2013 so we would not be a good prospect and I do not want to take the \u2588\u2588\u2588\u2588 from a firm\n that would be a better potential client.\u00a0 It is tempting, but I also want to be transparent.\n\n\u00a0\n\nRegards,\n\n\u00a0\n\nPaul",
+        "at": "2026-06-03 16:55:49+00",
+        "sequenceNumber": 2
+      },
+      "body": "RE: Knicks \u2588\u2588\u2588\u2588\n\nThank you for checking, Roberto!\u00a0 We have well-automated processes for what you describe \u2013 so we would not be a good prospect and I do not want to take the \u2588\u2588\u2588\u2588 from a firm\n that would be a better potential client.\u00a0 It is tempting, but I also want to be transparent.\n\n\u00a0\n\nRegards,\n\n\u00a0\n\nPaul",
+      "at": "2026-06-03 16:55:49+00"
+    },
+    {
+      "campaignOldId": 3429214,
+      "campaignNewId": 3867921,
+      "campaignName": "Client A \u00b7 Law Firms",
+      "client": "Client A",
+      "clientKey": "A",
+      "category": "Interested",
+      "fromName": "Rachel",
+      "fromEmailMasked": "r\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "UnitedLex",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Rachel,\n\nI've got a few extra Panthers \u2588\u2588\u2588\u2588 \u2014 would you like them, on me?\n\nWe're an MSP that has been around for 30 years - we worked with another law firm that grew from 8 to 300 attorneys and was hiring people specifically to deposit 300+ checks a day.\u00a0\n\nWe built them a scanner that routes every check straight into QuickBooks and their ERP \u2014 so they didn't need to hire more staff for it.\n\n\u2588\u2588\u2588\u2588 are yours regardless just to chat - no switching anything.\n\u00a0\nWorth a quick chat?\n\ngreg gusikowski\n\u2588\u2588\u2588\u2588 Technology Partners",
+        "at": "2026-06-01 19:22:35.033+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Greg,\n\nI'd love some Panthers \u2588\u2588\u2588\u2588, but I am not sure that my position as an account manager at a service provider company would be of any help to you \ud83d\ude42\n\nRachel DiPrima | Director, Account Management\u00a0 +\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nUnitedLex | The Business Partner for Legal\n\nFrom: greg gusikowski <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org>\nSent: Monday, June 1, 2026 3:22 PM\nTo: Rachel DiPrima <R\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\nSubject: Panthers \u2588\u2588\u2588\u2588\n\u00a0\n\nHi Rachel,\n\nI've got a few extra Panthers \u2588\u2588\u2588\u2588 \u2014 would you like them, on me?\n\nWe're an MSP that has been around for 30 years - we worked with another law firm that grew from 8 to 300 attorneys and was hiring people specifically to deposit 300+ checks a day.\u00a0\n\nWe built them a scanner that routes every check straight into QuickBooks and their ERP \u2014 so they didn't need to hire more staff for it.\n\n\u2588\u2588\u2588\u2588 are yours regardless just to chat - no switching anything.\n\u00a0\nWorth a quick chat?\n\ngreg gusikowski\n\u2588\u2588\u2588\u2588 Technology Partners",
+        "at": "2026-06-02 13:46:53+00",
+        "sequenceNumber": 1
+      },
+      "body": "Hi Greg,\n\nI'd love some Panthers \u2588\u2588\u2588\u2588, but I am not sure that my position as an account manager at a service provider company would be of any help to you \ud83d\ude42\n\nRachel DiPrima | Director, Account Management\u00a0 +\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\nUnitedLex | The Business Partner for Legal\n\nFrom: greg gusikowski <g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org>\nSent: Monday, June 1, 2026 3:22 PM\nTo: Rachel DiPrima <R\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com>\nSubject: Panthers \u2588\u2588\u2588\u2588\n\u00a0\n\nHi Rachel,\n\nI've got a few extra Panthers \u2588\u2588\u2588\u2588 \u2014 would you like them, on me?\n\nWe're an MSP that has been around for 30 years - we worked with another law firm that grew from 8 to 300 attorneys and was hiring people specifically to deposit 300+ checks a day.\u00a0\n\nWe built them a scanner that routes every check straight into QuickBooks and their ERP \u2014 so they didn't need to hire more staff for it.\n\n\u2588\u2588\u2588\u2588 are yours regardless just to chat - no switching anything.\n\u00a0\nWorth a quick chat?\n\ngreg gusikowski\n\u2588\u2588\u2588\u2588 Technology Partners",
+      "at": "2026-06-02 13:46:53+00"
+    },
+    {
+      "campaignOldId": 3201308,
+      "campaignNewId": 3867918,
+      "campaignName": "Client A \u00b7 MSPs 20-200",
+      "client": "Client A",
+      "clientKey": "A",
+      "category": "Interested",
+      "fromName": "Ghanendra",
+      "fromEmailMasked": "g\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Beem",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey Ghanendra,\n\nLet me cover you on your next PTO.\n\nTake a full week off without a single work call.\n\nNo \u2588\u2588\u2588\u2588, no resets, no \"hey real quick\".\n\nWe work with IT teams in and around Cambridge.\n\nWant me to walk you through how it works?\n\nmargaret schimmel\n\u2588\u2588\u2588\u2588 Technology Partners\n\nPS- No need to switch anything \u2014 we work alongside whoever you have. Think of us as a fill-in Ghanendra for the week.",
+        "at": "2026-04-20 14:32:49.878+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Sure, let's connect. Feel free to schedule a quick connect on Monday.\n\nOn Wed, Apr 22, 2026 at 10:44\u202fAM margaret schimmel <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:\nGhanendra,\u00a0\n\nMade you a loom of how this works. 2 minutes.\n\nShould I send the link?\n\nmargaret schimmel\n\n\u2588\u2588\u2588\u2588 Technology Partners\n\nOn Mon, Apr 20, 2026 at 02:32 PM UTC margaret schimmel <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:\n\n> Hey Ghanendra,\n\n>\n\n>\n\n> Let me cover you on your next PTO.\n\n>\n\n>\n\n> Take a full week off without a single work call.\n\n>\n\n>\n\n> No \u2588\u2588\u2588\u2588, no resets, no \"hey real quick\".\n\n>\n\n>\n\n> We work with IT teams in and around Cambridge.\n\n>\n\n>\n\n> Want me to walk you through how it works?\n\n>\n\n>\n\n> margaret schimmel\n\n> \u2588\u2588\u2588\u2588 Technology Partners\n\n>\n\n>\n\n> PS- No need to switch anything \u2014 we work alongside whoever you have. Think of us as a fill-in Ghanendra for the week.",
+        "at": "2026-04-23 16:59:31+00",
+        "sequenceNumber": 2
+      },
+      "body": "Sure, let's connect. Feel free to schedule a quick connect on Monday.\n\nOn Wed, Apr 22, 2026 at 10:44\u202fAM margaret schimmel <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:\nGhanendra,\u00a0\n\nMade you a loom of how this works. 2 minutes.\n\nShould I send the link?\n\nmargaret schimmel\n\n\u2588\u2588\u2588\u2588 Technology Partners\n\nOn Mon, Apr 20, 2026 at 02:32 PM UTC margaret schimmel <m\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.org> wrote:\n\n> Hey Ghanendra,\n\n>\n\n>\n\n> Let me cover you on your next PTO.\n\n>\n\n>\n\n> Take a full week off without a single work call.\n\n>\n\n>\n\n> No \u2588\u2588\u2588\u2588, no resets, no \"hey real quick\".\n\n>\n\n>\n\n> We work with IT teams in and around Cambridge.\n\n>\n\n>\n\n> Want me to walk you through how it works?\n\n>\n\n>\n\n> margaret schimmel\n\n> \u2588\u2588\u2588\u2588 Technology Partners\n\n>\n\n>\n\n> PS- No need to switch anything \u2014 we work alongside whoever you have. Think of us as a fill-in Ghanendra for the week.",
+      "at": "2026-04-23 16:59:31+00"
+    },
+    {
+      "campaignOldId": 3201381,
+      "campaignNewId": 3867919,
+      "campaignName": "Client A \u00b7 Spring",
+      "client": "Client A",
+      "clientKey": "A",
+      "category": "Interested",
+      "fromName": "Jeff",
+      "fromEmailMasked": "j\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "STRIKE",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hey\u00a0Jeff,\n\nI have a couple extra \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588- want them on me?\n\nWe run an MSP here in Spring and wanted to give these to the IT community here.\n\nActually, we just helped the Tejano Center downtown with their entire environment.\n\n\u2588\u2588\u2588\u2588 are yours either way, just for an intro meeting.\n\nWorth it?\n\nwillie wuckert\n\u2588\u2588\u2588\u2588 Technology Partners",
+        "at": "2026-04-20 13:24:25.079+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Willie,\n\nWe are currently under contract with another MSP but I am open to speaking with you about your capabilities.\n\nJeff Green\nChief Information Officer\nStrike\n460 Wildwood Forest Dr, Suite 350N\nSpring, TX 77380\n\nMobile: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nJ\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nwww.strikeusa.com\n\nDISCLAIMER: This email and any files transmitted with it are confidential and intended solely for the use of the individual or entity to whom they are addressed and no other third party may rely on any information provided for in this email or any files transmitted with it. If you are not the intended recipient, do not, directly or indirectly, use, disclose, distribute, print, or copy any part of this message. If you receive this message in error, please immediately delete it and all copies of it from your system, destroy any hard copies, and notify the sender. WARNING: Computer viruses can be transmitted via emails; the recipient is responsible for checking for any viruses transmitted by this email.\n-----Original Message-----\nFrom: willie wuckert\nSent: Monday, April 20, 2026 8:24 AM\nTo: Jeff Green\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\nHey\u00a0Jeff,\n\nI have a couple extra \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588- want them on me?\n\nWe run an MSP here in Spring and wanted to give these to the IT community here.\n\nActually, we just helped the Tejano Center downtown with their entire environment.\n\n\u2588\u2588\u2588\u2588 are yours either way, just for an intro meeting.\n\nWorth it?\n\nwillie wuckert\n\u2588\u2588\u2588\u2588 Technology Partners",
+        "at": "2026-04-22 15:32:39+00",
+        "sequenceNumber": 1
+      },
+      "body": "Willie,\n\nWe are currently under contract with another MSP but I am open to speaking with you about your capabilities.\n\nJeff Green\nChief Information Officer\nStrike\n460 Wildwood Forest Dr, Suite 350N\nSpring, TX 77380\n\nMobile: \u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n\nJ\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\nwww.strikeusa.com\n\nDISCLAIMER: This email and any files transmitted with it are confidential and intended solely for the use of the individual or entity to whom they are addressed and no other third party may rely on any information provided for in this email or any files transmitted with it. If you are not the intended recipient, do not, directly or indirectly, use, disclose, distribute, print, or copy any part of this message. If you receive this message in error, please immediately delete it and all copies of it from your system, destroy any hard copies, and notify the sender. WARNING: Computer viruses can be transmitted via emails; the recipient is responsible for checking for any viruses transmitted by this email.\n-----Original Message-----\nFrom: willie wuckert\nSent: Monday, April 20, 2026 8:24 AM\nTo: Jeff Green\nSubject: \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\n\nHey\u00a0Jeff,\n\nI have a couple extra \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588- want them on me?\n\nWe run an MSP here in Spring and wanted to give these to the IT community here.\n\nActually, we just helped the Tejano Center downtown with their entire environment.\n\n\u2588\u2588\u2588\u2588 are yours either way, just for an intro meeting.\n\nWorth it?\n\nwillie wuckert\n\u2588\u2588\u2588\u2588 Technology Partners",
+      "at": "2026-04-22 15:32:39+00"
+    },
+    {
+      "campaignOldId": 3201244,
+      "campaignNewId": 3867917,
+      "campaignName": "Client A \u00b7 \u2588\u2588\u2588\u2588zones",
+      "client": "Client A",
+      "clientKey": "A",
+      "category": "Interested",
+      "fromName": "Dean",
+      "fromEmailMasked": "d\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com",
+      "company": "Voigt-Abernathy Company, Sales Corp.",
+      "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+      "outreach": {
+        "direction": "outbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Hi Dean,\u00a0\n\nI wanted to get you a couple \u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588, on me.\n\nI'm sure you know you are in a top-10 \u2588\u2588\u2588\u2588 zone.\u00a0\n\nWe help Houston area companies specifically with their disaster prep.\n\nJust worked with a company HQ'd in the top 10 \u2014 they had zero redundancy before we connected. Now, they would have zero down time.\n\n\u2588\u2588\u2588\u2588 are yours to use regardless, just a thank-you for a quick call.\n\nCan I share more?\n\nmindy huels\n\u2588\u2588\u2588\u2588 Technology Partners",
+        "at": "2026-04-21 13:03:15.036+00",
+        "sequenceNumber": 1
+      },
+      "reply": {
+        "direction": "inbound",
+        "subject": "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588",
+        "body": "Sure.\n\nDean Lowe\n\nCorporate IT Director\n\nBirmingham Office:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n ext. 14105\n\nHouston Office:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n ext. 105\n\nEmail:\u00a0d\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\nWebsite:\u00a0www",
+        "at": "2026-04-21 14:34:26+00",
+        "sequenceNumber": 1
+      },
+      "body": "Sure.\n\nDean Lowe\n\nCorporate IT Director\n\nBirmingham Office:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n ext. 14105\n\nHouston Office:\u00a0\u2022\u2022\u2022-\u2022\u2022\u2022-\u2022\u2022\u2022\u2022\n ext. 105\n\nEmail:\u00a0d\u2022\u2022\u2022\u2022@\u2022\u2022\u2022\u2022\u2022\u2022\u2022.com\n\nWebsite:\u00a0www",
+      "at": "2026-04-21 14:34:26+00"
+    }
+  ]
+}

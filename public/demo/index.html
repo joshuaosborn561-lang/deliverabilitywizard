@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>SalesGlider · Campaign archive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="atmosphere" aria-hidden="true"></div>
+
+    <div class="app">
+      <aside class="sidebar">
+        <div>
+          <a class="brand" href="https://gosalesglider.com" target="_blank" rel="noreferrer">
+            <img
+              class="brand-mark"
+              src="./salesglider-mark.png"
+              srcset="./salesglider-mark.png 1x, ./salesglider-mark@2x.png 2x"
+              width="36"
+              height="36"
+              alt=""
+            />
+            <div>
+              <strong
+                ><span class="brand-sales">Sales</span
+                ><span class="brand-glider">Glider</span></strong
+              >
+              <span>Campaign archive</span>
+            </div>
+          </a>
+          <nav>
+            <button type="button" class="nav-item active" data-view="campaigns">
+              Campaigns
+            </button>
+            <button type="button" class="nav-item" data-view="replies">
+              Replies <span class="badge" id="reply-count">0</span>
+            </button>
+          </nav>
+        </div>
+        <div class="sidebar-footer">
+          <p class="fine-print" id="rail-note"></p>
+          <p class="fine-print quiet">Human-led. AI-fueled.</p>
+        </div>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="view-eyebrow">Restored clients</p>
+            <h1 id="view-title">Campaigns</h1>
+          </div>
+          <div class="top-right">
+            <div
+              class="client-filters"
+              id="client-filters"
+              role="group"
+              aria-label="Filter by client"
+            ></div>
+            <label class="search">
+              <span class="sr">Filter</span>
+              <input id="filter" type="search" placeholder="Filter…" />
+            </label>
+            <div class="health-pill"><i></i> Demo · redacted</div>
+          </div>
+        </header>
+
+        <section id="view-campaigns" class="panel active">
+          <div id="stat-row" class="kpi-grid"></div>
+          <article class="surface">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Pre-delete mirror</p>
+                <h2>Client archive</h2>
+              </div>
+              <div class="heading-actions">
+                <span class="muted" id="hidden-count"></span>
+                <button
+                  type="button"
+                  id="restore-hidden"
+                  class="ghost compact hidden"
+                >
+                  Restore hidden
+                </button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th>Campaign</th>
+                    <th>Status</th>
+                    <th>Leads</th>
+                    <th>Sent</th>
+                    <th>Replied</th>
+                    <th>Positive</th>
+                    <th>Bounced</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="campaign-rows"></tbody>
+              </table>
+              <p id="campaigns-empty" class="muted table-empty hidden">
+                No campaigns match this filter.
+              </p>
+            </div>
+          </article>
+        </section>
+
+        <section id="view-replies" class="panel">
+          <div class="inbox">
+            <aside class="surface thread-list" id="thread-list"></aside>
+            <article class="surface thread-pane" id="thread-pane">
+              <div class="empty muted">Select a reply</div>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>

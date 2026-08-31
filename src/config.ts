@@ -337,14 +337,12 @@ const ConfigSchema = z.object({
   cronScan: z.string().default("0 9 * * 1,4"),
   cronMonitor: z.string().default("0 */6 * * *"),
   /**
-   * Fleet send-volume report. Runs on its own schedule rather than with the
-   * monitor: the number is only meaningful once the day has some sending in
-   * it, and a 6-hourly post would report an empty day twice each morning.
-   *
-   * Pipe-separated because cron already uses commas inside a field. Runs in
-   * America/New_York so midday tracks EST/EDT.
+   * Client send/spam scoreboard (D156). Three posts a day in
+   * America/New_York — 10:00, 13:00, 16:30 — each the same briefing
+   * (per-client sent + spam plus the EOD extras). Pipe-separated because
+   * cron already uses commas inside a field.
    */
-  cronSendVolume: z.string().default("0 12 * * *|30 16 * * *"),
+  cronSendVolume: z.string().default("0 10 * * *|0 13 * * *|30 16 * * *"),
   providerIds: z
     .string()
     .optional()
@@ -542,7 +540,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     campaignStatuses: env.CAMPAIGN_STATUSES ?? "ACTIVE,PAUSED",
     cronScan: env.CRON_SCAN ?? "0 9 * * 1,4",
     cronMonitor: env.CRON_MONITOR ?? "0 */6 * * *",
-    cronSendVolume: env.CRON_SEND_VOLUME ?? "0 12 * * *|30 16 * * *",
+    cronSendVolume: env.CRON_SEND_VOLUME ?? "0 10 * * *|0 13 * * *|30 16 * * *",
     providerIds: env.PROVIDER_IDS ?? "",
     sequenceNumber: env.SEQUENCE_NUMBER ?? "1",
     stateFilePath: env.STATE_FILE_PATH ?? "/data/state.json",

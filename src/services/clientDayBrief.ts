@@ -79,7 +79,7 @@ export class ClientDayBriefService {
   ) {}
 
   async run(
-    options: { alert?: boolean; endOfDay?: boolean } = {},
+    options: { alert?: boolean } = {},
   ): Promise<ClientDayBriefResult> {
     const date = businessDate();
     const errors: string[] = [];
@@ -269,9 +269,7 @@ export class ClientDayBriefService {
         name: String(campaign.name ?? campaign.id),
       }));
 
-    const loadedDrafts = options.endOfDay
-      ? await this.collectLoadedDrafts(campaigns, errors)
-      : [];
+    const loadedDrafts = await this.collectLoadedDrafts(campaigns, errors);
     if (loadedDrafts.length) {
       result.loadedDrafts = loadedDrafts;
     }
@@ -279,32 +277,25 @@ export class ClientDayBriefService {
     if (options.alert !== false) {
       await this.slack.notifyClientDayBrief({
         ...result,
-        endOfDay: options.endOfDay === true,
-        staffingShorts: options.endOfDay
-          ? this.state.listLastStaffingShort()
-          : undefined,
-        untaggedCampaigns: options.endOfDay ? untagged : undefined,
-        domainAdvisories: options.endOfDay
-          ? this.state.listDomainAdvisories()
-          : undefined,
+        staffingShorts: this.state.listLastStaffingShort(),
+        untaggedCampaigns: untagged,
+        domainAdvisories: this.state.listDomainAdvisories(),
         // D143 — memberships an outside writer keeps re-adding after the
         // warmup gate pulls them; only a human can switch that writer off.
-        warmupBoomerangs: options.endOfDay
-          ? this.state.listWarmupGateBoomerangs()
-          : undefined,
-        loadedDrafts: options.endOfDay ? loadedDrafts : undefined,
-        canaryFleetDownSince: options.endOfDay
-          ? this.state.getCanaryFleetDown()?.since ?? null
-          : null,
+        warmupBoomerangs: this.state.listWarmupGateBoomerangs(),
+        loadedDrafts,
+        canaryFleetDownSince:
+          this.state.getCanaryFleetDown()?.since ?? null,
       });
     }
     return result;
   }
 
   /**
-   * D89 — DRAFT/DRAFTED campaigns that already have leads sitting in them
-   * and are not sending. Named on the EOD brief only. Does not import
-   * leads (D52) and does not START anyone (D40).
+   * D89/D156 — DRAFT/DRAFTED campaigns that already have leads sitting in
+   * them and are not sending. Named on every client-day Slack (10:00,
+   * 13:00, 16:30 ET). Does not import leads (D52) and does not START
+   * anyone (D40).
    */
   private async collectLoadedDrafts(
     campaigns: SmartleadCampaign[],

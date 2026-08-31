@@ -87,7 +87,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D66–D68 | Burned numbers — no entry exists |
 | D69 | Live |
 | D70 | Burned number — no entry exists |
-| D71 | Live |
+| D71 | Live — once-a-day scoreboard cadence superseded by D156 |
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
 | D74 | Live — log-only clause superseded by D75 |
 | D75 | Live |
@@ -171,6 +171,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
 | D155 | Live | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign; the converge re-clears the living fleet every 6h |
+| D156 | Live | The 16:30 client-day Slack also posts at 10:00 and 13:00 ET — same briefing, none slack-quiet |
 
 ---
 
@@ -4146,3 +4147,32 @@ campaignBounceAutostop.ts must match `bounce_autopause_threshold: null`
 and must NOT converge to a numeric value. Service tests: the force
 pass, a readable numeric drift (even 100), and an unreadable value all
 write null.
+
+## D156 — Client-day Slack is 10:00, 13:00, and 16:30 ET
+
+**Decision (Josh, 2026-08-31).** The briefing that already posts at
+16:30 America/New_York also posts at 10:00 and 13:00. Same payload
+every slot: per-client sent + spam, staffing shorts, untagged
+campaigns, loaded DRAFTs, domain advisories, warmup boomerangs, canary
+fleet down. None of the slots are slack-quiet.
+
+Default `CRON_SEND_VOLUME` is `0 10 * * *|0 13 * * *|30 16 * * *`.
+The last-slot-only `endOfDay` gate is gone — every scheduled run is
+the full briefing.
+
+**Why.** Josh asked for the 16:30 briefing at 10am and 1pm as well.
+Noon was already on the cron but D71 dropped it to `[slack-quiet]
+midday client-day`, so the extra slot never reached Slack.
+
+**Tradeoff.** Three scoreboards a day instead of one. Accepted: the
+content is the same briefing, not the 15-minute chatter D71 banned.
+The allowlist is unchanged (still `eod_summary`).
+
+**Supersedes.** D71's "once; last send-volume slot; midday briefs stay
+in logs." D71's other Slack allowlist (burned domain, isolated word,
+action result, later ops_alert) stays.
+
+**Guards.** Default `cronSendVolume` is the 10:00 / 13:00 / 16:30
+triple; `slack.ts` does not quiet midday client-day; `index.ts` does
+not treat only the last schedule as posting; owner-intent D156.
+

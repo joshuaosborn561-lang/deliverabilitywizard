@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D155** (2026-08-31). One page of current truth. When a new
+Canon as of **D156** (2026-08-31). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -24,7 +24,7 @@ Slack speaks only when a human decision is needed or the day is done.
 | Bounce loop | 10 min | **Never pauses, never STARTs** (D40/D148 — Josh: "i dont want anything paused anymore... investigating remediating and readding"). A REAL burst — >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141); a tripped counter samples the bounced rows first (retrying while the analytics ledger lags), a ledger dump of stale bounces logs loudly and does nothing, unreadable rows defer to the next tick — classifies the sampled SMTP reasons (tenant-rate-limit / sender-blocked / invalid-recipient / content-block, D140), Slacks ONE receipt naming the burst, the verdict and the plan, and opens a **resurrection incident** when the verdict blames the sender; a re-trip inside the hour folds into the open incident silently. The D90 lifetime-rate rule stays retired. **Clear** Smartlead bounce protection (`bounce_autopause_threshold: null`) on every living campaign — Smartlead's API defines null as off; the old "100" convention left the feature enabled and it still paused a 36%-bounce campaign on 2026-08-31 (D80/D84/D88/D124/D155). The API has no read for the field, so an unreadable value is treated as **armed** and the whole fleet is re-cleared every 6h (plus first sight of any new campaign). Never touches COMPLETED/STOPPED. Routing: a Microsoft tenant hitting its daily cap pages once per tenant per day (D140); a `550 5.1.8` outbound-spam block — ANY sample, never dominant-gated (D145) — opens the standard **burned-domain retire ask** for that sender's domain, receipts + buttons, one pending ask per domain (D146); a bad-list verdict re-queues nothing and points at the list. **The remediation itself releases the resend** (D147/D148): the incident scans its window (each lead's own NDR re-read; bad addresses stay dead; once per lead per campaign; 20 lead-reads per tick) and parks sender-fault leads until their gate opens — tenant_rate_limit: the next UTC day after the bounced send (cap reset); sender_blocked: the domain's retire ask resolved; content_block: the sequence edited after the incident. Suppression lists respected on the re-add; a gate shut 7 days expires its leads with a receipt; one receipt per flushed wave. Pre-D148 pause stamps still drain: a human START of one opens its job (D147), then the stamp clears — no new stamps are ever written. |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). Reads the shared account book, never its own fetch (D132). |
 | Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
-| EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
+| Client-day brief | 10:00, 13:00, 16:30 America/New_York | Same Slack scoreboard each slot: per-client sends + spam, untagged campaigns needing a human, DRAFT campaigns with leads loaded, staffing shorts, domain advisories, warmup boomerangs (D71, D85, D89, D156). |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). |
 
 ## Mailboxes
@@ -180,10 +180,11 @@ Exactly three pages plus receipts (D71, D47 plain English):
    campaigns it cut (D134/D150).
 2. **Isolated spam word** — the exact phrase, a substitute that keeps
    inboxing (D152), *Use suggested edit* / *Write my own edit* (D153).
-3. **EOD client scoreboard** — sends + spam once a day, plus untagged
+3. **Client-day scoreboard** — sends + spam at **10:00, 13:00, and
+   16:30** America/New_York (same briefing each time), plus untagged
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed
    inboxes an outside writer keeps re-adding after gate pulls
-   (D85/D89/D136/D143).
+   (D85/D89/D136/D143/D156).
 Plus `action_result` confirmations: a tapped button finished, a signature
 was auto-written (first time per campaign only, D92/D95), a reconnect
 happened or hard-failed (D94). Plus `ops_alert` pages — the machine

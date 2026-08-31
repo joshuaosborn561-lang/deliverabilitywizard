@@ -4,12 +4,18 @@ import cron from "node-cron";
 import { businessDate, parseSchedules } from "./sendVolume.js";
 
 describe("parseSchedules", () => {
-  it("splits the default midday / 16:30 pair into two valid expressions", () => {
-    const schedules = parseSchedules("0 12 * * *|30 16 * * *");
-    assert.deepEqual(schedules, ["0 12 * * *", "30 16 * * *"]);
+  it("splits the default 10:00 / 13:00 / 16:30 triple into valid expressions", () => {
+    const schedules = parseSchedules("0 10 * * *|0 13 * * *|30 16 * * *");
+    assert.deepEqual(schedules, ["0 10 * * *", "0 13 * * *", "30 16 * * *"]);
     for (const expression of schedules) {
       assert.equal(cron.validate(expression), true, expression);
     }
+  });
+
+  it("ships that triple as the config default (D156)", async () => {
+    const { loadConfig } = await import("../config.js");
+    const config = loadConfig({} as NodeJS.ProcessEnv);
+    assert.equal(config.cronSendVolume, "0 10 * * *|0 13 * * *|30 16 * * *");
   });
 
   it("does not split on the commas inside a cron field", () => {

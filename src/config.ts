@@ -221,16 +221,11 @@ const ConfigSchema = z.object({
    */
   bounceRateWarnThreshold: z.coerce.number().min(0).max(100).default(2),
   /**
-   * D80 — after our autostop has scanned, write Smartlead
-   * bounce_autopause_threshold to 100 (off). Not a rule to turn it on.
+   * D80/D157 — our campaign bounce loop. Smartlead's own High Bounce Rate
+   * Auto Protection has NO working API field (the settings handler
+   * discards `bounce_autopause_threshold`) — it is turned off in the UI
+   * at campaign build, never converged from here.
    */
-  enableBounceAutopauseConverge: boolFromEnv(true),
-  smartleadBounceAutopauseOffPercent: z.coerce
-    .number()
-    .min(1)
-    .max(100)
-    .default(100),
-  /** D80 — our campaign bounce pause. Smartlead's own autopause stays off. */
   enableCampaignBounceAutostop: boolFromEnv(true),
   cronBounceAutostop: z.string().default("*/10 * * * *"),
   /**
@@ -512,9 +507,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     topUpExcludeCampaigns: env.TOP_UP_EXCLUDE_CAMPAIGNS ?? "",
     bounceRateThreshold: env.BOUNCE_RATE_THRESHOLD ?? "5",
     bounceRateWarnThreshold: env.BOUNCE_RATE_WARN_THRESHOLD ?? "2",
-    enableBounceAutopauseConverge: env.ENABLE_BOUNCE_AUTOPAUSE_CONVERGE,
-    smartleadBounceAutopauseOffPercent:
-      env.SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT ?? "100",
     enableCampaignBounceAutostop: env.ENABLE_CAMPAIGN_BOUNCE_AUTOSTOP,
     cronBounceAutostop: env.CRON_BOUNCE_AUTOSTOP ?? "*/10 * * * *",
     bounceBurstCount: env.BOUNCE_BURST_COUNT ?? "10",

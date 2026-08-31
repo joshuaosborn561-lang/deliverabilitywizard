@@ -14,11 +14,6 @@ import {
   shouldPauseCampaignForBounceBurst,
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
-import {
-  campaignSettingsWriteBody,
-  loadBounceAutopauseSettings,
-  readBounceAutopausePercent,
-} from "../lib/bounceAutopause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   buildIsolationAction,
@@ -40,14 +35,6 @@ const ANALYTICS_START = "2020-01-01";
  * signal, six a hour is noise.
  */
 const BURST_REALERT_MS = 60 * 60 * 1000;
-/** Re-clear bounce protection this often; the 10m loop only fills gaps. */
-const AUTOPAUSE_VERIFY_EVERY_MS = 6 * 60 * 60 * 1000;
-/**
- * A force stamp older than this predates the null fix (writing "100" left
- * Smartlead's bounce protection ENABLED — null is the real off). One full
- * re-clear pass runs on the first tick after deploy, then stamps forward.
- */
-const AUTOPAUSE_CLEAR_SINCE = "2026-08-31T18:30:00.000Z";
 /** The bounced-rows ledger can lag the counter — wait this long between reads. */
 const SAMPLE_RETRY_MS = process.env.NODE_TEST_CONTEXT ? 0 : 90 * 1000;
 const SAMPLE_ATTEMPTS = 3;
@@ -78,7 +65,6 @@ export interface CampaignBounceAutostopResult {
   skipped: number;
   /** Burst trips that turned out to be ledger dumps of stale bounces (D141). */
   ledgerDumps: number;
-  smartleadDisabled: number;
   /** D147/D148 — incident leads re-queued for a resend this tick. */
   resurrected?: number;
   errors: string[];
@@ -122,8 +108,10 @@ function mergeSendBounce(...payloads: unknown[]): {
  * while the ledger lags) — a dump of stale bounces logs loudly and does
  * nothing. The D90 lifetime-rate rule (>10% after 1k) stays retired.
  * Does not START anyone (D40) and does not pause anyone (D148) — pauses
- * belong to humans in both directions. After the scan, Smartlead
- * bounce_autopause_threshold is converged to 100 (off).
+ * belong to humans in both directions. It also writes no Smartlead
+ * settings: `bounce_autopause_threshold` is dead on the public API — the
+ * settings handler validates it and then discards it, so High Bounce
+ * Rate Auto Protection can only be turned off in the UI (D157).
  */
 export class CampaignBounceAutostopService {
   private readonly resurrection?: BounceResurrectionService;
@@ -151,7 +139,6 @@ export class CampaignBounceAutostopService {
       bursts: [],
       skipped: 0,
       ledgerDumps: 0,
-      smartleadDisabled: 0,
       errors: [],
     };
     if (!this.config.enableCampaignBounceAutostop) {
@@ -335,9 +322,18 @@ export class CampaignBounceAutostopService {
       }
     }
 
-    if (this.config.enableBounceAutopauseConverge) {
-      await this.disableSmartleadAutopause(campaigns, dryRun, result);
-    }
+    // D157 — no Smartlead autopause write happens here, because none is
+    // possible. POST /campaigns/{id}/settings schema-validates
+    // `bounce_autopause_threshold` ("must be a string"; unknown keys 400)
+    // and the handler then DISCARDS it: a "banana" write returns ok:true
+    // and the UI keeps its value. Proven live 2026-08-31 — a Peterson
+    // campaign still showed 7% in the UI after "100" and null fleet
+    // writes that all returned ok. High Bounce Rate Auto Protection is
+    // UI-only; the pause attribution surface is
+    // `campaign_activity_logs.paused_reason: "bounce protection"` on GET
+    // /campaigns, and the only off-switch is the campaign SETUP page.
+    // Three generations of API "off" writes (D80 converge, D124 force,
+    // D155 null) were no-ops and are deleted.
 
     if (!dryRun) {
       await this.state?.save();
@@ -359,7 +355,7 @@ export class CampaignBounceAutostopService {
     }
 
     console.log(
-      `[bounce-autostop] scanned=${result.scanned} bursts=${result.bursts.length} skipped=${result.skipped} smartleadOff=${result.smartleadDisabled} errors=${result.errors.length}`,
+      `[bounce-autostop] scanned=${result.scanned} bursts=${result.bursts.length} skipped=${result.skipped} errors=${result.errors.length}`,
     );
     if (result.errors.length) {
       // A counted-but-nameless error hid a stuck per-campaign write on
@@ -371,17 +367,6 @@ export class CampaignBounceAutostopService {
     return result;
   }
 
-  /**
-   * D84 — converge on drift, not on schedule. The 10-minute loop writes only
-   * campaigns we have never converged (new ids). Every 6h one read-verify
-   * sweep checks living campaigns and rewrites only actual drift, so a
-   * UI-side change still gets caught without ~600 blind writes/hour.
-   *
-   * D124 — until `autopauseForceAllAt` is stamped, write 100 on every living
-   * campaign even when the cache and GET already say 100. A threshold-only
-   * POST has already disagreed with the Smartlead UI toggle; GET-echo the
-   * other settings so the write actually lands.
-   */
   /**
    * D141 — fetch bounced-send rows for the recency gate, retrying while
    * the analytics ledger lags the counter (the D140 first run read the
@@ -572,86 +557,6 @@ export class CampaignBounceAutostopService {
     return record;
   }
 
-  private async disableSmartleadAutopause(
-    campaigns: SmartleadCampaign[],
-    dryRun: boolean,
-    result: CampaignBounceAutostopResult,
-  ): Promise<void> {
-    const living = campaigns.filter(
-      (campaign) =>
-        !isAnyShellCampaign(campaign, this.config.podControlShellCampaignId) &&
-        !isTerminalCampaignStatus(campaign.status),
-    );
-
-    const lastVerify = this.state?.getLastAutopauseVerifyAt();
-    const verifyDue =
-      !lastVerify ||
-      Date.now() - Date.parse(lastVerify) >= AUTOPAUSE_VERIFY_EVERY_MS;
-    // 2026-08-31 — "100" was never OFF. Smartlead's own API contract says
-    // null CLEARS bounce protection; a numeric threshold leaves the feature
-    // enabled, and it paused four Parlay campaigns bouncing 36% two hours
-    // after a "100" write claimed ok. A force stamp older than this cutoff
-    // predates the null fix: re-clear the whole fleet once.
-    const forceStamp = this.state?.getAutopauseForceAllAt();
-    const forceAll = !forceStamp || forceStamp < AUTOPAUSE_CLEAR_SINCE;
-    // D80/D84 — GET /settings 404s here. A 404 used to count as "already
-    // off" and skip the write, which is how Smartlead's native pause stayed
-    // on after D124. Null confirm stamp = this pass still owes a campaign
-    // GET (production state will not have the field).
-    const confirmDue =
-      typeof this.state?.getAutopauseCampaignGetAt === "function"
-        ? !this.state.getAutopauseCampaignGetAt()
-        : false;
-
-    let disableErrors = 0;
-    for (const campaign of living) {
-      const alreadyOff = this.state?.getAutopauseOffAt(campaign.id);
-      if (!forceAll && alreadyOff && !verifyDue && !confirmDue) continue;
-      try {
-        const settings = await loadBounceAutopauseSettings(
-          this.smartlead,
-          campaign.id,
-        );
-        await sleep(process.env.NODE_TEST_CONTEXT ? 0 : 120);
-        const current = readBounceAutopausePercent(settings);
-        if (current != null) {
-          // Any numeric reading means the feature is armed — clear it.
-          console.log(
-            `[bounce-autostop] drift on #${campaign.id} ${campaign.name}: autopause ${current}% → cleared${dryRun ? " (dry-run)" : ""}`,
-          );
-        } else if (forceAll) {
-          console.log(
-            `[bounce-autostop] force clear bounce protection #${campaign.id} ${campaign.name}${dryRun ? " (dry-run)" : ""}`,
-          );
-        } else {
-          console.log(
-            `[bounce-autostop] bounce protection unreadable on #${campaign.id} ${campaign.name}: clearing (null = off, D80)${dryRun ? " (dry-run)" : ""}`,
-          );
-        }
-        if (!dryRun) {
-          const body = campaignSettingsWriteBody(settings ?? {}, {
-            bounce_autopause_threshold: null,
-          });
-          await this.smartlead.updateCampaignSettings(campaign.id, body);
-          await sleep(WRITE_GAP_MS);
-          this.state?.markAutopauseOff(campaign.id);
-        }
-        result.smartleadDisabled += 1;
-      } catch (error) {
-        disableErrors += 1;
-        const message = error instanceof Error ? error.message : String(error);
-        result.errors.push(`disable #${campaign.id}: ${message}`);
-      }
-    }
-
-    if ((verifyDue || confirmDue) && !dryRun) {
-      this.state?.setLastAutopauseVerifyAt(new Date().toISOString());
-      this.state?.setAutopauseCampaignGetAt?.(new Date().toISOString());
-    }
-    if (forceAll && !dryRun && disableErrors === 0) {
-      this.state?.setAutopauseForceAllAt(new Date().toISOString());
-    }
-  }
 }
 
 /**

@@ -1,11 +1,14 @@
 /**
- * D80/D88 — Smartlead's own bounce autopause stays OFF. The retired 20/7
- * band helpers were deleted (D129); the D90 trips live in
- * campaignBouncePause.ts.
+ * D80/D88 — the retired 20/7 band helpers were deleted (D129); the D90
+ * trips live in campaignBouncePause.ts.
  *
- * 2026-08-31 — "off" means CLEARED (`bounce_autopause_threshold: null`),
- * per Smartlead's own API contract. The old convention of writing 100 left
- * the feature enabled at a nominal threshold, and it still paused four
- * Parlay campaigns bouncing 36% two hours after a "100" write returned ok.
- * The converge in services/campaignBounceAutostop.ts writes null.
+ * D157 (2026-08-31) — Smartlead's High Bounce Rate Auto Protection has no
+ * working public-API control at all. POST /campaigns/{id}/settings
+ * schema-validates `bounce_autopause_threshold` and then discards it (a
+ * "banana" write returns ok:true; the UI keeps its value), and no GET
+ * returns it. Every generation of API "off" write — 100 (D80/D124), null
+ * (D155) — was a no-op; the fleet's thresholds only ever change in the UI.
+ * Nothing in this repo writes that field any more. Off-switch: the
+ * campaign SETUP page. Attribution: `campaign_activity_logs.paused_reason:
+ * "bounce protection"` on GET /campaigns.
  */

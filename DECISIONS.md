@@ -95,11 +95,11 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D77 | Live — Goliath-only unpause generalized by D82 |
 | D78 | Superseded by D80→D88 |
 | D79 | Retired-record (no per-sender bounce pull) — live |
-| D80 | Superseded by D88/D90 — the off-write (100) survives |
+| D80 | Superseded by D88/D90; the off-write is gone — the API discards the field (D157) |
 | D81 | Live — amended by D82/D122 |
 | D82 | Live |
 | D83 | Live |
-| D84 | Live |
+| D84 | Live — the autopause write-on-drift clause is retired by D157 (no write exists) |
 | D85 | Live — signature-ask clause superseded by D92/D97 |
 | D86 | Live |
 | D87 | Superseded by D92/D97 |
@@ -139,7 +139,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D121 | Live — qualified by D123 |
 | D122 | Live |
 | D123 | Live |
-| D124 | Live (one forced pass, then D84 drift-writes) |
+| D124 | Superseded by D157 — the force write never landed; the API discards the field |
 | D125 | Live |
 | D126 | Live |
 | D127 | Live — the canon rebuild |
@@ -170,7 +170,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D152 | Live | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
 | D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
-| D155 | Live | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign; the converge re-clears the living fleet every 6h |
+| D155 | Superseded by D157 — the null "clear" was as dead as the 100s (handler discards the field); rule 3 (write-ok is never verification) survives, generalized | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign |
+| D157 | Live | Smartlead bounce protection is UI-only: POST settings validates `bounce_autopause_threshold` then DISCARDS it (a "banana" write returned ok; a Peterson campaign still showed 7% after fleet-wide writes) — every API "off" write (D80 100 / D124 force / D155 null) was a no-op and the converge is deleted; off-switch = campaign SETUP page, attribution = `campaign_activity_logs.paused_reason` |
 
 ---
 
@@ -4146,3 +4147,64 @@ campaignBounceAutostop.ts must match `bounce_autopause_threshold: null`
 and must NOT converge to a numeric value. Service tests: the force
 pass, a readable numeric drift (even 100), and an unreadable value all
 write null.
+
+## D157 — Smartlead bounce protection is UI-only; the API field is dead
+
+**Decision (2026-08-31, forced by Josh's eyes).** Josh: "i am staring at
+a peterson campaing that still has 7% autopause man...read the smartlead
+api docs more thoroughly." He was right; every write this repo ever made
+to that field was a no-op that returned ok.
+
+**The finding.** `POST /api/v1/campaigns/{id}/settings` schema-validates
+`bounce_autopause_threshold` — a number gets 400 "must be a string",
+unknown keys (`bounce_autopause_percentage`, `bounce_autopause_enabled`)
+get 400 "not allowed" — and the handler then DISCARDS the field: probe
+value `"banana"` returned `ok: true` and the UI kept its value (live
+probes on the Pod control shell, 2026-08-31). No GET returns the field
+on this account (GET /settings 404s; the campaign object doesn't carry
+it). High Bounce Rate Auto Protection is settable ONLY in the campaign
+SETUP page of the UI. Corroborated: two open-source Smartlead clients
+model the full settings body without any bounce field, and the public
+docs list the settings body without it.
+
+So all three generations of API "off" writes were dead on arrival —
+D80's converge (100), D124's GET-echo force (100), D155's null clear —
+and the 2026-08-31 pause wave (Engagers + BCPs at their ~7% build-time
+thresholds; five Parlay SEG campaigns at 34–36% bounce) was Smartlead's
+UI-armed thresholds firing exactly as configured. Campaigns "held" after
+our writes only because nothing re-breached, not because a write landed.
+
+1. **Nothing in this repo writes `bounce_autopause_threshold`, ever.**
+   The converge path, its config knobs
+   (`ENABLE_BOUNCE_AUTOPAUSE_CONVERGE`,
+   `SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT`), its store stamps (D84
+   cache, D124 force stamp, the verify/GET stamps) and its tests are
+   deleted, not disabled. The field is also out of the settings
+   GET-echo list.
+2. **The off-switch is the UI**: untick High Bounce Rate Auto
+   Protection on the campaign SETUP page at build (the build skill says
+   so), and by hand for existing campaigns. One Smartlead support email
+   can also disable it account-wide — Josh's option.
+3. **Attribution surface**: `campaign_activity_logs[].paused_reason:
+   "bounce protection"` (+ `pause_time`) on GET /campaigns — the LIST
+   endpoint; the single-campaign GET lacks it. That is how a
+   Smartlead-initiated pause is recognized; the watchdog's "paused
+   (autobounce …)" ping is that surface speaking.
+4. **Write-`ok` is never verification** — D155's rule 3 survives,
+   generalized to every Smartlead field: confirmation is behavior, the
+   activity log, or the UI, never the POST response.
+
+**Supersedes.** D155's mechanism (the null was as dead as the 100s; its
+"clear, don't max" principle stays for fields the API actually honors).
+D124 (the force write never landed). D84's autopause write-on-drift
+cache (there is no write to pace; D84's terminal-campaign and backoff
+rules are untouched). D80's off-write clause — its real intent,
+Smartlead native autopause never pausing our campaigns, now lives in
+the UI checkbox and in build-time QA, not in code.
+
+**Guards.** canon "D124/D157" block: autostop must not build any
+`bounce_autopause_threshold:` write and must carry the UI-only
+explanation; lib/bounceAutopause.ts echo list must not carry the field;
+config.ts must not regrow the converge knobs. retired D88 block:
+autostop has no `updateCampaignSettings` at all. Service test pins no
+status writes and no settings reads/writes.

@@ -1929,12 +1929,18 @@ describe("owner intent — D80 campaign bounce autostop", () => {
         `Cron is now ${defaults.cronBounceAutostop}.`,
       ),
     );
-    assert.equal(
-      defaults.smartleadBounceAutopauseOffPercent,
-      100,
+    // D157 — the autopause-converge knobs are deleted outright: the API
+    // field is handler-discarded, so a config default implying an
+    // off-write would be a lie about a control we do not have.
+    const configSrc = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../config.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      configSrc,
+      /smartleadBounceAutopauseOffPercent|enableBounceAutopauseConverge/,
       stop(
-        "Smartlead bounce autopause stays off at 100 (D80).",
-        `Off percent is now ${defaults.smartleadBounceAutopauseOffPercent}.`,
+        "There is no Smartlead autopause write to configure (D157).",
+        "config.ts grew the autopause-converge knobs back.",
       ),
     );
     const bounceLib = await import("node:fs/promises").then((fs) =>
@@ -2200,12 +2206,12 @@ describe("owner intent — D84 canon sweep", () => {
         "campaignBounceAutostop.ts writes terminal campaigns again.",
       ),
     );
-    assert.match(
+    assert.doesNotMatch(
       autostop,
-      /getAutopauseOffAt/,
+      /updateCampaignSettings|getCampaignSettings/,
       stop(
-        "Bounce autopause converge is write-on-drift, not ~600 writes/hour (D84).",
-        "campaignBounceAutostop.ts lost the converged-campaign cache.",
+        "The bounce loop writes no Smartlead settings at all (D84/D157).",
+        "campaignBounceAutostop.ts touches campaign settings again — the field it once chased is handler-discarded.",
       ),
     );
 
@@ -4218,8 +4224,8 @@ describe("owner intent — D98 find a hole, fix it", () => {
   });
 });
 
-describe("owner intent — D124 force Smartlead autopause off once", () => {
-  it("D124: one forced GET-echo write of 100; D84 drift after", async () => {
+describe("owner intent — D124/D157 Smartlead autopause: from force-off to dead field", () => {
+  it("D157: the API field is handler-discarded — nothing writes it, and the code says why", async () => {
     const { readFile } = await import("node:fs/promises");
     const decisions = await readFile(
       new URL("../../DECISIONS.md", import.meta.url),
@@ -4229,36 +4235,41 @@ describe("owner intent — D124 force Smartlead autopause off once", () => {
       decisions,
       /## D124 — Force Smartlead bounce autopause off once/,
       stop(
-        "Josh called a one-shot force-off of Smartlead autopause (D124).",
+        "Josh called a one-shot force-off of Smartlead autopause (D124) — history stays in the ledger.",
         "DECISIONS.md no longer has D124.",
       ),
     );
     assert.match(
       decisions,
-      /bounce_autopause_threshold[\s\S]{0,200}100/,
+      /## D157 /,
       stop(
-        "The force write is still 100 / off (D80/D124).",
-        "D124 no longer says the force write is 100.",
+        "The dead-field finding is in the ledger (D157).",
+        "DECISIONS.md no longer has D157.",
       ),
     );
+    // D157 — every generation of API "off" write (100, GET-echo, null) was
+    // a no-op: POST /campaigns/{id}/settings validates
+    // bounce_autopause_threshold and then discards it. A "banana" write
+    // returned ok:true and the UI kept its value (2026-08-31, Peterson
+    // campaign still at 7% after fleet-wide writes). No write may return.
     const autostop = await readFile(
       new URL("../services/campaignBounceAutostop.ts", import.meta.url),
       "utf8",
     );
-    assert.match(
+    assert.doesNotMatch(
       autostop,
-      /campaignSettingsWriteBody/,
+      /bounce_autopause_threshold:/,
       stop(
-        "Autopause writes GET-echo settings so the Smartlead UI updates (D124).",
-        "campaignBounceAutostop.ts posts only bounce_autopause_threshold again.",
+        "No code writes bounce_autopause_threshold — the API discards it (D157).",
+        "campaignBounceAutostop.ts builds an autopause write body again.",
       ),
     );
     assert.match(
       autostop,
-      /getAutopauseForceAllAt/,
+      /UI-only|handler then DISCARDS/,
       stop(
-        "The force-off is one pass, then D84 write-on-drift (D124).",
-        "campaignBounceAutostop.ts lost the autopauseForceAllAt gate.",
+        "The file says why there is no write: the field is UI-only (D157).",
+        "campaignBounceAutostop.ts lost the D157 explanation — the next reader will re-add the dead write.",
       ),
     );
     assert.doesNotMatch(
@@ -4269,36 +4280,16 @@ describe("owner intent — D124 force Smartlead autopause off once", () => {
         "campaignBounceAutostop.ts now STARTs a campaign.",
       ),
     );
-    assert.match(
-      autostop,
-      /bounce_autopause_threshold: null/,
-      stop(
-        "Off means CLEARED — Smartlead's API defines null as off; a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign on 2026-08-31 (D80/D124).",
-        "campaignBounceAutostop.ts no longer clears bounce protection with null.",
-      ),
+    const settingsLib = await readFile(
+      new URL("../lib/bounceAutopause.ts", import.meta.url),
+      "utf8",
     );
     assert.doesNotMatch(
-      autostop,
-      /bounce_autopause_threshold: off\b/,
+      settingsLib,
+      /"bounce_autopause_threshold"/,
       stop(
-        "The converge writes null, not a nominal percent (D80).",
-        "campaignBounceAutostop.ts went back to writing a numeric threshold.",
-      ),
-    );
-    assert.match(
-      autostop,
-      /loadBounceAutopauseSettings|getCampaign/,
-      stop(
-        "Confirm Smartlead autopause off via GET campaign when GET settings 404s (D80/D124).",
-        "campaignBounceAutostop.ts no longer reads the campaign object for the threshold.",
-      ),
-    );
-    assert.doesNotMatch(
-      autostop,
-      /current == null \|\| current === offNumber/,
-      stop(
-        "An unreadable bounce_autopause_threshold is treated as on, not off (D80/D84).",
-        "campaignBounceAutostop.ts skips the off-write when the GET 404s again.",
+        "The settings echo list no longer carries the dead field (D157).",
+        "lib/bounceAutopause.ts echoes bounce_autopause_threshold again.",
       ),
     );
   });

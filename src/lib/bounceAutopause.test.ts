@@ -1,64 +1,29 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import {
-  campaignSettingsWriteBody,
-  loadBounceAutopauseSettings,
-  readBounceAutopausePercent,
-} from "./bounceAutopause.js";
-
-describe("readBounceAutopausePercent", () => {
-  it("reads string, number, and wrapped payloads", () => {
-    assert.equal(readBounceAutopausePercent({ bounce_autopause_threshold: "5" }), 5);
-    assert.equal(readBounceAutopausePercent({ bounce_autopause_threshold: 20 }), 20);
-    assert.equal(
-      readBounceAutopausePercent({ data: { bounce_autopause_threshold: "7" } }),
-      7,
-    );
-  });
-});
+import { campaignSettingsWriteBody } from "./bounceAutopause.js";
 
 describe("campaignSettingsWriteBody", () => {
-  it("overlays the threshold and rewrites GET-only track flags", () => {
+  it("echoes safe fields, rewrites GET-only track flags, applies the patch", () => {
     const body = campaignSettingsWriteBody(
       {
         track_settings: ["DONT_EMAIL_OPEN", "DONT_LINK_CLICK"],
         stop_lead_settings: "REPLY_TO_AN_EMAIL",
-        bounce_autopause_threshold: "5",
       },
-      { bounce_autopause_threshold: "20" },
+      { min_time_btwn_emails: 10 },
     );
     assert.deepEqual(body.track_settings, [
       "DONT_TRACK_EMAIL_OPEN",
       "DONT_TRACK_LINK_CLICK",
     ]);
-    assert.equal(body.bounce_autopause_threshold, "20");
+    assert.equal(body.stop_lead_settings, "REPLY_TO_AN_EMAIL");
+    assert.equal(body.min_time_btwn_emails, 10);
   });
-});
 
-describe("loadBounceAutopauseSettings (D80/D124)", () => {
-  it("falls back to GET campaign when GET settings 404s or omits the threshold", async () => {
-    const fromCampaign = await loadBounceAutopauseSettings(
-      {
-        getCampaignSettings: async () => {
-          throw new Error("HTTP 404");
-        },
-        getCampaign: async () => ({ bounce_autopause_threshold: "5" }),
-      },
-      1,
+  it("D157: never echoes bounce_autopause_threshold — the handler discards it", () => {
+    const body = campaignSettingsWriteBody(
+      { bounce_autopause_threshold: "7", stop_lead_settings: "REPLY_TO_AN_EMAIL" },
+      {},
     );
-    assert.equal(readBounceAutopausePercent(fromCampaign), 5);
-
-    const unread = await loadBounceAutopauseSettings(
-      {
-        getCampaignSettings: async () => {
-          throw new Error("HTTP 404");
-        },
-        getCampaign: async () => {
-          throw new Error("HTTP 404");
-        },
-      },
-      2,
-    );
-    assert.equal(readBounceAutopausePercent(unread), null);
+    assert.equal("bounce_autopause_threshold" in body, false);
   });
 });

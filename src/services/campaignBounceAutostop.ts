@@ -9,7 +9,6 @@ import {
   type BounceSample,
 } from "../lib/bounceReason.js";
 import { statsFromAnalytics, ymdUtc } from "../lib/campaignDayStats.js";
-import { SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT } from "../lib/campaignBounceAutostop.js";
 import {
   freshBounceSamples,
   shouldPauseCampaignForBounceBurst,
@@ -41,8 +40,14 @@ const ANALYTICS_START = "2020-01-01";
  * signal, six a hour is noise.
  */
 const BURST_REALERT_MS = 60 * 60 * 1000;
-/** Read-verify the off threshold this often; the 10m loop only fills gaps. */
+/** Re-clear bounce protection this often; the 10m loop only fills gaps. */
 const AUTOPAUSE_VERIFY_EVERY_MS = 6 * 60 * 60 * 1000;
+/**
+ * A force stamp older than this predates the null fix (writing "100" left
+ * Smartlead's bounce protection ENABLED — null is the real off). One full
+ * re-clear pass runs on the first tick after deploy, then stamps forward.
+ */
+const AUTOPAUSE_CLEAR_SINCE = "2026-08-31T18:30:00.000Z";
 /** The bounced-rows ledger can lag the counter — wait this long between reads. */
 const SAMPLE_RETRY_MS = process.env.NODE_TEST_CONTEXT ? 0 : 90 * 1000;
 const SAMPLE_ATTEMPTS = 3;
@@ -565,11 +570,6 @@ export class CampaignBounceAutostopService {
     dryRun: boolean,
     result: CampaignBounceAutostopResult,
   ): Promise<void> {
-    const off = String(
-      this.config.smartleadBounceAutopauseOffPercent ??
-        SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT,
-    );
-    const offNumber = Number(off);
     const living = campaigns.filter(
       (campaign) =>
         !isAnyShellCampaign(campaign, this.config.podControlShellCampaignId) &&
@@ -580,7 +580,13 @@ export class CampaignBounceAutostopService {
     const verifyDue =
       !lastVerify ||
       Date.now() - Date.parse(lastVerify) >= AUTOPAUSE_VERIFY_EVERY_MS;
-    const forceAll = !this.state?.getAutopauseForceAllAt();
+    // 2026-08-31 — "100" was never OFF. Smartlead's own API contract says
+    // null CLEARS bounce protection; a numeric threshold leaves the feature
+    // enabled, and it paused four Parlay campaigns bouncing 36% two hours
+    // after a "100" write claimed ok. A force stamp older than this cutoff
+    // predates the null fix: re-clear the whole fleet once.
+    const forceStamp = this.state?.getAutopauseForceAllAt();
+    const forceAll = !forceStamp || forceStamp < AUTOPAUSE_CLEAR_SINCE;
     // D80/D84 — GET /settings 404s here. A 404 used to count as "already
     // off" and skip the write, which is how Smartlead's native pause stayed
     // on after D124. Null confirm stamp = this pass still owes a campaign
@@ -601,30 +607,23 @@ export class CampaignBounceAutostopService {
         );
         await sleep(process.env.NODE_TEST_CONTEXT ? 0 : 120);
         const current = readBounceAutopausePercent(settings);
-        if (!forceAll && current === offNumber) {
-          this.state?.markAutopauseOff(campaign.id);
-          continue;
-        }
-        if (current != null && current !== offNumber) {
+        if (current != null) {
+          // Any numeric reading means the feature is armed — clear it.
           console.log(
-            `[bounce-autostop] drift on #${campaign.id} ${campaign.name}: autopause ${current}% → ${off}%${dryRun ? " (dry-run)" : ""}`,
+            `[bounce-autostop] drift on #${campaign.id} ${campaign.name}: autopause ${current}% → cleared${dryRun ? " (dry-run)" : ""}`,
           );
         } else if (forceAll) {
           console.log(
-            `[bounce-autostop] force autopause off #${campaign.id} ${campaign.name} → ${off}%${dryRun ? " (dry-run)" : ""}`,
-          );
-        } else if (current == null) {
-          console.log(
-            `[bounce-autostop] unread autopause on #${campaign.id} ${campaign.name}: treating as on, writing ${off}% (D80)${dryRun ? " (dry-run)" : ""}`,
+            `[bounce-autostop] force clear bounce protection #${campaign.id} ${campaign.name}${dryRun ? " (dry-run)" : ""}`,
           );
         } else {
           console.log(
-            `[bounce-autostop] Smartlead autopause off ${campaign.name} #${campaign.id} → ${off}%${dryRun ? " (dry-run)" : ""}`,
+            `[bounce-autostop] bounce protection unreadable on #${campaign.id} ${campaign.name}: clearing (null = off, D80)${dryRun ? " (dry-run)" : ""}`,
           );
         }
         if (!dryRun) {
           const body = campaignSettingsWriteBody(settings ?? {}, {
-            bounce_autopause_threshold: off,
+            bounce_autopause_threshold: null,
           });
           await this.smartlead.updateCampaignSettings(campaign.id, body);
           await sleep(WRITE_GAP_MS);

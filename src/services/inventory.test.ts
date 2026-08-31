@@ -59,6 +59,20 @@ describe("fetchInventory 429 retry (D122)", () => {
     );
     assert.equal(isSmartleadRateLimit(new Error("HTTP 404")), false);
   });
+
+  it("coerces string client_id values on the snapshot", async () => {
+    const snapshot = await fetchInventory({
+      listCampaigns: async () => [
+        { id: 1, name: "Live", status: "ACTIVE", client_id: "548611" as unknown as number },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 9, from_email: "a@x.com", client_id: "12" as unknown as number },
+      ],
+      listClients: async () => [],
+    });
+    assert.equal(snapshot.campaigns[0]?.client_id, 548611);
+    assert.equal(snapshot.accounts[0]?.client_id, 12);
+  });
 });
 describe("InventoryBook — one account book, partial reads distrusted (D132)", () => {
   const client = (accounts: number, opts: { fail?: boolean } = {}) => {

@@ -66,6 +66,11 @@ Slack speaks only when a human decision is needed or the day is done.
   exactly one client (plus paused shells). Foreign-client memberships are
   pulled every 15 minutes and the signature reset to the owner (D26, D75).
   Generics with a stale `client_id` belong to the POC client (D76).
+- **Campaign client tag** (D77/D85): health writes Smartlead `client_id`
+  from a unique name match against an existing client, including short
+  brand acronyms (MSRS). Names with no unique match stay on the EOD
+  brief until a human tags them in Smartlead — the tagger does not
+  invent a client row.
 - **Floor = half that client's own inboxes** (connected, not held, not
   resting, not retired, not canary — D58, D82, D99). No named-client
   exceptions; Vasco is nobody special (D82). The old global 50 floor is dead.

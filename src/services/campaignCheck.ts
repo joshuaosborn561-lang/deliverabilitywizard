@@ -10,7 +10,10 @@ import {
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
-import { matchClientForCampaign } from "../lib/campaignClient.js";
+import {
+  matchClientForCampaign,
+  numericClientId,
+} from "../lib/campaignClient.js";
 import {
   firstCheckPassed,
   formatFinding,
@@ -341,8 +344,7 @@ export class CampaignCheckService {
           }
         }
       }
-      const clientId =
-        typeof campaign.client_id === "number" ? campaign.client_id : null;
+      const clientId = numericClientId(campaign.client_id);
       const matched = matchClientForCampaign(name, clients);
       const brand =
         (clientId != null ? brandByClientId.get(clientId) : undefined) ??
@@ -576,14 +578,16 @@ export class CampaignCheckService {
       return findings;
     }
 
-    if (typeof campaign.client_id !== "number") {
+    const taggedClientId = numericClientId(campaign.client_id);
+    if (taggedClientId != null) campaign.client_id = taggedClientId;
+    if (taggedClientId == null) {
       findings.push({
         kind: "missing_client_tag",
         detail: "no Smartlead client_id",
       });
     } else {
       const matched = matchClientForCampaign(name, input.clients);
-      if (matched && matched.id !== campaign.client_id) {
+      if (matched && matched.id !== taggedClientId) {
         findings.push({
           kind: "client_mismatch",
           detail: `name matches ${clientDisplayName(matched)} (${matched.id}) but tagged ${campaign.client_id}`,

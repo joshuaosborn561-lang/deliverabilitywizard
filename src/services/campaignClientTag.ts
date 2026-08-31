@@ -1,7 +1,7 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import { type SmartleadClientRecord } from "../clients/smartlead.js";
-import { matchClientForCampaign } from "../lib/campaignClient.js";
+import { matchClientForCampaign, numericClientId } from "../lib/campaignClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -20,11 +20,16 @@ export interface CampaignClientTagResult {
 /**
  * D77 — every campaign carries an assigned Smartlead client so signature
  * QA can match senders to that client without guessing from the name.
+ * A unique name match against an existing client is written; no unique
+ * match stays skipped and is named on the EOD brief (D85).
  */
 export class CampaignClientTagService {
   constructor(
     private readonly config: AppConfig,
-    private readonly smartlead: SmartleadClient,
+    private readonly smartlead: Pick<
+      SmartleadClient,
+      "listCampaigns" | "listClients" | "setCampaignClientId"
+    >,
   ) {}
 
   async run(
@@ -54,7 +59,11 @@ export class CampaignClientTagService {
         result.skipped.push(`#${campaign.id} shell — no client tag`);
         continue;
       }
-      if (typeof campaign.client_id === "number") continue;
+      const existingId = numericClientId(campaign.client_id);
+      if (existingId != null) {
+        campaign.client_id = existingId;
+        continue;
+      }
       const match = matchClientForCampaign(String(campaign.name ?? ""), clients);
       if (!match) {
         result.skipped.push(

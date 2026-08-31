@@ -38,4 +38,40 @@ describe("matchClientForCampaign (D77)", () => {
       null,
     );
   });
+
+  it("assigns MSRS from a 4-letter logo including MSRS2 names (D77)", () => {
+    const withMsrs = [
+      ...clients,
+      { id: 446286, name: "Randy Gaines", logo: "MSRS" },
+    ];
+    assert.equal(
+      matchClientForCampaign("MSRS2 Ticket Offer Property Manager", withMsrs)?.id,
+      446286,
+    );
+    assert.equal(
+      matchClientForCampaign("MSRS Ticket Offer Propert Manager", withMsrs)?.id,
+      446286,
+    );
+  });
+
+  it("assigns Nieto and Positive only when those Smartlead clients exist (D77/D85)", () => {
+    assert.equal(
+      matchClientForCampaign("Nieto RB2B", clients),
+      null,
+      "no unique match — D85 leaves this for a human, does not invent a client",
+    );
+    const withRestored = [
+      ...clients,
+      { id: 10, name: "Nieto", logo: "Nieto" },
+      { id: 11, name: "Positive", logo: "Positive" },
+    ];
+    assert.equal(
+      matchClientForCampaign(
+        "Nieto Sports or Airpods Offer/Proprietary Tech",
+        withRestored,
+      )?.id,
+      10,
+    );
+    assert.equal(matchClientForCampaign("Positive", withRestored)?.id, 11);
+  });
 });

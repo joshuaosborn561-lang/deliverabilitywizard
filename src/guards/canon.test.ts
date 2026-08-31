@@ -1873,6 +1873,14 @@ describe("owner intent — D77 client tag and QA unpause", () => {
         "campaignClientTag.ts no longer assigns client_id.",
       ),
     );
+    assert.doesNotMatch(
+      tagSrc,
+      /ensureClient/,
+      stop(
+        "D85: no unique name match stays on the EOD brief until a human tags in Smartlead — the tagger does not create a client row.",
+        "campaignClientTag.ts started calling ensureClient, which invents a client instead of escalating (D85).",
+      ),
+    );
     const unpause = await import("node:fs/promises").then((fs) =>
       fs.readFile(
         new URL("../services/unpauseAfterSigQa.ts", import.meta.url),

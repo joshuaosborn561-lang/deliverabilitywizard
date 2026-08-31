@@ -4271,10 +4271,18 @@ describe("owner intent — D124 force Smartlead autopause off once", () => {
     );
     assert.match(
       autostop,
-      /SMARTLEAD_BOUNCE_AUTOPAUSE_OFF_PERCENT/,
+      /bounce_autopause_threshold: null/,
       stop(
-        "Do not turn Smartlead bounce autopause on (D80/D124).",
-        "campaignBounceAutostop.ts no longer converges to the off percent.",
+        "Off means CLEARED — Smartlead's API defines null as off; a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign on 2026-08-31 (D80/D124).",
+        "campaignBounceAutostop.ts no longer clears bounce protection with null.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /bounce_autopause_threshold: off\b/,
+      stop(
+        "The converge writes null, not a nominal percent (D80).",
+        "campaignBounceAutostop.ts went back to writing a numeric threshold.",
       ),
     );
     assert.match(

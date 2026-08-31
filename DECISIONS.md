@@ -170,6 +170,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D152 | Live | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
 | D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
+| D155 | Live | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign; the converge re-clears the living fleet every 6h |
 
 ---
 
@@ -4100,3 +4101,48 @@ D26/D43/D59 for *warmed* on-week boxes.
 **Guards.** `clientRest.ts` calls `owesWarmup` before on-week
 `addEmailAccountsToCampaign`; behavioral test: under-warmed on-week
 Parlay-shaped inbox is skipped, not restored.
+
+## D155 — Turning a Smartlead feature "off" means clearing it, not maxing it
+
+**Decision (Josh, 2026-08-31).** "Save that somewhere so you and Cursor
+know how to turn something off."
+
+Context: three generations of tooling — D80's converge, D124's forced
+fleet write, and the 2026-08-31 #176 re-assert — wrote
+`bounce_autopause_threshold: "100"` believing 100 meant off. Smartlead's
+API contract defines **null** as the value that CLEARS High Bounce Rate
+Auto-Protection; any numeric value leaves the feature ENABLED at that
+threshold. Proof, live on 8/31: four Parlay campaigns bouncing 36.5%
+were paused by Smartlead with `paused_reason: "bounce protection"` (its
+own `campaign_activity_logs`, returned by GET /campaigns) up to two
+hours AFTER a "100" write returned ok on each of them. The 5–15%-bounce
+BCP fleet survived the same afternoon only because it never provoked
+the still-enabled feature hard enough.
+
+1. **Disabling a Smartlead per-campaign feature is a clear (`null`),
+   never a "big number".** The bounce converge writes
+   `bounce_autopause_threshold: null` (PR #177); a force-since cutoff
+   re-cleared the whole living fleet once on deploy, and the 6-hour
+   re-assert continues with null forever (the public API has no read
+   for the field, so an unreadable value is treated as armed — #172's
+   posture, unchanged).
+2. **The build skill ships null.** smartlead-campaign-settings sets
+   `bounce_autopause_threshold: null` at campaign setup and its QA gate
+   checks for it; a campaign built with any numeric threshold is
+   mis-built.
+3. **Write success is not verification for these fields.** Smartlead
+   returns `ok: true` and offers no read-back; the live confirmations
+   are behavior (does it still pause?), `campaign_activity_logs`
+   (`paused_reason` names the actor), and the UI. Assume armed until
+   cleared.
+
+**Supersedes / amends.** Amends the D80/D88/D124 "converge to 100"
+convention: the intent — Smartlead native autopause OFF, the wizard's
+burst loop as the only bounce actor (D141/D148) — is unchanged; the
+value that actually achieves it is corrected to null.
+
+**Guards.** canon D124 block (updated with PR #177):
+campaignBounceAutostop.ts must match `bounce_autopause_threshold: null`
+and must NOT converge to a numeric value. Service tests: the force
+pass, a readable numeric drift (even 100), and an unreadable value all
+write null.

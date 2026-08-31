@@ -56,8 +56,9 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     assert.deepEqual(paused, []);
     assert.deepEqual(started, []);
     assert.equal(
-      settings.every((row) => row.threshold === "100"),
+      settings.every((row) => row.threshold === null),
       true,
+      "off means cleared — null, not a nominal 100",
     );
     assert.equal(settings.some((row) => row.id === 9), false);
     assert.ok(settings.some((row) => row.id === 6));
@@ -363,7 +364,8 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
       [1, 4],
     );
     assert.ok(
-      writes.every((row) => row.body.bounce_autopause_threshold === "100"),
+      writes.every((row) => row.body.bounce_autopause_threshold === null),
+      "the force pass clears bounce protection (null = off)",
     );
     assert.ok(forceAllAt);
 
@@ -373,7 +375,7 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     assert.equal(second.smartleadDisabled, 0);
   });
 
-  it("D80: GET settings 404 is not off — GET campaign 5% is drift and we write 100", async () => {
+  it("D80: GET settings 404 is not off — GET campaign 5% is drift and we clear it", async () => {
     const writes: Array<{ id: number; body: Record<string, unknown> }> = [];
     const autopauseOff = new Map<string, string>([["8", "already"]]);
     let campaignGetAt: string | null = null;
@@ -429,7 +431,7 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     assert.equal(first.smartleadDisabled, 1);
     assert.equal(writes.length, 1);
     assert.equal(writes[0]?.id, 8);
-    assert.equal(writes[0]?.body.bounce_autopause_threshold, "100");
+    assert.equal(writes[0]?.body.bounce_autopause_threshold, null);
     assert.equal(writes[0]?.body.send_as_plain_text, true);
     assert.ok(campaignGetAt, "the confirm-read stamp is set so the next pass is write-on-drift");
 
@@ -439,7 +441,7 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     assert.equal(second.smartleadDisabled, 0);
   });
 
-  it("D80: an unreadable threshold is written to 100, not skipped", async () => {
+  it("D80: an unreadable threshold is cleared, not skipped", async () => {
     const writes: number[] = [];
     let campaignGetAt: string | null = null;
     const service = new CampaignBounceAutostopService(

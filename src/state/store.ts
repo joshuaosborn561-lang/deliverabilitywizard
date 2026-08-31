@@ -211,31 +211,6 @@ export interface AppState {
   warmupEnsuredAt: Record<string, string>;
   /** D140 — last classified bounce verdict per campaign (id key). */
   bounceVerdicts: Record<string, BounceVerdictRecord>;
-  /**
-   * D84 — campaign ids whose Smartlead bounce_autopause_threshold we already
-   * wrote to 100 (off). The 10-minute loop writes only campaigns missing
-   * here; a slower verify pass reconciles drift. Before this cache the loop
-   * rewrote every campaign (including COMPLETED ones from 2025) every 10
-   * minutes — ~600 writes/hour that starved the whole key into 429s.
-   */
-  smartleadAutopauseOff: Record<string, string>;
-  /** D84 — ISO time of the last read-verify sweep of bounce autopause. */
-  lastAutopauseVerifyAt: string | null;
-  /**
-   * D124 — ISO time the one-shot force write of bounce_autopause_threshold
-   * 100 (off) finished on every living campaign. Null means the next
-   * bounce-autostop pass still owes that write, even if the D84 cache
-   * already says off.
-   */
-  autopauseForceAllAt: string | null;
-  /**
-   * D80/D84 — last time we *read* bounce_autopause_threshold off the
-   * campaign object (GET campaign, because GET settings 404s). Null means
-   * the next bounce-autostop pass still owes a confirm: the D84 cache plus
-   * an unreadable GET used to skip every campaign and leave Smartlead's
-   * native pause on.
-   */
-  autopauseCampaignGetAt: string | null;
   /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
   bounceSnapshots: Record<string, { bounced: number; sent: number; at: string }>;
   /**
@@ -447,10 +422,6 @@ const EMPTY_STATE: AppState = {
   warmupGatePulls: {},
   warmupEnsuredAt: {},
   bounceVerdicts: {},
-  smartleadAutopauseOff: {},
-  lastAutopauseVerifyAt: null,
-  autopauseForceAllAt: null,
-  autopauseCampaignGetAt: null,
   bounceSnapshots: {},
   bouncePausedCampaigns: {},
   stageHealth: {},
@@ -509,10 +480,6 @@ export class StateStore {
         domainAdvisories: parsed.domainAdvisories ?? [],
         markerClients: parsed.markerClients ?? {},
         bounceVerdicts: parsed.bounceVerdicts ?? {},
-        smartleadAutopauseOff: parsed.smartleadAutopauseOff ?? {},
-        lastAutopauseVerifyAt: parsed.lastAutopauseVerifyAt ?? null,
-        autopauseForceAllAt: parsed.autopauseForceAllAt ?? null,
-        autopauseCampaignGetAt: parsed.autopauseCampaignGetAt ?? null,
         bounceSnapshots: parsed.bounceSnapshots ?? {},
         bouncePausedCampaigns: parsed.bouncePausedCampaigns ?? {},
         stageHealth: parsed.stageHealth ?? {},
@@ -1002,46 +969,6 @@ export class StateStore {
 
   removeCampaignCheck(campaignId: number): void {
     delete this.state.campaignChecks[String(campaignId)];
-  }
-
-  /** D84 — bounce autopause already written off for this campaign. */
-  getAutopauseOffAt(campaignId: number): string | undefined {
-    return this.state.smartleadAutopauseOff[String(campaignId)];
-  }
-
-  markAutopauseOff(campaignId: number): void {
-    this.state.smartleadAutopauseOff[String(campaignId)] =
-      new Date().toISOString();
-  }
-
-  clearAutopauseOff(campaignId: number): void {
-    delete this.state.smartleadAutopauseOff[String(campaignId)];
-  }
-
-  getLastAutopauseVerifyAt(): string | null {
-    return this.state.lastAutopauseVerifyAt;
-  }
-
-  setLastAutopauseVerifyAt(iso: string): void {
-    this.state.lastAutopauseVerifyAt = iso;
-  }
-
-  /** D124 — one forced autopause-off write has already run. */
-  getAutopauseForceAllAt(): string | null {
-    return this.state.autopauseForceAllAt;
-  }
-
-  setAutopauseForceAllAt(iso: string): void {
-    this.state.autopauseForceAllAt = iso;
-  }
-
-  /** D80/D84 — last confirm-read of bounce_autopause_threshold via GET campaign. */
-  getAutopauseCampaignGetAt(): string | null {
-    return this.state.autopauseCampaignGetAt;
-  }
-
-  setAutopauseCampaignGetAt(iso: string): void {
-    this.state.autopauseCampaignGetAt = iso;
   }
 
   getBounceSnapshot(

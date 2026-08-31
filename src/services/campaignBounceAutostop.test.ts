@@ -15,7 +15,6 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
   it("the lifetime rate never trips — bad-looking rates are artifacts, not storms", async () => {
     const paused: number[] = [];
     const started: number[] = [];
-    const settings: Array<{ id: number; threshold: unknown }> = [];
     const service = new CampaignBounceAutostopService(
       loadConfig({ DRY_RUN: "false" }),
       {
@@ -39,10 +38,6 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
           if (status === "PAUSED") paused.push(id);
           if (status === "START") started.push(id);
         },
-        getCampaignSettings: async () => ({ bounce_autopause_threshold: "7" }),
-        updateCampaignSettings: async (id: number, body: Record<string, unknown>) => {
-          settings.push({ id, threshold: body.bounce_autopause_threshold });
-        },
       } as never,
       store(),
     );
@@ -55,13 +50,6 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     );
     assert.deepEqual(paused, []);
     assert.deepEqual(started, []);
-    assert.equal(
-      settings.every((row) => row.threshold === null),
-      true,
-      "off means cleared — null, not a nominal 100",
-    );
-    assert.equal(settings.some((row) => row.id === 9), false);
-    assert.ok(settings.some((row) => row.id === 6));
   });
 
   it("D148: a real burst is investigated and receipted — the campaign keeps running", async () => {
@@ -232,7 +220,7 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     assert.deepEqual(second.bursts, [], "exactly 10 new bounces must not trip");
   });
 
-  it("never writes a campaign status — no START (D40), no PAUSE (D148)", async () => {
+  it("never writes a campaign status — no START (D40), no PAUSE (D148) — and no settings (D157)", async () => {
     const src = await readFile(
       new URL("./campaignBounceAutostop.ts", import.meta.url),
       "utf8",
@@ -240,249 +228,11 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     assert.equal(/updateCampaignStatus\([^)]*START/.test(src), false);
     assert.equal(/updateCampaignStatus\([^)]*PAUSED/.test(src), false);
     assert.equal(/hasPendingResume|markPendingResume|clearPendingResume/.test(src), false);
+    // D157 — bounce_autopause_threshold is handler-discarded on the API;
+    // the loop attempts no settings write of any kind.
+    assert.equal(/updateCampaignSettings|getCampaignSettings/.test(src), false);
   });
 
-  it("D84: converge skips COMPLETED/STOPPED and writes each campaign once, not every 10 minutes", async () => {
-    const settings: Array<{ id: number }> = [];
-    const autopauseOff = new Map<string, string>();
-    let forceAllAt: string | null = null;
-    const state = {
-      getAutopauseOffAt: (id: number) => autopauseOff.get(String(id)),
-      markAutopauseOff: (id: number) => {
-        autopauseOff.set(String(id), new Date().toISOString());
-      },
-      clearAutopauseOff: (id: number) => {
-        autopauseOff.delete(String(id));
-      },
-      getLastAutopauseVerifyAt: () => new Date().toISOString(),
-      setLastAutopauseVerifyAt: () => undefined,
-      getAutopauseForceAllAt: () => forceAllAt,
-      setAutopauseForceAllAt: (iso: string) => {
-        forceAllAt = iso;
-      },
-      getBounceSnapshot: () => undefined,
-      setBounceSnapshot: () => undefined,
-      clearBouncePaused: () => undefined,
-      save: async () => undefined,
-    } as never;
-    const smartlead = {
-      listCampaigns: async () => [
-        { id: 1, name: "Live", status: "ACTIVE" },
-        { id: 2, name: "Old", status: "COMPLETED" },
-        { id: 3, name: "Killed", status: "STOPPED" },
-        { id: 4, name: "Paused", status: "PAUSED" },
-      ],
-      getCampaignAnalyticsByDate: async () => ({ sent_count: 10, bounce_count: 0 }),
-      getCampaignStatistics: async () => ({}),
-      getCampaignSettings: async () => {
-        return { bounce_autopause_threshold: "100" };
-      },
-      updateCampaignStatus: async () => undefined,
-      updateCampaignSettings: async (id: number) => {
-        settings.push({ id });
-      },
-    } as never;
-
-    const service = new CampaignBounceAutostopService(
-      loadConfig({ DRY_RUN: "false" }),
-      smartlead,
-      state,
-    );
-
-    await service.run({ dryRun: false });
-    assert.deepEqual(
-      settings.map((row) => row.id).sort((a, b) => a - b),
-      [1, 4],
-      "only living campaigns get the off write; COMPLETED/STOPPED are never touched",
-    );
-
-    settings.length = 0;
-    await service.run({ dryRun: false });
-    assert.deepEqual(
-      settings,
-      [],
-      "an already-converged campaign is not rewritten every pass (write-on-drift)",
-    );
-  });
-
-  it("D124: forces a GET-echo write once even when cache and GET already say 100", async () => {
-    const writes: Array<{ id: number; body: Record<string, unknown> }> = [];
-    const autopauseOff = new Map<string, string>([
-      ["1", "already"],
-      ["4", "already"],
-    ]);
-    let forceAllAt: string | null = null;
-    const state = {
-      getAutopauseOffAt: (id: number) => autopauseOff.get(String(id)),
-      markAutopauseOff: (id: number) => {
-        autopauseOff.set(String(id), new Date().toISOString());
-      },
-      getLastAutopauseVerifyAt: () => new Date().toISOString(),
-      setLastAutopauseVerifyAt: () => undefined,
-      getAutopauseForceAllAt: () => forceAllAt,
-      setAutopauseForceAllAt: (iso: string) => {
-        forceAllAt = iso;
-      },
-      getBounceSnapshot: () => undefined,
-      setBounceSnapshot: () => undefined,
-      clearBouncePaused: () => undefined,
-      save: async () => undefined,
-    } as never;
-    const service = new CampaignBounceAutostopService(
-      loadConfig({ DRY_RUN: "false" }),
-      {
-        listCampaigns: async () => [
-          { id: 1, name: "Live", status: "ACTIVE" },
-          { id: 2, name: "Old", status: "COMPLETED" },
-          { id: 4, name: "Paused", status: "PAUSED" },
-          { id: 9, name: "Pod control shell", status: "ACTIVE" },
-        ],
-        getCampaignAnalyticsByDate: async () => ({
-          sent_count: 10,
-          bounce_count: 0,
-        }),
-        getCampaignStatistics: async () => ({}),
-        getCampaignSettings: async () => ({
-          bounce_autopause_threshold: "100",
-          send_as_plain_text: true,
-        }),
-        updateCampaignStatus: async () => undefined,
-        updateCampaignSettings: async (
-          id: number,
-          body: Record<string, unknown>,
-        ) => {
-          writes.push({ id, body });
-        },
-      } as never,
-      state,
-    );
-
-    const first = await service.run({ dryRun: false });
-    assert.equal(first.smartleadDisabled, 2);
-    assert.deepEqual(
-      writes.map((row) => row.id).sort((a, b) => a - b),
-      [1, 4],
-    );
-    assert.ok(
-      writes.every((row) => row.body.bounce_autopause_threshold === null),
-      "the force pass clears bounce protection (null = off)",
-    );
-    assert.ok(forceAllAt);
-
-    writes.length = 0;
-    const second = await service.run({ dryRun: false });
-    assert.deepEqual(writes, []);
-    assert.equal(second.smartleadDisabled, 0);
-  });
-
-  it("D80: GET settings 404 is not off — GET campaign 5% is drift and we clear it", async () => {
-    const writes: Array<{ id: number; body: Record<string, unknown> }> = [];
-    const autopauseOff = new Map<string, string>([["8", "already"]]);
-    let campaignGetAt: string | null = null;
-    const state = {
-      getAutopauseOffAt: (id: number) => autopauseOff.get(String(id)),
-      markAutopauseOff: (id: number) => {
-        autopauseOff.set(String(id), new Date().toISOString());
-      },
-      getLastAutopauseVerifyAt: () => new Date().toISOString(),
-      setLastAutopauseVerifyAt: () => undefined,
-      getAutopauseForceAllAt: () => "already-forced",
-      setAutopauseForceAllAt: () => undefined,
-      getAutopauseCampaignGetAt: () => campaignGetAt,
-      setAutopauseCampaignGetAt: (iso: string) => {
-        campaignGetAt = iso;
-      },
-      getBounceSnapshot: () => undefined,
-      setBounceSnapshot: () => undefined,
-      clearBouncePaused: () => undefined,
-      save: async () => undefined,
-    } as never;
-    const service = new CampaignBounceAutostopService(
-      loadConfig({ DRY_RUN: "false" }),
-      {
-        listCampaigns: async () => [{ id: 8, name: "Live", status: "ACTIVE" }],
-        getCampaignAnalyticsByDate: async () => ({
-          sent_count: 10,
-          bounce_count: 0,
-        }),
-        getCampaignStatistics: async () => ({}),
-        getCampaignSettings: async () => {
-          throw new Error("HTTP 404");
-        },
-        getCampaign: async () => ({
-          id: 8,
-          name: "Live",
-          status: "ACTIVE",
-          bounce_autopause_threshold: "5",
-          send_as_plain_text: true,
-        }),
-        updateCampaignStatus: async () => undefined,
-        updateCampaignSettings: async (
-          id: number,
-          body: Record<string, unknown>,
-        ) => {
-          writes.push({ id, body });
-        },
-      } as never,
-      state,
-    );
-
-    const first = await service.run({ dryRun: false });
-    assert.equal(first.smartleadDisabled, 1);
-    assert.equal(writes.length, 1);
-    assert.equal(writes[0]?.id, 8);
-    assert.equal(writes[0]?.body.bounce_autopause_threshold, null);
-    assert.equal(writes[0]?.body.send_as_plain_text, true);
-    assert.ok(campaignGetAt, "the confirm-read stamp is set so the next pass is write-on-drift");
-
-    writes.length = 0;
-    const second = await service.run({ dryRun: false });
-    assert.deepEqual(writes, []);
-    assert.equal(second.smartleadDisabled, 0);
-  });
-
-  it("D80: an unreadable threshold is cleared, not skipped", async () => {
-    const writes: number[] = [];
-    let campaignGetAt: string | null = null;
-    const service = new CampaignBounceAutostopService(
-      loadConfig({ DRY_RUN: "false" }),
-      {
-        listCampaigns: async () => [{ id: 3, name: "Live", status: "ACTIVE" }],
-        getCampaignAnalyticsByDate: async () => ({
-          sent_count: 10,
-          bounce_count: 0,
-        }),
-        getCampaignStatistics: async () => ({}),
-        getCampaignSettings: async () => {
-          throw new Error("HTTP 404");
-        },
-        getCampaign: async () => ({ id: 3, name: "Live", status: "ACTIVE" }),
-        updateCampaignStatus: async () => undefined,
-        updateCampaignSettings: async (id: number) => {
-          writes.push(id);
-        },
-      } as never,
-      {
-        getAutopauseOffAt: () => "already",
-        markAutopauseOff: () => undefined,
-        getLastAutopauseVerifyAt: () => new Date().toISOString(),
-        setLastAutopauseVerifyAt: () => undefined,
-        getAutopauseForceAllAt: () => "already-forced",
-        setAutopauseForceAllAt: () => undefined,
-        getAutopauseCampaignGetAt: () => campaignGetAt,
-        setAutopauseCampaignGetAt: (iso: string) => {
-          campaignGetAt = iso;
-        },
-        getBounceSnapshot: () => undefined,
-        setBounceSnapshot: () => undefined,
-        clearBouncePaused: () => undefined,
-        save: async () => undefined,
-      } as never,
-    );
-
-    await service.run({ dryRun: false });
-    assert.deepEqual(writes, [3]);
-  });
 });
 
 describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", () => {

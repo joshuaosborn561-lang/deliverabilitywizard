@@ -1,9 +1,17 @@
 /**
  * Smartlead campaign settings helpers.
  *
- * D80/D88 — do not turn Smartlead bounce auto-pause on; writes use 100
- * (off). The Under-1k/Over-1k/Goliath name-band helpers were deleted
- * (D129) — campaign names never pick a bounce threshold.
+ * D157 — Smartlead's High Bounce Rate Auto Protection is UI-only. POST
+ * /campaigns/{id}/settings schema-validates `bounce_autopause_threshold`
+ * ("must be a string"; unknown keys 400) and the handler then DISCARDS
+ * it — a "banana" write returns ok:true and the UI keeps its value
+ * (proven live 2026-08-31; a Peterson campaign still showed 7% after
+ * fleet-wide "100" and null writes that all returned ok). There is no
+ * GET for it either. Never write or read that field from here: the
+ * off-switch is the campaign SETUP page in the UI, and the pause
+ * attribution surface is `campaign_activity_logs.paused_reason:
+ * "bounce protection"` on GET /campaigns. The name-band helpers stay
+ * deleted (D129) — campaign names never pick a bounce threshold.
  */
 
 const TRACK_REWRITE: Record<string, string> = {
@@ -11,7 +19,11 @@ const TRACK_REWRITE: Record<string, string> = {
   DONT_LINK_CLICK: "DONT_TRACK_LINK_CLICK",
 };
 
-/** Fields safe to echo from GET /settings back onto POST. */
+/**
+ * Fields safe to echo from GET /settings back onto POST.
+ * `bounce_autopause_threshold` is deliberately absent — the handler
+ * discards it (D157), so echoing it only implies a control we don't have.
+ */
 const SETTINGS_WRITE_KEYS = [
   "track_settings",
   "stop_lead_settings",
@@ -19,7 +31,6 @@ const SETTINGS_WRITE_KEYS = [
   "send_as_plain_text",
   "follow_up_percentage",
   "enable_ai_esp_matching",
-  "bounce_autopause_threshold",
   "out_of_office_detection_settings",
   "ignoreOOOasReply",
   "autoReactivateOOO",
@@ -43,35 +54,6 @@ export function unwrapCampaignSettings(settings: unknown): Record<string, unknow
     return unwrapCampaignSettings(row.settings);
   }
   return row;
-}
-
-export function readBounceAutopausePercent(settings: unknown): number | null {
-  const row = unwrapCampaignSettings(settings);
-  const raw = row.bounce_autopause_threshold ?? row.bounceAutopauseThreshold;
-  const n =
-    typeof raw === "number"
-      ? raw
-      : typeof raw === "string"
-        ? Number(raw)
-        : Number.NaN;
-  return Number.isFinite(n) ? n : null;
-}
-
-/**
- * D80/D124 — GET /campaigns/{id}/settings 404s on this Smartlead account,
- * so a missing read is not "already off". Prefer settings when it actually
- * carries the threshold; otherwise the campaign GET (which does work).
- */
-export async function loadBounceAutopauseSettings(
-  smartlead: {
-    getCampaignSettings: (campaignId: number) => Promise<unknown>;
-    getCampaign: (campaignId: number) => Promise<unknown>;
-  },
-  campaignId: number,
-): Promise<unknown> {
-  const settings = await smartlead.getCampaignSettings(campaignId).catch(() => null);
-  if (readBounceAutopausePercent(settings) != null) return settings;
-  return smartlead.getCampaign(campaignId).catch(() => null);
 }
 
 export function sanitizeTrackSettings(values: unknown): string[] | undefined {

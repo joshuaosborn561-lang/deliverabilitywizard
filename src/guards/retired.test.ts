@@ -61,7 +61,7 @@ describe("owner intent — D79 no per-sender bounce pull", () => {
 });
 
 describe("owner intent — D88 bounce pause bands retired", () => {
-  it("D88: the 20/7 pause bands stay unused; Smartlead off-write stays", async () => {
+  it("D88: the 20/7 pause bands stay unused; no Smartlead off-write exists (D157)", async () => {
     const read = (path: string) =>
       import("node:fs/promises").then((fs) =>
         fs.readFile(new URL(path, import.meta.url), "utf8"),
@@ -76,12 +76,14 @@ describe("owner intent — D88 bounce pause bands retired", () => {
         "campaignBounceAutostop.ts still imports shouldAutostopCampaignForBounce.",
       ),
     );
-    assert.match(
+    // D157 retired the off-write this guard used to require: the API
+    // discards bounce_autopause_threshold, so the loop writes nothing.
+    assert.doesNotMatch(
       autostop,
-      /bounce_autopause_threshold/,
+      /updateCampaignSettings/,
       stop(
-        "The bounce loop still writes Smartlead autopause off (D80/D88).",
-        "campaignBounceAutostop.ts lost the Smartlead off-write.",
+        "The bounce loop writes no Smartlead settings (D157).",
+        "campaignBounceAutostop.ts writes campaign settings again.",
       ),
     );
 

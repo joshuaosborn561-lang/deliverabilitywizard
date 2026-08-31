@@ -47,7 +47,7 @@ describe("client day brief drafts (D89)", () => {
       state,
     );
 
-    const result = await service.run({ endOfDay: true });
+    const result = await service.run();
     assert.deepEqual(
       result.loadedDrafts?.map((row) => row.id),
       [2],
@@ -56,12 +56,12 @@ describe("client day brief drafts (D89)", () => {
     assert.deepEqual(briefs[0]?.loadedDrafts?.map((row) => row.id), [2]);
   });
 
-  it("midday does not fetch or report drafts", async () => {
-    let statsReads = 0;
+  it("10:00 / 13:00 slots include drafts the same as 16:30 (D156)", async () => {
     const state = new StateStore(
       `/tmp/dw-day-mid-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
+    const briefs: Array<{ loadedDrafts?: Array<{ id: number }> }> = [];
     const service = new ClientDayBriefService(
       loadConfig({}),
       {
@@ -74,19 +74,24 @@ describe("client day brief drafts (D89)", () => {
           bounce_count: 0,
         }),
         getCampaignStatistics: async () => {
-          statsReads += 1;
           return { total_leads: 100, contacted: 0 };
         },
         getCampaign: async () => null,
         listAllEmailAccounts: async () => [],
       } as unknown as SmartleadClient,
       { listTests: async () => [] } as unknown as SmartDeliveryClient,
-      { notifyClientDayBrief: async () => undefined } as unknown as SlackClient,
+      {
+        notifyClientDayBrief: async (summary: {
+          loadedDrafts?: Array<{ id: number }>;
+        }) => {
+          briefs.push(summary);
+        },
+      } as unknown as SlackClient,
       state,
     );
 
-    const result = await service.run({ endOfDay: false });
-    assert.equal(result.loadedDrafts, undefined);
-    assert.equal(statsReads, 0);
+    const result = await service.run();
+    assert.deepEqual(result.loadedDrafts?.map((row) => row.id), [2]);
+    assert.deepEqual(briefs[0]?.loadedDrafts?.map((row) => row.id), [2]);
   });
 });

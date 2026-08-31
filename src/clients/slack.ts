@@ -216,8 +216,6 @@ export class SlackClient {
       genericSpare?: number;
     }>;
     errors: string[];
-    /** D64 — staffing picture only on the end-of-day brief. */
-    endOfDay?: boolean;
     staffingShorts?: Array<{
       name: string;
       staffable: number;
@@ -245,13 +243,6 @@ export class SlackClient {
       `${summary.totalSent.toLocaleString("en-US")} email${summary.totalSent === 1 ? "" : "s"} sent across ${summary.rows.length} client${summary.rows.length === 1 ? "" : "s"}.`,
       "",
     ];
-
-    if (!summary.endOfDay) {
-      console.log(
-        `[slack-quiet] midday client-day ${summary.date} ${summary.totalSent} sent`,
-      );
-      return;
-    }
 
     for (const row of summary.rows.slice(0, 25)) {
       const spam =

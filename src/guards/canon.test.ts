@@ -1071,10 +1071,10 @@ describe("owner intent — D64 staffing Slack is end of day", () => {
     );
     assert.match(
       brief,
-      /endOfDay/,
+      /staffingShorts/,
       stop(
-        "The client day brief posts staffing at end of day (D64).",
-        "clientDayBrief.ts no longer takes an end-of-day staffing pass.",
+        "The client day brief posts staffing (D64/D156).",
+        "clientDayBrief.ts no longer hands staffing shorts to Slack.",
       ),
     );
   });
@@ -5086,6 +5086,52 @@ describe("owner intent — D140 bounce reasons are read, not guessed", () => {
       stop(
         "A tenant hitting its cap alerts Josh once per tenant per day (D140).",
         "campaignBounceAutostop.ts lost the tenant alert dedupe.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D156 client-day Slack is 10:00, 13:00, and 16:30 ET", () => {
+  it("D156: every send-volume slot posts the same briefing; none are slack-quiet", async () => {
+    const { readFile } = await import("node:fs/promises");
+    assert.equal(
+      defaults.cronSendVolume,
+      "0 10 * * *|0 13 * * *|30 16 * * *",
+      stop(
+        "The client-day Slack is 10:00, 13:00, and 16:30 ET (D156).",
+        `cronSendVolume default is now ${defaults.cronSendVolume}.`,
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.equal(
+      /slack-quiet\] midday client-day/.test(slack),
+      false,
+      stop(
+        "10:00 and 13:00 post the same briefing as 16:30 (D156).",
+        "slack.ts still swallows non-last-slot client-day briefs.",
+      ),
+    );
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.equal(
+      /index === sendVolumeSchedules\.length - 1/.test(index),
+      false,
+      stop(
+        "Every CRON_SEND_VOLUME slot posts (D156).",
+        "index.ts still treats only the last schedule as the posting slot.",
+      ),
+    );
+    assert.match(
+      index,
+      /clientDayBrief\.run\(\)/,
+      stop(
+        "Scheduled client-day runs are the full briefing (D156).",
+        "index.ts no longer calls clientDayBrief.run() on the cron.",
       ),
     );
   });

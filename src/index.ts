@@ -936,14 +936,13 @@ async function main(): Promise<void> {
     });
   });
 
-  // Client day brief (sent / bounce% / spam% + resting vs active) posts at
-  // fixed local times. America/New_York so the times track EST/EDT.
-  sendVolumeSchedules.forEach((expression, index) => {
-    const endOfDay = index === sendVolumeSchedules.length - 1;
+  // Client day brief (D156) — same Slack scoreboard at 10:00, 13:00, and
+  // 16:30 America/New_York. Every slot posts; none are slack-quiet.
+  sendVolumeSchedules.forEach((expression) => {
     cron.schedule(
       expression,
       () => {
-        void clientDayBrief.run({ endOfDay }).catch((error) => {
+        void clientDayBrief.run().catch((error) => {
           console.error("[client-day] Unhandled cron error", error);
         });
       },
@@ -1739,6 +1738,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       testedCampaignCount: Object.keys(s.testedCampaigns).length,
       cronScan: config.cronScan,
       cronMonitor: config.cronMonitor,
+      cronSendVolume: config.cronSendVolume,
       enableCampaignHealth: config.enableCampaignHealth,
       cronHealth: config.cronHealth,
       enableCampaignCheck: config.enableCampaignCheck,
@@ -1922,7 +1922,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
       if (mode === "client-day" || mode === "send-volume" || mode === "day-brief") {
         assertRuntimeSecrets(config);
-        const result = await clientDayBrief.run({ endOfDay: true });
+        const result = await clientDayBrief.run();
         res.json({ ok: true, mode: "client-day", result });
         return;
       }
@@ -2265,7 +2265,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
     );
     console.log(
-      "[boot] Slack (D71/D149): burned-domain replace, isolated-word replace, EOD sends/spam, ops alerts (stage watchdog + deploy identity)",
+      "[boot] Slack (D71/D149/D156): burned-domain replace, isolated-word replace, client-day sends/spam at 10:00/13:00/16:30 ET, ops alerts (stage watchdog + deploy identity)",
     );
     console.log(
       `[boot] Lead runout: ${config.enableLeadRunout ? "ENABLED (half / three-quarters / done, logs only, no import)" : "disabled"}`,

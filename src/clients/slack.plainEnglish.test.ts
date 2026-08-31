@@ -87,7 +87,6 @@ describe("Slack copy is plain English (D47)", () => {
         },
       ],
       errors: [],
-      endOfDay: true,
       staffingShorts: [
         {
           name: "BCP PE Firms",
@@ -171,6 +170,11 @@ describe("Slack copy is plain English (D47)", () => {
     });
 
     assert.ok(sent.length >= 7);
+    assert.equal(
+      sent.some((text) => text.includes("*Client day — 2026-08-21*")),
+      true,
+      "client-day brief must Slack without an endOfDay flag (D156)",
+    );
     for (const [i, text] of sent.entries()) {
       assertPlain(text, `message ${i}`);
     }

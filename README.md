@@ -31,7 +31,7 @@ to look. Behaviour questions end at CANON.md.
 | Bounce loop | every 10 min | Pause over 10% lifetime bounce after 1k leads, or >10 new bounces in 10 min; classify the NDRs (tenant cap / bad recipients / content block); keep Smartlead's native auto-pause off |
 | Campaign check | hourly | Re-inspect blocked first-checks, shells, signatures, staffing floor, campaign min-gap converge |
 | Monitor | every 6 h | POD tags first (so decoration writes are not starved by placement pulls), then placement pulls, DNS advisory audit, canary adoption, campaign audit, domain→client advisory |
-| EOD brief | once a day (New York) | Per-client sends + spam scoreboard, untagged campaigns, loaded DRAFTs, domains needing a human |
+| Client-day brief | 10:00, 13:00, 16:30 New York | Same Slack scoreboard each slot: per-client sends + spam, untagged campaigns, loaded DRAFTs, domains needing a human |
 | Boot | on deploy | Canary attach at 90 s only — everything else waits for its cron |
 
 Standing posture, in one breath (decision numbers and detail in CANON.md):
@@ -40,7 +40,7 @@ leftover HOLD-UNTIL tags never yank a mailbox; one client per sender,
 staffing floor is half that client's own inboxes; every mailbox owes 21
 warmup days from InboxKit import unless its fleet is pre-warmed; the
 canary fleet diagnoses and never staffs; Slack carries exactly three pages
-(burned domain, isolated spam word, EOD scoreboard) plus action receipts;
+(burned domain, isolated spam word, client-day scoreboard at 10:00/13:00/16:30 ET) plus action receipts;
 real-money spend stops at `/approvals`.
 
 ## Surfaces

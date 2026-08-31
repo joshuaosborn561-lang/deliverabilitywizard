@@ -75,19 +75,33 @@ class Stripper(HTMLParser):
 EMAIL_RE = re.compile(r"\b[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}\b", re.I)
 PHONE_RE = re.compile(r"\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b")
 URL_RE = re.compile(r"https?://[^\s<>\"]+", re.I)
-OFFER_RE = re.compile(
-    r"air\s*pods?|"
-    r"sports?\s+tickets?|"
-    r"(?:complimentary|free|vip|suite|box)\s+tickets?|"
-    r"ticket\s+offer|"
-    r"(?:astros|world\s*series)\b|"
-    r"(?:nba|nfl|mlb)\s+tickets?|"
-    r"flood\s*zones?|"
-    r"houston\s+flood|"
-    r"tickets?\s+to\s+(?:the\s+)?(?:game|astros|match)|"
-    r"\b(?:airpods?|tickets?)\b",
-    re.I,
-)
+
+SIG_BRANDS = [
+    "Mid-South Roof Systems",
+    "Mid-South Roofing",
+    "Nieto Technology Partners",
+    "Nieto Tech Partners",
+]
+
+
+def redact_text(text: str) -> str:
+    if not text:
+        return ""
+    text = EMAIL_RE.sub(lambda m: mask_email(m.group(0)), text)
+    text = PHONE_RE.sub("•••-•••-••••", text)
+    text = URL_RE.sub("https://••••.com/••••", text)
+    # Offer wording stays visible — the demo board shows the hook.
+    for brand in SIG_BRANDS:
+        text = re.sub(re.escape(brand), "█" * len(brand), text, flags=re.I)
+    text = re.sub(r"\bMid-South\b", "█████████", text, flags=re.I)
+    text = re.sub(r"\bNieto\b", "█████", text, flags=re.I)
+    text = re.sub(
+        r"█+\s*Technology Partners",
+        "█" * len("Nieto Technology Partners"),
+        text,
+        flags=re.I,
+    )
+    return text
 
 
 def load_mcp(path: Path) -> list:
@@ -133,16 +147,6 @@ def mask_email(e: str) -> str:
     else:
         dom = "••••.com"
     return f"{local_m}@{dom}"
-
-
-def redact_text(text: str) -> str:
-    if not text:
-        return ""
-    text = EMAIL_RE.sub(lambda m: mask_email(m.group(0)), text)
-    text = PHONE_RE.sub("•••-•••-••••", text)
-    text = URL_RE.sub("https://••••.com/••••", text)
-    text = OFFER_RE.sub("████", text)
-    return text
 
 
 def first_name_only(fn: str | None, ln: str | None) -> str:
@@ -268,13 +272,19 @@ def main() -> None:
             cat_counts.setdefault(l["smartlead_campaign_id"], Counter())[cat] += 1
         for a in analytics:
             a["leads"] = int(lead_counts.get(a["oldId"], 0))
-            a["categories"] = {
+            cats = {
                 k: int(v) for k, v in cat_counts.get(a["oldId"], {}).items()
             }
+            a["categories"] = cats
+            a["positive"] = int(cats.get("Positive Reply", a.get("positive") or 0))
+            a["interested"] = int(cats.get("Interested", 0))
 
     out = {
         "title": "Campaign restore demo",
-        "note": "Real reply text from the pre-delete mirror. Prospect emails, phones, links, and offer terms (████) are redacted for the recording.",
+        "note": (
+            "Real threads from the pre-delete mirror. Prospect emails and client "
+            "signatures are redacted; offer wording is shown."
+        ),
         "campaigns": analytics,
         "replies": ordered,
     }

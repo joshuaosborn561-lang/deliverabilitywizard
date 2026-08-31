@@ -631,12 +631,13 @@ h3 {
   filter: blur(5px);
 }
 
-.offer-redact {
+.blur-signature {
   display: inline-block;
-  background: #1d2e26;
-  color: #1d2e26;
-  border-radius: 3px;
-  padding: 0 3px;
+  color: transparent;
+  text-shadow: 0 0 10px #8a938b;
+  background: linear-gradient(90deg, #e7ebe6, #f3f5f1);
+  border-radius: 4px;
+  padding: 1px 6px;
   user-select: none;
   filter: blur(5px);
 }

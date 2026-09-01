@@ -11,6 +11,18 @@ function store(): StateStore {
   );
 }
 
+/** Eleven fresh bounced sends — enough to substantiate a D141 live burst. */
+function freshBurstRows(
+  nowMs = Date.now(),
+  extras: Array<{ lead_email: string; sent_time: string }> = [],
+): Array<{ lead_email: string; sent_time: string }> {
+  const pads = Array.from({ length: 11 }, (_, i) => ({
+    lead_email: `fresh${i}@x.com`,
+    sent_time: new Date(nowMs - (30 + i) * 60 * 1000).toISOString(),
+  }));
+  return [...extras, ...pads];
+}
+
 describe("CampaignBounceAutostopService (D141/D148)", () => {
   it("the lifetime rate never trips — bad-looking rates are artifacts, not storms", async () => {
     const paused: number[] = [];
@@ -78,11 +90,8 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
         listBouncedSendStats: async () => ({
-          total_stats: "2",
-          data: [
-            { lead_email: "a@x.com", sent_time: new Date(Date.now() - 30 * 60 * 1000).toISOString() },
-            { lead_email: "b@x.com", sent_time: new Date(Date.now() - 45 * 60 * 1000).toISOString() },
-          ],
+          total_stats: "12",
+          data: freshBurstRows(),
         }),
       } as never,
       state,
@@ -107,8 +116,9 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     );
   });
 
-  it("D141: a ledger dump of stale bounces never acts — logged and consumed", async () => {
+  it("D141: a ledger dump of stale bounces never acts — logged and consumed, no Slack", async () => {
     const statusWrites: string[] = [];
+    const sent: string[] = [];
     const state = store();
     state.setBounceSnapshot(8, {
       bounced: 3,
@@ -141,12 +151,14 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
         }),
       } as never,
       state,
+      { send: async (text: string) => void sent.push(text) } as never,
     );
 
     const result = await service.run({ dryRun: false });
     assert.deepEqual(statusWrites, [], "stale-send bounces are residue, not a storm");
     assert.deepEqual(result.bursts, []);
     assert.equal(result.ledgerDumps, 1);
+    assert.deepEqual(sent, [], "a dump logs; it does not Slack a burst receipt");
     assert.equal(
       state.getBounceSnapshot(8)?.bounced,
       15,
@@ -154,7 +166,79 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
     );
   });
 
+  it("D141: one fresh send mixed into a stale dump is still a dump — no Slack (2026-08-31 #3798230)", async () => {
+    // Prod 2026-08-31 ~21:40 CDT: counter +13, lifetime bounce_count=13
+    // (mostly Aug 13–24), one send ~11:45 CDT. The old `fresh > 0` gate
+    // paged a REAL-burst receipt on the raw 13.
+    const FIXED_T = Date.parse("2026-09-01T02:40:00.000Z");
+    const statusWrites: string[] = [];
+    const sent: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(3798230, {
+      bounced: 0,
+      sent: 80,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3798230,
+            name: "Peterson - C2 Property Managers - AIRPODS",
+            status: "ACTIVE",
+          },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 94,
+          bounce_count: 13,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
+        },
+        listBouncedSendStats: async () => ({
+          total_stats: "13",
+          data: [
+            {
+              lead_email: "fresh@x.com",
+              sent_time: "2026-08-31T16:45:00.000Z",
+            },
+            { lead_email: "s1@x.com", sent_time: "2026-08-13T14:05:53.775Z" },
+            { lead_email: "s2@x.com", sent_time: "2026-08-14T15:10:00.000Z" },
+            { lead_email: "s3@x.com", sent_time: "2026-08-15T16:20:00.000Z" },
+            { lead_email: "s4@x.com", sent_time: "2026-08-16T12:00:00.000Z" },
+            { lead_email: "s5@x.com", sent_time: "2026-08-17T13:30:00.000Z" },
+            { lead_email: "s6@x.com", sent_time: "2026-08-18T14:00:00.000Z" },
+            { lead_email: "s7@x.com", sent_time: "2026-08-19T15:00:00.000Z" },
+            { lead_email: "s8@x.com", sent_time: "2026-08-20T16:34:22.414Z" },
+            { lead_email: "s9@x.com", sent_time: "2026-08-21T11:00:00.000Z" },
+            { lead_email: "s10@x.com", sent_time: "2026-08-22T12:00:00.000Z" },
+            { lead_email: "s11@x.com", sent_time: "2026-08-23T13:00:00.000Z" },
+            { lead_email: "s12@x.com", sent_time: "2026-08-24T17:06:36.434Z" },
+          ],
+        }),
+      } as never,
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+      undefined,
+      () => FIXED_T,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statusWrites, []);
+    assert.deepEqual(result.bursts, [], "one fresh send does not make the dump a burst");
+    assert.equal(result.ledgerDumps, 1);
+    assert.deepEqual(
+      sent,
+      [],
+      "the stale path logs only — no REAL-burst Slack receipt",
+    );
+    assert.equal(state.getBounceSnapshot(3798230)?.bounced, 13);
+  });
+
   it("D141: unreadable bounced rows defer the decision — snapshot kept for the next tick", async () => {
+    const sent: string[] = [];
     const state = store();
     const staleAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     state.setBounceSnapshot(8, { bounced: 3, sent: 40, at: staleAt });
@@ -175,11 +259,13 @@ describe("CampaignBounceAutostopService (D141/D148)", () => {
         listBouncedSendStats: async () => ({ total_stats: "0", data: [] }),
       } as never,
       state,
+      { send: async (text: string) => void sent.push(text) } as never,
     );
 
     const result = await service.run({ dryRun: false });
     assert.deepEqual(result.bursts, [], "no action on unverifiable data");
     assert.equal(result.ledgerDumps, 0);
+    assert.deepEqual(sent, [], "unreadable defer does not Slack");
     assert.equal(
       state.getBounceSnapshot(8)?.bounced,
       3,
@@ -255,8 +341,8 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
       getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
       updateCampaignSettings: async () => undefined,
       listBouncedSendStats: async () => ({
-        total_stats: "2",
-        data: [
+        total_stats: "12",
+        data: freshBurstRows(FIXED_T, [
           {
             lead_email: "a@target.com",
             sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
@@ -265,7 +351,7 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
             lead_email: "b@target.com",
             sent_time: new Date(FIXED_T - 25 * 60 * 1000).toISOString(),
           },
-        ],
+        ]),
       }),
       fetchLeadByEmail: async (email: string) => ({
         id: email === "a@target.com" ? 111 : 222,
@@ -365,8 +451,8 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
         getCampaignSettings: async () => ({ bounce_autopause_threshold: "100" }),
         updateCampaignSettings: async () => undefined,
         listBouncedSendStats: async () => ({
-          total_stats: "2",
-          data: [
+          total_stats: "12",
+          data: freshBurstRows(FIXED_T, [
             {
               lead_email: "a@target.com",
               sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
@@ -375,7 +461,7 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
               lead_email: "b@target.com",
               sent_time: new Date(FIXED_T - 25 * 60 * 1000).toISOString(),
             },
-          ],
+          ]),
         }),
         fetchLeadByEmail: async (email: string) => ({
           id: email === "a@target.com" ? 111 : 222,

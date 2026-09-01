@@ -11,6 +11,7 @@ import {
 import { statsFromAnalytics, ymdUtc } from "../lib/campaignDayStats.js";
 import {
   freshBounceSamples,
+  isLiveBounceBurst,
   shouldPauseCampaignForBounceBurst,
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
@@ -238,9 +239,10 @@ export class CampaignBounceAutostopService {
         }
 
         // D141 — a tripped counter is a suspicion, not a verdict. Sample
-        // the bounced rows first: only sends that actually happened in the
-        // last 24h count as a live burst; a ledger dump of stale bounces
-        // never pauses anyone.
+        // the bounced rows first: the burst is live only when those
+        // samples themselves show more than `bounceBurstCount` sends
+        // from the last 24h. A ledger dump of stale bounces — even
+        // with one coincidental recent send — logs and never Slacks.
         const rows = await this.sampleBouncedRows(campaign.id);
         if (rows == null) {
           // Rows unreadable while the ledger lags: keep the previous
@@ -260,10 +262,10 @@ export class CampaignBounceAutostopService {
           at: nowIso,
         });
 
-        if (recency.fresh === 0) {
+        if (!isLiveBounceBurst(recency, this.config.bounceBurstCount)) {
           result.ledgerDumps += 1;
           console.log(
-            `[bounce-autostop] burst on #${campaign.id} ${campaign.name} is a ledger dump: +${burst.delta} recorded in 10m, ${recency.readable} rows sampled, newest send ${recency.newestSentAt ?? "unknown"}, none inside 24h — no pause (D141)`,
+            `[bounce-autostop] burst on #${campaign.id} ${campaign.name} is a ledger dump: +${burst.delta} recorded in 10m, ${recency.readable} rows sampled, ${recency.fresh} sends <24h old (need >${this.config.bounceBurstCount}), newest send ${recency.newestSentAt ?? "unknown"} — no pause, no Slack (D141)`,
           );
           result.skipped += 1;
           continue;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   freshBounceSamples,
+  isLiveBounceBurst,
   shouldPauseCampaignForBounceBurst,
 } from "./campaignBouncePause.js";
 
@@ -63,6 +64,22 @@ describe("D141 bounce pause trips", () => {
     );
     assert.equal(mixed.fresh, 1);
     assert.equal(mixed.readable, 2);
+    assert.equal(
+      isLiveBounceBurst(mixed),
+      false,
+      "one fresh send among stale rows is still a dump, not a live burst",
+    );
+    assert.equal(isLiveBounceBurst(stale), false);
+    assert.equal(
+      isLiveBounceBurst({ readable: 12, fresh: 10, newestSentAt: null }),
+      false,
+      "exactly 10 fresh samples is not more than 10",
+    );
+    assert.equal(
+      isLiveBounceBurst({ readable: 13, fresh: 11, newestSentAt: null }),
+      true,
+      "more than 10 fresh sampled sends substantiates the burst",
+    );
   });
 
   it("reads nothing into rows without a parseable sent_time", () => {

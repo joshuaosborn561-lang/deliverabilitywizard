@@ -87,7 +87,11 @@ export async function apiRequest<T>(
       }
 
       if (!response.ok) {
-        const message =
+        // Always keep the status in the message. Smartlead 5xx bodies are
+        // often a vendor SQL string ("permission denied for table …") with
+        // no "HTTP 500", and isUpstream5xxNoise only matches HTTP 5xx.
+        const statusLabel = `HTTP ${response.status}`;
+        const detail =
           typeof parsed === "object" &&
           parsed !== null &&
           ("message" in parsed || "error" in parsed)
@@ -95,7 +99,11 @@ export async function apiRequest<T>(
                 (parsed as { message?: unknown; error?: unknown }).message ??
                   (parsed as { error?: unknown }).error,
               )
-            : `HTTP ${response.status}`;
+            : "";
+        const message =
+          detail && detail !== statusLabel
+            ? `${statusLabel}: ${detail}`
+            : statusLabel;
         throw new ApiError(message, response.status, parsed);
       }
 

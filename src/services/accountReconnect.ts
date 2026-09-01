@@ -7,11 +7,14 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import {
+  humanizeAlertError,
   isRateLimitNoise,
+  isThrottleOrTimeoutNoise,
   reconnectFailureCategory,
 } from "../lib/alertNoise.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
+import type { InventoryBook, InventorySnapshot } from "./inventory.js";
 
 const RECONNECT_ALERT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 const REEXPORT_ALERT_COOLDOWN_MS = 24 * 60 * 60 * 1000;
@@ -53,9 +56,10 @@ export class AccountReconnectService {
     private readonly inboxkit: InboxKitClient | null,
     private readonly slack: SlackClient,
     private readonly state: StateStore,
+    private readonly book: InventoryBook,
   ) {}
 
-  async run(): Promise<ReconnectResult> {
+  async run(opts: { inventory?: InventorySnapshot } = {}): Promise<ReconnectResult> {
     const result: ReconnectResult = {
       dryRun: this.config.dryRun,
       scanned: 0,
@@ -72,15 +76,18 @@ export class AccountReconnectService {
       `[reconnect] Starting (${result.dryRun ? "DRY RUN" : "LIVE"})`,
     );
 
+    // D132 / D94 — same contract as campaign check: a handed snapshot, else
+    // the shared book (carry-over on a failed read). Never refetch the
+    // mailbox list ourselves; a Smartlead email-accounts 500 must not
+    // report Checked 0 while D132 is holding the accepted book.
     let accounts: SmartleadAccountWithCampaigns[] = [];
     try {
-      accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: false,
-      });
+      const snapshot = opts.inventory ?? (await this.book.get());
+      accounts = snapshot.accounts;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`list accounts: ${message}`);
-      await this.finish(result);
+      await this.failClosedWithoutBook(result, message);
       return result;
     }
 
@@ -172,6 +179,60 @@ export class AccountReconnectService {
     this.state.setLastReconnectAt(new Date().toISOString());
     await this.finish(result);
     return result;
+  }
+
+  /**
+   * No accepted book and the mailbox list cannot be read. Fail closed —
+   * scanned=0 is not a disconnect wave. 429/timeout stay silent; a vendor
+   * 5xx pages once as ops_alert (D149), not as a reconnect action_result.
+   */
+  private async failClosedWithoutBook(
+    result: ReconnectResult,
+    message: string,
+  ): Promise<void> {
+    await this.state.save();
+    console.log("[reconnect] Done", {
+      dryRun: result.dryRun,
+      scanned: 0,
+      disconnected: 0,
+      failedClosed: true,
+      errors: result.errors.length,
+    });
+    console.warn(
+      `[reconnect] mailbox list unavailable and no accepted book — failing closed (not a disconnect wave): ${message}`,
+    );
+
+    if (isThrottleOrTimeoutNoise(message)) {
+      console.log(
+        "[reconnect] Skipping Slack (rate-limit/timeout; next cron retries)",
+      );
+      return;
+    }
+
+    const key = "reconnect-alert:error:mailbox-list-outage";
+    if (this.state.hasRecentAlert(key, RECONNECT_ALERT_COOLDOWN_MS)) {
+      console.log(
+        "[reconnect] Skipping Slack (mailbox-list outage already paged)",
+      );
+      return;
+    }
+
+    try {
+      await this.slack.send(
+        [
+          "Smartlead's mailbox-list API is failing.",
+          "This is not a disconnect wave — I could not load the mailbox book, and there is no accepted snapshot to scan.",
+          humanizeAlertError(`list accounts: ${message}`),
+          "The next health pass will retry. I will not page this again until it recovers.",
+        ].join("\n"),
+        undefined,
+        "ops_alert",
+      );
+      this.state.markAlert(key);
+      await this.state.save();
+    } catch (error) {
+      console.error("[reconnect] Slack notify failed", error);
+    }
   }
 
   private async reexportFailedInboxKit(

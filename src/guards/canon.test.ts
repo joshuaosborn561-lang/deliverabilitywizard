@@ -4598,6 +4598,26 @@ describe("owner intent — D132 one account book", () => {
         "index.ts runs the hourly sweep on its own fetch again.",
       ),
     );
+    const reconnect = await readFile(
+      new URL("../services/accountReconnect.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      reconnect,
+      /listAllEmailAccounts/,
+      stop(
+        "Reconnect reads the shared book, never its own mailbox-list fetch (D132).",
+        "accountReconnect.ts refetches email-accounts again — a 500 becomes Checked 0.",
+      ),
+    );
+    assert.match(
+      index,
+      /runReconnect\(inventory\)/,
+      stop(
+        "The health pass hands reconnect the shared book's snapshot (D132).",
+        "index.ts runs reconnect on its own fetch again.",
+      ),
+    );
   });
 });
 

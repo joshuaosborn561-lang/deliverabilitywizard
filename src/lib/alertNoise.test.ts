@@ -9,6 +9,7 @@ import {
   isRateLimitNoise,
   isRetryRemovalNoise,
   isSenderNotInCampaignNoise,
+  isThrottleOrTimeoutNoise,
   reconnectFailureCategory,
 } from "./alertNoise.js";
 
@@ -116,6 +117,31 @@ describe("alert noise", () => {
         "Failed creating tests for campaign 3763798: Insufficient sequence credits",
       ),
       false,
+    );
+  });
+
+  it("treats vendor SQL permission-denied 500s as upstream 5xx noise", () => {
+    const live =
+      "list accounts: permission denied for table smart_senders_scheduled_deletions";
+    const withStatus =
+      "list accounts: HTTP 500: permission denied for table smart_senders_scheduled_deletions";
+    for (const message of [live, withStatus]) {
+      assert.equal(isRateLimitNoise(message), true, message);
+      assert.equal(isBenignOpsNoise(message), true, message);
+      assert.equal(
+        isThrottleOrTimeoutNoise(message),
+        false,
+        `${message} is a platform 5xx, not a 429/timeout`,
+      );
+      assert.match(
+        humanizeAlertError(message),
+        /mailbox-list API is failing/i,
+      );
+      assert.doesNotMatch(humanizeAlertError(message), /0 were disconnected/i);
+    }
+    assert.equal(
+      reconnectFailureCategory(live),
+      "rate-limit",
     );
   });
 

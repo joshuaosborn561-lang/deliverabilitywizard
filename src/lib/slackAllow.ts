@@ -1,8 +1,9 @@
 /**
  * D71 — Slack is only deliverability flags plus one end-of-day scoreboard.
  * Everything else stays in logs /ops. D149 adds `ops_alert`: the machine
- * reporting itself broken (overdue watchdog stage, wrong deploy identity)
- * pages Slack instead of waiting for someone to come read the logs.
+ * reporting itself broken (overdue watchdog stage, wrong deploy identity,
+ * Smartlead mailbox-list API out with no accepted book) pages Slack
+ * instead of waiting for someone to come read the logs.
  */
 export const SLACK_ALLOW_KINDS = [
   "burned_domain",

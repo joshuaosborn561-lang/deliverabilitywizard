@@ -190,6 +190,7 @@ async function main(): Promise<void> {
     inboxkit,
     slack,
     state,
+    inventoryBook,
   );
   const warmupGate = new WarmupGateService(config, smartlead, slack, state);
   const testReconciler = new TestReconciler(
@@ -258,13 +259,13 @@ async function main(): Promise<void> {
     return poolInFlight;
   };
 
-  const runReconnect = async () => {
+  const runReconnect = async (inventory?: InventorySnapshot) => {
     assertRuntimeSecrets(config);
     if (reconnectInFlight) {
       console.log("[reconnect] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
-    reconnectInFlight = accountReconnect.run().finally(() => {
+    reconnectInFlight = accountReconnect.run({ inventory }).finally(() => {
       reconnectInFlight = null;
     });
     return reconnectInFlight;
@@ -693,7 +694,7 @@ async function main(): Promise<void> {
 
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
-        reconnectResult = await stage("reconnect", () => runReconnect());
+        reconnectResult = await stage("reconnect", () => runReconnect(inventory));
       }
 
       // D30/D35/D83: gap + daily volume + canary warmup-off every health pass.

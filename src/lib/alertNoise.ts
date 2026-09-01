@@ -4,12 +4,29 @@ const TIMEOUT_NOISE =
 /** Cloudflare/origin gateway timeouts and other upstream 5xx. */
 const UPSTREAM_5XX_NOISE = /\bHTTP\s*5\d\d\b/i;
 
+/**
+ * Smartlead 5xx bodies that are a vendor-DB failure, not our GRANT.
+ * Live 2026-09-01: email-accounts returned
+ * `{"error":"permission denied for table smart_senders_scheduled_deletions"}`.
+ */
+const VENDOR_SQL_5XX_NOISE =
+  /permission denied for (?:table|relation|schema)\b|smart_senders_scheduled_deletions/i;
+
 function isTimeoutNoise(message: string): boolean {
   return TIMEOUT_NOISE.test(message);
 }
 
+function isVendorSqlNoise(message: string): boolean {
+  return VENDOR_SQL_5XX_NOISE.test(message);
+}
+
 function isUpstream5xxNoise(message: string): boolean {
-  return UPSTREAM_5XX_NOISE.test(message);
+  return UPSTREAM_5XX_NOISE.test(message) || isVendorSqlNoise(message);
+}
+
+/** 429 / timeout only — not vendor 5xx. Next cron retries; do not page. */
+export function isThrottleOrTimeoutNoise(message: string): boolean {
+  return isHttpRateLimitNoise(message) || isTimeoutNoise(message);
 }
 
 function isHttpRateLimitNoise(message: string): boolean {
@@ -159,6 +176,15 @@ export function humanizeAlertError(message: string): string {
     return "A Smartlead request timed out. We'll retry automatically.";
   }
 
+  if (
+    listAccounts &&
+    (isUpstream5xxNoise(raw) || isVendorSqlNoise(raw))
+  ) {
+    return "Smartlead's mailbox-list API is failing (their server, not our database). This is not a disconnect wave; we'll retry next run.";
+  }
+  if (isVendorSqlNoise(raw)) {
+    return "Smartlead had a temporary server error (vendor database). We'll retry automatically.";
+  }
   if (rateLimited && listAccounts) {
     return "Smartlead rate-limited us while loading the mailbox list. Nothing was changed; we'll try again next run.";
   }

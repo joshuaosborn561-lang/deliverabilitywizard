@@ -630,6 +630,20 @@ export class SlackClient {
       return;
     }
 
+    // A mailbox-list failure with nothing scanned is not a disconnect
+    // check. Reconnect fail-closes as ops_alert; never "Checked 0".
+    const onlyEmptyListFailure =
+      summary.scanned === 0 &&
+      summary.disconnected === 0 &&
+      summary.reconnected === 0 &&
+      summary.failed === 0 &&
+      (summary.actions?.length ?? 0) === 0 &&
+      summary.inboxkitReexports === 0 &&
+      summary.errors.some((e) => /list\s+accounts/i.test(e));
+    if (onlyEmptyListFailure) {
+      return;
+    }
+
     const reconnected = (summary.actions ?? [])
       .filter((a) => a.reauthenticated)
       .slice(0, 12)

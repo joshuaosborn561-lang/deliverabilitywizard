@@ -175,4 +175,20 @@ describe("Slack copy is plain English (D47)", () => {
       assertPlain(text, `message ${i}`);
     }
   });
+
+  it("does not frame a mailbox-list 500 as Checked 0 disconnected", async () => {
+    const { client, sent } = capture();
+    await client.notifyReconnect({
+      scanned: 0,
+      disconnected: 0,
+      reconnected: 0,
+      skippedAlreadyConnected: 0,
+      failed: 0,
+      inboxkitReexports: 0,
+      errors: [
+        "list accounts: HTTP 500: permission denied for table smart_senders_scheduled_deletions",
+      ],
+    });
+    assert.deepEqual(sent, []);
+  });
 });

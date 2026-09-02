@@ -118,7 +118,8 @@ export async function alertStageAnomalies(input: {
 /**
  * D163 — CANON / healthy-sending misses page Slack once per campaign
  * per incident (ugly same-ESP, isolation queued, COPY / INFRA /
- * INCONCLUSIVE). Same incident stays silent across 15-minute sweeps;
+ * INCONCLUSIVE). D165 — isolation INCONCLUSIVE only pages ACTIVE
+ * senders. Same incident stays silent across 15-minute sweeps;
  * a transition pages; recovery (inbox back at the bar) clears the stamp.
  */
 export async function alertCanonMisses(input: {
@@ -126,7 +127,12 @@ export async function alertCanonMisses(input: {
   slack: Pick<SlackClient, "send">;
   threshold: number;
   dryRun?: boolean;
+  /** Account-book statuses — INCONCLUSIVE only pages ACTIVE senders (D165). */
+  campaigns?: Array<{ id: number; status?: string | null }>;
 }): Promise<{ alerted: string[]; recovered: number[] }> {
+  const statusById = input.campaigns
+    ? new Map(input.campaigns.map((row) => [row.id, row.status ?? undefined]))
+    : undefined;
   const misses = collectCanonMisses({
     scores: input.store.listPlacementScores(),
     suspects: input.store.listCopySuspects(),
@@ -136,6 +142,9 @@ export async function alertCanonMisses(input: {
     extraCampaignIds: input.store
       .listIsolationRuns()
       .map((run) => run.campaignId),
+    campaignStatus: statusById
+      ? (campaignId) => statusById.get(campaignId)
+      : undefined,
   });
   const missById = new Map(misses.map((row) => [row.campaignId, row]));
   const stamped = input.store.listCanonMissAlerts();

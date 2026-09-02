@@ -20,7 +20,7 @@ import {
   liveCampaignForPlacementTrigger,
   placementSuspectReason,
   sameEspInboxUgly,
-  shouldQueuePlacementSuspect,
+  shouldRequeueIsolation,
 } from "../lib/placementSuspect.js";
 import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { StateStore } from "../state/store.js";
@@ -269,7 +269,13 @@ export class ResultMonitor {
       .listCopySuspects()
       .find((row) => row.campaignId === target.campaignId);
     const openRun = this.state.latestIsolationRunForCampaign(target.campaignId);
-    if (!shouldQueuePlacementSuspect({ existing, openRun })) {
+    if (
+      !shouldRequeueIsolation({
+        existing,
+        openRun,
+        status: campaign?.status,
+      })
+    ) {
       return 0;
     }
 

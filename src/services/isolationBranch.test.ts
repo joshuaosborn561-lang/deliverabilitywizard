@@ -284,6 +284,64 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.deepEqual(evaluated, []);
   });
 
+  it("does not re-evaluate or page INCONCLUSIVE on a COMPLETED campaign (D165)", async () => {
+    const completed = {
+      id: 3763805,
+      name: "BCP Logistics Over-1k (With Team)",
+      status: "COMPLETED",
+    };
+    const { branch, state, evaluated, isolationPages } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+      campaign: completed,
+    });
+    state.markCopySuspect({
+      campaignId: completed.id,
+      campaignName: completed.name,
+      at: "2026-08-24T12:00:00.000Z",
+      reason: "stale inconclusive",
+    });
+    state.upsertIsolationRun({
+      id: "stale-aug-24",
+      campaignId: completed.id,
+      campaignName: completed.name,
+      startedAt: "2026-08-24T12:00:00.000Z",
+      updatedAt: "2026-08-24T12:00:00.000Z",
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason:
+        "No standing inbox-test reading for the mailboxes this campaign is sending from.",
+    });
+    state.setCanonMissAlert(completed.id, "INCONCLUSIVE");
+
+    evaluated.length = 0;
+    const result = await branch.run();
+    assert.deepEqual(
+      evaluated,
+      [],
+      "COMPLETED leftover suspects must not re-enter evaluate",
+    );
+    assert.equal(result.evaluated, 0);
+    assert.deepEqual(isolationPages, [], "no isolation Slack page on COMPLETED");
+  });
+
+  it("does not page INCONCLUSIVE when evaluate is called on a PAUSED campaign (D165)", async () => {
+    const { branch, isolationPages } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 50,
+      mailboxPlacement: "UNKNOWN",
+      campaign: { ...AIRPODS, status: "PAUSED" },
+    });
+    const run = await branch.evaluate(AIRPODS.id, { campaignInSpam: true });
+    assert.equal(run.verdict, "INCONCLUSIVE");
+    assert.deepEqual(
+      isolationPages,
+      [],
+      "PAUSED evaluate must not Slack-page INCONCLUSIVE",
+    );
+  });
+
   it("COPY vs INFRA still follows decideIsolationVerdict", async () => {
     const copy = await buildBranch({ knownGoodInbox: 95, canaryInbox: 0 });
     const copyRun = await copy.branch.evaluate(AIRPODS.id, { campaignInSpam: true });

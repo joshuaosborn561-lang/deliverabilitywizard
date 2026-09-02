@@ -754,6 +754,7 @@ async function main(): Promise<void> {
         slack,
         threshold: config.remediationInboxThreshold,
         dryRun: config.dryRun,
+        campaigns: inventory.campaigns,
       });
       await state.save();
 

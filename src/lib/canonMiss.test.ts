@@ -114,6 +114,62 @@ describe("canon miss incidents (D163)", () => {
     assert.equal(rows[0]?.kind, "ugly");
   });
 
+  it("does not collect INCONCLUSIVE for a COMPLETED campaign (D165)", () => {
+    const rows = collectCanonMisses({
+      scores: [],
+      suspects: [],
+      latestRun: (id) =>
+        id === 3763805
+          ? {
+              verdict: "INCONCLUSIVE",
+              reason:
+                "No standing inbox-test reading for the mailboxes this campaign is sending from.",
+            }
+          : undefined,
+      threshold: 80,
+      extraCampaignIds: [3763805],
+      campaignStatus: (id) => (id === 3763805 ? "COMPLETED" : "ACTIVE"),
+    });
+    assert.deepEqual(rows, []);
+  });
+
+  it("does not page INCONCLUSIVE for STOPPED or PAUSED (D165)", () => {
+    assert.equal(
+      currentCanonMiss({
+        campaignId: 3763805,
+        campaignName: "BCP Logistics Over-1k (With Team)",
+        latestRun: { verdict: "INCONCLUSIVE", reason: "need another reading" },
+        threshold: 80,
+        status: "STOPPED",
+        sendingStatusesKnown: true,
+      }),
+      null,
+    );
+    assert.equal(
+      currentCanonMiss({
+        campaignId: 1,
+        latestRun: { verdict: "INCONCLUSIVE" },
+        threshold: 80,
+        status: "PAUSED",
+        sendingStatusesKnown: true,
+      }),
+      null,
+    );
+  });
+
+  it("still pages INCONCLUSIVE on an ACTIVE sender (D165)", () => {
+    const miss = currentCanonMiss({
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      score: { inboxPercent: 0, source: "canary-copy" },
+      latestRun: { verdict: "INCONCLUSIVE", reason: "need another reading" },
+      threshold: 80,
+      status: "ACTIVE",
+      sendingStatusesKnown: true,
+    });
+    assert.equal(miss?.kind, "INCONCLUSIVE");
+  });
+
   it("Slack copy names the campaign, the miss, and the in-thread ask", () => {
     const text = canonMissText({
       campaignId: 3847794,

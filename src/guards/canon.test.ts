@@ -5771,10 +5771,10 @@ describe("owner intent — D164 re-queue after INCONCLUSIVE", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D164\*\*/,
+      /D164/,
       stop(
-        "CANON is as of D164.",
-        "CANON.md header was not bumped to D164.",
+        "CANON still cites the INCONCLUSIVE re-queue (D164).",
+        "CANON.md lost the D164 citation.",
       ),
     );
     const decisions = await readFile(
@@ -5787,6 +5787,163 @@ describe("owner intent — D164 re-queue after INCONCLUSIVE", () => {
       stop(
         "The INCONCLUSIVE re-queue rule is in the ledger (D164).",
         "DECISIONS.md no longer has D164.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D165 isolation INCONCLUSIVE is ACTIVE-only", () => {
+  it("D165: COMPLETED / STOPPED / PAUSED do not page or re-queue INCONCLUSIVE", async () => {
+    const { isActiveSendingStatus, shouldRequeueIsolation } = await import(
+      "../lib/placementSuspect.js"
+    );
+    const inconclusive = {
+      existing: { evaluatedAt: "2026-08-24T12:00:00.000Z" },
+      openRun: { verdict: "INCONCLUSIVE" as const },
+    };
+    assert.equal(
+      shouldRequeueIsolation({ ...inconclusive, status: "COMPLETED" }),
+      false,
+      stop(
+        "COMPLETED campaigns must not D164 re-queue INCONCLUSIVE (D165).",
+        "shouldRequeueIsolation still re-queues COMPLETED — BCP #3763805 pages forever.",
+      ),
+    );
+    assert.equal(
+      shouldRequeueIsolation({ ...inconclusive, status: "PAUSED" }),
+      false,
+      stop(
+        "PAUSED is not sending — skip INCONCLUSIVE re-queue (D165).",
+        "shouldRequeueIsolation still re-queues PAUSED.",
+      ),
+    );
+    assert.equal(
+      shouldRequeueIsolation({ ...inconclusive, status: "ACTIVE" }),
+      true,
+      stop(
+        "ACTIVE INCONCLUSIVE still re-queues (D164/D165).",
+        "shouldRequeueIsolation no longer re-queues ACTIVE.",
+      ),
+    );
+    assert.equal(
+      isActiveSendingStatus("COMPLETED"),
+      false,
+      stop(
+        "COMPLETED is not an active sending status (D165).",
+        "isActiveSendingStatus treats COMPLETED as sending.",
+      ),
+    );
+
+    const { currentCanonMiss } = await import("../lib/canonMiss.js");
+    assert.equal(
+      currentCanonMiss({
+        campaignId: 3763805,
+        campaignName: "BCP Logistics Over-1k (With Team)",
+        latestRun: { verdict: "INCONCLUSIVE" },
+        threshold: 80,
+        status: "COMPLETED",
+        sendingStatusesKnown: true,
+      }),
+      null,
+      stop(
+        "COMPLETED must not collect an INCONCLUSIVE CANON miss (D165).",
+        "currentCanonMiss still pages INCONCLUSIVE on COMPLETED.",
+      ),
+    );
+    assert.equal(
+      currentCanonMiss({
+        campaignId: 3847794,
+        latestRun: { verdict: "INCONCLUSIVE" },
+        threshold: 80,
+        status: "ACTIVE",
+        sendingStatusesKnown: true,
+      })?.kind,
+      "INCONCLUSIVE",
+      stop(
+        "ACTIVE INCONCLUSIVE still pages (D163/D165).",
+        "currentCanonMiss dropped ACTIVE INCONCLUSIVE pages.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const ops = await readFile(
+      new URL("../services/opsAlerts.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      ops,
+      /campaignStatus/,
+      stop(
+        "alertCanonMisses must receive inventory statuses (D165).",
+        "opsAlerts.ts no longer passes campaignStatus into collectCanonMisses.",
+      ),
+    );
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    const healthBody = index.slice(
+      index.indexOf("const runHealth = async"),
+      index.indexOf("const runBounceAutostop"),
+    );
+    assert.match(
+      healthBody,
+      /campaigns: inventory\.campaigns/,
+      stop(
+        "The health pass hands the account book to alertCanonMisses (D165/D84).",
+        "index.ts no longer passes inventory.campaigns into alertCanonMisses.",
+      ),
+    );
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      branch,
+      /isActiveSendingStatus/,
+      stop(
+        "Isolation-branch leftover evaluate skips non-ACTIVE (D165).",
+        "isolationBranch.ts no longer checks isActiveSendingStatus.",
+      ),
+    );
+    assert.match(
+      branch,
+      /pageInconclusive/,
+      stop(
+        "notifyIsolationVerdict must not page INCONCLUSIVE on non-ACTIVE (D165).",
+        "isolationBranch.ts evaluate no longer gates INCONCLUSIVE Slack.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D165\*\*/,
+      stop(
+        "CANON is as of D165.",
+        "CANON.md header was not bumped to D165.",
+      ),
+    );
+    assert.match(
+      canon,
+      /COMPLETED \/ STOPPED \/ PAUSED/,
+      stop(
+        "CANON names non-ACTIVE skip for isolation INCONCLUSIVE (D165).",
+        "CANON.md lost the D165 COMPLETED/STOPPED/PAUSED rule.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D165 — Isolation INCONCLUSIVE Slack \/ D164 re-queue is ACTIVE-only/,
+      stop(
+        "The ACTIVE-only INCONCLUSIVE rule is in the ledger (D165).",
+        "DECISIONS.md no longer has D165.",
       ),
     );
   });

@@ -178,7 +178,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D161 | Live | Client-domain retire MUST buy a client-named replacement; generic/pool spins are only for generic/pool domains |
 | D162 | Live | 5.1.8 / AS(42004) opens the burned-domain retire ask without a burst and on PAUSED campaigns — D145/D146 were burst-nested and ACTIVE-only, so the 8/31 BCP sender block never Slacked |
 | D163 | Live | CANON / healthy-sending misses page Slack once per campaign per incident |
-| D164 | Live | INCONCLUSIVE (or uncovered evaluatedAt) re-queues isolation — evaluatedAt is not a lock |
+| D164 | Live — ACTIVE-only clause added by D165 | INCONCLUSIVE (or uncovered evaluatedAt) re-queues isolation — evaluatedAt is not a lock |
+| D165 | Live | Isolation INCONCLUSIVE Slack pages and D164 re-queue are ACTIVE-only — COMPLETED / STOPPED / PAUSED stay quiet |
 
 ---
 
@@ -4579,3 +4580,45 @@ three `copyCanaries` had emails and no `testId` so
 open-isolation semantics. copy-canary backfills the missing testId
 and does not stop a test isolation still needs. Placement new-queue
 stays ACTIVE-gated.
+
+## D165 — Isolation INCONCLUSIVE Slack / D164 re-queue is ACTIVE-only
+
+**Decision (2026-09-02).** BCP Logistics Over-1k (With Team) #3763805
+is COMPLETED in Smartlead (all leads finished, 0 in progress, not
+sending). State still held an Aug 24 INCONCLUSIVE isolation run
+(control INSUFFICIENT: "No standing inbox-test reading for the
+mailboxes this campaign is sending from."). D163 + D164 re-alerted
+that stale miss — `canonMissAlerted` already had
+`3763805:INCONCLUSIVE` and a fresh Slack page still fired.
+
+`liveCampaignForPlacementTrigger` already skips non-ACTIVE when
+mapping a canary/live score to a queue target. `collectCanonMisses`
+/ `alertCanonMisses` / leftover `isolationBranch.run()` evaluate /
+`notifyIsolationVerdict` did not, so extraCampaignIds from stale
+runs kept paging dead campaigns.
+
+**The rule.**
+
+1. Isolation INCONCLUSIVE Slack pages (D163 `ops_alert` /
+   `notifyIsolationVerdict`) only for **ACTIVE** senders.
+2. D164 re-queue (`shouldRequeueIsolation`) only for **ACTIVE**.
+3. Leftover unevaluated suspects on COMPLETED / STOPPED / PAUSED
+   are not re-evaluated on the 15-minute sweep.
+4. **PAUSED is skipped too.** Isolation remediates sending; a paused
+   campaign is not sending; D40 never auto-resumes. D162 5.1.8
+   retire-ask on PAUSED is a different path (sender burned) and
+   stays.
+5. ACTIVE ugly / INCONCLUSIVE without COPY/INFRA cover still pages
+   and still re-queues (D163/D164).
+
+**Supersedes / amends.** Amends D163 (INCONCLUSIVE page) and D164
+(re-queue) to ACTIVE-only. Does not change kill-only (D51), spend
+gates, D162 5.1.8, or COPY/INFRA pages. Does not START/STOP
+campaigns.
+
+**Guards.** canon D165: `alertCanonMisses` receives inventory
+statuses; `currentCanonMiss` skips INCONCLUSIVE when statuses are
+known and the campaign is not ACTIVE; `shouldRequeueIsolation`
+gates D164; isolation-branch leftover evaluate skips non-ACTIVE;
+CANON names ACTIVE-only INCONCLUSIVE. Tests: COMPLETED must not
+page INCONCLUSIVE; ACTIVE still pages.

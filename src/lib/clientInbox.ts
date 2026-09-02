@@ -2,6 +2,7 @@ import type { AppConfig } from "../config.js";
 import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
+import { isBcpOwnedDomain } from "./bcp.js";
 import { emailDomainOf } from "./isolationDomain.js";
 import { hasPoolMarkerTag } from "./markerClients.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
@@ -70,6 +71,10 @@ export function isGenericMailbox(
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
   const domain = emailDomainOf(normalized);
+  // D169 / D99 / D161 — client-named BCP domains are client inventory,
+  // never a generic. A leftover GENERIC tag, marker client_id, or
+  // extraGenericMailbox from-name must not pull them out of A/B rest.
+  if (domain && isBcpOwnedDomain(domain)) return false;
   if (isGenericPoolDomain(domain)) return true;
   // D142 — generic-pool membership by domain, independent of pre-warmed.
   if (domain && config.extraGenericDomains.includes(domain)) return true;

@@ -113,6 +113,40 @@ describe("isClientInbox", () => {
     );
   });
 
+  it("D169: a client-named BCP domain is never a generic", () => {
+    assert.equal(
+      isGenericMailbox(
+        {
+          client_id: 542838,
+          from_name: "Harmony Norris",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "alex@getboldercyperpartner.info",
+        fleet,
+        {
+          getPoolMailbox: () =>
+            ({ email: "alex@getboldercyperpartner.info", status: "assigned" }) as never,
+          isMarkerClientId: () => true,
+        },
+      ),
+      false,
+      "boldercyper domains stay client inventory even with leftover generic marks",
+    );
+    assert.equal(
+      isClientInbox(
+        {
+          client_id: 542838,
+          from_name: "Harmony Norris",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "alex@getboldercyperpartner.info",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
+  });
+
   it("rejects mailboxes with no client_id", () => {
     assert.equal(
       isClientInbox(

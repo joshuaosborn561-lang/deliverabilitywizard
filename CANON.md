@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D168** (2026-09-02). One page of current truth. When a new
+Canon as of **D169** (2026-09-02). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -77,12 +77,21 @@ or the day is done. Silent findings are a bug (D163).
   and so is anything that owes warmup days — staffing never hands the gate
   its next pull; a fresh import waits out its 21 days even if its campaigns
   sit under floor meanwhile (D139).
-- **Rest (pods)**: each client's inboxes split into a stable, even A/B. The
-  off-week half comes OFF live campaigns (never left on at 0/day); warmup
-  stays on; resting is not staffable (D43). The split is visible in
-  Smartlead as POD-A/POD-B mailbox tags, converged 6-hourly — decoration
-  for humans, never read back by code (D135). Generics rest on their own clock:
-  ~14 days of live send, then sit ~14, then supply again (D43).
+- **Rest (pods)**: each client's inboxes split into a stable, even A/B
+  (D43). Off-week comes OFF **ACTIVE, PAUSED, and STOPPED** client
+  campaign memberships — never left on at 0/day, and never left parked
+  on a paused/stopped campaign that is not sending (D169). Warmup stays
+  on; resting is not staffable. PAUSED/STOPPED attachments are still in
+  the A/B pods; they cannot hoard inventory out of the ACTIVE pool.
+  On-week staffs **every ACTIVE** campaign for that client (D59),
+  including boxes whose only current memberships are PAUSED/STOPPED,
+  and clears those leftover attachments. Client-named BCP domains
+  (`boldercyper*`) are client inventory, never skipped as generics
+  (D99/D169). Excluded / canary / pod-control shells are not touched.
+  The split is visible in Smartlead as POD-A/POD-B mailbox tags,
+  converged 6-hourly — decoration for humans, never read back by code
+  (D135). Generics rest on their own clock: ~14 days of live send, then
+  sit ~14, then supply again (D43).
 - **Generics** staff only a POC client (currently Goliath) or a campaign Josh
   Slack-approved (D81/D82). "Generic" and "POC" are **mailbox tags**, never
   Smartlead clients — Josh does not pay for pool labels (D160). A box

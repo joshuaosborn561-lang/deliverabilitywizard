@@ -157,7 +157,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
 | D140 | Live | A bounce burst reads the SMTP reasons; tenant caps alert once/day |
 | D141 | Amended by D148 | Burst detection lives (sampled sends <24h; ledger dumps inert; lifetime-rate retired); the pause action is retired — a burst investigates, remediates, re-queues |
-| D142 | Live | Generic is a pool (client record), pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged |
+| D142 | Live — marker-client-records clause superseded by D160 | Generic is a pool, pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged (now moot) |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
 | D145 | Amended by D146 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146) |
@@ -174,6 +174,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D157 | Live | Smartlead bounce protection is UI-only: POST settings validates `bounce_autopause_threshold` then DISCARDS it (a "banana" write returned ok; a Peterson campaign still showed 7% after fleet-wide writes) — every API "off" write (D80 100 / D124 force / D155 null) was a no-op and the converge is deleted; off-switch = campaign SETUP page, attribution = `campaign_activity_logs.paused_reason` |
 | D158 | Live | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra) — not a D71 placement Slack page; TechEvo AirPods 0% canary was the miss |
 | D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
+| D160 | Live | Generic and POC are mailbox tags, never Smartlead clients — Josh does not pay for pool labels; leftover client records detach then get deleted in the UI |
 | D161 | Live | Client-domain retire MUST buy a client-named replacement; generic/pool spins are only for generic/pool domains |
 
 ---
@@ -4340,6 +4341,59 @@ trigger, the COPY vs INFRA rules, or D51.
 health window; `/health` names `placementIsolation`; CANON names
 D159. Service tests: ugly-without-isolation helper; isolation-branch
 records placement scores.
+
+## D160 — Generic and POC are mailbox tags, never Smartlead clients
+
+**Decision (Josh, 2026-09-02).** "poc and generic should not be
+clients in smartlead i dont wanna pay for them… those should just be
+internal tags for mailboxes not actual clients."
+
+D142 created two billable Smartlead client records named Generic
+(#567173) and POC (#567174) as mailbox-pool labels. They have no
+campaigns. Josh does not want to pay for them.
+
+**The rule.**
+
+1. Never create Smartlead clients named Generic or POC. `ensureClient`
+   / `client/save` is deleted.
+2. GENERIC and POC are Smartlead **mailbox tags** (same tier as
+   POD-A/POD-B). A box carrying either tag is a generic to every
+   classifier. Classification also stays: pool domains,
+   `EXTRA_GENERIC_DOMAINS`, pool state, pre-warmed fleets, and a
+   leftover D142 client_id until it is detached.
+3. Domain audit: a generic-fleet / pool box missing the tag gets
+   GENERIC (never a `client_id`). Leftover Generic/POC `client_id`s
+   are cleared. Confident real-client attach is unchanged (D142/D143).
+4. One-client: leftover Generic/POC `client_id` is cleared, never
+   rewritten to Goliath. A generic with no `client_id` does not get
+   Goliath written. D76 leftover *real* client_id (Peterson → Goliath)
+   stays.
+5. Goliath remains the POC *client* (D81/D82) — a real paying client
+   that may receive generics. That is not the Smartlead record named
+   "POC".
+6. Smartlead has no delete-client API. After mailboxes are detached,
+   delete the empty Generic and POC client records in the Smartlead UI
+   to stop billing. The machine never recreates them.
+
+**Would this break staffing?** No. Generics are identified by domain /
+pool / tag, not by sitting on a paid client record. They still staff
+Goliath (or Slack-approved) campaigns. One-client membership, fan-out,
+rest clocks, and the warmup gate do not read those client ids as
+owners.
+
+**Supersedes / amends.** Supersedes D142 clause 2 (Generic and POC
+are Smartlead client records). D142 clauses 1 (generic ≠ pre-warmed)
+and 3 (confident attach) stay. The staged POC mailbox-owner re-point
+stays staged and is now moot — there is no POC marker client to
+re-point to.
+
+**Guards.** canon D160: `ensureClient` / `client/save` gone; domain
+audit tags GENERIC and clears leftover marker `client_id`s; one-client
+`clearMarkerClientId` and no `keepClientId`; `isGenericMailbox` reads
+`hasPoolMarkerTag`; CANON names D160. retired: ensureClient stays
+deleted. Unit tests: tag helpers; GENERIC tag classifies; audit tags +
+detaches leftover and still attaches salesglider; one-client clears
+marker id and does not write Goliath.
 
 ## D161 — Client-domain retire buys a client-named replacement, never a generic spin
 

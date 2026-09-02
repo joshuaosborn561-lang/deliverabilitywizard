@@ -200,7 +200,7 @@ export interface AppState {
   /** D81 — Josh Slack-approved generic backfill, per campaign. */
   genericBackfillApprovals: Record<string, GenericBackfillApproval>;
   domainAdvisories: DomainClientAdvisory[];
-  /** D142 — Smartlead ids of the Generic / POC marker clients. */
+  /** D160 — leftover D142 Generic / POC client ids, stamped only to drain. */
   markerClients: { genericId?: number; pocId?: number };
   /** D147 — restarted bounce-paused campaigns whose incident leads are being re-queued. */
   bounceResurrectionJobs: Record<string, BounceResurrectionJob>;
@@ -1125,7 +1125,7 @@ export class StateStore {
     return this.state.domainAdvisories;
   }
 
-  /** D142 — the Generic/POC marker clients are pools, never real clients. */
+  /** D160 — leftover Generic/POC client ids, recognised only so we can detach. */
   setMarkerClientIds(ids: { genericId?: number; pocId?: number }): void {
     this.state.markerClients = { ...this.state.markerClients, ...ids };
   }

@@ -188,4 +188,54 @@ describe("OneClientMembershipService", () => {
     assert.deepEqual(added, []);
     assert.equal(result.restored.length, 0);
   });
+
+  it("clears a leftover Generic/POC client_id and does not write Goliath (D160)", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const tagged: number[][] = [];
+    const state = new StateStore(
+      `/tmp/one-client-d160-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setMarkerClientIds({ genericId: 900001, pocId: 900002 });
+    const service = new OneClientMembershipService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
+          { id: 9, name: "Pod control shell", status: "PAUSED", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "aaravsanchez@getoutreachdesk.info",
+            from_name: "Aarav Sanchez",
+            signature: "Aarav Sanchez\nGoliath Cybersecurity",
+            client_id: 900001,
+            campaign_ids: [1, 9],
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+          { id: 900001, name: "Generic", logo: "Generic" },
+        ],
+        ensureTag: async (name: string) => ({ id: 71, name }),
+        assignTags: async (ids: number[]) => {
+          tagged.push([...ids]);
+        },
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+      } as unknown as SmartleadClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(tagged, [[11]]);
+    assert.equal(updates[0]?.fields.client_id, null);
+    assert.equal(updates[0]?.fields.signature, undefined);
+    assert.equal(result.signaturesSet, 0);
+    assert.equal(result.restored.length, 0);
+  });
 });

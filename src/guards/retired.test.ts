@@ -196,6 +196,22 @@ describe("owner intent — D129 retired machinery stays deleted", () => {
   });
 });
 
+describe("owner intent — D160 marker clients stay deleted", () => {
+  it("D160: ensureClient is gone so Generic/POC cannot be recreated", async () => {
+    const src = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../clients/smartlead.ts", import.meta.url), "utf8"),
+    );
+    assert.doesNotMatch(
+      src,
+      /async ensureClient\(|client\/save/,
+      stop(
+        "The Generic/POC Smartlead client creator is deleted (D160).",
+        "smartlead.ts grew ensureClient / client/save again.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D130 the rotation engine is gone", () => {
   it("D130: engine files stay deleted and no knob can revive a pull", async () => {
     const { access } = await import("node:fs/promises");

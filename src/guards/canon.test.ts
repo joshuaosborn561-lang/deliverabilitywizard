@@ -2596,7 +2596,7 @@ describe("owner intent — D141 a bounce burst is fresh sends, never a ledger du
 });
 
 describe("owner intent — D142 generic is a pool, pre-warmed is a grant", () => {
-  it("D142: the two lists are separate; markers are generics; the POC re-point stays staged", async () => {
+  it("D142: the two lists are separate; pool tags are generics; the POC re-point stays staged", async () => {
     const read = (path: string) =>
       import("node:fs/promises").then((fs) =>
         fs.readFile(new URL(path, import.meta.url), "utf8"),
@@ -2647,32 +2647,29 @@ describe("owner intent — D142 generic is a pool, pre-warmed is a grant", () =>
     const { isGenericMailbox } = await import("../lib/clientInbox.js");
     assert.equal(
       isGenericMailbox(
-        { client_id: 777, from_name: "Any Body" },
+        { from_name: "Any Body", tags: [{ tag_name: "GENERIC" }] },
         "a@someclientdomain.com",
         {
           extraGenericMailboxes: [],
           extraGenericDomains: [],
           prewarmedDomains: [],
         },
-        {
-          getPoolMailbox: () => undefined,
-          isMarkerClientId: (id: number | null | undefined) => id === 777,
-        },
+        { getPoolMailbox: () => undefined },
       ),
       true,
       stop(
-        "A box assigned to the Generic/POC marker client is a generic (D142).",
-        "isGenericMailbox no longer recognises marker-client ids.",
+        "A box tagged GENERIC/POC is a generic (D160).",
+        "isGenericMailbox no longer recognises pool-marker tags.",
       ),
     );
 
     const oneClient = await read("../services/oneClientMembership.ts");
     assert.match(
       oneClient,
-      /markerOwned/,
+      /clearMarkerClientId/,
       stop(
-        "A Generic/POC client_id is a deliberate assignment one-client must not rewrite (D142).",
-        "oneClientMembership.ts reverts marker-owned boxes to the POC client again.",
+        "A leftover Generic/POC client_id is cleared, not rewritten to Goliath (D160).",
+        "oneClientMembership.ts lost the leftover-marker detach.",
       ),
     );
 
@@ -4864,9 +4861,10 @@ describe("owner intent — D135/D136 fleet visibility", () => {
       new URL("../services/domainClientAudit.ts", import.meta.url),
       "utf8",
     );
-    // D142 amended D136: a CONFIDENT match (exactly one client token in
-    // the domain base, or a generic-fleet orphan → the Generic marker)
-    // attaches; everything else is still an advisory, never a guess.
+    // D142/D160: a CONFIDENT match (exactly one client token in the
+    // domain base) attaches to that real client. Generic-fleet orphans
+    // get a GENERIC tag, never a Smartlead client. Everything else is
+    // still an advisory, never a guess.
     assert.match(
       audit,
       /confidentClientForDomain/,
@@ -5276,6 +5274,89 @@ describe("owner intent — D159 isolation on-ramp is the 15-minute sweep", () =>
       stop(
         "The 15-minute on-ramp cadence is in the ledger (D159).",
         "DECISIONS.md no longer has D159.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D160 Generic and POC are mailbox tags", () => {
+  it("D160: no Smartlead Generic/POC clients; tags label the pool; leftover ids detach", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+
+    const smartlead = await read("../clients/smartlead.ts");
+    assert.doesNotMatch(
+      smartlead,
+      /ensureClient|client\/save/,
+      stop(
+        "Generic and POC are never created as Smartlead clients (D160).",
+        "smartlead.ts still has ensureClient / client/save.",
+      ),
+    );
+
+    const audit = await read("../services/domainClientAudit.ts");
+    assert.doesNotMatch(
+      audit,
+      /ensureClient/,
+      stop(
+        "The domain audit never creates Generic/POC clients (D160).",
+        "domainClientAudit.ts still calls ensureClient.",
+      ),
+    );
+    assert.match(
+      audit,
+      /GENERIC_TAG/,
+      stop(
+        "Generic-fleet boxes get a GENERIC mailbox tag (D160).",
+        "domainClientAudit.ts lost the GENERIC tag converge.",
+      ),
+    );
+    assert.match(
+      audit,
+      /client_id: null/,
+      stop(
+        "Leftover Generic/POC client_ids are cleared (D160).",
+        "domainClientAudit.ts no longer detaches leftover marker clients.",
+      ),
+    );
+
+    const oneClient = await read("../services/oneClientMembership.ts");
+    assert.match(
+      oneClient,
+      /clearMarkerClientId/,
+      stop(
+        "One-client clears leftover Generic/POC client_ids (D160).",
+        "oneClientMembership.ts writes those boxes onto Goliath again.",
+      ),
+    );
+    assert.doesNotMatch(
+      oneClient,
+      /keepClientId/,
+      stop(
+        "One-client no longer keeps a Generic/POC client_id (D160).",
+        "oneClientMembership.ts still has keepClientId.",
+      ),
+    );
+
+    const inbox = await read("../lib/clientInbox.ts");
+    assert.match(
+      inbox,
+      /hasPoolMarkerTag/,
+      stop(
+        "A GENERIC/POC tag classifies a mailbox as a generic (D160).",
+        "clientInbox.ts no longer reads pool-marker tags.",
+      ),
+    );
+
+    const canon = await read("../../CANON.md");
+    assert.match(
+      canon,
+      /D160/,
+      stop(
+        "CANON still names mailbox tags not clients (D160).",
+        "CANON.md lost D160.",
       ),
     );
   });

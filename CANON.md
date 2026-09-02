@@ -65,7 +65,8 @@ Slack speaks only when a human decision is needed or the day is done.
 - **One client per sender, hard.** An inbox sits on every ACTIVE campaign of
   exactly one client (plus paused shells). Foreign-client memberships are
   pulled every 15 minutes and the signature reset to the owner (D26, D75).
-  Generics with a stale `client_id` belong to the POC client (D76).
+  Generics with a stale *real* `client_id` belong to the POC client (D76);
+  a leftover Generic/POC client_id is cleared, not rewritten (D160).
 - **Floor = half that client's own inboxes** (connected, not held, not
   resting, not retired, not canary — D58, D82, D99). No named-client
   exceptions; Vasco is nobody special (D82). The old global 50 floor is dead.
@@ -82,11 +83,14 @@ Slack speaks only when a human decision is needed or the day is done.
   for humans, never read back by code (D135). Generics rest on their own clock:
   ~14 days of live send, then sit ~14, then supply again (D43).
 - **Generics** staff only a POC client (currently Goliath) or a campaign Josh
-  Slack-approved (D81/D82). "Generic" and "POC" exist as Smartlead client
-  records used purely as mailbox pools: a box assigned to either is a
-  generic to every classifier, and one-client never rewrites that
-  assignment; the mailbox-side owner re-point to POC is staged, not live
-  (D142); a domain-retire tap is one fell swoop (D150): pull the burned
+  Slack-approved (D81/D82). "Generic" and "POC" are **mailbox tags**, never
+  Smartlead clients — Josh does not pay for pool labels (D160). A box
+  tagged GENERIC or POC is a generic to every classifier (also: pool
+  domain, `EXTRA_GENERIC_DOMAINS`, pool state, leftover D142 client_id
+  until detached). One-client never writes those boxes onto a client
+  record; leftover Generic/POC `client_id`s are cleared. The mailbox-side
+  owner re-point to a POC *client* stays staged and is now moot (D142).
+  A domain-retire tap is one fell swoop (D150): pull the burned
   inboxes, buy a replacement domain whose Google/Outlook mailbox mix
   matches what was retired, and auto-approve generics to cover the ACTIVE
   campaigns it cut until those replacements warm (D134). **A client-domain
@@ -231,17 +235,21 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
 - **DNS**: audited against public resolvers every monitor pass; never writes
   DNS; findings stay in logs (D71).
 - **Domain→client**: the audit first makes the CONFIDENT fixes itself —
-  a generic-fleet box with no client_id joins the Generic marker, and an
-  unmapped domain whose base carries exactly one client's distinctive
-  token attaches to that client (D142) — but a box that still owes warmup
-  days is not attach supply: the client_id write is deferred (EOD-brief
-  advisory says so) until the 21-day clock is served, because handing a
-  2-day-old box a client_id on 8/27 let an outside writer staff it
-  straight onto live campaigns (D143). Everything else — split_clients
-  always, ambiguous or token-less domains — is an advisory: logs plus one
-  EOD-brief section, never a guess, and a box already carrying a real
-  client_id is never rewritten (D136/D142). Generic fleets, BCP domains,
-  the isolation domain, canaries and retired domains are exempt.
+  a generic-fleet / pool box missing a GENERIC/POC tag gets the GENERIC
+  tag (never a client_id), leftover Generic/POC client_ids are cleared,
+  and an unmapped domain whose base carries exactly one client's
+  distinctive token attaches to that *real* client (D142/D160) — but a
+  box that still owes warmup days is not attach supply: the client_id
+  write is deferred (EOD-brief advisory says so) until the 21-day clock
+  is served, because handing a 2-day-old box a client_id on 8/27 let an
+  outside writer staff it straight onto live campaigns (D143). Everything
+  else — split_clients always, ambiguous or token-less domains — is an
+  advisory: logs plus one EOD-brief section, never a guess, and a box
+  already carrying a real client_id is never rewritten (D136/D142).
+  Generic fleets, BCP domains, the isolation domain, canaries and retired
+  domains are exempt. The leftover Generic and POC Smartlead client
+  records are never recreated; once mailboxes are detached, delete them
+  in the Smartlead UI to stop billing (no delete-client API).
 - **Lead runout**: log at half, three-quarters, done; never import; a
   working campaign running low is urgent in `/ops` (D52).
 - **Sending IPs**: census from placement reports we already pull; never buy

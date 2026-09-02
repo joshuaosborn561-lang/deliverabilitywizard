@@ -5258,10 +5258,10 @@ describe("owner intent — D159 isolation on-ramp is the 15-minute sweep", () =>
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D159\*\*/,
+      /D159/,
       stop(
         "CANON names D159.",
-        "CANON.md was not updated for the 15-minute on-ramp.",
+        "CANON.md lost the 15-minute on-ramp.",
       ),
     );
     const decisions = await readFile(

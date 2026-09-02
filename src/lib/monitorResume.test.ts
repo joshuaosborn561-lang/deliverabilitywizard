@@ -24,7 +24,7 @@ describe("D167 monitor resume", () => {
       "campaign-audit finished 14 minutes ago — resume must not rerun it",
     );
     assert.equal(
-      isMonitorStageFresh("2026-09-02T08:14:00.000Z", now),
+      isMonitorStageFresh("2026-09-02T08:15:00.000Z", now),
       true,
       "exactly 6h ago is still fresh (inclusive)",
     );

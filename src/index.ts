@@ -886,11 +886,9 @@ async function main(): Promise<void> {
       if (config.enablePodControls) {
         await stage("pod-tags", () => podTags.run(), { skipIfFreshMs });
       }
-      const monitorResult = await stage(
-        "monitor-results",
-        () => monitor.run(),
-        { skipIfFreshMs },
-      );
+      const monitorResult = await stage("monitor-results", () => monitor.run(), {
+        skipIfFreshMs,
+      });
       feedBugRemediator(
         "monitor",
         (monitorResult as { errors?: string[] })?.errors ?? [],
@@ -910,18 +908,13 @@ async function main(): Promise<void> {
       }
       // Zone-level faults are invisible from inside Smartlead; resolve DNS
       // directly so a domain sending without SPF cannot stay silent.
-      const dnsAuditResult: unknown = await stage(
-        "dns-audit",
-        () => dnsAudit.run(),
-        { skipIfFreshMs },
-      );
+      const dnsAuditResult: unknown = await stage("dns-audit", () => dnsAudit.run(), {
+        skipIfFreshMs,
+      });
       // Campaign-level audit (read-only). Staffing mutations live on the
       // faster CRON_HEALTH loop so thin campaigns do not wait six hours.
-      const campaignAuditResult: unknown = await stage(
-        "campaign-audit",
-        () => campaignAudit.run(),
-        { skipIfFreshMs },
-      );
+      const campaignAuditResult: unknown = await stage("campaign-audit", () =>
+        campaignAudit.run(), { skipIfFreshMs });
       // D52 — remaining leads. Campaign audit watches senders, not this number.
       let leadRunoutResult: unknown = null;
       if (config.enableLeadRunout) {
@@ -932,11 +925,9 @@ async function main(): Promise<void> {
       // D53 — sending IPs from placement reports we already pull.
       let sendingInfraResult: unknown = null;
       if (config.enableSendingInfraCensus) {
-        sendingInfraResult = await stage(
-          "sending-infra",
-          () => sendingInfra.run(),
-          { skipIfFreshMs },
-        );
+        sendingInfraResult = await stage("sending-infra", () => sendingInfra.run(), {
+          skipIfFreshMs,
+        });
       }
       let podControlResult: unknown = null;
       if (config.enablePodControls) {
@@ -964,16 +955,12 @@ async function main(): Promise<void> {
         });
       }
       if (config.enableCopyIsolation) {
-        await stage(
-          "copy-isolation",
-          async () => {
-            for (const run of state.listIsolationRuns()) {
-              if (!run.teardownStarted) continue;
-              await copyIsolation.runForCampaign(run);
-            }
-          },
-          { skipIfFreshMs },
-        );
+        await stage("copy-isolation", async () => {
+          for (const run of state.listIsolationRuns()) {
+            if (!run.teardownStarted) continue;
+            await copyIsolation.runForCampaign(run);
+          }
+        }, { skipIfFreshMs });
       }
       return {
         monitor: monitorResult,

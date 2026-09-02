@@ -61,7 +61,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D40 | Live |
 | D41 | Mostly superseded (D43 cohorts, D50 clock, D71 Slack) — burn checklist and DKIM/DMARC advisory live |
 | D42 | Superseded by D43 |
-| D43 | Live |
+| D43 | Live — qualified by D169 (off-week also leaves PAUSED/STOPPED) |
 | D44 | Historical one-shot (ran 2026-08-21) |
 | D45 | Live |
 | D46 | Live — enforced by D106 |
@@ -77,7 +77,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D56 | Live |
 | D57 | Burned number — no entry exists |
 | D58 | Superseded by D82 (POC pattern) — half-client floor lives on there |
-| D59 | Historical one-shot (ran 2026-08-24) |
+| D59 | Historical one-shot (ran 2026-08-24) — on-week every ACTIVE extended by D169 |
 | D60 | Live |
 | D61 | Historical one-shot (ran 2026-08-24; destructive) |
 | D62 | Burned number — no entry exists |
@@ -183,6 +183,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D166 | Live | pod-cover ticks every health pass so lastOkAt cannot freeze; /health names overdue stages |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 | D168 | Live | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
+| D169 | Live | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
 
 ---
 
@@ -4781,3 +4782,67 @@ on jet ski, Red Sox / `{{Local_Sports_Team}}` tickets, and AirPods —
 offer keywords survive; pen-test / Quick note do not. `copyVariants`
 does not slice sentence elements to 80. CANON names the job
 classifier. Unit tests in `isolationActions.test.ts`.
+
+## D169 — A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE
+
+**Decision (Josh, 2026-09-02).** "Fix pod A/B rest so paused/stopped
+campaigns cannot trap client inboxes out of the ACTIVE staffing pool.
+Then BCP (and every client) gets the full on-week half on ACTIVE
+campaigns."
+
+Correct model (D41–D43 / D59): ALL client-sendable inboxes for a
+client split A/B (stable hash). Off-week comes off live sending
+memberships; warmup stays on; resting ≠ staffable. On-week staffs
+**every ACTIVE** campaign for that client (D59), not only campaigns
+they happened to be on before. PAUSED campaigns are not sending, but
+their attached mailboxes are **still in the A/B pods**.
+
+**The bug (BCP client_id 542838, 2026-09-02).** ~86–96 unique client
+mailboxes. Only ~29 unique on ACTIVE No Team. ~44 unique still
+attached to PAUSED With Team; ~44 on STOPPED client-named-domain
+campaigns. `ClientRestService` filtered `onCampaigns` to **ACTIVE
+only** when benching, so off-week boxes on PAUSED never came off.
+Restore targeted ACTIVE (correct) but ACTIVE stayed thin: inventory
+was frozen on PAUSED/STOPPED, and some client-named BCP domains
+were skipped as generics.
+
+**The rule.**
+
+1. Off-week bench removes client inboxes from ACTIVE, PAUSED, and
+   STOPPED client campaign memberships. Last-account-on-campaign
+   guard stays. Excluded / canary / pod-control shells are not
+   touched. COMPLETED / DRAFT are not rest-detach targets. Bench
+   the off-week half **before** on-week restore so last-account on
+   a PAUSED campaign still sees on-week members; hygiene then
+   clears the hoard.
+2. On-week restore still targets every ACTIVE client campaign (D59).
+   Candidates include boxes whose only memberships are PAUSED/STOPPED.
+   Client-named BCP domains (`boldercyper*`) are client inventory,
+   never generics — a leftover GENERIC tag, marker client_id, or
+   fleet from-name must not skip them.
+3. On-week restore also clears leftover PAUSED/STOPPED attachments
+   so rotation cannot hoard the sending half there.
+4. Does **not** auto-START PAUSED campaigns (D40). BCP With Team
+   stays PAUSED.
+
+**Why.** Josh: the on-week half must sit on every ACTIVE campaign.
+A paused or stopped membership is not a rest exemption and is not
+staffable sending — leaving boxes there starves ACTIVE.
+
+**Tradeoff.** Last-account guard can leave one box on a PAUSED or
+STOPPED campaign. Accepted: emptying a campaign still waits for
+top-up. We do not START paused campaigns from this path.
+
+**Supersedes / amends.** Qualifies D43 (off-week leaves ACTIVE *and*
+PAUSED/STOPPED memberships, not ACTIVE only). Extends D59 (on-week
+still every ACTIVE; PAUSED/STOPPED-only boxes stay in the pod).
+Does not change D40, D154 warmup restore veto, or the generic
+send-clock.
+
+**Guards.** `isRestDetachableCampaign` includes ACTIVE/PAUSED/STOPPED
+and excludes shells/excluded/COMPLETED; bench uses it (the ACTIVE-only
+filter is the retired bug). `onWeekTargets` stays ACTIVE-only.
+`isGenericMailbox` returns false for BCP-owned domains. Tests:
+off-week removed from PAUSED/STOPPED; on-week only-on-PAUSED restored
+to every ACTIVE; BCP-owned domain is not a generic skip; last-account
+still holds on PAUSED; canon D169.

@@ -6275,10 +6275,10 @@ describe("owner intent — D168 word-hunt suggested edit keeps the offer", () =>
     );
     assert.match(
       canon,
-      /Canon as of \*\*D168\*\*/,
+      /D168/,
       stop(
-        "CANON is as of D168.",
-        "CANON.md header was not bumped to D168.",
+        "CANON names the offer-preserving substitute (D168).",
+        "CANON.md lost D168.",
       ),
     );
     assert.match(
@@ -6299,6 +6299,100 @@ describe("owner intent — D168 word-hunt suggested edit keeps the offer", () =>
       stop(
         "The offer-preserving substitute rule is in the ledger (D168).",
         "DECISIONS.md no longer has D168.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D169 A/B rest does not let PAUSED hoard the pod", () => {
+  it("D169: off-week detaches from PAUSED/STOPPED; on-week still every ACTIVE", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      rest,
+      /isRestDetachableCampaign/,
+      stop(
+        "A/B rest names the detachable-membership helper (D169).",
+        "clientRest.ts lost isRestDetachableCampaign.",
+      ),
+    );
+    assert.match(
+      rest,
+      /REST_DETACH_STATUSES/,
+      stop(
+        "Rest detach statuses are a named set (D169).",
+        "clientRest.ts no longer names REST_DETACH_STATUSES.",
+      ),
+    );
+    assert.match(
+      rest,
+      /"PAUSED"/,
+      stop(
+        "Off-week rest detaches from PAUSED campaigns (D169).",
+        "clientRest.ts no longer lists PAUSED as a rest-detach status.",
+      ),
+    );
+    assert.match(
+      rest,
+      /"STOPPED"/,
+      stop(
+        "Off-week rest detaches from STOPPED campaigns (D169).",
+        "clientRest.ts no longer lists STOPPED as a rest-detach status.",
+      ),
+    );
+    assert.match(
+      rest,
+      /leftoverPausedOrStopped/,
+      stop(
+        "On-week restore clears leftover PAUSED/STOPPED attachments (D169).",
+        "clientRest.ts no longer hygiene-clears PAUSED/STOPPED on restore.",
+      ),
+    );
+    const inbox = await readFile(
+      new URL("../lib/clientInbox.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      inbox,
+      /isBcpOwnedDomain\(domain\)\) return false/,
+      stop(
+        "Client-named BCP domains are never classified as generics (D169).",
+        "isGenericMailbox no longer exempts BCP-owned domains.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D169\*\*/,
+      stop(
+        "CANON is as of D169.",
+        "CANON.md header was not bumped to D169.",
+      ),
+    );
+    assert.match(
+      canon,
+      /ACTIVE, PAUSED, and STOPPED/,
+      stop(
+        "CANON says off-week leaves ACTIVE, PAUSED, and STOPPED (D169).",
+        "CANON.md lost the D169 rest-detach rule.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D169 — A\/B rest detaches off-week from PAUSED and STOPPED/,
+      stop(
+        "The paused-hoard rest rule is in the ledger (D169).",
+        "DECISIONS.md no longer has D169.",
       ),
     );
   });

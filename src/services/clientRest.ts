@@ -32,12 +32,41 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * D43 — per-client A/B rest. Half of that client's inboxes sit for two
  * weeks (off live campaigns, warmup on). Generics are not in this loop.
  *
+ * D169 — off-week detach is ACTIVE + PAUSED + STOPPED. A PAUSED/STOPPED
+ * membership still holds the box in the A/B pod; filtering bench to
+ * ACTIVE only left BCP With Team (PAUSED) and STOPPED client-named
+ * campaigns hoarding the off-week half, so ACTIVE stayed thin. On-week
+ * restore still targets every ACTIVE client campaign (D59) and also
+ * clears leftover PAUSED/STOPPED attachments so they cannot trap the
+ * on-week half. Excluded / canary / pod-control shells stay untouched.
+ *
  * D154 — on-week restore must not re-staff inboxes that still owe warmup.
  * Health runs client-rest *before* the warmup gate every pass; without this
  * check, under-warmed Parlay/Culturefits boxes were put back on every
  * ACTIVE client campaign each cycle (the D143 "boomerang"), then pulled
  * again — an in-app fight, not an outside sync.
  */
+
+/** Live-client statuses rest may detach from (D169). COMPLETED/DRAFT stay. */
+export const REST_DETACH_STATUSES = new Set(["ACTIVE", "PAUSED", "STOPPED"]);
+
+/**
+ * True when A/B rest may remove this membership. PAUSED and STOPPED are
+ * included — they are not sending, but they still occupy the pod (D169).
+ * Shells and TOP_UP_EXCLUDE_CAMPAIGNS stay out via `isExcluded`.
+ */
+export function isRestDetachableCampaign(
+  campaign:
+    | { id: number; name?: string | null; status?: string | null }
+    | undefined,
+  excluded: string[],
+): boolean {
+  if (!campaign) return false;
+  const status = String(campaign.status ?? "").toUpperCase();
+  if (!REST_DETACH_STATUSES.has(status)) return false;
+  if (isExcluded(campaign, excluded)) return false;
+  return true;
+}
 
 export interface ClientRestResult {
   dryRun: boolean;
@@ -191,6 +220,18 @@ export class ClientRestService {
       }
     }
 
+    type RestWork = {
+      account: SmartleadAccountWithCampaigns;
+      email: string;
+      groupKey: string;
+      cohort: RestCohort;
+      existing: ReturnType<StateStore["getRestingInbox"]>;
+      detachable: number[];
+      alreadyOnActive: number[];
+    };
+    const offWeek: RestWork[] = [];
+    const onWeek: RestWork[] = [];
+
     for (const { account, email, groupKey } of candidates) {
       result.examined += 1;
       const cohort = cohortByEmail.get(email);
@@ -201,112 +242,127 @@ export class ClientRestService {
         continue;
       }
 
-      const off = isOffWeek(cohort, now);
       const existing = this.state.getRestingInbox(email);
       if (existing?.kind === "generic") continue;
 
-      const onCampaigns = campaignIdsOf(account).filter((id) => {
+      // D169 — detachable = ACTIVE + PAUSED + STOPPED. The old ACTIVE-only
+      // filter left off-week boxes parked on PAUSED/STOPPED forever.
+      const detachable = campaignIdsOf(account).filter((id) =>
+        isRestDetachableCampaign(
+          campaignById.get(id),
+          this.config.topUpExcludeCampaigns,
+        ),
+      );
+      const alreadyOnActive = detachable.filter((id) => {
         const campaign = campaignById.get(id);
-        if (!campaign) return false;
-        if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
-        if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) return false;
-        return true;
+        return String(campaign?.status ?? "").toUpperCase() === "ACTIVE";
       });
+      const work: RestWork = {
+        account,
+        email,
+        groupKey,
+        cohort,
+        existing,
+        detachable,
+        alreadyOnActive,
+      };
+      if (isOffWeek(cohort, now)) offWeek.push(work);
+      else onWeek.push(work);
+    }
 
-      if (off) {
-        if (!onCampaigns.length && existing) continue;
-        const removed: number[] = [];
-        for (const campaignId of onCampaigns) {
-          const remaining = membership.get(campaignId) ?? 0;
-          if (remaining <= 1) {
-            result.skipped.push(
-              `${email}: last account on #${campaignId} — wait for top-up`,
-            );
-            continue;
-          }
-          try {
-            if (!dryRun) {
-              await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
-                account.id,
-              ]);
-              await sleep(150);
-              dropMembership(account, campaignId);
-            }
-            membership.set(campaignId, remaining - 1);
-            removed.push(campaignId);
-          } catch (error) {
-            const message =
-              error instanceof Error ? error.message : String(error);
-            result.errors.push(`${email} remove #${campaignId}: ${message}`);
-          }
+    // Off-week first so last-account on PAUSED still sees on-week members.
+    // On-week hygiene then clears the paused/stopped hoard (D169).
+    for (const row of offWeek) {
+      if (!row.detachable.length && row.existing) continue;
+      const removed = await this.detachFromCampaigns(
+        row.account,
+        row.email,
+        row.detachable,
+        membership,
+        dryRun,
+        result,
+      );
+      if (removed.length || !row.existing) {
+        const record = {
+          accountId: row.account.id,
+          email: row.email,
+          clientId: row.groupKey,
+          cohort: row.cohort,
+          kind: "client" as const,
+          restingSince: row.existing?.restingSince ?? now.toISOString(),
+          removedFromCampaigns: [
+            ...new Set([
+              ...(row.existing?.removedFromCampaigns ?? []),
+              ...removed,
+              ...row.detachable,
+            ]),
+          ],
+          lastSameEspInbox: row.existing?.lastSameEspInbox ?? null,
+        };
+        if (!dryRun) this.state.markRestingInbox(record);
+        if (removed.length) {
+          result.benched.push({ email: row.email, campaignIds: removed });
         }
-        if (removed.length || !existing) {
-          const record = {
-            accountId: account.id,
-            email,
-            clientId: groupKey,
-            cohort,
-            kind: "client" as const,
-            restingSince: existing?.restingSince ?? now.toISOString(),
-            removedFromCampaigns: [
-              ...new Set([
-                ...(existing?.removedFromCampaigns ?? []),
-                ...removed,
-                ...onCampaigns,
-              ]),
-            ],
-            lastSameEspInbox: existing?.lastSameEspInbox ?? null,
-          };
-          if (!dryRun) this.state.markRestingInbox(record);
-          if (removed.length) {
-            result.benched.push({ email, campaignIds: removed });
-          }
-        }
-        continue;
       }
+    }
 
+    for (const row of onWeek) {
       // D154 / D139 — under-warmed inboxes are not on-week staff. Restoring
       // them onto every ACTIVE client campaign handed the warmup gate its
       // next pull every health pass (Parlay ×16, Culturefits ×1).
-      if (owesWarmup(account, email, this.config, this.state)) {
-        result.skipped.push(`${email}: owes warmup (D139)`);
+      if (owesWarmup(row.account, row.email, this.config, this.state)) {
+        result.skipped.push(`${row.email}: owes warmup (D139)`);
         continue;
       }
 
       const clientId =
-        typeof account.client_id === "number" ? account.client_id : null;
-      const parsedId = groupKey.startsWith("id:")
-        ? Number(groupKey.slice(3))
+        typeof row.account.client_id === "number" ? row.account.client_id : null;
+      const parsedId = row.groupKey.startsWith("id:")
+        ? Number(row.groupKey.slice(3))
         : clientId;
       // D59 — on-week (B this fortnight) sits on every ACTIVE campaign for
       // that client, not just the campaigns it happened to be on before a hold.
       const targets = this.onWeekTargets(
         Number.isFinite(parsedId) ? parsedId : null,
-        groupKey,
+        row.groupKey,
         campaigns as SmartleadCampaign[],
         activeByClient,
       );
       const added: number[] = [];
       for (const campaignId of targets) {
-        if (onCampaigns.includes(campaignId)) continue;
+        if (row.alreadyOnActive.includes(campaignId)) continue;
         try {
           if (!dryRun) {
             await this.smartlead.addEmailAccountsToCampaign(campaignId, [
-              account.id,
+              row.account.id,
             ]);
             await sleep(150);
-            recordMembership(account, campaignId);
+            recordMembership(row.account, campaignId);
           }
           added.push(campaignId);
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
-          result.errors.push(`${email} restore #${campaignId}: ${message}`);
+          result.errors.push(`${row.email} restore #${campaignId}: ${message}`);
         }
       }
-      if (!dryRun) this.state.clearRestingInbox(email);
-      if (added.length || existing) {
-        result.restored.push({ email, campaignIds: added });
+      // D169 hygiene — on-week belongs on ACTIVE. Leftover PAUSED/STOPPED
+      // attachments are what starved the live pool (BCP With Team).
+      const leftoverPausedOrStopped = row.detachable.filter((id) => {
+        const campaign = campaignById.get(id);
+        return String(campaign?.status ?? "").toUpperCase() !== "ACTIVE";
+      });
+      const cleared = await this.detachFromCampaigns(
+        row.account,
+        row.email,
+        leftoverPausedOrStopped,
+        membership,
+        dryRun,
+        result,
+      );
+      if (!dryRun) this.state.clearRestingInbox(row.email);
+      if (added.length || row.existing || cleared.length) {
+        result.restored.push({ email: row.email, campaignIds: added });
       }
     }
 
@@ -347,5 +403,42 @@ export class ClientRestService {
           })
         : [];
     return [...new Set([...fromClient, ...fromBcp].map((campaign) => campaign.id))];
+  }
+
+  /** Last-account-on-campaign guard applies to every detach (D43 / D169). */
+  private async detachFromCampaigns(
+    account: SmartleadAccountWithCampaigns,
+    email: string,
+    campaignIds: number[],
+    membership: Map<number, number>,
+    dryRun: boolean,
+    result: ClientRestResult,
+  ): Promise<number[]> {
+    const removed: number[] = [];
+    for (const campaignId of campaignIds) {
+      const remaining = membership.get(campaignId) ?? 0;
+      if (remaining <= 1) {
+        result.skipped.push(
+          `${email}: last account on #${campaignId} — wait for top-up`,
+        );
+        continue;
+      }
+      try {
+        if (!dryRun) {
+          await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
+            account.id,
+          ]);
+          await sleep(150);
+          dropMembership(account, campaignId);
+        }
+        membership.set(campaignId, remaining - 1);
+        removed.push(campaignId);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : String(error);
+        result.errors.push(`${email} remove #${campaignId}: ${message}`);
+      }
+    }
+    return removed;
   }
 }

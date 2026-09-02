@@ -14,6 +14,7 @@ import {
   EMPTY_ISOLATION_STATE,
   normalizeIsolationState,
   type CopySuspectRecord,
+  type PlacementScoreRecord,
   type IsolationActionRecord,
   type IsolationRunRecord,
   type IsolationState,
@@ -1337,6 +1338,14 @@ export class StateStore {
     return Object.values(this.state.isolation.copySuspects);
   }
 
+  recordPlacementScore(record: PlacementScoreRecord): void {
+    this.state.isolation.placementScores[String(record.campaignId)] = record;
+  }
+
+  listPlacementScores(): PlacementScoreRecord[] {
+    return Object.values(this.state.isolation.placementScores);
+  }
+
   setCopyCanaries(
     campaignId: number,
     emails: string[],
@@ -1358,6 +1367,23 @@ export class StateStore {
 
   getCopyCanaryTestId(campaignId: number): string | undefined {
     return this.state.isolation.copyCanaries[String(campaignId)]?.testId;
+  }
+
+  /** SmartDelivery ids stored under isolation.copyCanaries — not testedCampaigns. */
+  listCopyCanaryTestIds(): string[] {
+    const out: string[] = [];
+    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+      if (row.testId) out.push(String(row.testId));
+    }
+    return out;
+  }
+
+  campaignIdForCopyCanaryTestId(testId: string): number | undefined {
+    const wanted = String(testId);
+    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+      if (row.testId && String(row.testId) === wanted) return row.campaignId;
+    }
+    return undefined;
   }
 
   listCopyCanaryEmails(): Set<string> {

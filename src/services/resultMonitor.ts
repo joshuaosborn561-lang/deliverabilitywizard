@@ -1,33 +1,36 @@
 import type { AppConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
-import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
-import { accountEmail } from "../clients/smartlead.js";
 import {
+  campaignIdOf,
   normalizeTestList,
   parseDomainBlacklistHits,
   parseIpBlacklistHits,
-  parseSenderInboxRates,
   testIdOf,
   uniqueBlacklistedDomains,
+  type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
 import { isMissingSpamTestNoise } from "../lib/alertNoise.js";
-import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
-import {
-  dkimFailing,
-  parseSenderAuthResults,
-  spfFailing,
-} from "../lib/authResults.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   diagnoseBlacklists,
   filterTeardownBlacklistHits,
 } from "../lib/blacklistDiagnosis.js";
+import {
+  liveCampaignForPlacementTrigger,
+  placementSuspectReason,
+  sameEspInboxUgly,
+  shouldQueuePlacementSuspect,
+} from "../lib/placementSuspect.js";
+import { prioritizeTestIdsForReports } from "../lib/testIdPriority.js";
 import type { StateStore } from "../state/store.js";
 import type {
   BlacklistedDomainHit,
   MailboxSummaryRow,
+  SmartleadCampaign,
   SpamTestSummary,
 } from "../types/index.js";
+import { isExcluded } from "./campaignTopUp.js";
 
 export interface MonitorResult {
   testsChecked: number;
@@ -37,12 +40,8 @@ export interface MonitorResult {
 }
 
 export class ResultMonitor {
-  /**
-   * Smartlead account types (email → GMAIL/OUTLOOK/…), needed so alerts score
-   * the same way remediation does. Fetched at most once per run, and only when
-   * an alert actually needs it — a clean run never pays for it.
-   */
-  private senderTypes: Map<string, string | undefined> | null = null;
+  /** ACTIVE/PAUSED campaign book for mapping canary-copy tests to live ids. */
+  private campaigns: SmartleadCampaign[] | null = null;
 
   constructor(
     private readonly config: AppConfig,
@@ -52,34 +51,8 @@ export class ResultMonitor {
     private readonly state: StateStore,
   ) {}
 
-  /**
-   * Without this map `parseSenderInboxRates` sees every sender as ESP "other",
-   * which forces blended scoring — so the alert would quote a different number
-   * than the one remediation acts on. Failure is non-fatal: we fall back to
-   * blended and the alert still goes out, just labelled as blended.
-   */
-  private async getSenderTypes(): Promise<Map<string, string | undefined>> {
-    if (this.senderTypes) return this.senderTypes;
-    const map = new Map<string, string | undefined>();
-    try {
-      const accounts = await this.smartlead.listAllEmailAccounts();
-      for (const account of accounts) {
-        const email = accountEmail(account)?.toLowerCase();
-        if (email) map.set(email, account.type);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(
-        `[monitor] Could not load Smartlead account types (${message}) — alerts fall back to blended ESP scoring`,
-      );
-    }
-    this.senderTypes = map;
-    return map;
-  }
-
   async run(): Promise<MonitorResult> {
-    // Types can change between runs (new mailboxes, reconnects) — refetch.
-    this.senderTypes = null;
+    this.campaigns = null;
     const result: MonitorResult = {
       testsChecked: 0,
       blacklistAlerts: 0,
@@ -102,10 +75,28 @@ export class ResultMonitor {
     }
 
     // Prefer tests we created; also check recent completed tests so nothing is missed.
+    // D158 — copy-canary ids live under isolation.copyCanaries, not testedCampaigns.
+    const campaigns = await this.getCampaigns();
+    const canaryIds = this.state.listCopyCanaryTestIds();
+    const activeLiveIds = new Set(
+      campaigns
+        .filter(
+          (row) =>
+            String(row.status ?? "").toUpperCase() === "ACTIVE" &&
+            !isAnyShellCampaign(row),
+        )
+        .map((row) => String(row.id)),
+    );
+    const liveTestIds = Object.entries(this.state.get().testedCampaigns)
+      .filter(([campaignId]) => activeLiveIds.has(campaignId))
+      .flatMap(([, row]) => row.testIds);
     const trackedIds = [
-      ...new Set(
-        Object.values(this.state.get().testedCampaigns).flatMap((c) => c.testIds),
-      ),
+      ...new Set([
+        ...Object.values(this.state.get().testedCampaigns).flatMap(
+          (c) => c.testIds,
+        ),
+        ...canaryIds,
+      ]),
     ];
     const listedIds = tests
       .map((test) => testIdOf(test))
@@ -113,6 +104,7 @@ export class ResultMonitor {
     const prioritizedIds = prioritizeTestIdsForReports({
       trackedIds: [...trackedIds, ...listedIds],
       listedTests: tests,
+      priorityIds: [...liveTestIds, ...canaryIds],
     });
     const testById = new Map(
       tests
@@ -131,7 +123,7 @@ export class ResultMonitor {
         );
         result.lowDeliverabilityAlerts += await this.checkProviderDeliverability(
           testId,
-          test?.test_name,
+          test,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -206,9 +198,23 @@ export class ResultMonitor {
     return 1;
   }
 
+  private async getCampaigns(): Promise<SmartleadCampaign[]> {
+    if (this.campaigns) return this.campaigns;
+    try {
+      this.campaigns = await this.smartlead.listCampaigns();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[monitor] Could not list campaigns (${message}) — placement isolation queue skipped this pass`,
+      );
+      this.campaigns = [];
+    }
+    return this.campaigns;
+  }
+
   private async checkProviderDeliverability(
     testId: string,
-    testName?: string,
+    test?: SpamTestSummary,
   ): Promise<number> {
     const report = await this.smartDelivery.getProviderwiseReport(testId);
     const rows = report.result ?? [];
@@ -223,66 +229,66 @@ export class ResultMonitor {
       providers.push({ name: label, inboxPercent: score });
     }
 
-    const weak = providers.filter(
-      (p) => p.inboxPercent < this.config.deliverabilityThreshold,
-    );
-    if (!weak.length) return 0;
-
-    // One alert per test (not per provider) — keyed on rounded weak scores
-    const key = `low-inbox:v4:${testId}:${weak
-      .map((p) => `${p.name}:${Math.floor(p.inboxPercent)}`)
-      .sort()
-      .join("|")}`;
-    if (this.state.hasAlert(key)) return 0;
-
-    // Per-sender placement + SPF/DKIM, so the alert says which mailbox is bad
-    // and why — not just that a provider is weak.
-    let senders: Array<{
-      email: string;
-      inboxPercent: number;
-      scoredSameEsp?: boolean;
-    }> = [];
-    let authFailures: Array<{
-      email: string;
-      spfFailing: boolean;
-      dkimFailing: boolean;
-    }> = [];
-    try {
-      const senderRaw = await this.smartDelivery.getSenderAccountReport(testId);
-      senders = parseSenderInboxRates(senderRaw, testId, {
-        senderTypeByEmail: await this.getSenderTypes(),
-        preferSameEsp: this.config.scoreSameEspOnly,
-        minSameEspSamples: this.config.minSameEspSamples,
-      }).map((row) => ({
-        email: row.email,
-        inboxPercent: row.inboxRate,
-        scoredSameEsp: row.scoredSameEsp,
-      }));
-      authFailures = parseSenderAuthResults(senderRaw)
-        .map((row) => ({
-          email: row.email,
-          spfFailing: spfFailing(row),
-          dkimFailing: dkimFailing(row),
-        }))
-        .filter((row) => row.spfFailing || row.dkimFailing);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[monitor] sender detail for ${testId} failed: ${message}`);
+    // D158 — live 80% same-ESP is a reading that queues isolation, not a Slack page.
+    if (!sameEspInboxUgly(providers, this.config.remediationInboxThreshold)) {
+      return 0;
     }
 
-    await this.slack.notifyPlacementResult({
-      testName,
-      testId,
-      threshold: this.config.deliverabilityThreshold,
-      providers,
-      overall: overallSplit(rows),
-      senders,
-      authFailures,
-      remediationThreshold: this.config.remediationInboxThreshold,
+    const campaigns = await this.getCampaigns();
+    let target = liveCampaignForPlacementTrigger({
+      testName: test?.test_name,
+      testCampaignId: test ? campaignIdOf(test) : undefined,
+      campaigns,
+    });
+    if (!target) {
+      const canaryCampaignId = this.state.campaignIdForCopyCanaryTestId(testId);
+      if (canaryCampaignId != null) {
+        target = liveCampaignForPlacementTrigger({
+          testName: `Canary copy: #${canaryCampaignId}`,
+          campaigns,
+        });
+      }
+    }
+    if (!target) {
+      console.log(
+        `[monitor] Same-ESP under ${this.config.remediationInboxThreshold}% on test ${testId} (${test?.test_name ?? "unnamed"}) — no ACTIVE live campaign to queue`,
+      );
+      return 0;
+    }
+    const campaign = campaigns.find((row) => row.id === target.campaignId);
+    if (
+      campaign &&
+      (isExcluded(campaign, this.config.topUpExcludeCampaigns) ||
+        isAnyShellCampaign(campaign))
+    ) {
+      return 0;
+    }
+
+    const existing = this.state
+      .listCopySuspects()
+      .find((row) => row.campaignId === target.campaignId);
+    const openRun = this.state.latestIsolationRunForCampaign(target.campaignId);
+    if (!shouldQueuePlacementSuspect({ existing, openRun })) {
+      return 0;
+    }
+
+    const key = `copy-suspect:v1:${target.campaignId}:${target.source}`;
+    if (this.state.hasAlert(key)) return 0;
+
+    this.state.markCopySuspect({
+      campaignId: target.campaignId,
+      campaignName: target.campaignName,
+      at: new Date().toISOString(),
+      reason: placementSuspectReason(
+        target.source,
+        providers,
+        this.config.remediationInboxThreshold,
+      ),
     });
     this.state.markAlert(key);
     console.log(
-      `[monitor] Placement alert for test ${testId}: ${weak
+      `[monitor] Queued isolation for #${target.campaignId} from ${target.source}: ${providers
+        .filter((p) => p.inboxPercent < this.config.remediationInboxThreshold)
         .map((p) => `${p.name} ${p.inboxPercent.toFixed(1)}%`)
         .join(", ")}`,
     );

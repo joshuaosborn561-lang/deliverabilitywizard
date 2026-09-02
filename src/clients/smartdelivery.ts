@@ -5,6 +5,7 @@ import {
   normalizeSenderEspFamily,
   type EspFamily,
 } from "../lib/esp.js";
+import { isCanaryCopyTestName } from "../lib/isolationNames.js";
 import type {
   BlacklistedDomainHit,
   BlacklistRow,
@@ -526,6 +527,7 @@ export function campaignIdOf(test: SpamTestSummary): string | undefined {
  * fall back to a name match.
  */
 export function isAutomatedTest(test: SpamTestSummary): boolean {
+  if (isCanaryCopyTestName(test.test_name)) return true;
   if (typeof test.every_days === "number" && test.every_days > 0) return true;
   if (test.schedule_start_time) return true;
   return /auto|schedul|recur/i.test(String(test.test_type ?? ""));

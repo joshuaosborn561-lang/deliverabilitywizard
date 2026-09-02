@@ -19,6 +19,8 @@ export interface IsolationVerdictInput {
   rig?: {
     controlPrimary: boolean | null;
     copyPrimary: boolean | null;
+    /** Mailboxes already on the isolation domain. 0 = unarmed. */
+    mailboxCount?: number;
   };
   /**
    * D51 — campaign-copy placement on purpose-unwarmed boxes vs warmed peers.
@@ -38,6 +40,13 @@ export interface IsolationVerdictInput {
    * null/omitted = no per-ESP reading yet (use copyCanary.unwarmedLanded).
    */
   unwarmedCopyFineAcrossEsps?: boolean | null;
+  /**
+   * D158 — bounce loop classified a dominant content_block. Prefer COPY
+   * when the canary (or live placement) is also ugly, unless known-good
+   * fails an ESP (then INFRA). Lets COPY land even when mailbox control
+   * is INSUFFICIENT — AirPods had no standing tag.
+   */
+  contentBlock?: boolean;
 }
 
 export interface IsolationVerdictResult {
@@ -50,12 +59,69 @@ export interface IsolationVerdictResult {
   pullInfraDiagnostics: boolean;
 }
 
+function canaryLean(input: IsolationVerdictInput): {
+  lean: "COPY" | "INFRA" | "WARMUP" | "NONE";
+  reason: string;
+} {
+  return input.copyCanary
+    ? interpretCopyCanary(input.copyCanary)
+    : { lean: "NONE", reason: "" };
+}
+
+function unwarmedCopyFailed(
+  input: IsolationVerdictInput,
+  canary: { lean: string },
+): boolean {
+  return (
+    input.unwarmedCopyFineAcrossEsps === false ||
+    canary.lean === "COPY" ||
+    input.copyCanary?.unwarmedLanded === false
+  );
+}
+
+/** Rig has mailboxes (or no snapshot) — start the hunt. Unarmed waits. */
+function startTeardownIfRigReady(
+  rig?: IsolationVerdictInput["rig"],
+): boolean {
+  if (!rig) return true;
+  if ((rig.mailboxCount ?? 1) > 0) return true;
+  return rig.controlPrimary !== false;
+}
+
 export function decideIsolationVerdict(
   input: IsolationVerdictInput,
 ): IsolationVerdictResult {
   const control = campaignSenderControl(input.senderControls);
+  const canary = canaryLean(input);
+  const unwarmedAlsoFailed = unwarmedCopyFailed(input, canary);
 
+  // D158 — content_block + ugly canary prefers COPY even with no mailbox
+  // tag. Known-good failing an ESP is still INFRA.
   if (control === "INSUFFICIENT") {
+    if (input.contentBlock && input.knownGoodFineAcrossEsps === false) {
+      return {
+        verdict: "INFRA",
+        control,
+        reason:
+          "Dominant bounce class is content_block, but the known-good email on those domains is also failing an ESP. That is the domain / inbox, not a word in the copy.",
+        startCopyTeardown: false,
+        pullInfraDiagnostics: true,
+      };
+    }
+    if (
+      input.contentBlock &&
+      input.knownGoodFineAcrossEsps !== false &&
+      (canary.lean === "COPY" || input.unwarmedCopyFineAcrossEsps === false)
+    ) {
+      return {
+        verdict: "COPY",
+        control,
+        reason:
+          "Dominant bounce class is content_block and the unwarmed canary (or live placement) is under the inbox bar. Prefer the copy path. No standing mailbox-control tag yet.",
+        startCopyTeardown: startTeardownIfRigReady(input.rig),
+        pullInfraDiagnostics: false,
+      };
+    }
     return {
       verdict: "INCONCLUSIVE",
       control,
@@ -126,10 +192,6 @@ export function decideIsolationVerdict(
 
   // campaignInSpam && control === CLEAN → copy only after we have looked
   // at unwarmed senders with that copy (D96).
-  const canary = input.copyCanary
-    ? interpretCopyCanary(input.copyCanary)
-    : { lean: "NONE" as const, reason: "" };
-
   if (canary.lean === "INFRA") {
     return {
       verdict: "INFRA",
@@ -149,10 +211,6 @@ export function decideIsolationVerdict(
     };
   }
 
-  const unwarmedAlsoFailed =
-    input.unwarmedCopyFineAcrossEsps === false ||
-    canary.lean === "COPY" ||
-    input.copyCanary?.unwarmedLanded === false;
   if (!unwarmedAlsoFailed) {
     return {
       verdict: "INCONCLUSIVE",
@@ -171,18 +229,21 @@ export function decideIsolationVerdict(
       canary.lean === "COPY"
         ? canary.reason
         : "The campaign copy is not inboxing on an ESP. Known-good on those domains is landing across ESPs, and unwarmed senders with that same copy are also failing an ESP. The copy is the problem.",
-    startCopyTeardown: true,
+    startCopyTeardown: startTeardownIfRigReady(input.rig),
     pullInfraDiagnostics: false,
   };
 
   if (!input.rig) return fromPod;
 
   if (input.rig.controlPrimary === false) {
+    const configured = (input.rig.mailboxCount ?? 1) > 0;
     return {
       verdict: "COPY",
       control,
-      reason: `${fromPod.reason} The low-rep test domain also failed its own control, so the word hunt is on hold until that domain is checked. The inboxes-vs-copy answer still stands.`,
-      startCopyTeardown: false,
+      reason: configured
+        ? `${fromPod.reason} The low-rep test domain failed its own control; the hunt still starts because the rig has mailboxes.`
+        : `${fromPod.reason} The low-rep test domain also failed its own control, so the word hunt waits until the rig is armed. The inboxes-vs-copy answer still stands.`,
+      startCopyTeardown: configured,
       pullInfraDiagnostics: false,
     };
   }
@@ -212,10 +273,10 @@ export function decideIsolationVerdict(
   return fromPod;
 }
 
-/** Guard: a failing/insufficient control must never produce COPY. */
+/** Guard: a FAILING control must never produce COPY (D48). INSUFFICIENT may COPY on content_block + ugly canary (D158). */
 export function failedControlIsNeverCopy(
   result: IsolationVerdictResult,
 ): boolean {
   if (result.verdict !== "COPY") return true;
-  return result.control === "CLEAN";
+  return result.control !== "FAILING";
 }

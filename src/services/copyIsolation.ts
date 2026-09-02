@@ -81,6 +81,7 @@ export class CopyIsolationService {
     const emails = await this.rig.rigEmails();
     if (!emails.length) {
       result.missingRig = true;
+      result.waiting = true;
       await this.slack.notifyCopyIsolation({
         campaignName: run.campaignName ?? `Campaign ${run.campaignId}`,
         missingRig: true,

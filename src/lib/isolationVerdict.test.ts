@@ -51,16 +51,53 @@ describe("isolation verdict", () => {
     assert.equal(failedControlIsNeverCopy(result), true);
   });
 
-  it("a failed rig control is not a copy finding for teardown", () => {
+  it("a failed rig control still starts teardown when the rig has mailboxes", () => {
     const result = decideIsolationVerdict({
       campaignInSpam: true,
       senderControls: ["PRIMARY"],
       unwarmedCopyFineAcrossEsps: false,
-      rig: { controlPrimary: false, copyPrimary: false },
+      rig: { controlPrimary: false, copyPrimary: false, mailboxCount: 2 },
+    });
+    assert.equal(result.verdict, "COPY");
+    assert.equal(result.startCopyTeardown, true);
+  });
+
+  it("COPY with an unarmed rig waits instead of leaving the hunt unstarted", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["PRIMARY"],
+      unwarmedCopyFineAcrossEsps: false,
+      rig: { controlPrimary: false, copyPrimary: false, mailboxCount: 0 },
     });
     assert.equal(result.verdict, "COPY");
     assert.equal(result.startCopyTeardown, false);
-    assert.match(result.reason, /word hunt is on hold/i);
+    assert.match(result.reason, /waits until the rig is armed/i);
+  });
+
+  it("D158: content_block + ugly canary is COPY even with no mailbox tag", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["UNKNOWN"],
+      contentBlock: true,
+      unwarmedCopyFineAcrossEsps: false,
+      knownGoodFineAcrossEsps: true,
+    });
+    assert.equal(result.verdict, "COPY");
+    assert.equal(result.control, "INSUFFICIENT");
+    assert.equal(result.startCopyTeardown, true);
+    assert.equal(failedControlIsNeverCopy(result), true);
+  });
+
+  it("D158: content_block + known-good also failing is INFRA", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["UNKNOWN"],
+      contentBlock: true,
+      unwarmedCopyFineAcrossEsps: false,
+      knownGoodFineAcrossEsps: false,
+    });
+    assert.equal(result.verdict, "INFRA");
+    assert.equal(result.startCopyTeardown, false);
   });
 
   it("rig control primary + copy primary is list/offer, not copy", () => {

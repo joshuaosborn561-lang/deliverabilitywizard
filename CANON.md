@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D157** (2026-08-31). One page of current truth. When a new
+Canon as of **D159** (2026-09-02). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -20,10 +20,10 @@ Slack speaks only when a human decision is needed or the day is done.
 
 | Loop | Cadence | Owns |
 |---|---|---|
-| Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43; on-week restore refuses under-warmed — D154) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → stage watchdog + `canonCompliant` yes/no (D108) — an overdue stage **pages Slack once per episode** with a recovery note when it comes back (D149). Old-client teardown (D107/D111) retired (D144). |
-| Bounce loop | 10 min | **Never pauses, never STARTs** (D40/D148 — Josh: "i dont want anything paused anymore... investigating remediating and readding"). A REAL burst — >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141); a tripped counter samples the bounced rows first (retrying while the analytics ledger lags), a ledger dump of stale bounces logs loudly and does nothing, unreadable rows defer to the next tick — classifies the sampled SMTP reasons (tenant-rate-limit / sender-blocked / invalid-recipient / content-block, D140), Slacks ONE receipt naming the burst, the verdict and the plan, and opens a **resurrection incident** when the verdict blames the sender; a re-trip inside the hour folds into the open incident silently. The D90 lifetime-rate rule stays retired. Smartlead's own High Bounce Rate Auto Protection is **UI-only** (D157): the public API validates `bounce_autopause_threshold` and then discards it (a "banana" write returns ok; no GET returns it), so no code here writes or reads the field — the D80/D124/D155 converge generations were no-ops and are deleted. It is unticked on the campaign SETUP page at build (the build skill's QA gate) and by hand for existing campaigns; a Smartlead-initiated pause is recognized by `campaign_activity_logs.paused_reason: "bounce protection"` on GET /campaigns. Never touches COMPLETED/STOPPED. Routing: a Microsoft tenant hitting its daily cap pages once per tenant per day (D140); a `550 5.1.8` outbound-spam block — ANY sample, never dominant-gated (D145) — opens the standard **burned-domain retire ask** for that sender's domain, receipts + buttons, one pending ask per domain (D146); a bad-list verdict re-queues nothing and points at the list. **The remediation itself releases the resend** (D147/D148): the incident scans its window (each lead's own NDR re-read; bad addresses stay dead; once per lead per campaign; 20 lead-reads per tick) and parks sender-fault leads until their gate opens — tenant_rate_limit: the next UTC day after the bounced send (cap reset); sender_blocked: the domain's retire ask resolved; content_block: the sequence edited after the incident. Suppression lists respected on the re-add; a gate shut 7 days expires its leads with a receipt; one receipt per flushed wave. Pre-D148 pause stamps still drain: a human START of one opens its job (D147), then the stamp clears — no new stamps are ever written. |
+| Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43; on-week restore refuses under-warmed — D154) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → **isolation on-ramp** (score canary/live same-ESP → `markCopySuspect` → evaluate; live % never rotates) every pass so ugly inbox is remediating within one cycle (D158/D159) → stage watchdog + `canonCompliant` yes/no (D108) — an overdue stage **pages Slack once per episode** with a recovery note when it comes back (D149). `/health` names canaries/campaigns still under 80% with no open isolation run or suspect, plus `isolation-branch` lastOk. Old-client teardown (D107/D111) retired (D144). |
+| Bounce loop | 10 min | **Never pauses, never STARTs** (D40/D148 — Josh: "i dont want anything paused anymore... investigating remediating and readding"). A REAL burst — >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141); a tripped counter samples the bounced rows first (retrying while the analytics ledger lags), a ledger dump of stale bounces logs loudly and does nothing, unreadable rows defer to the next tick — classifies the sampled SMTP reasons (tenant-rate-limit / sender-blocked / invalid-recipient / content-block, D140), Slacks ONE receipt naming the burst, the verdict and the plan, opens a **resurrection incident** when the verdict blames the sender, and a **dominant content_block also queues isolation** (D158 — same copy-suspect flag as an ugly canary; never a pause); a re-trip inside the hour folds into the open incident silently. The D90 lifetime-rate rule stays retired. Smartlead's own High Bounce Rate Auto Protection is **UI-only** (D157): the public API validates `bounce_autopause_threshold` and then discards it (a "banana" write returns ok; no GET returns it), so no code here writes or reads the field — the D80/D124/D155 converge generations were no-ops and are deleted. It is unticked on the campaign SETUP page at build (the build skill's QA gate) and by hand for existing campaigns; a Smartlead-initiated pause is recognized by `campaign_activity_logs.paused_reason: "bounce protection"` on GET /campaigns. Never touches COMPLETED/STOPPED. Routing: a Microsoft tenant hitting its daily cap pages once per tenant per day (D140); a `550 5.1.8` outbound-spam block — ANY sample, never dominant-gated (D145) — opens the standard **burned-domain retire ask** for that sender's domain, receipts + buttons, one pending ask per domain (D146); a bad-list verdict re-queues nothing and points at the list. **The remediation itself releases the resend** (D147/D148): the incident scans its window (each lead's own NDR re-read; bad addresses stay dead; once per lead per campaign; 20 lead-reads per tick) and parks sender-fault leads until their gate opens — tenant_rate_limit: the next UTC day after the bounced send (cap reset); sender_blocked: the domain's retire ask resolved; content_block: the sequence edited after the incident. Suppression lists respected on the re-add; a gate shut 7 days expires its leads with a receipt; one receipt per flushed wave. Pre-D148 pause stamps still drain: a human START of one opens its job (D147), then the stamp clears — no new stamps are ever written. |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). Reads the shared account book, never its own fetch (D132). |
-| Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls, DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
+| Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; no placement Slack page). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). |
 
@@ -103,8 +103,14 @@ Slack speaks only when a human decision is needed or the day is done.
   21-day warmup gate (D105). Health backfills to the floor afterwards.
 - 80% same-ESP live / 85% launch (promo tab = miss) are **readings** — the
   launch bar blocks QA-unpause of a new campaign (D46/D106), the live number
-  is a log. Never rotate on any of it; never use the blended all-ESP score
-  for anything (D32).
+  never rotates (D32/D51). Never use the blended all-ESP score for anything
+  (D32). A live or canary-copy same-ESP reading under 80% on an ACTIVE
+  campaign **queues isolation** (copy suspect → COPY word hunt / INFRA
+  sender-domain path), and so does a dominant bounce `content_block`
+  (D158). The score→suspect→evaluate pass runs on the **15-minute
+  health sweep** (D159) so a send-day miss is remediating within one
+  cycle — live % still never rotates (D51). That is not a Slack page
+  (D71/D158).
 - There is **no per-sender bounce pull** (D79 retired D5), **no campaign
   bounce band** (D88 retired D78/D80), **no paused-campaign bounce hunt**
   (D91 retired D29). The D90 bounce loop above is the only bounce actor.
@@ -142,9 +148,17 @@ Slack speaks only when a human decision is needed or the day is done.
 
 ## Diagnosis: infra vs copy vs word
 
-- A campaign in spam is a flag, not a verdict (D49). Read three things on the
-  same domains: the campaign-copy test per ESP, the known-good control per
-  ESP, and the unwarmed canary fleet sending that same copy (D93, D96).
+- A campaign in spam is a flag, not a verdict (D49). The flag is raised by
+  reply-collapse (D69), by same-ESP inbox under 80% on that campaign's
+  canary-copy test or live placement test, **or** by a dominant bounce
+  `content_block` (D158) — shells stay off the live board (D126), but
+  canary-copy ugliness for an ACTIVE live campaign counts. Prefer the
+  **copy** path on `content_block` + ugly canary unless known-good also
+  fails an ESP (then infra). The on-ramp is the 15-minute health
+  sweep (D159), not the 6-hour monitor or daily DeliveryWatch.
+  Read three things on the same domains: the campaign-copy test per ESP, the
+  known-good control per ESP, and the unwarmed canary fleet sending that
+  same copy (D93, D96).
   - Known-good also failing an ESP → **infra**, not a word.
   - Unwarmed canaries land the copy while live senders fail → infra.
   - Campaign copy fails an ESP, known-good fine everywhere, unwarmed canaries
@@ -152,10 +166,11 @@ Slack speaks only when a human decision is needed or the day is done.
     rig). Variants ride a paused **DW Word Hunt Shell** with the isolation
     mailboxes attached — SmartDelivery now requires `campaign_id` +
     `sequence_mapping_id` + `provider_ids`, so custom-sequence-only posts
-    are dead (D151). An unarmed rig asks Josh once to buy its isolation
-    domain — the tap is the approval, the buy is spend-gated, and the
-    bought domain arms the rig from state (`ISOLATION_DOMAIN` still
-    overrides) (D137).
+    are dead (D151). A COPY verdict **starts teardown** when the rig has
+    mailboxes — do not leave `teardownStarted: false`. An unarmed rig
+    waits and asks Josh once to buy its isolation domain — the tap is
+    the approval, the buy is spend-gated, and the bought domain arms
+    the rig from state (`ISOLATION_DOMAIN` still overrides) (D137/D158).
   - No unwarmed reading yet → wait. Do not hunt.
 - The hunt runs autonomously; Slack fires **once** when it has the word:
   receipts, the **exact phrase being replaced**, a **substitute edit that

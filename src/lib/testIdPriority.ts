@@ -20,6 +20,8 @@ export const DEFAULT_REPORT_TEST_LIMIT = 100;
 export function prioritizeTestIdsForReports(opts: {
   trackedIds: Iterable<string>;
   listedTests?: SpamTestSummary[];
+  /** Pin these (ACTIVE live + copy-canary ids) inside the cap first. */
+  priorityIds?: Iterable<string>;
   limit?: number;
 }): string[] {
   const limit = opts.limit ?? DEFAULT_REPORT_TEST_LIMIT;
@@ -28,6 +30,9 @@ export function prioritizeTestIdsForReports(opts: {
     const id = testIdOf(test);
     if (id) listedById.set(id, test);
   }
+  const priority = new Set(
+    [...(opts.priorityIds ?? [])].map(String).filter(Boolean),
+  );
 
   const unique = [...new Set([...opts.trackedIds].map(String).filter(Boolean))];
 
@@ -35,14 +40,22 @@ export function prioritizeTestIdsForReports(opts: {
     const test = listedById.get(id);
     const numeric = Number(id);
     const newest = Number.isFinite(numeric) ? -numeric : 0;
+    const pinned = priority.has(id);
+    if (pinned && !test) {
+      // copyCanaries ids often never appear in listTests / testedCampaigns.
+      return [-2, newest];
+    }
     if (!test) {
       // Unknown to the list — assume newer numeric ids are the live backfill.
       return [2, newest];
     }
     const auto = isAutomatedTest(test);
     const live = isTestStoppable(test);
-    if (auto && live) return [0, newest];
-    if (live) return [1, newest];
+    if (pinned && auto && live) return [-2, newest];
+    if (pinned && live) return [-1, newest];
+    if (pinned) return [0, newest];
+    if (auto && live) return [1, newest];
+    if (live) return [2, newest];
     if (auto) return [3, newest];
     return [4, newest];
   };

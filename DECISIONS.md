@@ -172,6 +172,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
 | D155 | Superseded by D157 — the null "clear" was as dead as the 100s (handler discards the field); rule 3 (write-ok is never verification) survives, generalized | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign |
 | D157 | Live | Smartlead bounce protection is UI-only: POST settings validates `bounce_autopause_threshold` then DISCARDS it (a "banana" write returned ok; a Peterson campaign still showed 7% after fleet-wide writes) — every API "off" write (D80 100 / D124 force / D155 null) was a no-op and the converge is deleted; off-switch = campaign SETUP page, attribution = `campaign_activity_logs.paused_reason` |
+| D158 | Live | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra) — not a D71 placement Slack page; TechEvo AirPods 0% canary was the miss |
+| D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
 
 ---
 
@@ -4208,3 +4210,132 @@ explanation; lib/bounceAutopause.ts echo list must not carry the field;
 config.ts must not regrow the converge knobs. retired D88 block:
 autostop has no `updateCampaignSettings` at all. Service test pins no
 status writes and no settings reads/writes.
+
+## D158 — Ugly same-ESP canary/placement scores start isolation, not a Slack page
+
+**Decision (2026-09-02, forced by Josh / TechEvo AirPods).** On 2026-09-01
+~1:05pm CT, TechEvo SFL Startup Owners AirPods (#3847794) copy-canary
+scored 0% inbox / 100% spam. Bounce loop correctly paged content_block.
+The wizard did **not** open isolation / word-hunt / burned-domain
+remediation for the copy.
+
+**The finding (verified on Railway deploy e76fe73).** Two holes, one
+outcome:
+
+1. **D71 Slack gate.** `notifyPlacementResult` called `send()` with no
+   `kind`, so `slackAllowed` dropped it as unclassified
+   (`[slack-quiet] dropped unclassified`). Low-inbox placement alerts
+   never reached Slack even when ResultMonitor fired.
+2. **Wrong trigger.** `IsolationBranchService.run()` only evaluated
+   `listCopySuspects()` without `evaluatedAt`. `markCopySuspect` was
+   set by DeliveryWatch on reply-collapse, not on canary/placement
+   under `remediationInboxThreshold` (80%). Canary-copy ugliness was
+   readable via `CopyCanaryService.readSplit` / `interpretCopyCanary`
+   and was not queued.
+
+CANON already named the right outcome: diagnose campaign-copy +
+known-good + unwarmed canary → COPY starts the word hunt (`copy_word`
+Slack) / INFRA goes the sender-domain path. Live 80% same-ESP is a
+reading (never rotate). Remediation is the isolation branch, not a
+placement Slack page.
+
+**The rule.**
+
+1. Same-ESP inbox under 80% on a canary-copy test or a live campaign
+   placement test, for an ACTIVE live campaign, queues
+   `markCopySuspect` and `evaluate({ campaignInSpam: true })`.
+2. Canary-copy ugliness counts for the live campaign (name → live id).
+   Shells, pod-control, isolation, and rig tests are never the target.
+   The ops Placement board still hides canary-copy (D126).
+3. Do not Slack a freeform placement page. `notifyPlacementResult`
+   logs and does not post. Isolation already uses the allowed
+   `copy_word` / burned-domain / spend lanes.
+4. Idempotent: do not re-hunt every monitor tick. Respect
+   `evaluatedAt`, an open word hunt, and a terminal COPY/INFRA run.
+   INCONCLUSIVE stays queued so a later reading can finish the branch.
+5. Never pause (D148). Never rotate on placement % (D51). Never spend
+   without approval.
+
+**Live evidence (AirPods #3847794, folded in the same PR).** State on
+the miss: live placement `testIds=["526114"]`; copy-canary
+`testId="526826"` under `isolation.copyCanaries[3847794]`;
+`alertedKeys` for both none; `copySuspects[3847794]` missing;
+`isolation.runs` for that campaign 0; `swap_copy` 0. Bounce verdict
+2026-09-01 18:30:42Z dominant `content_block` on
+techevolutiongrp.info; resurrection open with `copyEditedAt` null.
+`lastDeliveryWatchAt` 2026-09-01 17:02:15Z (before the ~1:05pm CT
+canary). Monitor 1:01–1:09pm CT alerted other tests, not 526826/526114.
+Fleet: 78 canary tests in state, only one ever got a low-inbox alert —
+canary ids live under `isolation.copyCanaries`, not `testedCampaigns`,
+so ResultMonitor under-scored them. Historically 8 COPY verdicts with
+`teardownStarted: false`.
+
+**On-ramp (same decision, newly explicit).**
+
+6. ResultMonitor always includes `copyCanaries.*.testId` in the tracked
+   set (and maps that id back to the live campaign when `listTests`
+   omitted the row). `Canary copy:` is automated. ACTIVE live + canary
+   ids are pinned inside the report cap first.
+7. Dominant bounce `content_block` also `markCopySuspect` +
+   `evaluate({ campaignInSpam: true, contentBlock: true })`. Prefer
+   COPY on `content_block` + ugly canary even when mailbox control is
+   INSUFFICIENT, unless known-good also fails an ESP (then INFRA).
+8. COPY with the isolation rig configured (mailboxes present) **must**
+   start teardown. If the rig is unarmed, wait and fire the D137
+   arming ask once — never leave `teardownStarted: false` on a COPY
+   that is waiting. A failed rig-control reading does not hold the
+   hunt when mailboxes already exist.
+
+**Supersedes / amends.** Amends D71's "placement is a log" into "placement
+under 80% same-ESP is a log **and** an isolation queue." Does not add a
+Slack allow-kind. Does not resurrect D28/D36 provider-split Slack.
+Delivery-watch reply-collapse remains a second queue (D69).
+
+**Guards.** canon D158 block: isolation-branch queues from
+`queueUglyPlacementSuspects` / `queueContentBlockSuspect` /
+`markCopySuspect`; ResultMonitor tracks `listCopyCanaryTestIds` and
+marks suspects instead of paging placement; `notifyPlacementResult`
+must not call `send(`; bounce autostop calls
+`queueContentBlockSuspect` on dominant `content_block`; COPY teardown
+starts (or waits + `ensureArmed`) rather than staying
+`teardownStarted: false`; CANON names D158. Service tests: canary
+under 80% marks + evaluate; copyCanaries-only ids are scored;
+content_block queues; unarmed COPY waits and arms; notifyPlacementResult
+stays quiet; COPY vs INFRA still follows `decideIsolationVerdict`.
+
+## D159 — Isolation on-ramp rides the 15-minute health sweep
+
+**Decision (2026-09-02, Josh escalation).** The placement/canary →
+isolation bridge must run about **every 15 minutes during the send
+day**, not only on the 6-hourly monitor or daily DeliveryWatch. Ugly
+same-ESP (under `remediationInboxThreshold` 80) is caught and
+remediating within one health cycle.
+
+**Why.** AirPods #3847794 scored 0% around 1:05pm CT. The bounce loop
+paged `content_block` the same afternoon. Isolation never opened
+because the score→suspect pass lived on the slow monitor. A 6-hour
+gap is a missed send day.
+
+**The rule.**
+
+1. `IsolationBranchService.run()` (score → `markCopySuspect` →
+   `evaluate`) is a watchdogged health-pass stage
+   (`isolation-branch`), overdue window = the 15-minute sweep.
+2. Live inbox % still never rotates (D51). This is diagnosis /
+   remediation on-ramp only. No START, no STOP, no pause.
+3. `/health` exposes `placementIsolation`: scored / ugly counts,
+   canaries/campaigns under 80% with no open isolation run or
+   suspect, and `lastOkAt` for the stage (also in `stages`).
+4. The 6-hour monitor may still score and queue as a second pass.
+   DeliveryWatch reply-collapse remains a third queue (D69). Neither
+   is the send-day cadence.
+
+**Supersedes / amends.** Amends D158's implied cadence (monitor /
+DeliveryWatch) to the 15-minute health sweep. Does not change the
+trigger, the COPY vs INFRA rules, or D51.
+
+**Guards.** canon D159 block: `stage("isolation-branch"` lives in
+`runHealth`; `STAGE_OVERDUE_WINDOWS_MS["isolation-branch"]` is the
+health window; `/health` names `placementIsolation`; CANON names
+D159. Service tests: ugly-without-isolation helper; isolation-branch
+records placement scores.

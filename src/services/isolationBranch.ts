@@ -7,8 +7,10 @@ import {
 } from "../clients/smartlead.js";
 import {
   campaignIdOf,
+  normalizeTestList,
   parseDomainBlacklistHits,
   parseIpBlacklistHits,
+  testIdOf,
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
 import { decideIsolationVerdict } from "../lib/isolationVerdict.js";
@@ -21,6 +23,19 @@ import { campaignProof } from "../lib/isolationProof.js";
 import { nyDateLabel } from "../lib/campaignDayStats.js";
 import type { IsolationRunRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import {
+  isCanaryCopyTestName,
+  isIsolationManagedTestName,
+} from "../lib/isolationNames.js";
+import {
+  isTerminalIsolationVerdict,
+  liveCampaignForPlacementTrigger,
+  minSameEspInbox,
+  placementSuspectReason,
+  sameEspInboxUgly,
+  shouldQueuePlacementSuspect,
+} from "../lib/placementSuspect.js";
 import { isExcluded } from "./campaignTopUp.js";
 import type { CopyIsolationService } from "./copyIsolation.js";
 import type { IsolationRigService } from "./isolationRig.js";
@@ -61,24 +76,41 @@ export class IsolationBranchService {
     };
     if (!this.config.enableIsolationBranch) return result;
 
+    if (!opts.campaignId) {
+      await this.queueUglyPlacementSuspects();
+    }
+
     const targets = opts.campaignId
       ? [{ campaignId: opts.campaignId }]
       : this.state.listCopySuspects().filter((row) => !row.evaluatedAt);
 
     for (const target of targets) {
       try {
-        const run = await this.evaluate(target.campaignId, { dryRun });
+        const priorReason = this.state
+          .listCopySuspects()
+          .find((row) => row.campaignId === target.campaignId)?.reason;
+        const run = await this.evaluate(target.campaignId, {
+          dryRun,
+          campaignInSpam: true,
+          contentBlock: /content_block/i.test(priorReason ?? ""),
+        });
         result.evaluated += 1;
         if (run.verdict === "COPY") result.copy += 1;
         else if (run.verdict === "INFRA") result.infra += 1;
         else result.inconclusive += 1;
         if (run.teardownStarted) result.teardowns += 1;
+        const prior = this.state
+          .listCopySuspects()
+          .find((row) => row.campaignId === target.campaignId);
         this.state.markCopySuspect({
           campaignId: target.campaignId,
           campaignName: run.campaignName,
-          at: this.state.listCopySuspects().find((row) => row.campaignId === target.campaignId)?.at
-            ?? new Date().toISOString(),
-          evaluatedAt: new Date().toISOString(),
+          at: prior?.at ?? new Date().toISOString(),
+          reason: prior?.reason,
+          // INCONCLUSIVE stays queued so a later canary/known-good reading can finish the branch.
+          evaluatedAt: isTerminalIsolationVerdict(run.verdict)
+            ? new Date().toISOString()
+            : prior?.evaluatedAt,
         });
       } catch (error) {
         result.errors.push(
@@ -90,9 +122,72 @@ export class IsolationBranchService {
     return result;
   }
 
+  /**
+   * D158 — dominant bounce content_block is the same copy-suspect flag
+   * as an ugly canary. Idempotent with shouldQueuePlacementSuspect.
+   */
+  async queueContentBlockSuspect(campaignId: number): Promise<void> {
+    if (!this.config.enableIsolationBranch) return;
+    let campaign: Awaited<ReturnType<SmartleadClient["getCampaign"]>>;
+    try {
+      campaign = await this.smartlead.getCampaign(campaignId);
+    } catch (error) {
+      console.warn(
+        `[isolation-branch] content_block queue could not load #${campaignId}`,
+        error,
+      );
+      return;
+    }
+    if (
+      isExcluded(campaign, this.config.topUpExcludeCampaigns) ||
+      isAnyShellCampaign(campaign)
+    ) {
+      return;
+    }
+    const existing = this.state
+      .listCopySuspects()
+      .find((row) => row.campaignId === campaignId);
+    const openRun = this.state.latestIsolationRunForCampaign(campaignId);
+    if (openRun?.teardownStarted) return;
+    if (isTerminalIsolationVerdict(openRun?.verdict) && openRun?.verdict !== "HEALTHY") {
+      return;
+    }
+    if (existing?.evaluatedAt) return;
+    this.state.markCopySuspect({
+      campaignId,
+      campaignName: campaign.name,
+      at: existing?.at ?? new Date().toISOString(),
+      reason: existing?.reason?.includes("content_block")
+        ? existing.reason
+        : "dominant bounce class content_block",
+    });
+    const run = await this.evaluate(campaignId, {
+      campaignInSpam: true,
+      contentBlock: true,
+    });
+    const prior = this.state
+      .listCopySuspects()
+      .find((row) => row.campaignId === campaignId);
+    this.state.markCopySuspect({
+      campaignId,
+      campaignName: run.campaignName,
+      at: prior?.at ?? new Date().toISOString(),
+      reason: prior?.reason ?? "dominant bounce class content_block",
+      evaluatedAt: isTerminalIsolationVerdict(run.verdict)
+        ? new Date().toISOString()
+        : prior?.evaluatedAt,
+    });
+    await this.state.save();
+  }
+
   async evaluate(
     campaignId: number,
-    opts: { dryRun?: boolean; campaignInSpam?: boolean; silent?: boolean } = {},
+    opts: {
+      dryRun?: boolean;
+      campaignInSpam?: boolean;
+      silent?: boolean;
+      contentBlock?: boolean;
+    } = {},
   ): Promise<IsolationRunRecord> {
     const campaign = await this.smartlead.getCampaign(campaignId);
     if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) {
@@ -124,6 +219,7 @@ export class IsolationBranchService {
     const unwarmedCopyFineAcrossEsps =
       await this.unwarmedCopyFineAcrossEsps(campaignId);
     const rigPrimary = await this.rig.readLatestControl();
+    const rigEmails = await this.rig.rigEmails().catch(() => []);
     const copyCanarySplit = this.copyCanary
       ? await this.copyCanary.readSplit(campaignId)
       : null;
@@ -133,10 +229,14 @@ export class IsolationBranchService {
       knownGoodFineAcrossEsps,
       unwarmedCopyFineAcrossEsps,
       copyCanary: copyCanarySplit,
-      rig:
-        decidedNeedsRig(campaignInSpam, senderControls)
-          ? { controlPrimary: rigPrimary, copyPrimary: null }
-          : undefined,
+      contentBlock: opts.contentBlock === true,
+      rig: {
+        controlPrimary: decidedNeedsRig(campaignInSpam, senderControls)
+          ? rigPrimary
+          : null,
+        copyPrimary: null,
+        mailboxCount: rigEmails.length,
+      },
     });
 
     let infraCheck: Record<string, unknown> | undefined;
@@ -161,12 +261,15 @@ export class IsolationBranchService {
     this.state.upsertIsolationRun(run);
 
     if (
-      decided.startCopyTeardown &&
+      decided.verdict === "COPY" &&
       this.config.enableCopyIsolation &&
       !opts.dryRun
     ) {
       const teardown = await this.copyIsolation.runForCampaign(run);
       run.teardownStarted = teardown.started || teardown.waiting;
+      if (!teardown.started) {
+        await this.rig.ensureArmed();
+      }
       run.updatedAt = new Date().toISOString();
       this.state.upsertIsolationRun(run);
     }
@@ -208,6 +311,134 @@ export class IsolationBranchService {
     }
     await this.state.save();
     return run;
+  }
+
+  /**
+   * D158 — canary-copy or live placement same-ESP under the live 80% bar
+   * queues the ACTIVE campaign as a copy suspect. Isolation then decides
+   * COPY vs INFRA. Not a Slack page (D71).
+   */
+  async queueUglyPlacementSuspects(): Promise<number> {
+    let campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>> = [];
+    try {
+      campaigns = await this.smartlead.listCampaigns();
+    } catch (error) {
+      console.warn("[isolation-branch] could not list campaigns for placement queue", error);
+      return 0;
+    }
+
+    const listedTests = normalizeTestList(
+      await this.smartDelivery.listTests({}).catch(() => []),
+    );
+    const tests = [
+      ...listedTests,
+      ...this.syntheticCopyCanaryTests(listedTests),
+    ].sort((a, b) => {
+      const ac = isCanaryCopyTestName(a.test_name) ? 0 : 1;
+      const bc = isCanaryCopyTestName(b.test_name) ? 0 : 1;
+      return ac - bc;
+    });
+    let queued = 0;
+    const seen = new Set<number>();
+
+    for (const test of tests) {
+      const target = liveCampaignForPlacementTrigger({
+        testName: test.test_name,
+        testCampaignId: campaignIdOf(test),
+        campaigns,
+      });
+      if (!target) continue;
+      if (seen.has(target.campaignId)) continue;
+      const campaign = campaigns.find((row) => row.id === target.campaignId);
+      if (
+        !campaign ||
+        isExcluded(campaign, this.config.topUpExcludeCampaigns) ||
+        isAnyShellCampaign(campaign)
+      ) {
+        continue;
+      }
+
+      const tid = testIdOf(test);
+      if (!tid) continue;
+      if (
+        isIsolationManagedTestName(test.test_name) &&
+        !isCanaryCopyTestName(test.test_name)
+      ) {
+        continue;
+      }
+      seen.add(target.campaignId);
+      const splits = await this.providerSplits(tid);
+      const inbox = minSameEspInbox(splits);
+      if (inbox != null) {
+        this.state.recordPlacementScore({
+          campaignId: target.campaignId,
+          campaignName: target.campaignName ?? campaign.name,
+          testId: tid,
+          source: target.source,
+          inboxPercent: inbox,
+          at: new Date().toISOString(),
+        });
+      }
+      if (!sameEspInboxUgly(splits, this.config.remediationInboxThreshold)) {
+        continue;
+      }
+      if (
+        !shouldQueuePlacementSuspect({
+          existing: this.state
+            .listCopySuspects()
+            .find((row) => row.campaignId === target.campaignId),
+          openRun: this.state.latestIsolationRunForCampaign(target.campaignId),
+        })
+      ) {
+        continue;
+      }
+
+      this.state.markCopySuspect({
+        campaignId: target.campaignId,
+        campaignName: target.campaignName ?? campaign.name,
+        at: new Date().toISOString(),
+        reason: placementSuspectReason(
+          target.source,
+          splits,
+          this.config.remediationInboxThreshold,
+        ),
+      });
+      queued += 1;
+      console.log(
+        `[isolation-branch] queued #${target.campaignId} from ${target.source}: ${splits
+          .map((row) => `${row.name} ${row.inboxPercent.toFixed(0)}%`)
+          .join(", ")}`,
+      );
+    }
+    return queued;
+  }
+
+  /** copyCanaries test ids that listTests omitted — still score them. */
+  private syntheticCopyCanaryTests(
+    listedTests: Array<{ id?: string | number; spam_test_id?: string | number }>,
+  ): Array<{
+    id: string;
+    test_name: string;
+    campaign_id?: number;
+  }> {
+    const already = new Set(
+      listedTests
+        .map((test) => testIdOf(test))
+        .filter((id): id is string => Boolean(id)),
+    );
+    return this.state.listCopyCanaryTestIds().flatMap((id) => {
+      if (already.has(id)) return [];
+      already.add(id);
+      const campaignId = this.state.campaignIdForCopyCanaryTestId(id);
+      if (campaignId == null) return [];
+      return [
+        {
+          id,
+          test_name: `Canary copy: #${campaignId}`,
+          campaign_id: campaignId,
+        },
+      ];
+    });
   }
 
   private async campaignLooksSpam(campaignId: number): Promise<boolean> {

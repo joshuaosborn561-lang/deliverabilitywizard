@@ -83,14 +83,7 @@ export class IsolationRigService {
     const domain = effectiveIsolationDomain(this.config, this.state);
     const emails = await this.rigEmails();
     if (!domain || emails.length < 1) {
-      // D137 — an unarmed rig is a one-tap buy away, not a shrug. The ask
-      // dedupes for the lifetime of the rig; Josh's tap is the approval
-      // (D4/D60) and the buy runs the same spend-gated pipeline as a
-      // replacement domain.
-      await this.requestArm(domain);
-      console.log(
-        "[isolation-rig] not armed — the word hunt waits on the isolation-domain buy (D137)",
-      );
+      await this.ensureArmed();
       return result;
     }
     result.configured = true;
@@ -167,6 +160,21 @@ export class IsolationRigService {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * D137 / D158 — COPY with an unarmed rig waits and asks Josh once.
+   * Dedupes for the lifetime of the pending buy.
+   */
+  async ensureArmed(): Promise<void> {
+    if (!this.config.enableIsolationRig) return;
+    const domain = effectiveIsolationDomain(this.config, this.state);
+    const emails = await this.rigEmails();
+    if (domain && emails.length >= 1) return;
+    await this.requestArm(domain);
+    console.log(
+      "[isolation-rig] not armed — the word hunt waits on the isolation-domain buy (D137)",
+    );
   }
 
   /** D137 — one owner ask to buy the rig's isolation domain, ever. */

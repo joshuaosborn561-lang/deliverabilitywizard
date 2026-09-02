@@ -103,6 +103,7 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "canary-buy-resume": SIX_HOURLY_MS,
   "canary-adopt": SIX_HOURLY_MS,
   "isolation-rig": SIX_HOURLY_MS,
-  "isolation-branch": SIX_HOURLY_MS,
+  // D159 — score→suspect→evaluate rides the 15-minute health sweep.
+  "isolation-branch": HEALTH_MS,
   "copy-isolation": SIX_HOURLY_MS,
 };

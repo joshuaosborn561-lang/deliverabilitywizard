@@ -213,7 +213,10 @@ export interface AppState {
   /** D140 — last classified bounce verdict per campaign (id key). */
   bounceVerdicts: Record<string, BounceVerdictRecord>;
   /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
-  bounceSnapshots: Record<string, { bounced: number; sent: number; at: string }>;
+  bounceSnapshots: Record<
+    string,
+    { bounced: number; sent: number; at: string; senderBlockHint?: string }
+  >;
   /**
    * D128 — campaigns the D90 bounce loop paused (id → ISO). qa-unpause never
    * STARTs a stamped campaign; the stamp clears when a human STARTs it and
@@ -974,13 +977,23 @@ export class StateStore {
 
   getBounceSnapshot(
     campaignId: number,
-  ): { bounced: number; sent: number; at: string } | undefined {
+  ): {
+    bounced: number;
+    sent: number;
+    at: string;
+    senderBlockHint?: string;
+  } | undefined {
     return this.state.bounceSnapshots[String(campaignId)];
   }
 
   setBounceSnapshot(
     campaignId: number,
-    snapshot: { bounced: number; sent: number; at: string },
+    snapshot: {
+      bounced: number;
+      sent: number;
+      at: string;
+      senderBlockHint?: string;
+    },
   ): void {
     this.state.bounceSnapshots[String(campaignId)] = snapshot;
   }

@@ -2912,6 +2912,56 @@ describe("owner intent — D145/D146 a sender block is a burned domain", () => {
   });
 });
 
+describe("owner intent — D162 5.1.8 is not burst-gated or ACTIVE-only", () => {
+  it("D162: the retire ask runs on PAUSED and without a burst trip", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+    const autostop = await read("../services/campaignBounceAutostop.ts");
+    assert.match(
+      autostop,
+      /scanSenderBlockedNdRs/,
+      stop(
+        "A 5.1.8 sample opens the retire ask without waiting for a D141 burst (D162).",
+        "campaignBounceAutostop.ts lost the burst-independent sender-block scan — the 8/31 BCP 5.1.8s on a paused campaign would stay silent again.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /isLivingSendCampaign/,
+      stop(
+        "The 5.1.8 scan includes PAUSED campaigns (D162) — Smartlead bounce-protection pause must not hide a burned domain.",
+        "campaignBounceAutostop.ts only walks ACTIVE campaigns again.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /openSenderBlockedRetireAsks/,
+      stop(
+        "Burst classify and the independent scan share the same burned-domain ask helper (D145/D146/D162).",
+        "The sender-block ask was inlined back into the burst-only classify path.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /updateCampaignStatus\([^)]*START/,
+      stop(
+        "The 5.1.8 path never STARTs anyone (D40/D148/D162).",
+        "campaignBounceAutostop.ts now STARTs a campaign.",
+      ),
+    );
+    assert.doesNotMatch(
+      autostop,
+      /updateCampaignStatus\([^)]*PAUSED/,
+      stop(
+        "The 5.1.8 path never pauses anyone (D148/D162).",
+        "campaignBounceAutostop.ts writes PAUSED again.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D147 a remediated bounce is a resend", () => {
   it("D147: the resend is NDR-gated, once per lead, suppression-respecting, never lead sourcing", async () => {
     const { RESURRECTABLE_CLASSES } = await import(
@@ -5455,10 +5505,10 @@ describe("owner intent — D161 client-domain replace is client-named", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D161\*\*/,
+      /D161/,
       stop(
-        "CANON is as of D161.",
-        "CANON.md header was not bumped.",
+        "CANON still names the client-named replace rule (D161).",
+        "CANON.md dropped D161 when a later decision landed.",
       ),
     );
     const decisions = await readFile(

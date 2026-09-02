@@ -160,7 +160,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D142 | Live — marker-client-records clause superseded by D160 | Generic is a pool, pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged (now moot) |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
-| D145 | Amended by D146 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146) |
+| D145 | Amended by D146 / D162 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146; the scan must run without a burst / on PAUSED — D162) |
 | D146 | Live | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the dedupe |
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
 | D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
@@ -176,6 +176,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
 | D160 | Live | Generic and POC are mailbox tags, never Smartlead clients — Josh does not pay for pool labels; leftover client records detach then get deleted in the UI |
 | D161 | Live | Client-domain retire MUST buy a client-named replacement; generic/pool spins are only for generic/pool domains |
+| D162 | Live | 5.1.8 / AS(42004) opens the burned-domain retire ask without a burst and on PAUSED campaigns — D145/D146 were burst-nested and ACTIVE-only, so the 8/31 BCP sender block never Slacked |
 
 ---
 
@@ -4436,3 +4437,53 @@ in `isolationBuy` / `isolationExecute` / `domainLifecycle`; CANON
 MUST language; Slack retire copy names D161. Lib + service tests:
 BCP retire cannot select `crosslaunchco*`; generic retire still
 can.
+
+## D162 — A 5.1.8 opens the retire ask without a burst, even on PAUSED
+
+**Decision (2026-09-02, forced by the 8/31 BCP miss).** D145/D146 already
+said ANY `550 5.1.8` / AS(42004) / "bad outbound sender" sample opens
+the standard burned-domain retire ask (receipts + cancel/replace
+buttons, one pending ask per domain). The code only ran that path
+inside a REAL burst classify on ACTIVE campaigns. On 2026-08-31,
+`caseykassulke@boldercyperpartnerpro.info` took NDRs `550 5.1.8 Access
+denied, bad outbound sender AS(42004)` (Sender Originated Bounce).
+Nothing posted to #deliverability. Josh was never notified.
+
+The miss was structural, not a classifier bug:
+
+1. The bounce loop only walked ACTIVE campaigns. A Smartlead UI bounce-
+   protection pause (D157 — the API cannot turn that off) removed the
+   campaign from the scan.
+2. D141's burst gate (>10 new bounces / 10 min, sampled sends <24h)
+   wrapped the D145/D146 ask. A slow drip, or a pause that stopped the
+   drip, never classified.
+3. Stats (`email_status=bounced`) have no SMTP text. The NDR lives on
+   `GET /campaigns/{id}/leads/{lead_id}/message-history`.
+
+**The rule.**
+
+1. ANY sampled NDR containing `550 5.1.8`, `AS(42004)`, or "bad
+   outbound sender" opens the burned-domain retire ask for that
+   **sender domain** immediately. Not dominant-gated (D145). Not
+   burst-gated. ACTIVE or PAUSED. COMPLETED/STOPPED and shells stay
+   out.
+2. Prefer message-history when `lead_category` is Sender Originated
+   Bounce or unset — that is the BCP shape. Stats stay a lead list,
+   not a diagnosis.
+3. One pending ask per domain (D146). A freshly retired domain is not
+   re-asked.
+4. The normal burst path for other classes is unchanged (D141/D148).
+   This is not a D91 paused-campaign bounce-rate hunt.
+5. Never START / STOP / pause from this path (D40/D148). Slack kind is
+   `burned_domain` (D71).
+
+**Supersedes / amends.** Amends D145/D146 (the trigger still stands;
+the scan must actually run). Does not reverse D91, D40, D148, or D157.
+
+**Guards.** canon D162 block: `scanSenderBlockedNdRs` and
+`isLivingSendCampaign` live in campaignBounceAutostop.ts; the shared
+`openSenderBlockedRetireAsks` helper is what both the burst classify
+and the independent scan call; no `updateCampaignStatus` START/PAUSED.
+Service tests: 5.1.8 on PAUSED opens the ask; same domain does not
+double-ask; +2 ACTIVE drip with a 5.1.8 still asks; non-5.1.8 burst
+and paused tenant-cap do not.

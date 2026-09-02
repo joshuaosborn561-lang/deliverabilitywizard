@@ -31,6 +31,12 @@ export interface BounceSnapshot {
   bounced: number;
   sent: number;
   at: string;
+  /**
+   * D162 — fingerprint of the last 5.1.8 NDR scan (sampled row count +
+   * newest sent_time). The sender-block path uses this so an unchanged
+   * ledger is not re-read every 10 minutes.
+   */
+  senderBlockHint?: string;
 }
 
 /** More than 10 new bounces inside the last ~10-minute snapshot window. */

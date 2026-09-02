@@ -3,6 +3,9 @@ import { describe, it } from "node:test";
 import {
   bounceReasonSnippet,
   classifyBounceText,
+  leadCategoryOf,
+  leadCategoryWantsNdrRead,
+  preferNdrRows,
   summarizeBounceSamples,
 } from "./bounceReason.js";
 
@@ -22,6 +25,10 @@ describe("bounce reason classification (D140)", () => {
     // the plain-wording variant Microsoft also uses
     assert.equal(
       classifyBounceText("your account has been blocked from sending mail"),
+      "sender_blocked",
+    );
+    assert.equal(
+      classifyBounceText("Access denied AS(42004) — sender originated"),
       "sender_blocked",
     );
   });
@@ -53,5 +60,28 @@ describe("bounce reason classification (D140)", () => {
     assert.equal(dominant, "tenant_rate_limit");
     assert.match(summary, /tenant_rate_limit×2/);
     assert.match(summary, /invalid_recipient×1/);
+  });
+
+  it("D162: Sender Originated Bounce / unset categories prefer an NDR read", () => {
+    assert.equal(leadCategoryWantsNdrRead(null), true);
+    assert.equal(leadCategoryWantsNdrRead(""), true);
+    assert.equal(
+      leadCategoryWantsNdrRead("Sender Originated Bounce"),
+      true,
+    );
+    assert.equal(leadCategoryWantsNdrRead("Interested"), false);
+    assert.equal(
+      leadCategoryOf({ lead_category: { name: "Sender Originated Bounce" } }),
+      "Sender Originated Bounce",
+    );
+    const rows = [
+      { lead_email: "a", lead_category: "Interested" },
+      { lead_email: "b", lead_category: "Sender Originated Bounce" },
+      { lead_email: "c" },
+    ];
+    assert.deepEqual(
+      preferNdrRows(rows).map((row) => row.lead_email),
+      ["b", "c"],
+    );
   });
 });

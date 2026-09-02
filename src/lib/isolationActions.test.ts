@@ -6,6 +6,9 @@ import {
   buildIsolationAction,
   classifyLineJob,
   dismissPendingSignatureAsks,
+  isBannedCopySwap,
+  preferEllipsis,
+  refreshCopySwapAction,
   remindPendingIsolationActions,
   requestIsolationAction,
   suggestedCopySwap,
@@ -302,5 +305,173 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
     const swap = suggestedCopySwap(line);
     assert.match(swap, /commercial properties|Atlanta/i);
     assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
+  });
+});
+
+describe("D170 — refresh stale swap_copy on remind; classifier harden", () => {
+  it("remind refreshes a frozen Quick note swap before Slack", async () => {
+    const store = tempStore();
+    const notified: Array<{ actionId: string; suggestedSwap?: string; proof?: string }> =
+      [];
+    const slack = {
+      notifyIsolationAction: async (details: {
+        actionId: string;
+        suggestedSwap?: string;
+        proof?: string;
+      }) => {
+        notified.push(details);
+      },
+    } as unknown as SlackClient;
+    const element =
+      "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.";
+    const stale = buildIsolationAction({
+      kind: "swap_copy",
+      title: `It was “${element}” on TechEvo AirPods`,
+      proof: "Suggested edit: *Quick note —*.",
+      detail: {
+        campaignId: 3799001,
+        campaignName: "TechEvo AirPods",
+        element,
+        swap: "Quick note —",
+      },
+    });
+    store.upsertIsolationAction(stale);
+    const count = await remindPendingIsolationActions({ store, slack });
+    assert.equal(count, 1);
+    const updated = store.pendingIsolationActions()[0];
+    assert.ok(updated);
+    assert.equal(updated.id, stale.id);
+    assert.match(String(updated.detail.swap), /Air\s*Pods/i);
+    assert.doesNotMatch(String(updated.detail.swap), /Quick note|pen-test|school-district/i);
+    assert.doesNotMatch(String(updated.detail.swap), /—/);
+    assert.match(updated.proof, /Air\s*Pods/i);
+    assert.doesNotMatch(updated.proof, /Quick note/);
+    assert.equal(notified.length, 1);
+    assert.match(notified[0]?.suggestedSwap ?? "", /Air\s*Pods/i);
+    assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /Quick note|pen-test/i);
+  });
+
+  it("remind does not re-page a swap that is still a banned default", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const stale = buildIsolationAction({
+      kind: "swap_copy",
+      title: "It was winner on TechEvo",
+      proof: "Suggested edit: *Quick note — from our school-district pen-test work.*",
+      detail: {
+        campaignName: "TechEvo",
+        element: "winner",
+        swap: "Quick note — from our school-district pen-test work.",
+      },
+    });
+    store.upsertIsolationAction(stale);
+    const count = await remindPendingIsolationActions({ store, slack });
+    // "winner" is a spam-token → blank delete, not banned. Still posts.
+    // A line whose refresh cannot escape the banned defaults is the skip.
+    assert.equal(count, 1);
+    assert.equal(store.pendingIsolationActions()[0]?.detail.swap, "");
+    assert.deepEqual(notified, [stale.id]);
+
+    const stillBanned = buildIsolationAction({
+      kind: "swap_copy",
+      title: "It was a phrase on TechEvo",
+      proof: "Suggested edit: *Quick note —*.",
+      detail: {
+        campaignName: "TechEvo",
+        // Empty element cannot be recomputed; banned swap must not Slack.
+        element: "",
+        swap: "Quick note — from our school-district pen-test work.",
+      },
+    });
+    const store2 = tempStore();
+    const capture2 = slackCapture();
+    store2.upsertIsolationAction(stillBanned);
+    const skipped = await remindPendingIsolationActions({
+      store: store2,
+      slack: capture2.slack,
+    });
+    assert.equal(skipped, 0);
+    assert.deepEqual(capture2.notified, []);
+  });
+
+  it("refreshCopySwapAction rewrites a frozen identity-line Quick note", () => {
+    const action = buildIsolationAction({
+      kind: "swap_copy",
+      title: "It was identity on TechEvo",
+      proof: "Suggested edit: *Quick note —*.",
+      detail: {
+        campaignName: "TechEvo L1",
+        element: "Hey, we're TechEvolution and we help IT teams stay online.",
+        swap: "Quick note —",
+      },
+    });
+    const next = refreshCopySwapAction(action);
+    assert.match(String(next.detail.swap), /TechEvolution/i);
+    assert.doesNotMatch(String(next.detail.swap), /Quick note|pen-test|school-district/i);
+    assert.doesNotMatch(String(next.detail.swap), /—/);
+    assert.equal(isBannedCopySwap(String(next.detail.swap)), false);
+  });
+
+  it("classifies truncated {{Local_Sports_Team as a sports-ticket offer", () => {
+    const sliced = "I've got a couple {{Local_Sports_Team";
+    assert.equal(classifyLineJob(sliced), "gift-or-experience-offer");
+    const swap = suggestedCopySwap(sliced);
+    assert.match(swap, /Local_Sports_Team|tickets/i);
+    assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
+    assert.doesNotMatch(swap, /—/);
+  });
+
+  it("keeps company identity on we're-TechEvolution openers", () => {
+    const line = "Hey — we're TechEvolution, reaching out about your IT stack.";
+    assert.equal(classifyLineJob(line), "generic");
+    const swap = suggestedCopySwap(line);
+    assert.match(swap, /TechEvolution/i);
+    assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
+    assert.doesNotMatch(swap, /—/);
+    assert.match(preferEllipsis(line), /\.\.\./);
+    assert.doesNotMatch(preferEllipsis(line), /—/);
+  });
+
+  it("AirPods and jet ski substitutes stay offer-preserving with no em dash", () => {
+    for (const [line, offer] of [
+      [
+        "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+        /Air\s*Pods/i,
+      ],
+      ["I've got a jet ski you can take out this weekend.", /jet\s*ski/i],
+    ] as const) {
+      const swap = suggestedCopySwap(line);
+      assert.match(swap, offer);
+      assert.doesNotMatch(swap, /Quick note|pen-test|school-district|—/);
+    }
+  });
+
+  it("first notify refreshes a swap_copy before Slack", async () => {
+    const store = tempStore();
+    const notified: Array<{ suggestedSwap?: string }> = [];
+    const slack = {
+      notifyIsolationAction: async (details: { suggestedSwap?: string }) => {
+        notified.push(details);
+      },
+    } as unknown as SlackClient;
+    const posted = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "swap_copy",
+        title: "It was AirPods",
+        proof: "Suggested edit: *Quick note —*.",
+        detail: {
+          campaignName: "TechEvo AirPods",
+          element:
+            "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+          swap: "Quick note —",
+        },
+      }),
+    });
+    assert.ok(posted);
+    assert.match(String(posted?.detail.swap), /Air\s*Pods/i);
+    assert.match(notified[0]?.suggestedSwap ?? "", /Air\s*Pods/i);
+    assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /Quick note/);
   });
 });

@@ -314,8 +314,9 @@ export class CopyIsolationService {
         run.campaignId,
         run.suspectTestId,
       ).catch(() => ({}) as { subject?: string; body?: string });
+      const context = [copy.subject, copy.body].filter(Boolean).join("\n");
       const swap = suggestedCopySwap(winner.element, {
-        context: [copy.subject, copy.body].filter(Boolean).join("\n"),
+        context,
         campaignName: run.campaignName,
         client: run.client,
       });
@@ -335,8 +336,10 @@ export class CopyIsolationService {
           detail: {
             campaignId: run.campaignId,
             campaignName: run.campaignName,
+            client: run.client,
             element: winner.element,
             swap,
+            context,
           },
         }),
       });

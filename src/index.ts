@@ -91,7 +91,12 @@ import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { canonBoard } from "./lib/canonCompliance.js";
 import { placementIsolationHealth } from "./lib/placementSuspect.js";
-import { STAGE_OVERDUE_WINDOWS_MS, overdueStages } from "./lib/stageWindows.js";
+import {
+  STAGE_OVERDUE_WINDOWS_MS,
+  overdueStages,
+  stageHealthView,
+  stageIdleReason,
+} from "./lib/stageWindows.js";
 import {
   MONITOR_CYCLE_MS,
   isMonitorStageFresh,
@@ -566,7 +571,7 @@ async function main(): Promise<void> {
     }
     try {
       const out = await fn();
-      state.recordStageOk(name, Date.now() - startedAt);
+      state.recordStageOk(name, Date.now() - startedAt, stageIdleReason(out));
       await checkpointStage(name);
       return out;
     } catch (error) {
@@ -702,10 +707,16 @@ async function main(): Promise<void> {
         }
       }
 
-      // D89 — serving inboxes missing a living known-good canary get a
-      // pod-control test on this pass (throttled hourly), not only at the
-      // 6-hour monitor.
-      if (config.enablePodControls) {
+      // D89 / D166 — serving inboxes missing a living known-good canary
+      // get a pod-control test on this pass (throttled hourly), not only
+      // at the 6-hour monitor. The watchdog tick always runs so lastOkAt
+      // cannot freeze when the board is already covered (prod 2026-08-27
+      // → 2026-09-02: six silent days, consecutiveFailures=0).
+      await stage("pod-cover", async () => {
+        if (!config.enablePodControls) {
+          console.log("[pod-cover] idle — ENABLE_POD_CONTROLS is off");
+          return { skipped: true as const, reason: "disabled" };
+        }
         const missingKnownGood = state
           .listCampaignChecks()
           .some((record) =>
@@ -717,10 +728,20 @@ async function main(): Promise<void> {
         const podAgeMs = lastPodAt
           ? Date.now() - Date.parse(lastPodAt)
           : Number.POSITIVE_INFINITY;
-        if (missingKnownGood && podAgeMs >= 55 * 60 * 1000) {
-          await stage("pod-cover", () => podControls.run());
+        if (!missingKnownGood) {
+          console.log(
+            "[pod-cover] idle — no inbox_missing_known_good findings",
+          );
+          return { skipped: true as const, reason: "covered" };
         }
-      }
+        if (podAgeMs < 55 * 60 * 1000) {
+          console.log(
+            `[pod-cover] idle — hourly throttle (last pod-control ${lastPodAt})`,
+          );
+          return { skipped: true as const, reason: "throttled" };
+        }
+        return podControls.run();
+      });
 
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
@@ -1805,17 +1826,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
     }
     const board = canonBoard(Object.values(s.campaignChecks ?? {}));
-    const stages: Record<
-      string,
-      { lastOkAt: string | null; consecutiveFailures: number; lastError: string | null }
-    > = {};
-    for (const [name, row] of Object.entries(s.stageHealth ?? {})) {
-      stages[name] = {
-        lastOkAt: row.lastOkAt,
-        consecutiveFailures: row.consecutiveFailures,
-        lastError: row.consecutiveFailures > 0 ? row.lastError : null,
-      };
-    }
+    const { stages, overdueStages: overdue } = stageHealthView(
+      s.stageHealth ?? {},
+    );
     res.json({
       ok: true,
       service: "deliverabilitywizard",
@@ -1825,6 +1838,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       canonYes: board.campaigns.filter((row) => row.yes).length,
       canonNo: board.campaigns.filter((row) => !row.yes).length,
       canaryFleetDown: s.canaryFleetDown ?? null,
+      overdueStages: overdue.map((row) => ({
+        name: row.name,
+        lastOkAt: row.lastOkAt,
+        consecutiveFailures: row.consecutiveFailures,
+        lastError: row.lastError,
+        windowMs: row.windowMs,
+      })),
       stages,
       deploy: deployIdentity,
       secretsConfigured: secretsReady,
@@ -1839,6 +1859,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       cronMonitor: config.cronMonitor,
       enableCampaignHealth: config.enableCampaignHealth,
       cronHealth: config.cronHealth,
+      enablePodControls: config.enablePodControls,
       enableCampaignCheck: config.enableCampaignCheck,
       cronCampaignCheck: config.cronCampaignCheck,
       campaignCheckCount: Object.keys(s.campaignChecks ?? {}).length,

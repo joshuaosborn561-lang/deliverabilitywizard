@@ -94,7 +94,7 @@ describe("D149 — the stage watchdog pages Slack, once per episode", () => {
 
   it("an event-driven stage (null window) never pages", async () => {
     const s = store();
-    s.recordStageError("pod-cover", "boom");
+    s.recordStageError("scan-backfill", "boom");
     const r = recorder();
     const out = await alertStageAnomalies({
       store: s,

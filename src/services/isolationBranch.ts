@@ -31,6 +31,7 @@ import {
 import {
   isTerminalIsolationVerdict,
   liveCampaignForPlacementTrigger,
+  minSameEspInbox,
   placementSuspectReason,
   sameEspInboxUgly,
   shouldQueuePlacementSuspect,
@@ -332,7 +333,11 @@ export class IsolationBranchService {
     const tests = [
       ...listedTests,
       ...this.syntheticCopyCanaryTests(listedTests),
-    ];
+    ].sort((a, b) => {
+      const ac = isCanaryCopyTestName(a.test_name) ? 0 : 1;
+      const bc = isCanaryCopyTestName(b.test_name) ? 0 : 1;
+      return ac - bc;
+    });
     let queued = 0;
     const seen = new Set<number>();
 
@@ -352,6 +357,31 @@ export class IsolationBranchService {
       ) {
         continue;
       }
+
+      const tid = testIdOf(test);
+      if (!tid) continue;
+      if (
+        isIsolationManagedTestName(test.test_name) &&
+        !isCanaryCopyTestName(test.test_name)
+      ) {
+        continue;
+      }
+      seen.add(target.campaignId);
+      const splits = await this.providerSplits(tid);
+      const inbox = minSameEspInbox(splits);
+      if (inbox != null) {
+        this.state.recordPlacementScore({
+          campaignId: target.campaignId,
+          campaignName: target.campaignName ?? campaign.name,
+          testId: tid,
+          source: target.source,
+          inboxPercent: inbox,
+          at: new Date().toISOString(),
+        });
+      }
+      if (!sameEspInboxUgly(splits, this.config.remediationInboxThreshold)) {
+        continue;
+      }
       if (
         !shouldQueuePlacementSuspect({
           existing: this.state
@@ -363,20 +393,6 @@ export class IsolationBranchService {
         continue;
       }
 
-      const tid = testIdOf(test);
-      if (!tid) continue;
-      if (
-        isIsolationManagedTestName(test.test_name) &&
-        !isCanaryCopyTestName(test.test_name)
-      ) {
-        continue;
-      }
-      const splits = await this.providerSplits(tid);
-      if (!sameEspInboxUgly(splits, this.config.remediationInboxThreshold)) {
-        continue;
-      }
-
-      seen.add(target.campaignId);
       this.state.markCopySuspect({
         campaignId: target.campaignId,
         campaignName: target.campaignName ?? campaign.name,

@@ -112,6 +112,16 @@ export interface CopySuspectRecord {
   reason?: string;
 }
 
+/** Last same-ESP reading the 15-minute on-ramp scored (D159). */
+export interface PlacementScoreRecord {
+  campaignId: number;
+  campaignName?: string;
+  testId: string;
+  source: "canary-copy" | "live-placement";
+  inboxPercent: number;
+  at: string;
+}
+
 /** D51/D54/D55 — dedicated canary fleet sending campaign copy off-campaign. */
 export interface CopyCanaryRecord {
   campaignId: number;
@@ -177,6 +187,7 @@ export interface IsolationState {
   variants: Record<string, IsolationVariantRecord>;
   suppressedTerms: Record<string, SuppressedTerm>;
   copySuspects: Record<string, CopySuspectRecord>;
+  placementScores: Record<string, PlacementScoreRecord>;
   copyCanaries: Record<string, CopyCanaryRecord>;
   copyCanaryFleet: CopyCanaryFleetRecord | null;
   lastPodControlAt: string | null;
@@ -201,6 +212,7 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   variants: {},
   suppressedTerms: {},
   copySuspects: {},
+  placementScores: {},
   copyCanaries: {},
   copyCanaryFleet: null,
   lastPodControlAt: null,
@@ -227,6 +239,7 @@ export function normalizeIsolationState(
     variants: raw?.variants ?? {},
     suppressedTerms: raw?.suppressedTerms ?? {},
     copySuspects: raw?.copySuspects ?? {},
+    placementScores: raw?.placementScores ?? {},
     copyCanaries: raw?.copyCanaries ?? {},
     copyCanaryFleet: raw?.copyCanaryFleet ?? null,
     controlTemplate: raw?.controlTemplate ?? null,

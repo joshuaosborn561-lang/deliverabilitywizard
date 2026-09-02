@@ -3,9 +3,11 @@ import { describe, it } from "node:test";
 import {
   isTerminalIsolationVerdict,
   liveCampaignForPlacementTrigger,
+  placementIsolationHealth,
   placementSuspectReason,
   sameEspInboxUgly,
   shouldQueuePlacementSuspect,
+  uglyWithoutIsolation,
 } from "./placementSuspect.js";
 
 const live = {
@@ -153,5 +155,61 @@ describe("placement suspect queue gates (D158)", () => {
     assert.equal(isTerminalIsolationVerdict("INFRA"), true);
     assert.equal(isTerminalIsolationVerdict("HEALTHY"), true);
     assert.equal(isTerminalIsolationVerdict("INCONCLUSIVE"), false);
+  });
+});
+
+describe("placement isolation health (D159)", () => {
+  const score = {
+    campaignId: 3847794,
+    campaignName: live.name,
+    source: "canary-copy" as const,
+    testId: "526826",
+    inboxPercent: 0,
+  };
+
+  it("lists ugly campaigns with no suspect and no isolation run", () => {
+    const holes = uglyWithoutIsolation({
+      scores: [score],
+      suspects: [],
+      latestRun: () => undefined,
+      threshold: 80,
+    });
+    assert.equal(holes.length, 1);
+    assert.equal(holes[0]?.campaignId, 3847794);
+  });
+
+  it("hides a campaign that already has an open suspect or COPY run", () => {
+    assert.deepEqual(
+      uglyWithoutIsolation({
+        scores: [score],
+        suspects: [{ campaignId: 3847794 }],
+        latestRun: () => undefined,
+        threshold: 80,
+      }),
+      [],
+    );
+    assert.deepEqual(
+      uglyWithoutIsolation({
+        scores: [score],
+        suspects: [],
+        latestRun: () => ({ verdict: "COPY", teardownStarted: true }),
+        threshold: 80,
+      }),
+      [],
+    );
+  });
+
+  it("exposes lastOk, scored, ugly, and holes for /health", () => {
+    const snap = placementIsolationHealth({
+      scores: [score, { ...score, campaignId: 1, inboxPercent: 95, testId: "1" }],
+      suspects: [],
+      latestRun: () => undefined,
+      threshold: 80,
+      lastOkAt: "2026-09-02T02:30:00.000Z",
+    });
+    assert.equal(snap.lastOkAt, "2026-09-02T02:30:00.000Z");
+    assert.equal(snap.scored, 2);
+    assert.equal(snap.ugly, 1);
+    assert.equal(snap.uglyWithoutIsolation.length, 1);
   });
 });

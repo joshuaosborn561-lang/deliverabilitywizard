@@ -90,6 +90,7 @@ import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { canonBoard } from "./lib/canonCompliance.js";
+import { placementIsolationHealth } from "./lib/placementSuspect.js";
 import { STAGE_OVERDUE_WINDOWS_MS, overdueStages } from "./lib/stageWindows.js";
 import { alertStageAnomalies } from "./services/opsAlerts.js";
 import {
@@ -725,6 +726,16 @@ async function main(): Promise<void> {
         }
       }
 
+      // D159 — score → markCopySuspect → evaluate on the 15-minute sweep
+      // so ugly same-ESP is remediating within one health cycle, not the
+      // 6-hour monitor. Live % still never rotates (D51).
+      let isolationBranchResult: unknown = null;
+      if (config.enableIsolationBranch) {
+        isolationBranchResult = await stage("isolation-branch", () =>
+          isolationBranch.run(),
+        );
+      }
+
       logCanonScoreboard();
       const passMs = Date.now() - passStart;
       if (passMs > 15 * 60 * 1000) {
@@ -747,6 +758,7 @@ async function main(): Promise<void> {
         reconnect: reconnectResult,
         mailboxGap: mailboxGapResult,
         mailboxSettings: mailboxSettingsResult,
+        isolationBranch: isolationBranchResult,
       };
     })().finally(() => {
       healthInFlight = null;
@@ -852,10 +864,6 @@ async function main(): Promise<void> {
       if (config.enableIsolationRig) {
         isolationRigResult = await stage("isolation-rig", () => isolationRig.run());
       }
-      let isolationBranchResult: unknown = null;
-      if (config.enableIsolationBranch) {
-        isolationBranchResult = await stage("isolation-branch", () => isolationBranch.run());
-      }
       if (config.enableCopyIsolation) {
         await stage("copy-isolation", async () => {
           for (const run of state.listIsolationRuns()) {
@@ -874,7 +882,6 @@ async function main(): Promise<void> {
         sendingInfra: sendingInfraResult,
         podControls: podControlResult,
         isolationRig: isolationRigResult,
-        isolationBranch: isolationBranchResult,
       };
     })().finally(() => {
       monitorInFlight = null;
@@ -1774,6 +1781,14 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       cronAccountReconnectTz: "America/New_York",
       opsUiEnabled: config.opsUiEnabled,
       opsUiConfigured: opsAuth.isConfigured(),
+      placementIsolation: placementIsolationHealth({
+        scores: state.listPlacementScores(),
+        suspects: state.listCopySuspects(),
+        latestRun: (campaignId) =>
+          state.latestIsolationRunForCampaign(campaignId),
+        threshold: config.remediationInboxThreshold,
+        lastOkAt: s.stageHealth?.["isolation-branch"]?.lastOkAt ?? null,
+      }),
     });
   });
 

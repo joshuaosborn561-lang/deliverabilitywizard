@@ -144,6 +144,10 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(result.copy, 1);
     assert.deepEqual(teardowns, [AIRPODS.id], "COPY starts the word hunt");
     assert.ok(suspect.evaluatedAt, "terminal COPY stamps evaluatedAt");
+    const score = state.listPlacementScores().find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(score, "15-minute on-ramp persists the same-ESP reading");
+    assert.equal(score.source, "canary-copy");
+    assert.equal(score.inboxPercent, 0);
   });
 
   it("does not re-hunt on the next tick after a terminal verdict", async () => {

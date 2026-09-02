@@ -173,6 +173,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D155 | Superseded by D157 — the null "clear" was as dead as the 100s (handler discards the field); rule 3 (write-ok is never verification) survives, generalized | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign |
 | D157 | Live | Smartlead bounce protection is UI-only: POST settings validates `bounce_autopause_threshold` then DISCARDS it (a "banana" write returned ok; a Peterson campaign still showed 7% after fleet-wide writes) — every API "off" write (D80 100 / D124 force / D155 null) was a no-op and the converge is deleted; off-switch = campaign SETUP page, attribution = `campaign_activity_logs.paused_reason` |
 | D158 | Live | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra) — not a D71 placement Slack page; TechEvo AirPods 0% canary was the miss |
+| D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
 
 ---
 
@@ -4301,3 +4302,40 @@ starts (or waits + `ensureArmed`) rather than staying
 under 80% marks + evaluate; copyCanaries-only ids are scored;
 content_block queues; unarmed COPY waits and arms; notifyPlacementResult
 stays quiet; COPY vs INFRA still follows `decideIsolationVerdict`.
+
+## D159 — Isolation on-ramp rides the 15-minute health sweep
+
+**Decision (2026-09-02, Josh escalation).** The placement/canary →
+isolation bridge must run about **every 15 minutes during the send
+day**, not only on the 6-hourly monitor or daily DeliveryWatch. Ugly
+same-ESP (under `remediationInboxThreshold` 80) is caught and
+remediating within one health cycle.
+
+**Why.** AirPods #3847794 scored 0% around 1:05pm CT. The bounce loop
+paged `content_block` the same afternoon. Isolation never opened
+because the score→suspect pass lived on the slow monitor. A 6-hour
+gap is a missed send day.
+
+**The rule.**
+
+1. `IsolationBranchService.run()` (score → `markCopySuspect` →
+   `evaluate`) is a watchdogged health-pass stage
+   (`isolation-branch`), overdue window = the 15-minute sweep.
+2. Live inbox % still never rotates (D51). This is diagnosis /
+   remediation on-ramp only. No START, no STOP, no pause.
+3. `/health` exposes `placementIsolation`: scored / ugly counts,
+   canaries/campaigns under 80% with no open isolation run or
+   suspect, and `lastOkAt` for the stage (also in `stages`).
+4. The 6-hour monitor may still score and queue as a second pass.
+   DeliveryWatch reply-collapse remains a third queue (D69). Neither
+   is the send-day cadence.
+
+**Supersedes / amends.** Amends D158's implied cadence (monitor /
+DeliveryWatch) to the 15-minute health sweep. Does not change the
+trigger, the COPY vs INFRA rules, or D51.
+
+**Guards.** canon D159 block: `stage("isolation-branch"` lives in
+`runHealth`; `STAGE_OVERDUE_WINDOWS_MS["isolation-branch"]` is the
+health window; `/health` names `placementIsolation`; CANON names
+D159. Service tests: ugly-without-isolation helper; isolation-branch
+records placement scores.

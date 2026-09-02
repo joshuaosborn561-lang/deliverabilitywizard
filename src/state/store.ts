@@ -14,6 +14,7 @@ import {
   EMPTY_ISOLATION_STATE,
   normalizeIsolationState,
   type CopySuspectRecord,
+  type PlacementScoreRecord,
   type IsolationActionRecord,
   type IsolationRunRecord,
   type IsolationState,
@@ -1335,6 +1336,14 @@ export class StateStore {
 
   listCopySuspects(): CopySuspectRecord[] {
     return Object.values(this.state.isolation.copySuspects);
+  }
+
+  recordPlacementScore(record: PlacementScoreRecord): void {
+    this.state.isolation.placementScores[String(record.campaignId)] = record;
+  }
+
+  listPlacementScores(): PlacementScoreRecord[] {
+    return Object.values(this.state.isolation.placementScores);
   }
 
   setCopyCanaries(

@@ -5211,3 +5211,72 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
     );
   });
 });
+
+describe("owner intent — D159 isolation on-ramp is the 15-minute sweep", () => {
+  it("D159: isolation-branch runs on health; /health names ugly-without-isolation", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const healthBody = index.slice(
+      index.indexOf("const runHealth = async"),
+      index.indexOf("const runBounceAutostop"),
+    );
+    assert.match(
+      healthBody,
+      /stage\("isolation-branch"/,
+      stop(
+        "The isolation on-ramp runs on the 15-minute health sweep (D159).",
+        "index.ts no longer stages isolation-branch inside runHealth.",
+      ),
+    );
+    const monitorBody = index.slice(
+      index.indexOf("monitorInFlight = (async () =>"),
+      index.indexOf("if (!cron.validate(config.cronScan))"),
+    );
+    assert.doesNotMatch(
+      monitorBody,
+      /stage\("isolation-branch"/,
+      stop(
+        "The 15-minute health sweep owns isolation-branch, not the 6-hour monitor (D159).",
+        "index.ts still stages isolation-branch inside the monitor loop.",
+      ),
+    );
+    assert.match(
+      index,
+      /placementIsolation/,
+      stop(
+        "/health exposes canaries/campaigns under 80% with no open isolation (D159).",
+        "index.ts /health lost placementIsolation.",
+      ),
+    );
+    const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
+    assert.equal(
+      STAGE_OVERDUE_WINDOWS_MS["isolation-branch"],
+      45 * 60 * 1000,
+      stop(
+        "isolation-branch overdue window matches the 15-minute sweep (D159).",
+        `isolation-branch window is ${STAGE_OVERDUE_WINDOWS_MS["isolation-branch"]}.`,
+      ),
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D159\*\*/,
+      stop(
+        "CANON names D159.",
+        "CANON.md was not updated for the 15-minute on-ramp.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D159 /,
+      stop(
+        "The 15-minute on-ramp cadence is in the ledger (D159).",
+        "DECISIONS.md no longer has D159.",
+      ),
+    );
+  });
+});

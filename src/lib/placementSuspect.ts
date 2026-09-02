@@ -82,6 +82,103 @@ export function sameEspInboxUgly(
   return anyEspBelowThreshold(providers, threshold);
 }
 
+/** Weakest same-ESP inbox % on the test, or null when nothing scored. */
+export function minSameEspInbox(
+  providers: ProviderInboxSplit[],
+): number | null {
+  if (!providers.length) return null;
+  return Math.min(...providers.map((row) => row.inboxPercent));
+}
+
+export function hasOpenIsolation(opts: {
+  existing?: { evaluatedAt?: string };
+  openRun?: { teardownStarted?: boolean; verdict?: string };
+}): boolean {
+  if (opts.existing && !opts.existing.evaluatedAt) return true;
+  if (opts.openRun?.teardownStarted) return true;
+  if (opts.openRun?.verdict === "COPY" || opts.openRun?.verdict === "INFRA") {
+    return true;
+  }
+  return false;
+}
+
+export interface UglyWithoutIsolationRow {
+  campaignId: number;
+  campaignName?: string;
+  source: PlacementSuspectSource;
+  testId: string;
+  inboxPercent: number;
+}
+
+/** QA: scored under the live bar with no suspect and no COPY/INFRA run. */
+export function uglyWithoutIsolation(opts: {
+  scores: Array<{
+    campaignId: number;
+    campaignName?: string;
+    source: PlacementSuspectSource;
+    testId: string;
+    inboxPercent: number;
+  }>;
+  suspects: Array<{ campaignId: number; evaluatedAt?: string }>;
+  latestRun: (campaignId: number) =>
+    | { teardownStarted?: boolean; verdict?: string }
+    | undefined;
+  threshold: number;
+}): UglyWithoutIsolationRow[] {
+  const suspectById = new Map(opts.suspects.map((row) => [row.campaignId, row]));
+  const out: UglyWithoutIsolationRow[] = [];
+  for (const score of opts.scores) {
+    if (score.inboxPercent >= opts.threshold) continue;
+    if (
+      hasOpenIsolation({
+        existing: suspectById.get(score.campaignId),
+        openRun: opts.latestRun(score.campaignId),
+      })
+    ) {
+      continue;
+    }
+    out.push({
+      campaignId: score.campaignId,
+      campaignName: score.campaignName,
+      source: score.source,
+      testId: score.testId,
+      inboxPercent: score.inboxPercent,
+    });
+  }
+  return out.sort((a, b) => a.campaignId - b.campaignId);
+}
+
+export function placementIsolationHealth(opts: {
+  scores: Array<{
+    campaignId: number;
+    campaignName?: string;
+    source: PlacementSuspectSource;
+    testId: string;
+    inboxPercent: number;
+  }>;
+  suspects: Array<{ campaignId: number; evaluatedAt?: string }>;
+  latestRun: (campaignId: number) =>
+    | { teardownStarted?: boolean; verdict?: string }
+    | undefined;
+  threshold: number;
+  lastOkAt: string | null;
+}): {
+  lastOkAt: string | null;
+  threshold: number;
+  scored: number;
+  ugly: number;
+  uglyWithoutIsolation: UglyWithoutIsolationRow[];
+} {
+  const holes = uglyWithoutIsolation(opts);
+  return {
+    lastOkAt: opts.lastOkAt,
+    threshold: opts.threshold,
+    scored: opts.scores.length,
+    ugly: opts.scores.filter((row) => row.inboxPercent < opts.threshold).length,
+    uglyWithoutIsolation: holes,
+  };
+}
+
 /**
  * Do not re-hunt every monitor tick. An unevaluated suspect is already
  * queued; a terminal isolation run or an open word hunt owns the campaign.

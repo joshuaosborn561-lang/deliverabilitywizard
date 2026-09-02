@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D159** (2026-09-02). One page of current truth. When a new
+Canon as of **D161** (2026-09-02). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -89,7 +89,12 @@ Slack speaks only when a human decision is needed or the day is done.
   (D142); a domain-retire tap is one fell swoop (D150): pull the burned
   inboxes, buy a replacement domain whose Google/Outlook mailbox mix
   matches what was retired, and auto-approve generics to cover the ACTIVE
-  campaigns it cut until those replacements warm (D134). Cross-client
+  campaigns it cut until those replacements warm (D134). **A client-domain
+  retire MUST buy a client-named replacement for that client** (BCP →
+  `boldercyperpartner*` / `getboldercyperpartner*` / `tryboldercyperpartner*`
+  style names already used for that client) — never a generic
+  crosslaunchco / pool spin. Generic spins are only for generic/pool
+  domains (D161). Cross-client
   top-up is a compensated **move**; same-client is additive. (The old
   recovery-swap system and its reservations are deleted, D130.)
 - **Retired domains stay off** live campaigns forever; replacements owe the
@@ -191,8 +196,9 @@ Slack speaks only when a human decision is needed or the day is done.
 
 Exactly three pages plus receipts (D71, D47 plain English):
 1. **Burned domain** — receipts + cancel/replace buttons; the retire tap
-   pulls, buys the ESP-matched replacement, and lets generics cover the
-   campaigns it cut (D134/D150).
+   pulls, buys the ESP-matched replacement (client-named when the burned
+   domain is a client domain — never a generic/pool spin, D161), and lets
+   generics cover the campaigns it cut (D134/D150).
 2. **Isolated spam word** — the exact phrase, a substitute that keeps
    inboxing (D152), *Use suggested edit* / *Write my own edit* (D153).
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
@@ -212,7 +218,7 @@ are dead (D97); the fix is written automatically as
 ## Spend and the human loop
 
 Three human moments (D49): **retire a domain** (Josh — one tap is pull +
-ESP-matched replacement buy + D134 backfill, D150), **buy
+ESP-matched, **client-named** replacement buy + D134 backfill, D150/D161), **buy
 domains/mailboxes** (Josh; Slack tap is the approval, asked once — D60;
 fail-#1 buy-ahead still exists until the domain actually retires),
 **change live copy** (Josh or Cayden, one word per tap, applied fleet-wide — D133). Everything else is

@@ -20,6 +20,7 @@ import {
   espMixFromAccountTypes,
   platformsMatchingEspMix,
 } from "../lib/retireEspMix.js";
+import { replacementParentForRetiredDomain } from "../lib/retireReplacement.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import { slackKindForIsolationAction } from "../lib/slackAllow.js";
@@ -196,7 +197,11 @@ export class IsolationExecuteService {
         detail: {
           domain,
           quantity: 1,
-          parentDomain: this.config.isolationBuyParentDomain,
+          parentDomain: replacementParentForRetiredDomain(
+            domain,
+            this.config,
+            { kind: "buy_domains" },
+          ),
           espMix,
           platforms,
           retiredDomain: domain,

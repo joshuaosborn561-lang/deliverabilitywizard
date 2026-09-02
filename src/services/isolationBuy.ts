@@ -4,6 +4,12 @@ import type { AppConfig } from "../config.js";
 import { generateDomainSpins } from "../lib/domainNaming.js";
 import { pickUniquePersonNames } from "../lib/personNames.js";
 import { platformsFromActionDetail } from "../lib/retireEspMix.js";
+import {
+  filterReplacementSpins,
+  isClientSendingDomain,
+  isForbiddenGenericReplacement,
+  replacementParentForRetiredDomain,
+} from "../lib/retireReplacement.js";
 import type { SpendGateway } from "../lib/spendGateway.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
@@ -94,21 +100,51 @@ export class IsolationBuyService {
     if (!this.inboxkit) {
       throw new Error("InboxKit is not configured, so I cannot attach nameservers.");
     }
-    const parent =
-      String(action.detail.parentDomain ?? "") ||
-      this.config.isolationBuyParentDomain;
+    // D161 — client-domain replace spins from that client's brand.
+    // The stock path used to always use isolationBuyParentDomain
+    // (crosslaunchco.com); that is what bought crosslaunchcotry.info
+    // for retired boldercyperpartnerpro.info. Not an ESP-inventory
+    // fallback — the parent was hard-coded generic on every retire.
+    const sourceDomain = String(
+      action.detail.retiredDomain ?? action.detail.domain ?? "",
+    ).toLowerCase();
+    const parent = replacementParentForRetiredDomain(
+      sourceDomain,
+      this.config,
+      {
+        requestedParent: String(action.detail.parentDomain ?? ""),
+        kind: action.kind,
+      },
+    );
+    if (
+      sourceDomain &&
+      isForbiddenGenericReplacement(sourceDomain, parent, this.config)
+    ) {
+      throw new Error(
+        `Refusing generic replacement parent ${parent} for client domain ${sourceDomain} (D161).`,
+      );
+    }
     const owned = new Set(
       this.store
         .listPoolMailboxes()
         .map((row) => row.domain.toLowerCase())
         .filter(Boolean),
     );
-    const candidates = generateDomainSpins(parent).filter(
-      (spin) => !owned.has(spin.domain),
+    const candidates = filterReplacementSpins(
+      generateDomainSpins(parent),
+      sourceDomain,
+      this.config,
+      owned,
     );
     const bought: string[] = [];
     for (const spin of candidates) {
       if (bought.length >= quantity) break;
+      if (
+        sourceDomain &&
+        isForbiddenGenericReplacement(sourceDomain, spin.domain, this.config)
+      ) {
+        continue;
+      }
       const check = await this.porkbun.checkDomainThrottled(spin.domain);
       if (!check.available) continue;
       const cents = PorkbunClient.priceToCents(check.price);
@@ -137,8 +173,12 @@ export class IsolationBuyService {
       bought.push(spin.domain);
     }
     if (bought.length < quantity) {
+      const clientHint =
+        sourceDomain && isClientSendingDomain(sourceDomain, this.config)
+          ? " Client-named spins only — I will not fall back to a generic/pool domain (D161)."
+          : "";
       throw new Error(
-        `Only found ${bought.length} available replacement domain${bought.length === 1 ? "" : "s"} (needed ${quantity}).`,
+        `Only found ${bought.length} available replacement domain${bought.length === 1 ? "" : "s"} (needed ${quantity}).${clientHint}`,
       );
     }
     return bought;

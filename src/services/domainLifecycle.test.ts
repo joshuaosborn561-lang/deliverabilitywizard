@@ -97,4 +97,29 @@ describe("DomainLifecycleService", () => {
     assert.match(action?.proof ?? "", /sitting off campaigns/i);
     assert.equal(slack.actions.length, 1);
   });
+
+  it("D161: a BCP retire ask carries a client-brand parent, not crosslaunchco", async () => {
+    const state = await store();
+    const slack = new FakeSlack();
+    const svc = new DomainLifecycleService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      state,
+      slack as never,
+    );
+    await svc.afterReadings([
+      { email: "a@boldercyperpartnerpro.info", placement: "SPAM", ranAt: "t1" },
+      { email: "b@boldercyperpartnerpro.info", placement: "SPAM", ranAt: "t1" },
+    ]);
+    await svc.afterReadings([
+      { email: "a@boldercyperpartnerpro.info", placement: "SPAM", ranAt: "t2" },
+      { email: "b@boldercyperpartnerpro.info", placement: "SPAM", ranAt: "t2" },
+    ]);
+    const retire = state
+      .listIsolationActions()
+      .find((row) => row.kind === "retire_domain");
+    assert.ok(retire, "two consecutive BCP fails open retire");
+    const parent = String(retire?.detail.parentDomain ?? "");
+    assert.match(parent, /boldercyperpartner/);
+    assert.doesNotMatch(parent, /crosslaunchco/);
+  });
 });

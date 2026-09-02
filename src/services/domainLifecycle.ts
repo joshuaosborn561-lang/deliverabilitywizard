@@ -7,6 +7,7 @@ import {
   type DomainMailboxReading,
 } from "../lib/domainControl.js";
 import { domainProof } from "../lib/isolationProof.js";
+import { replacementParentForRetiredDomain } from "../lib/retireReplacement.js";
 import {
   buildIsolationAction,
   requestIsolationAction,
@@ -114,8 +115,14 @@ export class DomainLifecycleService {
               domain,
               // D150 — the retire tap is also the replacement buy + ESP match
               // + D134 backfill. Quantity/parent ride along so execute has them.
+              // D161 — client-domain parent is that client's brand, not
+              // isolationBuyParentDomain (the generic stock default).
               quantity: 1,
-              parentDomain: this.config.isolationBuyParentDomain,
+              parentDomain: replacementParentForRetiredDomain(
+                domain,
+                this.config,
+                { kind: "retire_domain" },
+              ),
             },
           }),
         });
@@ -131,7 +138,11 @@ export class DomainLifecycleService {
             detail: {
               domain,
               quantity: 1,
-              parentDomain: this.config.isolationBuyParentDomain,
+              parentDomain: replacementParentForRetiredDomain(
+                domain,
+                this.config,
+                { kind: "buy_domains" },
+              ),
             },
           }),
         });

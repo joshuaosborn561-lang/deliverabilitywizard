@@ -1,17 +1,37 @@
 /**
- * D142 — Generic and POC are Smartlead CLIENT RECORDS used purely as
- * mailbox pools: a box assigned to one is a generic (staffing supply on
- * the generic clocks), never a client inbox. They take no A/B pods, no
- * floors, no fan-out of their own, and the domain→client audit treats
- * assignment to them as mapped. Pre-warmed is a separate flag entirely
- * (PREWARMED_DOMAINS) that only Josh grants.
+ * D160 — Generic and POC are mailbox TAGS, never Smartlead clients.
+ * D142 created billable client records named Generic / POC as pool
+ * labels; Josh does not want to pay for those. A box carrying either
+ * tag is a generic (staffing supply on the generic clocks), never a
+ * client inbox. They take no A/B pods, no floors, no fan-out of their
+ * own. Pre-warmed is a separate flag (PREWARMED_DOMAINS) that only
+ * Josh grants.
+ *
+ * Leftover Smartlead clients still named Generic / POC (D142) are
+ * recognised so we can detach mailboxes and stop recreating them.
+ * The names stay here so confident domain matching never treats
+ * those leftovers as a real client token.
  */
 
+export const GENERIC_TAG = "GENERIC";
+export const POC_TAG = "POC";
+
+/** Leftover D142 client-record names — never create these again. */
 export const GENERIC_CLIENT_NAME = "Generic";
 export const POC_CLIENT_NAME = "POC";
-/** Required by Smartlead's client shape; never mailed. */
-export const GENERIC_CLIENT_EMAIL = "generic-pool@salesglidergrowth.com";
-export const POC_CLIENT_EMAIL = "poc-pool@salesglidergrowth.com";
+
+export function isPoolMarkerTag(name: string | null | undefined): boolean {
+  const n = String(name ?? "").trim().toUpperCase();
+  return n === GENERIC_TAG || n === POC_TAG;
+}
+
+export function hasPoolMarkerTag(account: {
+  tags?: Array<{ tag_name?: unknown; name?: unknown }>;
+}): boolean {
+  return (account.tags ?? [])
+    .map((tag) => String(tag.tag_name ?? tag.name ?? "").trim())
+    .some((name) => isPoolMarkerTag(name));
+}
 
 export function isMarkerClientName(name: string | null | undefined): boolean {
   const n = String(name ?? "").trim().toLowerCase();
@@ -65,7 +85,8 @@ export function clientDomainTokens(client: {
 /**
  * D142 — the confident call: exactly one client whose distinctive token
  * appears in the domain's base name. Anything else stays an advisory for
- * Josh — the audit still never guesses.
+ * Josh — the audit still never guesses. Leftover Generic/POC client
+ * records contribute no tokens (D160).
  */
 export function confidentClientForDomain(
   domain: string,

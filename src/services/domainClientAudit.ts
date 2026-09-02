@@ -8,11 +8,13 @@ import {
 import { isBcpOwnedDomain } from "../lib/bcp.js";
 import { isFleetDomain } from "../lib/domainControl.js";
 import { effectiveIsolationDomain } from "../lib/isolationDomain.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
 import {
   confidentClientForDomain,
-  GENERIC_CLIENT_EMAIL,
   GENERIC_CLIENT_NAME,
-  POC_CLIENT_EMAIL,
+  GENERIC_TAG,
+  hasPoolMarkerTag,
+  isMarkerClientName,
   POC_CLIENT_NAME,
 } from "../lib/markerClients.js";
 import { sleep } from "../lib/http.js";
@@ -21,31 +23,34 @@ import type { StateStore } from "../state/store.js";
 import type { InventoryBook } from "./inventory.js";
 import { owesWarmup } from "./warmupGate.js";
 
-/** Client-id writes per pass — the rest converges on later passes. */
+/** Client-id / tag writes per pass — the rest converges on later passes. */
 const ATTACH_CAP = 40;
+/** Smartlead caps tag mapping writes at 25 accounts per call. */
+const TAG_BATCH = 25;
 
 export interface DomainClientAuditResult {
   advisories: DomainClientAdvisory[];
   attached: Array<{ domain: string; clientName: string; mailboxes: number }>;
+  tagged: number;
+  detached: number;
+  leftoverMarkerClients: string[];
 }
 
 /**
- * D136/D142 — a domain whose client story does not add up is first offered
- * a CONFIDENT fix, then a human question — never a guess.
+ * D136/D142/D160 — a domain whose client story does not add up is first
+ * offered a CONFIDENT fix, then a human question — never a guess.
  *
- * The pass ensures the Generic and POC marker clients exist (D142 — pools
- * as client records; boxes assigned to them are generics, not client
- * inboxes), then:
+ * Generic and POC are mailbox tags, never Smartlead clients (D160):
+ * - a generic-fleet / pool box missing GENERIC/POC gets the GENERIC tag;
+ * - a leftover D142 Generic/POC client_id is cleared (the tag stays);
+ * - those leftover client records are never recreated. Smartlead has no
+ *   delete-client API; once detached, Josh deletes them in the UI.
  *
- * - a box on a generic-fleet domain (EXTRA_GENERIC_DOMAINS) with NO
- *   client_id is assigned to the Generic marker;
+ * Real-client attach (D142/D143) is unchanged:
  * - an unmapped domain whose base name contains exactly one client's
- *   distinctive token (salesglider→SalesGlider, parlay→Parlay Tech) has
- *   its unassigned boxes attached to that client;
- * - everything else stays an advisory: logs plus one line on the EOD
- *   brief. split_clients is always advisory. A box that already carries a
- *   real client_id is never rewritten here (the staged POC re-point is
- *   D142's explicit follow-up, decided by Josh — not this pass).
+ *   distinctive token has its unassigned, warmed boxes attached;
+ * - everything else stays an advisory. split_clients is always advisory.
+ *   A box that already carries a real client_id is never rewritten here.
  *
  * Skipped on purpose: BCP-owned replacement domains (BCP even with no
  * client_id, D99), the isolation domain, the canary fleet, and retired
@@ -58,9 +63,9 @@ export class DomainClientAuditService {
     private readonly book: InventoryBook,
     private readonly smartlead?: Pick<
       SmartleadClient,
-      "ensureClient" | "updateEmailAccount"
+      "ensureTag" | "assignTags" | "updateEmailAccount"
     >,
-    /** Space between client-id writes (D135 taught us the burst 429s). */
+    /** Space between writes (D135 taught us the burst 429s). */
     private readonly pause: () => Promise<void> = () =>
       sleep(process.env.NODE_TEST_CONTEXT ? 0 : 1000),
   ) {}
@@ -73,55 +78,17 @@ export class DomainClientAuditService {
     const clientsById = new Map(clients.map((client) => [client.id, client]));
     const isolationDomain = effectiveIsolationDomain(this.config, this.state);
 
-    const markers = await this.ensureMarkers(clients);
+    const leftover = this.stampLeftoverMarkers(clients);
     const attached: DomainClientAuditResult["attached"] = [];
     let writesLeft = ATTACH_CAP;
+    let tagged = 0;
+    let detached = 0;
 
-    // D142 — generic-fleet boxes with no client belong to the Generic
-    // marker. Boxes already carrying a real client_id are left alone.
-    if (this.smartlead && markers.genericId != null && !this.config.dryRun) {
-      const orphans = accounts.filter((account) => {
-        const email = accountEmail(account)?.toLowerCase();
-        const domain = email?.split("@")[1];
-        if (!email || !domain) return false;
-        if (!isFleetDomain(domain, this.config.extraGenericDomains)) return false;
-        return account.client_id == null;
-      });
-      const byDomain = new Map<string, SmartleadAccountWithCampaigns[]>();
-      for (const account of orphans) {
-        const domain = accountEmail(account)!.toLowerCase().split("@")[1]!;
-        const list = byDomain.get(domain) ?? [];
-        list.push(account);
-        byDomain.set(domain, list);
-      }
-      for (const [domain, list] of byDomain) {
-        let done = 0;
-        for (const account of list) {
-          if (writesLeft <= 0) break;
-          try {
-            await this.smartlead.updateEmailAccount(account.id, {
-              client_id: markers.genericId,
-            });
-            writesLeft -= 1;
-            done += 1;
-            await this.pause();
-          } catch (error) {
-            console.warn(
-              `[domain-client] attach ${accountEmail(account)} → ${GENERIC_CLIENT_NAME} failed: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-        if (done) {
-          attached.push({
-            domain,
-            clientName: GENERIC_CLIENT_NAME,
-            mailboxes: done,
-          });
-          console.log(
-            `[domain-client] attached ${done} mailbox(es) on ${domain} → ${GENERIC_CLIENT_NAME} (generic pool, D142)`,
-          );
-        }
-      }
+    if (this.smartlead && !this.config.dryRun) {
+      const drain = await this.tagAndDetachGenerics(accounts, writesLeft);
+      tagged = drain.tagged;
+      detached = drain.detached;
+      writesLeft = drain.writesLeft;
     }
 
     const byDomain = new Map<string, SmartleadAccountWithCampaigns[]>();
@@ -147,6 +114,7 @@ export class DomainClientAuditService {
       for (const account of domainAccounts) {
         const client = resolveAccountClient(account, campaignClient, clientsById);
         if (client.clientId == null) continue;
+        if (this.state.isMarkerClientId(client.clientId)) continue;
         mapped += 1;
         names.set(client.clientName, (names.get(client.clientName) ?? 0) + 1);
       }
@@ -169,9 +137,6 @@ export class DomainClientAuditService {
           : null;
         if (match && !this.config.dryRun && writesLeft > 0) {
           // D143 — a box that still owes warmup days is not attach supply.
-          // Handing winparlay.info a client_id on 8/27 is what let an
-          // outside writer staff 2-day-old boxes onto live campaigns; the
-          // mapping waits until the box may legally serve.
           const unassigned = domainAccounts.filter(
             (account) => account.client_id == null,
           );
@@ -237,63 +202,145 @@ export class DomainClientAuditService {
     if (!advisories.length) {
       console.log("[domain-client] every sending domain maps to one client");
     }
-    return { advisories, attached };
+    if (leftover.names.length) {
+      console.log(
+        `[domain-client] leftover Smartlead clients ${leftover.names.join(" + ")} still exist — mailboxes are tagged GENERIC and detached; delete those empty clients in the Smartlead UI to stop billing (no delete-client API, D160)`,
+      );
+    }
+    return {
+      advisories,
+      attached,
+      tagged,
+      detached,
+      leftoverMarkerClients: leftover.names,
+    };
   }
 
   /**
-   * D142 — the Generic and POC marker clients exist and their ids are
-   * stamped in state so classifiers can recognise them. Reads come from
-   * the shared book; a create happens at most once per marker.
+   * D160 — stamp leftover Generic/POC client ids when they still exist
+   * in the book so classifiers can drain them. Never create. Clear the
+   * stamp when Josh has deleted them.
    */
-  private async ensureMarkers(
-    clients: Array<{ id: number; name?: string | null }>,
-  ): Promise<{ genericId?: number; pocId?: number }> {
+  private stampLeftoverMarkers(
+    clients: Array<{ id: number; name?: string | null; logo?: string | null }>,
+  ): { genericId?: number; pocId?: number; names: string[] } {
     const stamped = this.state.getMarkerClientIds();
-    const found = { ...stamped };
-    const byName = (name: string) =>
-      clients.find(
-        (client) =>
-          String(client.name ?? "").trim().toLowerCase() === name.toLowerCase(),
-      )?.id;
-
-    const genericInBook = byName(GENERIC_CLIENT_NAME);
-    if (genericInBook != null) found.genericId = genericInBook;
-    const pocInBook = byName(POC_CLIENT_NAME);
-    if (pocInBook != null) found.pocId = pocInBook;
-
-    if (this.smartlead && !this.config.dryRun) {
-      try {
-        if (found.genericId == null) {
-          found.genericId = await this.smartlead.ensureClient(
-            GENERIC_CLIENT_NAME,
-            GENERIC_CLIENT_EMAIL,
-          );
-          console.log(
-            `[domain-client] created marker client ${GENERIC_CLIENT_NAME} (#${found.genericId})`,
-          );
-        }
-        if (found.pocId == null) {
-          found.pocId = await this.smartlead.ensureClient(
-            POC_CLIENT_NAME,
-            POC_CLIENT_EMAIL,
-          );
-          console.log(
-            `[domain-client] created marker client ${POC_CLIENT_NAME} (#${found.pocId})`,
-          );
-        }
-      } catch (error) {
-        console.warn(
-          `[domain-client] marker ensure failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+    const found: { genericId?: number; pocId?: number } = {};
+    const names: string[] = [];
+    for (const client of clients) {
+      if (isMarkerClientName(client.name) || isMarkerClientName(client.logo)) {
+        names.push(String(client.name ?? client.logo ?? client.id));
+      }
+      if (
+        String(client.name ?? "").trim().toLowerCase() ===
+        GENERIC_CLIENT_NAME.toLowerCase()
+      ) {
+        found.genericId = client.id;
+      }
+      if (
+        String(client.name ?? "").trim().toLowerCase() ===
+        POC_CLIENT_NAME.toLowerCase()
+      ) {
+        found.pocId = client.id;
       }
     }
-
     if (
       found.genericId !== stamped.genericId ||
       found.pocId !== stamped.pocId
     ) {
       this.state.setMarkerClientIds(found);
     }
-    return found;
+    return { ...found, names };
   }
+
+  /**
+   * Tag generic-pool boxes GENERIC and clear leftover D142 client_ids.
+   * Tag first so classification survives the detach on the next pass.
+   */
+  private async tagAndDetachGenerics(
+    accounts: SmartleadAccountWithCampaigns[],
+    writesLeft: number,
+  ): Promise<{ tagged: number; detached: number; writesLeft: number }> {
+    const isolationDomain = effectiveIsolationDomain(this.config, this.state);
+    const needTag: number[] = [];
+    const needDetach: SmartleadAccountWithCampaigns[] = [];
+
+    for (const account of accounts) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (!email || !account.id) continue;
+      if (this.state.getPoolMailbox(email)?.copyCanary) continue;
+      if (this.state.isCopyCanary?.(email)) continue;
+      const domain = email.split("@")[1];
+      if (isolationDomain && domain === isolationDomain) continue;
+      if (domain && this.state.getDomainHistory(domain)?.status === "retired") {
+        continue;
+      }
+
+      const leftoverAssigned =
+        typeof account.client_id === "number" &&
+        this.state.isMarkerClientId(account.client_id);
+      const generic = isGenericMailbox(account, email, this.config, this.state);
+      if (!generic && !leftoverAssigned) continue;
+
+      if (!hasPoolMarkerTag(account)) needTag.push(account.id);
+      if (leftoverAssigned) needDetach.push(account);
+    }
+
+    let tagged = 0;
+    let detached = 0;
+    if (!this.smartlead) {
+      return { tagged, detached, writesLeft };
+    }
+
+    if (needTag.length && writesLeft > 0) {
+      try {
+        const tag = await this.smartlead.ensureTag(GENERIC_TAG, "#66BB6A");
+        for (const batch of chunk(needTag.slice(0, writesLeft), TAG_BATCH)) {
+          await this.smartlead.assignTags(batch, [tag.id]);
+          tagged += batch.length;
+          writesLeft -= batch.length;
+          await this.pause();
+          if (writesLeft <= 0) break;
+        }
+        if (tagged) {
+          console.log(
+            `[domain-client] tagged ${tagged} mailbox(es) ${GENERIC_TAG} (pool label, D160)`,
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `[domain-client] GENERIC tag converge failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    for (const account of needDetach) {
+      if (writesLeft <= 0) break;
+      try {
+        await this.smartlead.updateEmailAccount(account.id, { client_id: null });
+        account.client_id = null;
+        writesLeft -= 1;
+        detached += 1;
+        await this.pause();
+      } catch (error) {
+        console.warn(
+          `[domain-client] detach ${accountEmail(account)} from leftover marker client failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    if (detached) {
+      console.log(
+        `[domain-client] cleared leftover Generic/POC client_id on ${detached} mailbox(es) (D160)`,
+      );
+    }
+    return { tagged, detached, writesLeft };
+  }
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
 }

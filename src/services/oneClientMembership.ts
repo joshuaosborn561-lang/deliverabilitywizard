@@ -14,6 +14,7 @@ import {
 } from "../lib/clientBrand.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
+import { GENERIC_TAG } from "../lib/markerClients.js";
 import { pocClientId } from "../lib/pocClient.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
@@ -50,15 +51,19 @@ interface AccountPlan {
   pull: number[];
   restore: number[];
   signature?: string;
-  /** D142 — marker-client boxes keep their Generic/POC client_id. */
-  keepClientId?: boolean;
+  /** D160 — leftover Generic/POC client_id is cleared, never kept. */
+  clearMarkerClientId?: boolean;
+  /** D76 — leftover real-client id on a generic is rewritten to Goliath. */
+  writeOwnerClientId?: boolean;
 }
 
 /**
- * D75 / D76 — every health pass: an inbox may only sit on one client's
- * campaigns. Generics belong to Goliath even with a leftover client_id.
- * The paused pod-control shell does not count. Signature is rewritten to
- * the owner client's brand when a leftover line is another client.
+ * D75 / D76 / D160 — every health pass: an inbox may only sit on one
+ * client's campaigns. Generics belong to Goliath even with a leftover
+ * real client_id. A leftover Generic/POC client_id is cleared (those
+ * are not clients). The paused pod-control shell does not count.
+ * Signature is rewritten to the owner client's brand when a leftover
+ * line is another client.
  */
 export class OneClientMembershipService {
   constructor(
@@ -142,12 +147,18 @@ export class OneClientMembershipService {
       result.examined += 1;
 
       const generic = isGenericMailbox(account, email, this.config, this.state);
-      // D142 — a Generic/POC marker client_id is a deliberate pool
-      // assignment, not a leftover tag: never rewrite it back to the POC
-      // client's id. Memberships still resolve through the POC owner.
-      const markerOwned =
+      // D160 — a leftover Generic/POC client_id is a billable pool label
+      // we are draining, not an owner. Memberships still resolve through
+      // the POC owner (Goliath). A generic with no client_id stays bare.
+      const leftoverMarker =
         typeof account.client_id === "number" &&
         this.state.isMarkerClientId(account.client_id);
+      const leftoverReal =
+        generic &&
+        !leftoverMarker &&
+        typeof genericOwnerId === "number" &&
+        typeof account.client_id === "number" &&
+        account.client_id !== genericOwnerId;
       const owner = ownerClientId(account.client_id, memberships, {
         generic,
         genericOwnerId,
@@ -161,17 +172,8 @@ export class OneClientMembershipService {
       const onOwner = memberships.some(
         (row) => !row.shell && row.clientId === owner,
       );
-      const leftoverTagged =
-        generic &&
-        !markerOwned &&
-        typeof genericOwnerId === "number" &&
-        typeof account.client_id === "number" &&
-        account.client_id !== genericOwnerId;
-      const needsGoliathIdentity =
-        generic &&
-        !markerOwned &&
-        typeof genericOwnerId === "number" &&
-        account.client_id !== genericOwnerId;
+      const leftoverTagged = leftoverReal;
+      const needsGoliathIdentity = leftoverReal;
       // Shell-only leftover-tagged generics (Aarav after the first pass)
       // must go back on live Goliath, not sit on the paused shell.
       const restore =
@@ -202,7 +204,14 @@ export class OneClientMembershipService {
         (account.signature ?? "") !== desired &&
         (Boolean(foreign) || needsGoliathIdentity);
 
-      if (!pull.length && !restore.length && !needsSignature) continue;
+      if (
+        !pull.length &&
+        !restore.length &&
+        !needsSignature &&
+        !leftoverMarker
+      ) {
+        continue;
+      }
       plans.push({
         email,
         accountId: account.id,
@@ -210,7 +219,8 @@ export class OneClientMembershipService {
         pull,
         restore,
         signature: needsSignature && desired ? desired : undefined,
-        keepClientId: markerOwned,
+        clearMarkerClientId: leftoverMarker,
+        writeOwnerClientId: leftoverReal,
       });
     }
 
@@ -290,18 +300,33 @@ export class OneClientMembershipService {
     }
 
     for (const plan of plans) {
-      if (!plan.signature) continue;
+      if (!plan.signature && !plan.clearMarkerClientId) continue;
       try {
         if (!dryRun) {
+          if (plan.clearMarkerClientId) {
+            const tag = await this.smartlead.ensureTag(GENERIC_TAG, "#66BB6A");
+            await this.smartlead.assignTags([plan.accountId], [tag.id]);
+            await sleep(WRITE_GAP_MS);
+          }
           await this.smartlead.updateEmailAccount(plan.accountId, {
-            signature: plan.signature,
-            // D142 — never overwrite a deliberate Generic/POC assignment.
-            ...(plan.keepClientId ? {} : { client_id: plan.owner }),
+            ...(plan.signature ? { signature: plan.signature } : {}),
+            ...(plan.clearMarkerClientId
+              ? { client_id: null }
+              : plan.writeOwnerClientId
+                ? { client_id: plan.owner }
+                : {}),
           });
           await sleep(WRITE_GAP_MS);
         }
-        result.signaturesSet += 1;
-        console.log(`[one-client] ${plan.email} signature → client ${plan.owner}`);
+        if (plan.signature) {
+          result.signaturesSet += 1;
+          console.log(`[one-client] ${plan.email} signature → client ${plan.owner}`);
+        }
+        if (plan.clearMarkerClientId) {
+          console.log(
+            `[one-client] ${plan.email} cleared leftover Generic/POC client_id (D160)`,
+          );
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         result.errors.push(`${plan.email} signature: ${message}`);

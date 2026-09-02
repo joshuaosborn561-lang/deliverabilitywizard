@@ -37,6 +37,34 @@ describe("isClientInbox", () => {
     );
   });
 
+  it("treats a GENERIC mailbox tag as a generic (D160)", () => {
+    assert.equal(
+      isGenericMailbox(
+        {
+          from_name: "Any Body",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "a@someclientdomain.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
+    assert.equal(
+      isClientInbox(
+        {
+          client_id: 9,
+          from_name: "Any Body",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "a@someclientdomain.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+    );
+  });
+
   it("rejects a dropped pool-plan domain as a generic (D76)", () => {
     assert.equal(
       isGenericMailbox(

@@ -4811,7 +4811,10 @@ were skipped as generics.
 1. Off-week bench removes client inboxes from ACTIVE, PAUSED, and
    STOPPED client campaign memberships. Last-account-on-campaign
    guard stays. Excluded / canary / pod-control shells are not
-   touched. COMPLETED / DRAFT are not rest-detach targets.
+   touched. COMPLETED / DRAFT are not rest-detach targets. Bench
+   the off-week half **before** on-week restore so last-account on
+   a PAUSED campaign still sees on-week members; hygiene then
+   clears the hoard.
 2. On-week restore still targets every ACTIVE client campaign (D59).
    Candidates include boxes whose only memberships are PAUSED/STOPPED.
    Client-named BCP domains (`boldercyper*`) are client inventory,

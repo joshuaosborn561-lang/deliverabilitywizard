@@ -64,6 +64,8 @@ export function currentCanonMiss(opts: {
       opts.sendingStatusesKnown &&
       !isActiveSendingStatus(opts.status)
     ) {
+      // Status gate, not a campaign-id list — any COMPLETED /
+      // STOPPED / PAUSED sender stays quiet (D165).
       return null;
     }
     return {

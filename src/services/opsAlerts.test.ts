@@ -214,42 +214,68 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     assert.equal(r.sends.length, 1, "recovery is silent");
   });
 
-  it("does not page a stale INCONCLUSIVE on a COMPLETED campaign (D165)", async () => {
+  it("does not page stale INCONCLUSIVE on any COMPLETED sibling (D165)", async () => {
     const s = store();
     await s.load();
+    const reason =
+      "No standing inbox-test reading for the mailboxes this campaign is sending from.";
+    for (const row of [
+      {
+        id: 3763805,
+        name: "BCP Logistics Over-1k (With Team)",
+      },
+      {
+        id: 3763806,
+        name: "BCP Logistics Over-1k (No Team)",
+      },
+    ]) {
+      s.upsertIsolationRun({
+        id: `stale-${row.id}`,
+        campaignId: row.id,
+        campaignName: row.name,
+        startedAt: "2026-08-24T12:00:00.000Z",
+        updatedAt: "2026-08-24T12:00:00.000Z",
+        control: "INSUFFICIENT",
+        verdict: "INCONCLUSIVE",
+        campaignInSpam: true,
+        reason,
+      });
+      s.setCanonMissAlert(row.id, "INCONCLUSIVE");
+    }
     s.upsertIsolationRun({
-      id: "stale-aug-24",
-      campaignId: 3763805,
-      campaignName: "BCP Logistics Over-1k (With Team)",
-      startedAt: "2026-08-24T12:00:00.000Z",
-      updatedAt: "2026-08-24T12:00:00.000Z",
+      id: "run-active",
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      startedAt: "2026-09-02T04:10:00.000Z",
+      updatedAt: "2026-09-02T04:10:00.000Z",
       control: "INSUFFICIENT",
       verdict: "INCONCLUSIVE",
       campaignInSpam: true,
-      reason:
-        "No standing inbox-test reading for the mailboxes this campaign is sending from.",
+      reason: "need another reading",
     });
-    s.setCanonMissAlert(3763805, "INCONCLUSIVE");
     const r = recorder();
     const out = await alertCanonMisses({
       store: s,
       slack: r.slack,
       threshold: 80,
       campaigns: [
-        {
-          id: 3763805,
-          status: "COMPLETED",
-        },
+        { id: 3763805, status: "COMPLETED" },
+        { id: 3763806, status: "COMPLETED" },
+        { id: 3847794, status: "ACTIVE" },
       ],
     });
-    assert.deepEqual(out.alerted, []);
-    assert.equal(r.sends.length, 0, "COMPLETED must not Slack-page INCONCLUSIVE");
     assert.deepEqual(
-      out.recovered,
-      [3763805],
-      "stale COMPLETED INCONCLUSIVE stamp clears so it cannot re-page",
+      out.alerted,
+      ["3847794:INCONCLUSIVE"],
+      "skip is by ACTIVE status — both BCP siblings stay quiet",
     );
+    assert.equal(r.sends.length, 1);
+    assert.match(r.sends[0].text, /INCONCLUSIVE/);
+    assert.match(r.sends[0].text, /#3847794/);
+    assert.deepEqual(out.recovered.sort(), [3763805, 3763806]);
     assert.equal(s.getCanonMissAlert(3763805), undefined);
+    assert.equal(s.getCanonMissAlert(3763806), undefined);
+    assert.equal(s.getCanonMissAlert(3847794), "INCONCLUSIVE");
   });
 
   it("does not page a fresh INCONCLUSIVE on PAUSED (D165)", async () => {

@@ -114,23 +114,35 @@ describe("canon miss incidents (D163)", () => {
     assert.equal(rows[0]?.kind, "ugly");
   });
 
-  it("does not collect INCONCLUSIVE for a COMPLETED campaign (D165)", () => {
+  it("does not collect INCONCLUSIVE for any COMPLETED campaign (D165)", () => {
+    const stale = {
+      verdict: "INCONCLUSIVE" as const,
+      reason:
+        "No standing inbox-test reading for the mailboxes this campaign is sending from.",
+    };
+    const status: Record<number, string> = {
+      3763805: "COMPLETED",
+      3763806: "COMPLETED",
+      11: "STOPPED",
+      3847794: "ACTIVE",
+    };
     const rows = collectCanonMisses({
       scores: [],
       suspects: [],
       latestRun: (id) =>
-        id === 3763805
-          ? {
-              verdict: "INCONCLUSIVE",
-              reason:
-                "No standing inbox-test reading for the mailboxes this campaign is sending from.",
-            }
-          : undefined,
+        id === 3847794
+          ? { verdict: "INCONCLUSIVE", reason: "need another reading" }
+          : stale,
       threshold: 80,
-      extraCampaignIds: [3763805],
-      campaignStatus: (id) => (id === 3763805 ? "COMPLETED" : "ACTIVE"),
+      extraCampaignIds: [3763805, 3763806, 11, 3847794],
+      campaignStatus: (id) => status[id],
     });
-    assert.deepEqual(rows, []);
+    assert.deepEqual(
+      rows.map((row) => row.campaignId),
+      [3847794],
+      "BCP With Team #3763805 and No Team #3763806 are both COMPLETED — skip by status, not id",
+    );
+    assert.equal(rows[0]?.kind, "INCONCLUSIVE");
   });
 
   it("does not page INCONCLUSIVE for STOPPED or PAUSED (D165)", () => {

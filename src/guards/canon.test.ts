@@ -5835,21 +5835,25 @@ describe("owner intent — D165 isolation INCONCLUSIVE is ACTIVE-only", () => {
     );
 
     const { currentCanonMiss } = await import("../lib/canonMiss.js");
-    assert.equal(
-      currentCanonMiss({
-        campaignId: 3763805,
-        campaignName: "BCP Logistics Over-1k (With Team)",
-        latestRun: { verdict: "INCONCLUSIVE" },
-        threshold: 80,
-        status: "COMPLETED",
-        sendingStatusesKnown: true,
-      }),
-      null,
-      stop(
-        "COMPLETED must not collect an INCONCLUSIVE CANON miss (D165).",
-        "currentCanonMiss still pages INCONCLUSIVE on COMPLETED.",
-      ),
-    );
+    for (const row of [
+      { campaignId: 3763805, campaignName: "BCP Logistics Over-1k (With Team)" },
+      { campaignId: 3763806, campaignName: "BCP Logistics Over-1k (No Team)" },
+    ]) {
+      assert.equal(
+        currentCanonMiss({
+          ...row,
+          latestRun: { verdict: "INCONCLUSIVE" },
+          threshold: 80,
+          status: "COMPLETED",
+          sendingStatusesKnown: true,
+        }),
+        null,
+        stop(
+          "COMPLETED must not collect an INCONCLUSIVE CANON miss (D165).",
+          `currentCanonMiss still pages INCONCLUSIVE on COMPLETED #${row.campaignId}.`,
+        ),
+      );
+    }
     assert.equal(
       currentCanonMiss({
         campaignId: 3847794,
@@ -5866,6 +5870,18 @@ describe("owner intent — D165 isolation INCONCLUSIVE is ACTIVE-only", () => {
     );
 
     const { readFile } = await import("node:fs/promises");
+    const missSrc = await readFile(
+      new URL("../lib/canonMiss.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      missSrc,
+      /3763805|3763806/,
+      stop(
+        "The INCONCLUSIVE skip is by Smartlead status, never a campaign-id list (D165).",
+        "canonMiss.ts hard-coded a BCP campaign id — the No Team sibling would still page.",
+      ),
+    );
     const ops = await readFile(
       new URL("../services/opsAlerts.ts", import.meta.url),
       "utf8",
@@ -5876,6 +5892,14 @@ describe("owner intent — D165 isolation INCONCLUSIVE is ACTIVE-only", () => {
       stop(
         "alertCanonMisses must receive inventory statuses (D165).",
         "opsAlerts.ts no longer passes campaignStatus into collectCanonMisses.",
+      ),
+    );
+    assert.doesNotMatch(
+      ops,
+      /3763805|3763806/,
+      stop(
+        "The INCONCLUSIVE skip is by Smartlead status, never a campaign-id list (D165).",
+        "opsAlerts.ts hard-coded a BCP campaign id.",
       ),
     );
     const index = await readFile(

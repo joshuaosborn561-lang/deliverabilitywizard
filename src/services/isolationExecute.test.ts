@@ -497,6 +497,66 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       `replacement mailboxes match retired ESP mix: ${detail.platforms}`,
     );
   });
+
+  it("D161: retiring a BCP domain buys a boldercyperpartner parent, not crosslaunchco", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-retire-bcp-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire boldercyperpartnerpro.info",
+      proof: "proof",
+      detail: { domain: "boldercyperpartnerpro.info" },
+    });
+    state.upsertIsolationAction(action);
+    const buyCalls: Array<Record<string, unknown>> = [];
+    const sl = {
+      listCampaigns: async () => [
+        { id: 10, name: "BCP Outbound", status: "ACTIVE", client_id: 542838 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 21,
+          from_email: "a@boldercyperpartnerpro.info",
+          type: "GMAIL",
+          client_id: 542838,
+          campaign_ids: [10],
+        },
+      ],
+      removeEmailAccountsFromCampaign: async () => undefined,
+    };
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      sl as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async (buyAction: { detail: Record<string, unknown> }) => {
+          buyCalls.push(buyAction.detail);
+          return {
+            domains: ["getboldercyperpartner.info"],
+            mailboxesOrdered: 3,
+            awaitingNameservers: false,
+          };
+        },
+      } as never,
+    );
+
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(outcome.ok, true);
+    assert.equal(buyCalls.length, 1);
+    const parent = String(buyCalls[0]?.parentDomain ?? "");
+    assert.match(parent, /boldercyperpartner/);
+    assert.doesNotMatch(parent, /crosslaunchco/);
+    assert.equal(
+      buyCalls[0]?.retiredDomain,
+      "boldercyperpartnerpro.info",
+    );
+  });
 });
 
 describe("D137 — the isolation-domain buy arms the rig", () => {

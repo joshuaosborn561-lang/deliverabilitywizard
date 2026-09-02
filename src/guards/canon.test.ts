@@ -5260,8 +5260,8 @@ describe("owner intent — D159 isolation on-ramp is the 15-minute sweep", () =>
       canon,
       /D159/,
       stop(
-        "CANON names D159.",
-        "CANON.md lost the 15-minute on-ramp.",
+        "CANON still names the 15-minute on-ramp (D159).",
+        "CANON.md lost D159.",
       ),
     );
     const decisions = await readFile(
@@ -5353,10 +5353,124 @@ describe("owner intent — D160 Generic and POC are mailbox tags", () => {
     const canon = await read("../../CANON.md");
     assert.match(
       canon,
-      /Canon as of \*\*D160\*\*/,
+      /D160/,
       stop(
-        "CANON names D160.",
-        "CANON.md was not updated for the tag-not-client reversal.",
+        "CANON still names mailbox tags not clients (D160).",
+        "CANON.md lost D160.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D161 client-domain replace is client-named", () => {
+  it("D161: retire/buy path refuses a generic spin for a client domain", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const buy = await readFile(
+      new URL("../services/isolationBuy.ts", import.meta.url),
+      "utf8",
+    );
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const life = await readFile(
+      new URL("../services/domainLifecycle.ts", import.meta.url),
+      "utf8",
+    );
+    const lib = await readFile(
+      new URL("../lib/retireReplacement.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      lib,
+      /replacementParentForRetiredDomain/,
+      stop(
+        "Client-domain replace picks the client brand, not the generic parent (D161).",
+        "retireReplacement.ts is missing.",
+      ),
+    );
+    assert.match(
+      lib,
+      /isForbiddenGenericReplacement/,
+      stop(
+        "A generic spin is forbidden when the retired domain is a client domain (D161).",
+        "retireReplacement.ts lost the refuse helper.",
+      ),
+    );
+    assert.match(
+      buy,
+      /replacementParentForRetiredDomain/,
+      stop(
+        "The stock buy path derives the parent from the retired domain (D161).",
+        "isolationBuy.ts still spins from isolationBuyParentDomain alone.",
+      ),
+    );
+    assert.match(
+      buy,
+      /isForbiddenGenericReplacement/,
+      stop(
+        "The stock buy path refuses a generic candidate on a client retire (D161).",
+        "isolationBuy.ts can still buy crosslaunchco* for a client domain.",
+      ),
+    );
+    assert.match(
+      exec,
+      /replacementParentForRetiredDomain/,
+      stop(
+        "The D150 retire tap sets a client-brand parent (D161).",
+        "isolationExecute.ts still hard-codes isolationBuyParentDomain on retire.",
+      ),
+    );
+    assert.match(
+      life,
+      /replacementParentForRetiredDomain/,
+      stop(
+        "Buy-ahead and retire asks carry the client-brand parent (D161).",
+        "domainLifecycle.ts still hard-codes isolationBuyParentDomain.",
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      slack,
+      /never a generic\/pool spin, D161/,
+      stop(
+        "Slack retire copy names the client-named rule (D161).",
+        "slack.ts retire copy lost D161.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /MUST buy a client-named replacement/,
+      stop(
+        "CANON states the client-named replace MUST (D161).",
+        "CANON.md lost the D161 MUST.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D161\*\*/,
+      stop(
+        "CANON is as of D161.",
+        "CANON.md header was not bumped.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D161 /,
+      stop(
+        "The client-named replace rule is in the ledger (D161).",
+        "DECISIONS.md no longer has D161.",
       ),
     );
   });

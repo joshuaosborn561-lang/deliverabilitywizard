@@ -962,7 +962,7 @@ export class SlackClient {
           : details.kind === "add_signature_tag"
             ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
           : details.kind === "retire_domain"
-            ? "Josh: tap the button (opens a confirm page) to retire. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix, and lets generics cover the campaigns until those warm (D150). Cayden cannot approve this."
+            ? "Josh: tap the button (opens a confirm page) to retire. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161), and lets generics cover the campaigns until those warm (D150). Cayden cannot approve this."
             : "Josh or Cayden: *Use suggested edit* applies the suggestion above fleet-wide (D133). *Write my own edit* opens a Slack form that shows the exact phrase again so you can type a different replacement.",
     ]
       .filter((line): line is string => line !== undefined)

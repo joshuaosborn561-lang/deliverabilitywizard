@@ -165,7 +165,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
 | D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
-| D150 | Live | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
+| D150 | Live — replacement naming amended by D161 | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
 | D152 | Live | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
 | D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
@@ -175,6 +175,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D158 | Live | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra) — not a D71 placement Slack page; TechEvo AirPods 0% canary was the miss |
 | D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
 | D160 | Live | Generic and POC are mailbox tags, never Smartlead clients — Josh does not pay for pool labels; leftover client records detach then get deleted in the UI |
+| D161 | Live | Client-domain retire MUST buy a client-named replacement; generic/pool spins are only for generic/pool domains |
 
 ---
 
@@ -4393,3 +4394,45 @@ audit tags GENERIC and clears leftover marker `client_id`s; one-client
 deleted. Unit tests: tag helpers; GENERIC tag classifies; audit tags +
 detaches leftover and still attaches salesglider; one-client clears
 marker id and does not write Goliath.
+
+## D161 — Client-domain retire buys a client-named replacement, never a generic spin
+
+**Decision (Josh / SalesGlider, 2026-09-02).** When retiring a
+**CLIENT** domain (D150 / burned-domain replace), the replacement
+**MUST** be client-named for that client — never a generic
+crosslaunchco / pool spin. Generic spins are only for generic/pool
+domains.
+
+Standing pref, BCP: `boldercyperpartner*` /
+`getboldercyperpartner*` / `tryboldercyperpartner*` — the style
+already used for that client.
+
+**Why.** Tonight's retire of `boldercyperpartnerpro.info` (BCP
+`client_id` 542838) bought `crosslaunchcotry.info`. The stock D150
+path always set `parentDomain` to `isolationBuyParentDomain`
+(default `crosslaunchco.com`) and `generateDomainSpins` from that
+parent. It was **not** an ESP-inventory shortfall — ESP matching
+only picks Google/Outlook mailbox platforms; the domain name was
+hard-coded generic on every retire.
+
+**The rule.**
+
+1. A client sending domain (BCP / named-client brand / anything
+   that is not generic-pool, extra-generic, or a generic-brand
+   spin) **MUST** replace from that client's brand. The buy path
+   generates `get{brand}.info` / `{brand}pro.info` candidates and
+   **refuses** a generic candidate. Fail closed: no client brand →
+   throw, do not fall through to crosslaunchco.
+2. A generic/pool domain retire may still buy a generic spin.
+3. Isolation-rig and canary fleet buys stay on the generic parent
+   — they are not client-domain replaces.
+
+**Supersedes / amends.** Amends D150's replacement *name* (ESP mix
+and the one-tap fell swoop stay). Does not change D134 backfill,
+D4/D60 spend approval, or the 21-day clock on replacements (D65).
+
+**Guards.** canon D161 block: `replacementParentForRetiredDomain`
+in `isolationBuy` / `isolationExecute` / `domainLifecycle`; CANON
+MUST language; Slack retire copy names D161. Lib + service tests:
+BCP retire cannot select `crosslaunchco*`; generic retire still
+can.

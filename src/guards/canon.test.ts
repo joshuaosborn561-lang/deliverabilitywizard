@@ -5505,10 +5505,10 @@ describe("owner intent — D161 client-domain replace is client-named", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D161\*\*/,
+      /D161/,
       stop(
-        "CANON is as of D161.",
-        "CANON.md header was not bumped.",
+        "CANON still names the client-named replace rule (D161).",
+        "CANON.md dropped D161 when a later decision landed.",
       ),
     );
     const decisions = await readFile(

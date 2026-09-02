@@ -9,12 +9,13 @@
  *   snapshot — the only trip. The lifetime-rate rule (>10% after 1k,
  *   D90) is retired: Josh's lists are verified before load and never
  *   bounce like that, so the rate rule only ever fired on artifacts.
- * - Recency gate: a tripped burst pauses only when sampled bounced sends
- *   were actually SENT recently. The real failure modes this rule exists
- *   for — a missing send gap machine-gunning, Gmail/Outlook batch-
- *   rejecting a template, a Microsoft tenant blowing its daily cap
- *   (5.7.233) — all bounce fresh sends. A dump of stale bounces logs
- *   loudly and pauses nothing.
+ * - Recency gate: a tripped burst is live only when the samples
+ *   themselves substantiate more than 10 sends from the last 24h. The
+ *   real failure modes this rule exists for — a missing send gap
+ *   machine-gunning, Gmail/Outlook batch-rejecting a template, a
+ *   Microsoft tenant blowing its daily cap (5.7.233) — all bounce
+ *   fresh sends. A dump of stale bounces (including one recent bounce
+ *   mixed into a backlog landing) logs loudly and does nothing.
  *
  * Smartlead bounce_autopause_threshold stays off at 100 (D80/D124).
  */
@@ -85,4 +86,18 @@ export function freshBounceSamples(
     fresh,
     newestSentAt: newest == null ? null : new Date(newest).toISOString(),
   };
+}
+
+/**
+ * D141 — the counter delta is a suspicion. The burst is live only when
+ * the samples themselves show more than `burstCount` sends from the
+ * last 24h. One recent bounce mixed into a ledger dump of stale rows
+ * is still a dump (2026-08-31 #3798230: +13 recorded, 1 send <24h,
+ * Slack paged a REAL-burst receipt).
+ */
+export function isLiveBounceBurst(
+  recency: BounceRecencyRead,
+  burstCount = BOUNCE_BURST_COUNT,
+): boolean {
+  return recency.fresh > burstCount;
 }

@@ -2470,11 +2470,20 @@ describe("owner intent — D141 a bounce burst is fresh sends, never a ledger du
         "campaignBouncePause.ts exports shouldPauseCampaignForBounceRate again.",
       ),
     );
-    const { shouldPauseCampaignForBounceBurst, freshBounceSamples } =
+    const { shouldPauseCampaignForBounceBurst, freshBounceSamples, isLiveBounceBurst } =
       pauseLib as {
         shouldPauseCampaignForBounceBurst: typeof import("../lib/campaignBouncePause.js").shouldPauseCampaignForBounceBurst;
         freshBounceSamples: typeof import("../lib/campaignBouncePause.js").freshBounceSamples;
+        isLiveBounceBurst: typeof import("../lib/campaignBouncePause.js").isLiveBounceBurst;
       };
+    assert.equal(
+      typeof isLiveBounceBurst,
+      "function",
+      stop(
+        "The recency gate decides live vs dump from the fresh-sample count (D141).",
+        "isLiveBounceBurst is gone from campaignBouncePause.ts.",
+      ),
+    );
     const now = Date.parse("2026-08-26T02:10:00.000Z");
     assert.equal(
       shouldPauseCampaignForBounceBurst(
@@ -2516,6 +2525,30 @@ describe("owner intent — D141 a bounce burst is fresh sends, never a ledger du
         "freshBounceSamples no longer sees a fresh send.",
       ),
     );
+    assert.equal(
+      isLiveBounceBurst({
+        readable: 13,
+        fresh: 1,
+        newestSentAt: "2026-08-31T16:45:00.000Z",
+      }),
+      false,
+      stop(
+        "One fresh send mixed into a stale ledger dump is still a dump (D141; 2026-08-31 #3798230).",
+        "isLiveBounceBurst treats a single fresh sample as a live burst.",
+      ),
+    );
+    assert.equal(
+      isLiveBounceBurst({
+        readable: 13,
+        fresh: 11,
+        newestSentAt: "2026-08-31T16:45:00.000Z",
+      }),
+      true,
+      stop(
+        "More than 10 sampled sends from the last 24h substantiates a live burst (D141).",
+        "isLiveBounceBurst no longer trips on 11 fresh samples.",
+      ),
+    );
 
     const autostop = await read("../services/campaignBounceAutostop.ts");
     assert.doesNotMatch(
@@ -2544,10 +2577,10 @@ describe("owner intent — D141 a bounce burst is fresh sends, never a ledger du
     );
     assert.match(
       autostop,
-      /recency\.fresh === 0/,
+      /isLiveBounceBurst\(recency/,
       stop(
-        "A ledger dump of stale bounces logs and never pauses (D141).",
-        "campaignBounceAutostop.ts lost the dump branch.",
+        "A ledger dump of stale bounces logs and never pauses — one fresh sample is not a live burst (D141).",
+        "campaignBounceAutostop.ts treats any fresh sample as a live burst again.",
       ),
     );
     assert.match(

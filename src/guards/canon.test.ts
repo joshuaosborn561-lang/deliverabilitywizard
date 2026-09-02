@@ -5944,14 +5944,6 @@ describe("owner intent — D165 isolation INCONCLUSIVE is ACTIVE-only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D165\*\*/,
-      stop(
-        "CANON is as of D165.",
-        "CANON.md header was not bumped to D165.",
-      ),
-    );
-    assert.match(
-      canon,
       /COMPLETED \/ STOPPED \/ PAUSED/,
       stop(
         "CANON names non-ACTIVE skip for isolation INCONCLUSIVE (D165).",
@@ -5968,6 +5960,106 @@ describe("owner intent — D165 isolation INCONCLUSIVE is ACTIVE-only", () => {
       stop(
         "The ACTIVE-only INCONCLUSIVE rule is in the ledger (D165).",
         "DECISIONS.md no longer has D165.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D167 monitor chain survives a mid-sitting kill", () => {
+  it("D167: checkpoint lastOk, serialize save, resume leftovers on health not boot", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /checkpointStage/,
+      stop(
+        "A finished stage persists lastOk immediately (D167).",
+        "index.ts no longer checkpoints after recordStageOk — a SIGTERM after sending-infra's log would lose the OK again.",
+      ),
+    );
+    assert.match(
+      index,
+      /skipIfFreshMs/,
+      stop(
+        "A resume pass skips stages still fresh in the 6h cycle (D167).",
+        "runMonitor lost skip-if-fresh — leftovers would rerun the whole sitting or never resume.",
+      ),
+    );
+    assert.match(
+      index,
+      /kickMonitorResume/,
+      stop(
+        "Leftover 6h stages resume on the next health tick (D167).",
+        "index.ts no longer kicks monitor resume after health — a recycle waits 6h again.",
+      ),
+    );
+    assert.match(
+      index,
+      /resume:\s*true/,
+      stop(
+        "The health kick is a resume pass, not a full chain (D167).",
+        "kickMonitorResume no longer calls runMonitor({ resume: true }).",
+      ),
+    );
+
+    const listenAt = index.indexOf("app.listen(");
+    assert.ok(listenAt > 0, "index.ts should have app.listen");
+    const afterListen = index.slice(listenAt);
+    assert.doesNotMatch(
+      afterListen,
+      /runMonitor\(/,
+      stop(
+        "Monitor resume is not a boot-kick (D122/D167).",
+        "listen() started runMonitor — that races canary attach (D122).",
+      ),
+    );
+
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    assert.match(
+      store,
+      /saveTail/,
+      stop(
+        "state.save is serialized so overlapping writers cannot clobber lastOk (D167).",
+        "store.ts lost the save queue — health and monitor can rename stale snapshots again.",
+      ),
+    );
+
+    const resume = await readFile(
+      new URL("../lib/monitorResume.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      resume,
+      /MONITOR_LOOP_STAGES/,
+      stop(
+        "The 6h chain names are the skip-if-fresh list (D167).",
+        "monitorResume.ts lost MONITOR_LOOP_STAGES.",
+      ),
+    );
+    assert.match(
+      resume,
+      /staleMonitorStages/,
+      stop(
+        "Resume picks the leftover tail from lastOk (D167).",
+        "monitorResume.ts lost staleMonitorStages.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /D167/,
+      stop(
+        "CANON names the mid-chain resume rule (D167).",
+        "CANON.md has no D167 — the decision is not finished shipping (D127).",
+      ),
+    );
+    assert.match(
+      canon,
+      /next 15-minute health tick/,
+      stop(
+        "CANON says leftovers resume on the health tick, not the 6h cron (D167).",
+        "CANON.md lost the resume-on-health sentence.",
       ),
     );
   });

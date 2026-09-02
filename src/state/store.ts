@@ -442,6 +442,14 @@ const EMPTY_STATE: AppState = {
 export class StateStore {
   private state: AppState = structuredClone(EMPTY_STATE);
   private loaded = false;
+  /** D167 — one disk write at a time so overlapping saves cannot clobber. */
+  private saveTail: Promise<void> = Promise.resolve();
+  private saveSeq = 0;
+  /**
+   * Test-only: sit between stringify and rename so a concurrent mutation
+   * can prove the mutex does not persist a stale snapshot.
+   */
+  onSaveSnapshot?: () => Promise<void>;
 
   constructor(private readonly filePath: string) {}
 
@@ -1489,12 +1497,29 @@ export class StateStore {
     return this.listIsolationActions().filter((row) => row.status === "pending");
   }
 
+  /**
+   * D167 — serialize disk writes. Concurrent health + monitor used to
+   * stringify overlapping snapshots and rename out of order, so a finished
+   * stage's lastOk could vanish even after recordStageOk. Each queued save
+   * stringifies AFTER it holds the lock, so it sees every mutation that
+   * landed before it started writing.
+   */
   async save(): Promise<void> {
-    const dir = path.dirname(this.filePath);
-    await mkdir(dir, { recursive: true });
-    const tmp = `${this.filePath}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(this.state, null, 2), "utf8");
-    await rename(tmp, this.filePath);
+    const write = async (): Promise<void> => {
+      const dir = path.dirname(this.filePath);
+      await mkdir(dir, { recursive: true });
+      const tmp = `${this.filePath}.${process.pid}.${++this.saveSeq}.tmp`;
+      const body = JSON.stringify(this.state, null, 2);
+      if (this.onSaveSnapshot) await this.onSaveSnapshot();
+      await writeFile(tmp, body, "utf8");
+      await rename(tmp, this.filePath);
+    };
+    const run = this.saveTail.then(write, write);
+    this.saveTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   }
 }
 

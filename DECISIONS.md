@@ -180,6 +180,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D163 | Live | CANON / healthy-sending misses page Slack once per campaign per incident |
 | D164 | Live — ACTIVE-only clause added by D165 | INCONCLUSIVE (or uncovered evaluatedAt) re-queues isolation — evaluatedAt is not a lock |
 | D165 | Live | Isolation INCONCLUSIVE Slack pages and D164 re-queue are ACTIVE-only — COMPLETED / STOPPED / PAUSED stay quiet |
+| D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 
 ---
 
@@ -4622,3 +4623,59 @@ known and the campaign is not ACTIVE; `shouldRequeueIsolation`
 gates D164; isolation-branch leftover evaluate skips non-ACTIVE;
 CANON names ACTIVE-only INCONCLUSIVE. Tests: COMPLETED must not
 page INCONCLUSIVE; ACTIVE still pages.
+
+## D167 — Mid-chain monitor kill cannot leave a 6h overdue cliff
+
+**Decision (2026-09-02).** D149 paged Slack at ~13:25 UTC because ten
+SIX_HOURLY monitor stages were overdue (lastOk stuck 06:26–06:34 UTC,
+failures=0). A noon-ish pass had refreshed early stages
+(monitor-results / test-reconcile / dns-audit) and left the tail
+stale. A manual recovery kick got through campaign-audit (~14:00:47Z)
+and lead-runout (~14:02:02Z); logs showed
+`[sending-infra] { verdict: 'unknown', ips: 0, tests: 4, posted: false }`
+then `SIGTERM` while `node dist/index.js` was running. After reboot
+the tail stayed on the morning stamp until the next `0 */6 * * *`.
+
+Root cause (verified in code, not guessed from the page):
+
+1. `runMonitor` is one sequential sitting. campaign-audit alone can
+   take many minutes (signature sequence reads + `sleep(80)`). Holding
+   the whole chain in one process makes a Railway recycle expensive.
+2. `stage()` recorded `lastOk` in memory only. Individual services
+   save *inside* `run()` — before `recordStageOk` — so a kill after
+   the sending-infra log and before the next writer's save loses that
+   stage's OK. There is no SIGTERM flush.
+3. Concurrent `save()` used the same `${pid}.tmp` and renamed
+   overlapping snapshots. Health (15 min) and monitor share one
+   in-memory store; an earlier stringify + later rename can clobber a
+   newer lastOk.
+4. After recycle, D122 correctly refuses a boot-kick of
+   campaign-audit. Nothing else picked the leftover tail up, so D149
+   stayed red for hours.
+
+**The rule.**
+
+1. Every `stage()` checkpoints `recordStageOk` / `recordStageError`
+   with an immediate `state.save()`.
+2. `StateStore.save` is serialized — one disk write at a time, each
+   snapshot taken after it holds the lock.
+3. The 6h cron still runs the full chain. A **resume** pass (kicked
+   from the next 15-minute health tick, never at boot — D122) skips
+   any monitor-loop stage whose lastOk is still inside the 6-hour
+   cycle and continues from the first stale name.
+4. D149 Slack contract is unchanged (one overdue page per episode,
+   recovery note). No new spend. No Smartlead pause/start change.
+
+D166 is claimed by an open PR (pod-cover watchdog); this is D167.
+
+**Supersedes / amends.** Amends D131 (monitor is watchdogged) and
+D149 (the page is necessary; the 6h cliff after a recycle is not).
+Does not change D122 boot-kick, D40 pause/start, or spend gates.
+
+**Guards.** canon D167: `stage()` calls `checkpointStage` / `save`
+after `recordStageOk`; `runMonitor` accepts `resume` + `skipIfFreshMs`;
+health kicks `kickMonitorResume` and listen/boot does not call
+`runMonitor`; `StateStore.save` queues on `saveTail`;
+`MONITOR_LOOP_STAGES` + `staleMonitorStages` exist. Tests: mid-chain
+kill leftover tail is exactly the stale names; overlapping saves keep
+the later lastOk.

@@ -78,8 +78,15 @@ async function buildBranch(opts: {
     getRdnsDetails: async () => null,
     getIpAnalytics: async () => null,
   };
+  const isolationPages: string[] = [];
+  const placementPages: number[] = [];
   const slack = {
-    notifyIsolationVerdict: async () => undefined,
+    notifyIsolationVerdict: async (details: { verdict: string }) => {
+      isolationPages.push(details.verdict);
+    },
+    notifyPlacementResult: async () => {
+      placementPages.push(1);
+    },
   };
   const copyIsolation = {
     runForCampaign: async (run: { campaignId: number }) => {
@@ -125,12 +132,13 @@ async function buildBranch(opts: {
     evaluated.push(campaignId);
     return originalEvaluate(campaignId, evaluateOpts);
   };
-  return { branch, state, evaluated, teardowns, armed };
+  return { branch, state, evaluated, teardowns, armed, isolationPages, placementPages };
 }
 
 describe("IsolationBranchService placement queue (D158)", () => {
   it("canary-copy under 80% marks a suspect and evaluates the live campaign", async () => {
-    const { branch, state, evaluated, teardowns } = await buildBranch({
+    const { branch, state, evaluated, teardowns, isolationPages, placementPages } =
+      await buildBranch({
       knownGoodInbox: 95,
       canaryInbox: 0,
     });
@@ -148,6 +156,8 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.ok(score, "15-minute on-ramp persists the same-ESP reading");
     assert.equal(score.source, "canary-copy");
     assert.equal(score.inboxPercent, 0);
+    assert.ok(placementPages.length >= 1, "first under-bar reading pages Slack");
+    assert.ok(isolationPages.includes("COPY"), "COPY isolation pages Slack (D163)");
   });
 
   it("does not re-hunt on the next tick after a terminal verdict", async () => {
@@ -160,6 +170,42 @@ describe("IsolationBranchService placement queue (D158)", () => {
     const second = await branch.run();
     assert.deepEqual(evaluated, []);
     assert.equal(second.evaluated, 0);
+  });
+
+  it("re-queues after COPY when the latest run is INCONCLUSIVE (D164)", async () => {
+    const { branch, state, evaluated } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+    });
+    await branch.run();
+    const afterCopy = state
+      .listCopySuspects()
+      .find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(afterCopy?.evaluatedAt, "COPY stamps evaluatedAt");
+
+    state.upsertIsolationRun({
+      id: "later-inconclusive",
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason: "need another reading",
+    });
+
+    evaluated.length = 0;
+    const second = await branch.run();
+    assert.deepEqual(evaluated, [AIRPODS.id], "Goliath Education hole: must re-evaluate");
+    assert.ok(second.evaluated >= 1);
+    const after = state
+      .listCopySuspects()
+      .find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(
+      after && (after.evaluatedAt === undefined || after.evaluatedAt),
+      "re-queue cleared the sticky evaluatedAt long enough to evaluate",
+    );
   });
 
   it("COPY with an unarmed rig waits and asks to arm once", async () => {

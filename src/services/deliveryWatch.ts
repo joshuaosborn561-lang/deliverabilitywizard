@@ -98,24 +98,33 @@ export class DeliveryWatchService {
           campaignId: campaign.id,
           campaignName: campaign.name,
           at: new Date().toISOString(),
+          evaluatedAt: undefined,
         });
         if (!dryRun) {
           const run = await this.branch.evaluate(campaign.id, {
             campaignInSpam: true,
             silent: true,
           });
-          await this.slack.notifyIsolationVerdict({
-            campaignName: campaign.name,
-            dateLabel: nyDateLabel(),
-            verdict: run.verdict,
-            reason: run.reason,
-            repliesFrom: watch.repliesFrom,
-            repliesTo: watch.repliesTo,
-            oooFrom: watch.oooFrom,
-            oooTo: watch.oooTo,
-            bounceFlat: true,
-            teardownStarted: run.teardownStarted,
-          });
+          if (
+            (run.verdict === "COPY" ||
+              run.verdict === "INFRA" ||
+              run.verdict === "INCONCLUSIVE") &&
+            this.state.getCanonMissAlert(campaign.id) !== run.verdict
+          ) {
+            await this.slack.notifyIsolationVerdict({
+              campaignName: campaign.name,
+              dateLabel: nyDateLabel(),
+              verdict: run.verdict,
+              reason: run.reason,
+              repliesFrom: watch.repliesFrom,
+              repliesTo: watch.repliesTo,
+              oooFrom: watch.oooFrom,
+              oooTo: watch.oooTo,
+              bounceFlat: true,
+              teardownStarted: run.teardownStarted,
+            });
+            this.state.setCanonMissAlert(campaign.id, run.verdict);
+          }
         }
       } catch (error) {
         result.errors.push(

@@ -92,7 +92,7 @@ import { SendingInfraService } from "./services/sendingInfra.js";
 import { canonBoard } from "./lib/canonCompliance.js";
 import { placementIsolationHealth } from "./lib/placementSuspect.js";
 import { STAGE_OVERDUE_WINDOWS_MS, overdueStages } from "./lib/stageWindows.js";
-import { alertStageAnomalies } from "./services/opsAlerts.js";
+import { alertCanonMisses, alertStageAnomalies } from "./services/opsAlerts.js";
 import {
   deployIdentityLine,
   deployIdentityProblem,
@@ -747,6 +747,14 @@ async function main(): Promise<void> {
       // D149 — the watch lives here, not in a chat session: page Slack
       // once per overdue-stage episode, and once again on recovery.
       await alertStageAnomalies({ store: state, slack, dryRun: config.dryRun });
+      // D163 — same-ESP under 80% / isolation queued / COPY / INFRA /
+      // INCONCLUSIVE pages once per campaign per incident (not every 15m).
+      await alertCanonMisses({
+        store: state,
+        slack,
+        threshold: config.remediationInboxThreshold,
+        dryRun: config.dryRun,
+      });
       await state.save();
 
       return {

@@ -19,8 +19,8 @@ function assertPlain(text: string, label: string): void {
   assert.deepEqual(hits, [], `${label} still has jargon: ${hits.join(", ")}`);
 }
 
-describe("notifyPlacementResult is quiet (D71/D158)", () => {
-  it("does not post a placement Slack page", async () => {
+describe("notifyPlacementResult pages (D163)", () => {
+  it("posts the first under-bar placement look", async () => {
     const { client, sent } = capture();
     await client.notifyPlacementResult({
       testName: "Canary copy: #3847794 AirPods",
@@ -29,7 +29,10 @@ describe("notifyPlacementResult is quiet (D71/D158)", () => {
       providers: [{ name: "Gmail", inboxPercent: 0 }],
       remediationThreshold: 80,
     });
-    assert.deepEqual(sent, []);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0] ?? "", /Placement look/);
+    assert.match(sent[0] ?? "", /Gmail/);
+    assertPlain(sent[0] ?? "", "placement look");
   });
 });
 

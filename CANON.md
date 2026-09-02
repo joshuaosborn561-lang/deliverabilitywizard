@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D162** (2026-09-02). One page of current truth. When a new
+Canon as of **D164** (2026-09-02). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -14,16 +14,17 @@ from it. Derive behaviour from this file; use the ledger only to understand
 
 Client campaigns send every day, land in inboxes not spam, nothing sits
 silently broken, and clients book meetings. Automation does the babysitting;
-Slack speaks only when a human decision is needed or the day is done.
+Slack speaks when CANON is out of compliance, a human decision is needed,
+or the day is done. Silent findings are a bug (D163).
 
 ## The machine
 
 | Loop | Cadence | Owns |
 |---|---|---|
-| Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43; on-week restore refuses under-warmed — D154) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → **isolation on-ramp** (score canary/live same-ESP → `markCopySuspect` → evaluate; live % never rotates) every pass so ugly inbox is remediating within one cycle (D158/D159) → stage watchdog + `canonCompliant` yes/no (D108) — an overdue stage **pages Slack once per episode** with a recovery note when it comes back (D149). `/health` names canaries/campaigns still under 80% with no open isolation run or suspect, plus `isolation-branch` lastOk. Old-client teardown (D107/D111) retired (D144). |
+| Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43; on-week restore refuses under-warmed — D154) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach → **isolation on-ramp** (score canary/live same-ESP → `markCopySuspect` → evaluate; live % never rotates) every pass so ugly inbox is remediating within one cycle (D158/D159) — a latest INCONCLUSIVE (or `evaluatedAt` with no covering COPY/INFRA/HEALTHY run) **re-queues** (D164) → stage watchdog + `canonCompliant` yes/no (D108) — an overdue stage **pages Slack once per episode** with a recovery note when it comes back (D149). Same-ESP under 80%, isolation queued, and COPY / INFRA / INCONCLUSIVE **page Slack once per campaign per incident** (`ops_alert`, D163). `/health` names canaries/campaigns still under 80% with no open isolation run or suspect, plus `isolation-branch` lastOk. Old-client teardown (D107/D111) retired (D144). |
 | Bounce loop | 10 min | **Never pauses, never STARTs** (D40/D148 — Josh: "i dont want anything paused anymore... investigating remediating and readding"). A REAL burst — >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141); a tripped counter samples the bounced rows first (retrying while the analytics ledger lags), a ledger dump of stale bounces logs loudly and does nothing, unreadable rows defer to the next tick — classifies the sampled SMTP reasons (tenant-rate-limit / sender-blocked / invalid-recipient / content-block, D140), Slacks ONE receipt naming the burst, the verdict and the plan, opens a **resurrection incident** when the verdict blames the sender, and a **dominant content_block also queues isolation** (D158 — same copy-suspect flag as an ugly canary; never a pause); a re-trip inside the hour folds into the open incident silently. The D90 lifetime-rate rule stays retired. Smartlead's own High Bounce Rate Auto Protection is **UI-only** (D157): the public API validates `bounce_autopause_threshold` and then discards it (a "banana" write returns ok; no GET returns it), so no code here writes or reads the field — the D80/D124/D155 converge generations were no-ops and are deleted. It is unticked on the campaign SETUP page at build (the build skill's QA gate) and by hand for existing campaigns; a Smartlead-initiated pause is recognized by `campaign_activity_logs.paused_reason: "bounce protection"` on GET /campaigns. Never touches COMPLETED/STOPPED. Routing: a Microsoft tenant hitting its daily cap pages once per tenant per day (D140); a `550 5.1.8` / AS(42004) outbound-spam block — ANY sample, never dominant-gated (D145), never burst-gated, ACTIVE or PAUSED (D162) — opens the standard **burned-domain retire ask** for that sender's domain, receipts + buttons, one pending ask per domain (D146); a Smartlead bounce-protection pause must not hide it; a bad-list verdict re-queues nothing and points at the list. **The remediation itself releases the resend** (D147/D148): the incident scans its window (each lead's own NDR re-read; bad addresses stay dead; once per lead per campaign; 20 lead-reads per tick) and parks sender-fault leads until their gate opens — tenant_rate_limit: the next UTC day after the bounced send (cap reset); sender_blocked: the domain's retire ask resolved; content_block: the sequence edited after the incident. Suppression lists respected on the re-add; a gate shut 7 days expires its leads with a receipt; one receipt per flushed wave. Pre-D148 pause stamps still drain: a human START of one opens its job (D147), then the stamp clears — no new stamps are ever written. |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). Reads the shared account book, never its own fetch (D132). |
-| Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; no placement Slack page). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
+| Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; CANON-miss Slack is the 15-minute pager, D163). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). |
 
@@ -118,8 +119,12 @@ Slack speaks only when a human decision is needed or the day is done.
   sender-domain path), and so does a dominant bounce `content_block`
   (D158). The score→suspect→evaluate pass runs on the **15-minute
   health sweep** (D159) so a send-day miss is remediating within one
-  cycle — live % still never rotates (D51). That is not a Slack page
-  (D71/D158).
+  cycle — live % still never rotates (D51). A still-ugly campaign whose
+  latest isolation run is INCONCLUSIVE, or whose `evaluatedAt` is set
+  but the latest run is not COPY/INFRA/HEALTHY covering the ugly,
+  **re-queues** (D164). First detect / mark-suspect and each isolation
+  verdict transition **pages Slack once per campaign per incident**
+  (D163) — not every 15 minutes.
 - There is **no per-sender bounce pull** (D79 retired D5), **no campaign
   bounce band** (D88 retired D78/D80), **no paused-campaign bounce hunt**
   (D91 retired D29). The D90 bounce loop above is the only bounce actor.
@@ -181,6 +186,10 @@ Slack speaks only when a human decision is needed or the day is done.
     the approval, the buy is spend-gated, and the bought domain arms
     the rig from state (`ISOLATION_DOMAIN` still overrides) (D137/D158).
   - No unwarmed reading yet → wait. Do not hunt.
+  - Latest run **INCONCLUSIVE** (or `evaluatedAt` set but the latest
+    run is not COPY/INFRA/HEALTHY covering the still-ugly score) →
+    **re-queue** on the next 15-minute pass (D164). Do not treat an
+    old COPY stamp as a lock.
 - The hunt runs autonomously; Slack fires **once** when it has the word:
   receipts, the **exact phrase being replaced**, a **substitute edit that
   keeps the line’s job** (not a blank delete — D152), *Use suggested
@@ -200,7 +209,8 @@ Slack speaks only when a human decision is needed or the day is done.
 
 ## Slack contract
 
-Exactly three pages plus receipts (D71, D47 plain English):
+Three owner pages plus receipts, plus `ops_alert` when the machine or
+healthy sending is broken (D71, D149, D163, D47 plain English):
 1. **Burned domain** — receipts + cancel/replace buttons; the retire tap
    pulls, buys the ESP-matched replacement (client-named when the burned
    domain is a client domain — never a generic/pool spin, D161), and lets
@@ -215,9 +225,18 @@ Plus `action_result` confirmations: a tapped button finished, a signature
 was auto-written (first time per campaign only, D92/D95), a reconnect
 happened or hard-failed (D94). Plus `ops_alert` pages — the machine
 reporting itself broken (D149): a watchdog stage newly overdue (once per
-episode, recovery noted) and a wrong deploy identity at boot. Alerts and
-watches live on Railway, not in a chat session. Everything else —
-staffing, rest, DNS, runout, pod chatter — stays in logs and `/ops`. The signature *ask* buttons
+episode, recovery noted) and a wrong deploy identity at boot; **and
+CANON / healthy-sending misses** (D163): `notifyPlacementResult`
+sends the first under-80% Gmail/Outlook reading (not log-only);
+`notifyIsolationVerdict` pages isolation start / COPY / INFRA /
+INCONCLUSIVE and **must pass `ops_alert`** (unclassified `send()` is
+slack-quiet dropped). Optional first-open core checklist hole
+(`canonFindings`) pages once. **Once per campaign per incident**,
+never every 15 minutes. Investigate in-thread. Burned-domain /
+word-hunt / EOD / machine `ops_alert` stay as they are. Alerts and
+watches live on Railway, not in a chat session.
+Everything else — staffing, rest, DNS, runout, pod chatter — stays in
+logs and `/ops`. The signature *ask* buttons
 are dead (D97); the fix is written automatically as
 `First Last / {Client name}` (D92).
 

@@ -85,9 +85,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D64 | Superseded by D71 |
 | D65 | Live |
 | D66–D68 | Burned numbers — no entry exists |
-| D69 | Live |
+| D69 | Live — COPY-verdict mute superseded by D163; word-hunt phrase Slack stays |
 | D70 | Burned number — no entry exists |
-| D71 | Live |
+| D71 | Live — placement-miss silence superseded by D163; owner pages stay |
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
 | D74 | Live — log-only clause superseded by D75 |
 | D75 | Live |
@@ -172,11 +172,13 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
 | D155 | Superseded by D157 — the null "clear" was as dead as the 100s (handler discards the field); rule 3 (write-ok is never verification) survives, generalized | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign |
 | D157 | Live | Smartlead bounce protection is UI-only: POST settings validates `bounce_autopause_threshold` then DISCARDS it (a "banana" write returned ok; a Peterson campaign still showed 7% after fleet-wide writes) — every API "off" write (D80 100 / D124 force / D155 null) was a no-op and the converge is deleted; off-switch = campaign SETUP page, attribution = `campaign_activity_logs.paused_reason` |
-| D158 | Live | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra) — not a D71 placement Slack page; TechEvo AirPods 0% canary was the miss |
+| D158 | Live — Slack-silence clause superseded by D163; evaluatedAt lock superseded by D164; queue trigger stays | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra); TechEvo AirPods 0% canary was the miss |
 | D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
 | D160 | Live | Generic and POC are mailbox tags, never Smartlead clients — Josh does not pay for pool labels; leftover client records detach then get deleted in the UI |
 | D161 | Live | Client-domain retire MUST buy a client-named replacement; generic/pool spins are only for generic/pool domains |
 | D162 | Live | 5.1.8 / AS(42004) opens the burned-domain retire ask without a burst and on PAUSED campaigns — D145/D146 were burst-nested and ACTIVE-only, so the 8/31 BCP sender block never Slacked |
+| D163 | Live | CANON / healthy-sending misses page Slack once per campaign per incident |
+| D164 | Live | INCONCLUSIVE (or uncovered evaluatedAt) re-queues isolation — evaluatedAt is not a lock |
 
 ---
 
@@ -4487,3 +4489,80 @@ and the independent scan call; no `updateCampaignStatus` START/PAUSED.
 Service tests: 5.1.8 on PAUSED opens the ask; same domain does not
 double-ask; +2 ACTIVE drip with a 5.1.8 still asks; non-5.1.8 burst
 and paused tenant-cap do not.
+
+## D163 — CANON misses page Slack
+
+**Decision (Josh, overnight 2026-09-01 ~11:30pm CT).** Wizard is a
+glorified every-15-minute CANON checklist. Healthy sending = CANON
+in-repo. Anything out of CANON compliance MUST Slack-alert (channel
+#deliverability / existing wizard Slack path). Silent findings are a
+bug. The deliverability agent investigates in-thread.
+
+Tonight Josh got **zero Slack** for 11 ugly canaries (TechEvo 0%
+COPY, SG PE 22%, Goliath MDR 75%, Goliath Edu 0%, BCP 0% INFRA).
+Prod root cause: `notifyPlacementResult` was log-only;
+`notifyIsolationVerdict` called `send()` with no allow kind so
+`[slack-quiet] dropped unclassified`; D69 muted COPY before the
+notify. D71/D158 said placement Slack stays quiet.
+
+**The rule.**
+
+1. `notifyPlacementResult` **must send** (not log-only) as
+   `ops_alert` on the first same-ESP under 80% (live or canary).
+2. `notifyIsolationVerdict` **must pass `ops_alert`**. Isolation
+   start / COPY / INFRA / INCONCLUSIVE page. D69 COPY mute is
+   superseded. HEALTHY stays quiet.
+3. Optional: first-open core `canonFindings` (understaffed, no
+   canary, …) pages once per campaign.
+4. Dedupe: once per campaign per incident. Same reading every 15
+   minutes stays silent. Recovery (inbox back at the bar) clears the
+   stamp so a later miss can page.
+5. Use the existing `ops_alert` lane (D149) — do not add a new Slack
+   product surface. Existing lanes unchanged: burned-domain, word-hunt
+   `copy_word`, EOD, machine `ops_alert`. Not a retire ask. Do not
+   burn or retire domains.
+6. The word-hunt `copy_word` page (phrase + substitute) still fires
+   once when the hunt has the word (D152/D153). COPY isolation itself
+   is no longer silent while the hunt is running.
+
+**Supersedes / amends.** Supersedes D71 quiet placement/isolation,
+D69 COPY mute, D158 "placement Slack stays quiet". Isolation still
+remediates (D158/D159). Re-queue after INCONCLUSIVE is D164. Does
+not resurrect D28/D36. Does not change kill-only (D51) or spend
+gates. Does not touch D162's 5.1.8 retire-ask scan.
+
+**Guards.** canon D163: `notifyPlacementResult` calls `send(` with
+`ops_alert`; `notifyIsolationVerdict` passes `ops_alert`;
+isolationBranch does not skip COPY; ResultMonitor calls
+`notifyPlacementResult`; `alertCanonMisses` on the health pass;
+CANON names Slack-on-miss. Tests: first under-bar pages; verdict
+transition pages.
+
+## D164 — Re-queue isolation after INCONCLUSIVE (evaluatedAt is not a lock)
+
+**Decision (Josh, overnight 2026-09-01 ~11:30pm CT).**
+`shouldQueuePlacementSuspect` returned false forever once
+`evaluatedAt` was set. Goliath Education #3826690 / #3826693: COPY
+26 Aug → INCONCLUSIVE 28 Aug latest → tonight 0% showed
+`uglyWithoutIsolation` and never re-queued.
+
+**The rule.** Align re-queue with `hasOpenIsolation`:
+
+1. Do not re-queue when an unevaluated suspect is already queued, a
+   word hunt is open (`teardownStarted`), or the latest run is COPY
+   or INFRA.
+2. **Do** re-queue when the latest run is INCONCLUSIVE, or when
+   `evaluatedAt` is set but the latest run is not COPY / INFRA /
+   HEALTHY covering the still-ugly score. Clear `evaluatedAt` so
+   evaluate runs again. An unevaluated suspect, an open word hunt,
+   or a latest COPY/INFRA run still owns the campaign.
+
+**Supersedes / amends.** Amends D158 `evaluatedAt` lock. Isolation
+still remediates (D158/D159). Slack-on-miss is D163. Does not
+resurrect D28/D36. Does not change kill-only (D51) or spend gates.
+Does not touch D162's 5.1.8 retire-ask scan.
+
+**Guards.** canon D164: `shouldQueuePlacementSuspect` is the inverse
+of `hasOpenIsolation`; queue call sites pass `evaluatedAt: undefined`;
+CANON names the INCONCLUSIVE re-queue. Tests: INCONCLUSIVE re-queues;
+covering COPY/INFRA does not.

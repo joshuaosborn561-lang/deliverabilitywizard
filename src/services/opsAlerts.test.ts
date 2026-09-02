@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { StateStore } from "../state/store.js";
-import { alertStageAnomalies, stageAlertText } from "./opsAlerts.js";
+import { alertCanonMisses, alertStageAnomalies, stageAlertText } from "./opsAlerts.js";
 
 function store(): StateStore {
   return new StateStore(
@@ -142,5 +142,113 @@ describe("D149 — the stage watchdog pages Slack, once per episode", () => {
     assert.match(text, /6h45m/);
     assert.match(text, /1 straight failure/);
     assert.match(text, /HTTP 429/);
+  });
+});
+
+describe("D163 — CANON misses page Slack, once per campaign per incident", () => {
+  async function seeded() {
+    const s = store();
+    await s.load();
+    s.recordPlacementScore({
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      testId: "526826",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: "2026-09-02T04:00:00.000Z",
+    });
+    return s;
+  }
+
+  it("pages an ugly canary once, then stays silent on the next sweep", async () => {
+    const s = await seeded();
+    const r = recorder();
+    const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.deepEqual(first.alerted, ["3847794:ugly"]);
+    assert.equal(r.sends.length, 1);
+    assert.equal(r.sends[0].kind, "ops_alert");
+    assert.match(r.sends[0].text, /CANON miss/);
+    assert.match(r.sends[0].text, /TechEvo/);
+
+    const second = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.deepEqual(second.alerted, []);
+    assert.equal(r.sends.length, 1, "one page per incident, not one per 15m");
+  });
+
+  it("pages again when isolation evaluates INCONCLUSIVE (transition)", async () => {
+    const s = await seeded();
+    const r = recorder();
+    await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    s.upsertIsolationRun({
+      id: "run-1",
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      startedAt: "2026-09-02T04:10:00.000Z",
+      updatedAt: "2026-09-02T04:10:00.000Z",
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason: "need another reading",
+    });
+    const next = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.deepEqual(next.alerted, ["3847794:INCONCLUSIVE"]);
+    assert.equal(r.sends.length, 2);
+    assert.match(r.sends[1].text, /INCONCLUSIVE/);
+  });
+
+  it("clears the stamp when inbox recovers so a later miss can page", async () => {
+    const s = await seeded();
+    const r = recorder();
+    await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    s.recordPlacementScore({
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      testId: "526826",
+      source: "canary-copy",
+      inboxPercent: 92,
+      at: "2026-09-02T05:00:00.000Z",
+    });
+    const rec = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.deepEqual(rec.recovered, [3847794]);
+    assert.equal(s.getCanonMissAlert(3847794), undefined);
+    assert.equal(r.sends.length, 1, "recovery is silent");
+  });
+
+  it("pages a first-open core checklist hole once", async () => {
+    const s = store();
+    await s.load();
+    s.upsertCampaignCheck({
+      campaignId: 3847794,
+      name: "TechEvo SFL Startup Owners AirPods",
+      firstSeenAt: "2026-09-01T00:00:00.000Z",
+      firstCheckAt: "2026-09-01T00:00:00.000Z",
+      firstPassedAt: null,
+      lastSweepAt: "2026-09-02T04:00:00.000Z",
+      lastKind: "hourly",
+      findings: ["missing_canary: none"],
+    });
+    const r = recorder();
+    const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.ok(first.alerted.includes("3847794:findings"));
+    assert.equal(r.sends.length, 1);
+    assert.match(r.sends[0].text, /not sending healthy/);
+    assert.match(r.sends[0].text, /no canary/);
+    const second = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.equal(second.alerted.includes("3847794:findings"), false);
+    assert.equal(r.sends.length, 1);
+  });
+
+  it("dry-run pages nothing and stamps nothing", async () => {
+    const s = await seeded();
+    const r = recorder();
+    const out = await alertCanonMisses({
+      store: s,
+      slack: r.slack,
+      threshold: 80,
+      dryRun: true,
+    });
+    assert.deepEqual(out, { alerted: [], recovered: [] });
+    assert.equal(r.sends.length, 0);
+    assert.equal(s.getCanonMissAlert(3847794), undefined);
   });
 });

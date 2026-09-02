@@ -507,9 +507,9 @@ export class SlackClient {
   }
 
   /**
-   * D71/D158 — placement % is a reading, not a Slack page. Isolation
-   * branch consumes the same-ESP score. This method stays so callers
-   * and D47 jargon tests compile; it does not post.
+   * D163 — first same-ESP-under-bar reading pages Slack. Isolation still
+   * remediates (D158); this is the alert, not a retire ask. `ops_alert`
+   * so send() is not slack-quiet dropped (unclassified was the prod miss).
    */
   async notifyPlacementResult(details: {
     testName?: string;
@@ -536,12 +536,83 @@ export class SlackClient {
       (p) => p.inboxPercent < details.threshold,
     );
     if (!weak.length) return;
-    // D71/D158 — do not send(). Unclassified send() was slack-quiet dropped
-    // anyway; isolation branch is the remediation path.
-    console.log(
-      `[placement] reading only — ${details.testName ?? "campaign test"} ${weak
-        .map((p) => `${p.name} ${p.inboxPercent.toFixed(0)}%`)
-        .join(", ")} (isolation branch handles remediation)`,
+
+    const outlook = weak.find((p) =>
+      /outlook|office\s*365|o365|microsoft/i.test(p.name),
+    );
+    const gmail = weak.find((p) => /g\s*suite|gmail|google/i.test(p.name));
+
+    let plainTake: string;
+    if (outlook && outlook.inboxPercent < 20 && (!gmail || gmail.inboxPercent >= 50)) {
+      plainTake =
+        `Outlook/Microsoft is burying this campaign (mostly spam). Gmail is doing better. That pattern usually means the *copy/offer* is getting filtered on Microsoft — not one broken mailbox.`;
+    } else if (
+      weak.length >= 2 &&
+      weak.every((p) => p.inboxPercent < 40)
+    ) {
+      plainTake =
+        `Inbox rates are weak across providers. Could be the copy/offer, the domains, or both — not a single-inbox fluke.`;
+    } else if (weak.length === 1) {
+      plainTake = `*${weak[0]!.name}* is below ${details.threshold}% inbox on this test.`;
+    } else {
+      plainTake = `A few providers came in under ${details.threshold}% inbox on this test.`;
+    }
+
+    const scoreLines = details.providers.map(
+      (p) =>
+        `• *${p.name}*: ${p.inboxPercent.toFixed(1)}% inbox${
+          p.inboxPercent < details.threshold ? " (below target)" : ""
+        }`,
+    );
+
+    const overallLine = details.overall
+      ? `Overall: *${details.overall.inboxPercent.toFixed(1)}% inbox* · ${details.overall.tabPercent.toFixed(1)}% tab · *${details.overall.spamPercent.toFixed(1)}% spam*`
+      : undefined;
+
+    const authLines: string[] = [];
+    const auth = details.authFailures ?? [];
+    if (auth.length) {
+      const spfBroken = auth.filter((a) => a.spfFailing);
+      const dkimBroken = auth.filter((a) => a.dkimFailing);
+      authLines.push("");
+      if (spfBroken.length) {
+        authLines.push(
+          `:rotating_light: *SPF is FAILING on ${spfBroken.length} sender${spfBroken.length === 1 ? "" : "s"}* — this alone will push mail to spam regardless of copy or warmup. Fix the SPF record before replacing anything.`,
+          ...spfBroken.slice(0, 8).map((a) => `  • \`${a.email}\``),
+        );
+      }
+      if (dkimBroken.length) {
+        authLines.push(
+          `:rotating_light: *DKIM is FAILING on ${dkimBroken.length} sender${dkimBroken.length === 1 ? "" : "s"}*:`,
+          ...dkimBroken.slice(0, 8).map((a) => `  • \`${a.email}\``),
+        );
+      }
+    }
+
+    const weakSenderCount = (details.senders ?? []).filter(
+      (s) => s.inboxPercent < (details.remediationThreshold ?? 80),
+    ).length;
+
+    await this.send(
+      [
+        `*Placement look — ${details.testName || "campaign test"}*`,
+        details.testId ? `Test id: \`${details.testId}\`` : undefined,
+        overallLine,
+        "",
+        plainTake,
+        "",
+        ...scoreLines,
+        ...authLines,
+        weakSenderCount
+          ? `\n_${weakSenderCount} inbox${weakSenderCount === 1 ? "" : "es"} on this test landed below ${details.remediationThreshold ?? 80}% in their own mailbox type (Gmail or Outlook). Check the daily client note for bounce/spam._`
+          : undefined,
+        "",
+        `Isolation is remediating this. Investigate in-thread. This is the alert, not a domain retire ask.`,
+      ]
+        .filter((x): x is string => Boolean(x))
+        .join("\n"),
+      undefined,
+      "ops_alert",
     );
   }
 
@@ -784,6 +855,8 @@ export class SlackClient {
         "This campaign is in spam. That is a flag — either the inboxes or the copy. I need another known-good reading before I pick one.";
     }
 
+    if (details.verdict === "HEALTHY") return;
+
     await this.send(
       [
         `*${who || details.campaignName}*${details.dateLabel ? ` / ${details.dateLabel}` : ""}`,
@@ -791,9 +864,12 @@ export class SlackClient {
         verdictLine,
         details.infraSummary,
         details.proof,
+        "Investigate in-thread. Isolation remediates; this page is the alert, not a retire ask.",
       ]
         .filter((line): line is string => Boolean(line))
         .join("\n"),
+      undefined,
+      "ops_alert",
     );
   }
 

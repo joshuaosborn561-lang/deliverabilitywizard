@@ -4,78 +4,46 @@ import { loadConfig } from "../config.js";
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
-import type { StateStore } from "../state/store.js";
+import { StateStore } from "../state/store.js";
 import { ResultMonitor } from "./resultMonitor.js";
 
-const googleAuth = {
-  spf_result: { spf: "google.com: domain of x@brand.com designates 1.2.3.4" },
+const AIRPODS = {
+  id: 3847794,
+  name: "TechEvo SFL Startup Owners AirPods",
+  status: "ACTIVE",
 };
-const outlookAuth = {
-  spf_result: { spf: "pass (protection.outlook.com: domain of brand.com)" },
-};
 
-/**
- * One OUTLOOK sender. Its Microsoft seeds all inbox; its Google seeds all
- * spam. Blended = 50%, same-ESP (Microsoft) = 100%. Remediation scores the
- * same-ESP number, so the alert must quote 100 and not threaten a rotation.
- */
-function senderReport() {
-  return [
-    {
-      email: "outlook-sender@brand.com",
-      details: [
-        { reply: { mail_folder: "Inbox", ...outlookAuth } },
-        { reply: { mail_folder: "Inbox", ...outlookAuth } },
-        { reply: { mail_folder: "Inbox", ...outlookAuth } },
-        { reply: { mail_folder: "Spam", ...googleAuth } },
-        { reply: { mail_folder: "Spam", ...googleAuth } },
-        { reply: { mail_folder: "Spam", ...googleAuth } },
-      ],
-    },
-  ];
-}
-
-function fakeState(): StateStore {
+function fakeSmartDelivery(opts: {
+  testName?: string;
+  campaignId?: number;
+  inboxRate?: number;
+} = {}): SmartDeliveryClient {
   return {
-    get: () => ({ testedCampaigns: {} }),
-    hasAlert: () => false,
-    markAlert: () => undefined,
-    setLastMonitorAt: () => undefined,
-    save: async () => undefined,
-  } as unknown as StateStore;
-}
-
-function fakeSmartDelivery(): SmartDeliveryClient {
-  return {
-    listTests: async () => [{ id: "t1", test_name: "Test One" }],
+    listTests: async () => [
+      {
+        id: "t1",
+        test_name: opts.testName ?? `Canary copy: #${AIRPODS.id} ${AIRPODS.name}`,
+        campaign_id: opts.campaignId ?? 999001,
+      },
+    ],
     getProviderwiseReport: async () => ({
-      result: [
-        // Below the deliverability threshold so the alert path runs.
-        { provider_name: "Outlook", inbox_rate: 40 },
-      ],
+      result: [{ provider_name: "Gmail", inbox_rate: opts.inboxRate ?? 0 }],
     }),
-    getSenderAccountReport: async () => senderReport(),
+    getSenderAccountReport: async () => [],
     getDomainBlacklist: async () => [],
     getIpBlacklist: async () => [],
     getMailboxSummary: async () => [],
   } as unknown as SmartDeliveryClient;
 }
 
-type Captured = {
-  senders?: Array<{
-    email: string;
-    inboxPercent: number;
-    scoredSameEsp?: boolean;
-  }>;
-};
-
-function fakeSlack(captured: Captured): SlackClient {
+function fakeSlack(): SlackClient {
   return {
     send: async () => undefined,
-    notifyPlacementResult: async (payload: Captured) => {
-      captured.senders = payload.senders;
+    notifyPlacementResult: async () => {
+      throw new Error("notifyPlacementResult must not be the remediation path");
     },
     notifyBlacklist: async () => undefined,
+    notifyLowDeliverability: async () => undefined,
   } as unknown as SlackClient;
 }
 
@@ -86,12 +54,16 @@ const config = loadConfig({
   DELIVERABILITY_THRESHOLD: "80",
 });
 
-describe("ResultMonitor same-ESP alert scoring", () => {
-  it("scores alerts on the same-ESP number remediation acts on", async () => {
-    const captured: Captured = {};
+describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
+  it("canary-copy under 80% marks the ACTIVE live campaign as a copy suspect", async () => {
+    const state = new StateStore(
+      `/tmp/dw-monitor-canary-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
     const smartlead = {
-      listAllEmailAccounts: async () => [
-        { id: 1, from_email: "outlook-sender@brand.com", type: "OUTLOOK" },
+      listCampaigns: async () => [
+        AIRPODS,
+        { id: 999001, name: "Canary shell: #3847794 AirPods", status: "PAUSED" },
       ],
     } as unknown as SmartleadClient;
 
@@ -99,64 +71,83 @@ describe("ResultMonitor same-ESP alert scoring", () => {
       config,
       fakeSmartDelivery(),
       smartlead,
-      fakeSlack(captured),
-      fakeState(),
+      fakeSlack(),
+      state,
     );
-    await monitor.run();
+    const result = await monitor.run();
 
-    const sender = captured.senders?.[0];
-    assert.ok(sender, "expected a sender in the placement alert");
-    // Same-ESP (Microsoft seeds only) — all three inboxed.
-    assert.equal(sender.inboxPercent, 100);
-    assert.equal(sender.scoredSameEsp, true);
+    const suspect = state.listCopySuspects()[0];
+    assert.ok(suspect, "expected a copy suspect");
+    assert.equal(suspect.campaignId, AIRPODS.id);
+    assert.match(String(suspect.reason), /Canary-copy same-ESP/);
+    assert.equal(result.lowDeliverabilityAlerts, 1);
+    assert.equal(result.errors.length, 0);
   });
 
-  it("falls back to blended scoring when Smartlead types are unavailable", async () => {
-    const captured: Captured = {};
+  it("does not re-queue when the campaign is already evaluated", async () => {
+    const state = new StateStore(
+      `/tmp/dw-monitor-once-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.markCopySuspect({
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      at: "2026-09-01T18:00:00.000Z",
+      evaluatedAt: "2026-09-01T18:05:00.000Z",
+      reason: "already done",
+    });
     const smartlead = {
-      listAllEmailAccounts: async () => {
-        throw new Error("smartlead down");
-      },
+      listCampaigns: async () => [AIRPODS],
     } as unknown as SmartleadClient;
 
     const monitor = new ResultMonitor(
       config,
       fakeSmartDelivery(),
       smartlead,
-      fakeSlack(captured),
-      fakeState(),
+      fakeSlack(),
+      state,
+    );
+    const result = await monitor.run();
+    assert.equal(result.lowDeliverabilityAlerts, 0);
+    assert.equal(state.listCopySuspects().length, 1);
+  });
+
+  it("skips shells and isolation-managed tests as the target", async () => {
+    const state = new StateStore(
+      `/tmp/dw-monitor-skip-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const smartlead = {
+      listCampaigns: async () => [AIRPODS],
+    } as unknown as SmartleadClient;
+    const monitor = new ResultMonitor(
+      config,
+      fakeSmartDelivery({
+        testName: "Pod control: TechEvo A",
+        campaignId: AIRPODS.id,
+        inboxRate: 0,
+      }),
+      smartlead,
+      fakeSlack(),
+      state,
     );
     await monitor.run();
-
-    const sender = captured.senders?.[0];
-    assert.ok(sender, "alert should still go out when Smartlead is down");
-    assert.equal(sender.inboxPercent, 50);
-    assert.equal(sender.scoredSameEsp, false);
+    assert.equal(state.listCopySuspects().length, 0);
   });
 
   it("skips gone SmartDelivery tests without recording an error", async () => {
-    const smartlead = {
-      listAllEmailAccounts: async () => [],
-    } as unknown as SmartleadClient;
-
-    const state = {
-      get: () => ({
-        testedCampaigns: {
-          "1": {
-            campaignId: 1,
-            campaignName: "gone",
-            testedAt: new Date().toISOString(),
-            testIds: ["502070"],
-            mailboxCount: 1,
-            testsCreated: 1,
-          },
-        },
-      }),
-      hasAlert: () => false,
-      markAlert: () => undefined,
-      setLastMonitorAt: () => undefined,
-      save: async () => undefined,
-    } as unknown as StateStore;
+    const state = new StateStore(
+      `/tmp/dw-monitor-gone-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.markCampaignTested({
+      campaignId: 1,
+      campaignName: "gone",
+      testedAt: new Date().toISOString(),
+      testIds: ["502070"],
+      mailboxCount: 1,
+      testsCreated: 1,
+    });
 
     const smartDelivery = {
       listTests: async () => [],
@@ -174,41 +165,12 @@ describe("ResultMonitor same-ESP alert scoring", () => {
     const monitor = new ResultMonitor(
       config,
       smartDelivery,
-      smartlead,
-      fakeSlack({}),
+      { listCampaigns: async () => [] } as unknown as SmartleadClient,
+      fakeSlack(),
       state,
     );
     const result = await monitor.run();
     assert.equal(result.errors.length, 0);
     assert.equal(result.testsChecked, 1);
-  });
-
-  it("fetches Smartlead account types at most once per run", async () => {
-    const captured: Captured = {};
-    let calls = 0;
-    const smartlead = {
-      listAllEmailAccounts: async () => {
-        calls += 1;
-        return [{ id: 1, from_email: "outlook-sender@brand.com", type: "OUTLOOK" }];
-      },
-    } as unknown as SmartleadClient;
-
-    const smartDelivery = {
-      ...fakeSmartDelivery(),
-      listTests: async () => [
-        { id: "t1", test_name: "One" },
-        { id: "t2", test_name: "Two" },
-      ],
-    } as unknown as SmartDeliveryClient;
-
-    const monitor = new ResultMonitor(
-      config,
-      smartDelivery,
-      smartlead,
-      fakeSlack(captured),
-      fakeState(),
-    );
-    await monitor.run();
-    assert.equal(calls, 1);
   });
 });

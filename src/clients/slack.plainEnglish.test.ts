@@ -19,6 +19,20 @@ function assertPlain(text: string, label: string): void {
   assert.deepEqual(hits, [], `${label} still has jargon: ${hits.join(", ")}`);
 }
 
+describe("notifyPlacementResult is quiet (D71/D158)", () => {
+  it("does not post a placement Slack page", async () => {
+    const { client, sent } = capture();
+    await client.notifyPlacementResult({
+      testName: "Canary copy: #3847794 AirPods",
+      testId: "t1",
+      threshold: 80,
+      providers: [{ name: "Gmail", inboxPercent: 0 }],
+      remediationThreshold: 80,
+    });
+    assert.deepEqual(sent, []);
+  });
+});
+
 describe("Slack copy is plain English (D47)", () => {
   it("quota, placement, warmup, reconnect, remediation, day brief", async () => {
     const { client, sent } = capture();

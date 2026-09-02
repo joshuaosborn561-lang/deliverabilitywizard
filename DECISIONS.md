@@ -172,6 +172,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
 | D155 | Superseded by D157 — the null "clear" was as dead as the 100s (handler discards the field); rule 3 (write-ok is never verification) survives, generalized | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign |
 | D157 | Live | Smartlead bounce protection is UI-only: POST settings validates `bounce_autopause_threshold` then DISCARDS it (a "banana" write returned ok; a Peterson campaign still showed 7% after fleet-wide writes) — every API "off" write (D80 100 / D124 force / D155 null) was a no-op and the converge is deleted; off-switch = campaign SETUP page, attribution = `campaign_activity_logs.paused_reason` |
+| D158 | Live | Same-ESP inbox under 80% on canary-copy or live placement queues isolation (copy vs infra) — not a D71 placement Slack page; TechEvo AirPods 0% canary was the miss |
 
 ---
 
@@ -4208,3 +4209,60 @@ explanation; lib/bounceAutopause.ts echo list must not carry the field;
 config.ts must not regrow the converge knobs. retired D88 block:
 autostop has no `updateCampaignSettings` at all. Service test pins no
 status writes and no settings reads/writes.
+
+## D158 — Ugly same-ESP canary/placement scores start isolation, not a Slack page
+
+**Decision (2026-09-02, forced by Josh / TechEvo AirPods).** On 2026-09-01
+~1:05pm CT, TechEvo SFL Startup Owners AirPods (#3847794) copy-canary
+scored 0% inbox / 100% spam. Bounce loop correctly paged content_block.
+The wizard did **not** open isolation / word-hunt / burned-domain
+remediation for the copy.
+
+**The finding (verified on Railway deploy e76fe73).** Two holes, one
+outcome:
+
+1. **D71 Slack gate.** `notifyPlacementResult` called `send()` with no
+   `kind`, so `slackAllowed` dropped it as unclassified
+   (`[slack-quiet] dropped unclassified`). Low-inbox placement alerts
+   never reached Slack even when ResultMonitor fired.
+2. **Wrong trigger.** `IsolationBranchService.run()` only evaluated
+   `listCopySuspects()` without `evaluatedAt`. `markCopySuspect` was
+   set by DeliveryWatch on reply-collapse, not on canary/placement
+   under `remediationInboxThreshold` (80%). Canary-copy ugliness was
+   readable via `CopyCanaryService.readSplit` / `interpretCopyCanary`
+   and was not queued.
+
+CANON already named the right outcome: diagnose campaign-copy +
+known-good + unwarmed canary → COPY starts the word hunt (`copy_word`
+Slack) / INFRA goes the sender-domain path. Live 80% same-ESP is a
+reading (never rotate). Remediation is the isolation branch, not a
+placement Slack page.
+
+**The rule.**
+
+1. Same-ESP inbox under 80% on a canary-copy test or a live campaign
+   placement test, for an ACTIVE live campaign, queues
+   `markCopySuspect` and `evaluate({ campaignInSpam: true })`.
+2. Canary-copy ugliness counts for the live campaign (name → live id).
+   Shells, pod-control, isolation, and rig tests are never the target.
+   The ops Placement board still hides canary-copy (D126).
+3. Do not Slack a freeform placement page. `notifyPlacementResult`
+   logs and does not post. Isolation already uses the allowed
+   `copy_word` / burned-domain / spend lanes.
+4. Idempotent: do not re-hunt every monitor tick. Respect
+   `evaluatedAt`, an open word hunt, and a terminal COPY/INFRA run.
+   INCONCLUSIVE stays queued so a later reading can finish the branch.
+5. Never pause (D148). Never rotate on placement % (D51). Never spend
+   without approval.
+
+**Supersedes / amends.** Amends D71's "placement is a log" into "placement
+under 80% same-ESP is a log **and** an isolation queue." Does not add a
+Slack allow-kind. Does not resurrect D28/D36 provider-split Slack.
+Delivery-watch reply-collapse remains a second queue (D69).
+
+**Guards.** canon D158 block: isolation-branch queues from
+`queueUglyPlacementSuspects` / `markCopySuspect`; ResultMonitor marks
+suspects instead of paging placement; `notifyPlacementResult` must not
+call `send(`; CANON names D158. Service tests: canary under 80% marks
++ evaluate; notifyPlacementResult stays quiet; COPY vs INFRA still
+follows `decideIsolationVerdict`.

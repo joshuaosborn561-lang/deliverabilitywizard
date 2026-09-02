@@ -108,6 +108,8 @@ export interface CopySuspectRecord {
   campaignName?: string;
   at: string;
   evaluatedAt?: string;
+  /** D158 — why this campaign was queued (canary-copy / live placement / watch). */
+  reason?: string;
 }
 
 /** D51/D54/D55 — dedicated canary fleet sending campaign copy off-campaign. */

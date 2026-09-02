@@ -1083,8 +1083,8 @@ describe("owner intent — D64 staffing Slack is end of day", () => {
 describe("owner intent — D69 copy Slack is the word and a one-click edit", () => {
   it("D69: do not Slack a copy guess; Slack the word and Make the changes", async () => {
     // The old rotation engine (and its copy-guess Slack) is deleted (D130).
-    // Copy suspects now come from the daily delivery watch, which feeds the
-    // D93/D96 verdict instead of guessing in Slack.
+    // Copy suspects come from delivery watch (D69) and from ugly same-ESP
+    // canary/placement scores (D158), which feed the D93/D96 verdict.
     const watch = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../services/deliveryWatch.ts", import.meta.url), "utf8"),
     );
@@ -5077,6 +5077,80 @@ describe("owner intent — D140 bounce reasons are read, not guessed", () => {
       stop(
         "A tenant hitting its cap alerts Josh once per tenant per day (D140).",
         "campaignBounceAutostop.ts lost the tenant alert dedupe.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D158 ugly same-ESP starts isolation", () => {
+  it("D158: canary/live placement under 80% queues isolation; placement Slack stays quiet", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      branch,
+      /queueUglyPlacementSuspects/,
+      stop(
+        "Same-ESP under 80% on canary-copy or live placement queues isolation (D158).",
+        "isolationBranch.ts no longer scans placement/canary scores.",
+      ),
+    );
+    assert.match(
+      branch,
+      /campaignInSpam: true/,
+      stop(
+        "Queued placement suspects evaluate as campaign-in-spam so COPY vs INFRA can run (D158).",
+        "isolationBranch.run() no longer passes campaignInSpam: true.",
+      ),
+    );
+    const monitor = await readFile(
+      new URL("../services/resultMonitor.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      monitor,
+      /markCopySuspect/,
+      stop(
+        "ResultMonitor queues copy suspects from ugly same-ESP scores (D158).",
+        "resultMonitor.ts no longer marks copy suspects.",
+      ),
+    );
+    assert.doesNotMatch(
+      monitor,
+      /notifyPlacementResult/,
+      stop(
+        "ResultMonitor must not pretend to Slack a placement page (D71/D158).",
+        "resultMonitor.ts still calls notifyPlacementResult.",
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const placementFn = slack.slice(slack.indexOf("async notifyPlacementResult"));
+    const sendInPlacement = placementFn
+      .slice(0, placementFn.indexOf("\n  async ") === -1 ? placementFn.length : placementFn.indexOf("\n  async "))
+      .includes("this.send(");
+    assert.equal(
+      sendInPlacement,
+      false,
+      stop(
+        "notifyPlacementResult does not post — isolation is the remediation (D71/D158).",
+        "notifyPlacementResult still calls send().",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D158 /,
+      stop(
+        "The AirPods miss is in the ledger (D158).",
+        "DECISIONS.md no longer has D158.",
       ),
     );
   });

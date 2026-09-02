@@ -686,6 +686,7 @@ describe("CopyCanaryService", () => {
           created += 1;
           return { id: "should-not-create" };
         },
+        stopAutomatedTest: async () => undefined,
       } as unknown as SmartDeliveryClient,
       slackStub(),
       state,

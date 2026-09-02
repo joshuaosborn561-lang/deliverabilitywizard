@@ -92,6 +92,12 @@ import { SendingInfraService } from "./services/sendingInfra.js";
 import { canonBoard } from "./lib/canonCompliance.js";
 import { placementIsolationHealth } from "./lib/placementSuspect.js";
 import { STAGE_OVERDUE_WINDOWS_MS, overdueStages } from "./lib/stageWindows.js";
+import {
+  MONITOR_CYCLE_MS,
+  isMonitorStageFresh,
+  monitorNeedsResume,
+  staleMonitorStages,
+} from "./lib/monitorResume.js";
 import { alertCanonMisses, alertStageAnomalies } from "./services/opsAlerts.js";
 import {
   deployIdentityLine,
@@ -531,21 +537,44 @@ async function main(): Promise<void> {
    * recorded (per-stage lastOkAt / consecutiveFailures in state, surfaced on
    * /health) instead of vanishing into a console.warn. Production ran for
    * days with fan-out and campaign-audit dying on 429s and nothing said so.
+   * D167 — persist lastOk immediately. The monitor used to leave the
+   * record in memory until a later writer saved; a SIGTERM after
+   * `[sending-infra] {…}` and before the next save kept lastOk at morning.
    */
+  const checkpointStage = async (name: string): Promise<void> => {
+    try {
+      await state.save();
+    } catch (error) {
+      console.warn(`[watchdog] stage ${name} checkpoint save failed`, error);
+    }
+  };
+
   const stage = async <T>(
     name: string,
     fn: () => Promise<T>,
+    opts: { skipIfFreshMs?: number } = {},
   ): Promise<T | null> => {
     const startedAt = Date.now();
+    if (opts.skipIfFreshMs != null) {
+      const lastOk = state.listStageHealth()[name]?.lastOkAt ?? null;
+      if (isMonitorStageFresh(lastOk, startedAt, opts.skipIfFreshMs)) {
+        console.log(
+          `[watchdog] stage ${name} skipped — last ok ${lastOk} still inside the cycle`,
+        );
+        return null;
+      }
+    }
     try {
       const out = await fn();
       state.recordStageOk(name, Date.now() - startedAt);
+      await checkpointStage(name);
       return out;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       state.recordStageError(name, message);
       console.warn(`[watchdog] stage ${name} FAILED: ${message}`);
       feedBugRemediator(`stage-${name}`, error);
+      await checkpointStage(name);
       return null;
     }
   };
@@ -772,7 +801,26 @@ async function main(): Promise<void> {
     })().finally(() => {
       healthInFlight = null;
     });
-    return healthInFlight;
+    const result = await healthInFlight;
+    // D167 — leftover 6h stages resume on this tick, not the next cron
+    // and not at boot (D122). Fire-and-forget so /run?mode=health and the
+    // 15-minute cron do not sit on campaign-audit. skip-if-fresh makes a
+    // completed cycle a no-op.
+    kickMonitorResume();
+    return result;
+  };
+
+  const kickMonitorResume = (): void => {
+    if (monitorInFlight) return;
+    const leftover = staleMonitorStages(state.listStageHealth());
+    if (!leftover.length) return;
+    console.log(
+      `[monitor] D167 resume — leftover 6h stage(s): ${leftover.join(", ")}`,
+    );
+    void runMonitor({ remediate: true, resume: true }).catch((error) => {
+      console.error("[monitor] Resume after health failed", error);
+      feedBugRemediator("monitor-resume", error);
+    });
   };
 
   const runBounceAutostop = async () => {
@@ -811,11 +859,18 @@ async function main(): Promise<void> {
     return opsCheckInFlight;
   };
 
-  const runMonitor = async (opts: { remediate?: boolean } = {}) => {
+  const runMonitor = async (
+    opts: { remediate?: boolean; resume?: boolean } = {},
+  ) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
       console.log("[monitor] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
+    }
+    const skipIfFreshMs = opts.resume ? MONITOR_CYCLE_MS : undefined;
+    if (opts.resume && !monitorNeedsResume(state.listStageHealth())) {
+      console.log("[monitor] D167 resume — every 6h stage is still fresh");
+      return { skipped: true as const, reason: "all-fresh" };
     }
     monitorInFlight = (async () => {
       // D131 — every monitor stage is watchdogged like the health pass:
@@ -825,61 +880,100 @@ async function main(): Promise<void> {
       // line it lost the whole window to placement pulls and 429'd three
       // consecutive passes (00:22, 06:20, 12:17 on 2026-08-27) even with
       // spaced writes and ~91s of retry runway.
+      // D167 — a resume pass skips stages whose lastOk is still inside
+      // the 6h cycle so a mid-chain SIGTERM continues from the leftover
+      // tail instead of rerunning the whole sitting.
       if (config.enablePodControls) {
-        await stage("pod-tags", () => podTags.run());
+        await stage("pod-tags", () => podTags.run(), { skipIfFreshMs });
       }
-      const monitorResult = await stage("monitor-results", () => monitor.run());
+      const monitorResult = await stage(
+        "monitor-results",
+        () => monitor.run(),
+        { skipIfFreshMs },
+      );
       feedBugRemediator(
         "monitor",
         (monitorResult as { errors?: string[] })?.errors ?? [],
       );
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
-        warmupGateResult = await stage("warmup-gate", () => runWarmupGate());
+        warmupGateResult = await stage("warmup-gate", () => runWarmupGate(), {
+          skipIfFreshMs,
+        });
       }
       // Stop recurring tests whose campaign stopped being active since the scan
       let reconcileResult: unknown = null;
       if (config.enableTestReconciler) {
-        reconcileResult = await stage("test-reconcile", () => runTestReconcile());
+        reconcileResult = await stage("test-reconcile", () => runTestReconcile(), {
+          skipIfFreshMs,
+        });
       }
       // Zone-level faults are invisible from inside Smartlead; resolve DNS
       // directly so a domain sending without SPF cannot stay silent.
-      const dnsAuditResult: unknown = await stage("dns-audit", () => dnsAudit.run());
+      const dnsAuditResult: unknown = await stage(
+        "dns-audit",
+        () => dnsAudit.run(),
+        { skipIfFreshMs },
+      );
       // Campaign-level audit (read-only). Staffing mutations live on the
       // faster CRON_HEALTH loop so thin campaigns do not wait six hours.
-      const campaignAuditResult: unknown = await stage("campaign-audit", () =>
-        campaignAudit.run(),
+      const campaignAuditResult: unknown = await stage(
+        "campaign-audit",
+        () => campaignAudit.run(),
+        { skipIfFreshMs },
       );
       // D52 — remaining leads. Campaign audit watches senders, not this number.
       let leadRunoutResult: unknown = null;
       if (config.enableLeadRunout) {
-        leadRunoutResult = await stage("lead-runout", () => leadRunout.run());
+        leadRunoutResult = await stage("lead-runout", () => leadRunout.run(), {
+          skipIfFreshMs,
+        });
       }
       // D53 — sending IPs from placement reports we already pull.
       let sendingInfraResult: unknown = null;
       if (config.enableSendingInfraCensus) {
-        sendingInfraResult = await stage("sending-infra", () => sendingInfra.run());
+        sendingInfraResult = await stage(
+          "sending-infra",
+          () => sendingInfra.run(),
+          { skipIfFreshMs },
+        );
       }
       let podControlResult: unknown = null;
       if (config.enablePodControls) {
-        podControlResult = await stage("pod-controls", () => podControls.run());
-        await stage("domain-client-audit", () => domainClientAudit.run());
-      await stage("domain-lifecycle", () => domainLifecycle.run());
-        await stage("isolation-buy-resume", () => isolationBuy.resume());
-        await stage("canary-buy-resume", () => copyCanaryBuy.resume());
-        await stage("canary-adopt", () => runCanaryAdoption());
+        podControlResult = await stage("pod-controls", () => podControls.run(), {
+          skipIfFreshMs,
+        });
+        await stage("domain-client-audit", () => domainClientAudit.run(), {
+          skipIfFreshMs,
+        });
+        await stage("domain-lifecycle", () => domainLifecycle.run(), {
+          skipIfFreshMs,
+        });
+        await stage("isolation-buy-resume", () => isolationBuy.resume(), {
+          skipIfFreshMs,
+        });
+        await stage("canary-buy-resume", () => copyCanaryBuy.resume(), {
+          skipIfFreshMs,
+        });
+        await stage("canary-adopt", () => runCanaryAdoption(), { skipIfFreshMs });
       }
       let isolationRigResult: unknown = null;
       if (config.enableIsolationRig) {
-        isolationRigResult = await stage("isolation-rig", () => isolationRig.run());
+        isolationRigResult = await stage("isolation-rig", () => isolationRig.run(), {
+          skipIfFreshMs,
+        });
       }
       if (config.enableCopyIsolation) {
-        await stage("copy-isolation", async () => {
-          for (const run of state.listIsolationRuns()) {
-            if (!run.teardownStarted) continue;
-            await copyIsolation.runForCampaign(run);
-          }
-        });
+        await stage(
+          "copy-isolation",
+          async () => {
+            for (const run of state.listIsolationRuns()) {
+              if (!run.teardownStarted) continue;
+              await copyIsolation.runForCampaign(run);
+            }
+          },
+          { skipIfFreshMs },
+        );
       }
       return {
         monitor: monitorResult,

@@ -71,3 +71,44 @@ describe("ops audit state", () => {
     assert.equal(state.get().opsAudit[0]?.id, "5");
   });
 });
+
+describe("D167 serialized save", () => {
+  it("does not let an earlier snapshot clobber a later stage lastOk", async () => {
+    const filePath = `/tmp/dw-state-save-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    state.recordStageOk("campaign-audit", 1000);
+
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered!: () => void;
+    const enteredHold = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    state.onSaveSnapshot = async () => {
+      entered();
+      await held;
+    };
+
+    const first = state.save();
+    await enteredHold;
+    state.recordStageOk("sending-infra", 200);
+    const second = state.save();
+    release();
+    await Promise.all([first, second]);
+
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    const health = reloaded.listStageHealth();
+    assert.ok(
+      health["campaign-audit"]?.lastOkAt,
+      "first checkpoint must survive",
+    );
+    assert.ok(
+      health["sending-infra"]?.lastOkAt,
+      "a later recordStageOk must not be lost to an overlapping save rename",
+    );
+  });
+});

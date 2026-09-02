@@ -127,7 +127,7 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     assert.ok(state.listCopySuspects()[0]?.evaluatedAt);
   });
 
-  it("re-queues when evaluatedAt is set but the latest run is INCONCLUSIVE (D163)", async () => {
+  it("re-queues when evaluatedAt is set but the latest run is INCONCLUSIVE (D164)", async () => {
     const state = new StateStore(
       `/tmp/dw-monitor-requeue-${process.pid}-${Date.now()}.json`,
     );

@@ -134,7 +134,7 @@ describe("placement suspect queue gates (D158)", () => {
     );
   });
 
-  it("re-queues when evaluatedAt is set but the latest run is INCONCLUSIVE (D163)", () => {
+  it("re-queues when evaluatedAt is set but the latest run is INCONCLUSIVE (D164)", () => {
     assert.equal(
       shouldQueuePlacementSuspect({
         existing: { evaluatedAt: "2026-08-26T12:00:00.000Z" },

@@ -2,7 +2,7 @@
  * D158 — same-ESP inbox under the live 80% bar on a canary-copy or live
  * campaign placement is a copy-suspect flag. Isolation then reads canary
  * + known-good (D93/D96). D163 pages Slack once per campaign per
- * incident and re-queues when the latest run is INCONCLUSIVE.
+ * incident. D164 re-queues when the latest run is INCONCLUSIVE.
  */
 
 import { isAnyShellCampaign } from "./canaryShell.js";
@@ -181,7 +181,7 @@ export function placementIsolationHealth(opts: {
 }
 
 /**
- * Inverse of hasOpenIsolation (D163). An unevaluated suspect, an open
+ * Inverse of hasOpenIsolation (D164). An unevaluated suspect, an open
  * word hunt, or a latest COPY/INFRA run already owns the campaign — do
  * not re-queue. evaluatedAt alone is not a lock: a later INCONCLUSIVE
  * (or a stamp with no covering COPY/INFRA/HEALTHY run) must re-queue

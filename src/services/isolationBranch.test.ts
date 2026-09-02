@@ -172,7 +172,7 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(second.evaluated, 0);
   });
 
-  it("re-queues after COPY when the latest run is INCONCLUSIVE (D163)", async () => {
+  it("re-queues after COPY when the latest run is INCONCLUSIVE (D164)", async () => {
     const { branch, state, evaluated } = await buildBranch({
       knownGoodInbox: 95,
       canaryInbox: 0,

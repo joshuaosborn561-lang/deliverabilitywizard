@@ -5662,10 +5662,10 @@ describe("owner intent — D163 CANON misses page Slack", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D163\*\*/,
+      /D163/,
       stop(
-        "CANON is as of D163.",
-        "CANON.md header was not bumped.",
+        "CANON still cites Slack-on-CANON-miss (D163).",
+        "CANON.md lost the D163 citation.",
       ),
     );
     const decisions = await readFile(
@@ -5674,7 +5674,7 @@ describe("owner intent — D163 CANON misses page Slack", () => {
     );
     assert.match(
       decisions,
-      /## D163 /,
+      /## D163 — CANON misses page Slack/,
       stop(
         "The CANON-miss Slack rule is in the ledger (D163).",
         "DECISIONS.md no longer has D163.",
@@ -5683,8 +5683,8 @@ describe("owner intent — D163 CANON misses page Slack", () => {
   });
 });
 
-describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
-  it("D163: shouldQueue is the inverse of hasOpenIsolation; queue clears evaluatedAt", async () => {
+describe("owner intent — D164 re-queue after INCONCLUSIVE", () => {
+  it("D164: shouldQueue is the inverse of hasOpenIsolation; queue clears evaluatedAt", async () => {
     const { hasOpenIsolation, shouldQueuePlacementSuspect } = await import(
       "../lib/placementSuspect.js"
     );
@@ -5696,7 +5696,7 @@ describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
       hasOpenIsolation(inconclusive),
       false,
       stop(
-        "INCONCLUSIVE is not an open covering run (D163).",
+        "INCONCLUSIVE is not an open covering run (D164).",
         "hasOpenIsolation treats INCONCLUSIVE as open — Goliath Education stays stuck.",
       ),
     );
@@ -5704,7 +5704,7 @@ describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
       shouldQueuePlacementSuspect(inconclusive),
       true,
       stop(
-        "A still-ugly campaign whose latest run is INCONCLUSIVE must re-queue (D163).",
+        "A still-ugly campaign whose latest run is INCONCLUSIVE must re-queue (D164).",
         "shouldQueuePlacementSuspect still locks on evaluatedAt.",
       ),
     );
@@ -5712,7 +5712,7 @@ describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
       shouldQueuePlacementSuspect(inconclusive),
       !hasOpenIsolation(inconclusive),
       stop(
-        "shouldQueuePlacementSuspect is the inverse of hasOpenIsolation (D163).",
+        "shouldQueuePlacementSuspect is the inverse of hasOpenIsolation (D164).",
         "The two helpers disagree.",
       ),
     );
@@ -5725,7 +5725,7 @@ describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
       branch,
       /evaluatedAt: undefined/,
       stop(
-        "Re-queue clears evaluatedAt so evaluate actually runs (D163).",
+        "Re-queue clears evaluatedAt so evaluate actually runs (D164).",
         "isolationBranch.ts no longer clears evaluatedAt when queueing.",
       ),
     );
@@ -5737,7 +5737,7 @@ describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
       monitor,
       /evaluatedAt: undefined/,
       stop(
-        "ResultMonitor re-queue also clears evaluatedAt (D163).",
+        "ResultMonitor re-queue also clears evaluatedAt (D164).",
         "resultMonitor.ts no longer clears evaluatedAt.",
       ),
     );
@@ -5747,10 +5747,18 @@ describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
     );
     assert.match(
       canon,
-      /re-queue/i,
+      /re-queues?\*\* \(D164\)/,
       stop(
-        "CANON names the INCONCLUSIVE re-queue (D163).",
-        "CANON.md lost D163.",
+        "CANON names the INCONCLUSIVE re-queue (D164).",
+        "CANON.md lost D164.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D164\*\*/,
+      stop(
+        "CANON is as of D164.",
+        "CANON.md header was not bumped to D164.",
       ),
     );
     const decisions = await readFile(
@@ -5759,10 +5767,10 @@ describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
     );
     assert.match(
       decisions,
-      /## D163 /,
+      /## D164 /,
       stop(
-        "The INCONCLUSIVE re-queue rule is in the ledger (D163).",
-        "DECISIONS.md no longer has D163.",
+        "The INCONCLUSIVE re-queue rule is in the ledger (D164).",
+        "DECISIONS.md no longer has D164.",
       ),
     );
   });

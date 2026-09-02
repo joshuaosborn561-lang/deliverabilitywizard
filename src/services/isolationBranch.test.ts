@@ -10,6 +10,12 @@ const AIRPODS = {
   status: "ACTIVE",
 };
 
+const SALESGLIDER = {
+  id: 3748412,
+  name: "SalesGlider Trades Airpods",
+  status: "PAUSED",
+};
+
 function providerReport(inbox: number) {
   return {
     result: [
@@ -24,7 +30,10 @@ async function buildBranch(opts: {
   canaryInbox: number;
   mailboxPlacement?: "PRIMARY" | "SPAM" | "UNKNOWN";
   rigEmails?: string[];
+  campaign?: { id: number; name: string; status: string };
+  canaryTestId?: string | null;
 }) {
+  const campaign = opts.campaign ?? AIRPODS;
   const state = new StateStore(
     `/tmp/dw-iso-branch-${process.pid}-${Date.now()}-${Math.random()}.json`,
   );
@@ -45,16 +54,27 @@ async function buildBranch(opts: {
     emails: ["a@techevo.test"],
     createdAt: "2026-09-01T00:00:00.000Z",
   });
-  state.setCopyCanaries(AIRPODS.id, ["canary@g.test"], "canary-3847794");
+  if (opts.canaryTestId === null) {
+    state.setCopyCanaries(campaign.id, ["canary@g.test"]);
+  } else {
+    state.setCopyCanaries(
+      campaign.id,
+      ["canary@g.test"],
+      opts.canaryTestId ?? `canary-${campaign.id}`,
+    );
+  }
 
   const evaluated: number[] = [];
   const teardowns: number[] = [];
   const config = loadConfig({} as NodeJS.ProcessEnv);
 
+  const healed: number[] = [];
   const smartlead = {
-    listCampaigns: async () => [AIRPODS],
+    listCampaigns: async () => [campaign],
     getCampaign: async (id: number) =>
-      id === AIRPODS.id ? AIRPODS : { id, name: `Campaign ${id}`, status: "ACTIVE" },
+      id === campaign.id
+        ? campaign
+        : { id, name: `Campaign ${id}`, status: "ACTIVE" },
     getCampaignEmailAccounts: async () => [
       { id: 1, from_email: "a@techevo.test" },
     ],
@@ -62,8 +82,8 @@ async function buildBranch(opts: {
   const smartDelivery = {
     listTests: async () => [
       {
-        id: "canary-3847794",
-        test_name: `Canary copy: #${AIRPODS.id} ${AIRPODS.name}`,
+        id: opts.canaryTestId === null ? undefined : `canary-${campaign.id}`,
+        test_name: `Canary copy: #${campaign.id} ${campaign.name}`,
         campaign_id: 999001,
       },
     ],
@@ -115,6 +135,12 @@ async function buildBranch(opts: {
       warmedInbox: opts.canaryInbox < 80 ? 0 : 3,
     }),
     describeSplit: () => undefined,
+    healMissingTestId: async (campaignId: number) => {
+      healed.push(campaignId);
+      const id = `healed-${campaignId}`;
+      state.setCopyCanaries(campaignId, ["canary@g.test"], id);
+      return id;
+    },
   };
 
   const branch = new IsolationBranchService(
@@ -132,7 +158,17 @@ async function buildBranch(opts: {
     evaluated.push(campaignId);
     return originalEvaluate(campaignId, evaluateOpts);
   };
-  return { branch, state, evaluated, teardowns, armed, isolationPages, placementPages };
+  return {
+    branch,
+    state,
+    evaluated,
+    teardowns,
+    armed,
+    isolationPages,
+    placementPages,
+    healed,
+    campaign,
+  };
 }
 
 describe("IsolationBranchService placement queue (D158)", () => {
@@ -259,5 +295,70 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(infraRun.verdict, "INFRA");
     assert.equal(infraRun.teardownStarted, false);
     assert.equal(infra.teardowns.length, 0);
+  });
+
+  it("re-evaluates a PAUSED INCONCLUSIVE suspect even with evaluatedAt (D164)", async () => {
+    const { branch, state, evaluated } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+      campaign: SALESGLIDER,
+    });
+    state.markCopySuspect({
+      campaignId: SALESGLIDER.id,
+      campaignName: SALESGLIDER.name,
+      at: "2026-08-26T12:00:00.000Z",
+      evaluatedAt: "2026-08-26T12:05:00.000Z",
+      reason: "missing unwarmed senders with that copy",
+    });
+    state.upsertIsolationRun({
+      id: "06371d1b-768f-4e3b-9c52-ee08019f8341",
+      campaignId: SALESGLIDER.id,
+      campaignName: SALESGLIDER.name,
+      startedAt: "2026-08-26T12:00:00.000Z",
+      updatedAt: "2026-08-26T12:05:00.000Z",
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason: "missing unwarmed senders with that copy",
+    });
+
+    const result = await branch.run();
+    assert.deepEqual(
+      evaluated,
+      [SALESGLIDER.id],
+      "PAUSED + evaluatedAt must not lock INCONCLUSIVE out of the 15-minute loop",
+    );
+    assert.ok(result.evaluated >= 1);
+  });
+
+  it("does not blindly re-eval COPY/INFRA when hasOpenIsolation says owned", async () => {
+    const { branch, state, evaluated } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+    });
+    await branch.run();
+    evaluated.length = 0;
+    const owned = state.listCopySuspects().find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(owned?.evaluatedAt);
+    assert.equal(state.latestIsolationRunForCampaign(AIRPODS.id)?.verdict, "COPY");
+
+    const second = await branch.run();
+    assert.deepEqual(evaluated, []);
+    assert.equal(second.evaluated, 0);
+  });
+
+  it("heals a missing copy-canary testId so unwarmed scoring can finish", async () => {
+    const { branch, state, healed } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+      campaign: SALESGLIDER,
+      canaryTestId: null,
+    });
+    assert.equal(state.getCopyCanaryTestId(SALESGLIDER.id), undefined);
+
+    const run = await branch.evaluate(SALESGLIDER.id, { campaignInSpam: true });
+    assert.deepEqual(healed, [SALESGLIDER.id]);
+    assert.equal(state.getCopyCanaryTestId(SALESGLIDER.id), `healed-${SALESGLIDER.id}`);
+    assert.equal(run.verdict, "COPY", "healed testId lets the unwarmed reading finish");
   });
 });

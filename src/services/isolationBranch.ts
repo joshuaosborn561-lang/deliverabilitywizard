@@ -29,6 +29,7 @@ import {
   isIsolationManagedTestName,
 } from "../lib/isolationNames.js";
 import {
+  isolationSuspectsDueForEval,
   isTerminalIsolationVerdict,
   liveCampaignForPlacementTrigger,
   minSameEspInbox,
@@ -82,7 +83,10 @@ export class IsolationBranchService {
 
     const targets = opts.campaignId
       ? [{ campaignId: opts.campaignId }]
-      : this.state.listCopySuspects().filter((row) => !row.evaluatedAt);
+      : isolationSuspectsDueForEval(
+          this.state.listCopySuspects(),
+          (campaignId) => this.state.latestIsolationRunForCampaign(campaignId),
+        );
 
     for (const target of targets) {
       try {
@@ -489,7 +493,10 @@ export class IsolationBranchService {
   private async unwarmedCopyFineAcrossEsps(
     campaignId: number,
   ): Promise<boolean | null> {
-    const testId = this.state.getCopyCanaryTestId(campaignId);
+    let testId = this.state.getCopyCanaryTestId(campaignId);
+    if (!testId && this.copyCanary) {
+      testId = await this.copyCanary.healMissingTestId(campaignId);
+    }
     if (!testId) return null;
     const splits = await this.providerSplits(String(testId));
     if (!splits.length) return null;

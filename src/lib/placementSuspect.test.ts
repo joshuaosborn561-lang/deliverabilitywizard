@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  isolationSuspectsDueForEval,
   isTerminalIsolationVerdict,
   liveCampaignForPlacementTrigger,
   placementIsolationHealth,
   placementSuspectReason,
   sameEspInboxUgly,
+  shouldEvaluateIsolationSuspect,
   shouldQueuePlacementSuspect,
   uglyWithoutIsolation,
 } from "./placementSuspect.js";
@@ -176,6 +178,64 @@ describe("placement suspect queue gates (D158)", () => {
     assert.equal(isTerminalIsolationVerdict("INFRA"), true);
     assert.equal(isTerminalIsolationVerdict("HEALTHY"), true);
     assert.equal(isTerminalIsolationVerdict("INCONCLUSIVE"), false);
+  });
+
+  it("re-evaluates INCONCLUSIVE with evaluatedAt; COPY/INFRA stay owned", () => {
+    assert.equal(
+      shouldEvaluateIsolationSuspect({
+        existing: { evaluatedAt: "2026-08-26T12:05:00.000Z" },
+        openRun: { verdict: "INCONCLUSIVE" },
+      }),
+      true,
+      "SalesGlider hole: INCONCLUSIVE + evaluatedAt must still re-read",
+    );
+    assert.equal(
+      shouldEvaluateIsolationSuspect({
+        existing: { evaluatedAt: "2026-08-26T12:05:00.000Z" },
+        openRun: { verdict: "COPY", teardownStarted: true },
+      }),
+      false,
+      "hasOpenIsolation owns COPY — do not blindly re-eval",
+    );
+    assert.equal(
+      shouldEvaluateIsolationSuspect({
+        existing: { evaluatedAt: "2026-08-26T12:05:00.000Z" },
+        openRun: { verdict: "INFRA" },
+      }),
+      false,
+    );
+    assert.equal(
+      shouldEvaluateIsolationSuspect({
+        existing: { evaluatedAt: "2026-08-28T00:00:00.000Z" },
+        openRun: { verdict: "HEALTHY" },
+      }),
+      false,
+      "HEALTHY covers; placement re-queues only if still ugly and ACTIVE",
+    );
+    assert.equal(
+      shouldEvaluateIsolationSuspect({
+        existing: { evaluatedAt: undefined },
+      }),
+      true,
+    );
+    assert.equal(shouldEvaluateIsolationSuspect({}), false);
+  });
+
+  it("lists INCONCLUSIVE evaluatedAt suspects for the branch loop", () => {
+    const due = isolationSuspectsDueForEval(
+      [
+        { campaignId: 3748412, evaluatedAt: "2026-08-26T12:05:00.000Z" },
+        { campaignId: 1, evaluatedAt: "2026-08-26T12:05:00.000Z" },
+      ],
+      (id) =>
+        id === 3748412
+          ? { verdict: "INCONCLUSIVE" }
+          : { verdict: "COPY", teardownStarted: true },
+    );
+    assert.deepEqual(
+      due.map((row) => row.campaignId),
+      [3748412],
+    );
   });
 });
 

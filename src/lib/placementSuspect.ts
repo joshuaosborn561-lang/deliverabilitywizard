@@ -186,12 +186,54 @@ export function placementIsolationHealth(opts: {
  * not re-queue. evaluatedAt alone is not a lock: a later INCONCLUSIVE
  * (or a stamp with no covering COPY/INFRA/HEALTHY run) must re-queue
  * so tonight's still-ugly canary is not stuck forever.
+ *
+ * Placement *new* queue stays ACTIVE-gated via
+ * liveCampaignForPlacementTrigger. This helper only answers "already
+ * owned?" — it does not require ACTIVE.
  */
 export function shouldQueuePlacementSuspect(opts: {
   existing?: { evaluatedAt?: string };
   openRun?: { teardownStarted?: boolean; verdict?: string };
 }): boolean {
   return !hasOpenIsolation(opts);
+}
+
+/**
+ * Isolation-branch sweep (D164). Re-evaluate every existing suspect
+ * whose latest run is INCONCLUSIVE (or who has no COPY/INFRA/HEALTHY
+ * covering run) — even when evaluatedAt is set, even when the live
+ * campaign is PAUSED. COPY/INFRA/HEALTHY and an open word hunt own
+ * the campaign; do not blindly re-eval those.
+ *
+ * Same open-isolation semantics as shouldQueuePlacementSuspect:
+ * evaluatedAt is not a lock. Placement new-queue stays ACTIVE-only;
+ * this is the re-read of suspects already on the list.
+ */
+export function shouldEvaluateIsolationSuspect(opts: {
+  existing?: { evaluatedAt?: string };
+  openRun?: { teardownStarted?: boolean; verdict?: string };
+}): boolean {
+  if (!opts.existing) return false;
+  if (opts.openRun?.teardownStarted) return false;
+  if (isTerminalIsolationVerdict(opts.openRun?.verdict)) return false;
+  return true;
+}
+
+/** Existing suspects the 15-minute branch loop must re-read. */
+export function isolationSuspectsDueForEval<
+  T extends { campaignId: number; evaluatedAt?: string },
+>(
+  suspects: T[],
+  latestRun: (
+    campaignId: number,
+  ) => { teardownStarted?: boolean; verdict?: string } | undefined,
+): T[] {
+  return suspects.filter((row) =>
+    shouldEvaluateIsolationSuspect({
+      existing: row,
+      openRun: latestRun(row.campaignId),
+    }),
+  );
 }
 
 export function placementSuspectReason(

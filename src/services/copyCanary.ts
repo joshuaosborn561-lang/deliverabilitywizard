@@ -40,11 +40,12 @@ import {
 import { isCanaryShellCampaign } from "../lib/canaryShell.js";
 import { copySequence, isolationManualPayload } from "../lib/isolationPlacement.js";
 import { sleep } from "../lib/http.js";
-import { ensureCanaryShell } from "./canaryShell.js";
+import { shouldEvaluateIsolationSuspect } from "../lib/placementSuspect.js";
 import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
+import { ensureCanaryShell } from "./canaryShell.js";
 import { isExcluded } from "./campaignTopUp.js";
 import {
   addDaysIso,
@@ -201,11 +202,25 @@ export class CopyCanaryService {
       }
     }
 
+    await this.healOrphanCopyCanaryTestIds({
+      campaigns,
+      picks,
+      dryRun,
+      listed,
+      listFailed,
+      providerIds,
+      skipCampaignIds: activeIds,
+      result,
+    });
+
     for (const [campaignId, record] of Object.entries(
       this.state.getIsolation().copyCanaries,
     )) {
       const id = Number(campaignId);
       if (activeIds.has(id)) continue;
+      // D164 — keep the unwarmed reading alive while isolation still
+      // needs it (INCONCLUSIVE / no covering run), including PAUSED lives.
+      if (this.isolationNeedsCopyCanary(id)) continue;
       if (record.testId && this.smartDelivery && !dryRun) {
         await this.smartDelivery.stopAutomatedTest(record.testId).catch(() => undefined);
       }
@@ -246,6 +261,12 @@ export class CopyCanaryService {
               String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
             )[0] ?? {},
         );
+      if (canaryTestId && !this.state.getCopyCanaryTestId(campaignId)) {
+        const storedEmails = this.state.getCopyCanaries(campaignId);
+        if (storedEmails.length) {
+          this.state.setCopyCanaries(campaignId, storedEmails, canaryTestId);
+        }
+      }
       const warmedTestId = testIdOf(
         tests
           .filter(
@@ -315,6 +336,106 @@ export class CopyCanaryService {
     const reading = interpretCopyCanary(split);
     if (reading.lean === "NONE") return undefined;
     return `Unwarmed campaign copy: ${split.unwarmedInbox}/${split.unwarmedTested} inbox. Warmed peers: ${split.warmedInbox}/${split.warmedTested}. ${reading.reason}`;
+  }
+
+  /**
+   * D164 / D96 — emails without a SmartDelivery testId leave
+   * unwarmedCopyFineAcrossEsps null forever (SalesGlider #3748412).
+   * Recover a living Canary copy test, or create one when isolation
+   * still needs the reading (PAUSED lives included).
+   */
+  async healMissingTestId(
+    campaignId: number,
+    opts: { dryRun?: boolean } = {},
+  ): Promise<string | undefined> {
+    const stored = this.state.getCopyCanaryTestId(campaignId);
+    if (stored) return stored;
+    const emails = this.state.getCopyCanaries(campaignId);
+    if (!emails.length || !this.smartDelivery) return undefined;
+
+    const dryRun = opts.dryRun ?? this.config.dryRun;
+    let listed: unknown = [];
+    let listFailed = false;
+    try {
+      listed = await this.listTestsRetrying();
+    } catch {
+      listFailed = true;
+    }
+    if (listFailed) return undefined;
+
+    const recovered = this.recoverListedCopyCanaryTestId(campaignId, listed);
+    if (recovered) {
+      this.state.setCopyCanaries(campaignId, emails, recovered);
+      return recovered;
+    }
+
+    if (!this.isolationNeedsCopyCanary(campaignId)) return undefined;
+
+    let campaigns: SmartleadCampaign[] = [];
+    try {
+      campaigns = await this.smartlead.listCampaigns();
+    } catch {
+      return undefined;
+    }
+    const campaign = campaigns.find((row) => row.id === campaignId);
+    if (
+      !campaign ||
+      isCanaryShellCampaign(campaign) ||
+      isExcluded(campaign, this.config.topUpExcludeCampaigns)
+    ) {
+      return undefined;
+    }
+
+    let providerIds: number[] = [];
+    try {
+      providerIds = await this.smartDelivery.resolveProviderIds(
+        this.config.providerIds,
+      );
+    } catch {
+      return undefined;
+    }
+    if (!providerIds.length) return undefined;
+
+    let accounts: SmartleadAccountWithCampaigns[] = [];
+    try {
+      accounts = await this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: true,
+      });
+    } catch {
+      return undefined;
+    }
+    const accountByEmail = new Map(
+      accounts
+        .map((account) => {
+          const email = accountEmail(account)?.toLowerCase();
+          return email ? ([email, account] as const) : null;
+        })
+        .filter((row): row is readonly [string, SmartleadAccountWithCampaigns] =>
+          Boolean(row),
+        ),
+    );
+    const picks = this.fleetReady(accountByEmail);
+    if (!picks.length) return undefined;
+
+    try {
+      const testId = await this.ensureCopyTest(
+        campaign,
+        campaigns,
+        picks,
+        dryRun,
+        listed,
+        listFailed,
+        providerIds,
+      );
+      if (testId) {
+        this.state.setCopyCanaries(campaignId, emails, testId);
+      }
+      return testId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[copy-canary] heal testId failed #${campaignId}: ${message}`);
+      return undefined;
+    }
   }
 
   private async detachFromCampaigns(
@@ -394,6 +515,85 @@ export class CopyCanaryService {
       }
     }
     throw last instanceof Error ? last : new Error(String(last));
+  }
+
+  private isolationNeedsCopyCanary(campaignId: number): boolean {
+    const existing = this.state
+      .listCopySuspects()
+      .find((row) => row.campaignId === campaignId);
+    const openRun = this.state.latestIsolationRunForCampaign(campaignId);
+    return shouldEvaluateIsolationSuspect({ existing, openRun });
+  }
+
+  private recoverListedCopyCanaryTestId(
+    campaignId: number,
+    listed: unknown,
+  ): string | undefined {
+    const tests = normalizeTestList(listed);
+    const found = tests.find(
+      (test) => campaignIdFromCanaryTestName(test.test_name) === campaignId,
+    );
+    const foundId = found ? testIdOf(found) : undefined;
+    if (foundId && hasLivingUnwarmedCopyCanary(campaignId, tests, foundId)) {
+      return foundId;
+    }
+    return undefined;
+  }
+
+  /** Emails stored, testId missing — persist a living test or create one. */
+  private async healOrphanCopyCanaryTestIds(opts: {
+    campaigns: SmartleadCampaign[];
+    picks: PoolMailboxRecord[];
+    dryRun: boolean;
+    listed: unknown;
+    listFailed: boolean;
+    providerIds: number[];
+    skipCampaignIds: Set<number>;
+    result: CopyCanaryAttachResult;
+  }): Promise<void> {
+    if (opts.listFailed) return;
+    for (const [campaignId, record] of Object.entries(
+      this.state.getIsolation().copyCanaries,
+    )) {
+      const id = Number(campaignId);
+      if (opts.skipCampaignIds.has(id)) continue;
+      if (record.testId) continue;
+      if (!record.emails.length) continue;
+      const campaign = opts.campaigns.find((row) => row.id === id);
+      if (
+        !campaign ||
+        isCanaryShellCampaign(campaign) ||
+        isExcluded(campaign, this.config.topUpExcludeCampaigns)
+      ) {
+        continue;
+      }
+      const recovered = this.recoverListedCopyCanaryTestId(id, opts.listed);
+      if (recovered) {
+        this.state.setCopyCanaries(id, record.emails, recovered);
+        opts.result.testsEnsured += 1;
+        continue;
+      }
+      if (!this.isolationNeedsCopyCanary(id)) continue;
+      try {
+        const testId = await this.ensureCopyTest(
+          campaign,
+          opts.campaigns,
+          opts.picks,
+          opts.dryRun,
+          opts.listed,
+          opts.listFailed,
+          opts.providerIds,
+        );
+        if (testId) {
+          this.state.setCopyCanaries(id, record.emails, testId);
+          opts.result.testsEnsured += 1;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        opts.result.errors.push(`heal #${id}: ${message}`);
+        console.warn(`[copy-canary] heal orphan #${id}: ${message}`);
+      }
+    }
   }
 
   /** D119 — plant the shell lead even when we cannot list or schedule. */

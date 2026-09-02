@@ -17,6 +17,7 @@ import {
   isCanaryCopyTestName,
   isIsolationManagedTestName,
 } from "../lib/isolationNames.js";
+import { shouldEvaluateIsolationSuspect } from "../lib/placementSuspect.js";
 
 export interface StoppedTest {
   testId: string;
@@ -140,6 +141,21 @@ export class TestReconciler {
       if (isIsolationManagedTestName(test.test_name)) {
         result.keptActive += 1;
         continue;
+      }
+      if (isCanaryCopyTestName(test.test_name)) {
+        const liveId = campaignIdFromCanaryTestName(test.test_name);
+        const existing = liveId
+          ? this.state
+              .listCopySuspects()
+              .find((row) => row.campaignId === liveId)
+          : undefined;
+        const openRun = liveId
+          ? this.state.latestIsolationRunForCampaign(liveId)
+          : undefined;
+        if (shouldEvaluateIsolationSuspect({ existing, openRun })) {
+          result.keptActive += 1;
+          continue;
+        }
       }
       if (isRetiredRecovery) {
         // fall through to stop

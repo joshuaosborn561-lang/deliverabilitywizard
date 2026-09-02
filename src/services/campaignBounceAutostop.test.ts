@@ -578,3 +578,325 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
     assert.deepEqual(queued, [3847794]);
   });
 });
+
+describe("D162 — 5.1.8 opens the retire ask without a burst", () => {
+  const BLOCKED_NDR =
+    "<html>Delivery has failed. Remote server returned '550 5.1.8 Access denied, bad outbound sender AS(42004)'</html>";
+  const TENANT_NDR =
+    "<html>Delivery has failed. Remote server returned '550 5.7.233 - Your message can't be sent because your tenant has exceeded its daily limit for sending email to external recipients (tenant external recipient rate limit).'</html>";
+  const INVALID_NDR =
+    "<html>Delivery has failed. Remote server returned '550 5.1.1 The email account that you tried to reach does not exist.'</html>";
+  const FIXED_T = Date.parse("2026-08-31T20:00:00.000Z");
+
+  function slackRecorder() {
+    const sent: string[] = [];
+    const asks: Array<{ title: string; proof: string; kind: string }> = [];
+    return {
+      sent,
+      asks,
+      slack: {
+        send: async (text: string) => void sent.push(text),
+        notifyIsolationAction: async (ask: {
+          title: string;
+          proof: string;
+          kind: string;
+        }) => void asks.push(ask),
+      } as never,
+    };
+  }
+
+  it("a 5.1.8 sample on a PAUSED campaign opens the burned-domain retire ask", async () => {
+    const statusWrites: string[] = [];
+    const { sent, asks, slack } = slackRecorder();
+    const state = store();
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          {
+            id: 42,
+            name: "BCP Engagers",
+            status: "PAUSED",
+            campaign_activity_logs: [{ paused_reason: "bounce protection" }],
+          },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 80,
+          bounce_count: 4,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
+        },
+        listBouncedSendStats: async () => ({
+          total_stats: "1",
+          data: [
+            {
+              lead_email: "prospect@example.com",
+              sent_time: new Date(FIXED_T - 2 * 60 * 60 * 1000).toISOString(),
+              lead_category: "Sender Originated Bounce",
+            },
+          ],
+        }),
+        fetchLeadByEmail: async () => ({ id: 991 }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "caseykassulke@boldercyperpartnerpro.info" },
+            { type: "REPLY", email_body: BLOCKED_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      slack,
+      undefined,
+      () => FIXED_T,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statusWrites, [], "never START/STOP/pause from this path (D40/D148)");
+    assert.deepEqual(result.bursts, [], "a paused campaign is not a burst hunt (D91/D162)");
+    assert.equal(result.senderBlockAsks, 1);
+    assert.equal(asks.length, 1, "one retire ask for the blocked domain");
+    assert.equal(asks[0]!.kind, "retire_domain");
+    assert.match(asks[0]!.title, /boldercyperpartnerpro\.info/);
+    assert.match(asks[0]!.proof, /5\.1\.8/);
+    assert.match(asks[0]!.proof, /caseykassulke@boldercyperpartnerpro\.info/);
+    assert.equal(
+      sent.filter((text) => /Bounce burst/.test(text)).length,
+      0,
+      "no burst receipt — this is not a D141 trip",
+    );
+    const pending = state
+      .listIsolationActions()
+      .filter(
+        (row) =>
+          row.kind === "retire_domain" &&
+          row.detail.domain === "boldercyperpartnerpro.info",
+      );
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0]!.status, "pending");
+
+    const again = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          {
+            id: 42,
+            name: "BCP Engagers",
+            status: "PAUSED",
+            campaign_activity_logs: [{ paused_reason: "bounce protection" }],
+          },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 80,
+          bounce_count: 4,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
+        },
+        listBouncedSendStats: async () => ({
+          total_stats: "1",
+          data: [
+            {
+              lead_email: "prospect@example.com",
+              sent_time: new Date(FIXED_T - 2 * 60 * 60 * 1000).toISOString(),
+              lead_category: "Sender Originated Bounce",
+            },
+          ],
+        }),
+        fetchLeadByEmail: async () => ({ id: 991 }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "caseykassulke@boldercyperpartnerpro.info" },
+            { type: "REPLY", email_body: BLOCKED_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      slack,
+      undefined,
+      () => FIXED_T,
+    );
+    const second = await again.run({ dryRun: false });
+    assert.deepEqual(statusWrites, []);
+    assert.equal(second.senderBlockAsks, 0);
+    assert.equal(asks.length, 1, "one pending ask per domain (D146) — no double-ask");
+  });
+
+  it("a slow ACTIVE 5.1.8 drip (no >10 burst) still opens the retire ask", async () => {
+    const statusWrites: string[] = [];
+    const { asks, slack } = slackRecorder();
+    const state = store();
+    state.setBounceSnapshot(7, {
+      bounced: 5,
+      sent: 40,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 7, name: "BCP Slow drip", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 44,
+          bounce_count: 7,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
+        },
+        listBouncedSendStats: async () => ({
+          total_stats: "2",
+          data: [
+            {
+              lead_email: "a@target.com",
+              sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
+              lead_category: "Sender Originated Bounce",
+            },
+          ],
+        }),
+        fetchLeadByEmail: async () => ({ id: 111 }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "casey@boldercyperpartnerpro.info" },
+            { type: "REPLY", email_body: BLOCKED_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      slack,
+      undefined,
+      () => FIXED_T,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statusWrites, []);
+    assert.deepEqual(result.bursts, [], "+2 is not a burst (D141) — 5.1.8 still acts (D162)");
+    assert.equal(result.senderBlockAsks, 1);
+    assert.equal(asks[0]!.kind, "retire_domain");
+    assert.match(asks[0]!.title, /boldercyperpartnerpro\.info/);
+  });
+
+  it("a non-5.1.8 PAUSED sample does not open a retire ask", async () => {
+    const { asks, slack } = slackRecorder();
+    const state = store();
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 8, name: "Paused tenant cap", status: "PAUSED" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 50,
+          bounce_count: 12,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async () => undefined,
+        listBouncedSendStats: async () => ({
+          total_stats: "1",
+          data: [
+            {
+              lead_email: "a@target.com",
+              sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
+            },
+          ],
+        }),
+        fetchLeadByEmail: async () => ({ id: 111 }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "ok@cleartechco.com" },
+            { type: "REPLY", email_body: TENANT_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      slack,
+      undefined,
+      () => FIXED_T,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(result.bursts, []);
+    assert.equal(result.senderBlockAsks, 0);
+    assert.equal(asks.length, 0, "tenant-cap on a paused campaign is not a retire ask");
+    assert.equal(
+      state.listIsolationActions().filter((row) => row.kind === "retire_domain")
+        .length,
+      0,
+    );
+  });
+
+  it("a non-5.1.8 invalid-recipient burst is unchanged — no retire ask", async () => {
+    const statusWrites: string[] = [];
+    const { asks, slack } = slackRecorder();
+    const state = store();
+    state.setBounceSnapshot(8, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 8, name: "Bad list", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 55,
+          bounce_count: 15,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
+        },
+        listBouncedSendStats: async () => ({
+          total_stats: "2",
+          data: [
+            {
+              lead_email: "a@x.com",
+              sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
+            },
+            {
+              lead_email: "b@x.com",
+              sent_time: new Date(FIXED_T - 25 * 60 * 1000).toISOString(),
+            },
+          ],
+        }),
+        fetchLeadByEmail: async (email: string) => ({
+          id: email === "a@x.com" ? 111 : 222,
+        }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "ok@cleartechco.com" },
+            { type: "REPLY", email_body: INVALID_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      slack,
+      undefined,
+      () => FIXED_T,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statusWrites, []);
+    assert.equal(result.bursts[0]?.reason, "burst");
+    assert.equal(result.bursts[0]?.verdict?.dominant, "invalid_recipient");
+    assert.equal(asks.length, 0, "bad-list burst does not open a burned-domain ask");
+    assert.equal(result.senderBlockAsks, 0);
+  });
+});

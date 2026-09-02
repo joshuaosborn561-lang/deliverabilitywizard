@@ -4,7 +4,11 @@ import type { SlackClient } from "../clients/slack.js";
 import {
   bounceReasonSnippet,
   classifyBounceText,
+  leadCategoryOf,
+  ndrBodyFromHistory,
+  preferNdrRows,
   sampleSenderDomains,
+  senderBlockScanHint,
   summarizeBounceSamples,
   type BounceSample,
 } from "../lib/bounceReason.js";
@@ -39,11 +43,29 @@ const BURST_REALERT_MS = 60 * 60 * 1000;
 const SAMPLE_RETRY_MS = process.env.NODE_TEST_CONTEXT ? 0 : 90 * 1000;
 const SAMPLE_ATTEMPTS = 3;
 const SAMPLE_PAGE = 15;
+/** D162 — message-history reads for the burst-independent 5.1.8 scan. */
+const SENDER_BLOCK_READS_PER_TICK = 16;
+const SENDER_BLOCK_SAMPLE_ATTEMPTS = 1;
 
 /** COMPLETED / STOPPED campaigns never send again — stop touching them. */
 export function isTerminalCampaignStatus(status: unknown): boolean {
   const s = String(status ?? "").toUpperCase();
   return s === "COMPLETED" || s === "STOPPED";
+}
+
+/** ACTIVE or PAUSED — D162 still samples 5.1.8s after a Smartlead autopause. */
+export function isLivingSendCampaign(status: unknown): boolean {
+  const s = String(status ?? "").toUpperCase();
+  return s === "ACTIVE" || s === "PAUSED";
+}
+
+/** D157 — Smartlead bounce-protection pause on the LIST /campaigns payload. */
+export function pausedByBounceProtection(campaign: SmartleadCampaign): boolean {
+  const logs = campaign.campaign_activity_logs;
+  if (!Array.isArray(logs)) return false;
+  return logs.some((log) =>
+    /bounce protection/i.test(String(log?.paused_reason ?? "")),
+  );
 }
 
 export interface BounceBurstFinding {
@@ -67,6 +89,8 @@ export interface CampaignBounceAutostopResult {
   ledgerDumps: number;
   /** D147/D148 — incident leads re-queued for a resend this tick. */
   resurrected?: number;
+  /** D162 — burned-domain retire asks opened from a 5.1.8 sample this tick. */
+  senderBlockAsks: number;
   errors: string[];
 }
 
@@ -112,6 +136,9 @@ function mergeSendBounce(...payloads: unknown[]): {
  * settings: `bounce_autopause_threshold` is dead on the public API — the
  * settings handler validates it and then discards it, so High Bounce
  * Rate Auto Protection can only be turned off in the UI (D157).
+ * D162 — a `550 5.1.8` / AS(42004) sample opens the burned-domain retire
+ * ask even when there is no burst and even when the campaign is PAUSED
+ * (Smartlead's UI bounce protection). That scan is not a D91 rate hunt.
  */
 export class CampaignBounceAutostopService {
   private readonly resurrection?: BounceResurrectionService;
@@ -149,6 +176,7 @@ export class CampaignBounceAutostopService {
       bursts: [],
       skipped: 0,
       ledgerDumps: 0,
+      senderBlockAsks: 0,
       errors: [],
     };
     if (!this.config.enableCampaignBounceAutostop) {
@@ -168,12 +196,25 @@ export class CampaignBounceAutostopService {
     const nowMs = this.clock();
     const end = ymdUtc(new Date(nowMs));
     const nowIso = new Date(nowMs).toISOString();
-    const active = campaigns.filter((campaign) => {
+    const living = campaigns.filter((campaign) => {
       if (isAnyShellCampaign(campaign, this.config.podControlShellCampaignId)) {
         return false;
       }
-      return String(campaign.status ?? "").toUpperCase() === "ACTIVE";
+      return isLivingSendCampaign(campaign.status);
     });
+    const active = living.filter(
+      (campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE",
+    );
+    const paused = living
+      .filter(
+        (campaign) => String(campaign.status ?? "").toUpperCase() === "PAUSED",
+      )
+      .sort(
+        (a, b) =>
+          Number(pausedByBounceProtection(b)) - Number(pausedByBounceProtection(a)),
+      );
+    const classifiedBurst = new Set<number>();
+    const needsSenderBlock = new Set<number>();
 
     for (const campaign of active) {
       result.scanned += 1;
@@ -215,10 +256,14 @@ export class CampaignBounceAutostopService {
         );
 
         if (!burst.trip) {
+          if (!previous?.senderBlockHint || bounces > previous.bounced) {
+            needsSenderBlock.add(campaign.id);
+          }
           this.state?.setBounceSnapshot(campaign.id, {
             bounced: bounces,
             sent,
             at: nowIso,
+            senderBlockHint: previous?.senderBlockHint,
           });
           result.skipped += 1;
           continue;
@@ -238,6 +283,7 @@ export class CampaignBounceAutostopService {
             bounced: bounces,
             sent,
             at: nowIso,
+            senderBlockHint: previous?.senderBlockHint,
           });
           if (!dryRun) this.resurrection?.extendIncident(campaign.id);
           console.log(
@@ -268,9 +314,14 @@ export class CampaignBounceAutostopService {
           bounced: bounces,
           sent,
           at: nowIso,
+          senderBlockHint:
+            recency.fresh === 0
+              ? previous?.senderBlockHint
+              : (previous?.senderBlockHint ?? senderBlockScanHint(rows)),
         });
 
         if (recency.fresh === 0) {
+          needsSenderBlock.add(campaign.id);
           result.ledgerDumps += 1;
           console.log(
             `[bounce-autostop] burst on #${campaign.id} ${campaign.name} is a ledger dump: +${burst.delta} recorded in 10m, ${recency.readable} rows sampled, newest send ${recency.newestSentAt ?? "unknown"}, none inside 24h — no pause (D141)`,
@@ -300,6 +351,7 @@ export class CampaignBounceAutostopService {
             dryRun,
             rows,
           );
+          classifiedBurst.add(campaign.id);
         } catch (error) {
           console.warn(
             `[bounce-autostop] verdict #${campaign.id} unreadable: ${error instanceof Error ? error.message : String(error)}`,
@@ -349,6 +401,37 @@ export class CampaignBounceAutostopService {
       }
     }
 
+    // D162 — ANY 5.1.8 / AS(42004) sample opens the retire ask, including
+    // PAUSED campaigns Smartlead already bounce-protection paused, and
+    // ACTIVE campaigns whose drip never tripped the >10/10-min burst.
+    // Not a D91 bounce-rate hunt: only the sender-block SMTP class acts.
+    let senderBlockReadsLeft = SENDER_BLOCK_READS_PER_TICK;
+    const senderBlockQueue = [
+      ...paused,
+      ...active.filter(
+        (campaign) =>
+          !classifiedBurst.has(campaign.id) && needsSenderBlock.has(campaign.id),
+      ),
+    ];
+    for (const campaign of senderBlockQueue) {
+      if (senderBlockReadsLeft <= 0) break;
+      if (String(campaign.status ?? "").toUpperCase() === "PAUSED") {
+        result.scanned += 1;
+      }
+      try {
+        const used = await this.scanSenderBlockedNdRs(
+          campaign,
+          dryRun,
+          senderBlockReadsLeft,
+        );
+        senderBlockReadsLeft -= used.reads;
+        result.senderBlockAsks += used.asksOpened;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`#${campaign.id} sender-block: ${message}`);
+      }
+    }
+
     // D157 — no Smartlead autopause write happens here, because none is
     // possible. POST /campaigns/{id}/settings schema-validates
     // `bounce_autopause_threshold` ("must be a string"; unknown keys 400)
@@ -382,7 +465,7 @@ export class CampaignBounceAutostopService {
     }
 
     console.log(
-      `[bounce-autostop] scanned=${result.scanned} bursts=${result.bursts.length} skipped=${result.skipped} errors=${result.errors.length}`,
+      `[bounce-autostop] scanned=${result.scanned} bursts=${result.bursts.length} skipped=${result.skipped} senderBlockAsks=${result.senderBlockAsks} errors=${result.errors.length}`,
     );
     if (result.errors.length) {
       // A counted-but-nameless error hid a stuck per-campaign write on
@@ -404,8 +487,9 @@ export class CampaignBounceAutostopService {
    */
   private async sampleBouncedRows(
     campaignId: number,
+    attempts = SAMPLE_ATTEMPTS,
   ): Promise<Array<Record<string, unknown>> | null> {
-    for (let attempt = 0; attempt < SAMPLE_ATTEMPTS; attempt += 1) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       if (attempt > 0) await sleep(SAMPLE_RETRY_MS);
       try {
         const first = (await this.smartlead.listBouncedSendStats(
@@ -448,48 +532,7 @@ export class CampaignBounceAutostopService {
     dryRun: boolean,
     rows: Array<Record<string, unknown>>,
   ): Promise<BounceVerdictRecord | undefined> {
-    const samples: BounceSample[] = [];
-    const byRecency = [...rows].sort(
-      (a, b) =>
-        (Date.parse(String(b.sent_time ?? "")) || 0) -
-        (Date.parse(String(a.sent_time ?? "")) || 0),
-    );
-    for (const row of byRecency.slice(0, 4)) {
-      const leadEmail = String(row.lead_email ?? "");
-      if (!leadEmail) continue;
-      try {
-        const lead = (await this.smartlead.fetchLeadByEmail(leadEmail)) as {
-          id?: number | string;
-        };
-        if (lead?.id == null) continue;
-        await sleep(120);
-        const history = (await this.smartlead.getLeadMessageHistory(
-          campaignId,
-          lead.id,
-        )) as { history?: Array<Record<string, unknown>> };
-        await sleep(120);
-        const sent = (history?.history ?? []).find(
-          (entry) => String(entry.type ?? "").toUpperCase() === "SENT",
-        );
-        const ndr = (history?.history ?? []).find(
-          (entry) =>
-            String(entry.type ?? "").toUpperCase() === "REPLY" &&
-            /delivery has failed|mail delivery|undeliverable|returned/i.test(
-              String(entry.email_body ?? ""),
-            ),
-        );
-        if (!ndr) continue;
-        const snippet = bounceReasonSnippet(String(ndr.email_body ?? ""));
-        samples.push({
-          leadEmail,
-          senderEmail: sent ? String(sent.from ?? "") || null : null,
-          bounceClass: classifyBounceText(snippet + " " + String(ndr.email_body ?? "")),
-          snippet,
-        });
-      } catch {
-        // one unreadable lead must not kill the verdict
-      }
-    }
+    const samples = await this.collectNdrSamples(campaignId, rows, 4);
     const { dominant, summary } = summarizeBounceSamples(samples);
     const senderDomains = sampleSenderDomains(samples);
     const record: BounceVerdictRecord = {
@@ -525,63 +568,204 @@ export class CampaignBounceAutostopService {
         );
       }
     }
-    // D145/D146 — a 5.1.8 "bad outbound sender" is Microsoft flagging a
-    // mailbox for outbound spam. Josh: "that bad outbound sender should
-    // just trigger a burned domain" — the domain goes straight into the
-    // standard burned-domain flow (receipts + retire button; the tap is
-    // the approval, D49/D134), not a plain FYI page. Never gated on being
-    // the dominant class: the 8/27 live block was a minority sample under
-    // a tenant-cap wave. One pending ask per domain (samePending); the
-    // block itself never resets on its own.
-    if (!dryRun && this.slack && this.state) {
-      const store = this.state;
-      const slack = this.slack;
-      const blockedByDomain = new Map<string, Set<string>>();
-      for (const sample of samples) {
-        if (sample.bounceClass !== "sender_blocked" || !sample.senderEmail) {
-          continue;
-        }
-        const sender = sample.senderEmail.toLowerCase();
-        const domain = sender.split("@")[1];
-        if (!domain) continue;
-        const set = blockedByDomain.get(domain) ?? new Set<string>();
-        set.add(sender);
-        blockedByDomain.set(domain, set);
-      }
-      for (const [domain, senders] of blockedByDomain) {
-        // Stale pre-retire bounces must not re-ask for a domain Josh
-        // already retired (D146/D148 refinement).
-        if (domainRecentlyRetired(store, domain)) continue;
-        const snippet =
-          samples.find(
-            (sample) =>
-              sample.bounceClass === "sender_blocked" &&
-              sample.senderEmail?.toLowerCase().split("@")[1] === domain,
-          )?.snippet ?? "550 5.1.8 bad outbound sender";
-        const opened = await requestIsolationAction({
-          store,
-          slack,
-          action: buildIsolationAction({
-            kind: "retire_domain",
-            title: `Retire ${domain} — Microsoft flagged it as a bad outbound sender`,
-            proof: [
-              `Microsoft's outbound spam filter blocked ${[...senders]
-                .map((sender) => `\`${sender}\``)
-                .join(", ")} (550 5.1.8) — first seen on campaign #${campaignId}.`,
-              `"${snippet.slice(0, 160)}"`,
-              "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead.",
-            ].join("\n"),
-            detail: { domain },
-          }),
+    // D145/D146/D162 — ANY sender_blocked sample opens the retire ask,
+    // never dominant-gated, never burst-gated. Same helper the
+    // independent PAUSED/slow-drip scan uses.
+    await this.openSenderBlockedRetireAsks(campaignId, samples, dryRun);
+    return record;
+  }
+
+  /**
+   * D162 — look for a 5.1.8 / AS(42004) NDR without waiting for a burst
+   * or an ACTIVE status. Stats have no SMTP text; message-history does.
+   * Returns how many history reads were spent and how many asks opened.
+   */
+  private async scanSenderBlockedNdRs(
+    campaign: SmartleadCampaign,
+    dryRun: boolean,
+    readsLeft: number,
+  ): Promise<{ reads: number; asksOpened: number }> {
+    if (readsLeft <= 0) return { reads: 0, asksOpened: 0 };
+    const previous = this.state?.getBounceSnapshot(campaign.id);
+    const rows =
+      (await this.sampleBouncedRows(campaign.id, SENDER_BLOCK_SAMPLE_ATTEMPTS)) ??
+      (await this.senderOriginatedLeadRows(campaign.id));
+    if (!rows?.length) return { reads: 0, asksOpened: 0 };
+    const hint = senderBlockScanHint(rows);
+    if (previous?.senderBlockHint === hint) return { reads: 0, asksOpened: 0 };
+
+    const samples = await this.collectNdrSamples(campaign.id, rows, readsLeft);
+    const asksOpened = await this.openSenderBlockedRetireAsks(
+      campaign.id,
+      samples,
+      dryRun,
+    );
+    this.state?.setBounceSnapshot(campaign.id, {
+      bounced: previous?.bounced ?? rows.length,
+      sent: previous?.sent ?? 0,
+      at: previous?.at ?? new Date(this.clock()).toISOString(),
+      senderBlockHint: hint,
+    });
+    return { reads: Math.min(readsLeft, preferNdrRows(rows).length), asksOpened };
+  }
+
+  /**
+   * Fallback when bounced-stats are empty: one page of campaign leads,
+   * keeping Sender Originated Bounce / unset categories (D162).
+   */
+  private async senderOriginatedLeadRows(
+    campaignId: number,
+  ): Promise<Array<Record<string, unknown>> | null> {
+    if (typeof this.smartlead.getCampaignLeads !== "function") return null;
+    try {
+      const page = (await this.smartlead.getCampaignLeads(campaignId, {
+        limit: 25,
+      })) as {
+        data?: Array<Record<string, unknown>>;
+        leads?: Array<Record<string, unknown>>;
+      };
+      const data = Array.isArray(page?.data)
+        ? page.data
+        : Array.isArray(page?.leads)
+          ? page.leads
+          : [];
+      const rows: Array<Record<string, unknown>> = [];
+      for (const row of data) {
+        const nested =
+          row.lead && typeof row.lead === "object" && !Array.isArray(row.lead)
+            ? (row.lead as Record<string, unknown>)
+            : undefined;
+        const email = String(row.lead_email ?? nested?.email ?? row.email ?? "").trim();
+        if (!email) continue;
+        rows.push({
+          lead_email: email,
+          lead_id: nested?.id ?? row.lead_id ?? row.id,
+          sent_time: row.sent_time ?? row.last_sent_time ?? nested?.last_sent_time,
+          lead_category: leadCategoryOf(row),
         });
-        if (opened) {
-          console.log(
-            `[bounce-autostop] burned-domain ask opened for ${domain} — sender blocked (D146)`,
-          );
+      }
+      const preferred = preferNdrRows(rows);
+      return preferred.length ? preferred : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * D140/D162 — read message-history NDRs. Prefer Sender Originated
+   * Bounce / unset lead_category (stats have no SMTP).
+   */
+  private async collectNdrSamples(
+    campaignId: number,
+    rows: Array<Record<string, unknown>>,
+    limit: number,
+  ): Promise<BounceSample[]> {
+    const samples: BounceSample[] = [];
+    const byRecency = [...preferNdrRows(rows)].sort(
+      (a, b) =>
+        (Date.parse(String(b.sent_time ?? b.last_sent_time ?? "")) || 0) -
+        (Date.parse(String(a.sent_time ?? a.last_sent_time ?? "")) || 0),
+    );
+    for (const row of byRecency.slice(0, Math.max(0, limit))) {
+      const leadEmail = String(row.lead_email ?? "");
+      if (!leadEmail) continue;
+      try {
+        let leadId = row.lead_id ?? row.id;
+        if (leadId == null || leadId === "") {
+          const lead = (await this.smartlead.fetchLeadByEmail(leadEmail)) as {
+            id?: number | string;
+          };
+          leadId = lead?.id;
         }
+        if (leadId == null || leadId === "") continue;
+        await sleep(120);
+        const history = await this.smartlead.getLeadMessageHistory(
+          campaignId,
+          leadId as number | string,
+        );
+        await sleep(120);
+        const entries = Array.isArray(
+          (history as { history?: unknown[] } | null)?.history,
+        )
+          ? ((history as { history: Array<Record<string, unknown>> }).history ?? [])
+          : [];
+        const sent = entries.find(
+          (entry) => String(entry.type ?? "").toUpperCase() === "SENT",
+        );
+        const ndrBody = ndrBodyFromHistory(history);
+        if (!ndrBody) continue;
+        const snippet = bounceReasonSnippet(ndrBody);
+        samples.push({
+          leadEmail,
+          senderEmail: sent ? String(sent.from ?? "") || null : null,
+          bounceClass: classifyBounceText(snippet + " " + ndrBody),
+          snippet,
+        });
+      } catch {
+        // one unreadable lead must not kill the verdict
       }
     }
-    return record;
+    return samples;
+  }
+
+  /**
+   * D145/D146/D162 — ANY sender_blocked sample opens the standard
+   * burned-domain retire ask (receipts + buttons). Pending ask is the
+   * dedupe (one per domain). Slack kind is burned_domain (D71).
+   */
+  private async openSenderBlockedRetireAsks(
+    campaignId: number,
+    samples: BounceSample[],
+    dryRun: boolean,
+  ): Promise<number> {
+    if (dryRun || !this.slack || !this.state) return 0;
+    const store = this.state;
+    const slack = this.slack;
+    const blockedByDomain = new Map<string, Set<string>>();
+    for (const sample of samples) {
+      if (sample.bounceClass !== "sender_blocked" || !sample.senderEmail) {
+        continue;
+      }
+      const sender = sample.senderEmail.toLowerCase();
+      const domain = sender.split("@")[1];
+      if (!domain) continue;
+      const set = blockedByDomain.get(domain) ?? new Set<string>();
+      set.add(sender);
+      blockedByDomain.set(domain, set);
+    }
+    let openedCount = 0;
+    for (const [domain, senders] of blockedByDomain) {
+      if (domainRecentlyRetired(store, domain)) continue;
+      const snippet =
+        samples.find(
+          (sample) =>
+            sample.bounceClass === "sender_blocked" &&
+            sample.senderEmail?.toLowerCase().split("@")[1] === domain,
+        )?.snippet ?? "550 5.1.8 bad outbound sender";
+      const opened = await requestIsolationAction({
+        store,
+        slack,
+        action: buildIsolationAction({
+          kind: "retire_domain",
+          title: `Retire ${domain} — Microsoft flagged it as a bad outbound sender`,
+          proof: [
+            `Microsoft's outbound spam filter blocked ${[...senders]
+              .map((sender) => `\`${sender}\``)
+              .join(", ")} (550 5.1.8) — first seen on campaign #${campaignId}.`,
+            `"${snippet.slice(0, 160)}"`,
+            "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead.",
+          ].join("\n"),
+          detail: { domain },
+        }),
+      });
+      if (opened) {
+        openedCount += 1;
+        console.log(
+          `[bounce-autostop] burned-domain ask opened for ${domain} — sender blocked (D146/D162)`,
+        );
+      }
+    }
+    return openedCount;
   }
 
 }

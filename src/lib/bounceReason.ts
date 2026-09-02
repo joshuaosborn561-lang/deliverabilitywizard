@@ -53,6 +53,7 @@ export function classifyBounceText(text: string): BounceClass {
   // reset at midnight the way the tenant cap does.
   if (
     /5\.1\.8\b/.test(hay) ||
+    /as\s*\(\s*42004\s*\)/.test(hay) ||
     /bad outbound sender/.test(hay) ||
     /blocked from sending|restricted from sending|restricted entit/.test(hay)
   ) {
@@ -123,4 +124,59 @@ export function sampleSenderDomains(samples: BounceSample[]): string[] {
     if (domain) domains.add(domain);
   }
   return [...domains];
+}
+
+/**
+ * D162 — Smartlead's stats row has no SMTP text. Message-history is the
+ * NDR source; prefer leads whose category is Sender Originated Bounce
+ * (the BCP 8/31 shape) or unset, so a classified "Interested" row is
+ * not a wasted lead-read.
+ */
+export function leadCategoryOf(row: Record<string, unknown>): string | null {
+  const nested =
+    row.lead && typeof row.lead === "object" && !Array.isArray(row.lead)
+      ? (row.lead as Record<string, unknown>)
+      : undefined;
+  const raw =
+    row.lead_category ??
+    row.leadCategory ??
+    row.category ??
+    row.bounce_category ??
+    nested?.lead_category ??
+    nested?.leadCategory;
+  if (raw == null) return null;
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const name = String(
+      (raw as { name?: unknown; lead_category?: unknown }).name ??
+        (raw as { lead_category?: unknown }).lead_category ??
+        "",
+    ).trim();
+    return name || null;
+  }
+  const text = String(raw).trim();
+  return text || null;
+}
+
+export function leadCategoryWantsNdrRead(category: string | null): boolean {
+  if (!category) return true;
+  return /sender\s*originated\s*bounce/i.test(category);
+}
+
+/** Prefer sender-originated / unset categories; fall back to the full set. */
+export function preferNdrRows(
+  rows: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> {
+  const preferred = rows.filter((row) =>
+    leadCategoryWantsNdrRead(leadCategoryOf(row)),
+  );
+  return preferred.length ? preferred : rows;
+}
+
+export function senderBlockScanHint(rows: Array<Record<string, unknown>>): string {
+  let newest = 0;
+  for (const row of rows) {
+    const sentAt = Date.parse(String(row.sent_time ?? row.last_sent_time ?? ""));
+    if (Number.isFinite(sentAt) && sentAt > newest) newest = sentAt;
+  }
+  return `${rows.length}:${newest}`;
 }

@@ -6,6 +6,11 @@ export interface SmartleadCampaign {
   updated_at?: string;
   client_id?: number | null;
   bounce_autopause_threshold?: number | string | null;
+  /** D157 — LIST /campaigns only; Smartlead-initiated pause attribution. */
+  campaign_activity_logs?: Array<{
+    paused_reason?: string | null;
+    pause_time?: string | null;
+  }>;
 }
 
 export interface SmartleadEmailAccount {

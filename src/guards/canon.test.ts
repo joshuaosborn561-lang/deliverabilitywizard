@@ -5729,6 +5729,22 @@ describe("owner intent — D164 re-queue after INCONCLUSIVE", () => {
         "isolationBranch.ts no longer clears evaluatedAt when queueing.",
       ),
     );
+    assert.match(
+      branch,
+      /isolationSuspectsDueForEval/,
+      stop(
+        "Branch sweep re-evals INCONCLUSIVE via isolationSuspectsDueForEval (D164).",
+        "isolationBranch.ts still filters listCopySuspects with !evaluatedAt.",
+      ),
+    );
+    assert.doesNotMatch(
+      branch,
+      /listCopySuspects\(\)\.filter\(\(row\) => !row\.evaluatedAt\)/,
+      stop(
+        "Branch targets must not lock on evaluatedAt alone (D164).",
+        "isolationBranch.ts still uses !evaluatedAt as the run() filter.",
+      ),
+    );
     const monitor = await readFile(
       new URL("../services/resultMonitor.ts", import.meta.url),
       "utf8",

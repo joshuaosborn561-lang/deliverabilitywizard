@@ -578,4 +578,120 @@ describe("CopyCanaryService", () => {
       true,
     );
   });
+
+  it("backfills a missing copy-canary testId on a PAUSED isolation suspect", async () => {
+    const state = new StateStore(
+      `/tmp/copy-canary-heal-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    seedFleet(state);
+    state.setCopyCanaries(3748412, ["g1@canary-g.info", "o1@canary-o.info"]);
+    state.markCopySuspect({
+      campaignId: 3748412,
+      campaignName: "SalesGlider Trades Airpods",
+      at: "2026-08-26T12:00:00.000Z",
+      evaluatedAt: "2026-08-26T12:05:00.000Z",
+      reason: "missing unwarmed senders with that copy",
+    });
+    state.upsertIsolationRun({
+      id: "06371d1b-768f-4e3b-9c52-ee08019f8341",
+      campaignId: 3748412,
+      campaignName: "SalesGlider Trades Airpods",
+      startedAt: "2026-08-26T12:00:00.000Z",
+      updatedAt: "2026-08-26T12:05:00.000Z",
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason: "missing unwarmed senders with that copy",
+    });
+    assert.equal(state.getCopyCanaryTestId(3748412), undefined);
+
+    const created: string[] = [];
+    const stopped: string[] = [];
+    const shells = shellSmartlead({
+      listCampaigns: async () => [
+        { id: 3748412, name: "SalesGlider Trades Airpods", status: "PAUSED" },
+        { id: 9001, name: "Canary shell: #3748412 SalesGlider", status: "PAUSED" },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 11, from_email: "g1@canary-g.info", type: "GMAIL", campaign_ids: [] },
+        { id: 12, from_email: "o1@canary-o.info", type: "OUTLOOK", campaign_ids: [] },
+      ],
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+      configureWarmup: async () => undefined,
+    });
+
+    const result = await new CopyCanaryService(
+      loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),
+      shells.api as unknown as SmartleadClient,
+      {
+        listTests: async () => [],
+        resolveProviderIds: async () => [2, 20],
+        createAutomatedPlacement: async (payload: { test_name?: string }) => {
+          created.push(String(payload.test_name ?? ""));
+          return { id: "healed-3748412" };
+        },
+        stopAutomatedTest: async (testId: string) => {
+          stopped.push(testId);
+        },
+      } as unknown as SmartDeliveryClient,
+      slackStub(),
+      state,
+    ).attach({ dryRun: false });
+
+    assert.equal(state.getCopyCanaryTestId(3748412), "healed-3748412");
+    assert.ok(created.some((name) => name.includes("#3748412")));
+    assert.deepEqual(stopped, [], "do not stop the test isolation still needs");
+    assert.ok(result.testsEnsured >= 1);
+  });
+
+  it("persists a living listed testId when emails exist but state lost it", async () => {
+    const state = new StateStore(
+      `/tmp/copy-canary-recover-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    seedFleet(state);
+    state.setCopyCanaries(3748412, ["g1@canary-g.info", "o1@canary-o.info"]);
+    assert.equal(state.getCopyCanaryTestId(3748412), undefined);
+
+    let created = 0;
+    const shells = shellSmartlead({
+      listCampaigns: async () => [
+        { id: 3748412, name: "SalesGlider Trades Airpods", status: "PAUSED" },
+      ],
+      listAllEmailAccounts: async () => [
+        { id: 11, from_email: "g1@canary-g.info", type: "GMAIL", campaign_ids: [] },
+        { id: 12, from_email: "o1@canary-o.info", type: "OUTLOOK", campaign_ids: [] },
+      ],
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+      configureWarmup: async () => undefined,
+    });
+
+    await new CopyCanaryService(
+      loadConfig({ ENABLE_COPY_CANARY: "true", AUTO_PLACEMENT_TESTS: "true" }),
+      shells.api as unknown as SmartleadClient,
+      {
+        listTests: async () => [
+          {
+            id: "listed-3748412",
+            test_name: "Canary copy: #3748412 SalesGlider Trades Airpods",
+            status: "active",
+            every_days: 1,
+          },
+        ],
+        resolveProviderIds: async () => [2, 20],
+        createAutomatedPlacement: async () => {
+          created += 1;
+          return { id: "should-not-create" };
+        },
+      } as unknown as SmartDeliveryClient,
+      slackStub(),
+      state,
+    ).attach({ dryRun: false });
+
+    assert.equal(created, 0, "recover the living test — do not spawn a second");
+    assert.equal(state.getCopyCanaryTestId(3748412), "listed-3748412");
+  });
 });

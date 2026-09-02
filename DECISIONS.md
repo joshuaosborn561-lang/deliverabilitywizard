@@ -4564,5 +4564,18 @@ Does not touch D162's 5.1.8 retire-ask scan.
 
 **Guards.** canon D164: `shouldQueuePlacementSuspect` is the inverse
 of `hasOpenIsolation`; queue call sites pass `evaluatedAt: undefined`;
-CANON names the INCONCLUSIVE re-queue. Tests: INCONCLUSIVE re-queues;
-covering COPY/INFRA does not.
+branch `run()` selects with `shouldEvaluateIsolationSuspect` /
+`isolationSuspectsDueForEval` (not `!evaluatedAt`); CANON names the
+INCONCLUSIVE re-queue. Tests: INCONCLUSIVE re-queues; covering
+COPY/INFRA does not; PAUSED INCONCLUSIVE with `evaluatedAt` still
+re-reads; missing copy-canary `testId` is healed.
+
+**Production hole (2026-09-02).** SalesGlider Trades Airpods #3748412:
+D164 landed on the placement queue but branch `run()` still filtered
+`!evaluatedAt`, so 30 INCONCLUSIVE suspects with a stamp never
+re-read; PAUSED lives never re-entered via `liveCampaignForPlacementTrigger`;
+three `copyCanaries` had emails and no `testId` so
+`unwarmedCopyFineAcrossEsps` stayed null. Branch targets now share
+open-isolation semantics. copy-canary backfills the missing testId
+and does not stop a test isolation still needs. Placement new-queue
+stays ACTIVE-gated.

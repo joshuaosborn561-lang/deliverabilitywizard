@@ -98,6 +98,7 @@ export class DeliveryWatchService {
           campaignId: campaign.id,
           campaignName: campaign.name,
           at: new Date().toISOString(),
+          evaluatedAt: undefined,
         });
         if (!dryRun) {
           const run = await this.branch.evaluate(campaign.id, {

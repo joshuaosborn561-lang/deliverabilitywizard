@@ -84,7 +84,7 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     assert.equal(result.errors.length, 0);
   });
 
-  it("does not re-queue when the campaign is already evaluated", async () => {
+  it("does not re-queue when a covering COPY/INFRA run already owns the campaign", async () => {
     const state = new StateStore(
       `/tmp/dw-monitor-once-${process.pid}-${Date.now()}.json`,
     );
@@ -95,6 +95,18 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
       at: "2026-09-01T18:00:00.000Z",
       evaluatedAt: "2026-09-01T18:05:00.000Z",
       reason: "already done",
+    });
+    state.upsertIsolationRun({
+      id: "copy-run",
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      startedAt: "2026-09-01T18:05:00.000Z",
+      updatedAt: "2026-09-01T18:05:00.000Z",
+      control: "CLEAN",
+      verdict: "COPY",
+      campaignInSpam: true,
+      reason: "copy",
+      teardownStarted: true,
     });
     const smartlead = {
       listCampaigns: async () => [AIRPODS],
@@ -110,6 +122,59 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     const result = await monitor.run();
     assert.equal(result.lowDeliverabilityAlerts, 0);
     assert.equal(state.listCopySuspects().length, 1);
+    assert.ok(state.listCopySuspects()[0]?.evaluatedAt);
+  });
+
+  it("re-queues when evaluatedAt is set but the latest run is INCONCLUSIVE (D163)", async () => {
+    const state = new StateStore(
+      `/tmp/dw-monitor-requeue-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.markCopySuspect({
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      at: "2026-08-26T12:00:00.000Z",
+      evaluatedAt: "2026-08-26T12:05:00.000Z",
+      reason: "old COPY",
+    });
+    state.upsertIsolationRun({
+      id: "old-copy",
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      startedAt: "2026-08-26T12:05:00.000Z",
+      updatedAt: "2026-08-26T12:05:00.000Z",
+      control: "CLEAN",
+      verdict: "COPY",
+      campaignInSpam: true,
+      reason: "copy",
+      teardownStarted: true,
+    });
+    state.upsertIsolationRun({
+      id: "later-inconclusive",
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      startedAt: "2026-08-28T18:00:00.000Z",
+      updatedAt: "2026-08-28T18:00:00.000Z",
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason: "need another reading",
+    });
+    const smartlead = {
+      listCampaigns: async () => [AIRPODS],
+    } as unknown as SmartleadClient;
+
+    const monitor = new ResultMonitor(
+      config,
+      fakeSmartDelivery(),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+    const result = await monitor.run();
+    assert.equal(result.lowDeliverabilityAlerts, 1);
+    const suspect = state.listCopySuspects()[0];
+    assert.equal(suspect?.evaluatedAt, undefined);
   });
 
   it("skips shells and isolation-managed tests as the target", async () => {

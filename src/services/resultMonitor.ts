@@ -229,7 +229,8 @@ export class ResultMonitor {
       providers.push({ name: label, inboxPercent: score });
     }
 
-    // D158 — live 80% same-ESP is a reading that queues isolation, not a Slack page.
+    // D158 — live 80% same-ESP queues isolation. D162 pages Slack from
+    // the health-pass CANON-miss pager (once per campaign per incident).
     if (!sameEspInboxUgly(providers, this.config.remediationInboxThreshold)) {
       return 0;
     }
@@ -272,9 +273,6 @@ export class ResultMonitor {
       return 0;
     }
 
-    const key = `copy-suspect:v1:${target.campaignId}:${target.source}`;
-    if (this.state.hasAlert(key)) return 0;
-
     this.state.markCopySuspect({
       campaignId: target.campaignId,
       campaignName: target.campaignName,
@@ -284,8 +282,8 @@ export class ResultMonitor {
         providers,
         this.config.remediationInboxThreshold,
       ),
+      evaluatedAt: undefined,
     });
-    this.state.markAlert(key);
     console.log(
       `[monitor] Queued isolation for #${target.campaignId} from ${target.source}: ${providers
         .filter((p) => p.inboxPercent < this.config.remediationInboxThreshold)

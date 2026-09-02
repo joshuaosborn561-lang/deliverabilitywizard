@@ -105,17 +105,11 @@ describe("placement suspect queue gates (D158)", () => {
     assert.equal(sameEspInboxUgly([], 80), false);
   });
 
-  it("does not re-queue an evaluated suspect, an open hunt, or a terminal run", () => {
+  it("does not re-queue an unevaluated suspect, an open hunt, or a covering COPY/INFRA run", () => {
     assert.equal(shouldQueuePlacementSuspect({}), true);
     assert.equal(
       shouldQueuePlacementSuspect({
         existing: { evaluatedAt: undefined },
-      }),
-      false,
-    );
-    assert.equal(
-      shouldQueuePlacementSuspect({
-        existing: { evaluatedAt: "2026-09-01T18:00:00.000Z" },
       }),
       false,
     );
@@ -133,9 +127,36 @@ describe("placement suspect queue gates (D158)", () => {
     );
     assert.equal(
       shouldQueuePlacementSuspect({
+        existing: { evaluatedAt: "2026-08-26T12:00:00.000Z" },
+        openRun: { verdict: "COPY", teardownStarted: true },
+      }),
+      false,
+    );
+  });
+
+  it("re-queues when evaluatedAt is set but the latest run is INCONCLUSIVE (D163)", () => {
+    assert.equal(
+      shouldQueuePlacementSuspect({
+        existing: { evaluatedAt: "2026-08-26T12:00:00.000Z" },
+      }),
+      true,
+      "evaluatedAt alone is not a lock",
+    );
+    assert.equal(
+      shouldQueuePlacementSuspect({
+        existing: { evaluatedAt: "2026-08-26T12:00:00.000Z" },
         openRun: { verdict: "INCONCLUSIVE" },
       }),
       true,
+      "Goliath Education: COPY then INCONCLUSIVE must re-queue the still-ugly canary",
+    );
+    assert.equal(
+      shouldQueuePlacementSuspect({
+        existing: { evaluatedAt: "2026-08-28T00:00:00.000Z" },
+        openRun: { verdict: "HEALTHY" },
+      }),
+      true,
+      "HEALTHY does not cover a still-ugly reading — callers only ask when ugly",
     );
   });
 

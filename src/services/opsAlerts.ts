@@ -1,4 +1,9 @@
 import type { SlackClient } from "../clients/slack.js";
+import {
+  canonMissText,
+  collectCanonMisses,
+  type CanonMissKind,
+} from "../lib/canonMiss.js";
 import { overdueStages, type OverdueStage } from "../lib/stageWindows.js";
 import type { StateStore } from "../state/store.js";
 
@@ -103,6 +108,71 @@ export async function alertStageAnomalies(input: {
     } catch (error) {
       // No stamp — the page re-tries on the next pass instead of going silent.
       console.warn("[ops-alert] overdue page failed", error);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * D162 — CANON / healthy-sending misses page Slack once per campaign
+ * per incident (ugly same-ESP, isolation queued, COPY / INFRA /
+ * INCONCLUSIVE). Same incident stays silent across 15-minute sweeps;
+ * a transition pages; recovery (inbox back at the bar) clears the stamp.
+ */
+export async function alertCanonMisses(input: {
+  store: StateStore;
+  slack: Pick<SlackClient, "send">;
+  threshold: number;
+  dryRun?: boolean;
+}): Promise<{ alerted: string[]; recovered: number[] }> {
+  const misses = collectCanonMisses({
+    scores: input.store.listPlacementScores(),
+    suspects: input.store.listCopySuspects(),
+    latestRun: (campaignId) =>
+      input.store.latestIsolationRunForCampaign(campaignId),
+    threshold: input.threshold,
+    extraCampaignIds: input.store
+      .listIsolationRuns()
+      .map((run) => run.campaignId),
+  });
+  const missById = new Map(misses.map((row) => [row.campaignId, row]));
+  const stamped = input.store.listCanonMissAlerts();
+  const fresh = misses.filter(
+    (row) => stamped[String(row.campaignId)] !== row.kind,
+  );
+  const recovered = Object.keys(stamped)
+    .map((key) => Number(key))
+    .filter((id) => Number.isFinite(id) && !missById.has(id));
+
+  if (input.dryRun) {
+    if (fresh.length || recovered.length) {
+      console.log(
+        `[canon-miss] DRY RUN — would page [${fresh
+          .map((row) => `#${row.campaignId}:${row.kind}`)
+          .join(", ")}] recovered=[${recovered.join(", ")}]`,
+      );
+    }
+    return { alerted: [], recovered: [] };
+  }
+
+  const result = { alerted: [] as string[], recovered: [] as number[] };
+
+  for (const campaignId of recovered) {
+    input.store.clearCanonMissAlert(campaignId);
+    result.recovered.push(campaignId);
+  }
+
+  for (const row of fresh) {
+    try {
+      await input.slack.send(canonMissText(row), undefined, "ops_alert");
+      input.store.setCanonMissAlert(row.campaignId, row.kind);
+      result.alerted.push(`${row.campaignId}:${row.kind as CanonMissKind}`);
+    } catch (error) {
+      console.warn(
+        `[canon-miss] page failed for #${row.campaignId} ${row.kind}`,
+        error,
+      );
     }
   }
 

@@ -162,6 +162,42 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(second.evaluated, 0);
   });
 
+  it("re-queues after COPY when the latest run is INCONCLUSIVE (D163)", async () => {
+    const { branch, state, evaluated } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+    });
+    await branch.run();
+    const afterCopy = state
+      .listCopySuspects()
+      .find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(afterCopy?.evaluatedAt, "COPY stamps evaluatedAt");
+
+    state.upsertIsolationRun({
+      id: "later-inconclusive",
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      startedAt: new Date(Date.now() + 60_000).toISOString(),
+      updatedAt: new Date(Date.now() + 60_000).toISOString(),
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason: "need another reading",
+    });
+
+    evaluated.length = 0;
+    const second = await branch.run();
+    assert.deepEqual(evaluated, [AIRPODS.id], "Goliath Education hole: must re-evaluate");
+    assert.ok(second.evaluated >= 1);
+    const after = state
+      .listCopySuspects()
+      .find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(
+      after && (after.evaluatedAt === undefined || after.evaluatedAt),
+      "re-queue cleared the sticky evaluatedAt long enough to evaluate",
+    );
+  });
+
   it("COPY with an unarmed rig waits and asks to arm once", async () => {
     const { branch, armed, teardowns } = await buildBranch({
       knownGoodInbox: 95,

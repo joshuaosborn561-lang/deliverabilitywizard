@@ -229,6 +229,11 @@ export interface AppState {
   /** D149 — overdue stages currently paged to Slack (name → ISO paged-at). */
   stageAlertedAt: Record<string, string>;
   /**
+   * D162 — last CANON-miss Slack incident per campaign (id → kind).
+   * Same kind stays silent; a transition pages; recovery deletes the stamp.
+   */
+  canonMissAlerted: Record<string, string>;
+  /**
    * D85 — zero connected unwarmed-canary mailboxes, reported once instead of
    * as a finding on every ACTIVE campaign. Null when the fleet has at least
    * one connected mailbox.
@@ -430,6 +435,7 @@ const EMPTY_STATE: AppState = {
   bouncePausedCampaigns: {},
   stageHealth: {},
   stageAlertedAt: {},
+  canonMissAlerted: {},
   canaryFleetDown: null,
 };
 
@@ -488,6 +494,7 @@ export class StateStore {
         bouncePausedCampaigns: parsed.bouncePausedCampaigns ?? {},
         stageHealth: parsed.stageHealth ?? {},
         stageAlertedAt: parsed.stageAlertedAt ?? {},
+        canonMissAlerted: parsed.canonMissAlerted ?? {},
         canaryFleetDown: parsed.canaryFleetDown ?? null,
       };
     } catch (error) {
@@ -1101,6 +1108,23 @@ export class StateStore {
 
   clearStageAlert(name: string): void {
     delete this.state.stageAlertedAt[name];
+  }
+
+  /** D162 — one Slack page per campaign per CANON-miss incident. */
+  listCanonMissAlerts(): Record<string, string> {
+    return this.state.canonMissAlerted;
+  }
+
+  getCanonMissAlert(campaignId: number): string | undefined {
+    return this.state.canonMissAlerted[String(campaignId)];
+  }
+
+  setCanonMissAlert(campaignId: number, incident: string): void {
+    this.state.canonMissAlerted[String(campaignId)] = incident;
+  }
+
+  clearCanonMissAlert(campaignId: number): void {
+    delete this.state.canonMissAlerted[String(campaignId)];
   }
 
   /** D85 — one fleet-level fact instead of a finding per campaign. */

@@ -5525,3 +5525,187 @@ describe("owner intent — D161 client-domain replace is client-named", () => {
     );
   });
 });
+
+describe("owner intent — D162 CANON misses page Slack", () => {
+  it("D162: health pass pages CANON misses as ops_alert, once per incident", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    const healthBody = index.slice(
+      index.indexOf("const runHealth = async"),
+      index.indexOf("const runBounceAutostop"),
+    );
+    assert.match(
+      healthBody,
+      /alertCanonMisses/,
+      stop(
+        "The 15-minute health sweep pages CANON / healthy-sending misses (D162).",
+        "index.ts no longer calls alertCanonMisses inside runHealth.",
+      ),
+    );
+    const ops = await readFile(
+      new URL("../services/opsAlerts.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      ops,
+      /alertCanonMisses/,
+      stop(
+        "CANON-miss pages live next to the stage watchdog (D162).",
+        "opsAlerts.ts lost alertCanonMisses.",
+      ),
+    );
+    assert.match(
+      ops,
+      /"ops_alert"/,
+      stop(
+        "CANON-miss pages use the existing ops_alert lane (D162).",
+        "opsAlerts.ts no longer sends ops_alert.",
+      ),
+    );
+    assert.match(
+      ops,
+      /setCanonMissAlert/,
+      stop(
+        "One page per campaign per incident, stamped in state (D162).",
+        "opsAlerts.ts no longer stamps CANON-miss incidents — it would page every 15 minutes.",
+      ),
+    );
+    const { slackAllowed } = await import("../lib/slackAllow.js");
+    assert.equal(
+      slackAllowed("ops_alert"),
+      true,
+      stop(
+        "ops_alert stays allowed so CANON-miss pages are not slack-quiet dropped (D162/D149).",
+        "slackAllowed('ops_alert') is false.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /once per campaign per incident/,
+      stop(
+        "CANON Slack contract pages CANON misses once per campaign per incident (D162).",
+        "CANON.md lost the D162 Slack contract.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Silent findings are a bug/,
+      stop(
+        "CANON states silent findings are a bug (D162).",
+        "CANON.md lost the silent-findings rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D163\*\*/,
+      stop(
+        "CANON is as of D163.",
+        "CANON.md header was not bumped.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D162 /,
+      stop(
+        "The CANON-miss Slack rule is in the ledger (D162).",
+        "DECISIONS.md no longer has D162.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D163 re-queue after INCONCLUSIVE", () => {
+  it("D163: shouldQueue is the inverse of hasOpenIsolation; queue clears evaluatedAt", async () => {
+    const { hasOpenIsolation, shouldQueuePlacementSuspect } = await import(
+      "../lib/placementSuspect.js"
+    );
+    const inconclusive = {
+      existing: { evaluatedAt: "2026-08-26T12:00:00.000Z" },
+      openRun: { verdict: "INCONCLUSIVE" as const },
+    };
+    assert.equal(
+      hasOpenIsolation(inconclusive),
+      false,
+      stop(
+        "INCONCLUSIVE is not an open covering run (D163).",
+        "hasOpenIsolation treats INCONCLUSIVE as open — Goliath Education stays stuck.",
+      ),
+    );
+    assert.equal(
+      shouldQueuePlacementSuspect(inconclusive),
+      true,
+      stop(
+        "A still-ugly campaign whose latest run is INCONCLUSIVE must re-queue (D163).",
+        "shouldQueuePlacementSuspect still locks on evaluatedAt.",
+      ),
+    );
+    assert.equal(
+      shouldQueuePlacementSuspect(inconclusive),
+      !hasOpenIsolation(inconclusive),
+      stop(
+        "shouldQueuePlacementSuspect is the inverse of hasOpenIsolation (D163).",
+        "The two helpers disagree.",
+      ),
+    );
+    const { readFile } = await import("node:fs/promises");
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      branch,
+      /evaluatedAt: undefined/,
+      stop(
+        "Re-queue clears evaluatedAt so evaluate actually runs (D163).",
+        "isolationBranch.ts no longer clears evaluatedAt when queueing.",
+      ),
+    );
+    const monitor = await readFile(
+      new URL("../services/resultMonitor.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      monitor,
+      /evaluatedAt: undefined/,
+      stop(
+        "ResultMonitor re-queue also clears evaluatedAt (D163).",
+        "resultMonitor.ts no longer clears evaluatedAt.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /re-queue/i,
+      stop(
+        "CANON names the INCONCLUSIVE re-queue (D163).",
+        "CANON.md lost D163.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D163 /,
+      stop(
+        "The INCONCLUSIVE re-queue rule is in the ledger (D163).",
+        "DECISIONS.md no longer has D163.",
+      ),
+    );
+  });
+});

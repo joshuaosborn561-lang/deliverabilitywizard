@@ -148,11 +148,7 @@ export class IsolationBranchService {
       .listCopySuspects()
       .find((row) => row.campaignId === campaignId);
     const openRun = this.state.latestIsolationRunForCampaign(campaignId);
-    if (openRun?.teardownStarted) return;
-    if (isTerminalIsolationVerdict(openRun?.verdict) && openRun?.verdict !== "HEALTHY") {
-      return;
-    }
-    if (existing?.evaluatedAt) return;
+    if (!shouldQueuePlacementSuspect({ existing, openRun })) return;
     this.state.markCopySuspect({
       campaignId,
       campaignName: campaign.name,
@@ -160,6 +156,7 @@ export class IsolationBranchService {
       reason: existing?.reason?.includes("content_block")
         ? existing.reason
         : "dominant bounce class content_block",
+      evaluatedAt: undefined,
     });
     const run = await this.evaluate(campaignId, {
       campaignInSpam: true,
@@ -316,7 +313,8 @@ export class IsolationBranchService {
   /**
    * D158 — canary-copy or live placement same-ESP under the live 80% bar
    * queues the ACTIVE campaign as a copy suspect. Isolation then decides
-   * COPY vs INFRA. Not a Slack page (D71).
+   * COPY vs INFRA. D162 pages Slack once per campaign per incident
+   * (ugly / queued / verdict) from the health-pass CANON-miss pager.
    */
   async queueUglyPlacementSuspects(): Promise<number> {
     let campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>> = [];
@@ -402,6 +400,7 @@ export class IsolationBranchService {
           splits,
           this.config.remediationInboxThreshold,
         ),
+        evaluatedAt: undefined,
       });
       queued += 1;
       console.log(

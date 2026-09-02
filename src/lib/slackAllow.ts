@@ -1,8 +1,10 @@
 /**
- * D71 — Slack is only deliverability flags plus one end-of-day scoreboard.
+ * D71 — Slack is deliverability flags plus one end-of-day scoreboard.
  * Everything else stays in logs /ops. D149 adds `ops_alert`: the machine
- * reporting itself broken (overdue watchdog stage, wrong deploy identity)
- * pages Slack instead of waiting for someone to come read the logs.
+ * reporting itself broken (overdue watchdog stage, wrong deploy identity).
+ * D162 also uses `ops_alert` for CANON / healthy-sending misses (same-ESP
+ * under 80%, isolation queued / COPY / INFRA / INCONCLUSIVE) — once per
+ * campaign per incident.
  */
 export const SLACK_ALLOW_KINDS = [
   "burned_domain",

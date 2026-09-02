@@ -507,8 +507,9 @@ export class SlackClient {
   }
 
   /**
-   * D71/D158 — placement % is a reading, not a Slack page. Isolation
-   * branch consumes the same-ESP score. This method stays so callers
+   * D71/D158/D162 — placement % is a reading. Isolation branch consumes
+   * the same-ESP score; the health-pass CANON-miss pager (`ops_alert`)
+   * posts once per campaign per incident. This method stays so callers
    * and D47 jargon tests compile; it does not post.
    */
   async notifyPlacementResult(details: {

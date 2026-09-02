@@ -3,6 +3,7 @@ import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 import { emailDomainOf } from "./isolationDomain.js";
+import { hasPoolMarkerTag } from "./markerClients.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
 
 const droppedPoolDomains =
@@ -31,7 +32,7 @@ export function isGenericPoolDomain(domain: string | undefined): boolean {
  * (D43). Generics fill to 50 and rest on a 2-week send clock.
  */
 export function isClientInbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
@@ -47,7 +48,7 @@ export function isClientInbox(
 
 /** A/B rest is client inboxes only (D43). Generics use the send clock. */
 export function isRestEligibleMailbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
@@ -56,7 +57,7 @@ export function isRestEligibleMailbox(
 }
 
 export function isGenericMailbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name">,
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
   email: string,
   config: Pick<
     AppConfig,
@@ -72,7 +73,10 @@ export function isGenericMailbox(
   if (isGenericPoolDomain(domain)) return true;
   // D142 — generic-pool membership by domain, independent of pre-warmed.
   if (domain && config.extraGenericDomains.includes(domain)) return true;
-  // D142 — a box assigned to the Generic/POC marker client is a generic.
+  // D160 — GENERIC / POC mailbox tags are the pool label, not a client.
+  if (hasPoolMarkerTag(account)) return true;
+  // Drain: a leftover D142 Generic/POC client_id is still a generic
+  // until the audit detaches it.
   if (
     typeof account.client_id === "number" &&
     state.isMarkerClientId?.(account.client_id)

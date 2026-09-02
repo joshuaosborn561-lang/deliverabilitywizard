@@ -92,7 +92,7 @@ describe("DomainClientAuditService (D136)", () => {
     assert.equal(state.listDomainAdvisories().length, 0);
   });
 
-  it("D142: ensures the markers and attaches only the confident cases", async () => {
+  it("D160: tags generics, detaches leftover marker clients, attaches only confident real clients", async () => {
     const state = new StateStore(
       `/tmp/dw-domain-attach-${process.pid}-${Date.now()}.json`,
     );
@@ -103,31 +103,39 @@ describe("DomainClientAuditService (D136)", () => {
       { id: 418274, name: "Randy Haba", logo: "Parlay Tech" },
       { id: 100, name: "Acme" },
       { id: 200, name: "Bcorp" },
+      { id: 900001, name: "Generic", logo: "Generic" },
+      { id: 900002, name: "POC", logo: "POC" },
     ];
     const warmed = new Date(Date.now() - 60 * 86_400_000).toISOString();
     const young = new Date(Date.now() - 2 * 86_400_000).toISOString();
     const accounts = [
-      // generic-fleet orphan → Generic marker (immediate — markers own no campaigns)
-      { id: 1, from_email: "a@getintroducedapp.com", client_id: null, campaign_ids: [] },
-      // generic-fleet box already owned by a real client → untouched
-      { id: 2, from_email: "b@getintroducedapp.com", client_id: 100, campaign_ids: [] },
+      // generic-fleet orphan → GENERIC tag, no client_id
+      { id: 1, from_email: "a@getintroducedapp.com", client_id: null, campaign_ids: [], tags: [] },
+      // leftover D142 Generic client_id → tag + detach
+      { id: 8, from_email: "z@getintroducedapp.com", client_id: 900001, campaign_ids: [], tags: [] },
+      // generic-fleet box already owned by a real client → tagged, client_id untouched
+      { id: 2, from_email: "b@getintroducedapp.com", client_id: 100, campaign_ids: [], tags: [] },
       // unmapped domain with exactly one client token, clock served → SalesGlider
-      { id: 3, from_email: "u@salesgliderbox.info", client_id: null, campaign_ids: [], created_at: warmed },
+      { id: 3, from_email: "u@salesgliderbox.info", client_id: null, campaign_ids: [], created_at: warmed, tags: [] },
       // unmapped domain with no client token → stays a human question
-      { id: 4, from_email: "c@cornerstoneearthworksmy.info", client_id: null, campaign_ids: [] },
+      { id: 4, from_email: "c@cornerstoneearthworksmy.info", client_id: null, campaign_ids: [], tags: [] },
       // split-clients domain → advisory only, never written
-      { id: 5, from_email: "x@splitdomain.info", client_id: 100, campaign_ids: [] },
-      { id: 6, from_email: "y@splitdomain.info", client_id: 200, campaign_ids: [] },
+      { id: 5, from_email: "x@splitdomain.info", client_id: 100, campaign_ids: [], tags: [] },
+      { id: 6, from_email: "y@splitdomain.info", client_id: 200, campaign_ids: [], tags: [] },
       // D143 — confident match but the box still owes warmup days → deferred
-      { id: 7, from_email: "n@salesgliderfresh.info", client_id: null, campaign_ids: [], created_at: young },
+      { id: 7, from_email: "n@salesgliderfresh.info", client_id: null, campaign_ids: [], created_at: young, tags: [] },
     ];
 
-    const created: string[] = [];
     const writes: Array<{ id: number; client_id: unknown }> = [];
+    const assigned: number[][] = [];
+    const ensured: string[] = [];
     const smartlead = {
-      ensureClient: async (name: string) => {
-        created.push(name);
-        return name === "Generic" ? 900001 : 900002;
+      ensureTag: async (name: string) => {
+        ensured.push(name);
+        return { id: 71, name };
+      },
+      assignTags: async (accountIds: number[]) => {
+        assigned.push([...accountIds]);
       },
       updateEmailAccount: async (
         id: number,
@@ -144,29 +152,33 @@ describe("DomainClientAuditService (D136)", () => {
       smartlead as never,
       async () => {},
     );
-    const { advisories, attached } = await service.run();
+    const { advisories, attached, tagged, detached, leftoverMarkerClients } =
+      await service.run();
 
-    assert.deepEqual(created.sort(), ["Generic", "POC"]);
+    assert.deepEqual(ensured, ["GENERIC"]);
+    assert.ok(!ensured.includes("Generic") && !ensured.includes("POC"));
     assert.deepEqual(state.getMarkerClientIds(), {
       genericId: 900001,
       pocId: 900002,
     });
+    assert.deepEqual(leftoverMarkerClients.sort(), ["Generic", "POC"]);
+    assert.ok(tagged >= 1, "generic-fleet boxes get the GENERIC tag");
+    assert.equal(detached, 1, "leftover Generic client_id is cleared");
+    assert.ok(assigned.flat().includes(1));
+    assert.ok(assigned.flat().includes(8));
     assert.deepEqual(
       writes.sort((a, b) => a.id - b.id),
       [
-        { id: 1, client_id: 900001 },
         { id: 3, client_id: 345263 },
+        { id: 8, client_id: null },
       ],
-      "only the orphan generic and the warmed confident salesglider box are written",
+      "only the leftover marker detach and the warmed confident salesglider box write a client_id",
     );
-    assert.ok(
-      attached.some((row) => row.clientName === "Generic" && row.mailboxes === 1),
-    );
+    assert.ok(!attached.some((row) => row.clientName === "Generic"));
     assert.ok(attached.some((row) => row.clientName === "SalesGlider"));
     const byDomain = new Map(advisories.map((row) => [row.domain, row.kind]));
     assert.equal(byDomain.get("cornerstoneearthworksmy.info"), "unmapped");
     assert.equal(byDomain.get("splitdomain.info"), "split_clients");
-    // D143 — the young box's confident match waits out its 21 days.
     assert.equal(byDomain.get("salesgliderfresh.info"), "unmapped");
     const deferredNote = advisories.find(
       (row) => row.domain === "salesgliderfresh.info",

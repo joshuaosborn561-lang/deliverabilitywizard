@@ -3,6 +3,10 @@ import { describe, it } from "node:test";
 import {
   clientDomainTokens,
   confidentClientForDomain,
+  GENERIC_TAG,
+  hasPoolMarkerTag,
+  isPoolMarkerTag,
+  POC_TAG,
 } from "./markerClients.js";
 
 const CLIENTS = [
@@ -50,5 +54,17 @@ describe("D142 confident domain→client matching", () => {
       { id: 999, name: "Parlay Partners", logo: null },
     ];
     assert.equal(confidentClientForDomain("winparlay.info", doubled), null);
+  });
+});
+
+describe("D160 pool marker tags", () => {
+  it("GENERIC and POC tags mark a mailbox, leftover client names do not match domains", () => {
+    assert.equal(isPoolMarkerTag(GENERIC_TAG), true);
+    assert.equal(isPoolMarkerTag(POC_TAG), true);
+    assert.equal(isPoolMarkerTag("POD-A"), false);
+    assert.equal(hasPoolMarkerTag({ tags: [{ tag_name: "GENERIC" }] }), true);
+    assert.equal(hasPoolMarkerTag({ tags: [{ name: "poc" }] }), true);
+    assert.equal(hasPoolMarkerTag({ tags: [{ tag_name: "POD-A" }] }), false);
+    assert.equal(hasPoolMarkerTag({ tags: [] }), false);
   });
 });

@@ -237,6 +237,24 @@ export function classifyFailure(
     };
   }
 
+  // InboxKit per-domain mailbox cap (max 5). Resume used to re-order the
+  // full allotment on a domain that already had mailboxes. Not a code bug
+  // a remediator should chase once shortfall logic is in place.
+  if (
+    /maximum\s+\d+\s+mailboxes?\s+allowed\s+per\s+domain|cannot create mailboxes for domain/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "inboxkit-mailbox-cap"),
+      autoRemediate: false,
+      summary:
+        "InboxKit per-domain mailbox cap (domain already staffed or at vendor max)",
+      raw: text,
+    };
+  }
+
   if (
     /smartdelivery access|api access is not active|invalid api key|unauthorized/i.test(
       lower,

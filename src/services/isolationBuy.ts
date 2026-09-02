@@ -1,4 +1,4 @@
-import { InboxKitClient } from "../clients/inboxkit.js";
+import { InboxKitClient, mailboxDomainOf } from "../clients/inboxkit.js";
 import { PorkbunClient } from "../clients/porkbun.js";
 import type { AppConfig } from "../config.js";
 import { generateDomainSpins } from "../lib/domainNaming.js";
@@ -13,6 +13,38 @@ import {
 import type { SpendGateway } from "../lib/spendGateway.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
+
+/** InboxKit rejects buys above this per domain (live API error). */
+export const INBOXKIT_MAX_MAILBOXES_PER_DOMAIN = 5;
+
+/**
+ * Parse InboxKit's per-domain mailbox cap error.
+ * "Cannot create mailboxes for domain X. Maximum 5 mailboxes allowed per
+ * domain. Currently has 3 mailboxes."
+ */
+export function parseInboxkitMailboxCap(message: string): {
+  max: number;
+  current: number;
+} | null {
+  const match = message.match(
+    /maximum\s+(\d+)\s+mailboxes?\s+allowed\s+per\s+domain[\s\S]*?currently\s+has\s+(\d+)/i,
+  );
+  if (!match) return null;
+  const max = Number(match[1]);
+  const current = Number(match[2]);
+  if (!Number.isFinite(max) || !Number.isFinite(current)) return null;
+  return { max, current };
+}
+
+/** How many more mailboxes to buy toward the target, capped by InboxKit. */
+export function mailboxesStillNeeded(
+  existing: number,
+  perDomain: number,
+  vendorMax: number = INBOXKIT_MAX_MAILBOXES_PER_DOMAIN,
+): number {
+  const target = Math.max(0, Math.min(perDomain, vendorMax));
+  return Math.max(0, target - Math.max(0, existing));
+}
 
 export interface IsolationBuyResult {
   domains: string[];
@@ -212,24 +244,40 @@ export class IsolationBuyService {
       return { ordered: 0, awaitingNameservers: true };
     }
 
+    // Count mailboxes already on each domain so resume does not re-buy the
+    // full perDomain allotment (InboxKit: max 5/domain; live error when we
+    // tried to buy 3 more on a domain that already had 3).
+    const existingByDomain = await this.countMailboxesByDomain(
+      domains,
+      workspaceId || undefined,
+    );
+
     let ordered = 0;
     let seed = Date.now() % 10_000;
     const taken = new Set<string>();
     for (const [index, domain] of domains.entries()) {
       if (!ready.has(domain.toLowerCase())) continue;
+      const existing = existingByDomain.get(domain.toLowerCase()) ?? 0;
+      const needed = mailboxesStillNeeded(existing, perDomain);
+      if (needed <= 0) {
+        console.log(
+          `[isolation-buy] ${domain} already has ${existing} mailbox(es) (target ${perDomain}) — skipping buy`,
+        );
+        continue;
+      }
       const platforms =
-        platformsFromActionDetail(action.detail, perDomain) ??
-        Array.from({ length: perDomain }, (_, i) =>
+        platformsFromActionDetail(action.detail, needed) ??
+        Array.from({ length: needed }, (_, i) =>
           (index + i) % 2 === 0 ? ("GOOGLE" as const) : ("MICROSOFT" as const),
         );
       // One InboxKit order per platform group so a mixed-ESP domain stays
       // one domain with Google + Microsoft mailboxes (D150).
       const byPlatform = new Map<"GOOGLE" | "MICROSOFT", number>();
-      for (const platform of platforms.slice(0, perDomain)) {
+      for (const platform of platforms.slice(0, needed)) {
         byPlatform.set(platform, (byPlatform.get(platform) ?? 0) + 1);
       }
       if (!byPlatform.size) {
-        byPlatform.set(index % 2 === 0 ? "GOOGLE" : "MICROSOFT", perDomain);
+        byPlatform.set(index % 2 === 0 ? "GOOGLE" : "MICROSOFT", needed);
       }
       for (const [platform, count] of byPlatform) {
         const names = pickUniquePersonNames(count, seed, taken);
@@ -240,18 +288,32 @@ export class IsolationBuyService {
           domain_name: domain,
         }));
         const spendReq = {
-          key: `inboxkit:isolation:${domain}:${platform}:n${count}`,
+          key: `inboxkit:isolation:${domain}:${platform}:n${count}:have${existing}`,
           scope: "generic_pool" as const,
           kind: "inboxkit_mailbox_purchase",
           description: `Mailboxes on replacement domain ${domain} (${platform}).`,
-          detail: { domain, platform, count, actionId: action.id },
+          detail: { domain, platform, count, actionId: action.id, existing },
         };
         const decision = await this.spend.recordOwnerApproved(spendReq, decidedBy);
-        await this.inboxkit.buyMailboxes(batch, {
-          workspaceId: workspaceId || undefined,
-          useWalletBalance: true,
-          idempotencyKey: spendReq.key,
-        });
+        try {
+          await this.inboxkit.buyMailboxes(batch, {
+            workspaceId: workspaceId || undefined,
+            useWalletBalance: true,
+            idempotencyKey: spendReq.key,
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          const cap = parseInboxkitMailboxCap(message);
+          if (cap && cap.current >= Math.min(perDomain, cap.max)) {
+            // Already at target / vendor max — treat as done, do not page.
+            console.log(
+              `[isolation-buy] ${domain}: InboxKit mailbox cap (${cap.current}/${cap.max}) — treating as staffed`,
+            );
+            continue;
+          }
+          throw error;
+        }
         await this.spend.consume(decision, spendReq);
         const now = new Date().toISOString();
         for (const name of names) {
@@ -266,8 +328,49 @@ export class IsolationBuyService {
           });
         }
         ordered += names.length;
+        existingByDomain.set(
+          domain.toLowerCase(),
+          (existingByDomain.get(domain.toLowerCase()) ?? existing) + names.length,
+        );
       }
     }
     return { ordered, awaitingNameservers: pending.length > 0 };
+  }
+
+  private async countMailboxesByDomain(
+    domains: string[],
+    workspaceId?: string,
+  ): Promise<Map<string, number>> {
+    const wanted = new Set(domains.map((d) => d.toLowerCase()));
+    const counts = new Map<string, number>();
+    for (const domain of wanted) counts.set(domain, 0);
+
+    // Local store first (what we already recorded as bought).
+    for (const row of this.store.listPoolMailboxes()) {
+      const domain = row.domain.toLowerCase();
+      if (!wanted.has(domain)) continue;
+      counts.set(domain, (counts.get(domain) ?? 0) + 1);
+    }
+
+    // InboxKit truth when list succeeds — takes the higher count so we do
+    // not re-buy mailboxes that exist but are not in local state yet.
+    try {
+      const rows = await this.inboxkit!.listAllMailboxes(workspaceId, 200);
+      const live = new Map<string, number>();
+      for (const row of rows) {
+        const domain = mailboxDomainOf(row);
+        if (!wanted.has(domain)) continue;
+        live.set(domain, (live.get(domain) ?? 0) + 1);
+      }
+      for (const [domain, liveCount] of live) {
+        counts.set(domain, Math.max(counts.get(domain) ?? 0, liveCount));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[isolation-buy] listAllMailboxes failed; using store counts only: ${message}`,
+      );
+    }
+    return counts;
   }
 }

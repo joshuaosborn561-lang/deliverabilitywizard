@@ -93,7 +93,7 @@ export function decideIsolationVerdict(
 ): IsolationVerdictResult {
   const control = campaignSenderControl(input.senderControls);
   const canary = canaryLean(input);
-  const canaryFailed = unwarmedCopyFailed(input, canary);
+  const unwarmedAlsoFailed = unwarmedCopyFailed(input, canary);
 
   // D158 — content_block + ugly canary prefers COPY even with no mailbox
   // tag. Known-good failing an ESP is still INFRA.
@@ -211,7 +211,7 @@ export function decideIsolationVerdict(
     };
   }
 
-  if (!canaryFailed) {
+  if (!unwarmedAlsoFailed) {
     return {
       verdict: "INCONCLUSIVE",
       control,

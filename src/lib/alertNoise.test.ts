@@ -5,6 +5,7 @@ import {
   isApprovalGateNoise,
   isBenignOpsNoise,
   isBurnChecklistNoise,
+  isInboxkitMailboxCapNoise,
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
@@ -85,6 +86,15 @@ describe("alert noise", () => {
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
     assert.match(humanizeAlertError(message), /membership lag/i);
+  });
+
+  it("treats InboxKit per-domain mailbox cap as benign ops noise", () => {
+    const message =
+      "Cannot create mailboxes for domain boldercyperpartnerget.info. Maximum 5 mailboxes allowed per domain. Currently has 3 mailboxes.";
+    assert.equal(isInboxkitMailboxCapNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /per-domain cap/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

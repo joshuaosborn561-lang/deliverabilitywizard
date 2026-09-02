@@ -167,6 +167,17 @@ describe("classifyFailure", () => {
     assert.equal(other.fingerprint, c.fingerprint);
   });
 
+  it("treats InboxKit per-domain mailbox cap as non-remediable noise", () => {
+    const c = classifyFailure(
+      "stage-isolation-buy-resume",
+      "Cannot create mailboxes for domain boldercyperpartnerget.info. Maximum 5 mailboxes allowed per domain. Currently has 3 mailboxes.",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:inboxkit-mailbox-cap");
+    assert.match(c.summary, /mailbox cap/i);
+  });
+
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",

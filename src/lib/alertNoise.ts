@@ -86,6 +86,16 @@ export function isSenderNotInCampaignNoise(message: string): boolean {
   return /sender email accounts?.+not used in the campaign/i.test(message);
 }
 
+/**
+ * InboxKit refuses more mailboxes on a domain that is already at its
+ * per-domain cap (max 5). Isolation-buy resume should skip; do not page.
+ */
+export function isInboxkitMailboxCapNoise(message: string): boolean {
+  return /maximum\s+\d+\s+mailboxes?\s+allowed\s+per\s+domain|cannot create mailboxes for domain/i.test(
+    message,
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
@@ -94,7 +104,8 @@ export function isBenignOpsNoise(message: string): boolean {
     isMissingSpamTestNoise(message) ||
     isRetryRemovalNoise(message) ||
     isBurnChecklistNoise(message) ||
-    isSenderNotInCampaignNoise(message)
+    isSenderNotInCampaignNoise(message) ||
+    isInboxkitMailboxCapNoise(message)
   );
 }
 
@@ -144,6 +155,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isSenderNotInCampaignNoise(raw)) {
     return "SmartDelivery says some senders are not on that campaign yet (membership lag). We'll retry next scan.";
+  }
+
+  if (isInboxkitMailboxCapNoise(raw)) {
+    return "InboxKit will not add more mailboxes on that domain (per-domain cap). Already staffed or at the vendor max.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

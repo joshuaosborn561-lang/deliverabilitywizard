@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  isActiveSendingStatus,
   isolationSuspectsDueForEval,
   isTerminalIsolationVerdict,
   liveCampaignForPlacementTrigger,
@@ -9,6 +10,7 @@ import {
   sameEspInboxUgly,
   shouldEvaluateIsolationSuspect,
   shouldQueuePlacementSuspect,
+  shouldRequeueIsolation,
   uglyWithoutIsolation,
 } from "./placementSuspect.js";
 
@@ -66,6 +68,33 @@ describe("placement suspect mapping (D158)", () => {
       liveCampaignForPlacementTrigger({
         testName: "Canary copy: #3847794 AirPods",
         campaigns: [{ ...live, status: "PAUSED" }],
+      }),
+      undefined,
+    );
+    assert.equal(
+      liveCampaignForPlacementTrigger({
+        testName: "Canary copy: #3763805 BCP",
+        campaigns: [
+          {
+            id: 3763805,
+            name: "BCP Logistics Over-1k (With Team)",
+            status: "COMPLETED",
+          },
+        ],
+      }),
+      undefined,
+    );
+    assert.equal(
+      liveCampaignForPlacementTrigger({
+        testName: "BCP Logistics Over-1k (With Team)",
+        testCampaignId: 3763805,
+        campaigns: [
+          {
+            id: 3763805,
+            name: "BCP Logistics Over-1k (With Team)",
+            status: "STOPPED",
+          },
+        ],
       }),
       undefined,
     );
@@ -170,6 +199,41 @@ describe("placement suspect queue gates (D158)", () => {
         80,
       ),
       /Canary-copy same-ESP under 80% \(Gmail 0%\)/,
+    );
+  });
+
+  it("does not re-queue INCONCLUSIVE on COMPLETED / STOPPED / PAUSED (D165)", () => {
+    const inconclusive = {
+      existing: { evaluatedAt: "2026-08-24T12:00:00.000Z" },
+      openRun: { verdict: "INCONCLUSIVE" as const },
+    };
+    assert.equal(isActiveSendingStatus("ACTIVE"), true);
+    assert.equal(isActiveSendingStatus("COMPLETED"), false);
+    assert.equal(isActiveSendingStatus("STOPPED"), false);
+    assert.equal(isActiveSendingStatus("PAUSED"), false);
+    assert.equal(
+      shouldRequeueIsolation({ ...inconclusive, status: "COMPLETED" }),
+      false,
+      "BCP Logistics #3763805 COMPLETED must not D164 re-queue",
+    );
+    assert.equal(
+      shouldRequeueIsolation({ ...inconclusive, status: "STOPPED" }),
+      false,
+    );
+    assert.equal(
+      shouldRequeueIsolation({ ...inconclusive, status: "PAUSED" }),
+      false,
+      "PAUSED is not sending — skip INCONCLUSIVE re-queue (D165)",
+    );
+    assert.equal(
+      shouldRequeueIsolation({ ...inconclusive, status: "ACTIVE" }),
+      true,
+      "ACTIVE ugly/INCONCLUSIVE still re-queues (D164)",
+    );
+    assert.equal(
+      shouldQueuePlacementSuspect(inconclusive),
+      true,
+      "shouldQueue without status stays the D164 inverse",
     );
   });
 

@@ -2,10 +2,14 @@
  * D163 — a CANON / healthy-sending miss pages Slack once per campaign
  * per incident. Same-ESP under 80%, a newly queued suspect, and an
  * isolation verdict of COPY / INFRA / INCONCLUSIVE are incidents.
- * A 15-minute re-read of the same incident is not.
+ * A 15-minute re-read of the same incident is not. Isolation
+ * INCONCLUSIVE only pages ACTIVE senders (D165).
  */
 
-import type { PlacementSuspectSource } from "./placementSuspect.js";
+import {
+  isActiveSendingStatus,
+  type PlacementSuspectSource,
+} from "./placementSuspect.js";
 
 export type CanonMissKind =
   | "ugly"
@@ -40,6 +44,13 @@ export function currentCanonMiss(opts: {
   suspect?: { evaluatedAt?: string; reason?: string; campaignName?: string };
   latestRun?: { teardownStarted?: boolean; verdict?: string; reason?: string };
   threshold: number;
+  /** Smartlead status when the caller has the account book (D165). */
+  status?: string | null;
+  /**
+   * When true, isolation INCONCLUSIVE only pages ACTIVE senders
+   * (D165). Missing / COMPLETED / STOPPED / PAUSED stay quiet.
+   */
+  sendingStatusesKnown?: boolean;
 }): CanonMissRow | null {
   const name = opts.campaignName ?? opts.suspect?.campaignName;
   const ugly =
@@ -48,6 +59,15 @@ export function currentCanonMiss(opts: {
 
   const detail = missDetail(opts);
   if (isCanonMissVerdict(opts.latestRun?.verdict)) {
+    if (
+      opts.latestRun.verdict === "INCONCLUSIVE" &&
+      opts.sendingStatusesKnown &&
+      !isActiveSendingStatus(opts.status)
+    ) {
+      // Status gate, not a campaign-id list — any COMPLETED /
+      // STOPPED / PAUSED sender stays quiet (D165).
+      return null;
+    }
     return {
       campaignId: opts.campaignId,
       campaignName: name,
@@ -114,6 +134,7 @@ export function collectCanonMisses(opts: {
     | undefined;
   threshold: number;
   extraCampaignIds?: number[];
+  campaignStatus?: (campaignId: number) => string | undefined;
 }): CanonMissRow[] {
   const scoreById = new Map(opts.scores.map((row) => [row.campaignId, row]));
   const suspectById = new Map(opts.suspects.map((row) => [row.campaignId, row]));
@@ -122,6 +143,7 @@ export function collectCanonMisses(opts: {
     ...suspectById.keys(),
     ...(opts.extraCampaignIds ?? []),
   ]);
+  const statusesKnown = opts.campaignStatus != null;
   const out: CanonMissRow[] = [];
   for (const campaignId of ids) {
     const score = scoreById.get(campaignId);
@@ -133,6 +155,8 @@ export function collectCanonMisses(opts: {
       suspect,
       latestRun: opts.latestRun(campaignId),
       threshold: opts.threshold,
+      status: opts.campaignStatus?.(campaignId),
+      sendingStatusesKnown: statusesKnown,
     });
     if (miss) out.push(miss);
   }

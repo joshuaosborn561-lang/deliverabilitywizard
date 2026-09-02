@@ -236,6 +236,26 @@ export function isolationSuspectsDueForEval<
   );
 }
 
+/**
+ * D165 — D164 re-queue is for ACTIVE senders only. COMPLETED / STOPPED /
+ * PAUSED are not sending; a stale INCONCLUSIVE must not re-queue them.
+ * `status` omitted keeps the D164 inverse (callers already ACTIVE-gated
+ * via liveCampaignForPlacementTrigger).
+ *
+ * Distinct from shouldEvaluateIsolationSuspect: PAUSED lives already on
+ * the suspect list still re-read (D164); Slack / new-queue stay ACTIVE-only.
+ */
+export function shouldRequeueIsolation(opts: {
+  existing?: { evaluatedAt?: string };
+  openRun?: { teardownStarted?: boolean; verdict?: string };
+  status?: string | null;
+}): boolean {
+  if (opts.status !== undefined && !isActiveSendingStatus(opts.status)) {
+    return false;
+  }
+  return shouldQueuePlacementSuspect(opts);
+}
+
 export function placementSuspectReason(
   source: PlacementSuspectSource,
   providers: ProviderInboxSplit[],

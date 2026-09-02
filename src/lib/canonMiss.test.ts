@@ -114,6 +114,74 @@ describe("canon miss incidents (D163)", () => {
     assert.equal(rows[0]?.kind, "ugly");
   });
 
+  it("does not collect INCONCLUSIVE for any COMPLETED campaign (D165)", () => {
+    const stale = {
+      verdict: "INCONCLUSIVE" as const,
+      reason:
+        "No standing inbox-test reading for the mailboxes this campaign is sending from.",
+    };
+    const status: Record<number, string> = {
+      3763805: "COMPLETED",
+      3763806: "COMPLETED",
+      11: "STOPPED",
+      3847794: "ACTIVE",
+    };
+    const rows = collectCanonMisses({
+      scores: [],
+      suspects: [],
+      latestRun: (id) =>
+        id === 3847794
+          ? { verdict: "INCONCLUSIVE", reason: "need another reading" }
+          : stale,
+      threshold: 80,
+      extraCampaignIds: [3763805, 3763806, 11, 3847794],
+      campaignStatus: (id) => status[id],
+    });
+    assert.deepEqual(
+      rows.map((row) => row.campaignId),
+      [3847794],
+      "BCP With Team #3763805 and No Team #3763806 are both COMPLETED — skip by status, not id",
+    );
+    assert.equal(rows[0]?.kind, "INCONCLUSIVE");
+  });
+
+  it("does not page INCONCLUSIVE for STOPPED or PAUSED (D165)", () => {
+    assert.equal(
+      currentCanonMiss({
+        campaignId: 3763805,
+        campaignName: "BCP Logistics Over-1k (With Team)",
+        latestRun: { verdict: "INCONCLUSIVE", reason: "need another reading" },
+        threshold: 80,
+        status: "STOPPED",
+        sendingStatusesKnown: true,
+      }),
+      null,
+    );
+    assert.equal(
+      currentCanonMiss({
+        campaignId: 1,
+        latestRun: { verdict: "INCONCLUSIVE" },
+        threshold: 80,
+        status: "PAUSED",
+        sendingStatusesKnown: true,
+      }),
+      null,
+    );
+  });
+
+  it("still pages INCONCLUSIVE on an ACTIVE sender (D165)", () => {
+    const miss = currentCanonMiss({
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      score: { inboxPercent: 0, source: "canary-copy" },
+      latestRun: { verdict: "INCONCLUSIVE", reason: "need another reading" },
+      threshold: 80,
+      status: "ACTIVE",
+      sendingStatusesKnown: true,
+    });
+    assert.equal(miss?.kind, "INCONCLUSIVE");
+  });
+
   it("Slack copy names the campaign, the miss, and the in-thread ask", () => {
     const text = canonMissText({
       campaignId: 3847794,

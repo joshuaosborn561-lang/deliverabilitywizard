@@ -179,6 +179,57 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     assert.equal(suspect?.evaluatedAt, undefined);
   });
 
+  it("does not re-queue INCONCLUSIVE on a COMPLETED campaign (D165)", async () => {
+    const completed = {
+      id: 3763805,
+      name: "BCP Logistics Over-1k (With Team)",
+      status: "COMPLETED",
+    };
+    const state = new StateStore(
+      `/tmp/dw-monitor-completed-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.markCopySuspect({
+      campaignId: completed.id,
+      campaignName: completed.name,
+      at: "2026-08-24T12:00:00.000Z",
+      evaluatedAt: "2026-08-24T12:05:00.000Z",
+      reason: "stale inconclusive",
+    });
+    state.upsertIsolationRun({
+      id: "stale-aug-24",
+      campaignId: completed.id,
+      campaignName: completed.name,
+      startedAt: "2026-08-24T12:00:00.000Z",
+      updatedAt: "2026-08-24T12:00:00.000Z",
+      control: "INSUFFICIENT",
+      verdict: "INCONCLUSIVE",
+      campaignInSpam: true,
+      reason:
+        "No standing inbox-test reading for the mailboxes this campaign is sending from.",
+    });
+    const smartlead = {
+      listCampaigns: async () => [completed],
+    } as unknown as SmartleadClient;
+
+    const monitor = new ResultMonitor(
+      config,
+      fakeSmartDelivery({
+        testName: `Canary copy: #${completed.id} ${completed.name}`,
+      }),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+    const result = await monitor.run();
+    assert.equal(result.lowDeliverabilityAlerts, 0);
+    assert.equal(
+      state.listCopySuspects()[0]?.evaluatedAt,
+      "2026-08-24T12:05:00.000Z",
+      "COMPLETED must not D164 re-queue",
+    );
+  });
+
   it("skips shells and isolation-managed tests as the target", async () => {
     const state = new StateStore(
       `/tmp/dw-monitor-skip-${process.pid}-${Date.now()}.json`,

@@ -29,18 +29,27 @@ import {
   isIsolationManagedTestName,
 } from "../lib/isolationNames.js";
 import {
+  isActiveSendingStatus,
   isolationSuspectsDueForEval,
   isTerminalIsolationVerdict,
   liveCampaignForPlacementTrigger,
   minSameEspInbox,
   placementSuspectReason,
   sameEspInboxUgly,
-  shouldQueuePlacementSuspect,
+  shouldRequeueIsolation,
 } from "../lib/placementSuspect.js";
 import { isExcluded } from "./campaignTopUp.js";
 import type { CopyIsolationService } from "./copyIsolation.js";
 import type { IsolationRigService } from "./isolationRig.js";
 import type { CopyCanaryService } from "./copyCanary.js";
+
+/** D165 leftover skip: dead campaigns only. PAUSED still re-reads (D164). */
+function isFinishedSendingStatus(
+  status: string | undefined | null,
+): boolean {
+  const normalized = String(status ?? "").toUpperCase();
+  return normalized === "COMPLETED" || normalized === "STOPPED";
+}
 
 export interface IsolationBranchResult {
   dryRun: boolean;
@@ -77,15 +86,49 @@ export class IsolationBranchService {
     };
     if (!this.config.enableIsolationBranch) return result;
 
+    let campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>> = [];
+    let listedOk = false;
     if (!opts.campaignId) {
-      await this.queueUglyPlacementSuspects();
+      try {
+        campaigns = await this.smartlead.listCampaigns();
+        listedOk = true;
+      } catch (error) {
+        console.warn(
+          "[isolation-branch] could not list campaigns for placement queue",
+          error,
+        );
+      }
+      await this.queueUglyPlacementSuspects(campaigns);
     }
 
-    const targets = opts.campaignId
-      ? [{ campaignId: opts.campaignId }]
+    const statusById = new Map(
+      campaigns.map((row) => [row.id, row.status] as const),
+    );
+    // D164: re-read INCONCLUSIVE (incl. PAUSED + evaluatedAt).
+    // D165: leftover evaluate skips COMPLETED/STOPPED (dead, not sending).
+    // PAUSED stays in the re-read set; Slack/re-queue stay ACTIVE-only.
+    const due = opts.campaignId
+      ? []
       : isolationSuspectsDueForEval(
           this.state.listCopySuspects(),
           (campaignId) => this.state.latestIsolationRunForCampaign(campaignId),
+        );
+    const skippedFinished = listedOk
+      ? due.filter((row) =>
+          isFinishedSendingStatus(statusById.get(row.campaignId)),
+        )
+      : [];
+    if (skippedFinished.length) {
+      console.log(
+        `[isolation-branch] skip ${skippedFinished.length} COMPLETED/STOPPED leftover suspect(s) (D165)`,
+      );
+    }
+    const targets = opts.campaignId
+      ? [{ campaignId: opts.campaignId }]
+      : due.filter(
+          (row) =>
+            !listedOk ||
+            !isFinishedSendingStatus(statusById.get(row.campaignId)),
         );
 
     for (const target of targets) {
@@ -128,7 +171,7 @@ export class IsolationBranchService {
 
   /**
    * D158 — dominant bounce content_block is the same copy-suspect flag
-   * as an ugly canary. Idempotent with shouldQueuePlacementSuspect.
+   * as an ugly canary. Idempotent with shouldRequeueIsolation.
    */
   async queueContentBlockSuspect(campaignId: number): Promise<void> {
     if (!this.config.enableIsolationBranch) return;
@@ -144,7 +187,8 @@ export class IsolationBranchService {
     }
     if (
       isExcluded(campaign, this.config.topUpExcludeCampaigns) ||
-      isAnyShellCampaign(campaign)
+      isAnyShellCampaign(campaign) ||
+      !isActiveSendingStatus(campaign.status)
     ) {
       return;
     }
@@ -152,7 +196,9 @@ export class IsolationBranchService {
       .listCopySuspects()
       .find((row) => row.campaignId === campaignId);
     const openRun = this.state.latestIsolationRunForCampaign(campaignId);
-    if (!shouldQueuePlacementSuspect({ existing, openRun })) return;
+    if (!shouldRequeueIsolation({ existing, openRun, status: campaign.status })) {
+      return;
+    }
     this.state.markCopySuspect({
       campaignId,
       campaignName: campaign.name,
@@ -297,13 +343,17 @@ export class IsolationBranchService {
     this.state.upsertIsolationRun(run);
 
     // D163 — COPY / INFRA / INCONCLUSIVE page Slack (D69 COPY mute is
-    // superseded). Word hunt still pages the phrase + substitute later.
+    // superseded). D165 — INCONCLUSIVE only pages ACTIVE senders.
+    // Word hunt still pages the phrase + substitute later.
     // Deduped per campaign per verdict so the 15-minute sweep stays quiet.
+    const pageInconclusive =
+      decided.verdict === "INCONCLUSIVE" &&
+      isActiveSendingStatus(campaign.status);
     if (
       !opts.silent &&
       (decided.verdict === "COPY" ||
         decided.verdict === "INFRA" ||
-        decided.verdict === "INCONCLUSIVE") &&
+        pageInconclusive) &&
       this.state.getCanonMissAlert(campaignId) !== decided.verdict
     ) {
       await this.slack.notifyIsolationVerdict({
@@ -328,14 +378,9 @@ export class IsolationBranchService {
    * COPY vs INFRA. D163 pages Slack once per campaign per incident
    * (ugly / queued / verdict) from the health-pass CANON-miss pager.
    */
-  async queueUglyPlacementSuspects(): Promise<number> {
-    let campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>> = [];
-    try {
-      campaigns = await this.smartlead.listCampaigns();
-    } catch (error) {
-      console.warn("[isolation-branch] could not list campaigns for placement queue", error);
-      return 0;
-    }
+  async queueUglyPlacementSuspects(
+    campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>>,
+  ): Promise<number> {
 
     const listedTests = normalizeTestList(
       await this.smartDelivery.listTests({}).catch(() => []),
@@ -393,11 +438,12 @@ export class IsolationBranchService {
         continue;
       }
       if (
-        !shouldQueuePlacementSuspect({
+        !shouldRequeueIsolation({
           existing: this.state
             .listCopySuspects()
             .find((row) => row.campaignId === target.campaignId),
           openRun: this.state.latestIsolationRunForCampaign(target.campaignId),
+          status: campaign.status,
         })
       ) {
         continue;

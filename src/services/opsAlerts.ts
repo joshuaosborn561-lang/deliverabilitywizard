@@ -1,4 +1,5 @@
 import type { SlackClient } from "../clients/slack.js";
+import { canonBoard } from "../lib/canonCompliance.js";
 import {
   canonMissText,
   collectCanonMisses,
@@ -115,7 +116,7 @@ export async function alertStageAnomalies(input: {
 }
 
 /**
- * D162 — CANON / healthy-sending misses page Slack once per campaign
+ * D163 — CANON / healthy-sending misses page Slack once per campaign
  * per incident (ugly same-ESP, isolation queued, COPY / INFRA /
  * INCONCLUSIVE). Same incident stays silent across 15-minute sweeps;
  * a transition pages; recovery (inbox back at the bar) clears the stamp.
@@ -176,5 +177,70 @@ export async function alertCanonMisses(input: {
     }
   }
 
+  await pageFirstOpenCanonFindings(input, result);
   return result;
+}
+
+const FINDING_LABEL: Record<string, string> = {
+  understaffed: "not enough inboxes",
+  under_warmed: "inboxes still warming",
+  missing_signature_tag: "signature hole",
+  mailbox_sig: "signature hole",
+  mailbox_gap: "send gap too tight",
+  mailbox_volume: "daily volume off",
+  no_placement_test: "no placement test",
+  missing_canary: "no canary",
+  inbox_missing_known_good: "inbox missing known-good test",
+};
+
+/**
+ * Optional D163: first time a campaign is canon-no (core checklist
+ * hole), page once. Recovery clears the stamp so a later miss can page.
+ */
+async function pageFirstOpenCanonFindings(
+  input: {
+    store: StateStore;
+    slack: Pick<SlackClient, "send">;
+    dryRun?: boolean;
+  },
+  result: { alerted: string[]; recovered: number[] },
+): Promise<void> {
+  const board = canonBoard(input.store.listCampaignChecks());
+  const open = board.campaigns.filter((row) => !row.yes);
+  const openIds = new Set(open.map((row) => row.campaignId));
+
+  for (const campaignId of board.campaigns
+    .filter((row) => row.yes)
+    .map((row) => row.campaignId)) {
+    const key = `findings:${campaignId}`;
+    if (!input.store.getCanonMissStamp(key)) continue;
+    if (input.dryRun) continue;
+    input.store.clearCanonMissStamp(key);
+    if (!openIds.has(campaignId)) result.recovered.push(campaignId);
+  }
+
+  if (input.dryRun) return;
+
+  for (const row of open) {
+    const key = `findings:${row.campaignId}`;
+    if (input.store.getCanonMissStamp(key) === "open") continue;
+    const labels = row.fails
+      .map((kind) => FINDING_LABEL[kind] ?? kind.replace(/_/g, " "))
+      .join(", ");
+    const text = [
+      `:rotating_light: CANON miss — this campaign is not sending healthy`,
+      `• \`${row.name} #${row.campaignId}\` — ${labels}`,
+      "Investigate in-thread. The checklist keeps remediating; this page is the first alert.",
+    ].join("\n");
+    try {
+      await input.slack.send(text, undefined, "ops_alert");
+      input.store.setCanonMissStamp(key, "open");
+      result.alerted.push(`${row.campaignId}:findings`);
+    } catch (error) {
+      console.warn(
+        `[canon-miss] findings page failed for #${row.campaignId}`,
+        error,
+      );
+    }
+  }
 }

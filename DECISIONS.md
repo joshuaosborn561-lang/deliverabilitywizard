@@ -85,7 +85,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D64 | Superseded by D71 |
 | D65 | Live |
 | D66–D68 | Burned numbers — no entry exists |
-| D69 | Live |
+| D69 | Live — COPY-verdict mute superseded by D163; word-hunt phrase Slack stays |
 | D70 | Burned number — no entry exists |
 | D71 | Live — placement-miss silence superseded by D163; owner pages stay |
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
@@ -4498,10 +4498,11 @@ in-repo. Anything out of CANON compliance MUST Slack-alert (channel
 bug. The deliverability agent investigates in-thread.
 
 Tonight Josh got **zero Slack** for 11 ugly canaries (TechEvo 0%
-COPY, SG PE 22%, Goliath MDR 75%, Goliath Edu 0%, BCP 0% INFRA)
-because the D71/D158 contract only paged burned domain / spam-word /
-EOD / ops_alert-for-the-machine — **not** same-ESP under 80%,
-`markCopySuspect`, or COPY / INFRA / INCONCLUSIVE isolation.
+COPY, SG PE 22%, Goliath MDR 75%, Goliath Edu 0%, BCP 0% INFRA).
+Prod root cause: `notifyPlacementResult` was log-only; 
+`notifyIsolationVerdict` called `send()` with no allow kind so
+`[slack-quiet] dropped unclassified`; D69 muted COPY before the
+notify. D71/D158 said placement Slack stays quiet.
 
 Goliath Education #3826690 / #3826693: COPY 26 Aug → INCONCLUSIVE
 28 Aug latest → tonight 0% showed `uglyWithoutIsolation` and never
@@ -4510,33 +4511,40 @@ forever once `evaluatedAt` was set.
 
 **The rule.**
 
-1. Same-ESP inbox under 80% (live or canary) pages Slack when first
-   detected or marked suspect.
-2. Isolation queued / evaluated COPY / INFRA / INCONCLUSIVE pages on
-   **transition**.
-3. Dedupe: once per campaign per incident. Same reading every 15
+1. `notifyPlacementResult` **must send** (not log-only) as
+   `ops_alert` on the first same-ESP under 80% (live or canary).
+2. `notifyIsolationVerdict` **must pass `ops_alert`**. Isolation
+   start / COPY / INFRA / INCONCLUSIVE page. D69 COPY mute is
+   superseded. HEALTHY stays quiet.
+3. Optional: first-open core `canonFindings` (understaffed, no
+   canary, …) pages once per campaign.
+4. Dedupe: once per campaign per incident. Same reading every 15
    minutes stays silent. Recovery (inbox back at the bar) clears the
    stamp so a later miss can page.
-4. Use the existing `ops_alert` lane (D149) — do not add a new Slack
-   product surface. This is not a burned-domain retire ask and does
-   not burn or retire domains.
-5. The word-hunt `copy_word` page (phrase + substitute) still fires
+5. Use the existing `ops_alert` lane (D149) — do not add a new Slack
+   product surface. Existing lanes unchanged: burned-domain, word-hunt
+   `copy_word`, EOD, machine `ops_alert`. Not a retire ask. Do not
+   burn or retire domains.
+6. The word-hunt `copy_word` page (phrase + substitute) still fires
    once when the hunt has the word (D152/D153). COPY isolation itself
    is no longer silent while the hunt is running.
-6. Re-queue when the latest run is INCONCLUSIVE, or when
+7. Re-queue when the latest run is INCONCLUSIVE, or when
    `evaluatedAt` is set but the latest run is not COPY / INFRA /
    HEALTHY covering the still-ugly score. Clear `evaluatedAt` so
    evaluate runs again. An unevaluated suspect, an open word hunt,
    or a latest COPY/INFRA run still owns the campaign.
 
-**Supersedes / amends.** Amends D71 (placement-miss silence), D69
-COPY mute, and D158 clauses 3–4 (quiet placement page + `evaluatedAt`
-lock). Isolation still remediates (D158/D159). Does not resurrect
-D28/D36. Does not change kill-only (D51) or spend gates. Does not
-touch D162's 5.1.8 retire-ask scan.
+**Supersedes / amends.** Supersedes D71 quiet placement/isolation,
+D69 COPY mute, D158 "placement Slack stays quiet", and D158
+`evaluatedAt` lock. Isolation still remediates (D158/D159). Does
+not resurrect D28/D36. Does not change kill-only (D51) or spend
+gates. Does not touch D162's 5.1.8 retire-ask scan.
 
-**Guards.** canon D163: `notifyPlacementResult` / `notifyIsolationVerdict`
-/ `alertCanonMisses` page as `ops_alert`; `shouldQueuePlacementSuspect`
-is the inverse of `hasOpenIsolation`; CANON names Slack-on-miss and
-the re-queue. Tests: first under-bar pages; verdict transition pages;
-INCONCLUSIVE re-queues; covering COPY/INFRA does not.
+**Guards.** canon D163: `notifyPlacementResult` calls `send(` with
+`ops_alert`; `notifyIsolationVerdict` passes `ops_alert`;
+isolationBranch does not skip COPY; ResultMonitor calls
+`notifyPlacementResult`; `alertCanonMisses` on the health pass;
+`shouldQueuePlacementSuspect` is the inverse of `hasOpenIsolation`;
+CANON names Slack-on-miss and the re-queue. Tests: first under-bar
+pages; verdict transition pages; INCONCLUSIVE re-queues; covering
+COPY/INFRA does not.

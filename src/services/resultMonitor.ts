@@ -229,7 +229,7 @@ export class ResultMonitor {
       providers.push({ name: label, inboxPercent: score });
     }
 
-    // D158 — live 80% same-ESP queues isolation. D162 pages Slack from
+    // D158 — live 80% same-ESP queues isolation. D163 pages Slack from
     // the health-pass CANON-miss pager (once per campaign per incident).
     if (!sameEspInboxUgly(providers, this.config.remediationInboxThreshold)) {
       return 0;
@@ -284,6 +284,16 @@ export class ResultMonitor {
       ),
       evaluatedAt: undefined,
     });
+    if (this.state.getCanonMissAlert(target.campaignId) !== "ugly") {
+      await this.slack.notifyPlacementResult({
+        testName: test?.test_name,
+        testId,
+        threshold: this.config.remediationInboxThreshold,
+        providers,
+        remediationThreshold: this.config.remediationInboxThreshold,
+      });
+      this.state.setCanonMissAlert(target.campaignId, "ugly");
+    }
     console.log(
       `[monitor] Queued isolation for #${target.campaignId} from ${target.source}: ${providers
         .filter((p) => p.inboxPercent < this.config.remediationInboxThreshold)

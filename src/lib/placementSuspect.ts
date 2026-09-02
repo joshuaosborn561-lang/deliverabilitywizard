@@ -1,8 +1,8 @@
 /**
  * D158 — same-ESP inbox under the live 80% bar on a canary-copy or live
  * campaign placement is a copy-suspect flag. Isolation then reads canary
- * + known-good (D93/D96). D162 pages Slack once per campaign per
- * incident; D163 re-queues when the latest run is INCONCLUSIVE.
+ * + known-good (D93/D96). D163 pages Slack once per campaign per
+ * incident and re-queues when the latest run is INCONCLUSIVE.
  */
 
 import { isAnyShellCampaign } from "./canaryShell.js";

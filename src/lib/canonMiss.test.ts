@@ -11,7 +11,7 @@ const EDU = {
   campaignName: "Goliath Education",
 };
 
-describe("canon miss incidents (D162)", () => {
+describe("canon miss incidents (D163)", () => {
   it("pages ugly same-ESP when nothing is queued or evaluated", () => {
     const miss = currentCanonMiss({
       ...EDU,
@@ -19,7 +19,7 @@ describe("canon miss incidents (D162)", () => {
       threshold: 80,
     });
     assert.equal(miss?.kind, "ugly");
-    assert.match(miss?.detail ?? "", /canary-copy same-ESP 0%/);
+    assert.match(miss?.detail ?? "", /canary-copy inbox 0%/);
   });
 
   it("prefers the isolation verdict over the ugly reading", () => {
@@ -119,7 +119,7 @@ describe("canon miss incidents (D162)", () => {
       campaignId: 3847794,
       campaignName: "TechEvo SFL Startup Owners AirPods",
       kind: "COPY",
-      detail: "canary-copy same-ESP 0% (bar 80%)",
+      detail: "canary-copy inbox 0% (bar 80%)",
       inboxPercent: 0,
       source: "canary-copy",
     });

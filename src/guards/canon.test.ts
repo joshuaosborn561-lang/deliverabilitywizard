@@ -1081,7 +1081,7 @@ describe("owner intent — D64 staffing Slack is end of day", () => {
 });
 
 describe("owner intent — D69 copy Slack is the word and a one-click edit", () => {
-  it("D69: do not Slack a copy guess; Slack the word and Make the changes", async () => {
+  it("D69/D163: COPY verdict pages; the word hunt still Slacks the phrase + tap", async () => {
     // The old rotation engine (and its copy-guess Slack) is deleted (D130).
     // Copy suspects come from delivery watch (D69) and from ugly same-ESP
     // canary/placement scores (D158), which feed the D93/D96 verdict.
@@ -5131,7 +5131,7 @@ describe("owner intent — D140 bounce reasons are read, not guessed", () => {
 });
 
 describe("owner intent — D158 ugly same-ESP starts isolation", () => {
-  it("D158: canary/live placement under 80% queues isolation; placement Slack stays quiet", async () => {
+  it("D158: canary/live placement under 80% queues isolation (D163 pages Slack)", async () => {
     const { readFile } = await import("node:fs/promises");
     const branch = await readFile(
       new URL("../services/isolationBranch.ts", import.meta.url),
@@ -5197,12 +5197,12 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
         "resultMonitor.ts no longer includes copyCanaries.*.testId.",
       ),
     );
-    assert.doesNotMatch(
+    assert.match(
       monitor,
       /notifyPlacementResult/,
       stop(
-        "ResultMonitor must not pretend to Slack a placement page (D71/D158).",
-        "resultMonitor.ts still calls notifyPlacementResult.",
+        "First same-ESP under 80% pages Slack via notifyPlacementResult (D163).",
+        "resultMonitor.ts no longer calls notifyPlacementResult.",
       ),
     );
     const bounce = await readFile(
@@ -5234,15 +5234,26 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
       "utf8",
     );
     const placementFn = slack.slice(slack.indexOf("async notifyPlacementResult"));
-    const sendInPlacement = placementFn
-      .slice(0, placementFn.indexOf("\n  async ") === -1 ? placementFn.length : placementFn.indexOf("\n  async "))
-      .includes("this.send(");
+    const placementBody = placementFn.slice(
+      0,
+      placementFn.indexOf("\n  async ") === -1
+        ? placementFn.length
+        : placementFn.indexOf("\n  async "),
+    );
     assert.equal(
-      sendInPlacement,
-      false,
+      placementBody.includes("this.send("),
+      true,
       stop(
-        "notifyPlacementResult does not post — isolation is the remediation (D71/D158).",
-        "notifyPlacementResult still calls send().",
+        "notifyPlacementResult must send, not log-only (D163).",
+        "notifyPlacementResult no longer calls send().",
+      ),
+    );
+    assert.match(
+      placementBody,
+      /"ops_alert"/,
+      stop(
+        "notifyPlacementResult must pass an allow kind or send() is slack-quiet dropped (D163).",
+        "notifyPlacementResult sends unclassified.",
       ),
     );
     const decisions = await readFile(
@@ -5526,8 +5537,8 @@ describe("owner intent — D161 client-domain replace is client-named", () => {
   });
 });
 
-describe("owner intent — D162 CANON misses page Slack", () => {
-  it("D162: health pass pages CANON misses as ops_alert, once per incident", async () => {
+describe("owner intent — D163 CANON misses page Slack", () => {
+  it("D163: health pass pages CANON misses as ops_alert, once per incident", async () => {
     const { readFile } = await import("node:fs/promises");
     const index = await readFile(
       new URL("../index.ts", import.meta.url),
@@ -5541,7 +5552,7 @@ describe("owner intent — D162 CANON misses page Slack", () => {
       healthBody,
       /alertCanonMisses/,
       stop(
-        "The 15-minute health sweep pages CANON / healthy-sending misses (D162).",
+        "The 15-minute health sweep pages CANON / healthy-sending misses (D163).",
         "index.ts no longer calls alertCanonMisses inside runHealth.",
       ),
     );
@@ -5553,7 +5564,7 @@ describe("owner intent — D162 CANON misses page Slack", () => {
       ops,
       /alertCanonMisses/,
       stop(
-        "CANON-miss pages live next to the stage watchdog (D162).",
+        "CANON-miss pages live next to the stage watchdog (D163).",
         "opsAlerts.ts lost alertCanonMisses.",
       ),
     );
@@ -5561,7 +5572,7 @@ describe("owner intent — D162 CANON misses page Slack", () => {
       ops,
       /"ops_alert"/,
       stop(
-        "CANON-miss pages use the existing ops_alert lane (D162).",
+        "CANON-miss pages use the existing ops_alert lane (D163).",
         "opsAlerts.ts no longer sends ops_alert.",
       ),
     );
@@ -5569,7 +5580,7 @@ describe("owner intent — D162 CANON misses page Slack", () => {
       ops,
       /setCanonMissAlert/,
       stop(
-        "One page per campaign per incident, stamped in state (D162).",
+        "One page per campaign per incident, stamped in state (D163).",
         "opsAlerts.ts no longer stamps CANON-miss incidents — it would page every 15 minutes.",
       ),
     );
@@ -5578,8 +5589,47 @@ describe("owner intent — D162 CANON misses page Slack", () => {
       slackAllowed("ops_alert"),
       true,
       stop(
-        "ops_alert stays allowed so CANON-miss pages are not slack-quiet dropped (D162/D149).",
+        "ops_alert stays allowed so CANON-miss pages are not slack-quiet dropped (D163/D149).",
         "slackAllowed('ops_alert') is false.",
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const verdictFn = slack.slice(slack.indexOf("async notifyIsolationVerdict"));
+    const verdictBody = verdictFn.slice(
+      0,
+      verdictFn.indexOf("\n  async notifyCopyIsolation") === -1
+        ? verdictFn.length
+        : verdictFn.indexOf("\n  async notifyCopyIsolation"),
+    );
+    assert.match(
+      verdictBody,
+      /"ops_alert"/,
+      stop(
+        "notifyIsolationVerdict must pass an allow kind or unclassified send() is slack-quiet dropped (D163).",
+        "notifyIsolationVerdict still sends unclassified.",
+      ),
+    );
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      branch,
+      /verdict !== "COPY"/,
+      stop(
+        "COPY isolation pages Slack — D69 mute is superseded (D163).",
+        "isolationBranch.ts still skips Slack on COPY.",
+      ),
+    );
+    assert.match(
+      branch,
+      /notifyPlacementResult/,
+      stop(
+        "Isolation start / first under-bar reading pages via notifyPlacementResult (D163).",
+        "isolationBranch.ts no longer calls notifyPlacementResult.",
       ),
     );
     const canon = await readFile(
@@ -5588,17 +5638,25 @@ describe("owner intent — D162 CANON misses page Slack", () => {
     );
     assert.match(
       canon,
+      /healthy-sending misses\*\* \(D163\)/,
+      stop(
+        "CANON Slack contract pages CANON misses once per campaign per incident (D163).",
+        "CANON.md lost the D163 Slack contract.",
+      ),
+    );
+    assert.match(
+      canon,
       /once per campaign per incident/,
       stop(
-        "CANON Slack contract pages CANON misses once per campaign per incident (D162).",
-        "CANON.md lost the D162 Slack contract.",
+        "CANON Slack contract pages CANON misses once per campaign per incident (D163).",
+        "CANON.md lost the per-incident Slack contract.",
       ),
     );
     assert.match(
       canon,
       /Silent findings are a bug/,
       stop(
-        "CANON states silent findings are a bug (D162).",
+        "CANON states silent findings are a bug (D163).",
         "CANON.md lost the silent-findings rule.",
       ),
     );
@@ -5616,10 +5674,10 @@ describe("owner intent — D162 CANON misses page Slack", () => {
     );
     assert.match(
       decisions,
-      /## D162 /,
+      /## D163 /,
       stop(
-        "The CANON-miss Slack rule is in the ledger (D162).",
-        "DECISIONS.md no longer has D162.",
+        "The CANON-miss Slack rule is in the ledger (D163).",
+        "DECISIONS.md no longer has D163.",
       ),
     );
   });

@@ -292,9 +292,16 @@ export class IsolationBranchService {
     run.notes = proof;
     this.state.upsertIsolationRun(run);
 
-    // D69 — a COPY guess is not Slack-worthy. Canaries + word hunt post
-    // once, with the word and a one-click edit.
-    if (!opts.silent && decided.verdict !== "COPY") {
+    // D163 — COPY / INFRA / INCONCLUSIVE page Slack (D69 COPY mute is
+    // superseded). Word hunt still pages the phrase + substitute later.
+    // Deduped per campaign per verdict so the 15-minute sweep stays quiet.
+    if (
+      !opts.silent &&
+      (decided.verdict === "COPY" ||
+        decided.verdict === "INFRA" ||
+        decided.verdict === "INCONCLUSIVE") &&
+      this.state.getCanonMissAlert(campaignId) !== decided.verdict
+    ) {
       await this.slack.notifyIsolationVerdict({
         campaignName: campaign.name,
         clientName: campaign.name,
@@ -305,6 +312,7 @@ export class IsolationBranchService {
         infraSummary: summarizeInfra(infraCheck),
         proof,
       });
+      this.state.setCanonMissAlert(campaignId, decided.verdict);
     }
     await this.state.save();
     return run;
@@ -313,7 +321,7 @@ export class IsolationBranchService {
   /**
    * D158 — canary-copy or live placement same-ESP under the live 80% bar
    * queues the ACTIVE campaign as a copy suspect. Isolation then decides
-   * COPY vs INFRA. D162 pages Slack once per campaign per incident
+   * COPY vs INFRA. D163 pages Slack once per campaign per incident
    * (ugly / queued / verdict) from the health-pass CANON-miss pager.
    */
   async queueUglyPlacementSuspects(): Promise<number> {
@@ -403,6 +411,19 @@ export class IsolationBranchService {
         evaluatedAt: undefined,
       });
       queued += 1;
+      if (
+        !this.config.dryRun &&
+        this.state.getCanonMissAlert(target.campaignId) !== "ugly"
+      ) {
+        await this.slack.notifyPlacementResult({
+          testName: test.test_name,
+          testId: tid,
+          threshold: this.config.remediationInboxThreshold,
+          providers: splits,
+          remediationThreshold: this.config.remediationInboxThreshold,
+        });
+        this.state.setCanonMissAlert(target.campaignId, "ugly");
+      }
       console.log(
         `[isolation-branch] queued #${target.campaignId} from ${target.source}: ${splits
           .map((row) => `${row.name} ${row.inboxPercent.toFixed(0)}%`)

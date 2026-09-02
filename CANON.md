@@ -226,11 +226,15 @@ was auto-written (first time per campaign only, D92/D95), a reconnect
 happened or hard-failed (D94). Plus `ops_alert` pages — the machine
 reporting itself broken (D149): a watchdog stage newly overdue (once per
 episode, recovery noted) and a wrong deploy identity at boot; **and
-CANON / healthy-sending misses** (D163): same-ESP inbox under 80%
-(live or canary) when first detected or marked suspect, and isolation
-queued / evaluated COPY / INFRA / INCONCLUSIVE on transition — **once
-per campaign per incident**, never every 15 minutes. Investigate
-in-thread. Alerts and watches live on Railway, not in a chat session.
+CANON / healthy-sending misses** (D163): `notifyPlacementResult`
+sends the first under-80% Gmail/Outlook reading (not log-only);
+`notifyIsolationVerdict` pages isolation start / COPY / INFRA /
+INCONCLUSIVE and **must pass `ops_alert`** (unclassified `send()` is
+slack-quiet dropped). Optional first-open core checklist hole
+(`canonFindings`) pages once. **Once per campaign per incident**,
+never every 15 minutes. Investigate in-thread. Burned-domain /
+word-hunt / EOD / machine `ops_alert` stay as they are. Alerts and
+watches live on Railway, not in a chat session.
 Everything else — staffing, rest, DNS, runout, pod chatter — stays in
 logs and `/ops`. The signature *ask* buttons
 are dead (D97); the fix is written automatically as

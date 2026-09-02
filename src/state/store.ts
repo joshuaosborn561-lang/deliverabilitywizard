@@ -229,7 +229,7 @@ export interface AppState {
   /** D149 — overdue stages currently paged to Slack (name → ISO paged-at). */
   stageAlertedAt: Record<string, string>;
   /**
-   * D162 — last CANON-miss Slack incident per campaign (id → kind).
+   * D163 — last CANON-miss Slack incident per campaign (id → kind).
    * Same kind stays silent; a transition pages; recovery deletes the stamp.
    */
   canonMissAlerted: Record<string, string>;
@@ -1110,21 +1110,33 @@ export class StateStore {
     delete this.state.stageAlertedAt[name];
   }
 
-  /** D162 — one Slack page per campaign per CANON-miss incident. */
+  /** D163 — one Slack page per campaign per CANON-miss incident. */
   listCanonMissAlerts(): Record<string, string> {
     return this.state.canonMissAlerted;
   }
 
   getCanonMissAlert(campaignId: number): string | undefined {
-    return this.state.canonMissAlerted[String(campaignId)];
+    return this.getCanonMissStamp(String(campaignId));
   }
 
   setCanonMissAlert(campaignId: number, incident: string): void {
-    this.state.canonMissAlerted[String(campaignId)] = incident;
+    this.setCanonMissStamp(String(campaignId), incident);
   }
 
   clearCanonMissAlert(campaignId: number): void {
-    delete this.state.canonMissAlerted[String(campaignId)];
+    this.clearCanonMissStamp(String(campaignId));
+  }
+
+  getCanonMissStamp(key: string): string | undefined {
+    return this.state.canonMissAlerted[key];
+  }
+
+  setCanonMissStamp(key: string, incident: string): void {
+    this.state.canonMissAlerted[key] = incident;
+  }
+
+  clearCanonMissStamp(key: string): void {
+    delete this.state.canonMissAlerted[key];
   }
 
   /** D85 — one fleet-level fact instead of a finding per campaign. */

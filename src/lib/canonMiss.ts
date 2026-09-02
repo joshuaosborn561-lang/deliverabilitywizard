@@ -1,5 +1,5 @@
 /**
- * D162 — a CANON / healthy-sending miss pages Slack once per campaign
+ * D163 — a CANON / healthy-sending miss pages Slack once per campaign
  * per incident. Same-ESP under 80%, a newly queued suspect, and an
  * isolation verdict of COPY / INFRA / INCONCLUSIVE are incidents.
  * A 15-minute re-read of the same incident is not.
@@ -89,7 +89,7 @@ function missDetail(opts: {
   if (opts.score) {
     const where =
       opts.score.source === "canary-copy" ? "canary-copy" : "live placement";
-    return `${where} same-ESP ${opts.score.inboxPercent.toFixed(0)}% (bar ${opts.threshold}%)`;
+    return `${where} inbox ${opts.score.inboxPercent.toFixed(0)}% (bar ${opts.threshold}%)`;
   }
   if (opts.suspect?.reason) return opts.suspect.reason;
   if (opts.latestRun?.reason) return opts.latestRun.reason;
@@ -153,7 +153,7 @@ export function canonMissText(row: CanonMissRow): string {
 }
 
 function missHeadline(kind: CanonMissKind): string {
-  if (kind === "ugly") return "same-ESP inbox under 80%";
+  if (kind === "ugly") return "inbox under 80% on Gmail or Outlook";
   if (kind === "queued") return "isolation queued";
   if (kind === "COPY") return "isolation evaluated COPY";
   if (kind === "INFRA") return "isolation evaluated INFRA";

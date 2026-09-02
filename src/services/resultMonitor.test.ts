@@ -36,11 +36,11 @@ function fakeSmartDelivery(opts: {
   } as unknown as SmartDeliveryClient;
 }
 
-function fakeSlack(): SlackClient {
+function fakeSlack(pages: string[] = []): SlackClient {
   return {
     send: async () => undefined,
-    notifyPlacementResult: async () => {
-      throw new Error("notifyPlacementResult must not be the remediation path");
+    notifyPlacementResult: async (details: { testName?: string }) => {
+      pages.push(details.testName ?? "placement");
     },
     notifyBlacklist: async () => undefined,
     notifyLowDeliverability: async () => undefined,
@@ -67,17 +67,19 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
       ],
     } as unknown as SmartleadClient;
 
+    const pages: string[] = [];
     const monitor = new ResultMonitor(
       config,
       fakeSmartDelivery(),
       smartlead,
-      fakeSlack(),
+      fakeSlack(pages),
       state,
     );
     const result = await monitor.run();
 
     const suspect = state.listCopySuspects()[0];
     assert.ok(suspect, "expected a copy suspect");
+    assert.equal(pages.length, 1, "first same-ESP under 80% pages Slack");
     assert.equal(suspect.campaignId, AIRPODS.id);
     assert.match(String(suspect.reason), /Canary-copy same-ESP/);
     assert.equal(result.lowDeliverabilityAlerts, 1);

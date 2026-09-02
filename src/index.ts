@@ -747,7 +747,7 @@ async function main(): Promise<void> {
       // D149 — the watch lives here, not in a chat session: page Slack
       // once per overdue-stage episode, and once again on recovery.
       await alertStageAnomalies({ store: state, slack, dryRun: config.dryRun });
-      // D162 — same-ESP under 80% / isolation queued / COPY / INFRA /
+      // D163 — same-ESP under 80% / isolation queued / COPY / INFRA /
       // INCONCLUSIVE pages once per campaign per incident (not every 15m).
       await alertCanonMisses({
         store: state,

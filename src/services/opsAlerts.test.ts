@@ -145,7 +145,7 @@ describe("D149 — the stage watchdog pages Slack, once per episode", () => {
   });
 });
 
-describe("D162 — CANON misses page Slack, once per campaign per incident", () => {
+describe("D163 — CANON misses page Slack, once per campaign per incident", () => {
   async function seeded() {
     const s = store();
     await s.load();
@@ -212,6 +212,30 @@ describe("D162 — CANON misses page Slack, once per campaign per incident", () 
     assert.deepEqual(rec.recovered, [3847794]);
     assert.equal(s.getCanonMissAlert(3847794), undefined);
     assert.equal(r.sends.length, 1, "recovery is silent");
+  });
+
+  it("pages a first-open core checklist hole once", async () => {
+    const s = store();
+    await s.load();
+    s.upsertCampaignCheck({
+      campaignId: 3847794,
+      name: "TechEvo SFL Startup Owners AirPods",
+      firstSeenAt: "2026-09-01T00:00:00.000Z",
+      firstCheckAt: "2026-09-01T00:00:00.000Z",
+      firstPassedAt: null,
+      lastSweepAt: "2026-09-02T04:00:00.000Z",
+      lastKind: "hourly",
+      findings: ["missing_canary: none"],
+    });
+    const r = recorder();
+    const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.ok(first.alerted.includes("3847794:findings"));
+    assert.equal(r.sends.length, 1);
+    assert.match(r.sends[0].text, /not sending healthy/);
+    assert.match(r.sends[0].text, /no canary/);
+    const second = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.equal(second.alerted.includes("3847794:findings"), false);
+    assert.equal(r.sends.length, 1);
   });
 
   it("dry-run pages nothing and stamps nothing", async () => {

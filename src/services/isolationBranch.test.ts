@@ -78,8 +78,15 @@ async function buildBranch(opts: {
     getRdnsDetails: async () => null,
     getIpAnalytics: async () => null,
   };
+  const isolationPages: string[] = [];
+  const placementPages: number[] = [];
   const slack = {
-    notifyIsolationVerdict: async () => undefined,
+    notifyIsolationVerdict: async (details: { verdict: string }) => {
+      isolationPages.push(details.verdict);
+    },
+    notifyPlacementResult: async () => {
+      placementPages.push(1);
+    },
   };
   const copyIsolation = {
     runForCampaign: async (run: { campaignId: number }) => {
@@ -125,12 +132,13 @@ async function buildBranch(opts: {
     evaluated.push(campaignId);
     return originalEvaluate(campaignId, evaluateOpts);
   };
-  return { branch, state, evaluated, teardowns, armed };
+  return { branch, state, evaluated, teardowns, armed, isolationPages, placementPages };
 }
 
 describe("IsolationBranchService placement queue (D158)", () => {
   it("canary-copy under 80% marks a suspect and evaluates the live campaign", async () => {
-    const { branch, state, evaluated, teardowns } = await buildBranch({
+    const { branch, state, evaluated, teardowns, isolationPages, placementPages } =
+      await buildBranch({
       knownGoodInbox: 95,
       canaryInbox: 0,
     });
@@ -148,6 +156,8 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.ok(score, "15-minute on-ramp persists the same-ESP reading");
     assert.equal(score.source, "canary-copy");
     assert.equal(score.inboxPercent, 0);
+    assert.ok(placementPages.length >= 1, "first under-bar reading pages Slack");
+    assert.ok(isolationPages.includes("COPY"), "COPY isolation pages Slack (D163)");
   });
 
   it("does not re-hunt on the next tick after a terminal verdict", async () => {

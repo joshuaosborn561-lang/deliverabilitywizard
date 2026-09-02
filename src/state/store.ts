@@ -254,6 +254,8 @@ export interface StageHealthRecord {
   lastError: string | null;
   lastDurationMs: number | null;
   consecutiveFailures: number;
+  /** D166 — why the last success was an idle tick, or null if work ran. */
+  lastSkipReason?: string | null;
 }
 
 export interface BugRemediationRecord {
@@ -1073,7 +1075,7 @@ export class StateStore {
   }
 
   /** D84 — watchdog bookkeeping for one named stage. */
-  recordStageOk(name: string, durationMs: number): void {
+  recordStageOk(name: string, durationMs: number, skipReason?: string): void {
     const existing = this.state.stageHealth[name];
     this.state.stageHealth[name] = {
       lastOkAt: new Date().toISOString(),
@@ -1081,6 +1083,7 @@ export class StateStore {
       lastError: existing?.lastError ?? null,
       lastDurationMs: durationMs,
       consecutiveFailures: 0,
+      lastSkipReason: skipReason ?? null,
     };
   }
 
@@ -1092,6 +1095,7 @@ export class StateStore {
       lastError: error.slice(0, 500),
       lastDurationMs: existing?.lastDurationMs ?? null,
       consecutiveFailures: (existing?.consecutiveFailures ?? 0) + 1,
+      lastSkipReason: existing?.lastSkipReason ?? null,
     };
   }
 

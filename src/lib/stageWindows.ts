@@ -6,7 +6,9 @@
  * for most of every cycle (scan-backfill and mailbox-settings-full alarmed
  * all afternoon on 2026-08-26), which trains people to ignore the watchdog.
  * `null` marks an event-driven stage that runs only when something triggers
- * it — never overdue.
+ * it — never overdue. D166: `pod-cover` ticks every health pass (idle is a
+ * success) so its window is the 15-minute sweep, not null. A six-day frozen
+ * lastOkAt with consecutiveFailures=0 was silent green on production.
  *
  * This map is also the prune list: a persisted stageHealth record whose
  * name is missing here belongs to a stage the code no longer has, and is
@@ -31,20 +33,29 @@ export interface OverdueStage {
   windowMs: number;
 }
 
+export interface StageHealthRow {
+  lastOkAt: string | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastSkipReason?: string | null;
+}
+
+/** Shape `/health` publishes for one stage (D84 + overdue bit, D166). */
+export interface StageHealthView {
+  lastOkAt: string | null;
+  consecutiveFailures: number;
+  lastError: string | null;
+  overdue: boolean;
+  lastSkipReason: string | null;
+}
+
 /**
  * D131/D149 — the one place "overdue" is judged, shared by the log
  * scoreboard and the Slack pager so the two can never disagree. An
  * event-driven stage (window null) is never overdue.
  */
 export function overdueStages(
-  stageHealth: Record<
-    string,
-    {
-      lastOkAt: string | null;
-      consecutiveFailures: number;
-      lastError: string | null;
-    }
-  >,
+  stageHealth: Record<string, StageHealthRow>,
   now = Date.now(),
 ): OverdueStage[] {
   const out: OverdueStage[] = [];
@@ -68,6 +79,42 @@ export function overdueStages(
   return out;
 }
 
+/**
+ * D166 — `/health` names overdue stages instead of leaving a six-day
+ * lastOkAt next to consecutiveFailures=0 for a human to notice.
+ */
+export function stageHealthView(
+  stageHealth: Record<string, StageHealthRow>,
+  now = Date.now(),
+): {
+  stages: Record<string, StageHealthView>;
+  overdueStages: OverdueStage[];
+} {
+  const overdue = overdueStages(stageHealth, now);
+  const overdueNames = new Set(overdue.map((row) => row.name));
+  const stages: Record<string, StageHealthView> = {};
+  for (const [name, row] of Object.entries(stageHealth)) {
+    stages[name] = {
+      lastOkAt: row.lastOkAt,
+      consecutiveFailures: row.consecutiveFailures,
+      lastError: row.consecutiveFailures > 0 ? row.lastError : null,
+      overdue: overdueNames.has(name),
+      lastSkipReason: row.lastSkipReason ?? null,
+    };
+  }
+  return { stages, overdueStages: overdue };
+}
+
+/** Idle tick from `stage()` — lastOkAt refreshes, SmartDelivery work does not. */
+export function stageIdleReason(out: unknown): string | undefined {
+  if (!out || typeof out !== "object") return undefined;
+  const rec = out as { skipped?: unknown; reason?: unknown };
+  if (rec.skipped === true && typeof rec.reason === "string" && rec.reason) {
+    return rec.reason;
+  }
+  return undefined;
+}
+
 export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   // Canon sweep — every 15 minutes (D84).
   // Umbrella record for the whole pass (recorded directly at the end of
@@ -83,7 +130,7 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "qa-unpause": HEALTH_MS,
   "campaign-check-first": HEALTH_MS,
   "campaign-health": HEALTH_MS,
-  "pod-cover": null, // D89 — runs only while an inbox lacks known-good coverage
+  "pod-cover": HEALTH_MS, // D166 — watchdog tick every health pass; work still D89-gated
   "mailbox-gap": HEALTH_MS,
   // Slower converges piggybacked on the sweep.
   "mailbox-settings-full": SIX_HOURLY_MS,

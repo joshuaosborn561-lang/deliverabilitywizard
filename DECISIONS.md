@@ -180,6 +180,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D163 | Live | CANON / healthy-sending misses page Slack once per campaign per incident |
 | D164 | Live — ACTIVE-only clause added by D165 | INCONCLUSIVE (or uncovered evaluatedAt) re-queues isolation — evaluatedAt is not a lock |
 | D165 | Live | Isolation INCONCLUSIVE Slack pages and D164 re-queue are ACTIVE-only — COMPLETED / STOPPED / PAUSED stay quiet |
+| D166 | Live | pod-cover ticks every health pass so lastOkAt cannot freeze; /health names overdue stages |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 | D168 | Live | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
 
@@ -4624,6 +4625,57 @@ known and the campaign is not ACTIVE; `shouldRequeueIsolation`
 gates D164; isolation-branch leftover evaluate skips non-ACTIVE;
 CANON names ACTIVE-only INCONCLUSIVE. Tests: COMPLETED must not
 page INCONCLUSIVE; ACTIVE still pages.
+
+---
+
+## D166 — pod-cover ticks every health pass; /health names overdue stages
+
+**Decision (2026-09-02).** Production `/health` on main (`6cda556`,
+D165) showed `pod-cover.lastOkAt` stuck at `2026-08-27T07:09:11Z`
+(~6 days) with `consecutiveFailures: 0` and `lastError: null`.
+The same night's 6-hour monitor refreshed `pod-controls` at
+`2026-09-02T06:32:01Z`. `canonFindings` had zero
+`inbox_missing_known_good`. Fast 15-minute stages were healthy.
+
+`pod-cover` only entered `stage()` when findings existed and
+`lastPodControlAt` was ≥55 minutes old (D89). A clean board
+skipped the wrapper entirely, so lastOkAt froze. The overdue
+window was `null` (D131 event-driven), so the watchdog, Slack
+pager, and `/health` all treated six silent days as fine.
+
+Known-good coverage is still required (D56/D89/D131). The 6-hour
+`pod-controls` pass is the scheduled grower; `pod-cover` stays
+the hourly backfill when findings exist. The hole is the
+watchdog, not the grower.
+
+**The rule.**
+
+1. Health always runs `stage("pod-cover")`. No findings, hourly
+   throttle, or `ENABLE_POD_CONTROLS` off is an **idle success**
+   (`skipped` + reason: `covered` / `throttled` / `disabled`)
+   that refreshes lastOkAt. The SmartDelivery grow still runs
+   only when findings exist and the hour is due (D89).
+2. `pod-cover`'s overdue window is the 15-minute sweep
+   (`HEALTH_MS`), not null. A missed tick is overdue. A correct
+   idle tick is not.
+3. `/health` publishes `overdueStages`, per-stage `overdue`, and
+   `lastSkipReason`, using the same `overdueStages()` judgement
+   the log scoreboard and Slack pager already share (D149).
+4. `scan-backfill` stays event-driven / never overdue (D116/D131).
+   D131's "null = never overdue" still applies to that stage.
+
+**Supersedes / amends.** Amends D131 for `pod-cover` only: the
+*watchdog tick* is scheduled; the *work* stays D89-gated. Does
+not change kill-only, spend gates, or the 6-hour `pod-controls`
+pass. Does not START/STOP campaigns.
+
+**Guards.** canon D166: `stage("pod-cover")` is not wrapped in
+`if (missingKnownGood)`; window is `HEALTH_MS`; `/health` uses
+`stageHealthView`; CANON names the tick and overdue payload.
+Tests: idle tick is not overdue; 6-day silence is; `/health`
+shape includes `overdue` / `overdueStages` / `lastSkipReason`.
+
+---
 
 ## D167 — Mid-chain monitor kill cannot leave a 6h overdue cliff
 

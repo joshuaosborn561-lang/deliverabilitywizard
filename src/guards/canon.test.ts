@@ -2170,6 +2170,14 @@ describe("owner intent — D84 canon sweep", () => {
         "index.ts reports counts only — a 46-wide hole cannot be read.",
       ),
     );
+    assert.match(
+      index,
+      /overdueStages/,
+      stop(
+        "/health names overdue stages (D166).",
+        "index.ts /health lost the overdueStages payload.",
+      ),
+    );
 
     const fanOut = await read("../services/clientFanOut.ts");
     assert.doesNotMatch(
@@ -3208,11 +3216,11 @@ describe("owner intent — D149 alerts and watches live on Railway", () => {
       "../lib/stageWindows.js"
     );
     assert.equal(
-      STAGE_OVERDUE_WINDOWS_MS["pod-cover"],
+      STAGE_OVERDUE_WINDOWS_MS["scan-backfill"],
       null,
       stop(
-        "pod-cover is event-driven and never overdue (D131).",
-        "The registry lost pod-cover's null window.",
+        "scan-backfill is event-driven and never overdue (D116/D131).",
+        "The registry lost scan-backfill's null window.",
       ),
     );
     const now = Date.now();
@@ -3223,7 +3231,11 @@ describe("owner intent — D149 alerts and watches live on Railway", () => {
           consecutiveFailures: 1,
           lastError: "HTTP 429",
         },
-        "pod-cover": { lastOkAt: null, consecutiveFailures: 5, lastError: "boom" },
+        "scan-backfill": {
+          lastOkAt: null,
+          consecutiveFailures: 5,
+          lastError: "boom",
+        },
         reconnect: {
           lastOkAt: new Date(now - 60 * 1000).toISOString(),
           consecutiveFailures: 0,
@@ -5992,6 +6004,81 @@ describe("owner intent — D165 isolation INCONCLUSIVE is ACTIVE-only", () => {
       stop(
         "The ACTIVE-only INCONCLUSIVE rule is in the ledger (D165).",
         "DECISIONS.md no longer has D165.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D166 pod-cover watchdog tick", () => {
+  it("D166: pod-cover ticks every health pass; /health names overdue", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      index,
+      /await stage\("pod-cover"/,
+      stop(
+        "Health always ticks pod-cover so lastOkAt cannot freeze (D166).",
+        "index.ts no longer calls stage(\"pod-cover\").",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /if \(missingKnownGood && podAgeMs >= 55/,
+      stop(
+        "pod-cover's stage() wrapper is not gated on findings (D166).",
+        "index.ts still skips stage(\"pod-cover\") when the board is covered — that froze lastOkAt for six days.",
+      ),
+    );
+    assert.match(
+      index,
+      /stageHealthView/,
+      stop(
+        "/health uses the shared overdue view (D166).",
+        "index.ts /health no longer calls stageHealthView.",
+      ),
+    );
+    const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
+    assert.equal(
+      STAGE_OVERDUE_WINDOWS_MS["pod-cover"],
+      45 * 60 * 1000,
+      stop(
+        "pod-cover overdue window matches the 15-minute sweep (D166).",
+        `pod-cover window is ${STAGE_OVERDUE_WINDOWS_MS["pod-cover"]}.`,
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /D166/,
+      stop(
+        "CANON names the pod-cover watchdog tick (D166).",
+        "CANON.md lost D166.",
+      ),
+    );
+    assert.match(
+      canon,
+      /overdueStages/,
+      stop(
+        "CANON names the overdue /health payload (D166).",
+        "CANON.md lost overdueStages.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D166 — pod-cover ticks every health pass/,
+      stop(
+        "The pod-cover watchdog tick is in the ledger (D166).",
+        "DECISIONS.md no longer has D166.",
       ),
     );
   });

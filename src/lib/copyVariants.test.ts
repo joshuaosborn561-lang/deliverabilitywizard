@@ -4,6 +4,7 @@ import {
   generateCopyVariants,
   isSingleVariable,
   rankVariants,
+  sentenceElement,
 } from "./copyVariants.js";
 
 const BODY = [
@@ -48,6 +49,24 @@ describe("copy variants", () => {
       ),
       false,
     );
+  });
+
+  it("keeps the full offer sentence as the variant element (D168)", () => {
+    const sentence =
+      "I've got a jet ski sitting unused this Saturday morning and thought you might want to take it out on the lake.";
+    assert.ok(sentence.length > 80);
+    const variants = generateCopyVariants({
+      subject: "Hi",
+      body: `Hi there,\n\n${sentence}\n\nWorth a chat?`,
+      controlSubject: "Quick check-in",
+    });
+    const phrase = variants.find((row) =>
+      row.element.toLowerCase().includes("jet ski"),
+    );
+    assert.ok(phrase, "jet ski sentence must be a variant element");
+    assert.match(phrase.element, /on the lake/i);
+    assert.ok(phrase.element.length > 80);
+    assert.equal(sentenceElement(sentence), sentence);
   });
 
   it("ranks flagged terms first then caps", () => {

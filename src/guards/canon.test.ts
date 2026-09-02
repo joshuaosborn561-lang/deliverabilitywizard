@@ -4793,16 +4793,48 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
 
   it("D152: suggested swap keeps inboxing for gift-bait openers", async () => {
     const { readFile } = await import("node:fs/promises");
+    const { suggestedCopySwap, classifyLineJob } = await import(
+      "../lib/isolationActions.js"
+    );
+    assert.equal(
+      classifyLineJob(
+        "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+      ),
+      "gift-or-experience-offer",
+      stop(
+        "Gift-bait openers are classified as an offer job (D152/D168).",
+        "classifyLineJob lost the Air Pods offer.",
+      ),
+    );
+    const swap = suggestedCopySwap(
+      "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+    );
+    assert.match(
+      swap,
+      /Air\s*Pods/i,
+      stop(
+        "Gift-bait openers get a substitute that keeps the offer (D152/D168).",
+        "suggestedCopySwap dropped AirPods intent.",
+      ),
+    );
+    assert.doesNotMatch(
+      swap,
+      /pen-test|school-district|Quick note/i,
+      stop(
+        "Offer openers must not become pen-test or Quick note (D152/D168).",
+        `suggestedCopySwap returned ${swap}`,
+      ),
+    );
     const actions = await readFile(
       new URL("../lib/isolationActions.ts", import.meta.url),
       "utf8",
     );
     assert.match(
       actions,
-      /Air Pods|gift-bait|pen-test work/,
+      /classifyLineJob|gift-or-experience-offer/,
       stop(
         "Gift-bait openers get a substitute, not a blank delete (D152).",
-        "suggestedCopySwap lost the Air Pods / gift-bait branch.",
+        "suggestedCopySwap lost the line-job classifier.",
       ),
     );
     const proof = await readFile(
@@ -6060,6 +6092,126 @@ describe("owner intent — D167 monitor chain survives a mid-sitting kill", () =
       stop(
         "CANON says leftovers resume on the health tick, not the 6h cron (D167).",
         "CANON.md lost the resume-on-health sentence.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D168 word-hunt suggested edit keeps the offer", () => {
+  it("D168: offer openers keep gift/tickets/jet-ski/AirPods, never Quick note or pen-test", async () => {
+    const { suggestedCopySwap, classifyLineJob } = await import(
+      "../lib/isolationActions.js"
+    );
+    const cases: Array<{ line: string; offer: RegExp }> = [
+      {
+        line: "I've got a jet ski you can take out this weekend.",
+        offer: /jet\s*ski/i,
+      },
+      {
+        line: "I've got Red Sox tickets if you want them.",
+        offer: /tickets|Red Sox/i,
+      },
+      {
+        line: "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
+        offer: /tickets/i,
+      },
+      {
+        line:
+          "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+        offer: /Air\s*Pods/i,
+      },
+    ];
+    for (const row of cases) {
+      assert.equal(
+        classifyLineJob(row.line),
+        "gift-or-experience-offer",
+        stop(
+          "Offer openers classify as gift-or-experience-offer (D168).",
+          `${row.line} classified as ${classifyLineJob(row.line)}.`,
+        ),
+      );
+      const swap = suggestedCopySwap(row.line);
+      assert.match(
+        swap,
+        row.offer,
+        stop(
+          "The suggested edit keeps the offer keyword (D168).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+      assert.doesNotMatch(
+        swap,
+        /pen-test|school-district|Quick note/i,
+        stop(
+          "Offer openers must not become pen-test or Quick note (D168).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+    }
+
+    const { readFile } = await import("node:fs/promises");
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      actions,
+      /from our school-district pen-test work/,
+      stop(
+        "School-district pen-test is retired (D168).",
+        "isolationActions.ts still hard-codes the Goliath pen-test bridge.",
+      ),
+    );
+    assert.doesNotMatch(
+      actions,
+      /return "Quick note —"/,
+      stop(
+        "Quick note — is not the default substitute (D168).",
+        "suggestedCopySwap still returns Quick note —.",
+      ),
+    );
+    const variants = await readFile(
+      new URL("../lib/copyVariants.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      variants,
+      /sentence\.slice\(0,\s*80\)/,
+      stop(
+        "Hunt sentence elements keep fuller context, not slice(0, 80) (D168).",
+        "copyVariants.ts still truncates sentence elements to 80 chars.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D168\*\*/,
+      stop(
+        "CANON is as of D168.",
+        "CANON.md header was not bumped to D168.",
+      ),
+    );
+    assert.match(
+      canon,
+      /gift-or-experience|job classifier/,
+      stop(
+        "CANON names the line-job classifier (D168).",
+        "CANON.md lost the D168 offer-preserving substitute rule.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D168 — Word-hunt suggested edit keeps the offer/,
+      stop(
+        "The offer-preserving substitute rule is in the ledger (D168).",
+        "DECISIONS.md no longer has D168.",
       ),
     );
   });

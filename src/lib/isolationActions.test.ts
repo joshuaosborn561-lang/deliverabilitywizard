@@ -4,6 +4,7 @@ import type { SlackClient } from "../clients/slack.js";
 import { StateStore } from "../state/store.js";
 import {
   buildIsolationAction,
+  classifyLineJob,
   dismissPendingSignatureAsks,
   remindPendingIsolationActions,
   requestIsolationAction,
@@ -190,17 +191,116 @@ describe("D137 — a denied isolation-domain buy also never re-asks", () => {
   });
 });
 
-describe("suggestedCopySwap — D152 keep inboxing", () => {
-  it("proposes a substitute for gift-bait openers instead of blank delete", () => {
-    const swap = suggestedCopySwap(
-      "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+function assertOfferSwap(element: string, offer: RegExp, context?: string) {
+  const swap = suggestedCopySwap(element, context ? { context } : undefined);
+  assert.match(swap, offer, `offer keyword lost for ${JSON.stringify(element)}`);
+  assert.doesNotMatch(
+    swap,
+    /pen-test|school-district|Quick note/i,
+    `offer opener must not become pen-test or Quick note: ${swap}`,
+  );
+  assert.notEqual(swap.trim(), "");
+}
+
+describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
+  it("classifies spam-token / offer / CTA / generic", () => {
+    assert.equal(classifyLineJob("winner"), "spam-token");
+    assert.equal(
+      classifyLineJob("I've got a jet ski you can take out this weekend."),
+      "gift-or-experience-offer",
     );
-    assert.match(swap, /pen-test|Quick note|useful/i);
-    assert.notEqual(swap, "");
+    assert.equal(
+      classifyLineJob("Worth a reply?"),
+      "cta",
+    );
+    assert.equal(
+      classifyLineJob("We help commercial properties around Atlanta."),
+      "generic",
+    );
   });
 
-  it("still deletes pure spam tokens", () => {
+  it("keeps AirPods intent and drops bait phrasing", () => {
+    assert.equal(
+      classifyLineJob(
+        "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+      ),
+      "gift-or-experience-offer",
+    );
+    assertOfferSwap(
+      "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+      /Air\s*Pods/i,
+    );
+  });
+
+  it("keeps jet ski intent without requiring 'for you'", () => {
+    assertOfferSwap(
+      "I've got a jet ski you can take out this weekend.",
+      /jet\s*ski/i,
+    );
+    assertOfferSwap("Got a jet ski sitting unused Saturday.", /jet\s*ski/i);
+  });
+
+  it("keeps Red Sox / Local_Sports_Team ticket offers", () => {
+    assertOfferSwap(
+      "I've got Red Sox tickets if you want them.",
+      /tickets|Red Sox/i,
+    );
+    assertOfferSwap(
+      "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
+      /tickets/i,
+    );
+    const local = suggestedCopySwap(
+      "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
+    );
+    assert.match(local, /Local_Sports_Team|tickets/i);
+  });
+
+  it("uses fuller sentence context when the hunt slice hid the offer", () => {
+    const full =
+      "Wanted to see if you were around because a client left us their extra pair of AirPods.";
+    const sliced = full.slice(0, 80);
+    assert.equal(
+      classifyLineJob(sliced, { context: full }),
+      "gift-or-experience-offer",
+    );
+    assertOfferSwap(sliced, /Air\s*Pods/i, full);
+  });
+
+  it("does not emit Quick note — or school-district pen-test for offers", () => {
+    for (const line of [
+      "I've got a jet ski you can take out this weekend.",
+      "I've got Red Sox tickets if you want them.",
+      "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+    ]) {
+      const swap = suggestedCopySwap(line, { campaignName: "TechEvo AirPods" });
+      assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
+      assert.doesNotMatch(swap, /^Quick note —$/);
+    }
+    const goliath = suggestedCopySwap(
+      "I've got a pair of Air Pods for you.",
+      { campaignName: "Goliath L1 AirPods", client: "Goliath" },
+    );
+    assert.match(goliath, /Air\s*Pods/i);
+    assert.doesNotMatch(goliath, /pen-test|school-district|Quick note/i);
+  });
+
+  it("CTA gift closers keep the offer, not a receipts-report rewrite", () => {
+    const swap = suggestedCopySwap(
+      "P.S. Tickets are yours either way just for your time.",
+    );
+    assert.match(swap, /tickets/i);
+    assert.doesNotMatch(swap, /receipts report|pen-test|Quick note/i);
+  });
+
+  it("still deletes pure spam tokens and maps synonyms", () => {
     assert.equal(suggestedCopySwap("winner"), "");
     assert.equal(suggestedCopySwap("free"), "complimentary");
+  });
+
+  it("generic long lines keep their meaning instead of Quick note —", () => {
+    const line = "We help commercial properties around Atlanta use their building as an asset.";
+    const swap = suggestedCopySwap(line);
+    assert.match(swap, /commercial properties|Atlanta/i);
+    assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
   });
 });

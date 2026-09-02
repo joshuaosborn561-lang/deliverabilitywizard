@@ -148,7 +148,9 @@ export function generateCopyVariants(source: VariantSource): CopyVariant[] {
     if (nextBody === undefined) continue;
     pushIfSingle(out, original, {
       kind: "phrase",
-      element: sentence.slice(0, 80),
+      // D168 — keep enough of the sentence that suggestedCopySwap can
+      // see the offer noun. Hunt still deletes the full sentence.
+      element: sentenceElement(sentence),
       subject: source.subject,
       body: nextBody.replace(/\n{3,}/g, "\n\n").trim(),
     });
@@ -218,6 +220,15 @@ export function rankVariants(
   });
   scored.sort((a, b) => a.rank - b.rank || a.index - b.index);
   return scored.slice(0, cap).map((row) => row.variant);
+}
+
+/** Slack + fleet-apply cap. Was 80; that hid jet-ski / tickets nouns. */
+export const VARIANT_ELEMENT_MAX = 400;
+
+export function sentenceElement(sentence: string): string {
+  return sentence.length <= VARIANT_ELEMENT_MAX
+    ? sentence
+    : sentence.slice(0, VARIANT_ELEMENT_MAX);
 }
 
 function uniqueTerms(terms: string[]): string[] {

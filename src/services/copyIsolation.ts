@@ -310,7 +310,15 @@ export class CopyIsolationService {
     }
     const winner = result.recovered[0];
     if (winner) {
-      const swap = suggestedCopySwap(winner.element);
+      const copy = await this.loadCampaignCopy(
+        run.campaignId,
+        run.suspectTestId,
+      ).catch(() => ({}) as { subject?: string; body?: string });
+      const swap = suggestedCopySwap(winner.element, {
+        context: [copy.subject, copy.body].filter(Boolean).join("\n"),
+        campaignName: run.campaignName,
+        client: run.client,
+      });
       const proof = copySwapProof({
         campaignName: run.campaignName ?? `Campaign ${run.campaignId}`,
         element: winner.element,

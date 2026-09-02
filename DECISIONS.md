@@ -167,7 +167,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
 | D150 | Live — replacement naming amended by D161 | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
-| D152 | Live | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
+| D152 | Live — suggestion quality amended by D168 | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
 | D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
 | D154 | Live | Client A/B rest must not restore under-warmed inboxes — that was the in-app Parlay/Culturefits boomerang |
 | D155 | Superseded by D157 — the null "clear" was as dead as the 100s (handler discards the field); rule 3 (write-ok is never verification) survives, generalized | Smartlead "off" = clear the field (null) — a numeric 100 left bounce protection enabled and it paused a 36%-bounce campaign |
@@ -181,6 +181,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D164 | Live — ACTIVE-only clause added by D165 | INCONCLUSIVE (or uncovered evaluatedAt) re-queues isolation — evaluatedAt is not a lock |
 | D165 | Live | Isolation INCONCLUSIVE Slack pages and D164 re-queue are ACTIVE-only — COMPLETED / STOPPED / PAUSED stay quiet |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
+| D168 | Live | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
 
 ---
 
@@ -4679,3 +4680,52 @@ health kicks `kickMonitorResume` and listen/boot does not call
 `MONITOR_LOOP_STAGES` + `staleMonitorStages` exist. Tests: mid-chain
 kill leftover tail is exactly the stale names; overlapping saves keep
 the later lastOk.
+
+## D168 — Word-hunt suggested edit keeps the offer (D152 amend)
+
+**Decision (Josh, 2026-09-02).** "suggestions suck — they completely
+change email meaning (jet ski / Red Sox tickets / AirPods openers →
+'Quick note —' or unrelated school-district pen-test)."
+
+D152 required a substitute that keeps the line's job. The UI said so.
+The heuristic did not: `suggestedCopySwap` used a synonym table, then
+a gift-bait regex that rewrote every AirPods / tickets opener to
+`{Quick note|Had something useful} from our school-district pen-test
+work.` (Goliath copy, applied to every client), else if length > 40
+or whitespace **`"Quick note —"`**, else blank delete. Jet ski often
+missed the bait regex (needed I've got + for you). Tickets / AirPods
+got pen-test or Quick note. `copyVariants` labeled sentence elements
+with `slice(0, 80)`, so the swap often never saw the offer noun.
+
+**The rule.**
+
+1. Classify the line's job: spam-token / gift-or-experience offer /
+   CTA / generic.
+2. Offer-preserving substitutes keep gift / tickets / jet-ski /
+   AirPods *intent* and drop spammy bait phrasing.
+3. School-district pen-test is **retired**. It is the wrong client
+   on non-Goliath copy and drops the offer even on Goliath AirPods.
+4. Detection: Got / I've got / I have, and experiential offers
+   (jet ski) without requiring "for you".
+5. Prefer fuller sentence context — variant elements cap at 400, not
+   80; `suggestedCopySwap` expands a hunt slice from the campaign
+   body when it has it.
+6. `"Quick note —"` is banned as the default for offer / opener jobs.
+   Generic long lines keep their own wording, lightly softened.
+7. Blank delete stays only for pure spam tokens (`winner`,
+   `congratulations`).
+
+The hunt still *measures* by deletion. No live copy apply from this
+decision — Josh or Cayden still tap (D133). Slack Write-my-own modal
+is unchanged (D153).
+
+**Supersedes / amends.** Amends D152 (the substitute must actually
+keep the job, not claim to). Extends D133/D153 (tap + custom edit
+stay). Does not change hunt deletion measurement or the fleet apply
+button.
+
+**Guards.** canon D152/D168: `classifyLineJob` + `suggestedCopySwap`
+on jet ski, Red Sox / `{{Local_Sports_Team}}` tickets, and AirPods —
+offer keywords survive; pen-test / Quick note do not. `copyVariants`
+does not slice sentence elements to 80. CANON names the job
+classifier. Unit tests in `isolationActions.test.ts`.

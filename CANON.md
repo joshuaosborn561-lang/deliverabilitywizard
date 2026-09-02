@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D167** (2026-09-02). One page of current truth. When a new
+Canon as of **D168** (2026-09-02). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -206,7 +206,10 @@ or the day is done. Silent findings are a bug (D163).
     leave INCONCLUSIVE.
 - The hunt runs autonomously; Slack fires **once** when it has the word:
   receipts, the **exact phrase being replaced**, a **substitute edit that
-  keeps the line’s job** (not a blank delete — D152), *Use suggested
+  keeps the line’s job** — a job classifier (spam-token / gift-or-experience
+  offer / CTA / generic) so an AirPods, tickets, or jet-ski opener keeps
+  that offer and is never replaced with “Quick note —” or a school-district
+  pen-test (D152/D168; blank delete only for pure spam tokens), *Use suggested
   edit* plus *Write my own edit* (modal shows the phrase again — D153) —
   and that one tap deletes/replaces across **every ACTIVE campaign
   carrying it**, all steps and variants, shells excluded (D133). A
@@ -230,7 +233,8 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    domain is a client domain — never a generic/pool spin, D161), and lets
    generics cover the campaigns it cut (D134/D150).
 2. **Isolated spam word** — the exact phrase, a substitute that keeps
-   inboxing (D152), *Use suggested edit* / *Write my own edit* (D153).
+   the line’s job (offer openers keep the gift/tickets/experience —
+   D152/D168), *Use suggested edit* / *Write my own edit* (D153).
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed
    inboxes an outside writer keeps re-adding after gate pulls

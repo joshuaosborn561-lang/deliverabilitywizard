@@ -4255,14 +4255,49 @@ placement Slack page.
 5. Never pause (D148). Never rotate on placement % (D51). Never spend
    without approval.
 
+**Live evidence (AirPods #3847794, folded in the same PR).** State on
+the miss: live placement `testIds=["526114"]`; copy-canary
+`testId="526826"` under `isolation.copyCanaries[3847794]`;
+`alertedKeys` for both none; `copySuspects[3847794]` missing;
+`isolation.runs` for that campaign 0; `swap_copy` 0. Bounce verdict
+2026-09-01 18:30:42Z dominant `content_block` on
+techevolutiongrp.info; resurrection open with `copyEditedAt` null.
+`lastDeliveryWatchAt` 2026-09-01 17:02:15Z (before the ~1:05pm CT
+canary). Monitor 1:01–1:09pm CT alerted other tests, not 526826/526114.
+Fleet: 78 canary tests in state, only one ever got a low-inbox alert —
+canary ids live under `isolation.copyCanaries`, not `testedCampaigns`,
+so ResultMonitor under-scored them. Historically 8 COPY verdicts with
+`teardownStarted: false`.
+
+**On-ramp (same decision, newly explicit).**
+
+6. ResultMonitor always includes `copyCanaries.*.testId` in the tracked
+   set (and maps that id back to the live campaign when `listTests`
+   omitted the row). `Canary copy:` is automated. ACTIVE live + canary
+   ids are pinned inside the report cap first.
+7. Dominant bounce `content_block` also `markCopySuspect` +
+   `evaluate({ campaignInSpam: true, contentBlock: true })`. Prefer
+   COPY on `content_block` + ugly canary even when mailbox control is
+   INSUFFICIENT, unless known-good also fails an ESP (then INFRA).
+8. COPY with the isolation rig configured (mailboxes present) **must**
+   start teardown. If the rig is unarmed, wait and fire the D137
+   arming ask once — never leave `teardownStarted: false` on a COPY
+   that is waiting. A failed rig-control reading does not hold the
+   hunt when mailboxes already exist.
+
 **Supersedes / amends.** Amends D71's "placement is a log" into "placement
 under 80% same-ESP is a log **and** an isolation queue." Does not add a
 Slack allow-kind. Does not resurrect D28/D36 provider-split Slack.
 Delivery-watch reply-collapse remains a second queue (D69).
 
 **Guards.** canon D158 block: isolation-branch queues from
-`queueUglyPlacementSuspects` / `markCopySuspect`; ResultMonitor marks
-suspects instead of paging placement; `notifyPlacementResult` must not
-call `send(`; CANON names D158. Service tests: canary under 80% marks
-+ evaluate; notifyPlacementResult stays quiet; COPY vs INFRA still
-follows `decideIsolationVerdict`.
+`queueUglyPlacementSuspects` / `queueContentBlockSuspect` /
+`markCopySuspect`; ResultMonitor tracks `listCopyCanaryTestIds` and
+marks suspects instead of paging placement; `notifyPlacementResult`
+must not call `send(`; bounce autostop calls
+`queueContentBlockSuspect` on dominant `content_block`; COPY teardown
+starts (or waits + `ensureArmed`) rather than staying
+`teardownStarted: false`; CANON names D158. Service tests: canary
+under 80% marks + evaluate; copyCanaries-only ids are scored;
+content_block queues; unarmed COPY waits and arms; notifyPlacementResult
+stays quiet; COPY vs INFRA still follows `decideIsolationVerdict`.

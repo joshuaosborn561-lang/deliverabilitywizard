@@ -1360,6 +1360,23 @@ export class StateStore {
     return this.state.isolation.copyCanaries[String(campaignId)]?.testId;
   }
 
+  /** SmartDelivery ids stored under isolation.copyCanaries — not testedCampaigns. */
+  listCopyCanaryTestIds(): string[] {
+    const out: string[] = [];
+    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+      if (row.testId) out.push(String(row.testId));
+    }
+    return out;
+  }
+
+  campaignIdForCopyCanaryTestId(testId: string): number | undefined {
+    const wanted = String(testId);
+    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+      if (row.testId && String(row.testId) === wanted) return row.campaignId;
+    }
+    return undefined;
+  }
+
   listCopyCanaryEmails(): Set<string> {
     const out = new Set<string>();
     for (const row of Object.values(this.state.isolation.copyCanaries)) {

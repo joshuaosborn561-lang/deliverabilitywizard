@@ -22,7 +22,8 @@ function providerReport(inbox: number) {
 async function buildBranch(opts: {
   knownGoodInbox: number;
   canaryInbox: number;
-  mailboxPlacement?: "PRIMARY" | "SPAM";
+  mailboxPlacement?: "PRIMARY" | "SPAM" | "UNKNOWN";
+  rigEmails?: string[];
 }) {
   const state = new StateStore(
     `/tmp/dw-iso-branch-${process.pid}-${Date.now()}-${Math.random()}.json`,
@@ -83,11 +84,18 @@ async function buildBranch(opts: {
   const copyIsolation = {
     runForCampaign: async (run: { campaignId: number }) => {
       teardowns.push(run.campaignId);
+      const emails = opts.rigEmails ?? ["iso@techevo.test"];
+      if (!emails.length) return { started: false, waiting: true };
       return { started: true, waiting: false };
     },
   };
+  const armed: number[] = [];
   const rig = {
     readLatestControl: async () => null,
+    rigEmails: async () => opts.rigEmails ?? ["iso@techevo.test"],
+    ensureArmed: async () => {
+      armed.push(1);
+    },
   };
   const copyCanary = {
     readSplit: async () => ({
@@ -117,7 +125,7 @@ async function buildBranch(opts: {
     evaluated.push(campaignId);
     return originalEvaluate(campaignId, evaluateOpts);
   };
-  return { branch, state, evaluated, teardowns };
+  return { branch, state, evaluated, teardowns, armed };
 }
 
 describe("IsolationBranchService placement queue (D158)", () => {
@@ -148,6 +156,46 @@ describe("IsolationBranchService placement queue (D158)", () => {
     const second = await branch.run();
     assert.deepEqual(evaluated, []);
     assert.equal(second.evaluated, 0);
+  });
+
+  it("COPY with an unarmed rig waits and asks to arm once", async () => {
+    const { branch, armed, teardowns } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+      rigEmails: [],
+    });
+    const run = await branch.evaluate(AIRPODS.id, { campaignInSpam: true });
+    assert.equal(run.verdict, "COPY");
+    assert.equal(run.teardownStarted, true, "waiting on the rig still marks teardown started");
+    assert.deepEqual(teardowns, [AIRPODS.id]);
+    assert.equal(armed.length, 1, "unarmed COPY asks to arm the rig once");
+  });
+
+  it("dominant content_block queues the live campaign and evaluates", async () => {
+    const { branch, state, evaluated, teardowns } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+      mailboxPlacement: "UNKNOWN",
+    });
+    await branch.queueContentBlockSuspect(AIRPODS.id);
+    const suspect = state.listCopySuspects().find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(suspect);
+    assert.match(String(suspect.reason), /content_block/);
+    assert.deepEqual(evaluated, [AIRPODS.id]);
+    assert.deepEqual(teardowns, [AIRPODS.id]);
+    const run = state.latestIsolationRunForCampaign(AIRPODS.id);
+    assert.equal(run?.verdict, "COPY");
+  });
+
+  it("content_block queue is idempotent after a terminal COPY", async () => {
+    const { branch, evaluated } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+    });
+    await branch.queueContentBlockSuspect(AIRPODS.id);
+    evaluated.length = 0;
+    await branch.queueContentBlockSuspect(AIRPODS.id);
+    assert.deepEqual(evaluated, []);
   });
 
   it("COPY vs INFRA still follows decideIsolationVerdict", async () => {

@@ -510,4 +510,71 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
       "no second retire_domain record either",
     );
   });
+
+  it("D158: dominant content_block queues isolation (never pauses)", async () => {
+    const CONTENT_NDR =
+      "<html>Delivery has failed. Remote server returned '554 5.7.1 Content rejected — message blocked for policy reasons.'</html>";
+    const queued: number[] = [];
+    const statusWrites: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(3847794, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 3847794, name: "TechEvo SFL Startup Owners AirPods", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 55,
+          bounce_count: 15,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async (_id: number, status: string) => {
+          statusWrites.push(status);
+        },
+        listBouncedSendStats: async () => ({
+          total_stats: "2",
+          data: [
+            {
+              lead_email: "a@target.com",
+              sent_time: new Date(FIXED_T - 20 * 60 * 1000).toISOString(),
+            },
+            {
+              lead_email: "b@target.com",
+              sent_time: new Date(FIXED_T - 25 * 60 * 1000).toISOString(),
+            },
+          ],
+        }),
+        fetchLeadByEmail: async (email: string) => ({
+          id: email === "a@target.com" ? 111 : 222,
+        }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "ok@techevolutiongrp.info" },
+            { type: "REPLY", email_body: CONTENT_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      { send: async () => undefined } as never,
+      undefined,
+      () => FIXED_T,
+    );
+    service.setIsolationBranch({
+      queueContentBlockSuspect: async (campaignId: number) => {
+        queued.push(campaignId);
+      },
+    });
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statusWrites, [], "no pause (D148)");
+    assert.equal(result.bursts[0]?.verdict?.dominant, "content_block");
+    assert.deepEqual(queued, [3847794]);
+  });
 });

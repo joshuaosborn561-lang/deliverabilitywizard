@@ -5105,6 +5105,30 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
         "isolationBranch.run() no longer passes campaignInSpam: true.",
       ),
     );
+    assert.match(
+      branch,
+      /queueContentBlockSuspect/,
+      stop(
+        "Dominant bounce content_block queues isolation (D158).",
+        "isolationBranch.ts lost queueContentBlockSuspect.",
+      ),
+    );
+    assert.match(
+      branch,
+      /ensureArmed/,
+      stop(
+        "COPY with an unarmed rig asks to arm once (D158/D137).",
+        "isolationBranch.ts no longer calls ensureArmed on a waiting COPY.",
+      ),
+    );
+    assert.match(
+      branch,
+      /verdict === "COPY"/,
+      stop(
+        "COPY starts teardown (or waits) instead of leaving teardownStarted false (D158).",
+        "isolationBranch.ts no longer starts teardown on every COPY verdict.",
+      ),
+    );
     const monitor = await readFile(
       new URL("../services/resultMonitor.ts", import.meta.url),
       "utf8",
@@ -5117,12 +5141,44 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
         "resultMonitor.ts no longer marks copy suspects.",
       ),
     );
+    assert.match(
+      monitor,
+      /listCopyCanaryTestIds/,
+      stop(
+        "ResultMonitor always tracks isolation.copyCanaries test ids (D158).",
+        "resultMonitor.ts no longer includes copyCanaries.*.testId.",
+      ),
+    );
     assert.doesNotMatch(
       monitor,
       /notifyPlacementResult/,
       stop(
         "ResultMonitor must not pretend to Slack a placement page (D71/D158).",
         "resultMonitor.ts still calls notifyPlacementResult.",
+      ),
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      bounce,
+      /queueContentBlockSuspect/,
+      stop(
+        "Bounce loop queues isolation on dominant content_block (D158).",
+        "campaignBounceAutostop.ts no longer calls queueContentBlockSuspect.",
+      ),
+    );
+    const automated = await readFile(
+      new URL("../clients/smartdelivery.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      automated,
+      /isCanaryCopyTestName/,
+      stop(
+        "Canary copy: counts as an automated test (D158).",
+        "isAutomatedTest no longer treats Canary copy: as automated.",
       ),
     );
     const slack = await readFile(

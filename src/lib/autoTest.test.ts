@@ -30,6 +30,13 @@ describe("isAutomatedTest", () => {
   it("treats a bare manual test as not automated", () => {
     assert.equal(isAutomatedTest({ test_name: "one off" }), false);
   });
+
+  it("treats Canary copy: as automated even without recurrence fields", () => {
+    assert.equal(
+      isAutomatedTest({ test_name: "Canary copy: #3847794 AirPods" }),
+      true,
+    );
+  });
 });
 
 describe("isTestStoppable", () => {

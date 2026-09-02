@@ -64,4 +64,23 @@ describe("prioritizeTestIdsForReports", () => {
     const selected = prioritizeTestIdsForReports({ trackedIds: ids });
     assert.equal(selected.length, DEFAULT_REPORT_TEST_LIMIT);
   });
+
+  it("pins ACTIVE live + copy-canary ids inside the cap first", () => {
+    const selected = prioritizeTestIdsForReports({
+      trackedIds: ["100", "526826", "526114", "200"],
+      listedTests: [
+        { spam_test_id: 100, status: "COMPLETED", test_type: "manual" },
+        { spam_test_id: 200, status: "COMPLETED", test_type: "manual" },
+        {
+          spam_test_id: 526114,
+          status: "ACTIVE",
+          test_name: "TechEvo AirPods live",
+          every_days: 1,
+        },
+      ],
+      priorityIds: ["526826", "526114"],
+      limit: 2,
+    });
+    assert.deepEqual(selected, ["526826", "526114"]);
+  });
 });

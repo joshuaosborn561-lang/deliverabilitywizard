@@ -135,6 +135,53 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     assert.equal(state.listCopySuspects().length, 0);
   });
 
+  it("scores copyCanaries test ids even when they are absent from testedCampaigns and listTests", async () => {
+    const state = new StateStore(
+      `/tmp/dw-monitor-canary-state-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaries(AIRPODS.id, ["canary@g.test"], "526826");
+    const fetched: string[] = [];
+    const clutter = Array.from({ length: 120 }, (_, i) => ({
+      id: String(400000 + i),
+      test_name: `Old manual ${i}`,
+      status: "COMPLETED",
+      test_type: "manual",
+    }));
+    const smartDelivery = {
+      listTests: async () => clutter,
+      getProviderwiseReport: async (id: string) => {
+        fetched.push(String(id));
+        return {
+          result: [
+            {
+              provider_name: "Gmail",
+              inbox_rate: String(id) === "526826" ? 0 : 100,
+            },
+          ],
+        };
+      },
+      getSenderAccountReport: async () => [],
+      getDomainBlacklist: async () => [],
+      getIpBlacklist: async () => [],
+      getMailboxSummary: async () => [],
+    } as unknown as SmartDeliveryClient;
+
+    const monitor = new ResultMonitor(
+      config,
+      smartDelivery,
+      { listCampaigns: async () => [AIRPODS] } as unknown as SmartleadClient,
+      fakeSlack(),
+      state,
+    );
+    const result = await monitor.run();
+    assert.ok(fetched.includes("526826"), "copy-canary id must be fetched");
+    const suspect = state.listCopySuspects().find((row) => row.campaignId === AIRPODS.id);
+    assert.ok(suspect, "0% canary under copyCanaries must queue isolation");
+    assert.match(String(suspect.reason), /Canary-copy same-ESP/);
+    assert.equal(result.lowDeliverabilityAlerts, 1);
+  });
+
   it("skips gone SmartDelivery tests without recording an error", async () => {
     const state = new StateStore(
       `/tmp/dw-monitor-gone-${process.pid}-${Date.now()}.json`,

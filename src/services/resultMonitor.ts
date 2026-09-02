@@ -75,10 +75,28 @@ export class ResultMonitor {
     }
 
     // Prefer tests we created; also check recent completed tests so nothing is missed.
+    // D158 — copy-canary ids live under isolation.copyCanaries, not testedCampaigns.
+    const campaigns = await this.getCampaigns();
+    const canaryIds = this.state.listCopyCanaryTestIds();
+    const activeLiveIds = new Set(
+      campaigns
+        .filter(
+          (row) =>
+            String(row.status ?? "").toUpperCase() === "ACTIVE" &&
+            !isAnyShellCampaign(row),
+        )
+        .map((row) => String(row.id)),
+    );
+    const liveTestIds = Object.entries(this.state.get().testedCampaigns)
+      .filter(([campaignId]) => activeLiveIds.has(campaignId))
+      .flatMap(([, row]) => row.testIds);
     const trackedIds = [
-      ...new Set(
-        Object.values(this.state.get().testedCampaigns).flatMap((c) => c.testIds),
-      ),
+      ...new Set([
+        ...Object.values(this.state.get().testedCampaigns).flatMap(
+          (c) => c.testIds,
+        ),
+        ...canaryIds,
+      ]),
     ];
     const listedIds = tests
       .map((test) => testIdOf(test))
@@ -86,6 +104,7 @@ export class ResultMonitor {
     const prioritizedIds = prioritizeTestIdsForReports({
       trackedIds: [...trackedIds, ...listedIds],
       listedTests: tests,
+      priorityIds: [...liveTestIds, ...canaryIds],
     });
     const testById = new Map(
       tests
@@ -216,11 +235,20 @@ export class ResultMonitor {
     }
 
     const campaigns = await this.getCampaigns();
-    const target = liveCampaignForPlacementTrigger({
+    let target = liveCampaignForPlacementTrigger({
       testName: test?.test_name,
       testCampaignId: test ? campaignIdOf(test) : undefined,
       campaigns,
     });
+    if (!target) {
+      const canaryCampaignId = this.state.campaignIdForCopyCanaryTestId(testId);
+      if (canaryCampaignId != null) {
+        target = liveCampaignForPlacementTrigger({
+          testName: `Canary copy: #${canaryCampaignId}`,
+          campaigns,
+        });
+      }
+    }
     if (!target) {
       console.log(
         `[monitor] Same-ESP under ${this.config.remediationInboxThreshold}% on test ${testId} (${test?.test_name ?? "unnamed"}) — no ACTIVE live campaign to queue`,

@@ -389,6 +389,7 @@ async function main(): Promise<void> {
     isolationRig,
     copyCanary,
   );
+  campaignBounceAutostop.setIsolationBranch(isolationBranch);
   const podControls = new PodControlService(
     config,
     smartlead,

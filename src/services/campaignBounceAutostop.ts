@@ -115,6 +115,9 @@ function mergeSendBounce(...payloads: unknown[]): {
  */
 export class CampaignBounceAutostopService {
   private readonly resurrection?: BounceResurrectionService;
+  private isolation?: {
+    queueContentBlockSuspect(campaignId: number): Promise<void>;
+  };
 
   constructor(
     private readonly config: AppConfig,
@@ -129,6 +132,13 @@ export class CampaignBounceAutostopService {
       (state
         ? new BounceResurrectionService(config, smartlead, state, slack, clock)
         : undefined);
+  }
+
+  /** Wired after IsolationBranchService is constructed (index.ts order). */
+  setIsolationBranch(isolation: {
+    queueContentBlockSuspect(campaignId: number): Promise<void>;
+  }): void {
+    this.isolation = isolation;
   }
 
   async run(opts: { dryRun?: boolean } = {}): Promise<CampaignBounceAutostopResult> {
@@ -303,6 +313,23 @@ export class CampaignBounceAutostopService {
             { id: campaign.id, name: finding.campaignName },
             finding.verdict,
           );
+        }
+        // D158 — dominant content_block is a copy-suspect flag, same as
+        // an ugly canary. Isolation decides COPY vs INFRA; bounce still
+        // never pauses (D148).
+        if (
+          !dryRun &&
+          finding.verdict?.dominant === "content_block" &&
+          this.isolation
+        ) {
+          try {
+            await this.isolation.queueContentBlockSuspect(campaign.id);
+          } catch (error) {
+            console.warn(
+              `[bounce-autostop] content_block isolation queue #${campaign.id} failed`,
+              error,
+            );
+          }
         }
         if (!dryRun && this.slack) {
           try {

@@ -8,7 +8,9 @@ import { StateStore } from "../state/store.js";
 import {
   INBOXKIT_MAX_MAILBOXES_PER_DOMAIN,
   IsolationBuyService,
+  collapseToOneEsp,
   isolationMailboxSpendKey,
+  lockedEspFromInventory,
   planMailboxOrders,
 } from "./isolationBuy.js";
 
@@ -153,6 +155,36 @@ describe("planMailboxOrders — reconcile before buy", () => {
     );
     assert.deepEqual(plan.buy, []);
     assert.equal(plan.alreadyHave, 3);
+  });
+
+  it("locks buys to the ESP already on the domain (InboxKit one-ESP rule)", () => {
+    // Production: domain had Google; plan still asked for Microsoft and
+    // InboxKit rejected "Only one ESP platform is allowed per domain".
+    const plan = planMailboxOrders(
+      ["GOOGLE", "MICROSOFT", "MICROSOFT"],
+      [{ platform: "GOOGLE" }, { platform: "GOOGLE" }],
+    );
+    assert.deepEqual(plan.buy, [{ platform: "GOOGLE", count: 1 }]);
+    assert.equal(plan.alreadyHave, 2);
+    assert.equal(
+      plan.buy.some((row) => row.platform === "MICROSOFT"),
+      false,
+    );
+  });
+
+  it("collapses a mixed empty-domain plan onto one ESP", () => {
+    assert.deepEqual(lockedEspFromInventory([{ platform: "GOOGLE" }]), "GOOGLE");
+    assert.deepEqual(
+      collapseToOneEsp(["GOOGLE", "MICROSOFT", "MICROSOFT"], null),
+      ["MICROSOFT", "MICROSOFT", "MICROSOFT"],
+    );
+    const plan = planMailboxOrders(
+      ["GOOGLE", "MICROSOFT", "GOOGLE"],
+      [],
+    );
+    assert.equal(plan.buy.length, 1);
+    assert.equal(plan.buy[0]?.platform, "GOOGLE");
+    assert.equal(plan.buy[0]?.count, 3);
   });
 });
 
@@ -407,5 +439,57 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
     assert.equal(finished, 1);
     assert.equal(state.getIsolationAction(action.id)?.detail.phase, "complete");
     assert.equal(state.listPoolMailboxes().length, 3);
+  });
+
+  it("never buys Microsoft on a domain that already has Google mailboxes", async () => {
+    const state = await buyStore();
+    // Mixed plan (the D150 espMix shape) on a domain already locked to Google.
+    const action = awaitingAction(["GOOGLE", "MICROSOFT", "MICROSOFT"]);
+    state.upsertIsolationAction(action);
+    const inboxkit = mockInboxkit({
+      rows: [
+        {
+          username: "keep1",
+          email: `keep1@${domain}`,
+          domain_name: domain,
+          platform: "GOOGLE",
+          first_name: "Keep",
+          last_name: "One",
+        },
+        {
+          username: "keep2",
+          email: `keep2@${domain}`,
+          domain_name: domain,
+          platform: "GOOGLE",
+          first_name: "Keep",
+          last_name: "Two",
+        },
+      ],
+    });
+    const spend = trackingSpend();
+    const svc = new IsolationBuyService(
+      liveConfig(),
+      inboxkit.client,
+      null,
+      state,
+      spend.gateway,
+    );
+
+    const finished = await svc.resume();
+    assert.equal(finished, 1);
+    assert.equal(
+      inboxkit.buys.some((row) => row.platform === "MICROSOFT"),
+      false,
+      "must not request Microsoft on a Google-locked domain",
+    );
+    assert.ok(
+      inboxkit.buys.every((row) => row.platform === "GOOGLE"),
+      `unexpected buys: ${JSON.stringify(inboxkit.buys)}`,
+    );
+    assert.equal(
+      inboxkit.buys.reduce((n, row) => n + row.count, 0),
+      1,
+      "target 3 minus 2 existing Google",
+    );
   });
 });

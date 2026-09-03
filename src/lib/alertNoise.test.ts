@@ -5,6 +5,7 @@ import {
   isApprovalGateNoise,
   isBenignOpsNoise,
   isBurnChecklistNoise,
+  isInboxkitOneEspNoise,
   isMissingSpamTestNoise,
   isRateLimitNoise,
   isRetryRemovalNoise,
@@ -85,6 +86,15 @@ describe("alert noise", () => {
     assert.equal(isBenignOpsNoise(message), true);
     assert.equal(isRateLimitNoise(message), false);
     assert.match(humanizeAlertError(message), /membership lag/i);
+  });
+
+  it("treats InboxKit one-ESP-per-domain refusals as benign ops noise", () => {
+    const message =
+      "Cannot create Microsoft 365 mailboxes for domain crosslaunchcouse.info. Domain already has Google Workspace mailboxes. Only one ESP platform is allowed per domain.";
+    assert.equal(isInboxkitOneEspNoise(message), true);
+    assert.equal(isBenignOpsNoise(message), true);
+    assert.equal(isRateLimitNoise(message), false);
+    assert.match(humanizeAlertError(message), /one email platform per domain/i);
   });
 
   it("explains missing SmartDelivery seed accounts in plain English", () => {

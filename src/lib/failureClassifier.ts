@@ -237,6 +237,23 @@ export function classifyFailure(
     };
   }
 
+  // InboxKit: one ESP platform per domain. Resume used to plan Microsoft
+  // buys on a domain that already had Google (and vice versa).
+  if (
+    /only one (esp )?platform is allowed per domain|domain already has (google|microsoft).{0,40}mailboxes|cannot create (microsoft|google).{0,40}mailboxes for domain/i.test(
+      lower,
+    )
+  ) {
+    return {
+      class: "noise",
+      fingerprint: fingerprintOf("noise", "inboxkit-one-esp"),
+      autoRemediate: false,
+      summary:
+        "InboxKit one-ESP-per-domain rule (domain already locked to the other platform)",
+      raw: text,
+    };
+  }
+
   if (
     /smartdelivery access|api access is not active|invalid api key|unauthorized/i.test(
       lower,

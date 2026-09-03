@@ -42,14 +42,19 @@ export interface PlannedMailboxBuy {
 /**
  * How many mailboxes to buy after reconciling InboxKit inventory.
  * Never requests more than `maxPerDomain - existing.length`.
+ * InboxKit allows only one ESP platform per domain — if inventory already
+ * has Google or Microsoft, all remaining buys stay on that platform.
  */
 export function planMailboxOrders(
   needed: PoolPlatform[],
   existing: MailboxInventoryRow[],
   maxPerDomain = INBOXKIT_MAX_MAILBOXES_PER_DOMAIN,
 ): { buy: PlannedMailboxBuy[]; alreadyHave: number } {
+  const lock = lockedEspFromInventory(existing);
+  const neededSingle = collapseToOneEsp(needed, lock);
+
   const needCounts: Record<PoolPlatform, number> = { GOOGLE: 0, MICROSOFT: 0 };
-  for (const platform of needed) needCounts[platform] += 1;
+  for (const platform of neededSingle) needCounts[platform] += 1;
 
   const haveKnown: Record<PoolPlatform, number> = { GOOGLE: 0, MICROSOFT: 0 };
   let unknown = 0;
@@ -92,6 +97,44 @@ export function planMailboxOrders(
     buy,
     alreadyHave: assigned.GOOGLE + assigned.MICROSOFT,
   };
+}
+
+/** ESP already present on the domain, if any. */
+export function lockedEspFromInventory(
+  existing: MailboxInventoryRow[],
+): PoolPlatform | null {
+  for (const row of existing) {
+    if (row.platform === "GOOGLE" || row.platform === "MICROSOFT") {
+      return row.platform;
+    }
+  }
+  return null;
+}
+
+/**
+ * InboxKit: one ESP per domain. Collapse a mixed plan onto the locked
+ * platform (or the majority / first platform when the domain is empty).
+ */
+export function collapseToOneEsp(
+  needed: PoolPlatform[],
+  lock: PoolPlatform | null,
+): PoolPlatform[] {
+  if (!needed.length) return [];
+  if (lock) {
+    return Array.from({ length: needed.length }, () => lock);
+  }
+  const google = needed.filter((p) => p === "GOOGLE").length;
+  const microsoft = needed.length - google;
+  const pick: PoolPlatform =
+    google >= microsoft ? "GOOGLE" : "MICROSOFT";
+  return Array.from({ length: needed.length }, () => pick);
+}
+
+/** True when InboxKit refused a second ESP on a domain. */
+export function isInboxkitOneEspPerDomainError(message: string): boolean {
+  return /only one (esp )?platform is allowed per domain|domain already has (google|microsoft).*mailboxes/i.test(
+    message,
+  );
 }
 
 export function isolationMailboxSpendKey(
@@ -295,15 +338,22 @@ export class IsolationBuyService {
     const taken = new Set<string>();
     const pending: string[] = [];
     for (const [index, domain] of domains.entries()) {
-      const platforms = platformsForDomain(action.detail, perDomain, index);
+      const rawPlatforms = platformsForDomain(action.detail, perDomain, index);
       const existing = await this.listDomainMailboxes(domain, workspaceId);
       for (const username of existingUsernames(existing)) taken.add(username);
+      const inventory = existing.map((row) => ({
+        platform: inboxkitMailboxPlatform(row),
+      }));
+      // InboxKit: one ESP per domain. Lock to inventory (or majority) before
+      // planning buys / spend keys — a mixed GOOGLE+MICROSOFT plan was what
+      // blew up crosslaunchcouse.info ("already has Google Workspace").
+      const platforms = collapseToOneEsp(
+        rawPlatforms,
+        lockedEspFromInventory(inventory),
+      );
       this.upsertExistingPoolMailboxes(domain, existing, platforms);
 
-      const plan = planMailboxOrders(
-        platforms,
-        existing.map((row) => ({ platform: inboxkitMailboxPlatform(row) })),
-      );
+      const plan = planMailboxOrders(platforms, inventory);
       const byPlatform = countByPlatform(platforms);
       console.log(
         `[isolation-buy] ${domain} InboxKit inventory=${existing.length}` +
@@ -362,16 +412,28 @@ export class IsolationBuyService {
           spendReq,
           decidedBy,
         );
-        await this.inboxkit.buyMailboxes(batch, {
-          workspaceId: workspaceId || undefined,
-          useWalletBalance: true,
-          // Remainder buys must not reuse the original n{planned} key —
-          // InboxKit already accepted that buy and will not no-op a replay.
-          idempotencyKey:
-            toBuy === plannedCount
-              ? spendReq.key
-              : `${spendReq.key}:remain${toBuy}`,
-        });
+        try {
+          await this.inboxkit.buyMailboxes(batch, {
+            workspaceId: workspaceId || undefined,
+            useWalletBalance: true,
+            // Remainder buys must not reuse the original n{planned} key —
+            // InboxKit already accepted that buy and will not no-op a replay.
+            idempotencyKey:
+              toBuy === plannedCount
+                ? spendReq.key
+                : `${spendReq.key}:remain${toBuy}`,
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (isInboxkitOneEspPerDomainError(message)) {
+            console.log(
+              `[isolation-buy] ${domain}: InboxKit one-ESP rule blocked ${platform} — skipping (${message})`,
+            );
+            continue;
+          }
+          throw error;
+        }
         await this.spend.consume(decision, spendReq);
         for (const name of names) {
           this.store.upsertPoolMailbox({
@@ -472,16 +534,15 @@ function platformsForDomain(
   index: number,
 ): PoolPlatform[] {
   const fromDetail = platformsFromActionDetail(detail, perDomain);
+  // Default is a single ESP for the whole domain (InboxKit cannot mix).
+  // Alternating GOOGLE/MICROSOFT used to plan a second platform buy that
+  // always failed once the first platform was provisioned.
+  const fallback: PoolPlatform = index % 2 === 0 ? "GOOGLE" : "MICROSOFT";
   const platforms = (
-    fromDetail ??
-    Array.from({ length: perDomain }, (_, i) =>
-      (index + i) % 2 === 0 ? ("GOOGLE" as const) : ("MICROSOFT" as const),
-    )
+    fromDetail ?? Array.from({ length: perDomain }, () => fallback)
   ).slice(0, perDomain);
   if (platforms.length) return platforms;
-  return Array.from({ length: perDomain }, () =>
-    index % 2 === 0 ? ("GOOGLE" as const) : ("MICROSOFT" as const),
-  );
+  return Array.from({ length: perDomain }, () => fallback);
 }
 
 function countByPlatform(platforms: PoolPlatform[]): Map<PoolPlatform, number> {

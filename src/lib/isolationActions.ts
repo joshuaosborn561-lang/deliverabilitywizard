@@ -477,6 +477,46 @@ export function preferEllipsis(text: string): string {
     .trim();
 }
 
+export function hasSpintax(text: string): boolean {
+  return /\{[^{}|]+\|[^{}]*\}/.test(text);
+}
+
+export function flattenSpintax(text: string): string {
+  let prev = "";
+  let out = text;
+  while (out !== prev) {
+    prev = out;
+    out = out.replace(/\{([^{}|]+\|[^{}]*)\}/g, (_, inner: string) => {
+      const first = inner.split("|")[0]?.trim() ?? "";
+      return first;
+    });
+  }
+  return out.replace(/\s{2,}/g, " ").trim();
+}
+
+function spinGroupCount(text: string): number {
+  return (text.match(/\{[^{}|]+\|[^{}]*\}/g) ?? []).length;
+}
+
+/**
+ * Slack WITH block: prefer a single plain-prose line. Keep spintax only
+ * when the find itself is spintax and the substitute must match that
+ * structure (more than one spin group on both sides).
+ */
+export function plainProseSubstitute(find: string, swap: string): string {
+  const trimmed = swap.trim();
+  if (!trimmed) return "";
+  if (!hasSpintax(trimmed)) return preferEllipsis(trimmed);
+  if (
+    hasSpintax(find) &&
+    spinGroupCount(trimmed) > 1 &&
+    spinGroupCount(find) > 1
+  ) {
+    return preferEllipsis(trimmed);
+  }
+  return preferEllipsis(flattenSpintax(trimmed));
+}
+
 function isCompanyIdentityLine(text: string): boolean {
   return COMPANY_IDENTITY_RE.test(text);
 }
@@ -505,26 +545,28 @@ export function suggestedCopySwap(
   const trimmed = element.trim();
   const key = trimmed.toLowerCase();
   if (Object.prototype.hasOwnProperty.call(COPY_SYNONYMS, key)) {
-    return preferEllipsis(COPY_SYNONYMS[key]!);
+    return plainProseSubstitute(trimmed, COPY_SYNONYMS[key]!);
   }
 
   const text = resolveSwapText(trimmed, opts?.context);
   const job = classifyLineJob(trimmed, opts);
 
   if (job === "spam-token") return "";
-  if (job === "gift-or-experience-offer") return preferEllipsis(offerSubstitute(text));
-  if (job === "cta") return preferEllipsis(ctaSubstitute(text));
+  if (job === "gift-or-experience-offer") {
+    return plainProseSubstitute(trimmed, offerSubstitute(text));
+  }
+  if (job === "cta") return plainProseSubstitute(trimmed, ctaSubstitute(text));
 
   // D170 — "we're TechEvolution" identity openers keep the company name
   // with a light soften. Never "Quick note —".
   if (isCompanyIdentityLine(text)) {
-    return softenGeneric(text);
+    return plainProseSubstitute(trimmed, softenGeneric(text));
   }
 
   // Generic: keep the line, lightly softened. Never "Quick note —" and
   // never another client's pitch.
   if (trimmed.length > 40 || /\s/.test(trimmed)) {
-    return softenGeneric(text);
+    return plainProseSubstitute(trimmed, softenGeneric(text));
   }
   return "";
 }

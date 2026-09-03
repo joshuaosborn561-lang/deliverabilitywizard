@@ -1107,7 +1107,7 @@ describe("owner intent — D69 copy Slack is the word and a one-click edit", () 
     });
     assert.match(
       proof,
-      /Replacing this exact phrase\/word: \*free\*/,
+      /REMOVE this exact text: \*free\*/,
       stop(
         "The Slack names the exact phrase being replaced (D69/D153).",
         "copySwapProof no longer names the find phrase.",
@@ -4899,10 +4899,10 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
     );
     assert.match(
       modal,
-      /Replacing this exact phrase\/word/,
+      /REMOVE this exact text/,
       stop(
         "The edit modal labels the exact find phrase (D153).",
-        "slackSwapEdit.ts lost the Replacing this exact phrase/word label.",
+        "slackSwapEdit.ts lost the REMOVE this exact text label.",
       ),
     );
     const index = await readFile(
@@ -6451,6 +6451,38 @@ describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
       stop(
         "remindPendingIsolationActions refreshes swap_copy before Slack (D170).",
         "remind still re-posts pending swap_copy as stored.",
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      slack,
+      /swapCopySlackBody/,
+      stop(
+        "swap_copy Slack cards use the REMOVE / REPLACE WITH body (D170).",
+        "notifyIsolationAction no longer calls swapCopySlackBody.",
+      ),
+    );
+    const card = await readFile(
+      new URL("../lib/swapCopyCard.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      card,
+      /REMOVE this exact text/,
+      stop(
+        "The word-hunt Slack card labels REMOVE (D170).",
+        "swapCopyCard.ts lost the REMOVE fence label.",
+      ),
+    );
+    assert.match(
+      card,
+      /REPLACE WITH/,
+      stop(
+        "The word-hunt Slack card labels REPLACE WITH (D170).",
+        "swapCopyCard.ts lost the REPLACE WITH fence.",
       ),
     );
 

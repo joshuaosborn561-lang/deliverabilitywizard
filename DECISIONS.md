@@ -4895,9 +4895,20 @@ recomputed on every Slack page, not only when the hunt first
 writes the ask). Extends D152/D133/D153. Does not change hunt
 deletion measurement or the fleet-apply button.
 
+Josh follow-up (same session): "for the word hunts idk what you're
+suggesting I replace it with it's not clear on the card." The Slack
+`swap_copy` card now leads with *REMOVE this exact text:* and
+*REPLACE WITH:* in fenced blocks under the campaign name. WITH is
+plain prose (spintax flattened unless the find itself is structured
+spintax). Blank WITH is "(delete that phrase... leave nothing)".
+Button label stays *Use suggested edit*. Remind still recomputes
+before notify.
+
 **Guards.** canon D170: `remindPendingIsolationActions` refreshes a
 stale "Quick note —" AirPods swap before Slack; truncated
 `{{Local_Sports_Team` classifies as offer; identity lines keep
 TechEvolution; generated defaults have no em dash. `isBannedCopySwap`
-blocks Quick note / pen-test / school-district. CANON names the
-remind refresh. Unit tests in `isolationActions.test.ts`.
+blocks Quick note / pen-test / school-district. Slack card renders
+REMOVE / REPLACE WITH fences (`swapCopySlackBody`). CANON names the
+remind refresh and the card. Unit tests in `isolationActions.test.ts`
+and `swapCopyCard.test.ts`.

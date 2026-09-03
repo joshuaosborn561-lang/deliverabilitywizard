@@ -6,7 +6,9 @@ import {
   buildIsolationAction,
   classifyLineJob,
   dismissPendingSignatureAsks,
+  flattenSpintax,
   isBannedCopySwap,
+  plainProseSubstitute,
   preferEllipsis,
   refreshCopySwapAction,
   remindPendingIsolationActions,
@@ -430,6 +432,25 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     assert.doesNotMatch(swap, /—/);
     assert.match(preferEllipsis(line), /\.\.\./);
     assert.doesNotMatch(preferEllipsis(line), /—/);
+  });
+
+  it("flattens single-line WITH spintax unless both sides need matching structure", () => {
+    assert.equal(
+      flattenSpintax("{Happy to send|I can send} AirPods"),
+      "Happy to send AirPods",
+    );
+    assert.equal(
+      plainProseSubstitute("I've got Air Pods", "{Happy to send|I can send} AirPods"),
+      "Happy to send AirPods",
+    );
+    assert.equal(
+      plainProseSubstitute("{Hey|Hi} {there|friend}", "{Hello|Howdy} {there|friend}"),
+      "{Hello|Howdy} {there|friend}",
+    );
+    assert.equal(
+      suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
+      "Happy to send a pair of AirPods if useful.",
+    );
   });
 
   it("AirPods and jet ski substitutes stay offer-preserving with no em dash", () => {

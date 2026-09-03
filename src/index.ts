@@ -1250,9 +1250,9 @@ async function main(): Promise<void> {
   }): string => {
     const swapFields =
       opts.form && opts.swapEdit && opts.form.decision === "approve"
-        ? `<p style="margin:1rem 0 .4rem;color:#94a3b8;font-size:.85rem;"><strong>Replacing this exact phrase/word:</strong></p>
+        ? `<p style="margin:1rem 0 .4rem;color:#94a3b8;font-size:.85rem;"><strong>REMOVE this exact text:</strong></p>
 <pre style="white-space:pre-wrap;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.75rem;color:#e2e8f0;font-size:.85rem;">${escapeHtml(opts.swapEdit.element)}</pre>
-<label style="display:block;margin:1rem 0 .4rem;color:#94a3b8;font-size:.85rem;">Replace it with (edit freely — blank deletes the phrase)</label>
+<label style="display:block;margin:1rem 0 .4rem;color:#94a3b8;font-size:.85rem;">REPLACE WITH (edit freely... blank deletes the phrase)</label>
 <textarea name="swap" rows="4" style="width:100%;box-sizing:border-box;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:8px;padding:.75rem;font:inherit;">${escapeHtml(opts.swapEdit.suggested)}</textarea>`
         : "";
     const form = opts.form

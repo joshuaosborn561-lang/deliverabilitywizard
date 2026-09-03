@@ -70,7 +70,11 @@ describe("isolation Slack URL buttons", () => {
       campaignName: "Goliath Education Receipts - Large Public",
     });
 
-    assert.match(text, /Replacing this exact phrase\/word/);
+    assert.match(text, /REMOVE this exact text/);
+    assert.match(text, /REPLACE WITH/);
+    assert.match(text, /```[\s\S]*Air Pods[\s\S]*```/);
+    assert.match(text, /```[\s\S]*Quick note from our pen-test work[\s\S]*```/);
+    assert.doesNotMatch(text, /\*Suggested edit:\*/);
     assert.match(text, /Air Pods/);
     assert.match(text, /Write my own edit/);
     const actions = (

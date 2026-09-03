@@ -226,8 +226,11 @@ or the day is done. Silent findings are a bug (D163).
   `swap_copy` asks are **recomputed** (`suggestedCopySwap` + `copySwapProof`)
   on remind and before first notify so a pre-D168 frozen “Quick note —”
   cannot be re-paged; a still-banned default is never Slacked (D170).
-  *Use suggested edit* plus *Write my own edit* (modal shows the phrase
-  again — D153) — and that one tap deletes/replaces across **every ACTIVE
+  The Slack card leads with *REMOVE this exact text:* and *REPLACE WITH:*
+  in fenced blocks under the campaign name so the substitute cannot be
+  missed (D170). *Use suggested edit* plus *Write my own edit* (modal
+  shows REMOVE again — D153) — and that one tap deletes/replaces across
+  **every ACTIVE
   campaign carrying it**, all steps and variants, shells excluded (D133). A
   provider-split guess is never Slacked and never benches senders
   (D28/D36 are dead as drivers).
@@ -248,8 +251,9 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    pulls, buys the ESP-matched replacement (client-named when the burned
    domain is a client domain — never a generic/pool spin, D161), and lets
    generics cover the campaigns it cut (D134/D150).
-2. **Isolated spam word** — the exact phrase, a substitute that keeps
-   the line’s job (offer openers keep the gift/tickets/experience —
+2. **Isolated spam word** — *REMOVE this exact text:* and *REPLACE WITH:*
+   in fenced blocks under the campaign name (D170), a substitute that
+   keeps the line’s job (offer openers keep the gift/tickets/experience —
    D152/D168/D170; remind refreshes a stale pending swap before Slack),
    *Use suggested edit* / *Write my own edit* (D153).
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged

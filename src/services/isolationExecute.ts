@@ -348,6 +348,9 @@ export class IsolationExecuteService {
           ...buyAction.detail,
           domains: result.domains,
           phase: result.awaitingNameservers ? "awaiting_mailboxes" : "complete",
+          ...(result.espSkipReason
+            ? { espSkipReason: result.espSkipReason }
+            : {}),
         },
       });
       buySummary = [
@@ -357,6 +360,9 @@ export class IsolationExecuteService {
           : undefined,
         result.awaitingNameservers
           ? "Nameservers are still catching up; I will finish the mailbox order myself — no second tap."
+          : undefined,
+        result.espSkipReason
+          ? `InboxKit is one ESP per domain — ${result.espSkipReason}`
           : undefined,
       ]
         .filter(Boolean)

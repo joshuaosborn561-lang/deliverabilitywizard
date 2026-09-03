@@ -33,6 +33,8 @@ export interface IsolationBuyResult {
   domains: string[];
   mailboxesOrdered: number;
   awaitingNameservers: boolean;
+  /** Set when a mixed plan dropped the other ESP (D175). */
+  espSkipReason?: string;
 }
 
 /** InboxKit rejects a buy that would put a domain over this many mailboxes. */
@@ -50,14 +52,21 @@ export interface PlannedMailboxBuy {
 /**
  * How many mailboxes to buy after reconciling InboxKit inventory.
  * Never requests more than `maxPerDomain - existing.length`.
+ * InboxKit allows only one ESP per domain (D175) — a mixed plan is
+ * collapsed before counting so we never POST Microsoft onto Google
+ * inventory (the crosslaunchcouse.info isolation-buy-resume loop).
  */
 export function planMailboxOrders(
   needed: PoolPlatform[],
   existing: MailboxInventoryRow[],
   maxPerDomain = INBOXKIT_MAX_MAILBOXES_PER_DOMAIN,
 ): { buy: PlannedMailboxBuy[]; alreadyHave: number } {
+  const neededSingle = collapseToOneEsp(
+    needed,
+    lockedEspFromInventory(existing),
+  );
   const needCounts: Record<PoolPlatform, number> = { GOOGLE: 0, MICROSOFT: 0 };
-  for (const platform of needed) needCounts[platform] += 1;
+  for (const platform of neededSingle) needCounts[platform] += 1;
 
   const haveKnown: Record<PoolPlatform, number> = { GOOGLE: 0, MICROSOFT: 0 };
   let unknown = 0;
@@ -102,6 +111,56 @@ export function planMailboxOrders(
   };
 }
 
+/** ESP already present on the domain, if InboxKit reported one. */
+export function lockedEspFromInventory(
+  existing: MailboxInventoryRow[],
+): PoolPlatform | null {
+  for (const row of existing) {
+    if (row.platform === "GOOGLE" || row.platform === "MICROSOFT") {
+      return row.platform;
+    }
+  }
+  return null;
+}
+
+/**
+ * D175 — InboxKit: one ESP per domain.
+ * Locked inventory keeps only that ESP's slots (do not buy extra of the
+ * locked platform to stand in for the other — that is new spend).
+ * An empty domain fills the planned count with the majority ESP so the
+ * first buy cannot mix platforms.
+ */
+export function collapseToOneEsp(
+  needed: PoolPlatform[],
+  lock: PoolPlatform | null,
+): PoolPlatform[] {
+  if (!needed.length) return [];
+  if (lock) return needed.filter((platform) => platform === lock);
+  const google = needed.filter((platform) => platform === "GOOGLE").length;
+  const microsoft = needed.length - google;
+  const pick: PoolPlatform = google >= microsoft ? "GOOGLE" : "MICROSOFT";
+  return Array.from({ length: needed.length }, () => pick);
+}
+
+/** True when InboxKit refused a second ESP on a domain. */
+export function isInboxkitOneEspPerDomainError(message: string): boolean {
+  return /only one (esp )?platform is allowed per domain|domain already has (google|microsoft).{0,40}mailboxes|cannot create (microsoft|google).{0,40}mailboxes for domain/i.test(
+    message,
+  );
+}
+
+export function oneEspSkipReason(
+  domain: string,
+  lock: PoolPlatform,
+  skipped: PoolPlatform[],
+): string {
+  const unique = [...new Set(skipped)];
+  return (
+    `${domain} is locked to ${lock} — skipped ${unique.join("/")} ` +
+    `(InboxKit one ESP per domain, D175)`
+  );
+}
+
 export function isolationMailboxSpendKey(
   domain: string,
   platform: PoolPlatform,
@@ -144,12 +203,18 @@ export class IsolationBuyService {
         phase: mailboxes.awaitingNameservers
           ? AWAITING_MAILBOXES
           : "complete",
+        ...(mailboxes.espSkipReason
+          ? { espSkipReason: mailboxes.espSkipReason }
+          : {}),
       },
     });
     return {
       domains,
       mailboxesOrdered: mailboxes.ordered,
       awaitingNameservers: mailboxes.awaitingNameservers,
+      ...(mailboxes.espSkipReason
+        ? { espSkipReason: mailboxes.espSkipReason }
+        : {}),
     };
   }
 
@@ -170,6 +235,9 @@ export class IsolationBuyService {
               phase: result.awaitingNameservers
                 ? AWAITING_MAILBOXES
                 : "complete",
+              ...(result.espSkipReason
+                ? { espSkipReason: result.espSkipReason }
+                : {}),
             },
           });
           if (!result.awaitingNameservers) finished += 1;
@@ -198,9 +266,16 @@ export class IsolationBuyService {
       if (!mailboxes.awaitingNameservers) {
         this.store.upsertIsolationAction({
           ...action,
-          detail: { ...action.detail, phase: "complete" },
+          detail: {
+            ...action.detail,
+            phase: "complete",
+            ...(mailboxes.espSkipReason
+              ? { espSkipReason: mailboxes.espSkipReason }
+              : {}),
+          },
           status: "executed",
           executedAt: new Date().toISOString(),
+          error: undefined,
         });
         finished += 1;
       }
@@ -313,7 +388,11 @@ export class IsolationBuyService {
     domains: string[],
     decidedBy: string,
     action: IsolationActionRecord,
-  ): Promise<{ ordered: number; awaitingNameservers: boolean }> {
+  ): Promise<{
+    ordered: number;
+    awaitingNameservers: boolean;
+    espSkipReason?: string;
+  }> {
     if (!this.inboxkit) {
       throw new Error("InboxKit is not configured, so I cannot buy mailboxes.");
     }
@@ -321,7 +400,10 @@ export class IsolationBuyService {
       this.config.genericPoolWorkspaceId || this.config.inboxkitWorkspaceId;
     const perDomain = this.config.isolationMailboxesPerBuyDomain;
     if (this.config.dryRun) {
-      return { ordered: domains.length * perDomain, awaitingNameservers: false };
+      return {
+        ordered: domains.length * perDomain,
+        awaitingNameservers: false,
+      };
     }
 
     const listed = await this.inboxkit.listDomains(workspaceId || undefined, {
@@ -337,20 +419,42 @@ export class IsolationBuyService {
     let seed = Date.now() % 10_000;
     const taken = new Set<string>();
     const pending: string[] = [];
+    const skipReasons: string[] = [];
     for (const [index, domain] of domains.entries()) {
-      const platforms = platformsForDomain(action.detail, perDomain, index);
+      const rawPlatforms = platformsForDomain(action.detail, perDomain, index);
       const existing = await this.listDomainMailboxes(domain, workspaceId);
       for (const username of existingUsernames(existing)) taken.add(username);
+      const inventory = existing.map((row) => ({
+        platform: inboxkitMailboxPlatform(row),
+      }));
+      const lock = lockedEspFromInventory(inventory);
+      // D175 — lock to inventory (or majority) before planning buys / spend
+      // keys. Mixed GOOGLE+MICROSOFT on one domain is what InboxKit rejected
+      // for crosslaunchcouse.info.
+      const platforms = collapseToOneEsp(rawPlatforms, lock);
+      const skipped = [
+        ...new Set(rawPlatforms.filter((p) => !platforms.includes(p))),
+      ];
+      if (lock && skipped.length) {
+        const reason = oneEspSkipReason(domain, lock, skipped);
+        skipReasons.push(reason);
+        console.log(`[isolation-buy] ${reason}`);
+      } else if (!lock && skipped.length) {
+        const pick = platforms[0];
+        const reason =
+          `${domain} empty — provisioning ${pick ?? "none"} only ` +
+          `(InboxKit one ESP per domain, D175; skipped ${skipped.join("/")})`;
+        skipReasons.push(reason);
+        console.log(`[isolation-buy] ${reason}`);
+      }
       this.upsertExistingPoolMailboxes(domain, existing, platforms);
 
-      const plan = planMailboxOrders(
-        platforms,
-        existing.map((row) => ({ platform: inboxkitMailboxPlatform(row) })),
-      );
+      const plan = planMailboxOrders(platforms, inventory);
       const byPlatform = countByPlatform(platforms);
       console.log(
         `[isolation-buy] ${domain} InboxKit inventory=${existing.length}` +
           ` need=${platforms.join("/") || "none"}` +
+          (skipped.length ? ` skipped=${skipped.join("/")}` : "") +
           (plan.buy.length
             ? ` buy ${plan.buy.map((row) => `${row.platform}×${row.count}`).join(",")}`
             : " already filled — no buy"),
@@ -405,16 +509,28 @@ export class IsolationBuyService {
           spendReq,
           decidedBy,
         );
-        await this.inboxkit.buyMailboxes(batch, {
-          workspaceId: workspaceId || undefined,
-          useWalletBalance: true,
-          // Remainder buys must not reuse the original n{planned} key —
-          // InboxKit already accepted that buy and will not no-op a replay.
-          idempotencyKey:
-            toBuy === plannedCount
-              ? spendReq.key
-              : `${spendReq.key}:remain${toBuy}`,
-        });
+        try {
+          await this.inboxkit.buyMailboxes(batch, {
+            workspaceId: workspaceId || undefined,
+            useWalletBalance: true,
+            // Remainder buys must not reuse the original n{planned} key —
+            // InboxKit already accepted that buy and will not no-op a replay.
+            idempotencyKey:
+              toBuy === plannedCount
+                ? spendReq.key
+                : `${spendReq.key}:remain${toBuy}`,
+          });
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (isInboxkitOneEspPerDomainError(message)) {
+            const reason = `${domain}: InboxKit one-ESP rule blocked ${platform} — skipping (D175)`;
+            skipReasons.push(reason);
+            console.log(`[isolation-buy] ${reason} (${message})`);
+            continue;
+          }
+          throw error;
+        }
         await this.spend.consume(decision, spendReq);
         for (const name of names) {
           this.store.upsertPoolMailbox({
@@ -431,7 +547,11 @@ export class IsolationBuyService {
       }
     }
     await this.store.save();
-    return { ordered, awaitingNameservers: pending.length > 0 };
+    return {
+      ordered,
+      awaitingNameservers: pending.length > 0,
+      ...(skipReasons.length ? { espSkipReason: skipReasons.join("; ") } : {}),
+    };
   }
 
   private async listDomainMailboxes(
@@ -515,16 +635,15 @@ function platformsForDomain(
   index: number,
 ): PoolPlatform[] {
   const fromDetail = platformsFromActionDetail(detail, perDomain);
+  // Default is a single ESP for the whole domain (InboxKit cannot mix).
+  // Alternating GOOGLE/MICROSOFT used to plan a second platform buy that
+  // always failed once the first platform was provisioned (D175).
+  const fallback: PoolPlatform = index % 2 === 0 ? "GOOGLE" : "MICROSOFT";
   const platforms = (
-    fromDetail ??
-    Array.from({ length: perDomain }, (_, i) =>
-      (index + i) % 2 === 0 ? ("GOOGLE" as const) : ("MICROSOFT" as const),
-    )
+    fromDetail ?? Array.from({ length: perDomain }, () => fallback)
   ).slice(0, perDomain);
   if (platforms.length) return platforms;
-  return Array.from({ length: perDomain }, () =>
-    index % 2 === 0 ? ("GOOGLE" as const) : ("MICROSOFT" as const),
-  );
+  return Array.from({ length: perDomain }, () => fallback);
 }
 
 function countByPlatform(platforms: PoolPlatform[]): Map<PoolPlatform, number> {

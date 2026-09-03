@@ -86,6 +86,16 @@ export function isSenderNotInCampaignNoise(message: string): boolean {
   return /sender email accounts?.+not used in the campaign/i.test(message);
 }
 
+/**
+ * D175 — InboxKit refuses a second ESP on a domain that already has
+ * Google or Microsoft mailboxes. Isolation-buy skips; do not page.
+ */
+export function isInboxkitOneEspNoise(message: string): boolean {
+  return /only one (esp )?platform is allowed per domain|domain already has (google|microsoft).{0,40}mailboxes|cannot create (microsoft|google).{0,40}mailboxes for domain/i.test(
+    message,
+  );
+}
+
 /** Rate limits/timeouts + approval gates + gone tests — skip Slack paging. */
 export function isBenignOpsNoise(message: string): boolean {
   return (
@@ -94,7 +104,8 @@ export function isBenignOpsNoise(message: string): boolean {
     isMissingSpamTestNoise(message) ||
     isRetryRemovalNoise(message) ||
     isBurnChecklistNoise(message) ||
-    isSenderNotInCampaignNoise(message)
+    isSenderNotInCampaignNoise(message) ||
+    isInboxkitOneEspNoise(message)
   );
 }
 
@@ -144,6 +155,10 @@ export function humanizeAlertError(message: string): string {
 
   if (isSenderNotInCampaignNoise(raw)) {
     return "SmartDelivery says some senders are not on that campaign yet (membership lag). We'll retry next scan.";
+  }
+
+  if (isInboxkitOneEspNoise(raw)) {
+    return "InboxKit allows only one email platform per domain — that domain is already locked to Google or Microsoft. Isolation-buy skips the other ESP.";
   }
 
   if (bounceStats && /\b404\b/i.test(raw)) {

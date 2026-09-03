@@ -165,7 +165,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
 | D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
-| D150 | Live — replacement naming amended by D161 | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
+| D150 | Live — replacement naming amended by D161; one-ESP-per-domain buy amended by D175 | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
 | D152 | Live — suggestion quality amended by D168 | Word-hunt Make the changes proposes a substitute that keeps inboxing — blank delete is last resort for pure spam tokens |
 | D153 | Live | Word-hunt Slack ask offers Write my own edit — modal shows the exact find phrase before Josh types a replacement |
@@ -189,6 +189,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
 | D173 | Live | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
 | D174 | Live | Protected clients (seeded Goliath / 548611) never have a domain retired or burned; degrade to buy/cover; failed post-pull buys retry themselves; Porkbun checks are serialized |
+| D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 
 ---
 
@@ -5130,3 +5131,55 @@ non-protected retire has actually pulled.
 names D174. Unit tests: Goliath domain refuses retire ask and
 execution; failed buy with no domain is resumed; concurrent
 availability checks serialize and rate-limits retry.
+
+## D175 — Isolation-buy is one ESP per domain
+
+**Decision (Josh, 2026-09-03).** InboxKit allows only one ESP
+platform per domain. Isolation-buy (and isolation-buy-resume)
+must never request Microsoft mailboxes on a domain that already
+has Google Workspace, or the reverse. A mixed D150 plan is
+collapsed onto the domain's existing ESP (or, on a fresh
+domain, the majority ESP of the retired mix). The unmatched
+ESP is skipped, the action completes, and the stage is not
+left overdue. Do not buy a second domain to host the other
+ESP without a spend approval.
+
+**Why.** Production `crosslaunchcouse.info` was provisioned
+Google-only. Resume kept planning `GOOGLE/MICROSOFT/GOOGLE`
+and InboxKit rejected every health cycle:
+
+> Cannot create Microsoft 365 mailboxes for domain
+> crosslaunchcouse.info. Domain already has Google Workspace
+> mailboxes. Only one ESP platform is allowed per domain.
+
+`isolation-buy-resume` lastOk sat at ~12:22Z and consecutive
+failures climbed (8+). D149 paged. The D150 "one domain, mixed
+platforms" shape is physically impossible at InboxKit — the
+client already documents "One platform per domain (InboxKit
+cannot mix)". Retrying forever is the bug.
+
+**The rule.**
+
+1. `planMailboxOrders` locks to the ESP already in InboxKit
+   inventory. Remaining buys stay on that platform. The other
+   ESP is not substituted with extra mailboxes of the locked
+   one (that is new spend).
+2. A domain with no mailboxes yet is provisioned as a single
+   ESP — majority of the planned mix, Google on a tie. Never
+   alternate G/M on one domain.
+3. If InboxKit still refuses a second ESP, skip that buy and
+   complete the action. The stage records lastOk. A leftover
+   throw is remediator `noise:inboxkit-one-esp`, not a chase.
+4. Does not auto-buy another domain. Does not change bounce
+   autostop, standing prefs, or D174 protected-client retire.
+
+**Supersedes / amends.** Amends D150's "one domain, mixed
+platforms when both ESPs were present". ESP *matching* still
+sets the intended mix on the action; the buy lands one ESP
+per domain. Does not change D161/D173 naming or D174
+protected-client refuse.
+
+**Guards.** canon D175: `collapseToOneEsp` / `lockedEspFromInventory`
+in isolation-buy; CANON names one ESP per domain. Unit tests:
+Google inventory + G/M/G plan buys no Microsoft; resume
+completes instead of looping.

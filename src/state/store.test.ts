@@ -72,6 +72,37 @@ describe("ops audit state", () => {
   });
 });
 
+describe("D176 attach blocklist", () => {
+  it("persists a domain + account-id block across load", async () => {
+    const filePath = `/tmp/dw-attach-block-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    state.upsertAttachBlock({
+      domain: "cleartechco.com",
+      emails: ["ada@cleartechco.com"],
+      accountIds: [42004],
+      reason: "sender_blocked",
+      source: "campaign:3851730",
+    });
+    await state.save();
+
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    const block = reloaded.getAttachBlock("cleartechco.com");
+    assert.ok(block);
+    assert.deepEqual(block.emails, ["ada@cleartechco.com"]);
+    assert.deepEqual(block.accountIds, [42004]);
+    assert.equal(
+      reloaded.isSenderAttachBlocked({ email: "other@cleartechco.com" }),
+      true,
+    );
+    assert.equal(
+      reloaded.isSenderAttachBlocked({ email: "ok@goliath.com" }),
+      false,
+    );
+  });
+});
+
 describe("D167 serialized save", () => {
   it("does not let an earlier snapshot clobber a later stage lastOk", async () => {
     const filePath = `/tmp/dw-state-save-${process.pid}-${Date.now()}.json`;

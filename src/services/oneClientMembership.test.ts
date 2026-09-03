@@ -7,10 +7,13 @@ import { OneClientMembershipService } from "./oneClientMembership.js";
 
 function serviceWith(
   smartlead: Partial<SmartleadClient>,
+  state?: StateStore,
 ): OneClientMembershipService {
-  const state = new StateStore(
-    `/tmp/one-client-${process.pid}-${Date.now()}-${Math.random()}.json`,
-  );
+  const store =
+    state ??
+    new StateStore(
+      `/tmp/one-client-${process.pid}-${Date.now()}-${Math.random()}.json`,
+    );
   return new OneClientMembershipService(
     loadConfig({ DRY_RUN: "false" }),
     {
@@ -20,7 +23,7 @@ function serviceWith(
       updateEmailAccount: async () => undefined,
       ...smartlead,
     } as unknown as SmartleadClient,
-    state,
+    store,
   );
 }
 
@@ -237,5 +240,49 @@ describe("OneClientMembershipService", () => {
     assert.equal(updates[0]?.fields.signature, undefined);
     assert.equal(result.signaturesSet, 0);
     assert.equal(result.restored.length, 0);
+  });
+
+  it("D176: will not restore an attach-blocked generic onto Goliath", async () => {
+    const added: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/one-client-block-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertAttachBlock({
+      domain: "cleartechco.com",
+      emails: ["ada@cleartechco.com"],
+      accountIds: [11],
+      reason: "sender_blocked",
+    });
+    const service = serviceWith(
+      {
+        listCampaigns: async () => [
+          { id: 3851730, name: "Goliath MDR", status: "ACTIVE", client_id: 548611 },
+          { id: 2, name: "Peterson C3", status: "ACTIVE", client_id: 548610 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "ada@cleartechco.com",
+            from_name: "Ada Clear",
+            signature: "Ada Clear\nGoliath Cybersecurity",
+            client_id: 548610,
+            campaign_ids: [2],
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+          { id: 548610, name: "Peterson", logo: "Roofs by Peterson" },
+        ],
+        addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+          added.push([campaignId, [...ids]]);
+        },
+      },
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(added, []);
+    assert.ok(result.skipped.some((row) => row.includes("attach blocked")));
   });
 });

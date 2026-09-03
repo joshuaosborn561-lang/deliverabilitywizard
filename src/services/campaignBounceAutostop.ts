@@ -19,12 +19,17 @@ import {
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import {
+  isolationAskBlocksDomain,
+  normalizeAttachDomain,
+} from "../lib/attachBlock.js";
 import { domainRecentlyRetired } from "../lib/isolationActions.js";
 import {
   ownerOfDomain,
   refreshDomainOwnerCache,
   requestRetireOrCover,
 } from "../lib/retireAsk.js";
+import { accountEmail } from "../clients/smartlead.js";
 import type { InventoryBook } from "./inventory.js";
 import { sleep } from "../lib/http.js";
 import { BounceResurrectionService } from "./bounceResurrection.js";
@@ -186,6 +191,8 @@ export class CampaignBounceAutostopService {
       console.log("[bounce-autostop] Disabled");
       return result;
     }
+
+    if (!dryRun) this.persistLiveAskAttachBlocks();
 
     let campaigns: SmartleadCampaign[];
     try {
@@ -738,6 +745,15 @@ export class CampaignBounceAutostopService {
     }
     let openedCount = 0;
     for (const [domain, senders] of blockedByDomain) {
+      const accountIds = await this.accountIdsForSenders(senders);
+      store.upsertAttachBlock({
+        domain,
+        emails: senders,
+        accountIds,
+        reason: "sender_blocked",
+        source: `campaign:${campaignId}`,
+        blockedAt: new Date(this.clock()).toISOString(),
+      });
       if (domainRecentlyRetired(store, domain, this.clock())) continue;
       const snippet =
         samples.find(
@@ -782,6 +798,42 @@ export class CampaignBounceAutostopService {
       }
     }
     return openedCount;
+  }
+
+  /**
+   * D176 — a live retire / protected-client cover ask is itself a block,
+   * persisted so restaff still refuses after the Slack card is resolved.
+   */
+  private persistLiveAskAttachBlocks(): void {
+    if (!this.state) return;
+    for (const action of this.state.listIsolationActions()) {
+      const domain = normalizeAttachDomain(
+        String(action.detail.domain ?? action.detail.retiredDomain ?? ""),
+      );
+      if (!domain) continue;
+      if (!isolationAskBlocksDomain(domain, [action])) continue;
+      this.state.upsertAttachBlock({
+        domain,
+        reason: action.kind === "retire_domain" ? "burned" : "sender_blocked",
+        source: `ask:${action.kind}:${action.status}`,
+      });
+    }
+  }
+
+  private async accountIdsForSenders(senders: Set<string>): Promise<number[]> {
+    if (!this.book) return [];
+    try {
+      const snap = await this.book.get();
+      const ids: number[] = [];
+      for (const account of snap.accounts) {
+        const email = accountEmail(account)?.toLowerCase();
+        if (!email || !senders.has(email)) continue;
+        if (typeof account.id === "number") ids.push(account.id);
+      }
+      return ids;
+    } catch {
+      return [];
+    }
   }
 
 }

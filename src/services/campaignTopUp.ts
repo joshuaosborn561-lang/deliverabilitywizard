@@ -10,6 +10,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { owesWarmup } from "./warmupGate.js";
 import {
@@ -435,6 +436,14 @@ export class CampaignTopUpService {
               !isRetiredSendingDomain(
                 domain,
                 this.state.getDomainHistory(domain),
+              ) &&
+              !senderIsAttachBlocked(
+                {
+                  email: key,
+                  accountId: poolAccount?.id,
+                  domain,
+                },
+                this.state,
               ) &&
               // D139 — supply that owes warmup days is not supply.
               !(poolAccount && owesWarmup(poolAccount, key, this.config, this.state))

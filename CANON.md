@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D175** (2026-09-03). One page of current truth. When a new
+Canon as of **D176** (2026-09-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -22,7 +22,7 @@ or the day is done. Silent findings are a bug (D163).
 | Loop | Cadence | Owns |
 |---|---|---|
 | Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43; on-week restore refuses under-warmed — D154) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74) → campaign first-check leftovers incl. signature auto-write (D92) → scan-backfill when a placement test is missing (D116) → canary-copy attach (heals emails-without-testId so the unwarmed reading can finish) → **isolation on-ramp** (score canary/live same-ESP → `markCopySuspect` → evaluate; live % never rotates) every pass so ugly inbox is remediating within one cycle (D158/D159) — a latest INCONCLUSIVE (or `evaluatedAt` with no covering COPY/INFRA/HEALTHY run) **re-queues on ACTIVE senders only** (D164/D165) and the branch loop **re-reads** existing suspects including PAUSED lives already on the list (D164; placement *new* queue stays ACTIVE-only) → stage watchdog + `canonCompliant` yes/no (D108) — an overdue stage **pages Slack once per episode** with a recovery note when it comes back (D149). Same-ESP under 80%, isolation queued, and COPY / INFRA / INCONCLUSIVE **page Slack once per campaign per incident** (`ops_alert`, D163). `/health` names canaries/campaigns still under 80% with no open isolation run or suspect, plus `isolation-branch` lastOk, plus overdue stages (`overdueStages` / per-stage `overdue`, D166). `pod-cover` ticks every pass — idle records lastOkAt with a skip reason; SmartDelivery grow still only when `inbox_missing_known_good` exists, throttled hourly (D89/D166). Old-client teardown (D107/D111) retired (D144). |
-| Bounce loop | 10 min | **Never pauses, never STARTs** (D40/D148 — Josh: "i dont want anything paused anymore... investigating remediating and readding"). A REAL burst — >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141); a tripped counter samples the bounced rows first (retrying while the analytics ledger lags), a ledger dump of stale bounces logs loudly and does nothing, unreadable rows defer to the next tick — classifies the sampled SMTP reasons (tenant-rate-limit / sender-blocked / invalid-recipient / content-block, D140), Slacks ONE receipt naming the burst, the verdict and the plan, opens a **resurrection incident** when the verdict blames the sender, and a **dominant content_block also queues isolation** (D158 — same copy-suspect flag as an ugly canary; never a pause); a re-trip inside the hour folds into the open incident silently. The D90 lifetime-rate rule stays retired. Smartlead's own High Bounce Rate Auto Protection is **UI-only** (D157): the public API validates `bounce_autopause_threshold` and then discards it (a "banana" write returns ok; no GET returns it), so no code here writes or reads the field — the D80/D124/D155 converge generations were no-ops and are deleted. It is unticked on the campaign SETUP page at build (the build skill's QA gate) and by hand for existing campaigns; a Smartlead-initiated pause is recognized by `campaign_activity_logs.paused_reason: "bounce protection"` on GET /campaigns. Never touches COMPLETED/STOPPED. Routing: a Microsoft tenant hitting its daily cap pages once per tenant per day (D140); a `550 5.1.8` / AS(42004) outbound-spam block — ANY sample, never dominant-gated (D145), never burst-gated, ACTIVE or PAUSED (D162) — opens the standard **burned-domain retire ask** for that sender's domain, receipts + buttons, one pending ask per domain (D146); a Smartlead bounce-protection pause must not hide it; a bad-list verdict re-queues nothing and points at the list. **The remediation itself releases the resend** (D147/D148): the incident scans its window (each lead's own NDR re-read; bad addresses stay dead; once per lead per campaign; 20 lead-reads per tick) and parks sender-fault leads until their gate opens — tenant_rate_limit: the next UTC day after the bounced send (cap reset); sender_blocked: the domain's retire ask resolved; content_block: the sequence edited after the incident. Suppression lists respected on the re-add; a gate shut 7 days expires its leads with a receipt; one receipt per flushed wave. Pre-D148 pause stamps still drain: a human START of one opens its job (D147), then the stamp clears — no new stamps are ever written. |
+| Bounce loop | 10 min | **Never pauses, never STARTs** (D40/D148 — Josh: "i dont want anything paused anymore... investigating remediating and readding"). A REAL burst — >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141); a tripped counter samples the bounced rows first (retrying while the analytics ledger lags), a ledger dump of stale bounces logs loudly and does nothing, unreadable rows defer to the next tick — classifies the sampled SMTP reasons (tenant-rate-limit / sender-blocked / invalid-recipient / content-block, D140), Slacks ONE receipt naming the burst, the verdict and the plan, opens a **resurrection incident** when the verdict blames the sender, and a **dominant content_block also queues isolation** (D158 — same copy-suspect flag as an ugly canary; never a pause); a re-trip inside the hour folds into the open incident silently. The D90 lifetime-rate rule stays retired. Smartlead's own High Bounce Rate Auto Protection is **UI-only** (D157): the public API validates `bounce_autopause_threshold` and then discards it (a "banana" write returns ok; no GET returns it), so no code here writes or reads the field — the D80/D124/D155 converge generations were no-ops and are deleted. It is unticked on the campaign SETUP page at build (the build skill's QA gate) and by hand for existing campaigns; a Smartlead-initiated pause is recognized by `campaign_activity_logs.paused_reason: "bounce protection"` on GET /campaigns. Never touches COMPLETED/STOPPED. Routing: a Microsoft tenant hitting its daily cap pages once per tenant per day (D140); a `550 5.1.8` / AS(42004) outbound-spam block — ANY sample, never dominant-gated (D145), never burst-gated, ACTIVE or PAUSED (D162) — opens the standard **burned-domain retire ask** for that sender's domain, receipts + buttons, one pending ask per domain (D146), **and writes that domain (and sender account id) onto the attach blocklist** so restaff cannot put it back (D176); a Smartlead bounce-protection pause must not hide it; a bad-list verdict re-queues nothing and points at the list. **The remediation itself releases the resend** (D147/D148): the incident scans its window (each lead's own NDR re-read; bad addresses stay dead; once per lead per campaign; 20 lead-reads per tick) and parks sender-fault leads until their gate opens — tenant_rate_limit: the next UTC day after the bounced send (cap reset); sender_blocked: the domain's retire ask resolved; content_block: the sequence edited after the incident. Suppression lists respected on the re-add; a gate shut 7 days expires its leads with a receipt; one receipt per flushed wave. Pre-D148 pause stamps still drain: a human START of one opens its job (D147), then the stamp clears — no new stamps are ever written. |
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). Reads the shared account book, never its own fetch (D132). |
 | Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; CANON-miss Slack is the 15-minute pager, D163). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). `/health` names the overdue set (D166). A finished stage checkpoints `lastOk` immediately; `state.save` is serialized so health and monitor cannot clobber a snapshot. A mid-chain kill (Railway SIGTERM) resumes leftover stale 6h stages on the **next 15-minute health tick**, skipping anything still fresh in the cycle — never at boot (D122/D167). The 6h cron still runs the full chain. |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
@@ -69,14 +69,19 @@ or the day is done. Silent findings are a bug (D163).
   Generics with a stale *real* `client_id` belong to the POC client (D76);
   a leftover Generic/POC client_id is cleared, not rewritten (D160).
 - **Floor = half that client's own inboxes** (connected, not held, not
-  resting, not retired, not canary — D58, D82, D99). No named-client
+  resting, not retired, not attach-blocked, not canary — D58, D82, D99,
+  D176). No named-client
   exceptions; Vasco is nobody special (D82). The old global 50 floor is dead.
 - **Fan-out**: a client-owned inbox belongs on every ACTIVE campaign for its
   client even if it currently sits on zero campaigns (D84); BCP-owned domains
   count as BCP even with no `client_id` (D99). Resting inboxes are skipped,
   and so is anything that owes warmup days — staffing never hands the gate
   its next pull; a fresh import waits out its 21 days even if its campaigns
-  sit under floor meanwhile (D139).
+  sit under floor meanwhile (D139). **Attach-blocked** senders
+  (AS(42004) / `sender_blocked` / restricted / bounce-isolation unlink)
+  are skipped the same way — fan-out, top-up, client-rest, and one-client
+  restore must not put them back (D176), including Goliath-protected
+  domains that cannot be retired (D174).
 - **Rest (pods)**: each client's inboxes split into a stable, even A/B
   (D43). Off-week comes OFF **ACTIVE, PAUSED, and STOPPED** client
   campaign memberships — never left on at 0/day, and never left parked
@@ -134,7 +139,8 @@ or the day is done. Silent findings are a bug (D163).
   path forward. Porkbun availability checks are process-wide locked
   (sleep before the request) and retried on the 10-second rate limit.
 - **Retired domains stay off** live campaigns forever; replacements owe the
-  21 days (D65).
+  21 days (D65). **Attach-blocked** domains stay off even when they cannot
+  be retired (D174/D176) — cover buy is the replacement path, not reattach.
 
 ## Pulls and pauses
 
@@ -265,9 +271,10 @@ or the day is done. Silent findings are a bug (D163).
   fleet-wide only on 3+ inbox fails (D49). A blacklist hit alone burns
   nothing (D41).   A Microsoft outbound-spam block on a sender (`550
   5.1.8` / AS(42004)) opens the same retire ask directly — the provider itself
-  calling the sender bad outranks a placement reading (D146/D162). The
-  ask is not gated on a bounce burst or on the campaign still being
-  ACTIVE.
+  calling the sender bad outranks a placement reading (D146/D162) — **and
+  stamps the attach blocklist** so restaff cannot put those senders back
+  (D176). The ask is not gated on a bounce burst or on the campaign still
+  being ACTIVE.
 
 ## Slack contract
 
@@ -276,9 +283,10 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
 1. **Burned domain** — receipts + cancel/replace buttons; the retire tap
    pulls, buys the ESP-matched replacement (client-named when the burned
    domain is a client domain — never a generic/pool spin, D161/D173), and lets
-   generics cover the campaigns it cut (D134/D150). A protected client's
-   domain is never offered as a retire (D174) — the card is a cover buy
-   and says why.
+   generics cover the campaigns it cut (D134/D150).   A protected client's
+  domain is never offered as a retire (D174) — the card is a cover buy
+  and says why. Blocked senders on that domain stay off ACTIVE campaigns
+  (D176); cover is new inventory, not reattach.
 2. **Isolated spam word** — *REMOVE this exact text:* and *REPLACE WITH:*
    in fenced blocks under the campaign name (D170), a substitute that
    keeps the line’s job (offer openers keep the gift/tickets/experience

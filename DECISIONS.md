@@ -99,7 +99,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D81 | Live — amended by D82/D122 |
 | D82 | Live |
 | D83 | Live |
-| D84 | Live — the autopause write-on-drift clause is retired by D157 (no write exists) |
+| D84 | Live — the autopause write-on-drift clause is retired by D157 (no write exists); attach-blocked inventory skipped by D176 |
 | D85 | Live — signature-ask clause superseded by D92/D97 |
 | D86 | Live |
 | D87 | Superseded by D92/D97 |
@@ -190,6 +190,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D173 | Live | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
 | D174 | Live | Protected clients (seeded Goliath / 548611) never have a domain retired or burned; degrade to buy/cover; failed post-pull buys retry themselves; Porkbun checks are serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
+| D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back, including Goliath-protected domains |
 
 ---
 
@@ -5183,3 +5184,49 @@ protected-client refuse.
 in isolation-buy; CANON names one ESP per domain. Unit tests:
 Google inventory + G/M/G plan buys no Microsoft; resume
 completes instead of looping.
+
+## D176 — Restaff must not reattach burned / AS(42004) senders
+
+**Decision (Josh, 2026-09-03).** Once a domain or sender is marked
+burned, AS(42004) / `sender_blocked` / restricted, or deliberately
+unlinked for bounce isolation, restaff must not put it back on ACTIVE
+campaigns. Fan-out (D84), top-up, client-rest restore, and one-client
+restore honor a durable attach blocklist keyed by domain (and email
+account id). A live `retire_domain` ask or a protected-client
+`coverOnly` buy ask is itself a block so a deploy after an unlink
+heals on the first pass. Protected clients still never retire
+(D174) — cover buy is the replacement path; reattach of blocked
+inventory is not. Nothing pauses (D148). Kill-only (D51) is
+unchanged: this is a refuse-to-reattach rule, not a new bounce pull.
+
+**Why.** 2026-09-03 ~3:23pm CT: 50 `cleartechco.com` senders were
+unlinked from Goliath MDR #3851730 and MSP #3851731 after AS(42004)
+bursts. By ~4:22pm Canon QA both campaigns were back at 132 with
+those 50 reattached — D84 fan-out / top-up / one-client treated
+them as ordinary Goliath-owned supply. D174 forbids retiring
+cleartechco, so `isRetiredSendingDomain` never fired. Same class
+on BCP: burned `boldercyperpartner{net,hub,top}.info` senders
+stayed restaffable on HC No Team #3763800 after a
+sender_blocked / content_block burst.
+
+**The rule.**
+
+1. `sender_blocked` / AS(42004) / restricted writes the domain
+   (and known sender emails / account ids) onto `attachBlocks`.
+2. Attach writers skip that inventory. Floor counts skip it too.
+3. A pending/approved/executed retire ask, or a `coverOnly` buy
+   ask, is also a block (deploy-heal for today's unlinks).
+4. Does not pause anyone. Does not invent a 5% open-window
+   pause. Does not auto-unlink (D51). Does not retire a
+   protected domain (D174).
+
+**Supersedes / amends.** Amends D84 (fan-out is not blind once
+the sender is attach-blocked). Amends D59/D169 restore and D76
+one-client restore the same way. Complements D65 (retired stays
+off) and D174 (protected cannot retire — blocklist is the mark).
+Does not reverse D51 or D148.
+
+**Guards.** canon D176: fan-out / rest / top-up / one-client
+call `senderIsAttachBlocked`; bounce loop writes the block;
+CANON names D176. Tests: unlink/mark restricted → subsequent
+restaff leaves the campaign without those senders.

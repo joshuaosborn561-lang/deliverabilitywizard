@@ -11,6 +11,7 @@ import {
   type SlackAllowKind,
 } from "../lib/slackAllow.js";
 import { isolationActionValue } from "../lib/slackSignature.js";
+import { swapCopySlackBody } from "../lib/swapCopyCard.js";
 import {
   SWAP_EDIT_ACTION_ID,
   swapEditModalView,
@@ -1015,34 +1016,33 @@ export class SlackClient {
               : "Retire this domain";
     const findPhrase = details.element?.trim() ?? "";
     const suggested = details.suggestedSwap ?? "";
-    const text = [
-      `*${details.title}*`,
-      details.proof,
+    const text =
       details.kind === "swap_copy" && findPhrase
-        ? [
+        ? swapCopySlackBody({
+            title: details.title,
+            proof: details.proof,
+            element: findPhrase,
+            suggestedSwap: suggested,
+            campaignName: details.campaignName,
+          })
+        : [
+            `*${details.title}*`,
+            details.proof,
             "",
-            "*Replacing this exact phrase/word:*",
-            `\`\`\`${findPhrase.slice(0, 2800)}\`\`\``,
-            suggested.trim()
-              ? `*Suggested edit:* ${suggested.trim()}`
-              : "*Suggested edit:* delete that phrase",
-          ].join("\n")
-        : undefined,
-      "",
-      details.kind === "buy_domains"
-        ? "Cayden cannot approve a purchase. Josh: tap the button (opens a confirm page) or open Railway → /ops."
-        : details.kind === "buy_canary_fleet"
-          ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
-          : details.kind === "generic_backfill"
-            ? "Josh: tap Allow generics (opens a confirm page) to let pool generics backfill this campaign. Cayden cannot approve this."
-          : details.kind === "add_signature_tag"
-            ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
-          : details.kind === "retire_domain"
-            ? "Josh: tap the button (opens a confirm page) to retire. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161), and lets generics cover the campaigns until those warm (D150). Cayden cannot approve this."
-            : "Josh or Cayden: *Use suggested edit* applies the suggestion above fleet-wide (D133). *Write my own edit* opens a Slack form that shows the exact phrase again so you can type a different replacement.",
-    ]
-      .filter((line): line is string => line !== undefined)
-      .join("\n");
+            details.kind === "buy_domains"
+              ? "Cayden cannot approve a purchase. Josh: tap the button (opens a confirm page) or open Railway → /ops."
+              : details.kind === "buy_canary_fleet"
+                ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
+                : details.kind === "generic_backfill"
+                  ? "Josh: tap Allow generics (opens a confirm page) to let pool generics backfill this campaign. Cayden cannot approve this."
+                  : details.kind === "add_signature_tag"
+                    ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
+                    : details.kind === "retire_domain"
+                      ? "Josh: tap the button (opens a confirm page) to retire. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161), and lets generics cover the campaigns until those warm (D150). Cayden cannot approve this."
+                      : "Josh or Cayden: *Use suggested edit* applies REPLACE WITH fleet-wide (D133). *Write my own edit* opens a Slack form that shows REMOVE again so you can type a different replacement.",
+          ]
+            .filter((line): line is string => line !== undefined)
+            .join("\n");
     const approveValue = isolationActionValue(
       details.kind,
       details.actionId,

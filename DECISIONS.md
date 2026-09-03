@@ -182,8 +182,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D165 | Live | Isolation INCONCLUSIVE Slack pages and D164 re-queue are ACTIVE-only — COMPLETED / STOPPED / PAUSED stay quiet |
 | D166 | Live | pod-cover ticks every health pass so lastOkAt cannot freeze; /health names overdue stages |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
-| D168 | Live | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
+| D168 | Live — pending-ask refresh + classifier harden added by D170 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
 | D169 | Live | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
+| D170 | Live | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 
 ---
 
@@ -4846,3 +4847,68 @@ filter is the retired bug). `onWeekTargets` stays ACTIVE-only.
 off-week removed from PAUSED/STOPPED; on-week only-on-PAUSED restored
 to every ACTIVE; BCP-owned domain is not a generic skip; last-account
 still holds on PAUSED; canon D169.
+
+## D170 — Remind refreshes stale word-hunt swaps; never re-page Quick note
+
+**Decision (Josh, 2026-09-02).** TechEvo D133 word-hunt Slack asks were
+still showing pre-D168 suggestions ("Quick note —", school-district
+pen-test) after D168 shipped. Live `suggestedCopySwap` already produced
+good offer-preserving lines (AirPods → "Happy to send a pair of
+AirPods if useful."). The asks were frozen.
+
+**The bug.** `remindPendingIsolationActions` re-sent pending
+`swap_copy` actions **as stored**. Pending rows created before D168
+kept forever-bad `detail.swap` + `proof`. DeliveryWatch / boot remind
+re-paged them about every hour in #deliverability. A govt-identity
+line also Slacked "Quick note —" from that frozen state even though
+a live recompute would have kept TechEvolution.
+
+Classifier holes on the live path: a hunt slice that truncated at
+`{{Local_Sports_Team` (before "tickets") classified as generic and
+missed `OFFER_NOUN_RE`. Identity openers ("we're TechEvolution")
+had no keep-the-company rule.
+
+**The rule.**
+
+1. On remind **and** before first notify: every pending `swap_copy`
+   recomputes `detail.swap = suggestedCopySwap(element, { context,
+   campaignName })` from stored context when present (copyIsolation
+   now persists that context). Rebuild `proof` via `copySwapProof`,
+   upsert, then Slack. Never re-post a swap matching banned defaults:
+   Quick note, `/pen-test/i`, school-district bridge.
+2. `{{Local_Sports_Team}}` / `{{Team_Nickname}}` (even truncated,
+   even without "tickets" in the slice) classify as
+   gift-or-experience-offer. Sports-ticket openers keep the offer.
+3. Company-identity openers ("we're TechEvolution") keep the company
+   name with a light soften. Never "Quick note —".
+4. Default substitutes use `...`, never an em dash (Josh outbound
+   pref).
+5. Does **not** apply live copy, START/STOP, or spend. Josh or
+   Cayden still tap (D133).
+
+**Why.** D168 fixed the generator. The Slack pager was still reading
+the old stored string. A deploy that includes D168 cannot heal
+#deliverability until remind recomputes.
+
+**Supersedes / amends.** Amends D168 (the substitute must be
+recomputed on every Slack page, not only when the hunt first
+writes the ask). Extends D152/D133/D153. Does not change hunt
+deletion measurement or the fleet-apply button.
+
+Josh follow-up (same session): "for the word hunts idk what you're
+suggesting I replace it with it's not clear on the card." The Slack
+`swap_copy` card now leads with *REMOVE this exact text:* and
+*REPLACE WITH:* in fenced blocks under the campaign name. WITH is
+plain prose (spintax flattened unless the find itself is structured
+spintax). Blank WITH is "(delete that phrase... leave nothing)".
+Button label stays *Use suggested edit*. Remind still recomputes
+before notify.
+
+**Guards.** canon D170: `remindPendingIsolationActions` refreshes a
+stale "Quick note —" AirPods swap before Slack; truncated
+`{{Local_Sports_Team` classifies as offer; identity lines keep
+TechEvolution; generated defaults have no em dash. `isBannedCopySwap`
+blocks Quick note / pen-test / school-district. Slack card renders
+REMOVE / REPLACE WITH fences (`swapCopySlackBody`). CANON names the
+remind refresh and the card. Unit tests in `isolationActions.test.ts`
+and `swapCopyCard.test.ts`.

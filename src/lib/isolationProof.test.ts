@@ -25,7 +25,8 @@ describe("isolation proof", () => {
       swap: "complimentary",
       controlLanded: true,
     });
-    assert.match(text, /Replacing this exact phrase\/word: \*free\*/);
+    assert.match(text, /REMOVE this exact text: \*free\*/);
+    assert.match(text, /REPLACE WITH: \*complimentary\*/);
     assert.match(text, /complimentary/);
     assert.match(text, /keeps the line/);
     assert.match(text, /Write my own edit|Use suggested edit/);

@@ -1,4 +1,5 @@
 import type { SlackClient } from "../clients/slack.js";
+import { copySwapProof } from "./isolationProof.js";
 import type {
   IsolationActionKind,
   IsolationActionRecord,
@@ -108,10 +109,31 @@ export async function requestIsolationAction(input: {
   const existing = input.store
     .listIsolationActions()
     .find((row) => samePending(row, input.action));
-  if (existing) return null;
-  input.store.upsertIsolationAction(input.action);
-  await notifyIsolationActionRecord(input.slack, input.action);
-  return input.action;
+  if (existing) {
+    // D170 — a duplicate swap_copy ask still refreshes the frozen
+    // pre-D168 substitute so the pending record is not forever-bad.
+    // Do not Slack again; remind / first notify owns the page.
+    if (existing.kind === "swap_copy" && existing.status === "pending") {
+      const refreshed = refreshCopySwapAction({
+        ...existing,
+        detail: { ...existing.detail, ...input.action.detail },
+      });
+      if (!isBannedCopySwap(String(refreshed.detail.swap ?? ""))) {
+        persistRefreshedCopySwap(input.store, refreshed);
+      }
+    }
+    return null;
+  }
+  const action =
+    input.action.kind === "swap_copy"
+      ? refreshCopySwapAction(input.action)
+      : input.action;
+  if (action.kind === "swap_copy" && isBannedCopySwap(String(action.detail.swap ?? ""))) {
+    return null;
+  }
+  input.store.upsertIsolationAction(action);
+  await notifyIsolationActionRecord(input.slack, action);
+  return action;
 }
 
 export async function notifyIsolationActionRecord(
@@ -180,10 +202,82 @@ export async function remindPendingIsolationActions(input: {
   for (const action of pending) {
     if (action.kind === "buy_canary_fleet" && boughtCanary) continue;
     if (action.kind === "add_signature_tag") continue;
-    await notifyIsolationActionRecord(input.slack, action);
+    const next =
+      action.kind === "swap_copy" ? refreshCopySwapAction(action) : action;
+    if (action.kind === "swap_copy") {
+      if (isBannedCopySwap(String(next.detail.swap ?? ""))) continue;
+      if (String(action.detail.swap ?? "") !== String(next.detail.swap ?? "")) {
+        console.log(
+          `[canon] D170 refreshed pending swap_copy ${action.id}`,
+        );
+      }
+      persistRefreshedCopySwap(input.store, next);
+    }
+    await notifyIsolationActionRecord(input.slack, next);
     posted += 1;
   }
   return posted;
+}
+
+/**
+ * D170 — pending swap_copy rows created before D168 froze "Quick note —"
+ * / school-district pen-test. Recompute from the stored element + context
+ * (or campaignName) before any Slack page.
+ */
+export function refreshCopySwapAction(
+  action: IsolationActionRecord,
+): IsolationActionRecord {
+  if (action.kind !== "swap_copy") return action;
+  const element = String(action.detail.element ?? "");
+  if (!element.trim()) return action;
+  const opts = swapOptsFromDetail(action.detail);
+  let swap = suggestedCopySwap(element, opts);
+  if (isBannedCopySwap(swap)) {
+    swap = preferEllipsis(softenGeneric(resolveSwapText(element, opts.context)));
+  }
+  if (isBannedCopySwap(swap)) swap = "";
+  const campaignName =
+    typeof action.detail.campaignName === "string" && action.detail.campaignName.trim()
+      ? action.detail.campaignName
+      : "Campaign";
+  return {
+    ...action,
+    proof: copySwapProof({
+      campaignName,
+      element,
+      swap,
+      controlLanded: controlLandedFromProof(action.proof),
+    }),
+    detail: { ...action.detail, swap },
+  };
+}
+
+export function isBannedCopySwap(swap: string): boolean {
+  if (/Quick note/i.test(swap)) return true;
+  if (/pen-test/i.test(swap)) return true;
+  if (/from our school-district/i.test(swap)) return true;
+  return false;
+}
+
+function persistRefreshedCopySwap(
+  store: StateStore,
+  action: IsolationActionRecord,
+): void {
+  store.upsertIsolationAction(action);
+}
+
+function swapOptsFromDetail(detail: Record<string, unknown>): SuggestedCopySwapOpts {
+  return {
+    context: typeof detail.context === "string" ? detail.context : undefined,
+    campaignName:
+      typeof detail.campaignName === "string" ? detail.campaignName : undefined,
+    client: typeof detail.client === "string" ? detail.client : undefined,
+  };
+}
+
+function controlLandedFromProof(proof: string): boolean {
+  if (/did not land/.test(proof)) return false;
+  return true;
 }
 
 /** D87 — the campaign ids a signature ask covers (single or bulk). */
@@ -240,6 +334,9 @@ const SPAM_TOKEN_KEYS = new Set(["winner", "winners", "congratulations"]);
 const OFFER_NOUN_RE =
   /\b(?:air\s*pods?|airpods|tickets?|gift cards?|gifts?|jet[\s-]?skis?|round of golf|tee times?|concert tickets?)\b/i;
 
+/** Hunt slices often cut before "tickets" — the merge tag is the offer. */
+const SPORTS_MERGE_RE = /\{\{\s*(?:Local_Sports_Team|Team_Nickname)/i;
+
 const POSSESSION_RE =
   /\b(?:i(?:'ve| have)|i've got|got|i got)\b/i;
 
@@ -248,6 +345,9 @@ const OFFER_BAIT_RE =
 
 const CTA_RE =
   /\b(?:come either way|are yours either way|worth a (?:reply|chat|call)|open to connecting|book (?:here|a))\b/i;
+
+/** "we're TechEvolution" / "we are Acme" identity openers. */
+const COMPANY_IDENTITY_RE = /\bwe(?:'re| are)\s+[A-Za-z][\w.&-]{1,}/i;
 
 /**
  * Expand a hunt slice to the surrounding sentence when the body is
@@ -309,6 +409,9 @@ export function classifyLineJob(
 
 function isOfferLine(text: string): boolean {
   if (OFFER_NOUN_RE.test(text)) return true;
+  // D170 — {{Local_Sports_Team}} / {{Team_Nickname}} is a sports-ticket
+  // offer even when the hunt slice truncates before "tickets".
+  if (SPORTS_MERGE_RE.test(text)) return true;
   // Possession + bait without a known noun ("I've got something for you").
   if (POSSESSION_RE.test(text) && OFFER_BAIT_RE.test(text)) return true;
   return false;
@@ -321,6 +424,12 @@ function isCtaLine(text: string): boolean {
 }
 
 function extractOfferPhrase(text: string): string | undefined {
+  if (SPORTS_MERGE_RE.test(text)) {
+    const name = /Team_Nickname/i.test(text)
+      ? "Team_Nickname"
+      : "Local_Sports_Team";
+    return `{{${name}}} tickets`;
+  }
   const tagged = text.match(
     /\{\{(?:Local_Sports_Team|Team_Nickname)\}\}\s+tickets?/i,
   );
@@ -357,7 +466,59 @@ function softenGeneric(text: string): string {
     if (!to) continue;
     out = out.replace(new RegExp(`\\b${escapeRegExp(from)}\\b`, "ig"), to);
   }
+  return preferEllipsis(out.replace(/\s{2,}/g, " ").trim());
+}
+
+/** Josh outbound pref (D170): defaults use "..." never an em dash. */
+export function preferEllipsis(text: string): string {
+  return text
+    .replace(/\s*[—–]\s*/g, "... ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+export function hasSpintax(text: string): boolean {
+  return /\{[^{}|]+\|[^{}]*\}/.test(text);
+}
+
+export function flattenSpintax(text: string): string {
+  let prev = "";
+  let out = text;
+  while (out !== prev) {
+    prev = out;
+    out = out.replace(/\{([^{}|]+\|[^{}]*)\}/g, (_, inner: string) => {
+      const first = inner.split("|")[0]?.trim() ?? "";
+      return first;
+    });
+  }
   return out.replace(/\s{2,}/g, " ").trim();
+}
+
+function spinGroupCount(text: string): number {
+  return (text.match(/\{[^{}|]+\|[^{}]*\}/g) ?? []).length;
+}
+
+/**
+ * Slack WITH block: prefer a single plain-prose line. Keep spintax only
+ * when the find itself is spintax and the substitute must match that
+ * structure (more than one spin group on both sides).
+ */
+export function plainProseSubstitute(find: string, swap: string): string {
+  const trimmed = swap.trim();
+  if (!trimmed) return "";
+  if (!hasSpintax(trimmed)) return preferEllipsis(trimmed);
+  if (
+    hasSpintax(find) &&
+    spinGroupCount(trimmed) > 1 &&
+    spinGroupCount(find) > 1
+  ) {
+    return preferEllipsis(trimmed);
+  }
+  return preferEllipsis(flattenSpintax(trimmed));
+}
+
+function isCompanyIdentityLine(text: string): boolean {
+  return COMPANY_IDENTITY_RE.test(text);
 }
 
 function escapeRegExp(value: string): string {
@@ -365,15 +526,17 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * D152 / D168 — propose a substitute that still does the job of the line
- * and stayed (or should stay) out of spam. Blank delete is a last resort
- * for pure spam tokens (winner / congratulations), never the default for
- * an opener, offer, or CTA the campaign still needs.
+ * D152 / D168 / D170 — propose a substitute that still does the job of
+ * the line and stayed (or should stay) out of spam. Blank delete is a
+ * last resort for pure spam tokens (winner / congratulations), never the
+ * default for an opener, offer, or CTA the campaign still needs.
  *
  * Offer openers keep the gift / tickets / jet-ski / AirPods intent and
  * drop bait phrasing. The school-district pen-test bridge is retired —
  * it was Goliath copy applied to every client. "Quick note —" is not a
- * default for offer or opener jobs.
+ * default for offer or opener jobs. Identity openers keep the company
+ * name. Defaults use "..." never an em dash. Pending asks are
+ * recomputed on remind (D170) so a pre-D168 freeze cannot be re-paged.
  */
 export function suggestedCopySwap(
   element: string,
@@ -382,20 +545,28 @@ export function suggestedCopySwap(
   const trimmed = element.trim();
   const key = trimmed.toLowerCase();
   if (Object.prototype.hasOwnProperty.call(COPY_SYNONYMS, key)) {
-    return COPY_SYNONYMS[key]!;
+    return plainProseSubstitute(trimmed, COPY_SYNONYMS[key]!);
   }
 
   const text = resolveSwapText(trimmed, opts?.context);
   const job = classifyLineJob(trimmed, opts);
 
   if (job === "spam-token") return "";
-  if (job === "gift-or-experience-offer") return offerSubstitute(text);
-  if (job === "cta") return ctaSubstitute(text);
+  if (job === "gift-or-experience-offer") {
+    return plainProseSubstitute(trimmed, offerSubstitute(text));
+  }
+  if (job === "cta") return plainProseSubstitute(trimmed, ctaSubstitute(text));
+
+  // D170 — "we're TechEvolution" identity openers keep the company name
+  // with a light soften. Never "Quick note —".
+  if (isCompanyIdentityLine(text)) {
+    return plainProseSubstitute(trimmed, softenGeneric(text));
+  }
 
   // Generic: keep the line, lightly softened. Never "Quick note —" and
   // never another client's pitch.
   if (trimmed.length > 40 || /\s/.test(trimmed)) {
-    return softenGeneric(text);
+    return plainProseSubstitute(trimmed, softenGeneric(text));
   }
   return "";
 }

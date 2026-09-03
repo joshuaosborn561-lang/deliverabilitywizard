@@ -1107,7 +1107,7 @@ describe("owner intent — D69 copy Slack is the word and a one-click edit", () 
     });
     assert.match(
       proof,
-      /Replacing this exact phrase\/word: \*free\*/,
+      /REMOVE this exact text: \*free\*/,
       stop(
         "The Slack names the exact phrase being replaced (D69/D153).",
         "copySwapProof no longer names the find phrase.",
@@ -4899,10 +4899,10 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
     );
     assert.match(
       modal,
-      /Replacing this exact phrase\/word/,
+      /REMOVE this exact text/,
       stop(
         "The edit modal labels the exact find phrase (D153).",
-        "slackSwapEdit.ts lost the Replacing this exact phrase/word label.",
+        "slackSwapEdit.ts lost the REMOVE this exact text label.",
       ),
     );
     const index = await readFile(
@@ -6369,10 +6369,10 @@ describe("owner intent — D169 A/B rest does not let PAUSED hoard the pod", () 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D169\*\*/,
+      /D169/,
       stop(
-        "CANON is as of D169.",
-        "CANON.md header was not bumped to D169.",
+        "CANON still names D169.",
+        "CANON.md lost D169.",
       ),
     );
     assert.match(
@@ -6393,6 +6393,213 @@ describe("owner intent — D169 A/B rest does not let PAUSED hoard the pod", () 
       stop(
         "The paused-hoard rest rule is in the ledger (D169).",
         "DECISIONS.md no longer has D169.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
+  it("D170: remind recomputes swap_copy; Local_Sports_Team is an offer; no em-dash defaults", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actions,
+      /refreshCopySwapAction/,
+      stop(
+        "Pending swap_copy asks are recomputed before Slack (D170).",
+        "isolationActions.ts lost refreshCopySwapAction.",
+      ),
+    );
+    assert.match(
+      actions,
+      /isBannedCopySwap/,
+      stop(
+        "Banned Quick note / pen-test / school-district swaps are not re-paged (D170).",
+        "isolationActions.ts lost isBannedCopySwap.",
+      ),
+    );
+    assert.match(
+      actions,
+      /SPORTS_MERGE_RE|Local_Sports_Team/,
+      stop(
+        "Truncated {{Local_Sports_Team is an offer even without tickets (D170).",
+        "isolationActions.ts lost the sports-merge offer classifier.",
+      ),
+    );
+    assert.match(
+      actions,
+      /COMPANY_IDENTITY_RE|isCompanyIdentityLine/,
+      stop(
+        "Company-identity openers keep the company name (D170).",
+        "isolationActions.ts lost the identity-line keep.",
+      ),
+    );
+    assert.match(
+      actions,
+      /preferEllipsis/,
+      stop(
+        "Default substitutes use ... never an em dash (D170).",
+        "isolationActions.ts lost preferEllipsis.",
+      ),
+    );
+    assert.match(
+      actions,
+      /remindPendingIsolationActions[\s\S]*refreshCopySwapAction/,
+      stop(
+        "remindPendingIsolationActions refreshes swap_copy before Slack (D170).",
+        "remind still re-posts pending swap_copy as stored.",
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      slack,
+      /swapCopySlackBody/,
+      stop(
+        "swap_copy Slack cards use the REMOVE / REPLACE WITH body (D170).",
+        "notifyIsolationAction no longer calls swapCopySlackBody.",
+      ),
+    );
+    const card = await readFile(
+      new URL("../lib/swapCopyCard.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      card,
+      /REMOVE this exact text/,
+      stop(
+        "The word-hunt Slack card labels REMOVE (D170).",
+        "swapCopyCard.ts lost the REMOVE fence label.",
+      ),
+    );
+    assert.match(
+      card,
+      /REPLACE WITH/,
+      stop(
+        "The word-hunt Slack card labels REPLACE WITH (D170).",
+        "swapCopyCard.ts lost the REPLACE WITH fence.",
+      ),
+    );
+
+    const {
+      suggestedCopySwap,
+      classifyLineJob,
+      isBannedCopySwap,
+      refreshCopySwapAction,
+    } = await import("../lib/isolationActions.js");
+    assert.equal(
+      classifyLineJob("I've got a couple {{Local_Sports_Team"),
+      "gift-or-experience-offer",
+      stop(
+        "Truncated Local_Sports_Team classifies as an offer (D170).",
+        `classified as ${classifyLineJob("I've got a couple {{Local_Sports_Team")}.`,
+      ),
+    );
+    const identity = suggestedCopySwap(
+      "Hey, we're TechEvolution and we help IT teams stay online.",
+    );
+    assert.match(
+      identity,
+      /TechEvolution/i,
+      stop(
+        "Identity openers keep TechEvolution (D170).",
+        `suggestedCopySwap returned ${identity}`,
+      ),
+    );
+    assert.doesNotMatch(
+      identity,
+      /Quick note|pen-test|—/,
+      stop(
+        "Identity openers must not become Quick note or use an em dash (D170).",
+        `suggestedCopySwap returned ${identity}`,
+      ),
+    );
+    const airpods = suggestedCopySwap(
+      "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+    );
+    assert.match(
+      airpods,
+      /Air\s*Pods/i,
+      stop(
+        "AirPods substitutes still keep the offer (D170).",
+        `suggestedCopySwap returned ${airpods}`,
+      ),
+    );
+    assert.doesNotMatch(
+      airpods,
+      /—/,
+      stop(
+        "Default substitutes must not use an em dash (D170).",
+        `suggestedCopySwap returned ${airpods}`,
+      ),
+    );
+    assert.equal(
+      isBannedCopySwap("Quick note —"),
+      true,
+      stop(
+        "Quick note is a banned default (D170).",
+        "isBannedCopySwap no longer flags Quick note.",
+      ),
+    );
+
+    const { buildIsolationAction } = await import("../lib/isolationActions.js");
+    const refreshed = refreshCopySwapAction(
+      buildIsolationAction({
+        kind: "swap_copy",
+        title: "stale",
+        proof: "Suggested edit: *Quick note —*.",
+        detail: {
+          campaignName: "TechEvo AirPods",
+          element:
+            "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
+          swap: "Quick note —",
+        },
+      }),
+    );
+    assert.match(
+      String(refreshed.detail.swap),
+      /Air\s*Pods/i,
+      stop(
+        "refreshCopySwapAction rewrites a frozen Quick note AirPods swap (D170).",
+        `refresh returned ${String(refreshed.detail.swap)}`,
+      ),
+    );
+
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D170\*\*/,
+      stop(
+        "CANON is as of D170.",
+        "CANON.md header was not bumped to D170.",
+      ),
+    );
+    assert.match(
+      canon,
+      /recomputed|refresh/,
+      stop(
+        "CANON names the pending swap_copy remind refresh (D170).",
+        "CANON.md lost the D170 remind-refresh rule.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D170 — Remind refreshes stale word-hunt swaps/,
+      stop(
+        "The remind-refresh rule is in the ledger (D170).",
+        "DECISIONS.md no longer has D170.",
       ),
     );
   });

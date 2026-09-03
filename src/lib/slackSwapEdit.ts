@@ -32,7 +32,7 @@ export function swapEditModalView(input: {
           type: "mrkdwn",
           text: [
             campaign ? `*Campaign:* ${campaign}` : undefined,
-            "*Replacing this exact phrase/word:*",
+            "*REMOVE this exact text:*",
             `\`\`\`${truncateForSlack(element, 2800)}\`\`\``,
           ]
             .filter(Boolean)
@@ -52,7 +52,7 @@ export function swapEditModalView(input: {
         type: "input",
         block_id: SWAP_EDIT_INPUT_BLOCK_ID,
         optional: true,
-        label: { type: "plain_text", text: "Replace it with" },
+        label: { type: "plain_text", text: "REPLACE WITH" },
         element: {
           type: "plain_text_input",
           action_id: SWAP_EDIT_INPUT_ACTION_ID,

@@ -18,10 +18,11 @@ describe("slackSwapEdit — D153 write your own edit", () => {
     assert.equal(view.callback_id, SWAP_EDIT_CALLBACK_ID);
     assert.equal(view.private_metadata, "swap_copy-1");
     const blob = JSON.stringify(view);
-    assert.match(blob, /Replacing this exact phrase\/word/);
+    assert.match(blob, /REMOVE this exact text/);
     assert.match(blob, /Air Pods/);
     assert.match(blob, /Quick note from our pen-test work/);
     assert.match(blob, /Goliath Education Receipts/);
+    assert.match(blob, /REPLACE WITH/);
   });
 
   it("reads the typed replacement from the view submission", () => {

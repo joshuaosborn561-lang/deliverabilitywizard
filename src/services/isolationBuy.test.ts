@@ -8,7 +8,9 @@ import { StateStore } from "../state/store.js";
 import {
   INBOXKIT_MAX_MAILBOXES_PER_DOMAIN,
   IsolationBuyService,
+  collapseToOneEsp,
   isolationMailboxSpendKey,
+  lockedEspFromInventory,
   planMailboxOrders,
 } from "./isolationBuy.js";
 
@@ -154,6 +156,47 @@ describe("planMailboxOrders — reconcile before buy", () => {
     assert.deepEqual(plan.buy, []);
     assert.equal(plan.alreadyHave, 3);
   });
+
+  it("D175: domain already Google does not buy MICROSOFT on the same domain", () => {
+    // Production: crosslaunchcouse.info had Google×2; plan was G/M/G;
+    // InboxKit rejected "Only one ESP platform is allowed per domain".
+    const plan = planMailboxOrders(
+      ["GOOGLE", "MICROSOFT", "GOOGLE"],
+      [{ platform: "GOOGLE" }, { platform: "GOOGLE" }],
+    );
+    assert.deepEqual(plan.buy, []);
+    assert.equal(plan.alreadyHave, 2);
+    assert.equal(
+      plan.buy.some((row) => row.platform === "MICROSOFT"),
+      false,
+    );
+  });
+
+  it("D175: locked Google only buys remaining Google, never Microsoft", () => {
+    const plan = planMailboxOrders(
+      ["GOOGLE", "MICROSOFT", "GOOGLE"],
+      [{ platform: "GOOGLE" }],
+    );
+    assert.deepEqual(plan.buy, [{ platform: "GOOGLE", count: 1 }]);
+    assert.equal(
+      plan.buy.some((row) => row.platform === "MICROSOFT"),
+      false,
+    );
+  });
+
+  it("D175: empty domain collapses a mixed plan onto the majority ESP", () => {
+    assert.equal(lockedEspFromInventory([{ platform: "GOOGLE" }]), "GOOGLE");
+    assert.deepEqual(
+      collapseToOneEsp(["GOOGLE", "MICROSOFT", "GOOGLE"], "GOOGLE"),
+      ["GOOGLE", "GOOGLE"],
+    );
+    assert.deepEqual(
+      collapseToOneEsp(["GOOGLE", "MICROSOFT", "MICROSOFT"], null),
+      ["MICROSOFT", "MICROSOFT", "MICROSOFT"],
+    );
+    const plan = planMailboxOrders(["GOOGLE", "MICROSOFT", "GOOGLE"], []);
+    assert.deepEqual(plan.buy, [{ platform: "GOOGLE", count: 3 }]);
+  });
 });
 
 describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
@@ -234,15 +277,14 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
         buyMailboxes: async (
           batch: Array<{ platform: string; domain_name: string }>,
         ) => {
-          if (opts.buyMailboxes) {
-            await opts.buyMailboxes(batch);
-            return;
-          }
           buys.push({
             platform: batch[0]?.platform ?? "",
             domain: batch[0]?.domain_name ?? "",
             count: batch.length,
           });
+          if (opts.buyMailboxes) {
+            await opts.buyMailboxes(batch);
+          }
         },
       } as unknown as InboxKitClient,
     };
@@ -449,5 +491,94 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
     assert.ok(Array.isArray(next?.detail.domains) && next.detail.domains.length);
     assert.match(String(next?.detail.domains[0] ?? ""), /goliath/);
     assert.doesNotMatch(String(next?.detail.domains[0] ?? ""), /crosslaunchco/);
+  });
+
+  it("D175: never buys Microsoft on a domain that already has Google mailboxes", async () => {
+    const state = await buyStore();
+    const action = awaitingAction(["GOOGLE", "MICROSOFT", "GOOGLE"]);
+    state.upsertIsolationAction(action);
+    const inboxkit = mockInboxkit({
+      rows: [
+        {
+          username: "keep1",
+          email: `keep1@${domain}`,
+          domain_name: domain,
+          platform: "GOOGLE",
+          first_name: "Keep",
+          last_name: "One",
+        },
+        {
+          username: "keep2",
+          email: `keep2@${domain}`,
+          domain_name: domain,
+          platform: "GOOGLE",
+          first_name: "Keep",
+          last_name: "Two",
+        },
+      ],
+      buyMailboxes: async (batch) => {
+        throw new Error(
+          `Cannot create ${batch[0]?.platform === "MICROSOFT" ? "Microsoft 365" : "Google Workspace"} mailboxes for domain ${domain}. Domain already has Google Workspace mailboxes. Only one ESP platform is allowed per domain.`,
+        );
+      },
+    });
+    const spend = trackingSpend();
+    const svc = new IsolationBuyService(
+      liveConfig(),
+      inboxkit.client,
+      null,
+      state,
+      spend.gateway,
+    );
+
+    const finished = await svc.resume();
+    assert.equal(finished, 1);
+    assert.equal(state.getIsolationAction(action.id)?.detail.phase, "complete");
+    assert.equal(inboxkit.buys.length, 0);
+    assert.match(
+      String(state.getIsolationAction(action.id)?.detail.espSkipReason ?? ""),
+      /locked to GOOGLE/i,
+    );
+  });
+
+  it("D175: InboxKit one-ESP refusal completes the stage instead of looping", async () => {
+    const state = await buyStore();
+    // Empty inventory + mixed plan would buy Google; force the vendor
+    // refusal on that buy so the catch path still marks the action done.
+    const action = awaitingAction(["GOOGLE", "MICROSOFT", "GOOGLE"]);
+    state.upsertIsolationAction(action);
+    const inboxkit = mockInboxkit({
+      rows: [
+        {
+          username: "keep1",
+          email: `keep1@${domain}`,
+          domain_name: domain,
+          platform: "GOOGLE",
+          first_name: "Keep",
+          last_name: "One",
+        },
+      ],
+      buyMailboxes: async () => {
+        throw new Error(
+          `Cannot create Microsoft 365 mailboxes for domain ${domain}. Domain already has Google Workspace mailboxes. Only one ESP platform is allowed per domain.`,
+        );
+      },
+    });
+    const spend = trackingSpend();
+    const svc = new IsolationBuyService(
+      liveConfig(),
+      inboxkit.client,
+      null,
+      state,
+      spend.gateway,
+    );
+
+    const finished = await svc.resume();
+    assert.equal(finished, 1);
+    assert.equal(state.getIsolationAction(action.id)?.detail.phase, "complete");
+    assert.equal(
+      inboxkit.buys.some((row) => row.platform === "MICROSOFT"),
+      false,
+    );
   });
 });

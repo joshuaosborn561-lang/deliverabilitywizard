@@ -167,6 +167,17 @@ describe("classifyFailure", () => {
     assert.equal(other.fingerprint, c.fingerprint);
   });
 
+  it("treats InboxKit one-ESP-per-domain refusals as non-remediable noise", () => {
+    const c = classifyFailure(
+      "stage-isolation-buy-resume",
+      "Cannot create Microsoft 365 mailboxes for domain crosslaunchcouse.info. Domain already has Google Workspace mailboxes. Only one ESP platform is allowed per domain.",
+    );
+    assert.equal(c.class, "noise");
+    assert.equal(c.autoRemediate, false);
+    assert.equal(c.fingerprint, "noise:inboxkit-one-esp");
+    assert.match(c.summary, /one-ESP/i);
+  });
+
   it("treats denied/pending teardown approval as non-remediable noise", () => {
     const denied = classifyFailure(
       "remediation",

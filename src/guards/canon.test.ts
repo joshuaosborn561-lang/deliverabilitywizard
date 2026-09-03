@@ -7146,3 +7146,69 @@ describe("owner intent — D174 protected clients never retire", () => {
     );
   });
 });
+
+describe("owner intent — D175 isolation-buy is one ESP per domain", () => {
+  it("D175: never mix Google and Microsoft on one InboxKit domain", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const buy = await readFile(
+      new URL("../services/isolationBuy.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      buy,
+      /collapseToOneEsp/,
+      stop(
+        "Isolation-buy collapses a mixed plan onto one ESP (D175).",
+        "isolationBuy.ts can still plan Google + Microsoft on one domain.",
+      ),
+    );
+    assert.match(
+      buy,
+      /lockedEspFromInventory/,
+      stop(
+        "A domain already carrying Google or Microsoft locks remaining buys (D175).",
+        "isolationBuy.ts no longer reads the domain's existing ESP.",
+      ),
+    );
+    assert.match(
+      buy,
+      /isInboxkitOneEspPerDomainError/,
+      stop(
+        "An InboxKit one-ESP refusal is skipped, not retried forever (D175).",
+        "isolationBuy.ts still throws the Microsoft-on-Google error up to the stage.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /InboxKit\s+allows one ESP per domain/,
+      stop(
+        "CANON states InboxKit is one ESP per domain (D175).",
+        "CANON.md lost the D175 one-ESP rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D175/,
+      stop(
+        "CANON still names the one-ESP isolation-buy rule (D175).",
+        "CANON.md dropped D175 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D175 — Isolation-buy is one ESP per domain/,
+      stop(
+        "The one-ESP isolation-buy rule is in the ledger (D175).",
+        "DECISIONS.md no longer has D175.",
+      ),
+    );
+  });
+});

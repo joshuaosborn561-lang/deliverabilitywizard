@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D174** (2026-09-03). One page of current truth. When a new
+Canon as of **D175** (2026-09-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -103,7 +103,13 @@ or the day is done. Silent findings are a bug (D163).
   A domain-retire tap is one fell swoop (D150): pull the burned
   inboxes, buy a replacement domain whose Google/Outlook mailbox mix
   matches what was retired, and auto-approve generics to cover the ACTIVE
-  campaigns it cut until those replacements warm (D134). **A client-domain
+  campaigns it cut until those replacements warm (D134). **InboxKit
+  allows one ESP per domain** (D175): isolation-buy never requests
+  Microsoft on a domain that already has Google (or the reverse). A
+  fresh replacement is provisioned as one ESP (majority of the retired
+  mix). The unmatched ESP is skipped and the stage completes — no
+  second domain without a spend approval, no overdue retry loop.
+  **A client-domain
   retire MUST buy a client-named replacement for that client** (BCP →
   `boldercyperpartner*` / `getboldercyperpartner*` / `tryboldercyperpartner*`
   style names already used for that client) — never a generic

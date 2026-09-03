@@ -104,6 +104,32 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
+  /**
+   * D174 — Smartlead client ids whose sending domains must never be
+   * retired or burned. Seeded with Goliath (548611).
+   */
+  protectedClientIds: z
+    .string()
+    .default("548611")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => Number(x.trim()))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  /**
+   * D174 — client name/logo fragments that mark a protected client
+   * (same matching style as POC patterns). Seeded with goliath.
+   */
+  protectedClientNames: z
+    .string()
+    .default("goliath")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   enableCampaignTopUp: boolFromEnv(true),
   /**
    * Fast staffing loop: reconnect → mailbox settings → refill/unpause.
@@ -473,6 +499,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath",
+    protectedClientIds: env.PROTECTED_CLIENT_IDS ?? "548611",
+    protectedClientNames: env.PROTECTED_CLIENT_NAMES ?? "goliath",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,

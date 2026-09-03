@@ -4,6 +4,7 @@ import type { VariantKind } from "../lib/copyVariants.js";
 import type { CopyCanaryFleetRecord } from "../lib/copyCanaryFleet.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
 import type { PodPool, PodStatus } from "../lib/pods.js";
+import type { DomainOwnerRecord } from "../lib/domainOwnership.js";
 
 export interface IsolationControlTemplateRecord {
   controlVersion: string;
@@ -198,6 +199,8 @@ export interface IsolationState {
   lastDeliveryWatchAt: string | null;
   lastRigBaselineAt: string | null;
   domainHistory: Record<string, DomainControlHistoryRecord>;
+  /** D173 — last resolved sending-domain owner (mailbox client_id). */
+  domainOwners: Record<string, DomainOwnerRecord>;
   actions: Record<string, IsolationActionRecord>;
 }
 
@@ -221,6 +224,7 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   lastDeliveryWatchAt: null,
   lastRigBaselineAt: null,
   domainHistory: {},
+  domainOwners: {},
   actions: {},
 };
 
@@ -256,6 +260,7 @@ export function normalizeIsolationState(
     lastDeliveryWatchAt: raw?.lastDeliveryWatchAt ?? null,
     lastRigBaselineAt: raw?.lastRigBaselineAt ?? null,
     domainHistory: raw?.domainHistory ?? {},
+    domainOwners: raw?.domainOwners ?? {},
     actions: raw?.actions ?? {},
   };
 }

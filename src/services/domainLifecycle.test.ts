@@ -122,4 +122,74 @@ describe("DomainLifecycleService", () => {
     assert.match(parent, /boldercyperpartner/);
     assert.doesNotMatch(parent, /crosslaunchco/);
   });
+
+  it("D174: a protected client's domain opens a cover buy, never a retire ask", async () => {
+    const state = await store();
+    const slack = new FakeSlack();
+    const svc = new DomainLifecycleService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      state,
+      slack as never,
+    );
+    const owner = {
+      domain: "nowoutreachdesk.com",
+      kind: "client" as const,
+      clientId: 548611,
+      clientName: "Goliath Cybersecurity (Dave Ackley)",
+      mailboxCount: 3,
+      uniqueClientIds: [548611],
+      planSaysGeneric: true,
+      conflict: true,
+      source: "mailboxes" as const,
+      updatedAt: "t1",
+    };
+    state.upsertDomainOwner(owner);
+    await svc.afterReadings(
+      [
+        { email: "a@nowoutreachdesk.com", placement: "SPAM", ranAt: "t1" },
+        { email: "b@nowoutreachdesk.com", placement: "SPAM", ranAt: "t1" },
+        { email: "c@nowoutreachdesk.com", placement: "SPAM", ranAt: "t1" },
+      ],
+      {
+        accounts: [
+          { from_email: "a@nowoutreachdesk.com", client_id: 548611 },
+          { from_email: "b@nowoutreachdesk.com", client_id: 548611 },
+          { from_email: "c@nowoutreachdesk.com", client_id: 548611 },
+        ] as never,
+        clients: [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+      },
+    );
+    await svc.afterReadings(
+      [
+        { email: "a@nowoutreachdesk.com", placement: "SPAM", ranAt: "t2" },
+        { email: "b@nowoutreachdesk.com", placement: "SPAM", ranAt: "t2" },
+        { email: "c@nowoutreachdesk.com", placement: "SPAM", ranAt: "t2" },
+      ],
+      {
+        accounts: [
+          { from_email: "a@nowoutreachdesk.com", client_id: 548611 },
+          { from_email: "b@nowoutreachdesk.com", client_id: 548611 },
+          { from_email: "c@nowoutreachdesk.com", client_id: 548611 },
+        ] as never,
+        clients: [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+      },
+    );
+    const actions = state.listIsolationActions();
+    assert.equal(
+      actions.some((row) => row.kind === "retire_domain"),
+      false,
+      "protected client must not get a retire ask",
+    );
+    const buy = actions.find((row) => row.kind === "buy_domains");
+    assert.ok(buy, "degrades to the buy/cover path");
+    assert.match(buy?.title ?? "", /not retiring/i);
+    assert.match(buy?.proof ?? "", /protected client/i);
+    assert.match(String(buy?.detail.parentDomain ?? ""), /goliath/);
+    assert.doesNotMatch(String(buy?.detail.parentDomain ?? ""), /crosslaunchco/);
+    assert.equal(state.getDomainHistory("nowoutreachdesk.com")?.status, "watch");
+  });
 });

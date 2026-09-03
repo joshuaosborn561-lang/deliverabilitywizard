@@ -446,6 +446,21 @@ async function loadIsolation() {
         );
         card.append(header);
         if (action.proof) card.append(make("pre", "setup-prompt", action.proof));
+        const retryReason = String(
+          action.error || action.detail?.retryReason || "",
+        ).trim();
+        const phase = String(action.detail?.phase || "");
+        if (phase === "awaiting_purchase" || retryReason) {
+          card.append(
+            make(
+              "p",
+              "muted",
+              retryReason
+                ? `Retrying purchase (no human tap): ${retryReason}`
+                : "Retrying purchase — no domain yet. Health will retry (D174).",
+            ),
+          );
+        }
         card.append(make("p", "muted", formatDate(action.requestedAt)));
         if (canDecideIsolation(action)) {
           const row = make("div", "approval-actions");

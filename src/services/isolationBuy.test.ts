@@ -408,4 +408,46 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
     assert.equal(state.getIsolationAction(action.id)?.detail.phase, "complete");
     assert.equal(state.listPoolMailboxes().length, 3);
   });
+
+  it("D174: a failed buy with no domain is retryable and resume purchases", async () => {
+    const state = await buyStore();
+    const action = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Replacement for retired meetconnectapp.com",
+      proof: "proof",
+      detail: {
+        domain: "meetconnectapp.com",
+        retiredDomain: "meetconnectapp.com",
+        ownerKind: "client",
+        ownerClientId: 548611,
+        ownerClientName: "Goliath Cybersecurity",
+        phase: "awaiting_purchase",
+        quantity: 1,
+      },
+    });
+    action.status = "approved";
+    action.decidedBy = "Josh";
+    action.error = "1 out of 1 checks within 10 seconds used.";
+    state.upsertIsolationAction(action);
+    assert.ok(
+      state.pendingIsolationActions().some((row) => row.id === action.id),
+      "stuck buy surfaces in the pending queue",
+    );
+
+    const porkbun = porkbunAllAvailable();
+    const svc = new IsolationBuyService(
+      dryConfig(),
+      {} as never,
+      porkbun.client as never,
+      state,
+      {} as never,
+    );
+    const finished = await svc.resume();
+    assert.equal(finished, 1);
+    const next = state.getIsolationAction(action.id);
+    assert.equal(next?.status, "executed");
+    assert.ok(Array.isArray(next?.detail.domains) && next.detail.domains.length);
+    assert.match(String(next?.detail.domains[0] ?? ""), /goliath/);
+    assert.doesNotMatch(String(next?.detail.domains[0] ?? ""), /crosslaunchco/);
+  });
 });

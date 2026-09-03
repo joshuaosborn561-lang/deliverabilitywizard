@@ -187,6 +187,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
+| D173 | Live | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
+| D174 | Live | Protected clients (seeded Goliath / 548611) never have a domain retired or burned; degrade to buy/cover; failed post-pull buys retry themselves; Porkbun checks are serialized |
 
 ---
 
@@ -5022,3 +5024,109 @@ gated on writesLeft; CANON names the reserve and the mislabel.
 Unit tests in `domainClientAudit.test.ts`: tagging at the cap
 still attaches; confident warm attach; D143 after the budget is
 spent; starved domain says budget exhausted, never none-resolve.
+
+## D173 — Ownership-aware sending-domain classification
+
+**Decision (Josh, 2026-09-03).** A sending domain's owner is who
+staffs it. Live mailbox `client_id`s win; the generic pool plan is
+the fallback when mailboxes name no real Smartlead client. A
+plan-listed domain whose live mailboxes belong to one real client
+is that client's domain for every downstream decision — retire
+eligibility, replacement naming, generic-cover.
+
+**Why.** On 2026-09-03 the wizard retired `nowoutreachdesk.com`,
+`huboutreachdesk.com`, and `meetconnectapp.com` (and left
+`meetconnectnow.com` retire_pending). Every mailbox on those
+domains is Smartlead client 548611 (Goliath) with the Goliath
+Cybersecurity signature. The classifier (`isGenericPoolDomain` /
+`isGenericSendingDomain`) decided generic-vs-client from static
+membership in `GENERIC_POOL_PLAN` and never looked at the
+mailboxes. The plan listed those hosts, so they were treated as
+generic for both retire eligibility and D161 replacement naming —
+the replacement for `meetconnectapp.com` was
+`usecrosslaunchco.info`.
+
+**The rule.**
+
+1. Resolve ownership from the domain's live mailboxes. One unique
+   real (non-marker Generic/POC) `client_id` → that client owns
+   the domain. Cache the result. The static plan / extra-generic /
+   pre-warmed lists are the fallback when no real client staffs it.
+2. A plan-vs-mailbox conflict is logged
+   (`[domain-owner] … treating as client-owned (D173)`). The
+   mailboxes win.
+3. `isGenericSendingDomain` / `isClientSendingDomain` /
+   `replacementParentForRetiredDomain` take that owner. A
+   client-owned domain's replacement is client-named (D161) —
+   if the burned hostname is itself a generic brand, spin from
+   the client's brand (`Goliath Cybersecurity` →
+   `goliathcybersecurity*`), never `crosslaunchco` / pool.
+4. Does **not** rewrite A/B rest or one-client staffing
+   (`isGenericMailbox` / D76 / D160 stay). Those clocks still
+   treat pool-plan domains as generics for rest.
+
+**Supersedes / amends.** Amends D161's *classifier* (the
+client-named replace MUST stays; "is this a client domain?" now
+reads mailboxes). Does not change D150's one-tap fell swoop,
+D134 backfill, or D76 leftover-id-on-a-true-generic rest.
+
+**Guards.** canon D173: `resolveDomainOwner` / mailbox `client_id`
+wins; `replacementParentForRetiredDomain` takes `owner`; CANON
+names D173. Unit tests: plan-listed domain staffed by Goliath
+mailboxes is client-owned; its replacement parent is
+`goliath*`, never `crosslaunchco`.
+
+## D174 — Protected clients never have a domain retired or burned
+
+**Decision (Josh, 2026-09-03).** Goliath (Smartlead client
+`548611`) domains must never be burned or retired. The list is
+configurable (`PROTECTED_CLIENT_IDS` / `PROTECTED_CLIENT_NAMES`)
+and seeded with `548611` / `goliath`. A protected client's
+domain never produces a retire ask or a retire execution: it
+degrades to the buy/cover-replacements path, and Slack says
+plainly why a retire is not on offer.
+
+**Why.** Same 2026-09-03 incident. Nothing in the deployed code
+enforced a protected-client rule, so the retires went through
+and pulled every inbox off 7 live Goliath campaigns (137 → 132
+senders, no automatic refill). `meetconnectnow.com` is still
+`retire_pending`. Two replacement buys then died on Porkbun's
+"1 out of 1 checks within 10 seconds used." after the inboxes
+were already pulled; those actions sat in `approved` with no
+purchased domain and no resume path (resume only picked up
+`awaiting_mailboxes` with a domain). The availability client
+slept *after* `/domain/checkDomain` with no cross-job lock, so
+concurrent retire/buy jobs shared one 10-second window.
+
+**The rule.**
+
+1. A domain owned by a protected client (mailbox owner from
+   D173, or the seeded id/name list) **never** opens a
+   `retire_domain` ask. The Slack card is a cover *buy* and
+   names D174.
+2. Execution refuses even an already-open pending retire
+   (inboxes stay put). The tap converts to a cover buy.
+3. A replacement buy that fails after a pull persists
+   `phase: awaiting_purchase` (retryable). `IsolationBuy.resume`
+   picks it up on the 15-minute health sweep. It surfaces in
+   the pending queue with the error. Never leave `approved`
+   with no path forward.
+4. Porkbun availability checks are process-wide serialized
+   (sleep **before** the request) and retried with backoff on
+   the 10-second rate-limit error.
+5. Does **not** spend, pull, or buy from chat. Does not change
+   live campaign / mailbox / domain state in the PR that
+   ships the rule.
+
+**Supersedes / amends.** Amends D146/D150/D162 (the retire *ask*
+and the retire *tap* refuse a protected client). Amends D161
+via D173 ownership. Does not change D134 cover once a
+non-protected retire has actually pulled.
+
+**Guards.** canon D174: `PROTECTED_CLIENT_IDS` defaults to
+548611; `shouldRefuseRetire` / `refuseProtectedRetire`;
+`awaiting_purchase` + `needsPurchaseRetry`; Porkbun
+`PorkbunAvailabilityGate` sleeps before the request; CANON
+names D174. Unit tests: Goliath domain refuses retire ask and
+execution; failed buy with no domain is resumed; concurrent
+availability checks serialize and rate-limits retry.

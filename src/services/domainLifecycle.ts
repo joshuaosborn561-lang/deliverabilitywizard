@@ -7,26 +7,46 @@ import {
   type DomainMailboxReading,
 } from "../lib/domainControl.js";
 import { domainProof } from "../lib/isolationProof.js";
-import { replacementParentForRetiredDomain } from "../lib/retireReplacement.js";
+import { isProtectedOwner } from "../lib/protectedClient.js";
 import {
-  buildIsolationAction,
-  requestIsolationAction,
-} from "../lib/isolationActions.js";
+  neutralizeProtectedRetireAsks,
+  ownerOfDomain,
+  refreshDomainOwnerCache,
+  requestRetireOrCover,
+} from "../lib/retireAsk.js";
 import type { DomainControlHistoryRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
+import type { InventoryBook } from "./inventory.js";
 
 export class DomainLifecycleService {
   constructor(
     private readonly config: AppConfig,
     private readonly store: StateStore,
     private readonly slack: SlackClient,
+    private readonly book?: InventoryBook,
   ) {}
 
   async run(): Promise<{
     domains: number;
     buyAhead: number;
     retire: number;
+    covered: number;
   }> {
+    let accounts: Awaited<ReturnType<InventoryBook["get"]>>["accounts"] = [];
+    let clients: Awaited<ReturnType<InventoryBook["get"]>>["clients"] = [];
+    if (this.book) {
+      const snap = await this.book.get();
+      accounts = snap.accounts;
+      clients = snap.clients;
+      refreshDomainOwnerCache(this.store, accounts, clients, this.config);
+      await neutralizeProtectedRetireAsks({
+        store: this.store,
+        slack: this.slack,
+        config: this.config,
+        accounts,
+        clients,
+      });
+    }
     const pods = this.store.getIsolation().pods;
     const readings: DomainMailboxReading[] = this.store
       .listMailboxControls()
@@ -40,13 +60,22 @@ export class DomainLifecycleService {
           ranAt: row.ranAt,
         };
       });
-    return this.afterReadings(readings);
+    return this.afterReadings(readings, { accounts, clients });
   }
 
   async afterReadings(
     readings: Array<DomainMailboxReading & { ranAt?: string }>,
-  ): Promise<{ domains: number; buyAhead: number; retire: number }> {
-    const result = { domains: 0, buyAhead: 0, retire: 0 };
+    inventory?: {
+      accounts?: Parameters<typeof ownerOfDomain>[2];
+      clients?: Parameters<typeof ownerOfDomain>[3];
+    },
+  ): Promise<{
+    domains: number;
+    buyAhead: number;
+    retire: number;
+    covered: number;
+  }> {
+    const result = { domains: 0, buyAhead: 0, retire: 0, covered: 0 };
     if (!readings.length) return result;
 
     const byDomain = new Map<string, Array<DomainMailboxReading & { ranAt?: string }>>();
@@ -79,15 +108,25 @@ export class DomainLifecycleService {
         prev?.consecutiveFails ?? 0,
         verdict.domainFailed,
       );
+      const owner = ownerOfDomain(
+        domain,
+        this.store,
+        inventory?.accounts,
+        inventory?.clients,
+        this.config,
+      );
+      if (owner) this.store.upsertDomainOwner(owner);
+      const protectedClient = isProtectedOwner(owner, this.config);
       const history: DomainControlHistoryRecord = {
         domain,
         fleet: verdict.fleet,
         consecutiveFails,
-        status: consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS
-          ? "retire_pending"
-          : consecutiveFails >= 1
-            ? "watch"
-            : "ok",
+        status:
+          consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS && !protectedClient
+            ? "retire_pending"
+            : consecutiveFails >= 1
+              ? "watch"
+              : "ok",
         readings: [
           ...(prev?.readings ?? []),
           {
@@ -103,51 +142,20 @@ export class DomainLifecycleService {
       if (!verdict.domainFailed) continue;
 
       const proof = domainProof(verdict, consecutiveFails);
-      if (consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS) {
-        const opened = await requestIsolationAction({
-          store: this.store,
-          slack: this.slack,
-          action: buildIsolationAction({
-            kind: "retire_domain",
-            title: `Retire ${domain}`,
-            proof,
-            detail: {
-              domain,
-              // D150 — the retire tap is also the replacement buy + ESP match
-              // + D134 backfill. Quantity/parent ride along so execute has them.
-              // D161 — client-domain parent is that client's brand, not
-              // isolationBuyParentDomain (the generic stock default).
-              quantity: 1,
-              parentDomain: replacementParentForRetiredDomain(
-                domain,
-                this.config,
-                { kind: "retire_domain" },
-              ),
-            },
-          }),
-        });
-        if (opened) result.retire += 1;
-      } else if (consecutiveFails >= 1) {
-        const opened = await requestIsolationAction({
-          store: this.store,
-          slack: this.slack,
-          action: buildIsolationAction({
-            kind: "buy_domains",
-            title: `Buy a replacement for ${domain}`,
-            proof,
-            detail: {
-              domain,
-              quantity: 1,
-              parentDomain: replacementParentForRetiredDomain(
-                domain,
-                this.config,
-                { kind: "buy_domains" },
-              ),
-            },
-          }),
-        });
-        if (opened) result.buyAhead += 1;
-      }
+      const preferRetire =
+        consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS && !protectedClient;
+      const asked = await requestRetireOrCover({
+        store: this.store,
+        slack: this.slack,
+        config: this.config,
+        domain,
+        preferRetire,
+        proof,
+        owner,
+      });
+      if (asked.covered) result.covered += 1;
+      else if (asked.opened?.kind === "retire_domain") result.retire += 1;
+      else if (asked.opened) result.buyAhead += 1;
     }
     await this.store.save();
     return result;

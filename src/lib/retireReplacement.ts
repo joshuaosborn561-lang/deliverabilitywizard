@@ -1,15 +1,21 @@
 /**
- * D161 — a client-domain retire buys a client-named replacement.
+ * D161 / D173 — a client-domain retire buys a client-named replacement.
  *
  * The D150 stock path used to spin from `isolationBuyParentDomain`
  * (default `crosslaunchco.com`) for every retire. That bought
  * crosslaunchcotry.info when Josh retired boldercyperpartnerpro.info
  * (BCP). Generic / pool spins stay valid only when the retired domain
  * itself is generic.
+ *
+ * D173 — "generic" is ownership-aware. A plan-listed domain whose live
+ * mailboxes belong to a real client is that client's domain; its
+ * replacement is client-named, never a pool spin.
  */
 import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { isBcpOwnedDomain } from "./bcp.js";
+import { brandFromClientDisplayName } from "./clientBrand.js";
 import { isGenericPoolDomain } from "./clientInbox.js";
+import type { DomainOwnerRecord } from "./domainOwnership.js";
 import {
   brandRootFromParent,
   DOMAIN_AFFIXES,
@@ -115,15 +121,25 @@ export function isGenericBrandName(
   return false;
 }
 
+export type SendingDomainOwner = Pick<
+  DomainOwnerRecord,
+  "kind" | "clientId" | "clientName"
+> | null | undefined;
+
 /**
  * True when this sending domain is generic/pool inventory — those
  * replacements MAY be generic spins. Everything else is a client domain
  * (fail closed): BCP, a named-client brand, or an unknown domain.
+ *
+ * D173 — live mailbox ownership wins: a plan-listed domain staffed by
+ * one real client is not generic, even when the pool plan lists it.
  */
 export function isGenericSendingDomain(
   domain: string,
   config: RetireReplacementConfig,
+  owner?: SendingDomainOwner,
 ): boolean {
+  if (owner?.kind === "client" && owner.clientId) return false;
   const host = domain.trim().toLowerCase();
   if (!host) return false;
   if (isGenericPoolDomain(host)) return true;
@@ -136,10 +152,18 @@ export function isGenericSendingDomain(
 export function isClientSendingDomain(
   domain: string,
   config: RetireReplacementConfig,
+  owner?: SendingDomainOwner,
 ): boolean {
   const host = domain.trim().toLowerCase();
   if (!host) return false;
-  return !isGenericSendingDomain(host, config);
+  if (owner?.kind === "client" && owner.clientId) return true;
+  return !isGenericSendingDomain(host, config, owner);
+}
+
+/** Domain-safe brand from a Smartlead client display name / logo. */
+export function clientReplacementBrand(clientName: string | null | undefined): string {
+  const brand = brandFromClientDisplayName(String(clientName ?? ""));
+  return brand.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 /**
@@ -152,11 +176,16 @@ export function isClientSendingDomain(
 export function replacementParentForRetiredDomain(
   sourceDomain: string,
   config: RetireReplacementConfig,
-  opts: { requestedParent?: string; kind?: string } = {},
+  opts: {
+    requestedParent?: string;
+    kind?: string;
+    owner?: SendingDomainOwner;
+  } = {},
 ): string {
   const kind = opts.kind ?? "";
   const requested = (opts.requestedParent ?? "").trim().toLowerCase();
   const source = sourceDomain.trim().toLowerCase();
+  const owner = opts.owner;
 
   if (
     kind === "buy_isolation_domain" ||
@@ -166,20 +195,31 @@ export function replacementParentForRetiredDomain(
     return requested || config.isolationBuyParentDomain;
   }
 
-  if (isGenericSendingDomain(source, config)) {
+  if (isGenericSendingDomain(source, config, owner)) {
     return requested || config.isolationBuyParentDomain;
   }
 
-  const brand = replacementBrandRoot(source);
+  const roots = genericBrandRoots(config);
+  const fromDomain = replacementBrandRoot(source);
+  const domainLooksGeneric =
+    !fromDomain ||
+    fromDomain.length < 6 ||
+    isGenericBrandName(fromDomain, roots);
+  const fromClient = clientReplacementBrand(owner?.clientName);
+  const brand =
+    domainLooksGeneric && fromClient.length >= 6 ? fromClient : fromDomain;
   if (!brand || brand.length < 6) {
     throw new Error(
-      `Cannot derive a client brand from ${source}; refusing a generic replacement (D161).`,
+      `Cannot derive a client brand from ${source}; refusing a generic replacement (D161/D173).`,
     );
   }
   const parent = `${brand}.info`;
-  if (isGenericSendingDomain(parent, config) || isGenericBrandName(parent, genericBrandRoots(config))) {
+  if (
+    isGenericSendingDomain(parent, config) ||
+    isGenericBrandName(parent, roots)
+  ) {
     throw new Error(
-      `Client domain ${source} resolved to generic parent ${parent}; refusing (D161).`,
+      `Client domain ${source} resolved to generic parent ${parent}; refusing (D161/D173).`,
     );
   }
   return parent;
@@ -190,8 +230,9 @@ export function isForbiddenGenericReplacement(
   sourceDomain: string,
   candidateDomain: string,
   config: RetireReplacementConfig,
+  owner?: SendingDomainOwner,
 ): boolean {
-  if (!isClientSendingDomain(sourceDomain, config)) return false;
+  if (!isClientSendingDomain(sourceDomain, config, owner)) return false;
   return isGenericSendingDomain(candidateDomain, config);
 }
 
@@ -200,9 +241,10 @@ export function filterReplacementSpins(
   sourceDomain: string,
   config: RetireReplacementConfig,
   owned: Set<string>,
+  owner?: SendingDomainOwner,
 ): DomainSpin[] {
   const source = sourceDomain.trim().toLowerCase();
-  const clientReplace = isClientSendingDomain(source, config);
+  const clientReplace = isClientSendingDomain(source, config, owner);
   return spins.filter((spin) => {
     const host = spin.domain.toLowerCase();
     if (owned.has(host)) return false;

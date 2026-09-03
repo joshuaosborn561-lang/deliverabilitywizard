@@ -12,11 +12,19 @@ import {
   type PoolPlatform,
 } from "../lib/retireEspMix.js";
 import {
+  AWAITING_MAILBOXES,
+  AWAITING_PURCHASE,
+  needsMailboxResume,
+  needsPurchaseRetry,
+  purchasedDomainsOf,
+} from "../lib/buyResume.js";
+import {
   filterReplacementSpins,
   isClientSendingDomain,
   isForbiddenGenericReplacement,
   replacementParentForRetiredDomain,
 } from "../lib/retireReplacement.js";
+import { ownerFromActionDetail } from "../lib/retireAsk.js";
 import type { SpendGateway, SpendRequest } from "../lib/spendGateway.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
@@ -114,9 +122,17 @@ export class IsolationBuyService {
   async run(action: IsolationActionRecord): Promise<IsolationBuyResult> {
     const quantity = Math.max(1, Number(action.detail.quantity ?? 1));
     const decidedBy = action.decidedBy ?? "Josh";
+    const existing = purchasedDomainsOf(action);
+    if (!existing.length) {
+      this.store.upsertIsolationAction({
+        ...action,
+        status: action.status === "pending" ? action.status : "approved",
+        detail: { ...action.detail, phase: AWAITING_PURCHASE },
+      });
+    }
     const domains =
-      Array.isArray(action.detail.domains) && action.detail.domains.length
-        ? (action.detail.domains as string[])
+      existing.length > 0
+        ? existing
         : await this.purchaseDomains(quantity, decidedBy, action);
 
     const mailboxes = await this.orderMailboxes(domains, decidedBy, action);
@@ -126,7 +142,7 @@ export class IsolationBuyService {
         ...action.detail,
         domains,
         phase: mailboxes.awaitingNameservers
-          ? "awaiting_mailboxes"
+          ? AWAITING_MAILBOXES
           : "complete",
       },
     });
@@ -140,18 +156,40 @@ export class IsolationBuyService {
   async resume(): Promise<number> {
     let finished = 0;
     for (const action of this.store.listIsolationActions()) {
-      if (
-        action.kind !== "buy_domains" &&
-        action.kind !== "buy_isolation_domain"
-      ) {
+      if (needsPurchaseRetry(action)) {
+        try {
+          const result = await this.run(action);
+          this.store.upsertIsolationAction({
+            ...this.store.getIsolationAction(action.id)!,
+            status: "executed",
+            executedAt: new Date().toISOString(),
+            error: undefined,
+            detail: {
+              ...action.detail,
+              domains: result.domains,
+              phase: result.awaitingNameservers
+                ? AWAITING_MAILBOXES
+                : "complete",
+            },
+          });
+          if (!result.awaitingNameservers) finished += 1;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.store.upsertIsolationAction({
+            ...this.store.getIsolationAction(action.id)!,
+            status: "approved",
+            error: message,
+            detail: {
+              ...action.detail,
+              phase: AWAITING_PURCHASE,
+              retryReason: message,
+            },
+          });
+        }
         continue;
       }
-      if (action.status !== "executed" && action.status !== "approved") continue;
-      if (action.detail.phase !== "awaiting_mailboxes") continue;
-      const domains = Array.isArray(action.detail.domains)
-        ? (action.detail.domains as string[])
-        : [];
-      if (!domains.length) continue;
+      if (!needsMailboxResume(action)) continue;
+      const domains = purchasedDomainsOf(action);
       const mailboxes = await this.orderMailboxes(
         domains,
         action.decidedBy ?? "Josh",
@@ -167,7 +205,7 @@ export class IsolationBuyService {
         finished += 1;
       }
     }
-    if (finished) await this.store.save();
+    await this.store.save();
     return finished;
   }
 
@@ -190,20 +228,24 @@ export class IsolationBuyService {
     const sourceDomain = String(
       action.detail.retiredDomain ?? action.detail.domain ?? "",
     ).toLowerCase();
+    const owner =
+      ownerFromActionDetail(action.detail) ??
+      this.store.getDomainOwner(sourceDomain);
     const parent = replacementParentForRetiredDomain(
       sourceDomain,
       this.config,
       {
         requestedParent: String(action.detail.parentDomain ?? ""),
         kind: action.kind,
+        owner,
       },
     );
     if (
       sourceDomain &&
-      isForbiddenGenericReplacement(sourceDomain, parent, this.config)
+      isForbiddenGenericReplacement(sourceDomain, parent, this.config, owner)
     ) {
       throw new Error(
-        `Refusing generic replacement parent ${parent} for client domain ${sourceDomain} (D161).`,
+        `Refusing generic replacement parent ${parent} for client domain ${sourceDomain} (D161/D173).`,
       );
     }
     const owned = new Set(
@@ -217,13 +259,14 @@ export class IsolationBuyService {
       sourceDomain,
       this.config,
       owned,
+      owner,
     );
     const bought: string[] = [];
     for (const spin of candidates) {
       if (bought.length >= quantity) break;
       if (
         sourceDomain &&
-        isForbiddenGenericReplacement(sourceDomain, spin.domain, this.config)
+        isForbiddenGenericReplacement(sourceDomain, spin.domain, this.config, owner)
       ) {
         continue;
       }
@@ -256,7 +299,7 @@ export class IsolationBuyService {
     }
     if (bought.length < quantity) {
       const clientHint =
-        sourceDomain && isClientSendingDomain(sourceDomain, this.config)
+        sourceDomain && isClientSendingDomain(sourceDomain, this.config, owner)
           ? " Client-named spins only — I will not fall back to a generic/pool domain (D161)."
           : "";
       throw new Error(

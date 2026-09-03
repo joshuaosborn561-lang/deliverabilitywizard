@@ -24,7 +24,13 @@ import type { InventoryBook } from "./inventory.js";
 import { owesWarmup } from "./warmupGate.js";
 
 /** Client-id / tag writes per pass — the rest converges on later passes. */
-const ATTACH_CAP = 40;
+export const ATTACH_CAP = 40;
+/**
+ * D172 — GENERIC tagging cannot spend this many writes. Real-client
+ * attach always gets at least this budget, even when the pool still
+ * has untagged generics. Unused tag budget rolls back to attach.
+ */
+export const CLIENT_ATTACH_RESERVE = 20;
 /** Smartlead caps tag mapping writes at 25 accounts per call. */
 const TAG_BATCH = 25;
 
@@ -37,8 +43,8 @@ export interface DomainClientAuditResult {
 }
 
 /**
- * D136/D142/D160 — a domain whose client story does not add up is first
- * offered a CONFIDENT fix, then a human question — never a guess.
+ * D136/D142/D160/D172 — a domain whose client story does not add up is
+ * first offered a CONFIDENT fix, then a human question — never a guess.
  *
  * Generic and POC are mailbox tags, never Smartlead clients (D160):
  * - a generic-fleet / pool box missing GENERIC/POC gets the GENERIC tag;
@@ -46,9 +52,14 @@ export interface DomainClientAuditResult {
  * - those leftover client records are never recreated. Smartlead has no
  *   delete-client API; once detached, Josh deletes them in the UI.
  *
- * Real-client attach (D142/D143) is unchanged:
+ * Real-client attach (D142/D143/D172):
  * - an unmapped domain whose base name contains exactly one client's
  *   distinctive token has its unassigned, warmed boxes attached;
+ * - GENERIC tagging cannot starve that attach — a reserved write budget
+ *   is held back from the tag/detach drain so each pass makes forward
+ *   progress on client-named domains (D172);
+ * - a confident match that could not write this pass is an advisory
+ *   that says the budget is exhausted, never "none resolve to a client";
  * - everything else stays an advisory. split_clients is always advisory.
  *   A box that already carries a real client_id is never rewritten here.
  *
@@ -85,10 +96,14 @@ export class DomainClientAuditService {
     let detached = 0;
 
     if (this.smartlead && !this.config.dryRun) {
-      const drain = await this.tagAndDetachGenerics(accounts, writesLeft);
+      // D172 — tagging may spend only the writes above the attach
+      // reserve. Unused tag budget rolls back so a quiet generic
+      // fleet does not waste attach capacity.
+      const tagBudget = Math.max(0, writesLeft - CLIENT_ATTACH_RESERVE);
+      const drain = await this.tagAndDetachGenerics(accounts, tagBudget);
       tagged = drain.tagged;
       detached = drain.detached;
-      writesLeft = drain.writesLeft;
+      writesLeft = drain.writesLeft + CLIENT_ATTACH_RESERVE;
     }
 
     const byDomain = new Map<string, SmartleadAccountWithCampaigns[]>();
@@ -135,8 +150,10 @@ export class DomainClientAuditService {
         const match = this.smartlead
           ? confidentClientForDomain(domain, clients)
           : null;
-        if (match && !this.config.dryRun && writesLeft > 0) {
+        if (match && !this.config.dryRun) {
           // D143 — a box that still owes warmup days is not attach supply.
+          // Evaluated even when the write budget is already spent so the
+          // advisory is never "none resolve to a client" (D172).
           const unassigned = domainAccounts.filter(
             (account) => account.client_id == null,
           );
@@ -161,6 +178,7 @@ export class DomainClientAuditService {
               );
             }
           }
+          const leftoverReady = ready.length - done;
           if (done) {
             attached.push({
               domain,
@@ -182,8 +200,20 @@ export class DomainClientAuditService {
               `[domain-client] deferred ${deferred} mailbox(es) on ${domain} → ${match.clientName} until warmup is served (D143)`,
             );
           }
-          if (done || deferred > 0) continue;
+          if (leftoverReady > 0 && writesLeft <= 0) {
+            advisories.push({
+              domain,
+              kind: "unmapped",
+              note: `matches ${match.clientName}, attach deferred — write budget exhausted this run (D172)`,
+              at: now,
+            });
+            console.log(
+              `[domain-client] deferred ${leftoverReady} mailbox(es) on ${domain} → ${match.clientName} — write budget exhausted this run (D172)`,
+            );
+          }
+          if (done || deferred > 0 || leftoverReady > 0) continue;
         }
+        if (match) continue;
         advisories.push({
           domain,
           kind: "unmapped",

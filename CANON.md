@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D171** (2026-09-03). One page of current truth. When a new
+Canon as of **D172** (2026-09-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -308,14 +308,20 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
   box that still owes warmup days is not attach supply: the client_id
   write is deferred (EOD-brief advisory says so) until the 21-day clock
   is served, because handing a 2-day-old box a client_id on 8/27 let an
-  outside writer staff it straight onto live campaigns (D143). Everything
-  else — split_clients always, ambiguous or token-less domains — is an
-  advisory: logs plus one EOD-brief section, never a guess, and a box
-  already carrying a real client_id is never rewritten (D136/D142).
-  Generic fleets, BCP domains, the isolation domain, canaries and retired
-  domains are exempt. The leftover Generic and POC Smartlead client
-  records are never recreated; once mailboxes are detached, delete them
-  in the Smartlead UI to stop billing (no delete-client API).
+  outside writer staff it straight onto live campaigns (D143). GENERIC
+  tagging cannot starve that attach: a reserved write budget is held
+  back so each pass still attaches client-named domains even when the
+  pool still needs labels (D172). A confident match that could not
+  write this pass is an EOD advisory that says the budget is exhausted
+  — never "none resolve to a client" (that mislabel hid Parlay /
+  CornerStone / SalesGlider fleets). Everything else — split_clients
+  always, ambiguous or token-less domains — is an advisory: logs plus
+  one EOD-brief section, never a guess, and a box already carrying a
+  real client_id is never rewritten (D136/D142). Generic fleets, BCP
+  domains, the isolation domain, canaries and retired domains are
+  exempt. The leftover Generic and POC Smartlead client records are
+  never recreated; once mailboxes are detached, delete them in the
+  Smartlead UI to stop billing (no delete-client API).
 - **Lead runout**: log at half, three-quarters, done; never import; a
   working campaign running low is urgent in `/ops` (D52).
 - **Sending IPs**: census from placement reports we already pull; never buy

@@ -3,7 +3,11 @@ import { describe, it } from "node:test";
 import { loadConfig } from "../config.js";
 import { StateStore } from "../state/store.js";
 import type { InventoryBook } from "./inventory.js";
-import { DomainClientAuditService } from "./domainClientAudit.js";
+import {
+  ATTACH_CAP,
+  CLIENT_ATTACH_RESERVE,
+  DomainClientAuditService,
+} from "./domainClientAudit.js";
 
 function bookWith(
   campaigns: unknown[],
@@ -185,5 +189,207 @@ describe("DomainClientAuditService (D136)", () => {
     )?.note;
     assert.match(deferredNote ?? "", /owe the 21-day warmup/);
     assert.equal(byDomain.size, 3);
+  });
+});
+
+describe("DomainClientAuditService (D172)", () => {
+  const warmed = new Date(Date.now() - 60 * 86_400_000).toISOString();
+  const young = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  const clients = [
+    { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+    { id: 418274, name: "Randy Haba", logo: "Parlay Tech" },
+  ];
+
+  function trackingSmartlead() {
+    const writes: Array<{ id: number; client_id: unknown }> = [];
+    const assigned: number[][] = [];
+    const smartlead = {
+      ensureTag: async (name: string) => ({ id: 71, name }),
+      assignTags: async (accountIds: number[]) => {
+        assigned.push([...accountIds]);
+      },
+      updateEmailAccount: async (
+        id: number,
+        fields: { client_id?: number | null },
+      ) => {
+        writes.push({ id, client_id: fields.client_id });
+      },
+    };
+    return { smartlead, writes, assigned };
+  }
+
+  function runAudit(
+    accounts: unknown[],
+    smartlead: ReturnType<typeof trackingSmartlead>["smartlead"],
+  ) {
+    const state = new StateStore(
+      `/tmp/dw-d172-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,
+    );
+    return state.load().then(() => {
+      const service = new DomainClientAuditService(
+        loadConfig({ DRY_RUN: "false" }),
+        state,
+        bookWith([], accounts, clients),
+        smartlead as never,
+        async () => {},
+      );
+      return service.run();
+    });
+  }
+
+  function genericBoxes(count: number, idFrom: number) {
+    return Array.from({ length: count }, (_, i) => ({
+      id: idFrom + i,
+      from_email: `g${i}@getintroducedapp.com`,
+      client_id: null,
+      campaign_ids: [],
+      tags: [],
+    }));
+  }
+
+  it("generic tagging at the cap still attaches a confident real-client domain", async () => {
+    const { smartlead, writes, assigned } = trackingSmartlead();
+    const accounts = [
+      ...genericBoxes(ATTACH_CAP, 1),
+      {
+        id: 900,
+        from_email: "u@salesgliderbox.info",
+        client_id: null,
+        campaign_ids: [],
+        created_at: warmed,
+        tags: [],
+      },
+    ];
+    const { attached, tagged, advisories } = await runAudit(accounts, smartlead);
+
+    assert.ok(tagged >= 1, "GENERIC tagging still makes progress");
+    assert.ok(
+      assigned.flat().length >= CLIENT_ATTACH_RESERVE || tagged >= 1,
+      "tagging spent some of its budget",
+    );
+    assert.ok(
+      writes.some((row) => row.id === 900 && row.client_id === 345263),
+      "SalesGlider attach must not be starved by GENERIC tagging",
+    );
+    assert.ok(attached.some((row) => row.clientName === "SalesGlider"));
+    const note =
+      advisories.find((row) => row.domain === "salesgliderbox.info")?.note ?? "";
+    assert.doesNotMatch(note, /none resolve to a client/);
+  });
+
+  it("a client-named domain with one confident match and warm unassigned boxes attaches", async () => {
+    const { smartlead, writes } = trackingSmartlead();
+    const { attached, advisories } = await runAudit(
+      [
+        {
+          id: 3,
+          from_email: "u@winparlay.info",
+          client_id: null,
+          campaign_ids: [],
+          created_at: warmed,
+          tags: [],
+        },
+      ],
+      smartlead,
+    );
+
+    assert.deepEqual(writes, [{ id: 3, client_id: 418274 }]);
+    assert.deepEqual(attached, [
+      { domain: "winparlay.info", clientName: "Parlay Tech", mailboxes: 1 },
+    ]);
+    assert.equal(
+      advisories.some((row) => row.domain === "winparlay.info"),
+      false,
+    );
+  });
+
+  it("a domain whose boxes all owe warmup still produces the D143 deferral advisory", async () => {
+    const { smartlead, writes } = trackingSmartlead();
+    // Spend the tag budget AND the attach reserve so D143 cannot hide
+    // behind writesLeft > 0 — the 2026-09-03 mislabel.
+    const warmedParlay = Array.from(
+      { length: CLIENT_ATTACH_RESERVE },
+      (_, i) => ({
+        id: 2000 + i,
+        from_email: `w${i}@winparlay.info`,
+        client_id: null,
+        campaign_ids: [],
+        created_at: warmed,
+        tags: [],
+      }),
+    );
+    const { advisories, attached } = await runAudit(
+      [
+        ...genericBoxes(ATTACH_CAP, 1),
+        ...warmedParlay,
+        {
+          id: 7,
+          from_email: "n@salesgliderfresh.info",
+          client_id: null,
+          campaign_ids: [],
+          created_at: young,
+          tags: [],
+        },
+      ],
+      smartlead,
+    );
+
+    assert.ok(
+      !writes.some((row) => row.id === 7),
+      "a box that owes warmup is not attach supply (D143)",
+    );
+    assert.ok(!attached.some((row) => row.domain === "salesgliderfresh.info"));
+    const deferred = advisories.find(
+      (row) => row.domain === "salesgliderfresh.info",
+    );
+    assert.equal(deferred?.kind, "unmapped");
+    assert.match(deferred?.note ?? "", /owe the 21-day warmup/);
+    assert.doesNotMatch(deferred?.note ?? "", /none resolve to a client/);
+  });
+
+  it("a starved confident match says write budget exhausted, never none-resolve", async () => {
+    const { smartlead, writes } = trackingSmartlead();
+    const warmedParlay = Array.from(
+      { length: CLIENT_ATTACH_RESERVE },
+      (_, i) => ({
+        id: 3000 + i,
+        from_email: `w${i}@winparlay.info`,
+        client_id: null,
+        campaign_ids: [],
+        created_at: warmed,
+        tags: [],
+      }),
+    );
+    const { advisories, attached } = await runAudit(
+      [
+        ...genericBoxes(ATTACH_CAP, 1),
+        ...warmedParlay,
+        {
+          id: 4000,
+          from_email: "h@hqparlay.info",
+          client_id: null,
+          campaign_ids: [],
+          created_at: warmed,
+          tags: [],
+        },
+      ],
+      smartlead,
+    );
+
+    assert.ok(
+      attached.some((row) => row.domain === "winparlay.info"),
+      "the reserved attach budget still lands",
+    );
+    assert.ok(
+      !writes.some((row) => row.id === 4000),
+      "hqparlay.info waits for a later pass",
+    );
+    const starved = advisories.find((row) => row.domain === "hqparlay.info");
+    assert.equal(starved?.kind, "unmapped");
+    assert.match(
+      starved?.note ?? "",
+      /matches Parlay Tech, attach deferred — write budget exhausted this run/,
+    );
+    assert.doesNotMatch(starved?.note ?? "", /none resolve to a client/);
   });
 });

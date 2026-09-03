@@ -190,7 +190,9 @@ export async function remindPendingIsolationActions(input: {
   slack: Pick<SlackClient, "notifyIsolationAction">;
 }): Promise<number> {
   dismissPendingSignatureAsks(input.store);
-  const pending = input.store.pendingIsolationActions();
+  const pending = input.store
+    .pendingIsolationActions()
+    .filter((row) => row.status === "pending");
   const boughtCanary = input.store
     .listIsolationActions()
     .some(

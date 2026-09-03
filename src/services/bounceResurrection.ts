@@ -9,11 +9,8 @@ import {
 } from "../lib/bounceReason.js";
 import { ymdUtc } from "../lib/campaignDayStats.js";
 import { sleep } from "../lib/http.js";
-import {
-  buildIsolationAction,
-  domainRecentlyRetired,
-  requestIsolationAction,
-} from "../lib/isolationActions.js";
+import { domainRecentlyRetired } from "../lib/isolationActions.js";
+import { requestRetireOrCover } from "../lib/retireAsk.js";
 import type {
   BounceResurrectionJob,
   BounceVerdictRecord,
@@ -538,23 +535,24 @@ export class BounceResurrectionService {
     const slack = this.slack;
     if (!slack || typeof slack.notifyIsolationAction !== "function") return;
     try {
-      const opened = await requestIsolationAction({
+      const asked = await requestRetireOrCover({
         store: this.state,
         slack,
-        action: buildIsolationAction({
-          kind: "retire_domain",
-          title: `Retire ${domain} — Microsoft flagged it as a bad outbound sender`,
-          proof: [
-            `Found while re-queueing incident bounces: ${leadEmail} on campaign #${campaignId} bounced 550 5.1.8 from a ${domain} sender.`,
-            `"${bounceReasonSnippet(ndr).slice(0, 160)}"`,
-            "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead. The lead re-queues once this ask is resolved.",
-          ].join("\n"),
-          detail: { domain },
-        }),
+        config: this.config,
+        domain,
+        preferRetire: true,
+        owner: this.state.getDomainOwner(domain),
+        proof: [
+          `Found while re-queueing incident bounces: ${leadEmail} on campaign #${campaignId} bounced 550 5.1.8 from a ${domain} sender.`,
+          `"${bounceReasonSnippet(ndr).slice(0, 160)}"`,
+          "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead. The lead re-queues once this ask is resolved.",
+        ].join("\n"),
       });
-      if (opened) {
+      if (asked.opened) {
         console.log(
-          `[bounce-resurrect] burned-domain ask opened for ${domain} — sender block found in the incident scan (D146/D148)`,
+          asked.covered
+            ? `[bounce-resurrect] protected-client cover buy opened for ${domain} — not retiring (D174)`
+            : `[bounce-resurrect] burned-domain ask opened for ${domain} — sender block found in the incident scan (D146/D148)`,
         );
       }
     } catch (error) {

@@ -146,7 +146,7 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "pod-tags": SIX_HOURLY_MS,
   "domain-client-audit": SIX_HOURLY_MS,
   "domain-lifecycle": SIX_HOURLY_MS,
-  "isolation-buy-resume": SIX_HOURLY_MS,
+  "isolation-buy-resume": HEALTH_MS, // D174 — retry a failed post-pull buy every sweep
   "canary-buy-resume": SIX_HOURLY_MS,
   "canary-adopt": SIX_HOURLY_MS,
   "isolation-rig": SIX_HOURLY_MS,

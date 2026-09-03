@@ -20,6 +20,22 @@ import {
   espMixFromAccountTypes,
   platformsMatchingEspMix,
 } from "../lib/retireEspMix.js";
+import {
+  AWAITING_PURCHASE,
+  purchasedDomainsOf,
+} from "../lib/buyResume.js";
+import {
+  isProtectedOwner,
+  protectedRetireReason,
+} from "../lib/protectedClient.js";
+import {
+  ownerFromActionDetail,
+  ownerOfDomain,
+  ownerOnActionDetail,
+  refreshDomainOwnerCache,
+  requestRetireOrCover,
+  shouldRefuseRetire,
+} from "../lib/retireAsk.js";
 import { replacementParentForRetiredDomain } from "../lib/retireReplacement.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
@@ -98,7 +114,14 @@ export class IsolationExecuteService {
     };
     this.state.upsertIsolationAction(approved);
     try {
-      if (approved.kind === "retire_domain") await this.retire(approved);
+      if (approved.kind === "retire_domain") {
+        const refused = await this.refuseProtectedRetire(approved);
+        if (refused) {
+          await this.state.save();
+          return { ok: true, message: refused };
+        }
+        await this.retire(approved);
+      }
       else if (approved.kind === "swap_copy") await this.swapCopy(approved);
       else if (approved.kind === "add_signature_tag")
         await this.addSignatureTag(approved);
@@ -118,10 +141,22 @@ export class IsolationExecuteService {
       return { ok: true, message: "Done." };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const current = this.state.getIsolationAction(actionId)!;
+      const retryableBuy =
+        (current.kind === "buy_domains" ||
+          current.kind === "buy_isolation_domain") &&
+        purchasedDomainsOf(current).length === 0;
       this.state.upsertIsolationAction({
-        ...this.state.getIsolationAction(actionId)!,
-        status: "failed",
+        ...current,
+        status: retryableBuy ? "approved" : "failed",
         error: message,
+        detail: retryableBuy
+          ? {
+              ...current.detail,
+              phase: AWAITING_PURCHASE,
+              retryReason: message,
+            }
+          : current.detail,
       });
       await this.state.save();
       await this.announce(
@@ -132,10 +167,101 @@ export class IsolationExecuteService {
     }
   }
 
+  private async refuseProtectedRetire(
+    action: IsolationActionRecord,
+  ): Promise<string | null> {
+    const domain = String(action.detail.domain ?? "").toLowerCase();
+    if (!domain) return null;
+    const snap = await this.book.get();
+    refreshDomainOwnerCache(
+      this.state,
+      snap.accounts,
+      snap.clients,
+      this.config,
+    );
+    const owner =
+      ownerOfDomain(
+        domain,
+        this.state,
+        snap.accounts,
+        snap.clients,
+        this.config,
+      ) ?? ownerFromActionDetail(action.detail);
+    if (!shouldRefuseRetire(owner, this.config)) return null;
+    const reason = protectedRetireReason(owner, domain);
+    this.state.upsertIsolationAction({
+      ...action,
+      status: "denied",
+      decidedAt: new Date().toISOString(),
+      decidedBy: action.decidedBy ?? "Josh",
+      error: reason,
+    });
+    if (owner) this.state.upsertDomainOwner(owner);
+    const cover = await requestRetireOrCover({
+      store: this.state,
+      slack: this.slack,
+      config: this.config,
+      domain,
+      preferRetire: false,
+      proof: action.proof,
+      owner,
+    });
+    if (cover.opened) {
+      const approvedBuy: IsolationActionRecord = {
+        ...cover.opened,
+        status: "approved",
+        decidedAt: new Date().toISOString(),
+        decidedBy: action.decidedBy ?? "Josh",
+      };
+      this.state.upsertIsolationAction(approvedBuy);
+      try {
+        await this.buyDomains(approvedBuy);
+        this.state.upsertIsolationAction({
+          ...this.state.getIsolationAction(approvedBuy.id)!,
+          status: "executed",
+          executedAt: new Date().toISOString(),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.state.upsertIsolationAction({
+          ...this.state.getIsolationAction(approvedBuy.id)!,
+          status: "approved",
+          error: message,
+          detail: {
+            ...approvedBuy.detail,
+            phase: AWAITING_PURCHASE,
+            retryReason: message,
+          },
+        });
+      }
+    }
+    await this.announce(
+      "retire_domain",
+      [
+        `Did not retire *${domain}*.`,
+        reason,
+        "No inboxes were pulled.",
+        cover.opened
+          ? "I opened a cover replacement buy instead (D174)."
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    return reason;
+  }
+
   private async retire(action: IsolationActionRecord): Promise<void> {
     const domain = String(action.detail.domain ?? "").toLowerCase();
     if (!domain) throw new Error("Missing domain");
-    const { campaigns, accounts } = await this.book.get();
+    const { campaigns, accounts, clients } = await this.book.get();
+    refreshDomainOwnerCache(this.state, accounts, clients, this.config);
+    const owner =
+      ownerOfDomain(domain, this.state, accounts, clients, this.config) ??
+      ownerFromActionDetail(action.detail);
+    if (isProtectedOwner(owner, this.config)) {
+      throw new Error(protectedRetireReason(owner, domain));
+    }
     const active = new Set(
       campaigns
         .filter((campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE")
@@ -189,28 +315,30 @@ export class IsolationExecuteService {
       this.config.isolationMailboxesPerBuyDomain,
     );
     let buySummary: string | undefined;
-    try {
-      const buyAction = buildIsolationAction({
-        kind: "buy_domains",
-        title: `Replacement for retired ${domain}`,
-        proof: action.proof,
-        detail: {
+    const buyAction = buildIsolationAction({
+      kind: "buy_domains",
+      title: `Replacement for retired ${domain}`,
+      proof: action.proof,
+      detail: {
+        domain,
+        quantity: 1,
+        parentDomain: replacementParentForRetiredDomain(
           domain,
-          quantity: 1,
-          parentDomain: replacementParentForRetiredDomain(
-            domain,
-            this.config,
-            { kind: "buy_domains" },
-          ),
-          espMix,
-          platforms,
-          retiredDomain: domain,
-        },
-      });
-      buyAction.status = "approved";
-      buyAction.decidedAt = new Date().toISOString();
-      buyAction.decidedBy = action.decidedBy ?? "Josh";
-      this.state.upsertIsolationAction(buyAction);
+          this.config,
+          { kind: "buy_domains", owner },
+        ),
+        espMix,
+        platforms,
+        retiredDomain: domain,
+        phase: AWAITING_PURCHASE,
+        ...ownerOnActionDetail(owner),
+      },
+    });
+    buyAction.status = "approved";
+    buyAction.decidedAt = new Date().toISOString();
+    buyAction.decidedBy = action.decidedBy ?? "Josh";
+    this.state.upsertIsolationAction(buyAction);
+    try {
       const result = await this.buy.run(buyAction);
       this.state.upsertIsolationAction({
         ...this.state.getIsolationAction(buyAction.id)!,
@@ -235,7 +363,20 @@ export class IsolationExecuteService {
         .join(" ");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      buySummary = `Replacement buy failed after the pull: ${message}. Generics may still cover; I will need another tap to buy.`;
+      const current = this.state.getIsolationAction(buyAction.id);
+      if (current) {
+        this.state.upsertIsolationAction({
+          ...current,
+          status: "approved",
+          error: message,
+          detail: {
+            ...current.detail,
+            phase: AWAITING_PURCHASE,
+            retryReason: message,
+          },
+        });
+      }
+      buySummary = `Replacement buy failed after the pull: ${message}. I will retry the purchase myself — no second tap (D174).`;
     }
 
     await this.announce(

@@ -6760,8 +6760,8 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
       canon,
       /D171/,
       stop(
-        "CANON still names the D171 offer lead-in.",
-        "CANON.md lost D171.",
+        "CANON still names the I'd-like-to-offer gift/offer default (D171).",
+        "CANON.md dropped D171 when a later decision landed.",
       ),
     );
     assert.match(
@@ -6833,10 +6833,10 @@ describe("owner intent — D172 real-client attach is not starved by GENERIC tag
     );
     assert.match(
       canon,
-      /Canon as of \*\*D172\*\*/,
+      /D172/,
       stop(
-        "CANON is as of D172.",
-        "CANON.md header was not bumped to D172.",
+        "CANON still names the attach-reserve rule (D172).",
+        "CANON.md dropped D172 when a later decision landed.",
       ),
     );
     assert.match(
@@ -6866,6 +6866,282 @@ describe("owner intent — D172 real-client attach is not starved by GENERIC tag
       stop(
         "The attach-reserve rule is in the ledger (D172).",
         "DECISIONS.md no longer has D172.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D173 ownership is who staffs the domain", () => {
+  it("D173: mailbox client_id wins over the generic pool plan", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const owner = await readFile(
+      new URL("../lib/domainOwnership.ts", import.meta.url),
+      "utf8",
+    );
+    const replace = await readFile(
+      new URL("../lib/retireReplacement.ts", import.meta.url),
+      "utf8",
+    );
+    const life = await readFile(
+      new URL("../services/domainLifecycle.ts", import.meta.url),
+      "utf8",
+    );
+    const buy = await readFile(
+      new URL("../services/isolationBuy.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      owner,
+      /resolveDomainOwner/,
+      stop(
+        "Sending-domain owner is resolved from live mailbox client_id (D173).",
+        "domainOwnership.ts is missing resolveDomainOwner.",
+      ),
+    );
+    assert.match(
+      owner,
+      /treating as client-owned \(D173\)/,
+      stop(
+        "A plan-vs-mailbox conflict is logged and the mailboxes win (D173).",
+        "domainOwnership.ts lost the conflict log.",
+      ),
+    );
+    assert.match(
+      replace,
+      /owner\?: SendingDomainOwner/,
+      stop(
+        "Generic-vs-client classification takes the mailbox owner (D173).",
+        "retireReplacement.ts still classifies from the pool plan alone.",
+      ),
+    );
+    assert.match(
+      replace,
+      /owner\?\.kind === "client"/,
+      stop(
+        "A client-staffed domain is not generic, even on the pool plan (D173).",
+        "isGenericSendingDomain still ignores mailbox ownership.",
+      ),
+    );
+    assert.match(
+      replace,
+      /clientReplacementBrand/,
+      stop(
+        "A generic-looking client domain spins from the client brand (D173).",
+        "retireReplacement.ts cannot derive a client-named parent.",
+      ),
+    );
+    assert.match(
+      buy,
+      /ownerFromActionDetail/,
+      stop(
+        "The buy path uses mailbox ownership for the replacement parent (D173).",
+        "isolationBuy.ts still names replacements from the pool plan.",
+      ),
+    );
+    assert.match(
+      life,
+      /ownerOfDomain/,
+      stop(
+        "Domain lifecycle retires and covers with mailbox ownership (D173).",
+        "domainLifecycle.ts still treats plan-listed hosts as generic.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Ownership is who staffs the domain/,
+      stop(
+        "CANON states the ownership-aware classifier (D173).",
+        "CANON.md lost the D173 MUST.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D173/,
+      stop(
+        "CANON still names ownership-aware classification (D173).",
+        "CANON.md dropped D173 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D173 — Ownership-aware sending-domain classification/,
+      stop(
+        "The ownership-aware classifier is in the ledger (D173).",
+        "DECISIONS.md no longer has D173.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D174 protected clients never retire", () => {
+  it("D174: Goliath domains refuse retire; failed buys retry themselves", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const protectedClient = await readFile(
+      new URL("../lib/protectedClient.ts", import.meta.url),
+      "utf8",
+    );
+    const resume = await readFile(
+      new URL("../lib/buyResume.ts", import.meta.url),
+      "utf8",
+    );
+    const ask = await readFile(
+      new URL("../lib/retireAsk.ts", import.meta.url),
+      "utf8",
+    );
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const buy = await readFile(
+      new URL("../services/isolationBuy.ts", import.meta.url),
+      "utf8",
+    );
+    const porkbun = await readFile(
+      new URL("../clients/porkbun.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      protectedClient,
+      /DEFAULT_PROTECTED_CLIENT_IDS = \[548611\]/,
+      stop(
+        "Protected clients are seeded with Goliath / 548611 (D174).",
+        "protectedClient.ts lost the Goliath seed.",
+      ),
+    );
+    assert.match(
+      ask,
+      /shouldRefuseRetire/,
+      stop(
+        "A protected client's domain never opens a retire ask (D174).",
+        "retireAsk.ts lost the refuse helper.",
+      ),
+    );
+    assert.match(
+      ask,
+      /neutralizeProtectedRetireAsks/,
+      stop(
+        "Already-open pending retires for a protected client are denied (D174).",
+        "retireAsk.ts cannot convert meetconnectnow.com-style leftover taps.",
+      ),
+    );
+    assert.match(
+      exec,
+      /refuseProtectedRetire/,
+      stop(
+        "The retire tap refuses a protected client before pulling inboxes (D174).",
+        "isolationExecute.ts can still pull Goliath inboxes.",
+      ),
+    );
+    assert.match(
+      exec,
+      /AWAITING_PURCHASE/,
+      stop(
+        "A buy that fails after the pull stays awaiting_purchase (D174).",
+        "isolationExecute.ts can still park a failed buy in approved with no path.",
+      ),
+    );
+    assert.match(
+      resume,
+      /needsPurchaseRetry/,
+      stop(
+        "Resume picks up a buy with no purchased domain (D174).",
+        "buyResume.ts still only resumes awaiting_mailboxes.",
+      ),
+    );
+    assert.match(
+      buy,
+      /needsPurchaseRetry/,
+      stop(
+        "IsolationBuy.resume retries the Porkbun purchase (D174).",
+        "isolationBuy.ts resume still requires a purchased domain.",
+      ),
+    );
+    assert.match(
+      store,
+      /isRetryableReplacementBuy/,
+      stop(
+        "A stuck buy surfaces in the pending isolation queue (D174).",
+        "pendingIsolationActions still hides approved-with-no-domain buys.",
+      ),
+    );
+    assert.match(
+      porkbun,
+      /PorkbunAvailabilityGate/,
+      stop(
+        "Porkbun availability checks are process-wide locked (D174).",
+        "porkbun.ts lost the availability gate.",
+      ),
+    );
+    assert.match(
+      porkbun,
+      /sleepFn\(wait\)/,
+      stop(
+        "The availability lock sleeps BEFORE the request (D174).",
+        "porkbun.ts still sleeps after /domain/checkDomain.",
+      ),
+    );
+    assert.match(
+      porkbun,
+      /isPorkbunAvailabilityRateLimit/,
+      stop(
+        "Porkbun's 10-second check wording is retried (D174).",
+        "porkbun.ts treats the rate-limit error as a fatal abort.",
+      ),
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      slack,
+      /A protected client's domain is never retired \(D174\)/,
+      stop(
+        "Slack retire copy names the protected-client rule (D174).",
+        "slack.ts retire copy lost D174.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Protected clients never have a domain retired or burned/,
+      stop(
+        "CANON states the protected-client never-retire MUST (D174).",
+        "CANON.md lost the D174 MUST.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D174/,
+      stop(
+        "CANON still names the protected-client rule (D174).",
+        "CANON.md dropped D174 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D174 — Protected clients never have a domain retired or burned/,
+      stop(
+        "The protected-client rule is in the ledger (D174).",
+        "DECISIONS.md no longer has D174.",
       ),
     );
   });

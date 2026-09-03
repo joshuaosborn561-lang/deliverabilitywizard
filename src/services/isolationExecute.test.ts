@@ -557,6 +557,139 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       "boldercyperpartnerpro.info",
     );
   });
+
+  it("D174: a pending retire for a protected client cannot execute", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-retire-prot-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire meetconnectnow.com",
+      proof: "proof",
+      detail: { domain: "meetconnectnow.com" },
+    });
+    state.upsertIsolationAction(action);
+    const removed: Array<[number, number[]]> = [];
+    const sl = {
+      listCampaigns: async () => [
+        { id: 10, name: "Goliath X", status: "ACTIVE", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 21,
+          from_email: "a@meetconnectnow.com",
+          type: "GMAIL",
+          client_id: 548611,
+          campaign_ids: [10],
+        },
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        accountIds: number[],
+      ) => {
+        removed.push([campaignId, accountIds]);
+      },
+    };
+    const sent: string[] = [];
+    const buyCalls: unknown[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      sl as never,
+      {
+        send: async (text: string) => void sent.push(text),
+        notifyIsolationAction: async () => undefined,
+      } as never,
+      state,
+      {
+        run: async (buyAction: { detail: Record<string, unknown> }) => {
+          buyCalls.push(buyAction.detail);
+          return {
+            domains: ["getgoliathcybersecurity.info"],
+            mailboxesOrdered: 3,
+            awaitingNameservers: false,
+          };
+        },
+      } as never,
+    );
+
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(removed, [], "protected retire must not pull inboxes");
+    assert.equal(state.getIsolationAction(action.id)?.status, "denied");
+    assert.match(state.getIsolationAction(action.id)?.error ?? "", /D174/);
+    assert.ok(
+      buyCalls.length >= 1,
+      "degrades to a cover replacement buy",
+    );
+    assert.ok(sent.some((text) => /Did not retire/i.test(text)));
+  });
+
+  it("D174: a buy that fails after the pull stays awaiting_purchase", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-retire-retry-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire boldercyperpartnerpro.info",
+      proof: "proof",
+      detail: { domain: "boldercyperpartnerpro.info" },
+    });
+    state.upsertIsolationAction(action);
+    const sl = {
+      listCampaigns: async () => [
+        { id: 10, name: "BCP X", status: "ACTIVE", client_id: 542838 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 21,
+          from_email: "a@boldercyperpartnerpro.info",
+          type: "GMAIL",
+          client_id: 542838,
+          campaign_ids: [10],
+        },
+      ],
+      listClients: async () => [
+        { id: 542838, name: "BCP", logo: "Bolder Cyper Partner" },
+      ],
+      removeEmailAccountsFromCampaign: async () => undefined,
+    };
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      sl as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async () => {
+          throw new Error("1 out of 1 checks within 10 seconds used.");
+        },
+      } as never,
+    );
+
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(outcome.ok, true);
+    const buy = state
+      .listIsolationActions()
+      .find((row) => row.kind === "buy_domains");
+    assert.ok(buy, "retire still opens a replacement buy");
+    assert.equal(buy?.status, "approved");
+    assert.equal(buy?.detail.phase, "awaiting_purchase");
+    assert.match(buy?.error ?? "", /10 seconds/);
+    assert.ok(
+      state.pendingIsolationActions().some((row) => row.id === buy?.id),
+      "failed buy surfaces in the pending queue",
+    );
+  });
 });
 
 describe("D137 — the isolation-domain buy arms the rig", () => {

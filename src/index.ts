@@ -36,6 +36,10 @@ import {
   remindPendingIsolationActions,
 } from "./lib/isolationActions.js";
 import {
+  neutralizeProtectedRetireAsks,
+  refreshDomainOwnerCache,
+} from "./lib/retireAsk.js";
+import {
   exchangeSlackOauth,
   writeSlackBotTokenFile,
 } from "./lib/slackOauth.js";
@@ -366,6 +370,9 @@ async function main(): Promise<void> {
     smartlead,
     state,
     slack,
+    undefined,
+    Date.now,
+    inventoryBook,
   );
   const campaignHealth = new CampaignHealthService(
     config,
@@ -448,7 +455,12 @@ async function main(): Promise<void> {
     inventoryBook,
     copyCanaryBuy,
   );
-  const domainLifecycle = new DomainLifecycleService(config, state, slack);
+  const domainLifecycle = new DomainLifecycleService(
+    config,
+    state,
+    slack,
+    inventoryBook,
+  );
   const deliveryWatch = new DeliveryWatchService(
     config,
     smartlead,
@@ -785,6 +797,23 @@ async function main(): Promise<void> {
           isolationBranch.run(),
         );
       }
+
+      // D173/D174 — refresh mailbox ownership and retry a replacement
+      // buy that failed after the pull. Do not wait for the 6h monitor.
+      refreshDomainOwnerCache(
+        state,
+        inventory.accounts,
+        inventory.clients,
+        config,
+      );
+      await neutralizeProtectedRetireAsks({
+        store: state,
+        slack,
+        config,
+        accounts: inventory.accounts,
+        clients: inventory.clients,
+      });
+      await stage("isolation-buy-resume", () => isolationBuy.resume());
 
       logCanonScoreboard();
       const passMs = Date.now() - passStart;

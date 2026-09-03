@@ -19,11 +19,13 @@ import {
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import { domainRecentlyRetired } from "../lib/isolationActions.js";
 import {
-  buildIsolationAction,
-  domainRecentlyRetired,
-  requestIsolationAction,
-} from "../lib/isolationActions.js";
+  ownerOfDomain,
+  refreshDomainOwnerCache,
+  requestRetireOrCover,
+} from "../lib/retireAsk.js";
+import type { InventoryBook } from "./inventory.js";
 import { sleep } from "../lib/http.js";
 import { BounceResurrectionService } from "./bounceResurrection.js";
 import type { BounceVerdictRecord } from "../state/store.js";
@@ -153,6 +155,7 @@ export class CampaignBounceAutostopService {
     private readonly slack?: Pick<SlackClient, "send" | "notifyIsolationAction">,
     resurrection?: BounceResurrectionService,
     private readonly clock: () => number = Date.now,
+    private readonly book?: InventoryBook,
   ) {
     this.resurrection =
       resurrection ??
@@ -742,26 +745,39 @@ export class CampaignBounceAutostopService {
             sample.bounceClass === "sender_blocked" &&
             sample.senderEmail?.toLowerCase().split("@")[1] === domain,
         )?.snippet ?? "550 5.1.8 bad outbound sender";
-      const opened = await requestIsolationAction({
+      let owner = store.getDomainOwner(domain);
+      if (this.book) {
+        const snap = await this.book.get();
+        refreshDomainOwnerCache(store, snap.accounts, snap.clients, this.config);
+        owner = ownerOfDomain(
+          domain,
+          store,
+          snap.accounts,
+          snap.clients,
+          this.config,
+        );
+      }
+      const asked = await requestRetireOrCover({
         store,
         slack,
-        action: buildIsolationAction({
-          kind: "retire_domain",
-          title: `Retire ${domain} — Microsoft flagged it as a bad outbound sender`,
-          proof: [
-            `Microsoft's outbound spam filter blocked ${[...senders]
-              .map((sender) => `\`${sender}\``)
-              .join(", ")} (550 5.1.8) — first seen on campaign #${campaignId}.`,
-            `"${snippet.slice(0, 160)}"`,
-            "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead.",
-          ].join("\n"),
-          detail: { domain },
-        }),
+        config: this.config,
+        domain,
+        preferRetire: true,
+        owner,
+        proof: [
+          `Microsoft's outbound spam filter blocked ${[...senders]
+            .map((sender) => `\`${sender}\``)
+            .join(", ")} (550 5.1.8) — first seen on campaign #${campaignId}.`,
+          `"${snippet.slice(0, 160)}"`,
+          "The block does not reset at midnight — the account sits in Defender's Restricted entities until unblocked. Cancel retires nothing; unblock the sender in Defender instead.",
+        ].join("\n"),
       });
-      if (opened) {
+      if (asked.opened) {
         openedCount += 1;
         console.log(
-          `[bounce-autostop] burned-domain ask opened for ${domain} — sender blocked (D146/D162)`,
+          asked.covered
+            ? `[bounce-autostop] protected-client cover buy opened for ${domain} — not retiring (D174)`
+            : `[bounce-autostop] burned-domain ask opened for ${domain} — sender blocked (D146/D162)`,
         );
       }
     }

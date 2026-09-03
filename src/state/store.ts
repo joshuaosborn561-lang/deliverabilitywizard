@@ -23,6 +23,8 @@ import {
   type PodControlRecord,
   type DomainControlHistoryRecord,
 } from "./isolationState.js";
+import type { DomainOwnerRecord } from "../lib/domainOwnership.js";
+import { isRetryableReplacementBuy } from "../lib/buyResume.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
 import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
 import type { GenericBackfillApproval } from "../lib/genericBackfill.js";
@@ -1485,6 +1487,22 @@ export class StateStore {
     return Object.values(this.state.isolation.domainHistory);
   }
 
+  replaceDomainOwners(owners: Record<string, DomainOwnerRecord>): void {
+    this.state.isolation.domainOwners = owners;
+  }
+
+  upsertDomainOwner(record: DomainOwnerRecord): void {
+    this.state.isolation.domainOwners[record.domain.toLowerCase()] = record;
+  }
+
+  getDomainOwner(domain: string): DomainOwnerRecord | undefined {
+    return this.state.isolation.domainOwners[domain.trim().toLowerCase()];
+  }
+
+  listDomainOwners(): DomainOwnerRecord[] {
+    return Object.values(this.state.isolation.domainOwners);
+  }
+
   upsertIsolationAction(record: IsolationActionRecord): void {
     this.state.isolation.actions[record.id] = record;
   }
@@ -1498,7 +1516,9 @@ export class StateStore {
   }
 
   pendingIsolationActions(): IsolationActionRecord[] {
-    return this.listIsolationActions().filter((row) => row.status === "pending");
+    return this.listIsolationActions().filter(
+      (row) => row.status === "pending" || isRetryableReplacementBuy(row),
+    );
   }
 
   /**

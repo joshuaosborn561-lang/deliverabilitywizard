@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D170** (2026-09-02). One page of current truth. When a new
+Canon as of **D171** (2026-09-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -221,8 +221,12 @@ or the day is done. Silent findings are a bug (D163).
   pen-test (D152/D168; blank delete only for pure spam tokens).
   `{{Local_Sports_Team}}` / sports-ticket openers stay an offer even when
   the hunt slice truncates before “tickets”; company-identity openers
-  (“we’re TechEvolution”) keep the company name with a light soften;
-  default substitutes use `...` never an em dash (D170). Pending
+  (“we’re TechEvolution”) keep the company name with a light soften —
+  they are not the gift/offer template; gift-or-experience-offer
+  REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}`
+  (or equivalent 2–3 way spintax including I'd like to offer) and keep
+  the offer noun — not bare `Happy to send` / `Happy to offer` only
+  (D171); default substitutes use `...` never an em dash (D170). Pending
   `swap_copy` asks are **recomputed** (`suggestedCopySwap` + `copySwapProof`)
   on remind and before first notify so a pre-D168 frozen “Quick note —”
   cannot be re-paged; a still-banned default is never Slacked (D170).
@@ -253,8 +257,9 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    generics cover the campaigns it cut (D134/D150).
 2. **Isolated spam word** — *REMOVE this exact text:* and *REPLACE WITH:*
    in fenced blocks under the campaign name (D170), a substitute that
-   keeps the line’s job (offer openers keep the gift/tickets/experience —
-   D152/D168/D170; remind refreshes a stale pending swap before Slack),
+   keeps the line’s job (offer openers keep the gift/tickets/experience
+   and lead with `{I'd like to offer|Happy to offer}` —
+   D152/D168/D170/D171; remind refreshes a stale pending swap before Slack),
    *Use suggested edit* / *Write my own edit* (D153).
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed

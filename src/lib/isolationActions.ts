@@ -442,17 +442,28 @@ function extractOfferPhrase(text: string): string | undefined {
   return match?.[0];
 }
 
+/** D171 — Josh-locked gift/offer REPLACE WITH lead-in (2-way; I'd like to offer first). */
+export const OFFER_LEAD_SPINTAX = "{I'd like to offer|Happy to offer}";
+
+export function isOfferLeadSpintax(text: string): boolean {
+  return /^\{\s*I'd like to offer\s*\|[^}]+\}/i.test(text.trim());
+}
+
+function offerLead(rest: string): string {
+  return `${OFFER_LEAD_SPINTAX} ${rest}`;
+}
+
 function offerSubstitute(text: string): string {
   const phrase = extractOfferPhrase(text);
-  if (!phrase) return "Happy to send that if useful.";
+  if (!phrase) return offerLead("that if useful.");
   const experiential = /jet[\s-]?ski|round of golf|tee time/i.test(phrase);
   if (/air\s*pods?|airpods/i.test(phrase)) {
-    return "Happy to send a pair of AirPods if useful.";
+    return offerLead("a pair of AirPods if useful.");
   }
   if (experiential) {
-    return `Happy to offer a ${phrase.replace(/^a\s+/i, "")} outing if useful.`;
+    return offerLead(`a ${phrase.replace(/^a\s+/i, "")} outing if useful.`);
   }
-  return `Happy to send ${phrase} if useful.`;
+  return offerLead(`${phrase} if useful.`);
 }
 
 function ctaSubstitute(text: string): string {
@@ -499,14 +510,17 @@ function spinGroupCount(text: string): number {
 }
 
 /**
- * Slack WITH block: prefer a single plain-prose line. Keep spintax only
- * when the find itself is spintax and the substitute must match that
- * structure (more than one spin group on both sides).
+ * Slack WITH block: prefer a single plain-prose line. Keep spintax when
+ * the find itself is structured spintax (more than one spin group on
+ * both sides), or when the swap is the D171 gift/offer lead-in
+ * `{I'd like to offer|...}` — Josh locked that REPLACE WITH style.
  */
 export function plainProseSubstitute(find: string, swap: string): string {
   const trimmed = swap.trim();
   if (!trimmed) return "";
   if (!hasSpintax(trimmed)) return preferEllipsis(trimmed);
+  // D171 — gift/offer defaults keep the I'd-like-to-offer lead-in.
+  if (isOfferLeadSpintax(trimmed)) return preferEllipsis(trimmed);
   if (
     hasSpintax(find) &&
     spinGroupCount(trimmed) > 1 &&
@@ -526,17 +540,21 @@ function escapeRegExp(value: string): string {
 }
 
 /**
- * D152 / D168 / D170 — propose a substitute that still does the job of
- * the line and stayed (or should stay) out of spam. Blank delete is a
- * last resort for pure spam tokens (winner / congratulations), never the
- * default for an opener, offer, or CTA the campaign still needs.
+ * D152 / D168 / D170 / D171 — propose a substitute that still does the
+ * job of the line and stayed (or should stay) out of spam. Blank delete
+ * is a last resort for pure spam tokens (winner / congratulations),
+ * never the default for an opener, offer, or CTA the campaign still
+ * needs.
  *
  * Offer openers keep the gift / tickets / jet-ski / AirPods intent and
- * drop bait phrasing. The school-district pen-test bridge is retired —
- * it was Goliath copy applied to every client. "Quick note —" is not a
- * default for offer or opener jobs. Identity openers keep the company
- * name. Defaults use "..." never an em dash. Pending asks are
- * recomputed on remind (D170) so a pre-D168 freeze cannot be re-paged.
+ * drop bait phrasing. Gift/offer REPLACE WITH defaults lead with
+ * `{I'd like to offer|Happy to offer}` (D171) — not bare "Happy to
+ * send" / "Happy to offer" only. The school-district pen-test bridge
+ * is retired. "Quick note —" is not a default for offer or opener
+ * jobs. Identity openers ("we're TechEvolution") keep the company
+ * name with a light soften — they are not this offer template.
+ * Defaults use "..." never an em dash. Pending asks are recomputed
+ * on remind (D170) so a pre-D168 freeze cannot be re-paged.
  */
 export function suggestedCopySwap(
   element: string,

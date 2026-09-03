@@ -6758,10 +6758,10 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
     );
     assert.match(
       canon,
-      /Canon as of \*\*D171\*\*/,
+      /D171/,
       stop(
-        "CANON is as of D171.",
-        "CANON.md header was not bumped to D171.",
+        "CANON still names the D171 offer lead-in.",
+        "CANON.md lost D171.",
       ),
     );
     assert.match(
@@ -6782,6 +6782,90 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
       stop(
         "The offer lead-in rule is in the ledger (D171).",
         "DECISIONS.md no longer has D171.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D172 real-client attach is not starved by GENERIC tagging", () => {
+  it("D172: reserved attach budget; budget-exhausted advisory; D143 not gated on writesLeft", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const audit = await readFile(
+      new URL("../services/domainClientAudit.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      audit,
+      /CLIENT_ATTACH_RESERVE/,
+      stop(
+        "GENERIC tagging cannot spend the reserved real-client attach writes (D172).",
+        "domainClientAudit.ts lost CLIENT_ATTACH_RESERVE.",
+      ),
+    );
+    assert.match(
+      audit,
+      /writesLeft - CLIENT_ATTACH_RESERVE/,
+      stop(
+        "Tagging is capped at ATTACH_CAP minus the attach reserve (D172).",
+        "domainClientAudit.ts no longer holds the reserve back from tagAndDetachGenerics.",
+      ),
+    );
+    assert.match(
+      audit,
+      /write budget exhausted this run/,
+      stop(
+        "A confident match that could not write this pass says the budget is exhausted (D172).",
+        "domainClientAudit.ts lost the budget-exhausted advisory.",
+      ),
+    );
+    assert.doesNotMatch(
+      audit,
+      /if \(match && !this\.config\.dryRun && writesLeft > 0\)/,
+      stop(
+        "D143 deferral and the D172 budget advisory are not gated on leftover writes (D172).",
+        "domainClientAudit.ts still skips a confident match when writesLeft is 0 — that was the none-resolve mislabel.",
+      ),
+    );
+
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D172\*\*/,
+      stop(
+        "CANON is as of D172.",
+        "CANON.md header was not bumped to D172.",
+      ),
+    );
+    assert.match(
+      canon,
+      /reserved write budget/,
+      stop(
+        "CANON names the attach reserve (D172).",
+        "CANON.md lost the D172 attach-reserve rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /none resolve to a client/,
+      stop(
+        "CANON names the none-resolve mislabel (D172).",
+        "CANON.md lost the D172 mislabel warning.",
+      ),
+    );
+
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D172 — Real-client attach cannot be starved by GENERIC tagging/,
+      stop(
+        "The attach-reserve rule is in the ledger (D172).",
+        "DECISIONS.md no longer has D172.",
       ),
     );
   });

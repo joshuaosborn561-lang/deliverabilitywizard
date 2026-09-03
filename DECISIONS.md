@@ -186,6 +186,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D169 | Live | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
+| D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
 
 ---
 
@@ -4957,3 +4958,67 @@ substitutes include `{I'd like to offer|`; identity lines do not;
 `plainProseSubstitute` keeps the offer lead-in; CANON names the
 template. Unit tests in `isolationActions.test.ts` and
 `swapCopyCard.test.ts`.
+
+## D172 — Real-client attach cannot be starved by GENERIC tagging
+
+**Decision (SalesGlider, 2026-09-03).** The domain-client audit's
+per-pass write cap must not let GENERIC pool tagging starve D142
+real-client attach. A confident client match that could not write
+this pass is an advisory that says the budget is exhausted — never
+"none resolve to a client".
+
+Live 2026-09-03: every 6-hour `domain-client-audit` logged
+`tagged 40 mailbox(es) GENERIC (pool label, D160)` then 26
+`unmapped <domain> — N mailbox(es), none resolve to a client`
+lines. The unmapped set included client-named fleets Smartlead
+already had exactly one client for: Parlay Tech (#418274)
+`winparlay.info` / `hqparlay.info` / `myparlay.info` /
+`proparlay.info` / `topparlay.info`; CornerStone Earthworks
+(#574088) ~10 domains; SalesGlider (#345263) ~11 domains. Those
+are D142 confident matches. Consequence: 10 ACTIVE Parlay
+campaigns reported `understaffed: staffable 17/20 (half this
+client's inboxes)` for days — the client's own mailboxes existed
+but never got `client_id`, so the half-client floor under-counted
+and pool generics (Goliath-only) could not top them up.
+
+**The rule.**
+
+1. GENERIC tagging / leftover-marker detach may spend only the
+   writes above a reserved real-client attach budget
+   (`CLIENT_ATTACH_RESERVE`). Unused tag budget rolls back to
+   attach. Each audit pass attaches client-named domains even
+   when untagged generics remain.
+2. D143 stays: a box that still owes the 21-day warmup is not
+   attach supply. That deferral advisory is evaluated even when
+   the write budget is already spent.
+3. A confident match whose warmed unassigned boxes could not be
+   written this pass is an `unmapped` advisory:
+   `matches <client>, attach deferred — write budget exhausted
+   this run (D172)`. Never "none resolve to a client" for a
+   domain we already know the client of.
+4. Unchanged: split_clients is always advisory; never guess when
+   two clients' tokens match; skip BCP-owned replacement domains,
+   the isolation domain, the canary fleet, and retired domains;
+   leftover Generic/POC `client_id`s still clear (D160); writes
+   stay spaced (the pause helper) so Smartlead is not 429'd.
+5. Does **not** attach from chat, spend, purge, or bypass the
+   warmup gate.
+
+**Why.** `run()` started with `writesLeft = ATTACH_CAP` (40),
+called `tagAndDetachGenerics` first, and the D142 attach branch
+was gated on `writesLeft > 0`. As long as any untagged generics
+remained, the cap was spent on labels, attach never got a write,
+and the fall-through advisory called a known client-named domain
+"none resolve to a client". That mislabel hid the hole.
+
+**Supersedes / amends.** Amends D142/D160 (the shared write cap
+and the none-resolve fall-through). Does not change D143 warmup
+deferral, D160 tag-not-client, D136 no-guess, or D99/D54 skip
+lists.
+
+**Guards.** canon D172: `CLIENT_ATTACH_RESERVE` held back from
+tagging; budget-exhausted advisory wording; D143 advisory not
+gated on writesLeft; CANON names the reserve and the mislabel.
+Unit tests in `domainClientAudit.test.ts`: tagging at the cap
+still attaches; confident warm attach; D143 after the budget is
+spent; starved domain says budget exhausted, never none-resolve.

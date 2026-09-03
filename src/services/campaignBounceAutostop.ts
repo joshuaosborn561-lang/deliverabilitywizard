@@ -738,7 +738,7 @@ export class CampaignBounceAutostopService {
     }
     let openedCount = 0;
     for (const [domain, senders] of blockedByDomain) {
-      if (domainRecentlyRetired(store, domain)) continue;
+      if (domainRecentlyRetired(store, domain, this.clock())) continue;
       const snippet =
         samples.find(
           (sample) =>

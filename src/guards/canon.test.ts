@@ -2903,7 +2903,7 @@ describe("owner intent — D145/D146 a sender block is a burned domain", () => {
     // not an FYI page.
     assert.match(
       autostop,
-      /requestIsolationAction/,
+      /requestRetireOrCover/,
       stop(
         "A sender block feeds the burned-domain flow (D146).",
         "campaignBounceAutostop.ts no longer opens an isolation action for a blocked sender.",
@@ -2911,7 +2911,7 @@ describe("owner intent — D145/D146 a sender block is a burned domain", () => {
     );
     assert.match(
       autostop,
-      /kind: "retire_domain"/,
+      /preferRetire: true/,
       stop(
         "The blocked sender's domain gets the standard retire ask with buttons (D146/D49).",
         "campaignBounceAutostop.ts downgraded the sender-block response to something other than the retire_domain ask.",
@@ -3120,7 +3120,7 @@ describe("owner intent — D148 nothing pauses: investigate, remediate, re-add",
     );
     assert.match(
       service,
-      /requestIsolationAction/,
+      /requestRetireOrCover/,
       stop(
         "A 5.1.8 found during the incident re-scan opens the same retire ask a burst sample would (D146/D148) — the 8/27 live block was classified pre-D146 and the burst path never saw it.",
         "bounceResurrection.ts no longer opens the burned-domain ask from the scan; a scan-discovered block would resend with no ask to gate it.",
@@ -5536,7 +5536,7 @@ describe("owner intent — D161 client-domain replace is client-named", () => {
     );
     assert.match(
       life,
-      /replacementParentForRetiredDomain/,
+      /requestRetireOrCover/,
       stop(
         "Buy-ahead and retire asks carry the client-brand parent (D161).",
         "domainLifecycle.ts still hard-codes isolationBuyParentDomain.",

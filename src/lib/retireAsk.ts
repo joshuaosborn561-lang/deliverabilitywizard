@@ -24,6 +24,7 @@ import {
 } from "./retireReplacement.js";
 import {
   buildIsolationAction,
+  domainRecentlyRetired,
   requestIsolationAction,
 } from "./isolationActions.js";
 
@@ -115,6 +116,13 @@ export async function requestRetireOrCover(input: {
   const host = input.domain.trim().toLowerCase();
   const owner = input.owner ?? input.store.getDomainOwner(host);
   const refuse = shouldRefuseRetire(owner, input.config);
+  if (
+    input.preferRetire &&
+    !refuse &&
+    domainRecentlyRetired(input.store, host)
+  ) {
+    return { opened: null, covered: false };
+  }
   const parent = replacementParentForRetiredDomain(host, input.config, {
     kind: refuse || !input.preferRetire ? "buy_domains" : "retire_domain",
     owner,

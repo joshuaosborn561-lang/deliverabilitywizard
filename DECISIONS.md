@@ -184,7 +184,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 | D168 | Live — pending-ask refresh + classifier harden added by D170 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
 | D169 | Live | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
-| D170 | Live | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
+| D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
+| D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 
 ---
 
@@ -4912,3 +4913,47 @@ blocks Quick note / pen-test / school-district. Slack card renders
 REMOVE / REPLACE WITH fences (`swapCopySlackBody`). CANON names the
 remind refresh and the card. Unit tests in `isolationActions.test.ts`
 and `swapCopyCard.test.ts`.
+
+## D171 — Gift/offer REPLACE WITH leads with I'd like to offer
+
+**Decision (Josh / SalesGlider, 2026-09-03).** Word-hunt gift/offer
+REPLACE WITH style is locked: use spintaxed **I'd like to offer**
+variants, not bare `Happy to send` / `Happy to offer` only.
+
+Examples:
+
+- AirPods: `{I'd like to offer|Happy to offer} a pair of AirPods if useful.`
+- Jet ski: `{I'd like to offer|Happy to offer} a jet ski outing if useful.`
+- Sports/tickets: `{I'd like to offer|Happy to offer} {{Local_Sports_Team}} tickets if useful.`
+
+**The rule.**
+
+1. `offerSubstitute` / `suggestedCopySwap` gift-or-experience-offer
+   defaults lead with `{I'd like to offer|Happy to offer}` (or
+   equivalent 2–3 way spintax that includes I'd like to offer).
+2. Keep the offer noun (AirPods, jet ski outing, tickets /
+   `{{Local_Sports_Team}}`). Drop bait phrasing.
+3. Slack REPLACE WITH keeps that lead-in — do not flatten
+   `{I'd like to offer|...}` to plain prose (amends D170's flatten
+   default for this template only).
+4. Company-identity openers ("we're TechEvolution") stay a light
+   soften. They are not this offer template.
+5. Defaults still use `...`, never an em dash (D170).
+6. Does **not** apply live Smartlead copy, START/STOP, or spend.
+   Josh or Cayden still tap (D133).
+
+**Why.** D168/D170 kept the offer but defaulted to "Happy to send a
+pair of AirPods if useful." / "Happy to offer a jet ski outing…".
+Josh locked the REPLACE WITH lead-in so the card shows the same
+spintaxed offer line he wants on the sequence.
+
+**Supersedes / amends.** Amends D168/D170 (the offer default
+phrasing and the flatten-WITH rule for this lead-in). Extends
+D152/D133/D153. Does not change hunt deletion measurement, remind
+refresh, or the fleet-apply button.
+
+**Guards.** canon D171: AirPods / jet ski / `{{Local_Sports_Team}}`
+substitutes include `{I'd like to offer|`; identity lines do not;
+`plainProseSubstitute` keeps the offer lead-in; CANON names the
+template. Unit tests in `isolationActions.test.ts` and
+`swapCopyCard.test.ts`.

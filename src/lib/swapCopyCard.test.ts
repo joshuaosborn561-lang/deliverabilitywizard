@@ -10,7 +10,7 @@ describe("swap_copy Slack card — REMOVE / REPLACE WITH", () => {
       campaignName: "TechEvo AirPods",
       element:
         "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
-      suggestedSwap: "Happy to send a pair of AirPods if useful.",
+      suggestedSwap: "{I'd like to offer|Happy to offer} a pair of AirPods if useful.",
       proof: [
         "Campaign: *TechEvo AirPods*.",
         "Suggested edit: *Quick note —*.",
@@ -31,7 +31,7 @@ describe("swap_copy Slack card — REMOVE / REPLACE WITH", () => {
     );
     assert.match(
       text,
-      /\*REPLACE WITH:\*\n```Happy to send a pair of AirPods if useful\.```/,
+      /\*REPLACE WITH:\*\n```\{I'd like to offer\|Happy to offer\} a pair of AirPods if useful\.```/,
     );
     assert.doesNotMatch(text, /\*Suggested edit:\*/);
     assert.doesNotMatch(text, /Quick note/);
@@ -65,6 +65,22 @@ describe("swap_copy Slack card — REMOVE / REPLACE WITH", () => {
     });
     assert.match(text, /```Happy to send a pair of AirPods if useful\.```/);
     assert.doesNotMatch(text, /\{Happy to send\|I can send\}/);
+  });
+
+  it("keeps D171 I'd-like-to-offer lead-in on REPLACE WITH", () => {
+    const swap = "{I'd like to offer|Happy to offer} a pair of AirPods if useful.";
+    const text = swapCopySlackBody({
+      title: "swap",
+      campaignName: "TechEvo",
+      element: "I've got Air Pods for you.",
+      suggestedSwap: swap,
+      proof: "",
+    });
+    assert.match(
+      text,
+      /```\{I'd like to offer\|Happy to offer\} a pair of AirPods if useful\.```/,
+    );
+    assert.doesNotMatch(text, /—/);
   });
 
   it("keeps matching multi-group spintax when the find is also spintax", () => {

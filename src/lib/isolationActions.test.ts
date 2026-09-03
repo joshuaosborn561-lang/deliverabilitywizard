@@ -8,6 +8,8 @@ import {
   dismissPendingSignatureAsks,
   flattenSpintax,
   isBannedCopySwap,
+  isOfferLeadSpintax,
+  OFFER_LEAD_SPINTAX,
   plainProseSubstitute,
   preferEllipsis,
   refreshCopySwapAction,
@@ -199,11 +201,21 @@ describe("D137 — a denied isolation-domain buy also never re-asks", () => {
 function assertOfferSwap(element: string, offer: RegExp, context?: string) {
   const swap = suggestedCopySwap(element, context ? { context } : undefined);
   assert.match(swap, offer, `offer keyword lost for ${JSON.stringify(element)}`);
+  assert.match(
+    swap,
+    /\{I'd like to offer\|/,
+    `offer default must lead with I'd-like-to-offer spintax: ${swap}`,
+  );
+  assert.ok(
+    isOfferLeadSpintax(swap),
+    `offer default must keep the D171 lead-in: ${swap}`,
+  );
   assert.doesNotMatch(
     swap,
     /pen-test|school-district|Quick note/i,
     `offer opener must not become pen-test or Quick note: ${swap}`,
   );
+  assert.doesNotMatch(swap, /^Happy to (?:send|offer) /);
   assert.notEqual(swap.trim(), "");
 }
 
@@ -278,8 +290,10 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
       "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
     ]) {
       const swap = suggestedCopySwap(line, { campaignName: "TechEvo AirPods" });
+      assert.match(swap, /\{I'd like to offer\|/);
       assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
       assert.doesNotMatch(swap, /^Quick note —$/);
+      assert.doesNotMatch(swap, /^Happy to (?:send|offer) /);
     }
     const goliath = suggestedCopySwap(
       "I've got a pair of Air Pods for you.",
@@ -294,6 +308,7 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
       "P.S. Tickets are yours either way just for your time.",
     );
     assert.match(swap, /tickets/i);
+    assert.match(swap, /\{I'd like to offer\|/);
     assert.doesNotMatch(swap, /receipts report|pen-test|Quick note/i);
   });
 
@@ -448,9 +463,40 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
       "{Hello|Howdy} {there|friend}",
     );
     assert.equal(
-      suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
-      "Happy to send a pair of AirPods if useful.",
+      plainProseSubstitute(
+        "I've got Air Pods",
+        "{I'd like to offer|Happy to offer} a pair of AirPods if useful.",
+      ),
+      "{I'd like to offer|Happy to offer} a pair of AirPods if useful.",
     );
+  });
+
+  it("D171 — gift/offer defaults lead with {I'd like to offer|Happy to offer}", () => {
+    assert.equal(OFFER_LEAD_SPINTAX, "{I'd like to offer|Happy to offer}");
+    assert.equal(
+      suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
+      `${OFFER_LEAD_SPINTAX} a pair of AirPods if useful.`,
+    );
+    assert.equal(
+      suggestedCopySwap("I've got a jet ski you can take out this weekend."),
+      `${OFFER_LEAD_SPINTAX} a jet ski outing if useful.`,
+    );
+    assert.equal(
+      suggestedCopySwap(
+        "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
+      ),
+      `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if useful.`,
+    );
+    assert.equal(
+      suggestedCopySwap("I've got Red Sox tickets if you want them."),
+      `${OFFER_LEAD_SPINTAX} Red Sox tickets if useful.`,
+    );
+    const identity = suggestedCopySwap(
+      "Hey, we're TechEvolution and we help IT teams stay online.",
+    );
+    assert.match(identity, /TechEvolution/i);
+    assert.doesNotMatch(identity, /I'd like to offer|Happy to offer/i);
+    assert.doesNotMatch(identity, /—/);
   });
 
   it("AirPods and jet ski substitutes stay offer-preserving with no em dash", () => {

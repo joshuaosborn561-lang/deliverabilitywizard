@@ -4829,6 +4829,14 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
         "suggestedCopySwap dropped AirPods intent.",
       ),
     );
+    assert.match(
+      swap,
+      /\{I'd like to offer\|/,
+      stop(
+        "Gift-bait REPLACE WITH leads with I'd-like-to-offer spintax (D171).",
+        `suggestedCopySwap returned ${swap}`,
+      ),
+    );
     assert.doesNotMatch(
       swap,
       /pen-test|school-district|Quick note/i,
@@ -6226,6 +6234,14 @@ describe("owner intent — D168 word-hunt suggested edit keeps the offer", () =>
           `${row.line} → ${swap}`,
         ),
       );
+      assert.match(
+        swap,
+        /\{I'd like to offer\|/,
+        stop(
+          "Gift/offer REPLACE WITH leads with I'd-like-to-offer spintax (D171).",
+          `${row.line} → ${swap}`,
+        ),
+      );
       assert.doesNotMatch(
         swap,
         /pen-test|school-district|Quick note/i,
@@ -6530,6 +6546,14 @@ describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
         `suggestedCopySwap returned ${airpods}`,
       ),
     );
+    assert.match(
+      airpods,
+      /\{I'd like to offer\|/,
+      stop(
+        "AirPods REPLACE WITH leads with I'd-like-to-offer spintax (D171).",
+        `suggestedCopySwap returned ${airpods}`,
+      ),
+    );
     assert.doesNotMatch(
       airpods,
       /—/,
@@ -6576,10 +6600,10 @@ describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D170\*\*/,
+      /D170/,
       stop(
-        "CANON is as of D170.",
-        "CANON.md header was not bumped to D170.",
+        "CANON still names D170.",
+        "CANON.md lost D170.",
       ),
     );
     assert.match(
@@ -6600,6 +6624,164 @@ describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
       stop(
         "The remind-refresh rule is in the ledger (D170).",
         "DECISIONS.md no longer has D170.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to offer", () => {
+  it("D171: offer defaults use {I'd like to offer|...}; identity stays a soften", async () => {
+    const { suggestedCopySwap, isOfferLeadSpintax, OFFER_LEAD_SPINTAX } =
+      await import("../lib/isolationActions.js");
+    assert.equal(
+      OFFER_LEAD_SPINTAX,
+      "{I'd like to offer|Happy to offer}",
+      stop(
+        "Gift/offer lead-in is Josh's I'd-like-to-offer spintax (D171).",
+        `OFFER_LEAD_SPINTAX is ${OFFER_LEAD_SPINTAX}`,
+      ),
+    );
+    const cases: Array<{ line: string; offer: RegExp; rest: RegExp }> = [
+      {
+        line: "{I've got|I have} a pair of Air Pods for you.",
+        offer: /Air\s*Pods/i,
+        rest: /a pair of AirPods if useful/,
+      },
+      {
+        line: "I've got a jet ski you can take out this weekend.",
+        offer: /jet\s*ski/i,
+        rest: /jet ski outing if useful/,
+      },
+      {
+        line: "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
+        offer: /Local_Sports_Team/,
+        rest: /\{\{Local_Sports_Team\}\} tickets if useful/,
+      },
+    ];
+    for (const row of cases) {
+      const swap = suggestedCopySwap(row.line);
+      assert.match(
+        swap,
+        /\{I'd like to offer\|/,
+        stop(
+          "Gift/offer REPLACE WITH leads with I'd-like-to-offer spintax (D171).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+      assert.equal(
+        isOfferLeadSpintax(swap),
+        true,
+        stop(
+          "Offer defaults keep the D171 lead-in (not flattened) (D171).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+      assert.match(
+        swap,
+        row.offer,
+        stop(
+          "The suggested edit keeps the offer noun (D171).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+      assert.match(
+        swap,
+        row.rest,
+        stop(
+          "The suggested edit keeps Josh's offer rest (D171).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+      assert.doesNotMatch(
+        swap,
+        /^Happy to (?:send|offer) /,
+        stop(
+          "Offer defaults are not bare Happy-to-send / Happy-to-offer (D171).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+      assert.doesNotMatch(
+        swap,
+        /—|Quick note|pen-test|school-district/,
+        stop(
+          "Offer defaults stay off Quick note / pen-test / em dash (D171).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+    }
+
+    const identity = suggestedCopySwap(
+      "Hey, we're TechEvolution and we help IT teams stay online.",
+    );
+    assert.match(
+      identity,
+      /TechEvolution/i,
+      stop(
+        "Identity openers keep TechEvolution (D171).",
+        `suggestedCopySwap returned ${identity}`,
+      ),
+    );
+    assert.doesNotMatch(
+      identity,
+      /I'd like to offer|Happy to offer/,
+      stop(
+        "Identity openers are not the gift/offer template (D171).",
+        `suggestedCopySwap returned ${identity}`,
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actions,
+      /I'd like to offer/,
+      stop(
+        "offerSubstitute uses I'd like to offer (D171).",
+        "isolationActions.ts lost the D171 offer lead-in.",
+      ),
+    );
+    assert.match(
+      actions,
+      /isOfferLeadSpintax/,
+      stop(
+        "plainProseSubstitute keeps the D171 offer lead-in (D171).",
+        "isolationActions.ts lost isOfferLeadSpintax.",
+      ),
+    );
+
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D171\*\*/,
+      stop(
+        "CANON is as of D171.",
+        "CANON.md header was not bumped to D171.",
+      ),
+    );
+    assert.match(
+      canon,
+      /I'd like to offer/,
+      stop(
+        "CANON names the I'd-like-to-offer gift/offer default (D171).",
+        "CANON.md lost the D171 offer lead-in.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D171 — Gift\/offer REPLACE WITH leads with I'd like to offer/,
+      stop(
+        "The offer lead-in rule is in the ledger (D171).",
+        "DECISIONS.md no longer has D171.",
       ),
     );
   });

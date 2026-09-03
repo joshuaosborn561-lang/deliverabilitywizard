@@ -109,4 +109,35 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       1,
     );
   });
+
+  it("D176: attach-blocked inboxes do not inflate the half-floor", () => {
+    const counts = countClientInboxesByKey(
+      [
+        { id: 1, from_email: "a@bcp.com", client_id: 9 },
+        { id: 2, from_email: "b@bcp.com", client_id: 9 },
+        {
+          id: 3,
+          from_email: "burned@boldercyperpartnerhub.info",
+          client_id: 9,
+        },
+      ],
+      [{ id: 1, name: "BCP Healthcare", status: "ACTIVE", client_id: 9 }],
+      [{ id: 9, name: "BCP" }],
+      { extraGenericMailboxes: [], extraGenericDomains: [], prewarmedDomains: [] },
+      {
+        getPoolMailbox: () => undefined,
+        listAttachBlocks: () => [
+          {
+            domain: "boldercyperpartnerhub.info",
+            emails: ["burned@boldercyperpartnerhub.info"],
+            accountIds: [3],
+            reason: "restricted",
+            blockedAt: "2026-09-03T20:00:00.000Z",
+          },
+        ],
+        listIsolationActions: () => [],
+      },
+    );
+    assert.equal(counts.get(clientCountKey(9)), 2);
+  });
 });

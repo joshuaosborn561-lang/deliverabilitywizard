@@ -7,6 +7,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -189,6 +190,15 @@ export class ClientRestService {
         isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
       ) {
         result.skipped.push(`${email}: retired domain`);
+        continue;
+      }
+      if (
+        senderIsAttachBlocked(
+          { email, accountId: account.id, domain },
+          this.state,
+        )
+      ) {
+        result.skipped.push(`${email}: attach blocked (D176)`);
         continue;
       }
       if (isGenericMailbox(account, email, this.config, this.state)) continue;

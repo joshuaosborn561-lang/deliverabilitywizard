@@ -331,4 +331,73 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(result.pulledGenerics[0]?.email, pool.email);
     assert.equal(result.assigned.length, 0);
   });
+
+  it("D176: will not restaff an attach-blocked generic onto a short campaign", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "ada@cleartechco.com",
+      domain: "cleartechco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 42004,
+      firstName: "Ada",
+      lastName: "Clear",
+      status: "available",
+    };
+    const { state } = fakeState(pool);
+    const blockedState = {
+      ...state,
+      listAttachBlocks: () => [
+        {
+          domain: "cleartechco.com",
+          emails: [pool.email],
+          accountIds: [42004],
+          reason: "sender_blocked" as const,
+          blockedAt: "2026-09-03T20:23:00.000Z",
+        },
+      ],
+      listIsolationActions: () => [],
+    } as unknown as StateStore;
+    let addCalls = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3851730, name: "Goliath MDR", status: "ACTIVE", client_id: 2 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 42004,
+          from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
+        },
+        ...Array.from({ length: 6 }, (_, index) => ({
+          id: 500 + index,
+          from_email: `live-${index}@goliath.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 2,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [],
+        })),
+      ],
+      listClients: async () => [{ id: 2, name: "Goliath Cybersecurity" }],
+      addEmailAccountsToCampaign: async () => {
+        addCalls += 1;
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      blockedState,
+    );
+
+    const result = await service.run();
+    assert.equal(addCalls, 0, "blocked cleartechco must not fill the gap");
+    assert.equal(result.assigned.length, 0);
+  });
 });

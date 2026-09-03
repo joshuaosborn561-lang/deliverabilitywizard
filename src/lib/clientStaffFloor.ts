@@ -8,6 +8,7 @@ import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isClientInbox } from "./clientInbox.js";
+import { senderIsAttachBlocked } from "./attachBlock.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
@@ -41,6 +42,8 @@ export function allowsGenericStaff(
 type FloorCountState = Pick<StateStore, "getPoolMailbox"> & {
   isCopyCanary?: StateStore["isCopyCanary"];
   getDomainHistory?: StateStore["getDomainHistory"];
+  listAttachBlocks?: StateStore["listAttachBlocks"];
+  listIsolationActions?: StateStore["listIsolationActions"];
 };
 
 export function countClientInboxesByKey(
@@ -68,6 +71,14 @@ export function countClientInboxesByKey(
     const domain = email.split("@")[1]?.toLowerCase();
     const history = domain ? state.getDomainHistory?.(domain) : undefined;
     if (isRetiredSendingDomain(domain, history)) continue;
+    if (
+      senderIsAttachBlocked(
+        { email, accountId: account.id, domain },
+        state,
+      )
+    ) {
+      continue;
+    }
     const resolved = resolveAccountClient(account, campaignClientById, clientsById);
     const key = clientCountKey(resolved.clientId);
     counts.set(key, (counts.get(key) ?? 0) + 1);

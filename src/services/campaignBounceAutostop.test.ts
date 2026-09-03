@@ -439,6 +439,10 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
       );
     assert.equal(pending.length, 1);
     assert.equal(pending[0]!.status, "pending");
+    const attachBlock = state.getAttachBlock("salesgliderrun.com");
+    assert.ok(attachBlock, "D176: sender_blocked writes the attach blocklist");
+    assert.deepEqual(attachBlock.emails, ["flagged@salesgliderrun.com"]);
+    assert.equal(attachBlock.reason, "sender_blocked");
     assert.ok(
       state.getBounceResurrectionJob(9),
       "the mixed-class incident opens too — the 5.1.8 lead waits on the ask",

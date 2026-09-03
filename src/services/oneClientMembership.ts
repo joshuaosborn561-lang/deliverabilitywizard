@@ -16,6 +16,7 @@ import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import { pocClientId } from "../lib/pocClient.js";
+import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
@@ -133,6 +134,15 @@ export class OneClientMembershipService {
       if (!email || !account.id) continue;
       if (this.state.isCopyCanary(email)) continue;
       if (isIsolationEmail(email, isolation)) continue;
+      if (
+        senderIsAttachBlocked(
+          { email, accountId: account.id },
+          this.state,
+        )
+      ) {
+        result.skipped.push(`${email}: attach blocked (D176)`);
+        continue;
+      }
 
       const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
         const campaign = campaignById.get(id);

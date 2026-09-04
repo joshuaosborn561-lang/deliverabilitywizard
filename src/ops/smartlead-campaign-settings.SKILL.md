@@ -239,13 +239,13 @@ monitoring is the health job.
 
 ## 6. AI categorization and bounce protection
 
-Use `Smartlead:update_campaign_ai_bounce_settings` (or the batch tool).
+Use `Smartlead:update_campaign_ai_bounce_settings` (or the batch tool) for
+AI / OOO fields only.
 
 **Pass every field explicitly. Do not use `use_bcp_defaults: true`.**
 
 | Setting | API field | Value |
 |---|---|---|
-| Bounce auto-pause threshold | `bounce_autopause_threshold` | `"100"` (native pause off — the wizard owns bounce pausing, D90/D124) |
 | Active AI categories | `ai_categorisation_options` | `[6, 1, 3]` |
 | Restart OOO when lead returns | `out_of_office_detection_settings.autoCategorizeOOO` | `true` |
 | Ignore OOO from reply % | `ignoreOOOasReply` | **`true`** |
@@ -262,12 +262,14 @@ Copy field names exactly (British s / American z, snake / camel).
 
 `autoCategorizeOOO` and `autoReactivateOOO` are mutually exclusive.
 
-Smartlead bounce auto-pause stays **off** (`100`). The wizard pauses a
-campaign itself over **10% bounce after 1,000 leads emailed, or more than
-10 new bounces in 10 minutes** (D90), then classifies a sample of the NDRs
-— tenant rate limit vs bad recipients vs content block (D140). **Do not
-auto-START** a bounce pause: only a human STARTs a bounce-paused campaign
-(D40/D128).
+**High Bounce Rate Auto Protection is UI-only (D157).** Do **not** POST
+`bounce_autopause_threshold` — the settings handler validates it and then
+discards it (a `"banana"` write returns ok; the UI keeps its value). Untick
+the checkbox on the campaign SETUP page at build, and by hand for existing
+campaigns. Attribution of a Smartlead pause is
+`campaign_activity_logs.paused_reason: "bounce protection"` on LIST
+`GET /campaigns`. The wizard never pauses and never STARTs (D148/D40); a
+real bounce burst classifies, receipts, remediates and re-queues.
 
 ## 7. Mailbox setup ... `Smartlead:link_mailboxes`
 
@@ -372,9 +374,9 @@ Nothing goes ACTIVE until every line passes.
 10. Suppression and domain block list applied, scoped to that `client_id`.
 11. Cross-campaign dedupe verified against full exports.
 12. Schedule applied and verified by read-back.
-13. AI categorization on, `ignoreOOOasReply: true`, native bounce
-    auto-pause off (`bounce_autopause_threshold: "100"` — the wizard owns
-    bounce pausing, D90).
+13. AI categorization on, `ignoreOOOasReply: true`, and High Bounce Rate
+    Auto Protection **unticked in the SETUP UI** (D157 — there is no API
+    off-write; do not POST `bounce_autopause_threshold`).
 14. No off-ICP leads (retail, student orgs, school districts).
 15. Every proof claim in the copy is client-approved.
 

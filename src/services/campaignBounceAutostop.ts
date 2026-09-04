@@ -61,11 +61,19 @@ export function isLivingSendCampaign(status: unknown): boolean {
   return s === "ACTIVE" || s === "PAUSED";
 }
 
-/** D157 — Smartlead bounce-protection pause on the LIST /campaigns payload. */
+/**
+ * D157 — Smartlead bounce-protection pause on the LIST /campaigns payload.
+ * Live shape is one object (`{ paused_reason, pause_time }`); accept an
+ * array too so fixtures and any future list form still match.
+ */
 export function pausedByBounceProtection(campaign: SmartleadCampaign): boolean {
   const logs = campaign.campaign_activity_logs;
-  if (!Array.isArray(logs)) return false;
-  return logs.some((log) =>
+  const rows = Array.isArray(logs)
+    ? logs
+    : logs && typeof logs === "object"
+      ? [logs]
+      : [];
+  return rows.some((log) =>
     /bounce protection/i.test(String(log?.paused_reason ?? "")),
   );
 }

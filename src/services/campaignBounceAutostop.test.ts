@@ -3,13 +3,62 @@ import { describe, it } from "node:test";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../config.js";
 import { StateStore } from "../state/store.js";
-import { CampaignBounceAutostopService } from "./campaignBounceAutostop.js";
+import {
+  CampaignBounceAutostopService,
+  pausedByBounceProtection,
+} from "./campaignBounceAutostop.js";
 
 function store(): StateStore {
   return new StateStore(
     `/tmp/dw-bounce-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.json`,
   );
 }
+
+describe("pausedByBounceProtection (D157)", () => {
+  it("matches the live LIST shape — a single activity-log object", () => {
+    assert.equal(
+      pausedByBounceProtection({
+        id: 3763809,
+        name: "BCP PE Firms (No Team)",
+        status: "PAUSED",
+        campaign_activity_logs: {
+          pause_time: "2026-09-04T18:55:08.257Z",
+          paused_reason: "bounce protection",
+        },
+      }),
+      true,
+      "object-shaped logs must attribute Smartlead bounce protection",
+    );
+  });
+
+  it("still matches an array of log rows (fixtures)", () => {
+    assert.equal(
+      pausedByBounceProtection({
+        id: 1,
+        name: "x",
+        status: "PAUSED",
+        campaign_activity_logs: [{ paused_reason: "bounce protection" }],
+      }),
+      true,
+    );
+  });
+
+  it("is false when there is no bounce-protection reason", () => {
+    assert.equal(
+      pausedByBounceProtection({
+        id: 1,
+        name: "x",
+        status: "PAUSED",
+        campaign_activity_logs: { paused_reason: "manual" },
+      }),
+      false,
+    );
+    assert.equal(
+      pausedByBounceProtection({ id: 1, name: "x", status: "PAUSED" }),
+      false,
+    );
+  });
+});
 
 describe("CampaignBounceAutostopService (D141/D148)", () => {
   it("the lifetime rate never trips — bad-looking rates are artifacts, not storms", async () => {
@@ -617,7 +666,10 @@ describe("D162 — 5.1.8 opens the retire ask without a burst", () => {
             id: 42,
             name: "BCP Engagers",
             status: "PAUSED",
-            campaign_activity_logs: [{ paused_reason: "bounce protection" }],
+            campaign_activity_logs: {
+              paused_reason: "bounce protection",
+              pause_time: "2026-09-04T18:55:08.257Z",
+            },
           },
         ],
         getCampaignAnalyticsByDate: async () => ({
@@ -687,7 +739,10 @@ describe("D162 — 5.1.8 opens the retire ask without a burst", () => {
             id: 42,
             name: "BCP Engagers",
             status: "PAUSED",
-            campaign_activity_logs: [{ paused_reason: "bounce protection" }],
+            campaign_activity_logs: {
+              paused_reason: "bounce protection",
+              pause_time: "2026-09-04T18:55:08.257Z",
+            },
           },
         ],
         getCampaignAnalyticsByDate: async () => ({

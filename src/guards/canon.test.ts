@@ -7212,3 +7212,101 @@ describe("owner intent — D175 isolation-buy is one ESP per domain", () => {
     );
   });
 });
+
+describe("owner intent — D176 attach-blocked senders stay off", () => {
+  it("D176: restaff writers refuse AS(42004) / burned / restricted senders", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const fanout = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const oneClient = await readFile(
+      new URL("../services/oneClientMembership.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      fanout,
+      /senderIsAttachBlocked/,
+      stop(
+        "Fan-out must not put attach-blocked senders back (D176).",
+        "clientFanOut.ts no longer checks senderIsAttachBlocked.",
+      ),
+    );
+    assert.match(
+      rest,
+      /senderIsAttachBlocked/,
+      stop(
+        "Client-rest restore must not put attach-blocked senders back (D176).",
+        "clientRest.ts no longer checks senderIsAttachBlocked.",
+      ),
+    );
+    assert.match(
+      topUp,
+      /senderIsAttachBlocked/,
+      stop(
+        "Top-up must not staff from an attach-blocked domain (D176).",
+        "campaignTopUp.ts no longer checks senderIsAttachBlocked.",
+      ),
+    );
+    assert.match(
+      oneClient,
+      /senderIsAttachBlocked/,
+      stop(
+        "One-client restore must not put attach-blocked generics back (D176).",
+        "oneClientMembership.ts no longer checks senderIsAttachBlocked.",
+      ),
+    );
+    assert.match(
+      bounce,
+      /upsertAttachBlock/,
+      stop(
+        "A sender_blocked sample writes the attach blocklist (D176).",
+        "campaignBounceAutostop.ts no longer stamps attachBlocks.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Attach-blocked/,
+      stop(
+        "CANON states attach-blocked senders stay off (D176).",
+        "CANON.md lost the D176 attach-block rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D176/,
+      stop(
+        "CANON still names the attach-block rule (D176).",
+        "CANON.md dropped D176 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D176 — Restaff must not reattach burned \/ AS\(42004\) senders/,
+      stop(
+        "The attach-block rule is in the ledger (D176).",
+        "DECISIONS.md no longer has D176.",
+      ),
+    );
+  });
+});

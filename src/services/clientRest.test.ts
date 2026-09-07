@@ -242,6 +242,78 @@ describe("ClientRestService", () => {
     assert.equal(state.getRestingInbox(onEmail), undefined);
   });
 
+  it("D176: on-week restore will not reattach an attach-blocked sender", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const onEmail = "burned@boldercyperpartnerhub.info";
+    assert.equal(
+      assignClientCohorts([onEmail, "z@boldercyperpartnerhub.info"]).get(onEmail),
+      "A",
+    );
+    assert.equal(isOffWeek("A", now), false);
+
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-attach-block-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertAttachBlock({
+      domain: "boldercyperpartnerhub.info",
+      emails: [onEmail],
+      accountIds: [20],
+      reason: "restricted",
+      source: "campaign:3763800",
+    });
+    state.markRestingInbox({
+      accountId: 20,
+      email: onEmail,
+      clientId: "id:9",
+      cohort: "A",
+      kind: "client",
+      restingSince: "2025-12-01T00:00:00.000Z",
+      removedFromCampaigns: [3763800],
+    });
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3763800, name: "HC No Team", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: onEmail,
+          client_id: 9,
+          campaign_ids: [],
+          created_at: WARMED,
+        },
+        {
+          id: 21,
+          from_email: "z@boldercyperpartnerhub.info",
+          client_id: 9,
+          campaign_ids: [3763800],
+          created_at: WARMED,
+        },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.ok(!adds.flatMap(([, ids]) => ids).includes(20));
+    assert.ok(result.skipped.some((row) => row.includes("attach blocked")));
+  });
+
   it("does not A/B-rest a pool generic (D43)", async () => {
     const now = new Date("2026-01-01T17:00:00Z");
     const state = new StateStore(

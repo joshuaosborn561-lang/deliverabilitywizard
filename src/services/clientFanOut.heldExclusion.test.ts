@@ -125,6 +125,68 @@ describe("ClientFanOutService held exclusion", () => {
     assert.ok(result.skipped.some((s) => s.includes("retired domain")));
   });
 
+  it("D176: never fans out a sender on an attach-blocked domain", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3851730, name: "Goliath MDR", status: "ACTIVE", client_id: 548611 },
+        { id: 3851731, name: "Goliath MSP", status: "ACTIVE", client_id: 548611 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 42004,
+          from_email: "ada@cleartechco.com",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3851730],
+          client_id: 548611,
+          tags: [],
+        },
+        {
+          id: 42005,
+          from_email: "ok@goliathcyber.com",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3851730],
+          client_id: 548611,
+          tags: [],
+        },
+      ],
+      listClients: async () => [{ id: 548611, name: "Goliath Cybersecurity" }],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        isCopyCanary: () => false,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+        listAttachBlocks: () => [
+          {
+            domain: "cleartechco.com",
+            emails: ["ada@cleartechco.com"],
+            accountIds: [42004],
+            reason: "sender_blocked",
+            blockedAt: "2026-09-03T20:23:00.000Z",
+          },
+        ],
+        listIsolationActions: () => [],
+      } as unknown as StateStore,
+    );
+    const result = await service.run({ dryRun: false });
+    const addedIds = adds.flatMap(([, ids]) => ids);
+    assert.ok(
+      !addedIds.includes(42004),
+      "AS(42004) cleartechco sender must stay off after unlink",
+    );
+    assert.ok(addedIds.includes(42005), "healthy sibling still fans out");
+    assert.ok(result.skipped.some((s) => s.includes("attach blocked")));
+  });
+
   it("still fans out when a HOLD-UNTIL tag has expired", async () => {
     const { service, adds } = fixture({
       tags: [{ tag_name: "HOLD-UNTIL-2020-01-01" }],

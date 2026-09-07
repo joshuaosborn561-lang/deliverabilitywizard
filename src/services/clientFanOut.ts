@@ -11,6 +11,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
+import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
@@ -153,6 +154,15 @@ export class ClientFanOutService {
           isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
         ) {
           result.skipped.push(`${email}: retired domain`);
+          continue;
+        }
+        if (
+          senderIsAttachBlocked(
+            { email, accountId: account.id, domain },
+            this.state,
+          )
+        ) {
+          result.skipped.push(`${email}: attach blocked (D176)`);
           continue;
         }
         if (this.state.getRestingInbox(email)) {

@@ -26,6 +26,11 @@ import {
 import type { DomainOwnerRecord } from "../lib/domainOwnership.js";
 import { isRetryableReplacementBuy } from "../lib/buyResume.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
+import {
+  mergeAttachBlock,
+  senderIsAttachBlocked,
+  type AttachBlockRecord,
+} from "../lib/attachBlock.js";
 import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
 import type { GenericBackfillApproval } from "../lib/genericBackfill.js";
 
@@ -212,6 +217,11 @@ export interface AppState {
   warmupGatePulls: Record<string, WarmupGatePullRecord>;
   /** D143 — last warmup re-enable write per accountId (skip the 84/pass rewrites). */
   warmupEnsuredAt: Record<string, string>;
+  /**
+   * D176 — domains / senders that must not be reattached after AS(42004),
+   * sender_blocked, restricted, or bounce-isolation unlink. Keyed by domain.
+   */
+  attachBlocks: Record<string, AttachBlockRecord>;
   /** D140 — last classified bounce verdict per campaign (id key). */
   bounceVerdicts: Record<string, BounceVerdictRecord>;
   /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
@@ -434,6 +444,7 @@ const EMPTY_STATE: AppState = {
   resurrectedLeads: {},
   warmupGatePulls: {},
   warmupEnsuredAt: {},
+  attachBlocks: {},
   bounceVerdicts: {},
   bounceSnapshots: {},
   bouncePausedCampaigns: {},
@@ -501,6 +512,7 @@ export class StateStore {
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
         domainAdvisories: parsed.domainAdvisories ?? [],
         markerClients: parsed.markerClients ?? {},
+        attachBlocks: parsed.attachBlocks ?? {},
         bounceVerdicts: parsed.bounceVerdicts ?? {},
         bounceSnapshots: parsed.bounceSnapshots ?? {},
         bouncePausedCampaigns: parsed.bouncePausedCampaigns ?? {},
@@ -1481,6 +1493,39 @@ export class StateStore {
 
   getDomainHistory(domain: string): DomainControlHistoryRecord | undefined {
     return this.state.isolation.domainHistory[domain.toLowerCase()];
+  }
+
+  upsertAttachBlock(
+    incoming: {
+      domain: string;
+      emails?: Iterable<string>;
+      accountIds?: Iterable<number>;
+      reason: AttachBlockRecord["reason"];
+      source?: string;
+      blockedAt?: string;
+    },
+  ): AttachBlockRecord {
+    const host = incoming.domain.trim().toLowerCase();
+    const merged = mergeAttachBlock(this.state.attachBlocks[host], incoming);
+    this.state.attachBlocks[merged.domain] = merged;
+    return merged;
+  }
+
+  getAttachBlock(domain: string): AttachBlockRecord | undefined {
+    return this.state.attachBlocks[domain.trim().toLowerCase()];
+  }
+
+  listAttachBlocks(): AttachBlockRecord[] {
+    return Object.values(this.state.attachBlocks);
+  }
+
+  /** D176 — restaff writers refuse burned / AS(42004) / restricted senders. */
+  isSenderAttachBlocked(sender: {
+    email?: string;
+    accountId?: number;
+    domain?: string;
+  }): boolean {
+    return senderIsAttachBlocked(sender, this);
   }
 
   listDomainHistory(): DomainControlHistoryRecord[] {

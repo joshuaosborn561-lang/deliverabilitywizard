@@ -7375,8 +7375,8 @@ describe("owner intent — D176 attach-blocked senders stay off", () => {
   });
 });
 
-describe("owner intent — D177 Insight campaigns never get auto signature append", () => {
-  it("D177: Insight name or client skips D92 sequence writes", async () => {
+describe("owner intent — D177 Insight in copy never gets auto signature append", () => {
+  it("D177: exact Insight in sequence copy skips D92 and strips placeholders", async () => {
     const { readFile } = await import("node:fs/promises");
     const qa = await readFile(
       new URL("../lib/signatureQa.ts", import.meta.url),
@@ -7396,42 +7396,66 @@ describe("owner intent — D177 Insight campaigns never get auto signature appen
     );
     assert.match(
       qa,
-      /campaignSkipsAutoSignature/,
+      /sequenceBodiesContainInsight/,
       stop(
-        "Insight campaigns skip auto signature append (D177).",
-        "signatureQa.ts no longer exports campaignSkipsAutoSignature.",
+        "Insight exemption reads sequence copy (D177).",
+        "signatureQa.ts no longer exports sequenceBodiesContainInsight.",
       ),
     );
     assert.match(
       qa,
-      /startsWith\("insight"\)/,
+      /INSIGHT_COPY_NEEDLE = "Insight"/,
       stop(
-        "Insight exemption is a case-insensitive name prefix (D177).",
-        "signatureQa.ts no longer matches names that start with Insight.",
+        "Insight exemption is the exact capital-I substring Insight (D177).",
+        "signatureQa.ts no longer defines INSIGHT_COPY_NEEDLE as Insight.",
+      ),
+    );
+    assert.match(
+      qa,
+      /includes\(INSIGHT_COPY_NEEDLE\)/,
+      stop(
+        "Insight exemption is the exact capital-I substring Insight (D177).",
+        "signatureQa.ts no longer matches includes(INSIGHT_COPY_NEEDLE).",
+      ),
+    );
+    assert.match(
+      qa,
+      /stripSignatureTags/,
+      stop(
+        "Insight copy must strip leftover signature placeholders (D177).",
+        "signatureQa.ts no longer exports stripSignatureTags.",
       ),
     );
     assert.match(
       check,
-      /campaignSkipsAutoSignature/,
+      /sequenceBodiesContainInsight/,
       stop(
-        "Campaign-check must not re-append Insight signatures (D177).",
-        "campaignCheck.ts no longer consults campaignSkipsAutoSignature.",
+        "Campaign-check must not re-append Insight-in-copy signatures (D177).",
+        "campaignCheck.ts no longer consults sequenceBodiesContainInsight.",
+      ),
+    );
+    assert.match(
+      check,
+      /stripSignatureTags/,
+      stop(
+        "Campaign-check must strip Insight-in-copy signature tags (D177).",
+        "campaignCheck.ts no longer calls stripSignatureTags.",
       ),
     );
     assert.match(
       audit,
-      /campaignSkipsAutoSignature/,
+      /sequenceBodiesContainInsight/,
       stop(
-        "Campaign-audit must not flag Insight missing %signature% (D177).",
-        "campaignAudit.ts no longer consults campaignSkipsAutoSignature.",
+        "Campaign-audit must not flag Insight-in-copy missing %signature% (D177).",
+        "campaignAudit.ts no longer consults sequenceBodiesContainInsight.",
       ),
     );
     assert.match(
       isolation,
-      /campaignSkipsAutoSignature/,
+      /sequenceBodiesContainInsight/,
       stop(
-        "Leftover add_signature_tag must not write Insight sequences (D177).",
-        "isolationExecute.ts no longer consults campaignSkipsAutoSignature.",
+        "Leftover add_signature_tag must not write Insight-in-copy sequences (D177).",
+        "isolationExecute.ts no longer consults sequenceBodiesContainInsight.",
       ),
     );
     const canon = await readFile(
@@ -7440,17 +7464,17 @@ describe("owner intent — D177 Insight campaigns never get auto signature appen
     );
     assert.match(
       canon,
-      /Insight campaigns never get auto/,
+      /Copy that contains `Insight` never/,
       stop(
-        "CANON states Insight campaigns never get auto signature append (D177).",
-        "CANON.md lost the D177 Insight exemption.",
+        "CANON states copy containing Insight never gets auto signature append (D177).",
+        "CANON.md lost the D177 Insight-in-copy rule.",
       ),
     );
     assert.match(
       canon,
       /D177/,
       stop(
-        "CANON still names the Insight exemption (D177).",
+        "CANON still names the Insight-in-copy exemption (D177).",
         "CANON.md dropped D177 when a later decision landed.",
       ),
     );
@@ -7460,9 +7484,9 @@ describe("owner intent — D177 Insight campaigns never get auto signature appen
     );
     assert.match(
       decisions,
-      /## D177 — Insight campaigns never get auto signature append/,
+      /## D177 — Insight in copy never gets auto signature append/,
       stop(
-        "The Insight exemption is in the ledger (D177).",
+        "The Insight-in-copy exemption is in the ledger (D177).",
         "DECISIONS.md no longer has D177.",
       ),
     );

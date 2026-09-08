@@ -212,16 +212,16 @@ describe("IsolationExecuteService", () => {
     assert.equal(sequences[0]!.sequence_variants[0]!.subject, "hey");
   });
 
-  it("D177: leftover Add %signature% does not write an Insight campaign", async () => {
+  it("D177: leftover Add %signature% does not write when copy contains Insight", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-insight-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
     const action = buildIsolationAction({
       kind: "add_signature_tag",
-      title: "%signature% missing on Insight Pipeline A",
+      title: "%signature% missing on SalesGlider tagged draft",
       proof: "step 1 A is missing %signature%",
-      detail: { campaignId: 3921647, campaignName: "Insight Pipeline A" },
+      detail: { campaignId: 3921647, campaignName: "SalesGlider tagged draft" },
     });
     state.upsertIsolationAction(action);
     let written = 0;
@@ -232,7 +232,7 @@ describe("IsolationExecuteService", () => {
           {
             id: 1,
             seq_number: 1,
-            email_body: "<div>Josh stripped the signature</div>",
+            email_body: "<div>A note from Insight this week</div>",
           },
         ],
         updateCampaignSequences: async () => {
@@ -248,7 +248,7 @@ describe("IsolationExecuteService", () => {
       role: "operator",
     });
     assert.equal(result.ok, true);
-    assert.equal(written, 0, "Insight sequences must stay signature-free");
+    assert.equal(written, 0, "Insight-in-copy sequences must stay signature-free");
   });
 
   it("a bulk signature approve fixes every listed campaign in one tap (D87)", async () => {

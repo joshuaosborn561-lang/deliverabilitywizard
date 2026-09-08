@@ -17,7 +17,8 @@ import {
 } from "../lib/isolationActions.js";
 import {
   appendSignatureTag,
-  campaignSkipsAutoSignature,
+  sequenceBodiesContainInsight,
+  stripSignatureTags,
 } from "../lib/signatureQa.js";
 import {
   espMixFromAccountTypes,
@@ -587,14 +588,22 @@ export class IsolationExecuteService {
     const failed: string[] = [];
     for (const campaignId of ids) {
       const label = names.get(campaignId) ?? `#${campaignId}`;
-      if (campaignSkipsAutoSignature({ campaignName: names.get(campaignId) ?? label })) {
-        done.push(
-          `*${label}* skipped — Insight campaigns never get auto signature append (D177)`,
-        );
-        continue;
-      }
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaignId);
+        if (sequenceBodiesContainInsight(sequences)) {
+          const { sequences: next, changed } = stripSignatureTags(sequences ?? []);
+          if (changed.length) {
+            await this.smartlead.updateCampaignSequences(campaignId, next);
+            done.push(
+              `*${label}*: stripped signature placeholders — Insight in copy (D177)`,
+            );
+          } else {
+            done.push(
+              `*${label}* skipped — Insight in copy, no signature tag to add (D177)`,
+            );
+          }
+          continue;
+        }
         const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
         if (!changed.length) {
           done.push(`*${label}* already had the tag everywhere`);

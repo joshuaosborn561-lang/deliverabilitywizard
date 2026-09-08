@@ -171,7 +171,7 @@ describe("CampaignAuditService signature QA", () => {
     );
   });
 
-  it("D177: does not flag missing %signature% on an Insight-named campaign", async () => {
+  it("D177: does not flag missing %signature% when copy contains Insight", async () => {
     const state = new StateStore(
       `/tmp/campaign-audit-insight-${process.pid}-${Date.now()}.json`,
     );
@@ -182,7 +182,7 @@ describe("CampaignAuditService signature QA", () => {
         listCampaigns: async () => [
           {
             id: 3921647,
-            name: "Insight Pipeline A",
+            name: "SalesGlider tagged draft",
             status: "ACTIVE",
             client_id: 345263,
           },
@@ -197,8 +197,14 @@ describe("CampaignAuditService signature QA", () => {
         listClients: async () => [
           { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
         ],
-        getCampaignSequences: async () => [
-          { seq_number: 1, email_body: "<div>no tag on purpose</div>" },
+        getCampaignSequences: async (id: number) => [
+          {
+            seq_number: 1,
+            email_body:
+              id === 3921647
+                ? "<div>A note from Insight this week</div>"
+                : "<div>no tag on purpose</div>",
+          },
         ],
       } as unknown as SmartleadClient,
       {
@@ -216,7 +222,7 @@ describe("CampaignAuditService signature QA", () => {
           issue.kind === "missing_signature_tag",
       ),
       false,
-      "Insight must not be a missing_signature_tag finding",
+      "Insight-in-copy must not be a missing_signature_tag finding",
     );
     assert.ok(
       result.signatureIssues.some(

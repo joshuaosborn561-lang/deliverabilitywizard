@@ -49,15 +49,17 @@ import { isPocClient } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   appendSignatureTag,
-  campaignSkipsAutoSignature,
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
+  sequenceBodiesContainInsight,
   sequenceCopyHay,
+  sequencesHaveSignaturePlaceholder,
+  stripSignatureTags,
 } from "../lib/signatureQa.js";
 import { isConnectedAccount, isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
-import type { SmartleadCampaign } from "../types/index.js";
+import type { SmartleadCampaign, SmartleadSequence } from "../types/index.js";
 import type { SpamTestSummary } from "../types/index.js";
 import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { campaignSettingsWriteBody } from "../lib/bounceAutopause.js";
@@ -283,7 +285,7 @@ export class CampaignCheckService {
       if (!runFirst && !runHourly) continue;
 
       const kind: "first" | "hourly" = runFirst ? "first" : "hourly";
-      let findings = await this.inspect({
+      const inspected = await this.inspect({
         campaign,
         campaigns: campaignById,
         accounts: accounts as SmartleadAccountWithCampaigns[],
@@ -300,6 +302,7 @@ export class CampaignCheckService {
         listedTestsFailed,
         depth: kind,
       });
+      let findings = inspected.findings;
       // D138 — the campaign-level minimum gap is converged, not assumed.
       // Mailbox-level 10m is converged every pass by mailbox-settings; a
       // hand-made campaign arrives on Smartlead's default and nothing else
@@ -350,13 +353,11 @@ export class CampaignCheckService {
         (matched
           ? brandFromClientDisplayName(clientDisplayName(matched))
           : "");
-      const taggedClient = clients.find((client) => client.id === clientId);
       const sigApplied = await this.autoApplySignature({
         campaignId: campaign.id,
         name,
         brand,
-        clientName: taggedClient?.name,
-        clientLogo: taggedClient?.logo,
+        sequences: inspected.sequences,
         accounts: accounts as SmartleadAccountWithCampaigns[],
         findings,
         otherClientBrands: allBrands,
@@ -467,42 +468,47 @@ export class CampaignCheckService {
     campaignId: number;
     name: string;
     brand: string;
-    clientName?: string | null;
-    clientLogo?: string | null;
+    sequences: SmartleadSequence[] | null;
     accounts: SmartleadAccountWithCampaigns[];
     findings: CampaignFinding[];
     otherClientBrands: string[];
   }): Promise<{ brand: string; wroteTag: boolean; wroteMailbox: boolean } | null> {
-    // D177 — Insight never gets %signature% / {{Signature}} re-appended.
-    if (
-      campaignSkipsAutoSignature({
-        campaignName: input.name,
-        clientName: input.clientName,
-        clientLogo: input.clientLogo,
-      })
-    ) {
-      return null;
-    }
     const needTag = input.findings.some(
       (finding) => finding.kind === "missing_signature_tag",
     );
     const needMailbox = input.findings.some(
       (finding) => finding.kind === "mailbox_sig",
     );
-    if (!needTag && !needMailbox) {
+    let sequences = input.sequences;
+    const insightInCopy = sequenceBodiesContainInsight(sequences);
+    const needStrip =
+      insightInCopy && sequencesHaveSignaturePlaceholder(sequences);
+    if (!needTag && !needMailbox && !needStrip) {
       return null;
     }
     if (this.config.dryRun) {
       console.log(
         `[campaign-check] dry-run signature #${input.campaignId} ${input.name}`,
       );
-      return { brand: input.brand, wroteTag: needTag, wroteMailbox: needMailbox };
+      return { brand: input.brand, wroteTag: needTag && !insightInCopy, wroteMailbox: needMailbox };
     }
     try {
       let wroteTag = false;
-      if (needTag) {
-        const sequences = await this.smartlead.getCampaignSequences(input.campaignId);
-        const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
+      if (sequences == null && (needTag || insightInCopy || needStrip)) {
+        sequences = await this.smartlead.getCampaignSequences(input.campaignId);
+      }
+      const rows = sequences ?? [];
+      if (sequenceBodiesContainInsight(rows)) {
+        const { sequences: next, changed } = stripSignatureTags(rows);
+        if (changed.length) {
+          await this.smartlead.updateCampaignSequences(input.campaignId, next);
+          await sleep(WRITE_GAP_MS);
+          console.log(
+            `[campaign-check] insight signature stripped #${input.campaignId} ${input.name} ${changed.join(", ")} (D177)`,
+          );
+        }
+      } else if (needTag) {
+        const { sequences: next, changed } = appendSignatureTag(rows);
         if (changed.length) {
           await this.smartlead.updateCampaignSequences(input.campaignId, next);
           await sleep(WRITE_GAP_MS);
@@ -556,7 +562,10 @@ export class CampaignCheckService {
     fleetDown: boolean;
     listedTestsFailed: boolean;
     depth: "first" | "hourly";
-  }): Promise<CampaignFinding[]> {
+  }): Promise<{
+    findings: CampaignFinding[];
+    sequences: SmartleadSequence[] | null;
+  }> {
     const findings: CampaignFinding[] = [];
     const { campaign } = input;
     const name = String(campaign.name ?? campaign.id);
@@ -575,7 +584,7 @@ export class CampaignCheckService {
             console.log(
               `[campaign-check] paused instrumentation shell #${campaign.id} ${name} (was ${status || "unknown"})`,
             );
-            return findings;
+            return { findings, sequences: null };
           } catch (error) {
             const message =
               error instanceof Error ? error.message : String(error);
@@ -589,7 +598,7 @@ export class CampaignCheckService {
           detail: `instrumentation shell is ${status || "unknown"} — must stay PAUSED`,
         });
       }
-      return findings;
+      return { findings, sequences: null };
     }
 
     if (typeof campaign.client_id !== "number") {
@@ -610,11 +619,6 @@ export class CampaignCheckService {
     const taggedClient = input.clients.find(
       (client) => client.id === campaign.client_id,
     );
-    const skipAutoSignature = campaignSkipsAutoSignature({
-      campaignName: name,
-      clientName: taggedClient?.name,
-      clientLogo: taggedClient?.logo,
-    });
     const clientName = clientDisplayName(taggedClient);
     const expected =
       typeof campaign.client_id === "number"
@@ -637,7 +641,7 @@ export class CampaignCheckService {
     for (const account of attached) {
       const email = accountEmail(account);
       if (!email) continue;
-      if (expected && !skipAutoSignature) {
+      if (expected) {
         const mismatch = mailboxSignatureMismatch({
           fromName: account.from_name,
           signature: account.signature,
@@ -719,11 +723,13 @@ export class CampaignCheckService {
       }
     }
 
+    let sequences: SmartleadSequence[] | null = null;
     try {
-      const sequences = await this.smartlead.getCampaignSequences(campaign.id);
+      sequences = await this.smartlead.getCampaignSequences(campaign.id);
       await sleep(WRITE_GAP_MS);
+      const insightInCopy = sequenceBodiesContainInsight(sequences);
       for (const row of sequenceCopyHay(sequences ?? [])) {
-        if (!skipAutoSignature && missingSignatureTag(row.text)) {
+        if (!insightInCopy && missingSignatureTag(row.text)) {
           findings.push({
             kind: "missing_signature_tag",
             detail: `${row.label} is missing %signature%`,
@@ -824,6 +830,6 @@ export class CampaignCheckService {
       // it is reported once above, never per campaign.
     }
 
-    return findings;
+    return { findings, sequences };
   }
 }

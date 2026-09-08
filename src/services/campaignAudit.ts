@@ -15,10 +15,10 @@ import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
-  campaignSkipsAutoSignature,
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
+  sequenceBodiesContainInsight,
   sequenceCopyHay,
 } from "../lib/signatureQa.js";
 import {
@@ -290,10 +290,6 @@ export class CampaignAuditService {
           ? input.brandByClientId.get(campaign.client_id) ?? ""
           : "";
       if (!expected) continue;
-      const skipAutoSignature = campaignSkipsAutoSignature({
-        campaignName,
-        clientName: expected,
-      });
 
       for (const account of input.accounts) {
         if (!campaignIdsOf(account).includes(campaign.id)) continue;
@@ -307,24 +303,23 @@ export class CampaignAuditService {
         });
         if (!mismatch) continue;
         const detail = `${email} ${mismatch}`;
-        if (!skipAutoSignature) {
-          issues.push({
-            campaignId: campaign.id,
-            campaignName,
-            kind: "mailbox_sig",
-            detail,
-          });
-          console.log(
-            `[campaign-audit] SIG-MISMATCH #${campaign.id} ${campaign.name} — ${detail}`,
-          );
-        }
+        issues.push({
+          campaignId: campaign.id,
+          campaignName,
+          kind: "mailbox_sig",
+          detail,
+        });
+        console.log(
+          `[campaign-audit] SIG-MISMATCH #${campaign.id} ${campaign.name} — ${detail}`,
+        );
       }
 
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaign.id);
         await sleep(80);
+        const insightInCopy = sequenceBodiesContainInsight(sequences);
         for (const row of sequenceCopyHay(sequences ?? [])) {
-          if (!skipAutoSignature && missingSignatureTag(row.text)) {
+          if (!insightInCopy && missingSignatureTag(row.text)) {
             const detail = `${row.label} is missing %signature%`;
             issues.push({
               campaignId: campaign.id,

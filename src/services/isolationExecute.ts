@@ -15,7 +15,10 @@ import {
   buildIsolationAction,
   signatureCampaignIdsOf,
 } from "../lib/isolationActions.js";
-import { appendSignatureTag } from "../lib/signatureQa.js";
+import {
+  appendSignatureTag,
+  campaignSkipsAutoSignature,
+} from "../lib/signatureQa.js";
 import {
   espMixFromAccountTypes,
   platformsMatchingEspMix,
@@ -584,6 +587,12 @@ export class IsolationExecuteService {
     const failed: string[] = [];
     for (const campaignId of ids) {
       const label = names.get(campaignId) ?? `#${campaignId}`;
+      if (campaignSkipsAutoSignature({ campaignName: names.get(campaignId) ?? label })) {
+        done.push(
+          `*${label}* skipped — Insight campaigns never get auto signature append (D177)`,
+        );
+        continue;
+      }
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaignId);
         const { sequences: next, changed } = appendSignatureTag(sequences ?? []);

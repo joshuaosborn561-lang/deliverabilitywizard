@@ -7374,3 +7374,97 @@ describe("owner intent — D176 attach-blocked senders stay off", () => {
     );
   });
 });
+
+describe("owner intent — D177 Insight campaigns never get auto signature append", () => {
+  it("D177: Insight name or client skips D92 sequence writes", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const qa = await readFile(
+      new URL("../lib/signatureQa.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const audit = await readFile(
+      new URL("../services/campaignAudit.ts", import.meta.url),
+      "utf8",
+    );
+    const isolation = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      qa,
+      /campaignSkipsAutoSignature/,
+      stop(
+        "Insight campaigns skip auto signature append (D177).",
+        "signatureQa.ts no longer exports campaignSkipsAutoSignature.",
+      ),
+    );
+    assert.match(
+      qa,
+      /startsWith\("insight"\)/,
+      stop(
+        "Insight exemption is a case-insensitive name prefix (D177).",
+        "signatureQa.ts no longer matches names that start with Insight.",
+      ),
+    );
+    assert.match(
+      check,
+      /campaignSkipsAutoSignature/,
+      stop(
+        "Campaign-check must not re-append Insight signatures (D177).",
+        "campaignCheck.ts no longer consults campaignSkipsAutoSignature.",
+      ),
+    );
+    assert.match(
+      audit,
+      /campaignSkipsAutoSignature/,
+      stop(
+        "Campaign-audit must not flag Insight missing %signature% (D177).",
+        "campaignAudit.ts no longer consults campaignSkipsAutoSignature.",
+      ),
+    );
+    assert.match(
+      isolation,
+      /campaignSkipsAutoSignature/,
+      stop(
+        "Leftover add_signature_tag must not write Insight sequences (D177).",
+        "isolationExecute.ts no longer consults campaignSkipsAutoSignature.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Insight campaigns never get auto/,
+      stop(
+        "CANON states Insight campaigns never get auto signature append (D177).",
+        "CANON.md lost the D177 Insight exemption.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D177/,
+      stop(
+        "CANON still names the Insight exemption (D177).",
+        "CANON.md dropped D177 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D177 — Insight campaigns never get auto signature append/,
+      stop(
+        "The Insight exemption is in the ledger (D177).",
+        "DECISIONS.md no longer has D177.",
+      ),
+    );
+  });
+});

@@ -47,9 +47,48 @@ export function sequenceCopyHay(sequences: SmartleadSequence[]): Array<{
   return out;
 }
 
+/** Smartlead / Instantly-style signature placeholders D92 writes. */
+const SIGNATURE_PLACEHOLDER = /%signature%|\{\{\s*Signature\s*\}\}/i;
+
 export function missingSignatureTag(html: string): boolean {
   if (!html.replace(/<[^>]+>/g, " ").trim()) return false;
-  return !/%signature%/i.test(html);
+  return !SIGNATURE_PLACEHOLDER.test(html);
+}
+
+/**
+ * D177 — Insight campaigns never get auto signature append.
+ * Name prefix is the reliable match: the live Insight drafts are
+ * wrongly tagged SalesGlider (`client_id` 345263). An Insight
+ * Smartlead client, if one exists later, is also exempt.
+ */
+export function isInsightCampaignName(
+  name: string | null | undefined,
+): boolean {
+  return String(name ?? "")
+    .trim()
+    .toLowerCase()
+    .startsWith("insight");
+}
+
+export function isInsightClientLabel(
+  label: string | null | undefined,
+): boolean {
+  return String(label ?? "")
+    .trim()
+    .toLowerCase()
+    .startsWith("insight");
+}
+
+export function campaignSkipsAutoSignature(opts: {
+  campaignName?: string | null;
+  clientName?: string | null;
+  clientLogo?: string | null;
+}): boolean {
+  return (
+    isInsightCampaignName(opts.campaignName) ||
+    isInsightClientLabel(opts.clientName) ||
+    isInsightClientLabel(opts.clientLogo)
+  );
 }
 
 /**

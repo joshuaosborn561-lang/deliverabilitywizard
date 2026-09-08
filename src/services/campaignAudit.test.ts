@@ -170,4 +170,60 @@ describe("CampaignAuditService signature QA", () => {
       "QA must catch an empty mailbox signature",
     );
   });
+
+  it("D177: does not flag missing %signature% on an Insight-named campaign", async () => {
+    const state = new StateStore(
+      `/tmp/campaign-audit-insight-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = mkAudit(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921647,
+            name: "Insight Pipeline A",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+          {
+            id: 88,
+            name: "SalesGlider Nurture",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [
+          { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+        ],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>no tag on purpose</div>" },
+        ],
+      } as unknown as SmartleadClient,
+      {
+        listTests: async () => [],
+        enrichCampaignIds: async (rows: unknown[]) => rows,
+      } as unknown as SmartDeliveryClient,
+      state,
+    );
+
+    const result = await service.run(50);
+    assert.equal(
+      result.signatureIssues.some(
+        (issue) =>
+          issue.campaignId === 3921647 &&
+          issue.kind === "missing_signature_tag",
+      ),
+      false,
+      "Insight must not be a missing_signature_tag finding",
+    );
+    assert.ok(
+      result.signatureIssues.some(
+        (issue) =>
+          issue.campaignId === 88 && issue.kind === "missing_signature_tag",
+      ),
+      "SalesGlider still flags a missing tag",
+    );
+  });
 });

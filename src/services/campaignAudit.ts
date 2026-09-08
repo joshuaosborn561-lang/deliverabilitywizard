@@ -15,6 +15,7 @@ import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
+  campaignSkipsAutoSignature,
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
@@ -283,11 +284,16 @@ export class CampaignAuditService {
     });
 
     for (const campaign of live) {
+      const campaignName = String(campaign.name ?? campaign.id);
       const expected =
         typeof campaign.client_id === "number"
           ? input.brandByClientId.get(campaign.client_id) ?? ""
           : "";
       if (!expected) continue;
+      const skipAutoSignature = campaignSkipsAutoSignature({
+        campaignName,
+        clientName: expected,
+      });
 
       for (const account of input.accounts) {
         if (!campaignIdsOf(account).includes(campaign.id)) continue;
@@ -301,26 +307,28 @@ export class CampaignAuditService {
         });
         if (!mismatch) continue;
         const detail = `${email} ${mismatch}`;
-        issues.push({
-          campaignId: campaign.id,
-          campaignName: String(campaign.name ?? campaign.id),
-          kind: "mailbox_sig",
-          detail,
-        });
-        console.log(
-          `[campaign-audit] SIG-MISMATCH #${campaign.id} ${campaign.name} — ${detail}`,
-        );
+        if (!skipAutoSignature) {
+          issues.push({
+            campaignId: campaign.id,
+            campaignName,
+            kind: "mailbox_sig",
+            detail,
+          });
+          console.log(
+            `[campaign-audit] SIG-MISMATCH #${campaign.id} ${campaign.name} — ${detail}`,
+          );
+        }
       }
 
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaign.id);
         await sleep(80);
         for (const row of sequenceCopyHay(sequences ?? [])) {
-          if (missingSignatureTag(row.text)) {
+          if (!skipAutoSignature && missingSignatureTag(row.text)) {
             const detail = `${row.label} is missing %signature%`;
             issues.push({
               campaignId: campaign.id,
-              campaignName: String(campaign.name ?? campaign.id),
+              campaignName,
               kind: "missing_signature_tag",
               detail,
             });

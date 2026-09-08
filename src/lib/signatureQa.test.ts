@@ -4,6 +4,8 @@ import type { SmartleadSequence } from "../types/index.js";
 import { findForeignBrand } from "./clientBrand.js";
 import {
   appendSignatureTag,
+  campaignSkipsAutoSignature,
+  isInsightCampaignName,
   missingSignatureTag,
   sequencesForWrite,
   signatureHay,
@@ -50,6 +52,56 @@ describe("signature QA (D74)", () => {
     assert.equal(
       missingSignatureTag("<div>open to it?</div><div>%signature%</div>"),
       false,
+    );
+    assert.equal(
+      missingSignatureTag("<div>open to it?</div><div>{{Signature}}</div>"),
+      false,
+    );
+  });
+});
+
+describe("Insight auto-signature exemption (D177)", () => {
+  it("matches an Insight name prefix case-insensitively", () => {
+    assert.equal(isInsightCampaignName("Insight Pipeline A"), true);
+    assert.equal(isInsightCampaignName("insight — west"), true);
+    assert.equal(isInsightCampaignName("INSIGHT"), true);
+    assert.equal(isInsightCampaignName("SalesGlider Nurture"), false);
+    assert.equal(isInsightCampaignName("BCP Healthcare"), false);
+    assert.equal(isInsightCampaignName("Parlay Insight"), false);
+  });
+
+  it("skips auto-append on Insight name even under a SalesGlider client", () => {
+    assert.equal(
+      campaignSkipsAutoSignature({
+        campaignName: "Insight Draft 1",
+        clientName: "SalesGlider",
+        clientLogo: "SalesGlider",
+      }),
+      true,
+    );
+    assert.equal(
+      campaignSkipsAutoSignature({
+        campaignName: "SalesGlider Nurture",
+        clientName: "SalesGlider",
+      }),
+      false,
+    );
+  });
+
+  it("skips auto-append when the tagged client is Insight", () => {
+    assert.equal(
+      campaignSkipsAutoSignature({
+        campaignName: "West coast A",
+        clientName: "Insight",
+      }),
+      true,
+    );
+    assert.equal(
+      campaignSkipsAutoSignature({
+        campaignName: "West coast A",
+        clientLogo: "Insight Partners",
+      }),
+      true,
     );
   });
 });

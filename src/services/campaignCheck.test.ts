@@ -1030,3 +1030,150 @@ describe("D138 — campaign-level min gap is converged, not assumed", () => {
     );
   });
 });
+
+describe("D177 Insight campaigns never get auto signature append", () => {
+  const salesGlider = { id: 345263, name: "SalesGlider", logo: "SalesGlider" };
+
+  it("does not re-append %signature% on an Insight DRAFT tagged SalesGlider", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const wrote: string[] = [];
+    const mailboxSigs: string[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921647,
+            name: "Insight Pipeline A",
+            status: "DRAFTED",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 9,
+            from_email: "ada@salesglider.com",
+            from_name: "Ada Pool",
+            signature: "",
+            client_id: 345263,
+            campaign_ids: [3921647],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Josh stripped the signature</div>" },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(wrote, [], "Insight sequences must stay signature-free");
+    assert.deepEqual(mailboxSigs, [], "do not stamp SalesGlider onto Insight senders via D92");
+    assert.equal(
+      (result.findings[0]?.findings ?? []).some((finding) =>
+        finding.kind === "missing_signature_tag",
+      ),
+      false,
+    );
+    assert.equal(
+      (state.getCampaignCheck(3921647)?.findings ?? []).some((finding) =>
+        finding.startsWith("missing_signature_tag"),
+      ),
+      false,
+    );
+  });
+
+  it("clears a leftover missing_signature_tag without writing the tag", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 3921650,
+      name: "Insight Pipeline B",
+      firstSeenAt: "2026-09-08T00:00:00.000Z",
+      firstCheckAt: "2026-09-08T00:00:00.000Z",
+      firstPassedAt: "2026-09-08T00:05:00.000Z",
+      lastSweepAt: "2026-09-08T01:00:00.000Z",
+      lastKind: "hourly",
+      findings: ["missing_signature_tag: step 1 A is missing %signature%"],
+      sigAutoWrittenAt: "2026-09-08T00:05:00.000Z",
+    });
+    const wrote: string[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921650,
+            name: "Insight Pipeline B",
+            status: "DRAFTED",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>still no tag</div>" },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.deepEqual(wrote, [], "leftover Insight hole must not write %signature%");
+    assert.equal(
+      (state.getCampaignCheck(3921650)?.findings ?? []).some((finding) =>
+        finding.startsWith("missing_signature_tag"),
+      ),
+      false,
+    );
+  });
+
+  it("still writes %signature% on a SalesGlider-named campaign", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const wrote: string[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 88,
+            name: "SalesGlider Nurture",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.ok(wrote[0]?.includes("%signature%"), "SalesGlider still gets D92");
+  });
+});

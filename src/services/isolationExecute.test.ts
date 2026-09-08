@@ -212,6 +212,45 @@ describe("IsolationExecuteService", () => {
     assert.equal(sequences[0]!.sequence_variants[0]!.subject, "hey");
   });
 
+  it("D177: leftover Add %signature% does not write an Insight campaign", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-exec-insight-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "add_signature_tag",
+      title: "%signature% missing on Insight Pipeline A",
+      proof: "step 1 A is missing %signature%",
+      detail: { campaignId: 3921647, campaignName: "Insight Pipeline A" },
+    });
+    state.upsertIsolationAction(action);
+    let written = 0;
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        getCampaignSequences: async () => [
+          {
+            id: 1,
+            seq_number: 1,
+            email_body: "<div>Josh stripped the signature</div>",
+          },
+        ],
+        updateCampaignSequences: async () => {
+          written += 1;
+        },
+      } as never,
+      { send: async () => undefined } as never,
+      state,
+      { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const result = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(written, 0, "Insight sequences must stay signature-free");
+  });
+
   it("a bulk signature approve fixes every listed campaign in one tap (D87)", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-sig-bulk-${process.pid}-${Date.now()}.json`,

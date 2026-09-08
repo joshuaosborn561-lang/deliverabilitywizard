@@ -107,7 +107,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D89 | Live — signature-ask collapse superseded by D92/D97 |
 | D90 | Superseded by D141 — burst survives recency-gated; the lifetime-rate rule is retired |
 | D91 | Retired-record (no paused-campaign hunt) — live |
-| D92 | Live |
+| D92 | Live — Insight campaigns exempted by D177 |
 | D93 | Live |
 | D94 | Live |
 | D95 | Live |
@@ -191,6 +191,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D174 | Live | Protected clients (seeded Goliath / 548611) never have a domain retired or burned; degrade to buy/cover; failed post-pull buys retry themselves; Porkbun checks are serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back, including Goliath-protected domains |
+| D177 | Live | Insight campaigns never get auto signature append (`%signature%` / `{{Signature}}`) — name prefix match even when wrongly tagged SalesGlider |
 
 ---
 
@@ -5230,3 +5231,40 @@ Does not reverse D51 or D148.
 call `senderIsAttachBlocked`; bounce loop writes the block;
 CANON names D176. Tests: unlink/mark restricted → subsequent
 restaff leaves the campaign without those senders.
+
+## D177 — Insight campaigns never get auto signature append
+
+**Decision (Josh, 2026-09-08).** Insight campaigns do not receive
+D92 / campaign-check signature enforcement. Do not flag
+`missing_signature_tag`, and do not write `%signature%` or
+`{{Signature}}` onto their sequences. Match a campaign whose
+name starts with `Insight` (case-insensitive) **or** that is
+tagged to an Insight Smartlead client if one exists. Prefer
+the name prefix — the live Insight DRAFTs (#3921647, #3921650,
+#3921651, #3921653, #3921654, #3921656, #3921659) are wrongly
+tagged SalesGlider `client_id` 345263, and name is the only
+reliable signal. Other clients (BCP, Goliath, Parlay, TechEvo,
+SalesGlider) still get D92.
+
+**Why.** Josh stripped signatures from those seven Insight
+drafts. The next campaign-check pass treated them as SalesGlider
+and re-appended mailbox name + SalesGlider branding via
+`%signature%`. Josh: make sure it does not reappend.
+
+**The rule.**
+
+1. Name starts with `Insight` → skip auto signature append.
+2. Tagged Insight client (name or logo) → skip, if that client
+   exists later.
+3. A sequence that already has no signature placeholder stays
+   that way. Do not add one.
+4. Does not change D31/D92 for any other client.
+
+**Supersedes / amends.** Amends D92 (auto-write is not universal).
+Does not reverse D31, D74, D97, or D125 for other clients.
+
+**Guards.** canon D177: `campaignSkipsAutoSignature` in
+campaign-check / audit / leftover isolation write; CANON names
+D177. Tests: Insight-named DRAFT under SalesGlider client_id
+does not get `%signature%` written; SalesGlider / Goliath still
+do.

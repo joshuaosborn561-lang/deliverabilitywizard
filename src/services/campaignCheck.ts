@@ -49,6 +49,7 @@ import { isPocClient } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   appendSignatureTag,
+  campaignSkipsAutoSignature,
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
@@ -349,10 +350,13 @@ export class CampaignCheckService {
         (matched
           ? brandFromClientDisplayName(clientDisplayName(matched))
           : "");
+      const taggedClient = clients.find((client) => client.id === clientId);
       const sigApplied = await this.autoApplySignature({
         campaignId: campaign.id,
         name,
         brand,
+        clientName: taggedClient?.name,
+        clientLogo: taggedClient?.logo,
         accounts: accounts as SmartleadAccountWithCampaigns[],
         findings,
         otherClientBrands: allBrands,
@@ -463,10 +467,22 @@ export class CampaignCheckService {
     campaignId: number;
     name: string;
     brand: string;
+    clientName?: string | null;
+    clientLogo?: string | null;
     accounts: SmartleadAccountWithCampaigns[];
     findings: CampaignFinding[];
     otherClientBrands: string[];
   }): Promise<{ brand: string; wroteTag: boolean; wroteMailbox: boolean } | null> {
+    // D177 — Insight never gets %signature% / {{Signature}} re-appended.
+    if (
+      campaignSkipsAutoSignature({
+        campaignName: input.name,
+        clientName: input.clientName,
+        clientLogo: input.clientLogo,
+      })
+    ) {
+      return null;
+    }
     const needTag = input.findings.some(
       (finding) => finding.kind === "missing_signature_tag",
     );
@@ -591,9 +607,15 @@ export class CampaignCheckService {
       }
     }
 
-    const clientName = clientDisplayName(
-      input.clients.find((client) => client.id === campaign.client_id),
+    const taggedClient = input.clients.find(
+      (client) => client.id === campaign.client_id,
     );
+    const skipAutoSignature = campaignSkipsAutoSignature({
+      campaignName: name,
+      clientName: taggedClient?.name,
+      clientLogo: taggedClient?.logo,
+    });
+    const clientName = clientDisplayName(taggedClient);
     const expected =
       typeof campaign.client_id === "number"
         ? input.brandByClientId.get(campaign.client_id) ?? ""
@@ -615,7 +637,7 @@ export class CampaignCheckService {
     for (const account of attached) {
       const email = accountEmail(account);
       if (!email) continue;
-      if (expected) {
+      if (expected && !skipAutoSignature) {
         const mismatch = mailboxSignatureMismatch({
           fromName: account.from_name,
           signature: account.signature,
@@ -701,7 +723,7 @@ export class CampaignCheckService {
       const sequences = await this.smartlead.getCampaignSequences(campaign.id);
       await sleep(WRITE_GAP_MS);
       for (const row of sequenceCopyHay(sequences ?? [])) {
-        if (missingSignatureTag(row.text)) {
+        if (!skipAutoSignature && missingSignatureTag(row.text)) {
           findings.push({
             kind: "missing_signature_tag",
             detail: `${row.label} is missing %signature%`,

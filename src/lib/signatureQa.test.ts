@@ -4,9 +4,13 @@ import type { SmartleadSequence } from "../types/index.js";
 import { findForeignBrand } from "./clientBrand.js";
 import {
   appendSignatureTag,
+  bodyContainsInsight,
   missingSignatureTag,
+  sequenceBodiesContainInsight,
   sequencesForWrite,
   signatureHay,
+  stripSignaturePlaceholders,
+  stripSignatureTags,
 } from "./signatureQa.js";
 
 describe("signature QA (D74)", () => {
@@ -49,6 +53,73 @@ describe("signature QA (D74)", () => {
     );
     assert.equal(
       missingSignatureTag("<div>open to it?</div><div>%signature%</div>"),
+      false,
+    );
+    assert.equal(
+      missingSignatureTag("<div>open to it?</div><div>{{Signature}}</div>"),
+      false,
+    );
+  });
+});
+
+describe("Insight-in-copy auto-signature exemption (D177)", () => {
+  it("matches the exact capital-I substring Insight in the body", () => {
+    assert.equal(bodyContainsInsight("<div>Welcome to Insight</div>"), true);
+    assert.equal(bodyContainsInsight("<div>insight lowercase</div>"), false);
+    assert.equal(bodyContainsInsight("<div>INSIGHT shout</div>"), false);
+    assert.equal(bodyContainsInsight("<div>Sean, that offer's still open</div>"), false);
+  });
+
+  it("reads Insight from email_body or variants, not the campaign name", () => {
+    assert.equal(
+      sequenceBodiesContainInsight([
+        { seq_number: 1, email_body: "<div>A note from Insight</div>" },
+      ]),
+      true,
+    );
+    assert.equal(
+      sequenceBodiesContainInsight([
+        {
+          seq_number: 1,
+          email_body: "<div>plain</div>",
+          sequence_variants: [
+            { variant_label: "A", email_body: "<div>Meet Insight this week</div>" },
+          ],
+        },
+      ]),
+      true,
+    );
+    assert.equal(
+      sequenceBodiesContainInsight([
+        { seq_number: 1, email_body: "<div>SalesGlider nurture</div>" },
+      ]),
+      false,
+    );
+  });
+
+  it("strips %signature% and {{Signature}} from Insight copy", () => {
+    assert.equal(
+      stripSignaturePlaceholders("<div>Welcome to Insight</div><br><br>%signature%"),
+      "<div>Welcome to Insight</div>",
+    );
+    assert.equal(
+      stripSignaturePlaceholders("<div>Welcome to Insight</div><div>%signature%</div>"),
+      "<div>Welcome to Insight</div>",
+    );
+    assert.equal(
+      stripSignaturePlaceholders("<div>Welcome to Insight</div><div>{{Signature}}</div>"),
+      "<div>Welcome to Insight</div>",
+    );
+    const { sequences, changed } = stripSignatureTags([
+      {
+        seq_number: 1,
+        email_body: "<div>Welcome to Insight</div><br><br>%signature%",
+      },
+    ]);
+    assert.deepEqual(changed, ["step 1"]);
+    assert.equal(sequences[0]!.email_body, "<div>Welcome to Insight</div>");
+    assert.equal(
+      sequences[0]!.email_body!.includes("%signature%"),
       false,
     );
   });

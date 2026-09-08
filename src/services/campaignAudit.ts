@@ -18,6 +18,7 @@ import {
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
+  sequenceBodiesContainInsight,
   sequenceCopyHay,
 } from "../lib/signatureQa.js";
 import {
@@ -283,6 +284,7 @@ export class CampaignAuditService {
     });
 
     for (const campaign of live) {
+      const campaignName = String(campaign.name ?? campaign.id);
       const expected =
         typeof campaign.client_id === "number"
           ? input.brandByClientId.get(campaign.client_id) ?? ""
@@ -303,7 +305,7 @@ export class CampaignAuditService {
         const detail = `${email} ${mismatch}`;
         issues.push({
           campaignId: campaign.id,
-          campaignName: String(campaign.name ?? campaign.id),
+          campaignName,
           kind: "mailbox_sig",
           detail,
         });
@@ -315,12 +317,13 @@ export class CampaignAuditService {
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaign.id);
         await sleep(80);
+        const insightInCopy = sequenceBodiesContainInsight(sequences);
         for (const row of sequenceCopyHay(sequences ?? [])) {
-          if (missingSignatureTag(row.text)) {
+          if (!insightInCopy && missingSignatureTag(row.text)) {
             const detail = `${row.label} is missing %signature%`;
             issues.push({
               campaignId: campaign.id,
-              campaignName: String(campaign.name ?? campaign.id),
+              campaignName,
               kind: "missing_signature_tag",
               detail,
             });

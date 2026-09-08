@@ -107,7 +107,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D89 | Live — signature-ask collapse superseded by D92/D97 |
 | D90 | Superseded by D141 — burst survives recency-gated; the lifetime-rate rule is retired |
 | D91 | Retired-record (no paused-campaign hunt) — live |
-| D92 | Live |
+| D92 | Live — copy containing `Insight` exempted by D177 |
 | D93 | Live |
 | D94 | Live |
 | D95 | Live |
@@ -191,6 +191,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D174 | Live | Protected clients (seeded Goliath / 548611) never have a domain retired or burned; degrade to buy/cover; failed post-pull buys retry themselves; Porkbun checks are serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back, including Goliath-protected domains |
+| D177 | Live | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
 
 ---
 
@@ -5230,3 +5231,39 @@ Does not reverse D51 or D148.
 call `senderIsAttachBlocked`; bounce loop writes the block;
 CANON names D176. Tests: unlink/mark restricted → subsequent
 restaff leaves the campaign without those senders.
+
+## D177 — Insight in copy never gets auto signature append
+
+**Decision (Josh, 2026-09-08; clarified same day).** If campaign
+sequence copy includes the exact substring `Insight` (capital I)
+in `email_body` or any variant body, D92 must not append
+`%signature%` or `{{Signature}}`. If those placeholders are
+already present, the same campaign-check pass strips them.
+Not a campaign-name prefix. Not an Insight client-tag match.
+`insight` / `INSIGHT` alone do not count. Other clients (BCP,
+Goliath, Parlay, TechEvo, SalesGlider) still get D92 when their
+copy does not contain `Insight`.
+
+**Why.** Josh stripped signatures from seven Insight drafts
+(#3921647, #3921650, #3921651, #3921653, #3921654, #3921656,
+#3921659) wrongly tagged SalesGlider `client_id` 345263. D92
+re-appended mailbox name + SalesGlider branding. Clarification:
+the signal is the copy itself — exact `Insight` in the body —
+not the campaign name.
+
+**The rule.**
+
+1. Any step / variant `email_body` contains `Insight` → do not
+   append a signature placeholder.
+2. Same pass: strip `%signature%` / `{{Signature}}` if present.
+3. Copy without that substring still gets D92.
+4. Does not change D31 mailbox signatures for other clients.
+
+**Supersedes / amends.** Amends D92 (auto-write is not universal).
+Does not reverse D31, D74, D97, or D125 for other clients.
+
+**Guards.** canon D177: `sequenceBodiesContainInsight` /
+`stripSignatureTags` in campaign-check / audit / leftover
+isolation write; CANON names D177. Tests: body with `Insight`
+does not get `%signature%` and leftover tags are stripped;
+SalesGlider copy without `Insight` still gets D92.

@@ -15,7 +15,11 @@ import {
   buildIsolationAction,
   signatureCampaignIdsOf,
 } from "../lib/isolationActions.js";
-import { appendSignatureTag } from "../lib/signatureQa.js";
+import {
+  appendSignatureTag,
+  sequenceBodiesContainInsight,
+  stripSignatureTags,
+} from "../lib/signatureQa.js";
 import {
   espMixFromAccountTypes,
   platformsMatchingEspMix,
@@ -586,6 +590,20 @@ export class IsolationExecuteService {
       const label = names.get(campaignId) ?? `#${campaignId}`;
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaignId);
+        if (sequenceBodiesContainInsight(sequences)) {
+          const { sequences: next, changed } = stripSignatureTags(sequences ?? []);
+          if (changed.length) {
+            await this.smartlead.updateCampaignSequences(campaignId, next);
+            done.push(
+              `*${label}*: stripped signature placeholders — Insight in copy (D177)`,
+            );
+          } else {
+            done.push(
+              `*${label}* skipped — Insight in copy, no signature tag to add (D177)`,
+            );
+          }
+          continue;
+        }
         const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
         if (!changed.length) {
           done.push(`*${label}* already had the tag everywhere`);

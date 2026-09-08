@@ -1030,3 +1030,156 @@ describe("D138 — campaign-level min gap is converged, not assumed", () => {
     );
   });
 });
+
+describe("D177 Insight-in-copy never gets auto signature append", () => {
+  const salesGlider = { id: 345263, name: "SalesGlider", logo: "SalesGlider" };
+
+  it("does not re-append %signature% when the body contains Insight", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const wrote: string[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921647,
+            name: "SalesGlider tagged draft",
+            status: "DRAFTED",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>A note from Insight this week</div>" },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(wrote, [], "Insight-in-copy sequences must stay signature-free");
+    assert.equal(
+      (result.findings[0]?.findings ?? []).some((finding) =>
+        finding.kind === "missing_signature_tag",
+      ),
+      false,
+    );
+    assert.equal(
+      (state.getCampaignCheck(3921647)?.findings ?? []).some((finding) =>
+        finding.startsWith("missing_signature_tag"),
+      ),
+      false,
+    );
+  });
+
+  it("strips an existing %signature% on the same pass when copy has Insight", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const wrote: string[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921650,
+            name: "SalesGlider tagged draft",
+            status: "DRAFTED",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          {
+            seq_number: 1,
+            email_body: "<div>A note from Insight</div><br><br>%signature%",
+          },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.equal(wrote.length, 1, "leftover Insight tag is stripped");
+    assert.equal(wrote[0]!.includes("%signature%"), false);
+    assert.match(wrote[0]!, /Insight/);
+  });
+
+  it("still writes %signature% when copy has no Insight substring", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const wrote: string[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 88,
+            name: "Insight Pipeline A",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.ok(wrote[0]?.includes("%signature%"), "name-only Insight still gets D92");
+  });
+
+  it("still writes %signature% on a SalesGlider campaign without Insight in copy", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const wrote: string[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 89,
+            name: "SalesGlider Nurture",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Sean, that offer's still open</div>" },
+        ],
+        updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
+        },
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.ok(wrote[0]?.includes("%signature%"), "SalesGlider still gets D92");
+  });
+});

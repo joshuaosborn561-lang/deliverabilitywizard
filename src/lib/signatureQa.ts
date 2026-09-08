@@ -47,9 +47,117 @@ export function sequenceCopyHay(sequences: SmartleadSequence[]): Array<{
   return out;
 }
 
+/** Smartlead / Instantly-style signature placeholders D92 writes. */
+const SIGNATURE_PLACEHOLDER = /%signature%|\{\{\s*Signature\s*\}\}/i;
+
 export function missingSignatureTag(html: string): boolean {
   if (!html.replace(/<[^>]+>/g, " ").trim()) return false;
-  return !/%signature%/i.test(html);
+  return !SIGNATURE_PLACEHOLDER.test(html);
+}
+
+/**
+ * D177 — exact capital-I substring `Insight` in sequence copy.
+ * Not a name-prefix or client-tag match. `insight` / `INSIGHT` alone
+ * do not count.
+ */
+export const INSIGHT_COPY_NEEDLE = "Insight";
+
+export function bodyContainsInsight(
+  html: string | null | undefined,
+): boolean {
+  return String(html ?? "").includes(INSIGHT_COPY_NEEDLE);
+}
+
+export function sequencesHaveSignaturePlaceholder(
+  sequences: SmartleadSequence[] | null | undefined,
+): boolean {
+  if (!sequences?.length) return false;
+  const hay = sequenceCopyHay(sequences);
+  return hay.some((row) => SIGNATURE_PLACEHOLDER.test(row.text));
+}
+
+export function sequenceBodiesContainInsight(
+  sequences: SmartleadSequence[] | null | undefined,
+): boolean {
+  if (!sequences?.length) return false;
+  for (const sequence of sequences) {
+    if (bodyContainsInsight(sequence.email_body)) return true;
+    for (const list of [
+      sequence.sequence_variants,
+      sequence.seq_variants,
+      sequence.variants,
+    ]) {
+      if (!list) continue;
+      for (const variant of list) {
+        if (bodyContainsInsight(variant.email_body)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function stripSignaturePlaceholders(html: string): string {
+  let out = String(html ?? "");
+  out = out.replace(
+    /<(div|p|span)(\s[^>]*)?>\s*(?:%signature%|\{\{\s*Signature\s*\}\})\s*<\/\1>/gi,
+    "",
+  );
+  out = out.replace(
+    /(?:<br\s*\/?\s*>\s*){1,2}(?:%signature%|\{\{\s*Signature\s*\}\})/gi,
+    "",
+  );
+  out = out.replace(/%signature%|\{\{\s*Signature\s*\}\}/gi, "");
+  return out;
+}
+
+/**
+ * D177 — drop `%signature%` / `{{Signature}}` from every step / variant
+ * body. Subjects are untouched. Bodies without a placeholder stay as-is.
+ */
+export function stripSignatureTags(sequences: SmartleadSequence[]): {
+  sequences: SmartleadSequence[];
+  changed: string[];
+} {
+  const changed: string[] = [];
+  const fixBody = (body: string | undefined, label: string): string | undefined => {
+    const text = String(body ?? "");
+    if (!SIGNATURE_PLACEHOLDER.test(text)) return body;
+    changed.push(label);
+    return stripSignaturePlaceholders(text);
+  };
+  const next = sequences.map((sequence) => {
+    const out: SmartleadSequence = { ...sequence };
+    if (sequence.sequence_variants?.length) {
+      out.sequence_variants = sequence.sequence_variants.map((variant, index) => ({
+        ...variant,
+        email_body: fixBody(
+          variant.email_body,
+          `step ${sequence.seq_number} ${variant.variant_label ?? String.fromCharCode(65 + index)}`,
+        ),
+      }));
+    }
+    if (sequence.seq_variants?.length) {
+      out.seq_variants = sequence.seq_variants.map((variant, index) => ({
+        ...variant,
+        email_body: fixBody(
+          variant.email_body,
+          `step ${sequence.seq_number} ${variant.variant_label ?? String.fromCharCode(65 + index)}`,
+        ),
+      }));
+    }
+    if (sequence.variants?.length) {
+      out.variants = sequence.variants.map((variant, index) => ({
+        ...variant,
+        email_body: fixBody(
+          variant.email_body,
+          `step ${sequence.seq_number} ${variant.variant_label ?? String.fromCharCode(65 + index)}`,
+        ),
+      }));
+    }
+    out.email_body = fixBody(sequence.email_body, `step ${sequence.seq_number}`);
+    return out;
+  });
+  return { sequences: next, changed };
 }
 
 /**

@@ -68,7 +68,7 @@ export function mergeAttachBlock(
     domain,
     emails: [...emails].sort(),
     accountIds: [...accountIds].sort((a, b) => a - b),
-    reason: incoming.reason || existing?.reason || "sender_blocked",
+    reason: existing?.reason || incoming.reason || "sender_blocked",
     source: incoming.source ?? existing?.source,
     blockedAt: existing?.blockedAt ?? incoming.blockedAt ?? new Date().toISOString(),
   };

@@ -4,8 +4,13 @@
  * campaign, restaff must not put it back. Protected clients (D174)
  * never retire, so this list is the only durable "stay off" mark.
  */
-import { isRetiredSendingDomain } from "./domainControl.js";
+import {
+  groupReadingsByDomain,
+  isRetiredSendingDomain,
+  judgeDomainCycle,
+} from "./domainControl.js";
 import { emailDomainOf } from "./isolationDomain.js";
+import type { MailboxControlPlacement } from "./mailboxControlTag.js";
 
 export type AttachBlockReason =
   | "sender_blocked"
@@ -63,7 +68,7 @@ export function mergeAttachBlock(
     domain,
     emails: [...emails].sort(),
     accountIds: [...accountIds].sort((a, b) => a - b),
-    reason: incoming.reason || existing?.reason || "sender_blocked",
+    reason: existing?.reason || incoming.reason || "sender_blocked",
     source: incoming.source ?? existing?.source,
     blockedAt: existing?.blockedAt ?? incoming.blockedAt ?? new Date().toISOString(),
   };
@@ -144,4 +149,106 @@ export function senderIsAttachBlocked(
     domainHistory: domain ? state.getDomainHistory?.(domain) : undefined,
     isolationActions: state.listIsolationActions?.() ?? [],
   });
+}
+
+export interface AttachBlockWriter {
+  upsertAttachBlock(incoming: {
+    domain: string;
+    emails?: Iterable<string>;
+    accountIds?: Iterable<number>;
+    reason: AttachBlockReason;
+    source?: string;
+    blockedAt?: string;
+  }): AttachBlockRecord;
+}
+
+/**
+ * D176 — the unlink itself is the write. INFRA / retire / bounce-isolation
+ * remediations call this so restaff cannot put the sender back. Does not
+ * pull anyone (D51); the caller owns Smartlead membership.
+ */
+export function recordIsolationUnlinkAttachBlock(
+  store: AttachBlockWriter,
+  incoming: {
+    domain: string;
+    emails?: Iterable<string>;
+    accountIds?: Iterable<number>;
+    reason: AttachBlockReason;
+    source?: string;
+    blockedAt?: string;
+  },
+): AttachBlockRecord {
+  return store.upsertAttachBlock(incoming);
+}
+
+/**
+ * D176 — INFRA isolation remediates by stamping attach blocks on sender
+ * domains the known-good email already condemned. Bounce-isolation reason
+ * so a later restaff pass treats them as unlinked. Does not remove
+ * campaign membership (D51 kill-only).
+ */
+export interface InfraUnlinkAccount {
+  id?: number;
+  from_email?: string;
+  email?: string;
+  username?: string;
+}
+
+function accountEmailLoose(
+  account: InfraUnlinkAccount,
+): string | undefined {
+  const raw =
+    account.from_email?.trim() ||
+    account.email?.trim() ||
+    account.username?.trim();
+  return raw ? raw.toLowerCase() : undefined;
+}
+
+export function recordInfraIsolationUnlink(
+  store: AttachBlockWriter,
+  accounts: InfraUnlinkAccount[],
+  opts: {
+    campaignId: number;
+    extraGenericDomains?: string[];
+    placementOf: (email: string) => MailboxControlPlacement | undefined;
+    blockedAt?: string;
+  },
+): AttachBlockRecord[] {
+  const readings = accounts.flatMap((account) => {
+    const email = accountEmailLoose(account);
+    if (!email) return [];
+    return [
+      {
+        email,
+        placement: opts.placementOf(email) ?? "UNKNOWN",
+      },
+    ];
+  });
+  const wrote: AttachBlockRecord[] = [];
+  for (const [domain, group] of groupReadingsByDomain(readings)) {
+    const verdict = judgeDomainCycle(
+      domain,
+      group,
+      opts.extraGenericDomains ?? [],
+    );
+    if (!verdict.domainFailed) continue;
+    const onDomain = accounts.filter(
+      (account) => emailDomainOf(accountEmailLoose(account) ?? "") === domain,
+    );
+    wrote.push(
+      recordIsolationUnlinkAttachBlock(store, {
+        domain,
+        emails: onDomain
+          .map((account) => accountEmailLoose(account))
+          .filter((email): email is string => Boolean(email)),
+        accountIds: onDomain
+          .map((account) => account.id)
+          .filter((id): id is number => Number.isFinite(id)),
+        reason: "bounce_isolation",
+        source: `isolation-infra:${opts.campaignId}`,
+        blockedAt: opts.blockedAt,
+      }),
+    );
+  }
+  return wrote;
 }

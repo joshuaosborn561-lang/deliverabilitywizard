@@ -22,6 +22,7 @@ import {
 import {
   replacementParentForRetiredDomain,
 } from "./retireReplacement.js";
+import { isolationAskBlocksDomain } from "./attachBlock.js";
 import {
   buildIsolationAction,
   domainRecentlyRetired,
@@ -149,6 +150,7 @@ export async function requestRetireOrCover(input: {
         },
       }),
     });
+    persistAskAttachBlock(input.store, host, opened);
     return { opened, covered: true, reason };
   }
 
@@ -169,6 +171,7 @@ export async function requestRetireOrCover(input: {
         },
       }),
     });
+    persistAskAttachBlock(input.store, host, opened);
     return { opened, covered: false };
   }
 
@@ -188,7 +191,22 @@ export async function requestRetireOrCover(input: {
       },
     }),
   });
+  persistAskAttachBlock(input.store, host, opened);
   return { opened, covered: false };
+}
+
+function persistAskAttachBlock(
+  store: StateStore,
+  domain: string,
+  action: IsolationActionRecord | null,
+): void {
+  if (!action) return;
+  if (!isolationAskBlocksDomain(domain, [action])) return;
+  store.upsertAttachBlock({
+    domain,
+    reason: action.kind === "retire_domain" ? "burned" : "sender_blocked",
+    source: `ask:${action.kind}:${action.status}`,
+  });
 }
 
 /**

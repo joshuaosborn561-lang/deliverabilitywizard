@@ -496,6 +496,11 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       detail.platforms?.every((p) => p === "MICROSOFT"),
       `replacement mailboxes match retired ESP mix: ${detail.platforms}`,
     );
+    const attachBlock = state.getAttachBlock("burned.info");
+    assert.ok(attachBlock, "D176: retire unlink writes the attach block");
+    assert.equal(attachBlock.reason, "burned");
+    assert.deepEqual(attachBlock.emails, ["a@burned.info", "b@burned.info"]);
+    assert.deepEqual(attachBlock.accountIds, [21, 22]);
   });
 
   it("D161: retiring a BCP domain buys a boldercyperpartner parent, not crosslaunchco", async () => {

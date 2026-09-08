@@ -19,10 +19,7 @@ import {
   type BouncePauseReason,
 } from "../lib/campaignBouncePause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
-import {
-  isolationAskBlocksDomain,
-  normalizeAttachDomain,
-} from "../lib/attachBlock.js";
+import { persistLiveAskAttachBlocks } from "../lib/attachBlockHeal.js";
 import { domainRecentlyRetired } from "../lib/isolationActions.js";
 import {
   ownerOfDomain,
@@ -192,7 +189,7 @@ export class CampaignBounceAutostopService {
       return result;
     }
 
-    if (!dryRun) this.persistLiveAskAttachBlocks();
+    if (!dryRun && this.state) persistLiveAskAttachBlocks(this.state);
 
     let campaigns: SmartleadCampaign[];
     try {
@@ -798,26 +795,6 @@ export class CampaignBounceAutostopService {
       }
     }
     return openedCount;
-  }
-
-  /**
-   * D176 — a live retire / protected-client cover ask is itself a block,
-   * persisted so restaff still refuses after the Slack card is resolved.
-   */
-  private persistLiveAskAttachBlocks(): void {
-    if (!this.state) return;
-    for (const action of this.state.listIsolationActions()) {
-      const domain = normalizeAttachDomain(
-        String(action.detail.domain ?? action.detail.retiredDomain ?? ""),
-      );
-      if (!domain) continue;
-      if (!isolationAskBlocksDomain(domain, [action])) continue;
-      this.state.upsertAttachBlock({
-        domain,
-        reason: action.kind === "retire_domain" ? "burned" : "sender_blocked",
-        source: `ask:${action.kind}:${action.status}`,
-      });
-    }
   }
 
   private async accountIdsForSenders(senders: Set<string>): Promise<number[]> {

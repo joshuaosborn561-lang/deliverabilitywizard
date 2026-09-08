@@ -7236,6 +7236,22 @@ describe("owner intent — D176 attach-blocked senders stay off", () => {
       new URL("../services/campaignBounceAutostop.ts", import.meta.url),
       "utf8",
     );
+    const isolationBranch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    const isolationExecute = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    const heal = await readFile(
+      new URL("../lib/attachBlockHeal.ts", import.meta.url),
+      "utf8",
+    );
     assert.match(
       fanout,
       /senderIsAttachBlocked/,
@@ -7276,6 +7292,38 @@ describe("owner intent — D176 attach-blocked senders stay off", () => {
         "campaignBounceAutostop.ts no longer stamps attachBlocks.",
       ),
     );
+    assert.match(
+      isolationBranch,
+      /recordInfraIsolationUnlink/,
+      stop(
+        "INFRA isolation must stamp attach blocks so restaff cannot reattach (D176).",
+        "isolationBranch.ts no longer calls recordInfraIsolationUnlink.",
+      ),
+    );
+    assert.match(
+      isolationExecute,
+      /recordIsolationUnlinkAttachBlock/,
+      stop(
+        "A retire unlink must write the attach blocklist (D176).",
+        "isolationExecute.ts no longer stamps attachBlocks on retire.",
+      ),
+    );
+    assert.match(
+      index,
+      /healAttachBlocks/,
+      stop(
+        "Boot must heal attachBlocks so a missing burned domain is not rediscovered by hand (D176).",
+        "index.ts no longer calls healAttachBlocks.",
+      ),
+    );
+    assert.match(
+      heal,
+      /boldercyperpartnertop\.info/,
+      stop(
+        "The known missing BCP top domain must be in the boot seed (D176).",
+        "attachBlockHeal.ts lost the boldercyperpartnertop.info seed.",
+      ),
+    );
     const canon = await readFile(
       new URL("../../CANON.md", import.meta.url),
       "utf8",
@@ -7294,6 +7342,22 @@ describe("owner intent — D176 attach-blocked senders stay off", () => {
       stop(
         "CANON still names the attach-block rule (D176).",
         "CANON.md dropped D176 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      canon,
+      /INFRA isolation stamps/,
+      stop(
+        "CANON must say INFRA isolation stamps the attach block (D176).",
+        "CANON.md lost the INFRA attach-block writer.",
+      ),
+    );
+    assert.match(
+      canon,
+      /boldercyperpartnertop\.info/,
+      stop(
+        "CANON must name the boot heal for the missing BCP top domain (D176).",
+        "CANON.md lost the boldercyperpartnertop.info heal.",
       ),
     );
     const decisions = await readFile(

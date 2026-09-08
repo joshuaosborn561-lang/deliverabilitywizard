@@ -26,7 +26,7 @@ or the day is done. Silent findings are a bug (D163).
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82). Reads the shared account book, never its own fetch (D132). |
 | Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; CANON-miss Slack is the 15-minute pager, D163). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). `/health` names the overdue set (D166). A finished stage checkpoints `lastOk` immediately; `state.save` is serialized so health and monitor cannot clobber a snapshot. A mid-chain kill (Railway SIGTERM) resumes leftover stale 6h stages on the **next 15-minute health tick**, skipping anything still fresh in the cycle — never at boot (D122/D167). The 6h cron still runs the full chain. |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
-| Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). |
+| Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). State-only D176 heal writes live retire/cover asks, retired / retire-pending history, and the known missing burned domain (`boldercyperpartnertop.info`) onto `attachBlocks` so restaff cannot reattach after a deploy. |
 
 ## Mailboxes
 
@@ -77,11 +77,14 @@ or the day is done. Silent findings are a bug (D163).
   count as BCP even with no `client_id` (D99). Resting inboxes are skipped,
   and so is anything that owes warmup days — staffing never hands the gate
   its next pull; a fresh import waits out its 21 days even if its campaigns
-  sit under floor meanwhile (D139). **Attach-blocked** senders
+  sit under floor meanwhile (D139).   **Attach-blocked** senders
   (AS(42004) / `sender_blocked` / restricted / bounce-isolation unlink)
   are skipped the same way — fan-out, top-up, client-rest, and one-client
   restore must not put them back (D176), including Goliath-protected
-  domains that cannot be retired (D174).
+  domains that cannot be retired (D174). INFRA isolation stamps the
+  block when known-good condemns a sender domain (`bounce_isolation`);
+  a retire unlink writes `burned`; boot heals live asks plus known
+  missing blocks so a deploy does not wait for another sample.
 - **Rest (pods)**: each client's inboxes split into a stable, even A/B
   (D43). Off-week comes OFF **ACTIVE, PAUSED, and STOPPED** client
   campaign memberships — never left on at 0/day, and never left parked
@@ -273,7 +276,10 @@ or the day is done. Silent findings are a bug (D163).
   5.1.8` / AS(42004)) opens the same retire ask directly — the provider itself
   calling the sender bad outranks a placement reading (D146/D162) — **and
   stamps the attach blocklist** so restaff cannot put those senders back
-  (D176). The ask is not gated on a bounce burst or on the campaign still
+  (D176). An INFRA isolation verdict does the same for sender domains
+  the known-good email already condemned, and a retire unlink writes
+  `burned` — the block is the durable mark, not another pull (D51).
+  The ask is not gated on a bounce burst or on the campaign still
   being ACTIVE.
 
 ## Slack contract

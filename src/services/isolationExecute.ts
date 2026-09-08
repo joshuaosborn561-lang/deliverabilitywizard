@@ -39,6 +39,7 @@ import {
 import { replacementParentForRetiredDomain } from "../lib/retireReplacement.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
+import { recordIsolationUnlinkAttachBlock } from "../lib/attachBlock.js";
 import { slackKindForIsolationAction } from "../lib/slackAllow.js";
 import type { IsolationBuyService } from "./isolationBuy.js";
 import type { CopyCanaryBuyService } from "./copyCanaryBuy.js";
@@ -283,6 +284,15 @@ export class IsolationExecuteService {
         cutCampaignIds.add(campaignId);
       }
     }
+    recordIsolationUnlinkAttachBlock(this.state, {
+      domain,
+      emails: onDomain
+        .map((account) => accountEmail(account))
+        .filter((email): email is string => Boolean(email)),
+      accountIds: onDomain.map((account) => account.id),
+      reason: "burned",
+      source: `retire:${domain}`,
+    });
     const history = this.state.getDomainHistory(domain);
     if (history) {
       this.state.upsertDomainHistory({

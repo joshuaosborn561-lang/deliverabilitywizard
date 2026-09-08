@@ -353,6 +353,32 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(infraRun.verdict, "INFRA");
     assert.equal(infraRun.teardownStarted, false);
     assert.equal(infra.teardowns.length, 0);
+    assert.equal(
+      infra.state.getAttachBlock("techevo.test"),
+      undefined,
+      "INFRA with PRIMARY known-good does not invent a domain block",
+    );
+  });
+
+  it("D176: INFRA unlink path writes bounce_isolation when known-good condemns the sender domain", async () => {
+    const infra = await buildBranch({
+      knownGoodInbox: 10,
+      canaryInbox: 0,
+      mailboxPlacement: "SPAM",
+    });
+    const infraRun = await infra.branch.evaluate(AIRPODS.id, {
+      campaignInSpam: true,
+    });
+    assert.equal(infraRun.verdict, "INFRA");
+    const block = infra.state.getAttachBlock("techevo.test");
+    assert.ok(block, "INFRA isolation must stamp the attach block");
+    assert.equal(block.reason, "bounce_isolation");
+    assert.deepEqual(block.emails, ["a@techevo.test"]);
+    assert.deepEqual(block.accountIds, [1]);
+    assert.equal(
+      infra.state.isSenderAttachBlocked({ email: "other@techevo.test" }),
+      true,
+    );
   });
 
   it("re-evaluates a PAUSED INCONCLUSIVE suspect even with evaluatedAt (D164)", async () => {

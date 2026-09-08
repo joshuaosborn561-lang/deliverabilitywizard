@@ -187,6 +187,97 @@ describe("ClientFanOutService held exclusion", () => {
     assert.ok(result.skipped.some((s) => s.includes("attach blocked")));
   });
 
+  it("D176: missing attach block restaffs boldercyperpartnertop; upsert then skips", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const blocks: Array<{
+      domain: string;
+      emails: string[];
+      accountIds: number[];
+      reason: "burned";
+      blockedAt: string;
+    }> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3763800, name: "BCP Healthcare No Team", status: "ACTIVE", client_id: 9 },
+        { id: 3897350, name: "BCP SEG", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 21442842,
+          from_email: "jeremy@boldercyperpartnertop.info",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3763800],
+          client_id: 9,
+          tags: [],
+        },
+        {
+          id: 21442456,
+          from_email: "hugo@boldercyperpartnertop.info",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3763800],
+          client_id: 9,
+          tags: [],
+        },
+        {
+          id: 21442382,
+          from_email: "kim@boldercyperpartnertop.info",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3763800],
+          client_id: 9,
+          tags: [],
+        },
+      ],
+      listClients: async () => [{ id: 9, name: "BCP" }],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const state = {
+      getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
+      getRestingInbox: () => undefined,
+      getDomainHistory: () => undefined,
+      listAttachBlocks: () => blocks,
+      listIsolationActions: () => [],
+    } as unknown as StateStore;
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    await service.run({ dryRun: false });
+    const first = adds.flatMap(([, ids]) => ids);
+    assert.ok(
+      first.includes(21442842) &&
+        first.includes(21442456) &&
+        first.includes(21442382),
+      "without an attach block, burned top-domain senders restaff",
+    );
+
+    adds.length = 0;
+    blocks.push({
+      domain: "boldercyperpartnertop.info",
+      emails: [
+        "jeremy@boldercyperpartnertop.info",
+        "hugo@boldercyperpartnertop.info",
+        "kim@boldercyperpartnertop.info",
+      ],
+      accountIds: [21442842, 21442456, 21442382],
+      reason: "burned",
+      blockedAt: "2026-09-08T15:00:00.000Z",
+    });
+    const after = await service.run({ dryRun: false });
+    const second = adds.flatMap(([, ids]) => ids);
+    assert.deepEqual(second, [], "after upsert, restaff must skip the domain");
+    assert.ok(
+      after.skipped.some((row) => row.includes("attach blocked")),
+      "skipped lines name the attach block",
+    );
+  });
+
   it("still fans out when a HOLD-UNTIL tag has expired", async () => {
     const { service, adds } = fixture({
       tags: [{ tag_name: "HOLD-UNTIL-2020-01-01" }],

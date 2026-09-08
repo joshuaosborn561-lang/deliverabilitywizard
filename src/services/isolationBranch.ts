@@ -13,6 +13,7 @@ import {
   testIdOf,
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
+import { recordInfraIsolationUnlink } from "../lib/attachBlock.js";
 import { decideIsolationVerdict } from "../lib/isolationVerdict.js";
 import {
   allEspsAtOrAbove,
@@ -306,6 +307,25 @@ export class IsolationBranchService {
       teardownStarted: false,
     };
     this.state.upsertIsolationRun(run);
+
+    // D176 — INFRA means the inboxes/domain are the problem. Stamp
+    // attach blocks on known-good-condemned sender domains so restaff
+    // cannot put them back after a human / QA unlink. Does not pull (D51).
+    if (decided.verdict === "INFRA" && !opts.dryRun) {
+      const blocked = recordInfraIsolationUnlink(this.state, accounts, {
+        campaignId,
+        extraGenericDomains: this.config.extraGenericDomains,
+        placementOf: (email) =>
+          this.state.getMailboxControl(email)?.placement ?? "UNKNOWN",
+      });
+      if (blocked.length) {
+        console.log(
+          `[isolation-branch] D176 attach-block INFRA #${campaignId}: ${blocked
+            .map((row) => row.domain)
+            .join(", ")}`,
+        );
+      }
+    }
 
     if (
       decided.verdict === "COPY" &&

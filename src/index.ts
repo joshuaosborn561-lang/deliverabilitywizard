@@ -115,6 +115,7 @@ import {
 } from "./lib/deployIdentity.js";
 import { PodTagService } from "./services/podTags.js";
 import { DomainClientAuditService } from "./services/domainClientAudit.js";
+import { healAttachBlocks } from "./lib/attachBlockHeal.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -145,6 +146,18 @@ async function main(): Promise<void> {
       for (const name of ghostStages) state.dropStageHealth(name);
       console.warn(
         `[boot] D131 prune: dropped stageHealth for deleted stage(s): ${ghostStages.join(", ")}`,
+      );
+      await state.save();
+    }
+  }
+  // D176 — state-only. Persist live retire/cover asks, retired history,
+  // and the known missing BCP top domain so restaff cannot reattach
+  // after a deploy. Does not touch Smartlead (D122).
+  {
+    const healed = healAttachBlocks(state);
+    if (healed.wrote) {
+      console.log(
+        `[boot] D176 attach-block heal: ${healed.domains.join(", ")}`,
       );
       await state.save();
     }

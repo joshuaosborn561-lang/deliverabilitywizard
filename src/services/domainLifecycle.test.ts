@@ -123,7 +123,7 @@ describe("DomainLifecycleService", () => {
     assert.doesNotMatch(parent, /crosslaunchco/);
   });
 
-  it("D174: a protected client's domain opens a cover buy, never a retire ask", async () => {
+  it("D181: a Goliath domain opens a normal retire ask, not cover-buy-only", async () => {
     const state = await store();
     const slack = new FakeSlack();
     const svc = new DomainLifecycleService(
@@ -179,18 +179,17 @@ describe("DomainLifecycleService", () => {
       },
     );
     const actions = state.listIsolationActions();
+    const retire = actions.find((row) => row.kind === "retire_domain");
+    assert.ok(retire, "Goliath burned domain opens a normal Retire ask (D181)");
+    assert.match(retire?.title ?? "", /Retire nowoutreachdesk\.com/);
+    assert.doesNotMatch(retire?.title ?? "", /not retiring/i);
+    assert.doesNotMatch(retire?.proof ?? "", /protected client/i);
+    assert.match(String(retire?.detail.parentDomain ?? ""), /goliath/);
+    assert.doesNotMatch(String(retire?.detail.parentDomain ?? ""), /crosslaunchco/);
     assert.equal(
-      actions.some((row) => row.kind === "retire_domain"),
-      false,
-      "protected client must not get a retire ask",
+      state.getDomainHistory("nowoutreachdesk.com")?.status,
+      "retire_pending",
     );
-    const buy = actions.find((row) => row.kind === "buy_domains");
-    assert.ok(buy, "degrades to the buy/cover path");
-    assert.match(buy?.title ?? "", /not retiring/i);
-    assert.match(buy?.proof ?? "", /protected client/i);
-    assert.match(String(buy?.detail.parentDomain ?? ""), /goliath/);
-    assert.doesNotMatch(String(buy?.detail.parentDomain ?? ""), /crosslaunchco/);
-    assert.equal(state.getDomainHistory("nowoutreachdesk.com")?.status, "watch");
   });
 
   it("D179: an executed retire does not open a second ask on later fails", async () => {

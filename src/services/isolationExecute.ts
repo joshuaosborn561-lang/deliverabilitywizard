@@ -31,16 +31,10 @@ import {
   purchasedDomainsOf,
 } from "../lib/buyResume.js";
 import {
-  isProtectedOwner,
-  protectedRetireReason,
-} from "../lib/protectedClient.js";
-import {
   ownerFromActionDetail,
   ownerOfDomain,
   ownerOnActionDetail,
   refreshDomainOwnerCache,
-  requestRetireOrCover,
-  shouldRefuseRetire,
 } from "../lib/retireAsk.js";
 import { replacementParentForRetiredDomain } from "../lib/retireReplacement.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
@@ -157,11 +151,6 @@ export class IsolationExecuteService {
     this.state.upsertIsolationAction(approved);
     try {
       if (approved.kind === "retire_domain") {
-        const refused = await this.refuseProtectedRetire(approved);
-        if (refused) {
-          await this.state.save();
-          return { ok: true, message: refused };
-        }
         await this.retire(approved);
       }
       else if (approved.kind === "swap_copy") await this.swapCopy(approved);
@@ -209,90 +198,6 @@ export class IsolationExecuteService {
     }
   }
 
-  private async refuseProtectedRetire(
-    action: IsolationActionRecord,
-  ): Promise<string | null> {
-    const domain = String(action.detail.domain ?? "").toLowerCase();
-    if (!domain) return null;
-    const snap = await this.book.get();
-    refreshDomainOwnerCache(
-      this.state,
-      snap.accounts,
-      snap.clients,
-      this.config,
-    );
-    const owner =
-      ownerOfDomain(
-        domain,
-        this.state,
-        snap.accounts,
-        snap.clients,
-        this.config,
-      ) ?? ownerFromActionDetail(action.detail);
-    if (!shouldRefuseRetire(owner, this.config)) return null;
-    const reason = protectedRetireReason(owner, domain);
-    this.state.upsertIsolationAction({
-      ...action,
-      status: "denied",
-      decidedAt: new Date().toISOString(),
-      decidedBy: action.decidedBy ?? "Josh",
-      error: reason,
-    });
-    if (owner) this.state.upsertDomainOwner(owner);
-    const cover = await requestRetireOrCover({
-      store: this.state,
-      slack: this.slack,
-      config: this.config,
-      domain,
-      preferRetire: false,
-      proof: action.proof,
-      owner,
-    });
-    if (cover.opened) {
-      const approvedBuy: IsolationActionRecord = {
-        ...cover.opened,
-        status: "approved",
-        decidedAt: new Date().toISOString(),
-        decidedBy: action.decidedBy ?? "Josh",
-      };
-      this.state.upsertIsolationAction(approvedBuy);
-      try {
-        await this.buyDomains(approvedBuy);
-        this.state.upsertIsolationAction({
-          ...this.state.getIsolationAction(approvedBuy.id)!,
-          status: "executed",
-          executedAt: new Date().toISOString(),
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.state.upsertIsolationAction({
-          ...this.state.getIsolationAction(approvedBuy.id)!,
-          status: "approved",
-          error: message,
-          detail: {
-            ...approvedBuy.detail,
-            phase: AWAITING_PURCHASE,
-            retryReason: message,
-          },
-        });
-      }
-    }
-    await this.announce(
-      "retire_domain",
-      [
-        `Did not retire *${domain}*.`,
-        reason,
-        "No inboxes were pulled.",
-        cover.opened
-          ? "I opened a cover replacement buy instead (D174)."
-          : undefined,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
-    return reason;
-  }
-
   private async retire(action: IsolationActionRecord): Promise<void> {
     const domain = String(action.detail.domain ?? "").toLowerCase();
     if (!domain) throw new Error("Missing domain");
@@ -301,9 +206,6 @@ export class IsolationExecuteService {
     const owner =
       ownerOfDomain(domain, this.state, accounts, clients, this.config) ??
       ownerFromActionDetail(action.detail);
-    if (isProtectedOwner(owner, this.config)) {
-      throw new Error(protectedRetireReason(owner, domain));
-    }
     const active = new Set(
       campaigns
         .filter((campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE")

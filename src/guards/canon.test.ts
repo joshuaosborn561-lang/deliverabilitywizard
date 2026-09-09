@@ -6981,19 +6981,11 @@ describe("owner intent — D173 ownership is who staffs the domain", () => {
   });
 });
 
-describe("owner intent — D174 protected clients never retire", () => {
-  it("D174: Goliath domains refuse retire; failed buys retry themselves", async () => {
+describe("owner intent — D174 failed-buy retry and Porkbun lock stay", () => {
+  it("D174: failed buys retry themselves; Porkbun checks stay serialized", async () => {
     const { readFile } = await import("node:fs/promises");
-    const protectedClient = await readFile(
-      new URL("../lib/protectedClient.ts", import.meta.url),
-      "utf8",
-    );
     const resume = await readFile(
       new URL("../lib/buyResume.ts", import.meta.url),
-      "utf8",
-    );
-    const ask = await readFile(
-      new URL("../lib/retireAsk.ts", import.meta.url),
       "utf8",
     );
     const exec = await readFile(
@@ -7011,38 +7003,6 @@ describe("owner intent — D174 protected clients never retire", () => {
     const store = await readFile(
       new URL("../state/store.ts", import.meta.url),
       "utf8",
-    );
-    assert.match(
-      protectedClient,
-      /DEFAULT_PROTECTED_CLIENT_IDS = \[548611\]/,
-      stop(
-        "Protected clients are seeded with Goliath / 548611 (D174).",
-        "protectedClient.ts lost the Goliath seed.",
-      ),
-    );
-    assert.match(
-      ask,
-      /shouldRefuseRetire/,
-      stop(
-        "A protected client's domain never opens a retire ask (D174).",
-        "retireAsk.ts lost the refuse helper.",
-      ),
-    );
-    assert.match(
-      ask,
-      /neutralizeProtectedRetireAsks/,
-      stop(
-        "Already-open pending retires for a protected client are denied (D174).",
-        "retireAsk.ts cannot convert meetconnectnow.com-style leftover taps.",
-      ),
-    );
-    assert.match(
-      exec,
-      /refuseProtectedRetire/,
-      stop(
-        "The retire tap refuses a protected client before pulling inboxes (D174).",
-        "isolationExecute.ts can still pull Goliath inboxes.",
-      ),
     );
     assert.match(
       exec,
@@ -7100,35 +7060,23 @@ describe("owner intent — D174 protected clients never retire", () => {
         "porkbun.ts treats the rate-limit error as a fatal abort.",
       ),
     );
-    const slack = await readFile(
-      new URL("../clients/slack.ts", import.meta.url),
-      "utf8",
-    );
-    assert.match(
-      slack,
-      /A protected client's domain is never retired \(D174\)/,
-      stop(
-        "Slack retire copy names the protected-client rule (D174).",
-        "slack.ts retire copy lost D174.",
-      ),
-    );
     const canon = await readFile(
       new URL("../../CANON.md", import.meta.url),
       "utf8",
     );
     assert.match(
       canon,
-      /Protected clients never have a domain retired or burned/,
+      /awaiting_purchase/,
       stop(
-        "CANON states the protected-client never-retire MUST (D174).",
-        "CANON.md lost the D174 MUST.",
+        "CANON still states the failed-buy retry (D174 leftover).",
+        "CANON.md dropped awaiting_purchase when D181 landed.",
       ),
     );
     assert.match(
       canon,
       /D174/,
       stop(
-        "CANON still names the protected-client rule (D174).",
+        "CANON still names D174 for buy-retry / Porkbun lock.",
         "CANON.md dropped D174 when a later decision landed.",
       ),
     );
@@ -7140,8 +7088,155 @@ describe("owner intent — D174 protected clients never retire", () => {
       decisions,
       /## D174 — Protected clients never have a domain retired or burned/,
       stop(
-        "The protected-client rule is in the ledger (D174).",
+        "The original D174 entry stays in the ledger (append-only).",
         "DECISIONS.md no longer has D174.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D181 Goliath retires like any other client", () => {
+  it("D181: Goliath / 548611 follows the normal Retire path (D174 never-retire reversed)", async () => {
+    const { existsSync } = await import("node:fs");
+    const { readFile } = await import("node:fs/promises");
+    assert.equal(
+      existsSync(new URL("../lib/protectedClient.ts", import.meta.url)),
+      false,
+      stop(
+        "The protected-client module is deleted (D181).",
+        "protectedClient.ts is back — that re-seeds D174 never-retire.",
+      ),
+    );
+    const config = await readFile(
+      new URL("../config.ts", import.meta.url),
+      "utf8",
+    );
+    const ask = await readFile(
+      new URL("../lib/retireAsk.ts", import.meta.url),
+      "utf8",
+    );
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const life = await readFile(
+      new URL("../services/domainLifecycle.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const envExample = await readFile(
+      new URL("../../.env.example", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      config,
+      /protectedClientIds|PROTECTED_CLIENT_IDS/,
+      stop(
+        "Config no longer carries a protected-client list (D181).",
+        "config.ts still seeds PROTECTED_CLIENT_IDS.",
+      ),
+    );
+    assert.doesNotMatch(
+      envExample,
+      /PROTECTED_CLIENT_IDS|PROTECTED_CLIENT_NAMES/,
+      stop(
+        ".env.example no longer documents a protected-client list (D181).",
+        ".env.example still lists PROTECTED_CLIENT_*.",
+      ),
+    );
+    assert.doesNotMatch(
+      ask,
+      /shouldRefuseRetire|neutralizeProtectedRetireAsks|protected client/,
+      stop(
+        "Retire asks no longer refuse or convert a protected client (D181).",
+        "retireAsk.ts still has the D174 carve-out.",
+      ),
+    );
+    assert.doesNotMatch(
+      exec,
+      /refuseProtectedRetire|isProtectedOwner|protectedRetireReason/,
+      stop(
+        "The retire tap no longer refuses Goliath (D181).",
+        "isolationExecute.ts can still convert a Goliath retire to cover-buy.",
+      ),
+    );
+    assert.doesNotMatch(
+      life,
+      /isProtectedOwner|protectedClient|neutralizeProtectedRetireAsks/,
+      stop(
+        "Domain lifecycle retires Goliath on the same fail count (D181).",
+        "domainLifecycle.ts still skips retire for a protected client.",
+      ),
+    );
+    assert.doesNotMatch(
+      bounce,
+      /not retiring \(D174\)|protected-client cover/,
+      stop(
+        "AS(42004) on a Goliath domain opens the normal burned-domain ask (D181).",
+        "campaignBounceAutostop.ts still logs a protected-client cover buy.",
+      ),
+    );
+    assert.doesNotMatch(
+      slack,
+      /A protected client's domain is never retired/,
+      stop(
+        "Slack retire copy no longer names the D174 never-retire rule (D181).",
+        "slack.ts still tells Josh a protected client's domain is never retired.",
+      ),
+    );
+    assert.match(
+      slack,
+      /Goliath \/ client 548611 follows the same Retire path \(D181\)/,
+      stop(
+        "Slack retire copy says Goliath follows the same Retire path (D181).",
+        "slack.ts lost the D181 Goliath retire sentence.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      canon,
+      /Protected clients never have a domain retired or burned/,
+      stop(
+        "CANON no longer states the D174 never-retire MUST (D181).",
+        "CANON.md still forbids retiring a protected client.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Goliath \/ client 548611 burned domains follow the normal Retire/,
+      stop(
+        "CANON states Goliath burned domains follow the normal Retire ask (D181).",
+        "CANON.md lost the D181 MUST.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D181/,
+      stop(
+        "CANON names D181.",
+        "CANON.md dropped D181 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D181 — Goliath \/ client 548611 retires like any other client/,
+      stop(
+        "The D181 reversal is in the ledger.",
+        "DECISIONS.md no longer has D181.",
       ),
     );
   });

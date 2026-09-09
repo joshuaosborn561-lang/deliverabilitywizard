@@ -188,13 +188,14 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
 | D173 | Live | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
-| D174 | Live | Protected clients (seeded Goliath / 548611) never have a domain retired or burned; degrade to buy/cover; failed post-pull buys retry themselves; Porkbun checks are serialized |
+| D174 | Live — never-retire superseded by D181; buy-retry + Porkbun lock stay | Protected-client never-retire/never-burn (seeded Goliath / 548611) is gone; failed post-pull buys still retry themselves; Porkbun checks stay serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
-| D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back, including Goliath-protected domains |
+| D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back |
 | D177 | Superseded by D178 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
 | D178 | Live | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; mailbox signature fields never rewritten |
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
+| D181 | Live | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
 
 ---
 
@@ -5418,3 +5419,64 @@ START/STOP).
 campaign-check samples multi-offset and does not write sequences on
 this path; `merge_tag_blank` is a `CANON_CORE_KINDS` finding;
 Slack pages `merge_tag_blank` via `ops_alert`; CANON names D180.
+
+## D181 — Goliath / client 548611 retires like any other client
+
+**Decision (Josh, 2026-09-09 ~2:49pm CT).** Remove the D174
+never-retire / never-burn protected-client carve-out. Goliath
+domains (Smartlead client_id `548611`) may be Retire'd like other
+clients when burned. Cayden approves spend/Retire and must
+double-check the bad outbound sender. The Oct 15 Goliath
+*campaign* PAUSE hold is unchanged and separate — this is not a
+campaign start/stop rule and does not auto-START any Goliath
+campaign.
+
+**Why.** Production was still paging "Protected clients never have
+a domain retired or burned (D174)" and converting Goliath burned
+domains to Buy-cover-only (seen live 2026-09-09 ~5:06pm CT on
+cleartechco.com, meetconnectnow.com, outreachdeskapp.com,
+appreachdesk.com, crosslaunchco.com, crossscaleco.com, etc.).
+Josh had already removed the never-retire rule that afternoon.
+The carve-out left burned Goliath senders on cover-buy-only,
+which is wrong after his call.
+
+**The rule.**
+
+1. No protected-client list. `PROTECTED_CLIENT_IDS` /
+   `PROTECTED_CLIENT_NAMES` / `isProtectedClient` /
+   `shouldRefuseRetire` / `neutralizeProtectedRetireAsks` /
+   `refuseProtectedRetire` are deleted.
+2. A Goliath domain with AS(42004) / known-good burn evidence
+   opens a normal `retire_domain` ask (D146/D150/D161/D173/D176/
+   D179). Slack is the standard Retire card, not "not retiring
+   protected client".
+3. Execution of an approved Goliath retire pulls inboxes and
+   buys the client-named replacement (`getgoliath*` /
+   `goliathcybersecurity*` style, D161). It does not convert to
+   cover-buy-only.
+4. Cover-buy without retire remains available where the
+   existing non-protected flow already offers it (fail-#1
+   buy-ahead). The protection carve-out is gone.
+5. Attach-blocklist (D176) still stamps burned senders so
+   restaff cannot put them back.
+6. D174's buy-retry (`awaiting_purchase` + 15-minute resume)
+   and Porkbun availability lock stay live — those are not the
+   never-retire rule.
+7. Does not change Goliath campaign ACTIVE/PAUSED policy, the
+   Oct 15 hold, bounce loop D148, `REQUIRE_SPEND_APPROVAL`, or
+   Cayden approval UX.
+
+**Supersedes / amends.** Supersedes D174's never-retire /
+never-burn / cover-only convert. Does not reverse D174's
+failed-buy retry or Porkbun serialization. Does not reverse
+D146/D150/D161/D173/D176/D179. Does not change D40 / campaign
+prefs.
+
+**Guards.** canon D181: no `PROTECTED_CLIENT_*` /
+`shouldRefuseRetire` / `refuseProtectedRetire`; a Goliath
+domain with two consecutive fails or AS(42004) opens
+`retire_domain`; CANON names D181 and does not state the
+D174 never-retire MUST. Unit tests: Goliath retire ask and
+execution succeed; leftover D174 buy-retry / Porkbun tests
+stay.
+

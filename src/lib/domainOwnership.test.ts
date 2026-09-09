@@ -9,10 +9,6 @@ import {
   isGenericSendingDomain,
   replacementParentForRetiredDomain,
 } from "./retireReplacement.js";
-import {
-  isProtectedOwner,
-  protectedRetireReason,
-} from "./protectedClient.js";
 
 const goliath = { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" };
 
@@ -76,36 +72,5 @@ describe("D173 — ownership-aware sending-domain classification", () => {
     assert.match(parent, /goliath/);
     assert.doesNotMatch(parent, /crosslaunchco/);
     assert.doesNotMatch(parent, /meetconnect/);
-  });
-});
-
-describe("D174 — protected clients never retire", () => {
-  it("Goliath / 548611 is protected by default", () => {
-    const config = cfg();
-    assert.ok(config.protectedClientIds.includes(548611));
-    assert.ok(config.protectedClientNames.includes("goliath"));
-    const owner = resolveDomainOwner(
-      "huboutreachdesk.com",
-      [{ from_email: "a@huboutreachdesk.com", client_id: 548611 }],
-      [goliath],
-      config,
-    );
-    assert.equal(isProtectedOwner(owner, config), true);
-    assert.match(
-      protectedRetireReason(owner, "huboutreachdesk.com"),
-      /Not offering a retire/,
-    );
-    assert.match(protectedRetireReason(owner, "huboutreachdesk.com"), /D174/);
-  });
-
-  it("an unprotected client domain is not blocked", () => {
-    const config = cfg();
-    const owner = resolveDomainOwner(
-      "boldercyperpartnerpro.info",
-      [{ from_email: "a@boldercyperpartnerpro.info", client_id: 542838 }],
-      [{ id: 542838, name: "BCP", logo: "Bolder Cyper Partner" }],
-      config,
-    );
-    assert.equal(isProtectedOwner(owner, config), false);
   });
 });

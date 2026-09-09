@@ -96,7 +96,7 @@ describe("attachBlock (D176)", () => {
         },
       ),
       true,
-      "a protected-client cover ask is enough to refuse restaff",
+      "a leftover coverOnly buy ask is enough to refuse restaff",
     );
     assert.equal(
       isSenderAttachBlocked(

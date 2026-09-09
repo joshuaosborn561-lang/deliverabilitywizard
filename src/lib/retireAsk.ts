@@ -1,7 +1,8 @@
 /**
- * D173 / D174 — open a domain-failure ask that respects ownership
- * and the protected-client never-retire rule. Protected inventory
- * degrades to a buy/cover ask and the Slack card says why.
+ * D173 / D181 — open a domain-failure ask that respects ownership.
+ * Goliath / client 548611 follows the same Retire path as every
+ * other client (D181 reversed D174 never-retire). Cover-buy without
+ * retire remains the fail-#1 buy-ahead path, not a protection carve-out.
  */
 import type { SlackClient } from "../clients/slack.js";
 import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
@@ -14,11 +15,6 @@ import {
   resolveDomainOwner,
   type DomainOwnerRecord,
 } from "./domainOwnership.js";
-import {
-  isProtectedOwner,
-  protectedRetireReason,
-  type ProtectedClientConfig,
-} from "./protectedClient.js";
 import {
   replacementParentForRetiredDomain,
 } from "./retireReplacement.js";
@@ -93,13 +89,6 @@ export function ownerFromActionDetail(
   };
 }
 
-export function shouldRefuseRetire(
-  owner: DomainOwnerRecord | undefined,
-  config: ProtectedClientConfig,
-): boolean {
-  return isProtectedOwner(owner, config);
-}
-
 export async function requestRetireOrCover(input: {
   store: StateStore;
   slack: Pick<SlackClient, "notifyIsolationAction">;
@@ -116,39 +105,14 @@ export async function requestRetireOrCover(input: {
 }> {
   const host = input.domain.trim().toLowerCase();
   const owner = input.owner ?? input.store.getDomainOwner(host);
-  const refuse = shouldRefuseRetire(owner, input.config);
-  if (!refuse && domainAlreadyRetired(input.store, host)) {
+  if (domainAlreadyRetired(input.store, host)) {
     return { opened: null, covered: false };
   }
   const parent = replacementParentForRetiredDomain(host, input.config, {
-    kind: refuse || !input.preferRetire ? "buy_domains" : "retire_domain",
+    kind: input.preferRetire ? "retire_domain" : "buy_domains",
     owner,
   });
   const ownerDetail = ownerOnActionDetail(owner);
-
-  if (refuse) {
-    const reason = protectedRetireReason(owner, host);
-    const opened = await requestIsolationAction({
-      store: input.store,
-      slack: input.slack,
-      action: buildIsolationAction({
-        kind: "buy_domains",
-        title: `Buy cover for ${host} — not retiring (protected client)`,
-        proof: [input.proof, reason].filter(Boolean).join("\n"),
-        detail: {
-          domain: host,
-          quantity: 1,
-          parentDomain: parent,
-          coverOnly: true,
-          protectedClient: true,
-          ...ownerDetail,
-          ...input.extraDetail,
-        },
-      }),
-    });
-    persistAskAttachBlock(input.store, host, opened);
-    return { opened, covered: true, reason };
-  }
 
   if (input.preferRetire) {
     const opened = await requestIsolationAction({
@@ -203,54 +167,4 @@ function persistAskAttachBlock(
     reason: action.kind === "retire_domain" ? "burned" : "sender_blocked",
     source: `ask:${action.kind}:${action.status}`,
   });
-}
-
-/**
- * Convert already-open pending retires for protected clients into
- * buy/cover asks so the Slack button cannot pull their inboxes.
- */
-export async function neutralizeProtectedRetireAsks(input: {
-  store: StateStore;
-  slack: Pick<SlackClient, "notifyIsolationAction">;
-  config: AppConfig;
-  accounts?: SmartleadAccountWithCampaigns[];
-  clients?: SmartleadClientRecord[];
-}): Promise<number> {
-  let converted = 0;
-  for (const action of input.store.listIsolationActions()) {
-    if (action.kind !== "retire_domain" || action.status !== "pending") continue;
-    const domain = String(action.detail.domain ?? "").toLowerCase();
-    if (!domain) continue;
-    const owner = ownerOfDomain(
-      domain,
-      input.store,
-      input.accounts,
-      input.clients,
-      input.config,
-    );
-    if (!shouldRefuseRetire(owner, input.config)) continue;
-    const reason = protectedRetireReason(owner, domain);
-    input.store.upsertIsolationAction({
-      ...action,
-      status: "denied",
-      decidedAt: new Date().toISOString(),
-      decidedBy: "system",
-      error: reason,
-    });
-    if (owner) input.store.upsertDomainOwner(owner);
-    await requestRetireOrCover({
-      store: input.store,
-      slack: input.slack,
-      config: input.config,
-      domain,
-      preferRetire: false,
-      proof: action.proof,
-      owner,
-    });
-    converted += 1;
-    console.warn(
-      `[retire-guard] denied pending retire for ${domain} — ${reason}`,
-    );
-  }
-  return converted;
 }

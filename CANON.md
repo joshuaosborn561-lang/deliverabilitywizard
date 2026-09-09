@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D180** (2026-09-09). One page of current truth. When a new
+Canon as of **D181** (2026-09-09). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -92,8 +92,7 @@ or the day is done. Silent findings are a bug (D163).
   sit under floor meanwhile (D139).   **Attach-blocked** senders
   (AS(42004) / `sender_blocked` / restricted / bounce-isolation unlink)
   are skipped the same way — fan-out, top-up, client-rest, and one-client
-  restore must not put them back (D176), including Goliath-protected
-  domains that cannot be retired (D174). INFRA isolation stamps the
+  restore must not put them back (D176). INFRA isolation stamps the
   block when known-good condemns a sender domain (`bounce_isolation`);
   a retire unlink writes `burned`; boot heals live asks plus known
   missing blocks so a deploy does not wait for another sample.
@@ -132,7 +131,8 @@ or the day is done. Silent findings are a bug (D163).
   **A client-domain
   retire MUST buy a client-named replacement for that client** (BCP →
   `boldercyperpartner*` / `getboldercyperpartner*` / `tryboldercyperpartner*`
-  style names already used for that client) — never a generic
+  style names already used for that client; Goliath → `getgoliath*` /
+  `goliathcybersecurity*` style) — never a generic
   crosslaunchco / pool spin. Generic spins are only for generic/pool
   domains (D161).   Cross-client
   top-up is a compensated **move**; same-client is additive. (The old
@@ -143,23 +143,25 @@ or the day is done. Silent findings are a bug (D163).
   naming, and generic-cover — even when it appears on the generic
   pool list. The plan is the fallback when mailboxes name no real
   client. A plan-vs-mailbox conflict is logged; the mailboxes win.
-  **Protected clients never have a domain retired or burned** (D174):
-  seeded with Goliath / Smartlead `548611` (`PROTECTED_CLIENT_IDS` /
-  `PROTECTED_CLIENT_NAMES`). A protected domain never produces a
-  retire ask or a retire execution — it degrades to the buy/cover
-  path and Slack says why. An already-open pending retire for a
-  protected client cannot execute (inboxes stay put). A replacement
-  buy that fails after a pull stays in `awaiting_purchase` and the
-  15-minute resume retries it — never parked in `approved` with no
-  path forward. Porkbun availability checks are process-wide locked
-  (sleep before the request) and retried on the 10-second rate limit.
+  **Goliath / client 548611 burned domains follow the normal Retire
+  ask** (D181, reversing D174 never-retire): AS(42004) / known-good
+  evidence opens `retire_domain` like any other client
+  (D146/D150/D161/D173/D176/D179). Replacements are client-named.
+  The Oct 15 Goliath *campaign* PAUSE hold is unchanged and separate
+  — this is not a campaign start/stop rule. Cover-buy without retire
+  remains the fail-#1 buy-ahead path, not a protection carve-out.
+  A replacement buy that fails after a pull stays in
+  `awaiting_purchase` and the 15-minute resume retries it — never
+  parked in `approved` with no path forward (D174). Porkbun
+  availability checks are process-wide locked (sleep before the
+  request) and retried on the 10-second rate limit.
 - **Retired domains stay off** live campaigns forever; replacements owe the
   21 days (D65). A known-retired domain never opens a fresh actionable
   Retire ask or a second replacement buy when old / recurrent 5.1.8
   evidence reappears — Slack suppress, deploy remind, and the confirm
-  tap are all no-ops (D179). **Attach-blocked** domains stay off even
-  when they cannot be retired (D174/D176) — cover buy is the replacement
-  path, not reattach.
+  tap are all no-ops (D179). **Attach-blocked** domains stay off live
+  campaigns (D176) — restaff must not put them back, including after
+  a Goliath retire. Cover is new inventory, not reattach.
 
 ## Pulls and pauses
 
@@ -309,10 +311,9 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    generics cover the campaigns it cut (D134/D150). A domain that is
    **already retired** is not offered again (D179) — leftover Slack
    buttons and the confirm page are fail-safe no-ops, no second
-   purchase.   A protected client's
-  domain is never offered as a retire (D174) — the card is a cover buy
-  and says why. Blocked senders on that domain stay off ACTIVE campaigns
-  (D176); cover is new inventory, not reattach.
+   purchase. Goliath burned domains get the same Retire card as
+   every other client (D181). Blocked senders stay off ACTIVE
+   campaigns (D176); cover is new inventory, not reattach.
 2. **Isolated spam word** — *REMOVE this exact text:* and *REPLACE WITH:*
    in fenced blocks under the campaign name (D170), a substitute that
    keeps the line’s job (offer openers keep the gift/tickets/experience
@@ -351,9 +352,8 @@ the P.S. and never a mailbox-signature write (D178).
 ## Spend and the human loop
 
 Three human moments (D49): **retire a domain** (Josh — one tap is pull +
-ESP-matched, **client-named** replacement buy + D134 backfill, D150/D161/D173;
-a protected client is refused at the tap and converted to a cover buy,
-D174; an already-retired domain's confirm is a no-op, D179), **buy
+ESP-matched, **client-named** replacement buy + D134 backfill, D150/D161/D173/D181;
+an already-retired domain's confirm is a no-op, D179), **buy
 domains/mailboxes** (Josh; Slack tap is the approval, asked once — D60;
 fail-#1 buy-ahead still exists until the domain actually retires),
 **change live copy** (Josh or Cayden, one word per tap, applied fleet-wide — D133). Everything else is

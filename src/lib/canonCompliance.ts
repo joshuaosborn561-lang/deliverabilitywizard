@@ -4,6 +4,7 @@ import type { CampaignCheckRecord } from "./campaignCheck.js";
  * D108 — the 15-minute yes/no. A living ACTIVE campaign is compliant
  * when none of these core holes are open. DNS / launch bar / client
  * tag sit on the board as "other" and do not flip the main yes.
+ * D180 — blank merge tags / missing custom_fields are a core hole.
  */
 export const CANON_CORE_KINDS = [
   "understaffed",
@@ -16,6 +17,7 @@ export const CANON_CORE_KINDS = [
   "no_placement_test",
   "missing_canary",
   "inbox_missing_known_good",
+  "merge_tag_blank",
 ] as const;
 
 export type CanonCoreKind = (typeof CANON_CORE_KINDS)[number];

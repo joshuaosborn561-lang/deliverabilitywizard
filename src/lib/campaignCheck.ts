@@ -2,10 +2,12 @@
  * D81 / D82 — first-seen campaign audit, then hourly sweeps.
  *
  * First check is identity / safety. Hourly watches pods, signatures,
- * canaries, and the half-client floor. Bounce auto-pause is not this
- * checker (Cayden's D80). Goliath is a POC client, not a special rule
- * pile. Every serving inbox needs a known-good canary; every campaign
- * needs its copy on the unwarmed fleet canary.
+ * canaries, the half-client floor, and merge-tag fill (D180). Bounce
+ * auto-pause is not this checker (Cayden's D80). Goliath is a POC
+ * client, not a special rule pile. Every serving inbox needs a
+ * known-good canary; every campaign needs its copy on the unwarmed
+ * fleet canary. Blank merge tags page Slack; they do not START/STOP
+ * or rewrite live copy.
  */
 
 export const CAMPAIGN_CHECK_KINDS = [
@@ -28,6 +30,7 @@ export const CAMPAIGN_CHECK_KINDS = [
   "mailbox_volume",
   "campaign_min_gap",
   "below_launch_bar",
+  "merge_tag_blank",
 ] as const;
 
 export type CampaignCheckKind = (typeof CAMPAIGN_CHECK_KINDS)[number];
@@ -73,4 +76,8 @@ export interface CampaignCheckRecord {
   findings: string[];
   /** D95 — first auto-write already told Josh. Re-writes stay quiet. */
   sigAutoWrittenAt?: string | null;
+  /** D180 — last merge-tag fill sample (lead total + custom tags seen). */
+  mergeTagCheckedAt?: string | null;
+  mergeTagLeadTotal?: number | null;
+  mergeTagCustomKeys?: string[];
 }

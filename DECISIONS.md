@@ -194,6 +194,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D177 | Superseded by D178 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
 | D178 | Live | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; mailbox signature fields never rewritten |
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
+| D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 
 ---
 
@@ -5369,3 +5370,51 @@ have not been retired, D174, or D176.
 D179. Tests: 8-day-old executed retire + recurrent 5.1.8 does not
 Slack; leftover pending confirm does not buy; first-time 5.1.8
 still asks.
+
+## D180 — Merge tags cannot silently send blank
+
+**Decision (Josh, 2026-09-09).** The pre-launch merge-tag hard gate
+(`src/ops/smartlead-campaign-settings.SKILL.md` +
+`scripts/check_merge_tags.py`) is now a live CANON check. Insight
+Consolidation Gateway SEG #3921647 shipped `{{gateway_provider}}` while
+sampled leads had no `custom_fields.gateway_provider` (keys present:
+`job_title`, `Local_Sports_Team`, `vendor`, …). Sent `email_message`
+bodies rendered blanks ("Microsoft shop with  on top" / "which  covers").
+A manual script that is not on the 15-minute machine is not a gate.
+
+**The rule.**
+
+1. Parse every `{{tag}}` from all sequence steps / variants.
+2. System fields (`email`, `first_name`, `last_name`, `company_name`,
+   `phone_number`, `website`, `location`, `linkedin_profile`,
+   `company_url`) are allowlisted. Smartlead builtins (`Signature`,
+   unsubscribe) are skipped. Everything else is a lead custom field.
+3. Sample leads across **multiple offsets**, not just 0. Fail when a
+   custom tag is missing as a `custom_fields` key, or is filled on
+   under ~80% of the sample.
+4. Also fail when a cheap recent-sent statistics sample still contains
+   literal `{{tag}}` or an obvious blank hole next to that tag's
+   sequence context.
+5. Finding kind `merge_tag_blank` is a **core** `/health` hole and
+   pages `#deliverability` as a CANON miss (`ops_alert`) once per
+   campaign per incident, with campaign id/name, missing tags, fill
+   rates, and a sample. Recovery clears the stamp.
+6. **Never** auto-edit live sequence copy. **Never** rewrite lead
+   custom fields. **Never** START/STOP the campaign. Human Apply /
+   list remap only.
+7. Triggers: `campaign-check-first` for newly seen campaigns; hourly
+   campaign-check resample of ACTIVE campaigns that still use custom
+   tags; sooner when the lead list grew materially (peek `total_leads`,
+   then resample). Sequences already fetched by campaign-check; lead
+   pages are the only extra Smartlead reads (D84 inventory stays one
+   account-book fetch).
+
+**Supersedes / amends.** Promotes the skill's manual merge-tag gate
+into the live machine. Does not reverse D49/D133 (live copy Apply is
+still human-only), D52 (does not import leads), or D40 (does not
+START/STOP).
+
+**Guards.** canon D180: `mergeTags.ts` extract + fill judgment;
+campaign-check samples multi-offset and does not write sequences on
+this path; `merge_tag_blank` is a `CANON_CORE_KINDS` finding;
+Slack pages `merge_tag_blank` via `ops_alert`; CANON names D180.

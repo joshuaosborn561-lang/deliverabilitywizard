@@ -84,13 +84,30 @@ def extract_bodies(sequences: Any) -> list[tuple[str, str]]:
 
 def extract_leads(leads: Any) -> list[dict[str, Any]]:
     rows = as_list(leads, "data", "leads", "results")
-    return [row for row in rows if isinstance(row, dict)]
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        nested = row.get("lead")
+        if isinstance(nested, dict):
+            merged = {**nested, **row}
+            if nested.get("custom_fields") is not None:
+                merged["custom_fields"] = nested["custom_fields"]
+            out.append(merged)
+        else:
+            out.append(row)
+    return out
 
 
 def custom_keys(lead: dict[str, Any]) -> set[str]:
     fields = lead.get("custom_fields")
     if isinstance(fields, dict):
-        return {str(k) for k in fields.keys() if fields.get(k) not in (None, "")}
+        return {
+            str(k)
+            for k in fields.keys()
+            if fields.get(k) not in (None, "")
+            and not (isinstance(fields.get(k), str) and not str(fields.get(k)).strip())
+        }
     return set()
 
 

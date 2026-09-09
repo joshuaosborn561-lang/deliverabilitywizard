@@ -7694,3 +7694,175 @@ describe("owner intent — D179 already-retired domains never re-ask or re-spend
     );
   });
 });
+
+describe("owner intent — D180 merge tags cannot silently send blank", () => {
+  it("D180: live campaign-check samples fill rate, pages merge_tag_blank, never edits copy", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const merge = await readFile(
+      new URL("../lib/mergeTags.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const compliance = await readFile(
+      new URL("../lib/canonCompliance.ts", import.meta.url),
+      "utf8",
+    );
+    const kinds = await readFile(
+      new URL("../lib/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const alerts = await readFile(
+      new URL("../services/opsAlerts.ts", import.meta.url),
+      "utf8",
+    );
+    const { CANON_CORE_KINDS } = await import("../lib/canonCompliance.js");
+    const { isFirstCheckBlocking } = await import("../lib/campaignCheck.js");
+
+    assert.match(
+      merge,
+      /export const MIN_CUSTOM_COVERAGE = 0\.8/,
+      stop(
+        "Custom merge tags need ~80% fill on the lead sample (D180).",
+        "mergeTags.ts lost MIN_CUSTOM_COVERAGE = 0.8.",
+      ),
+    );
+    assert.match(
+      merge,
+      /first_name/,
+      stop(
+        "System merge tags stay the skill allowlist (D180).",
+        "mergeTags.ts lost the first_name system field.",
+      ),
+    );
+    assert.match(
+      merge,
+      /sampleLeadOffsets/,
+      stop(
+        "Lead sampling must walk several offsets, not just 0 (D180).",
+        "mergeTags.ts lost sampleLeadOffsets.",
+      ),
+    );
+    assert.match(
+      check,
+      /inspectMergeTags/,
+      stop(
+        "Campaign-check must run merge-tag fill QA (D180).",
+        "campaignCheck.ts no longer calls inspectMergeTags.",
+      ),
+    );
+    assert.match(
+      check,
+      /sampleLeadOffsets/,
+      stop(
+        "Campaign-check must sample leads at multiple offsets (D180).",
+        "campaignCheck.ts no longer uses sampleLeadOffsets.",
+      ),
+    );
+    assert.doesNotMatch(
+      check.slice(check.indexOf("private async inspectMergeTags")),
+      /updateCampaignSequences|addLeadsToCampaign|restoreCampaignLead/,
+      stop(
+        "Merge-tag QA must not rewrite live copy or remap leads (D180).",
+        "inspectMergeTags writes sequences or leads.",
+      ),
+    );
+    assert.ok(
+      (CANON_CORE_KINDS as readonly string[]).includes("merge_tag_blank"),
+      stop(
+        "merge_tag_blank is a core /health hole (D180).",
+        "CANON_CORE_KINDS dropped merge_tag_blank.",
+      ),
+    );
+    assert.match(
+      compliance,
+      /"merge_tag_blank"/,
+      stop(
+        "canonCompliance names merge_tag_blank (D180).",
+        "canonCompliance.ts lost merge_tag_blank.",
+      ),
+    );
+    assert.match(
+      kinds,
+      /"merge_tag_blank"/,
+      stop(
+        "Campaign-check findings include merge_tag_blank (D180).",
+        "CAMPAIGN_CHECK_KINDS dropped merge_tag_blank.",
+      ),
+    );
+    assert.equal(
+      isFirstCheckBlocking("merge_tag_blank"),
+      false,
+      stop(
+        "Blank merge tags page Slack; they do not block first-check identity (D180).",
+        "merge_tag_blank is now first-check blocking.",
+      ),
+    );
+    assert.match(
+      alerts,
+      /pageMergeTagMisses/,
+      stop(
+        "CANON-miss Slack must page merge-tag fill misses (D180).",
+        "opsAlerts.ts no longer calls pageMergeTagMisses.",
+      ),
+    );
+    assert.match(
+      alerts,
+      /"ops_alert"/,
+      stop(
+        "Merge-tag pages use the ops_alert lane (D180/D163).",
+        "opsAlerts.ts no longer sends ops_alert.",
+      ),
+    );
+    assert.match(
+      alerts,
+      /merge_tag:\$\{/,
+      stop(
+        "Merge-tag Slack is once per campaign per incident (D180).",
+        "opsAlerts.ts lost the merge_tag stamp key.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /merge-tag fill/,
+      stop(
+        "CANON states merge-tag fill QA (D180).",
+        "CANON.md lost the D180 merge-tag fill rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /merge_tag_blank/,
+      stop(
+        "CANON names the merge_tag_blank finding (D180).",
+        "CANON.md dropped merge_tag_blank.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D180/,
+      stop(
+        "CANON still names merge-tag fill (D180).",
+        "CANON.md dropped D180 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D180 — Merge tags cannot silently send blank/,
+      stop(
+        "The merge-tag fill rule is in the ledger (D180).",
+        "DECISIONS.md no longer has D180.",
+      ),
+    );
+  });
+});

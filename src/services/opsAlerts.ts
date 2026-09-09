@@ -194,6 +194,7 @@ const FINDING_LABEL: Record<string, string> = {
   understaffed: "not enough inboxes",
   under_warmed: "inboxes still warming",
   missing_signature_tag: "signature hole",
+  missing_insight_close: "signature hole",
   mailbox_sig: "signature hole",
   mailbox_gap: "send gap too tight",
   mailbox_volume: "daily volume off",

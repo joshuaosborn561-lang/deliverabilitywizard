@@ -17,8 +17,8 @@ import {
 } from "../lib/isolationActions.js";
 import {
   appendSignatureTag,
+  ensureInsightCloseOnSequences,
   sequenceBodiesContainInsight,
-  stripSignatureTags,
 } from "../lib/signatureQa.js";
 import {
   espMixFromAccountTypes,
@@ -591,15 +591,17 @@ export class IsolationExecuteService {
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaignId);
         if (sequenceBodiesContainInsight(sequences)) {
-          const { sequences: next, changed } = stripSignatureTags(sequences ?? []);
+          const { sequences: next, changed } = ensureInsightCloseOnSequences(
+            sequences ?? [],
+          );
           if (changed.length) {
             await this.smartlead.updateCampaignSequences(campaignId, next);
             done.push(
-              `*${label}*: stripped signature placeholders — Insight in copy (D177)`,
+              `*${label}*: wrote Josh Osborn / Insight close in the body (D178)`,
             );
           } else {
             done.push(
-              `*${label}* skipped — Insight in copy, no signature tag to add (D177)`,
+              `*${label}* already had Josh Osborn / Insight in the copy (D178)`,
             );
           }
           continue;

@@ -1031,10 +1031,10 @@ describe("D138 — campaign-level min gap is converged, not assumed", () => {
   });
 });
 
-describe("D177 Insight-in-copy never gets auto signature append", () => {
+describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => {
   const salesGlider = { id: 345263, name: "SalesGlider", logo: "SalesGlider" };
 
-  it("does not re-append %signature% when the body contains Insight", async () => {
+  it("writes Josh Osborn / Insight and does not append %signature%", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const wrote: string[] = [];
@@ -1064,12 +1064,21 @@ describe("D177 Insight-in-copy never gets auto signature append", () => {
     );
 
     const result = await service.run({ mode: "first" });
-    assert.deepEqual(wrote, [], "Insight-in-copy sequences must stay signature-free");
+    assert.equal(wrote.length, 1, "Insight-in-copy must get the in-body close");
+    assert.equal(wrote[0]!.includes("%signature%"), false);
+    assert.match(wrote[0]!, /Josh Osborn<br>Insight/);
     assert.equal(
       (result.findings[0]?.findings ?? []).some((finding) =>
         finding.kind === "missing_signature_tag",
       ),
       false,
+    );
+    assert.equal(
+      (result.findings[0]?.findings ?? []).some((finding) =>
+        finding.kind === "missing_insight_close",
+      ),
+      false,
+      "same pass clears the Insight close finding",
     );
     assert.equal(
       (state.getCampaignCheck(3921647)?.findings ?? []).some((finding) =>
@@ -1079,7 +1088,7 @@ describe("D177 Insight-in-copy never gets auto signature append", () => {
     );
   });
 
-  it("strips an existing %signature% on the same pass when copy has Insight", async () => {
+  it("strips %signature% and inserts the close before P.S.", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const wrote: string[] = [];
@@ -1099,7 +1108,8 @@ describe("D177 Insight-in-copy never gets auto signature append", () => {
         getCampaignSequences: async () => [
           {
             seq_number: 1,
-            email_body: "<div>A note from Insight</div><br><br>%signature%",
+            email_body:
+              "<div>A note from Insight</div><br><br>%signature%<br><br>P.S. Tickets are yours.",
           },
         ],
         updateCampaignSequences: async (_id: number, sequences: Array<{ email_body?: string }>) => {
@@ -1112,9 +1122,102 @@ describe("D177 Insight-in-copy never gets auto signature append", () => {
     );
 
     await service.run({ mode: "first" });
-    assert.equal(wrote.length, 1, "leftover Insight tag is stripped");
+    assert.equal(wrote.length, 1, "leftover Insight tag is replaced with the close");
     assert.equal(wrote[0]!.includes("%signature%"), false);
-    assert.match(wrote[0]!, /Insight/);
+    assert.match(wrote[0]!, /Josh Osborn<br>Insight/);
+    assert.ok(wrote[0]!.indexOf("Josh Osborn") < wrote[0]!.indexOf("P.S."));
+  });
+
+  it("does not rewrite shared mailbox signature fields", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const mailboxWrites: Array<{ id: number; signature?: string }> = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921651,
+            name: "SalesGlider tagged draft",
+            status: "DRAFTED",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 44,
+            from_email: "lea@salesglidergrowth.com",
+            from_name: "Lea Carter",
+            signature: "Lea Carter\nSalesGlider",
+            client_id: 345263,
+            campaign_ids: [3921651],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>A note from Insight this week</div>" },
+        ],
+        updateCampaignSequences: async () => undefined,
+        updateEmailAccount: async (id: number, fields: { signature?: string }) => {
+          mailboxWrites.push({ id, signature: fields.signature });
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.deepEqual(mailboxWrites, [], "Insight path must not touch mailbox signatures");
+  });
+
+  it("does not rewrite an empty shared mailbox signature either", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const mailboxWrites: Array<{ id: number; signature?: string }> = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921653,
+            name: "SalesGlider tagged draft",
+            status: "DRAFTED",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 45,
+            from_email: "lea@salesglidergrowth.com",
+            from_name: "Lea Carter",
+            signature: "",
+            client_id: 345263,
+            campaign_ids: [3921653],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>A note from Insight this week</div>" },
+        ],
+        updateCampaignSequences: async () => undefined,
+        updateEmailAccount: async (id: number, fields: { signature?: string }) => {
+          mailboxWrites.push({ id, signature: fields.signature });
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    await service.run({ mode: "first" });
+    assert.deepEqual(
+      mailboxWrites,
+      [],
+      "empty shared mailbox signatures stay untouched on Insight campaigns",
+    );
   });
 
   it("still writes %signature% when copy has no Insight substring", async () => {

@@ -7375,8 +7375,8 @@ describe("owner intent — D176 attach-blocked senders stay off", () => {
   });
 });
 
-describe("owner intent — D177 Insight in copy never gets auto signature append", () => {
-  it("D177: exact Insight in sequence copy skips D92 and strips placeholders", async () => {
+describe("owner intent — D178 Insight close lives in the sequence body", () => {
+  it("D178: Insight-in-copy writes Josh Osborn / Insight in the body, never mailbox fields", async () => {
     const { readFile } = await import("node:fs/promises");
     const qa = await readFile(
       new URL("../lib/signatureQa.ts", import.meta.url),
@@ -7398,7 +7398,7 @@ describe("owner intent — D177 Insight in copy never gets auto signature append
       qa,
       /sequenceBodiesContainInsight/,
       stop(
-        "Insight exemption reads sequence copy (D177).",
+        "Insight close reads sequence copy (D178).",
         "signatureQa.ts no longer exports sequenceBodiesContainInsight.",
       ),
     );
@@ -7406,7 +7406,7 @@ describe("owner intent — D177 Insight in copy never gets auto signature append
       qa,
       /INSIGHT_COPY_NEEDLE = "Insight"/,
       stop(
-        "Insight exemption is the exact capital-I substring Insight (D177).",
+        "Insight close is the exact capital-I substring Insight (D178).",
         "signatureQa.ts no longer defines INSIGHT_COPY_NEEDLE as Insight.",
       ),
     );
@@ -7414,48 +7414,80 @@ describe("owner intent — D177 Insight in copy never gets auto signature append
       qa,
       /includes\(INSIGHT_COPY_NEEDLE\)/,
       stop(
-        "Insight exemption is the exact capital-I substring Insight (D177).",
+        "Insight close is the exact capital-I substring Insight (D178).",
         "signatureQa.ts no longer matches includes(INSIGHT_COPY_NEEDLE).",
       ),
     );
     assert.match(
       qa,
-      /stripSignatureTags/,
+      /ensureInsightCloseOnSequences/,
       stop(
-        "Insight copy must strip leftover signature placeholders (D177).",
-        "signatureQa.ts no longer exports stripSignatureTags.",
+        "Insight copy must write Josh Osborn / Insight into the body (D178).",
+        "signatureQa.ts no longer exports ensureInsightCloseOnSequences.",
+      ),
+    );
+    assert.match(
+      qa,
+      /INSIGHT_CLOSE_HTML = "Josh Osborn<br>Insight"/,
+      stop(
+        "The Insight close is Josh Osborn then Insight (D178).",
+        "signatureQa.ts no longer defines INSIGHT_CLOSE_HTML as Josh Osborn / Insight.",
+      ),
+    );
+    assert.match(
+      qa,
+      /PS_START/,
+      stop(
+        "The Insight close is inserted before P.S. lines (D178).",
+        "signatureQa.ts no longer detects P.S. for Insight close placement.",
       ),
     );
     assert.match(
       check,
       /sequenceBodiesContainInsight/,
       stop(
-        "Campaign-check must not re-append Insight-in-copy signatures (D177).",
+        "Campaign-check must not re-append Insight-in-copy mailbox placeholders (D178).",
         "campaignCheck.ts no longer consults sequenceBodiesContainInsight.",
       ),
     );
     assert.match(
       check,
-      /stripSignatureTags/,
+      /ensureInsightCloseOnSequences/,
       stop(
-        "Campaign-check must strip Insight-in-copy signature tags (D177).",
-        "campaignCheck.ts no longer calls stripSignatureTags.",
+        "Campaign-check must write the Insight close into sequence copy (D178).",
+        "campaignCheck.ts no longer calls ensureInsightCloseOnSequences.",
+      ),
+    );
+    assert.match(
+      check,
+      /Insight campaigns share SalesGlider mailboxes/,
+      stop(
+        "Campaign-check must skip mailbox signature writes for Insight-in-copy (D178).",
+        "campaignCheck.ts no longer documents the mailbox skip.",
+      ),
+    );
+    assert.match(
+      check,
+      /updateEmailAccount\(account\.id, \{ signature: desired \}\)/,
+      stop(
+        "Non-Insight D92 mailbox writes stay (D178).",
+        "campaignCheck.ts lost updateEmailAccount signature writes for other clients.",
       ),
     );
     assert.match(
       audit,
       /sequenceBodiesContainInsight/,
       stop(
-        "Campaign-audit must not flag Insight-in-copy missing %signature% (D177).",
+        "Campaign-audit must not flag Insight-in-copy missing %signature% (D178).",
         "campaignAudit.ts no longer consults sequenceBodiesContainInsight.",
       ),
     );
     assert.match(
       isolation,
-      /sequenceBodiesContainInsight/,
+      /ensureInsightCloseOnSequences/,
       stop(
-        "Leftover add_signature_tag must not write Insight-in-copy sequences (D177).",
-        "isolationExecute.ts no longer consults sequenceBodiesContainInsight.",
+        "Leftover add_signature_tag must write Insight close in the body (D178).",
+        "isolationExecute.ts no longer calls ensureInsightCloseOnSequences.",
       ),
     );
     const canon = await readFile(
@@ -7464,18 +7496,26 @@ describe("owner intent — D177 Insight in copy never gets auto signature append
     );
     assert.match(
       canon,
-      /Copy that contains `Insight` never/,
+      /writes a plain close into the/,
       stop(
-        "CANON states copy containing Insight never gets auto signature append (D177).",
-        "CANON.md lost the D177 Insight-in-copy rule.",
+        "CANON states Insight-in-copy gets Josh Osborn / Insight in the body (D178).",
+        "CANON.md lost the D178 Insight-in-copy rule.",
       ),
     );
     assert.match(
       canon,
-      /D177/,
+      /Mailbox \/ email-account signature fields are \*\*never rewritten\*\*/,
       stop(
-        "CANON still names the Insight-in-copy exemption (D177).",
-        "CANON.md dropped D177 when a later decision landed.",
+        "CANON forbids mailbox signature writes on the Insight path (D178).",
+        "CANON.md dropped the no-mailbox-write clause.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D178/,
+      stop(
+        "CANON still names the Insight-in-copy close (D178).",
+        "CANON.md dropped D178 when a later decision landed.",
       ),
     );
     const decisions = await readFile(
@@ -7486,8 +7526,16 @@ describe("owner intent — D177 Insight in copy never gets auto signature append
       decisions,
       /## D177 — Insight in copy never gets auto signature append/,
       stop(
-        "The Insight-in-copy exemption is in the ledger (D177).",
+        "The superseded Insight strip stays in the ledger (D177).",
         "DECISIONS.md no longer has D177.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D178 — Insight close lives in the sequence body, never the mailbox/,
+      stop(
+        "The Insight in-body close is in the ledger (D178).",
+        "DECISIONS.md no longer has D178.",
       ),
     );
   });

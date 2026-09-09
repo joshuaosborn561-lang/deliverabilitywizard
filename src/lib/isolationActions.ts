@@ -1,6 +1,7 @@
 import type { SlackClient } from "../clients/slack.js";
 import { copySwapProof } from "./isolationProof.js";
 import type {
+  DomainControlHistoryRecord,
   IsolationActionKind,
   IsolationActionRecord,
 } from "../state/isolationState.js";
@@ -40,6 +41,7 @@ function samePending(
     next.kind !== "buy_canary_fleet" &&
     next.kind !== "buy_isolation_domain" &&
     next.kind !== "add_signature_tag" &&
+    next.kind !== "retire_domain" &&
     existing.status !== "pending"
   ) {
     return false;
@@ -73,6 +75,18 @@ function samePending(
       existing.status === "executed"
     );
   }
+  if (next.kind === "retire_domain") {
+    // D179 — an executed / in-flight retire is the durable dedupe, not
+    // a 7-day window. A denied ask may be re-opened; failed stays
+    // retryable via the same record.
+    return (
+      String(existing.detail.domain ?? "").toLowerCase() ===
+        String(next.detail.domain ?? "").toLowerCase() &&
+      (existing.status === "pending" ||
+        existing.status === "approved" ||
+        existing.status === "executed")
+    );
+  }
   return (
     String(existing.detail.domain ?? "").toLowerCase() ===
     String(next.detail.domain ?? "").toLowerCase()
@@ -80,25 +94,115 @@ function samePending(
 }
 
 /**
- * D146/D148 refinement — a domain retired in the last week keeps bouncing
- * stale pre-retire sends into the ledger; those samples must not re-open
- * a "Retire X" ask for a domain that is already retired (live 22:10Z on
- * 8/27: techevolutionhub.info got a second ask two hours after Josh
- * executed its first).
+ * D179 — a domain Josh already retired must not open another actionable
+ * Retire ask or buy a second replacement when stale / recurrent 5.1.8
+ * evidence reappears. The old 7-day window (D146/D148) expired on
+ * 2026-09-09 and re-prompted boldercyperpartnerhub.info after a
+ * successful 2026-09-02 retire.
+ *
+ * Sources of truth, any age:
+ *   1. an executed retire_domain action for that host
+ *   2. domain history status === "retired"
+ *
+ * Denied asks do not count (Josh said not now). Attach-block / burned
+ * cleanup is a separate restaff lock (D176) and is not this signal.
  */
-export function domainRecentlyRetired(
-  store: StateStore,
+export function domainAlreadyRetired(
+  store: Pick<StateStore, "listIsolationActions" | "getDomainHistory">,
   domain: string,
-  now = Date.now(),
 ): boolean {
+  const host = domain.trim().toLowerCase();
+  if (!host) return false;
+  if (store.getDomainHistory(host)?.status === "retired") return true;
   return store.listIsolationActions().some(
     (row) =>
       row.kind === "retire_domain" &&
       row.status === "executed" &&
-      String(row.detail.domain ?? "").toLowerCase() === domain.toLowerCase() &&
-      now - Date.parse(String(row.executedAt ?? row.decidedAt ?? "")) <
-        7 * 24 * 60 * 60 * 1000,
+      String(row.detail.domain ?? "").toLowerCase() === host,
   );
+}
+
+/** @deprecated D179 — use domainAlreadyRetired; the 7-day window is gone. */
+export function domainRecentlyRetired(
+  store: Pick<StateStore, "listIsolationActions" | "getDomainHistory">,
+  domain: string,
+  _now = Date.now(),
+): boolean {
+  return domainAlreadyRetired(store, domain);
+}
+
+/**
+ * D179 — leftover pending Retire buttons for a domain that is already
+ * retired (executed action or history) must not be re-posted on deploy
+ * remind and must not stay tappable. Denied, not executed — this ask
+ * did not spend.
+ */
+export function dismissRetiredDomainAsks(
+  store: Pick<StateStore, "listIsolationActions" | "getDomainHistory" | "upsertIsolationAction">,
+  now = new Date().toISOString(),
+): number {
+  let dismissed = 0;
+  for (const action of store.listIsolationActions()) {
+    if (action.kind !== "retire_domain" || action.status !== "pending") continue;
+    const host = String(action.detail.domain ?? "").toLowerCase();
+    if (!host || !domainAlreadyRetired(store, host)) continue;
+    store.upsertIsolationAction({
+      ...action,
+      status: "denied",
+      decidedAt: now,
+      decidedBy: "system",
+      error:
+        "Already retired (D179). Stale Retire ask dismissed — no second purchase.",
+    });
+    dismissed += 1;
+  }
+  return dismissed;
+}
+
+/** Replacement buy already in flight or done for this retired domain. */
+export function domainRetireReplacementSpent(
+  store: Pick<StateStore, "listIsolationActions">,
+  domain: string,
+): boolean {
+  const host = domain.trim().toLowerCase();
+  if (!host) return false;
+  return store.listIsolationActions().some((row) => {
+    if (row.kind !== "buy_domains") return false;
+    if (row.status !== "approved" && row.status !== "executed") return false;
+    const retired = String(row.detail.retiredDomain ?? "").toLowerCase();
+    return retired === host;
+  });
+}
+
+/** True when a confirm tap must not pull or buy again (D179). */
+export function retireAlreadySettled(
+  store: Pick<StateStore, "listIsolationActions" | "getDomainHistory">,
+  domain: string,
+): boolean {
+  return (
+    domainAlreadyRetired(store, domain) ||
+    domainRetireReplacementSpent(store, domain)
+  );
+}
+
+export function persistRetiredDomainHistory(
+  store: Pick<StateStore, "getDomainHistory" | "upsertDomainHistory">,
+  domain: string,
+  now = new Date().toISOString(),
+): DomainControlHistoryRecord {
+  const host = domain.trim().toLowerCase();
+  const prev = store.getDomainHistory(host);
+  const next: DomainControlHistoryRecord = {
+    domain: host,
+    fleet: prev?.fleet ?? false,
+    consecutiveFails: prev?.consecutiveFails ?? 0,
+    status: "retired",
+    readings: prev?.readings ?? [],
+    lastReason: prev?.lastReason,
+    retiredAt: prev?.retiredAt ?? now,
+  };
+  store.upsertDomainHistory(next);
+  return next;
 }
 
 export async function requestIsolationAction(input: {
@@ -106,6 +210,12 @@ export async function requestIsolationAction(input: {
   slack: Pick<SlackClient, "notifyIsolationAction">;
   action: IsolationActionRecord;
 }): Promise<IsolationActionRecord | null> {
+  if (input.action.kind === "retire_domain") {
+    const host = String(input.action.detail.domain ?? "").toLowerCase();
+    if (host && domainAlreadyRetired(input.store, host)) {
+      return null;
+    }
+  }
   const existing = input.store
     .listIsolationActions()
     .find((row) => samePending(row, input.action));
@@ -190,6 +300,7 @@ export async function remindPendingIsolationActions(input: {
   slack: Pick<SlackClient, "notifyIsolationAction">;
 }): Promise<number> {
   dismissPendingSignatureAsks(input.store);
+  dismissRetiredDomainAsks(input.store);
   const pending = input.store
     .pendingIsolationActions()
     .filter((row) => row.status === "pending");

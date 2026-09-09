@@ -903,4 +903,137 @@ describe("D162 — 5.1.8 opens the retire ask without a burst", () => {
     assert.equal(asks.length, 0, "bad-list burst does not open a burned-domain ask");
     assert.equal(result.senderBlockAsks, 0);
   });
+
+  it("D179: an 8-day-old executed retire does not re-ask when 5.1.8 reappears", async () => {
+    const { asks, slack } = slackRecorder();
+    const state = store();
+    const executedAt = "2026-09-02T15:10:00.000Z";
+    const later = Date.parse("2026-09-09T15:41:48.000Z");
+    state.upsertIsolationAction({
+      id: "retire-hub-1",
+      kind: "retire_domain",
+      status: "executed",
+      title: "Retire boldercyperpartnerhub.info",
+      proof: "first retire",
+      detail: { domain: "boldercyperpartnerhub.info" },
+      allowed: "owner",
+      requestedAt: "2026-09-02T15:00:00.000Z",
+      executedAt,
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 3897345, name: "BCP leftover", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 80,
+          bounce_count: 4,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async () => undefined,
+        listBouncedSendStats: async () => ({
+          total_stats: "1",
+          data: [
+            {
+              lead_email: "prospect@example.com",
+              sent_time: new Date(later - 2 * 60 * 60 * 1000).toISOString(),
+              lead_category: "Sender Originated Bounce",
+            },
+          ],
+        }),
+        fetchLeadByEmail: async () => ({ id: 991 }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "idahirthe@boldercyperpartnerhub.info" },
+            { type: "REPLY", email_body: BLOCKED_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      slack,
+      undefined,
+      () => later,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.equal(result.senderBlockAsks, 0);
+    assert.equal(asks.length, 0, "already-retired domain must not Slack a new Retire button");
+    assert.equal(
+      state
+        .listIsolationActions()
+        .filter((row) => row.kind === "retire_domain").length,
+      1,
+      "no second retire_domain record after the 7-day window",
+    );
+    const attachBlock = state.getAttachBlock("boldercyperpartnerhub.info");
+    assert.ok(attachBlock, "D176 attach-block write still happens");
+    assert.equal(
+      attachBlock.reason,
+      "burned",
+      "executed retire is the durable burned mark (D176/D179)",
+    );
+  });
+
+  it("D179: history status=retired also suppresses a recurrent 5.1.8 ask", async () => {
+    const { asks, slack } = slackRecorder();
+    const state = store();
+    state.upsertDomainHistory({
+      domain: "salesgliderrun.com",
+      fleet: false,
+      consecutiveFails: 2,
+      status: "retired",
+      readings: [],
+      retiredAt: "2026-08-20T00:00:00.000Z",
+    });
+    const later = Date.parse("2026-09-09T15:41:48.000Z");
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 9, name: "SG leftover", status: "ACTIVE" },
+        ],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 80,
+          bounce_count: 4,
+        }),
+        getCampaignStatistics: async () => ({}),
+        updateCampaignStatus: async () => undefined,
+        listBouncedSendStats: async () => ({
+          total_stats: "1",
+          data: [
+            {
+              lead_email: "prospect@example.com",
+              sent_time: new Date(later - 2 * 60 * 60 * 1000).toISOString(),
+              lead_category: "Sender Originated Bounce",
+            },
+          ],
+        }),
+        fetchLeadByEmail: async () => ({ id: 991 }),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "flagged@salesgliderrun.com" },
+            { type: "REPLY", email_body: BLOCKED_NDR },
+          ],
+        }),
+        fetchCampaignSequences: async () => [],
+        deleteCampaignLead: async () => undefined,
+        restoreCampaignLead: async () => undefined,
+      } as never,
+      state,
+      slack,
+      undefined,
+      () => later,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.equal(result.senderBlockAsks, 0);
+    assert.equal(asks.length, 0);
+    assert.equal(
+      state.listIsolationActions().filter((row) => row.kind === "retire_domain")
+        .length,
+      0,
+    );
+  });
 });

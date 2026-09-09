@@ -33,6 +33,8 @@ import {
 } from "./lib/slackActionLink.js";
 import {
   dismissPendingSignatureAsks,
+  dismissRetiredDomainAsks,
+  domainAlreadyRetired,
   remindPendingIsolationActions,
 } from "./lib/isolationActions.js";
 import {
@@ -1251,12 +1253,13 @@ async function main(): Promise<void> {
   // D97 — leftover Add %signature% asks are dismissed, not re-posted.
   setTimeout(() => {
     const dropped = dismissPendingSignatureAsks(state);
-    if (dropped) {
+    const staleRetires = dismissRetiredDomainAsks(state);
+    if (dropped || staleRetires) {
       console.log(
-        `[slack] Dismissed ${dropped} leftover signature ask(s) (D97)`,
+        `[slack] Dismissed ${dropped} leftover signature ask(s) (D97), ${staleRetires} stale retire ask(s) (D179)`,
       );
       void state.save().catch((error) => {
-        console.error("[slack] could not persist signature-ask dismiss", error);
+        console.error("[slack] could not persist ask dismiss", error);
       });
     }
     void remindPendingIsolationActions({ store: state, slack })
@@ -1391,12 +1394,29 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     }
     const pending = state.getIsolationAction(parsed.id);
     const title = isolationKindTitle(pending?.kind ?? "request");
+    const retireHost = String(pending?.detail.domain ?? "").toLowerCase();
+    if (
+      pending?.kind === "retire_domain" &&
+      retireHost &&
+      domainAlreadyRetired(state, retireHost)
+    ) {
+      res.type("html").send(
+        slackActionHtml({
+          title,
+          body: `Already retired — ${retireHost} stays off. No second purchase.`,
+        }),
+      );
+      return;
+    }
     if (!pending || pending.status !== "pending") {
       res.type("html").send(
         slackActionHtml({
           title,
           body: pending
-            ? `This request is already ${pending.status}.`
+            ? pending.kind === "retire_domain" &&
+              (pending.status === "approved" || pending.status === "executed")
+              ? `Already retired — ${retireHost || "this domain"} stays off. No second purchase.`
+              : `This request is already ${pending.status}.`
             : "That request is no longer pending.",
         }),
       );

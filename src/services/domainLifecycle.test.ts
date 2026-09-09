@@ -192,4 +192,38 @@ describe("DomainLifecycleService", () => {
     assert.doesNotMatch(String(buy?.detail.parentDomain ?? ""), /crosslaunchco/);
     assert.equal(state.getDomainHistory("nowoutreachdesk.com")?.status, "watch");
   });
+
+  it("D179: an executed retire does not open a second ask on later fails", async () => {
+    const state = await store();
+    const slack = new FakeSlack();
+    const svc = new DomainLifecycleService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      state,
+      slack as never,
+    );
+    state.upsertIsolationAction({
+      id: "retire-run-1",
+      kind: "retire_domain",
+      status: "executed",
+      title: "Retire salesgliderrun.com",
+      proof: "already done",
+      detail: { domain: "salesgliderrun.com" },
+      allowed: "owner",
+      requestedAt: "2026-08-20T00:00:00.000Z",
+      executedAt: "2026-08-20T00:10:00.000Z",
+    });
+    await svc.afterReadings([
+      { email: "a@salesgliderrun.com", placement: "SPAM", ranAt: "t1" },
+      { email: "b@salesgliderrun.com", placement: "SPAM", ranAt: "t1" },
+    ]);
+    await svc.afterReadings([
+      { email: "a@salesgliderrun.com", placement: "SPAM", ranAt: "t2" },
+      { email: "b@salesgliderrun.com", placement: "SPAM", ranAt: "t2" },
+    ]);
+    const retires = state
+      .listIsolationActions()
+      .filter((row) => row.kind === "retire_domain");
+    assert.equal(retires.length, 1, "executed retire is the only retire record");
+    assert.equal(slack.actions.length, 0, "no fresh Retire Slack");
+  });
 });

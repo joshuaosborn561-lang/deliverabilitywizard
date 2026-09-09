@@ -197,18 +197,20 @@ monitoring is the health job.
 {
   "campaign_id": "<id>",
   "schedule": {
-    "timezone": "America/Chicago",
+    "timezone": "America/New_York",
     "days_of_the_week": [1, 2, 3, 4],
-    "start_hour": "09:00",
-    "end_hour": "18:00",
+    "start_hour": "08:00",
+    "end_hour": "19:00",
     "min_time_btw_emails": 10,
     "max_leads_per_day": 10000
   }
 }
 ```
 
-- Monday–Thursday only. No Friday, no weekends.
-- 9:00–18:00 America/Chicago.
+- Monday–Thursday only. No Friday, no weekends. Smartlead is one
+  window — do not invent a Friday slot.
+- 08:00–19:00 America/New_York (Eastern). Not Chicago 09:00–18:00
+  (retired by D182).
 - `min_time_btw_emails: 10`. Do not use 13 or 20. The hourly checker
   converges any drift back to 10 on sight, campaign and mailbox level
   (D138) — do not fight it.
@@ -404,8 +406,10 @@ A success response is not verification. Read it back.
 
 ## Source of truth
 
-Schedule and general settings: campaign 3479011 (Parlay Sports Offer), live
-API. AI / bounce fields: Josh, after the MCP tools landed.
+Schedule: Josh 2026-09-09 (D182) — Monday–Thursday 08:00–19:00
+America/New_York. General settings still from campaign 3479011
+(Parlay Sports Offer) live API. AI / bounce fields: Josh, after the
+MCP tools landed.
 
 Fleet staffing, rest, warmup, and the two bars: D43 / D46 (Aug 2026).
 Client A/B rest and the generic 14-day send clock are the rotation system.

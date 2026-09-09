@@ -7242,6 +7242,157 @@ describe("owner intent — D181 Goliath retires like any other client", () => {
   });
 });
 
+describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET", () => {
+  it("D182: skill + CANON ship ET 08:00–19:00 Mon–Thu; no Chicago 9–18; no Friday; no window overwrite", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const skill = await readFile(
+      new URL("../ops/smartlead-campaign-settings.SKILL.md", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      skill,
+      /"timezone": "America\/New_York"/,
+      stop(
+        "The build skill writes America/New_York (D182).",
+        "smartlead-campaign-settings.SKILL.md lost the Eastern timezone.",
+      ),
+    );
+    assert.match(
+      skill,
+      /"start_hour": "08:00"/,
+      stop(
+        "The build skill starts the window at 08:00 ET (D182).",
+        "smartlead-campaign-settings.SKILL.md lost start_hour 08:00.",
+      ),
+    );
+    assert.match(
+      skill,
+      /"end_hour": "19:00"/,
+      stop(
+        "The build skill ends the window at 19:00 ET (D182).",
+        "smartlead-campaign-settings.SKILL.md lost end_hour 19:00.",
+      ),
+    );
+    assert.match(
+      skill,
+      /"days_of_the_week": \[1, 2, 3, 4\]/,
+      stop(
+        "The build skill sends Monday–Thursday only (D182).",
+        "smartlead-campaign-settings.SKILL.md lost days_of_the_week [1, 2, 3, 4].",
+      ),
+    );
+    assert.match(
+      skill,
+      /"min_time_btw_emails": 10/,
+      stop(
+        "The 10-minute gap stays on the standing schedule (D182/D138).",
+        "smartlead-campaign-settings.SKILL.md dropped min_time_btw_emails: 10.",
+      ),
+    );
+    assert.match(
+      skill,
+      /"max_leads_per_day": 10000/,
+      stop(
+        "Campaign max_leads_per_day stays 10000 (D182).",
+        "smartlead-campaign-settings.SKILL.md dropped max_leads_per_day: 10000.",
+      ),
+    );
+    assert.doesNotMatch(
+      skill,
+      /"timezone": "America\/Chicago"/,
+      stop(
+        "The Chicago standing default is retired (D182).",
+        "smartlead-campaign-settings.SKILL.md still ships America/Chicago as the schedule timezone.",
+      ),
+    );
+    assert.doesNotMatch(
+      skill,
+      /"start_hour": "09:00"/,
+      stop(
+        "The 09:00 standing start is retired (D182).",
+        "smartlead-campaign-settings.SKILL.md still ships start_hour 09:00.",
+      ),
+    );
+    assert.doesNotMatch(
+      skill,
+      /"end_hour": "18:00"/,
+      stop(
+        "The 18:00 standing end is retired (D182).",
+        "smartlead-campaign-settings.SKILL.md still ships end_hour 18:00.",
+      ),
+    );
+    assert.doesNotMatch(
+      skill,
+      /"days_of_the_week": \[[^\]]*\b5\b/,
+      stop(
+        "Friday is not a send day (D182).",
+        "smartlead-campaign-settings.SKILL.md added Friday to days_of_the_week.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
+      /timezone|start_hour|end_hour|days_of_the_week|set_schedule/,
+      stop(
+        "Campaign-check must not overwrite send windows (D182).",
+        "campaignCheck.ts now writes timezone / hours / days — that would smash Cold Call Followup-style custom windows.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Monday–Thursday\s+08:00–19:00 America\/New_York/,
+      stop(
+        "CANON states the ET Mon–Thu 8am–7pm send window (D182).",
+        "CANON.md lost the D182 send window.",
+      ),
+    );
+    assert.match(
+      canon,
+      /No Friday/,
+      stop(
+        "CANON says no Friday (D182).",
+        "CANON.md dropped the no-Friday rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /no schedule-window converge/,
+      stop(
+        "CANON says custom windows are not overwritten (D182).",
+        "CANON.md lost the no-converge clause — a later writer could smash afternoon campaigns.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D182/,
+      stop(
+        "CANON names D182.",
+        "CANON.md dropped D182 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D182 — Standing send window is Mon–Thu 8am–7pm ET/,
+      stop(
+        "The send-window rule is in the ledger (D182).",
+        "DECISIONS.md no longer has D182.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D175 isolation-buy is one ESP per domain", () => {
   it("D175: never mix Google and Microsoft on one InboxKit domain", async () => {
     const { readFile } = await import("node:fs/promises");

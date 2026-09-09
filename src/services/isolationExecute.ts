@@ -13,6 +13,8 @@ import type { SmartleadSequence } from "../types/index.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
 import {
   buildIsolationAction,
+  persistRetiredDomainHistory,
+  retireAlreadySettled,
   signatureCampaignIdsOf,
 } from "../lib/isolationActions.js";
 import {
@@ -83,6 +85,18 @@ export class IsolationExecuteService {
             : "Already done — that buy is in progress. No second tap.",
         };
       }
+      if (
+        action.kind === "retire_domain" &&
+        (action.status === "approved" || action.status === "executed")
+      ) {
+        const domain = String(action.detail.domain ?? "").toLowerCase();
+        return {
+          ok: true,
+          message: domain
+            ? `Already retired — ${domain} stays off. No second purchase.`
+            : "Already retired — no second purchase.",
+        };
+      }
       return {
         ok: false,
         message: `This request is already ${action.status}.`,
@@ -95,6 +109,29 @@ export class IsolationExecuteService {
           action.kind === "swap_copy" || action.kind === "add_signature_tag"
             ? "Josh or Cayden can approve this copy edit."
             : "Only Josh can approve retiring a domain or buying replacements / the canary fleet.",
+      };
+    }
+    const retireHost = String(action.detail.domain ?? "").toLowerCase();
+    if (
+      decision === "approve" &&
+      action.kind === "retire_domain" &&
+      retireHost &&
+      retireAlreadySettled(this.state, retireHost)
+    ) {
+      this.state.upsertIsolationAction({
+        ...action,
+        status: "executed",
+        decidedAt: new Date().toISOString(),
+        decidedBy: actor.name,
+        executedAt: new Date().toISOString(),
+        error:
+          "Already retired (D179). Confirm was a no-op — no second purchase.",
+      });
+      persistRetiredDomainHistory(this.state, retireHost);
+      await this.state.save();
+      return {
+        ok: true,
+        message: `Already retired — ${retireHost} stays off. No second purchase.`,
       };
     }
     if (decision === "deny") {
@@ -272,6 +309,25 @@ export class IsolationExecuteService {
         .filter((campaign) => String(campaign.status ?? "").toUpperCase() === "ACTIVE")
         .map((campaign) => campaign.id),
     );
+    if (retireAlreadySettled(this.state, domain)) {
+      persistRetiredDomainHistory(this.state, domain);
+      recordIsolationUnlinkAttachBlock(this.state, {
+        domain,
+        emails: [],
+        accountIds: [],
+        reason: "burned",
+        source: `retire:${domain}:already`,
+      });
+      await this.announce(
+        "retire_domain",
+        [
+          `Already retired *${domain}*.`,
+          "No inboxes were pulled and no replacement was bought (D179).",
+          action.proof,
+        ].join("\n"),
+      );
+      return;
+    }
     const onDomain = accounts.filter(
       (account) => accountDomain(account) === domain,
     );
@@ -297,14 +353,7 @@ export class IsolationExecuteService {
       reason: "burned",
       source: `retire:${domain}`,
     });
-    const history = this.state.getDomainHistory(domain);
-    if (history) {
-      this.state.upsertDomainHistory({
-        ...history,
-        status: "retired",
-        retiredAt: new Date().toISOString(),
-      });
-    }
+    persistRetiredDomainHistory(this.state, domain);
     // D134 — the tap that cut senders is also the approval for generics to
     // cover those campaigns: sending volume must not drop while the
     // replacement domains warm. Approving is allowing, never forcing — the

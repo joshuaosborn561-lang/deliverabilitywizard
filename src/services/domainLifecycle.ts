@@ -8,6 +8,7 @@ import {
 } from "../lib/domainControl.js";
 import { domainProof } from "../lib/isolationProof.js";
 import { isProtectedOwner } from "../lib/protectedClient.js";
+import { domainAlreadyRetired } from "../lib/isolationActions.js";
 import {
   neutralizeProtectedRetireAsks,
   ownerOfDomain,
@@ -97,6 +98,7 @@ export class DomainLifecycleService {
           .at(-1) ?? new Date().toISOString();
       const prev = this.store.getDomainHistory(domain);
       if (prev?.status === "retired") continue;
+      if (domainAlreadyRetired(this.store, domain)) continue;
       if (prev?.readings.some((point) => point.at === cycleAt)) continue;
 
       const verdict = judgeDomainCycle(

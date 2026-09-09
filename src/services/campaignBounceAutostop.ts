@@ -20,7 +20,7 @@ import {
 } from "../lib/campaignBouncePause.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { persistLiveAskAttachBlocks } from "../lib/attachBlockHeal.js";
-import { domainRecentlyRetired } from "../lib/isolationActions.js";
+import { domainAlreadyRetired } from "../lib/isolationActions.js";
 import {
   ownerOfDomain,
   refreshDomainOwnerCache,
@@ -751,7 +751,7 @@ export class CampaignBounceAutostopService {
         source: `campaign:${campaignId}`,
         blockedAt: new Date(this.clock()).toISOString(),
       });
-      if (domainRecentlyRetired(store, domain, this.clock())) continue;
+      if (domainAlreadyRetired(store, domain)) continue;
       const snippet =
         samples.find(
           (sample) =>

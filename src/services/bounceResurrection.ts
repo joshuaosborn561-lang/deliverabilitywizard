@@ -9,7 +9,7 @@ import {
 } from "../lib/bounceReason.js";
 import { ymdUtc } from "../lib/campaignDayStats.js";
 import { sleep } from "../lib/http.js";
-import { domainRecentlyRetired } from "../lib/isolationActions.js";
+import { domainAlreadyRetired } from "../lib/isolationActions.js";
 import { requestRetireOrCover } from "../lib/retireAsk.js";
 import type {
   BounceResurrectionJob,
@@ -531,7 +531,7 @@ export class BounceResurrectionService {
     if (!domain) return;
     // Stale pre-retire bounces must not re-ask for a domain Josh already
     // retired (D146/D148 refinement).
-    if (domainRecentlyRetired(this.state, domain, this.clock())) return;
+    if (domainAlreadyRetired(this.state, domain)) return;
     const slack = this.slack;
     if (!slack || typeof slack.notifyIsolationAction !== "function") return;
     try {

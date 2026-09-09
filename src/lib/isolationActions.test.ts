@@ -6,10 +6,13 @@ import {
   buildIsolationAction,
   classifyLineJob,
   dismissPendingSignatureAsks,
+  dismissRetiredDomainAsks,
+  domainAlreadyRetired,
   flattenSpintax,
   isBannedCopySwap,
   isOfferLeadSpintax,
   OFFER_LEAD_SPINTAX,
+  persistRetiredDomainHistory,
   plainProseSubstitute,
   preferEllipsis,
   refreshCopySwapAction,
@@ -126,6 +129,95 @@ describe("isolation Slack reminds", () => {
     const count = await remindPendingIsolationActions({ store, slack });
     assert.equal(count, 0);
     assert.deepEqual(notified, []);
+  });
+
+  it("D179: an executed retire is never re-asked, even after 8 days", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const executed = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire boldercyperpartnerhub.info",
+      proof: "AS(42004) on 2026-09-02",
+      detail: { domain: "boldercyperpartnerhub.info" },
+      now: "2026-09-02T15:00:00.000Z",
+    });
+    store.upsertIsolationAction({
+      ...executed,
+      status: "executed",
+      executedAt: "2026-09-02T15:10:00.000Z",
+    });
+    assert.equal(
+      domainAlreadyRetired(store, "boldercyperpartnerhub.info"),
+      true,
+    );
+    const second = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire boldercyperpartnerhub.info",
+        proof: "Stale 5.1.8 on 2026-09-09",
+        detail: { domain: "boldercyperpartnerhub.info" },
+        now: "2026-09-09T15:41:48.000Z",
+      }),
+    });
+    assert.equal(second, null, "executed retire is the durable dedupe");
+    assert.deepEqual(notified, []);
+    assert.equal(
+      store.listIsolationActions().filter((row) => row.kind === "retire_domain")
+        .length,
+      1,
+    );
+  });
+
+  it("D179: domain history status=retired suppresses a leftover pending ask", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    persistRetiredDomainHistory(store, "salesgliderrun.com", "2026-08-20T00:00:00.000Z");
+    const leftover = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire salesgliderrun.com",
+      proof: "Stale 5.1.8",
+      detail: { domain: "salesgliderrun.com" },
+    });
+    store.upsertIsolationAction(leftover);
+    assert.equal(domainAlreadyRetired(store, "salesgliderrun.com"), true);
+    const dropped = dismissRetiredDomainAsks(store);
+    const count = await remindPendingIsolationActions({ store, slack });
+    assert.equal(dropped, 1);
+    assert.equal(count, 0);
+    assert.deepEqual(notified, []);
+    assert.equal(store.getIsolationAction(leftover.id)?.status, "denied");
+    const again = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire salesgliderrun.com",
+        proof: "Again",
+        detail: { domain: "salesgliderrun.com" },
+      }),
+    });
+    assert.equal(again, null);
+  });
+
+  it("D179: a domain that is not retired still opens a retire ask", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const first = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire freshburn.info",
+        proof: "First 5.1.8",
+        detail: { domain: "freshburn.info" },
+      }),
+    });
+    assert.ok(first);
+    assert.equal(first?.status, "pending");
+    assert.deepEqual(notified, [first!.id]);
+    assert.equal(domainAlreadyRetired(store, "freshburn.info"), false);
   });
 
 });

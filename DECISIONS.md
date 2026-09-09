@@ -161,7 +161,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
 | D145 | Amended by D146 / D162 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146; the scan must run without a burst / on PAUSED — D162) |
-| D146 | Live | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the dedupe |
+| D146 | Live — 7-day re-ask window superseded by D179 | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the live-ask dedupe |
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
 | D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
@@ -176,7 +176,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D159 | Live | Isolation on-ramp (score → markCopySuspect → evaluate) runs on the 15-minute health/canon sweep — not only the 6-hour monitor or daily DeliveryWatch; live % still never rotates |
 | D160 | Live | Generic and POC are mailbox tags, never Smartlead clients — Josh does not pay for pool labels; leftover client records detach then get deleted in the UI |
 | D161 | Live | Client-domain retire MUST buy a client-named replacement; generic/pool spins are only for generic/pool domains |
-| D162 | Live | 5.1.8 / AS(42004) opens the burned-domain retire ask without a burst and on PAUSED campaigns — D145/D146 were burst-nested and ACTIVE-only, so the 8/31 BCP sender block never Slacked |
+| D162 | Live — "freshly retired" window superseded by D179 | 5.1.8 / AS(42004) opens the burned-domain retire ask without a burst and on PAUSED campaigns — D145/D146 were burst-nested and ACTIVE-only, so the 8/31 BCP sender block never Slacked |
 | D163 | Live | CANON / healthy-sending misses page Slack once per campaign per incident |
 | D164 | Live — ACTIVE-only clause added by D165 | INCONCLUSIVE (or uncovered evaluatedAt) re-queues isolation — evaluatedAt is not a lock |
 | D165 | Live | Isolation INCONCLUSIVE Slack pages and D164 re-queue are ACTIVE-only — COMPLETED / STOPPED / PAUSED stay quiet |
@@ -193,6 +193,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back, including Goliath-protected domains |
 | D177 | Superseded by D178 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
 | D178 | Live | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; mailbox signature fields never rewritten |
+| D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 
 ---
 
@@ -5321,3 +5322,50 @@ contains `Insight`; CANON names D178. Tests: body with `Insight`
 gets Josh Osborn / Insight before P.S., leftover placeholders
 are stripped, mailbox signature fields are not written;
 SalesGlider copy without `Insight` still gets D92.
+
+## D179 — Already-retired domains never re-open a Retire ask or spend again
+
+**Decision (2026-09-09, forced by the same-day BCP miss).** D146/D148
+said a freshly retired domain is not re-asked. The code implemented
+that as a **7-day** window on `executedAt`. On 2026-09-09 at 10:41:48
+CT the wizard posted a fresh Slack Retire prompt for
+`boldercyperpartnerhub.info` after AS(42004)/550 5.1.8 on
+`idahirthe@` first seen campaign #3897345. That domain was already
+retired on 2026-09-02 (5 inboxes / 24 memberships pulled; client-named
+replacement `boldercyperpartnertry.info` bought). A new Retire button
+is a duplicate-spend path. The same hole re-posted stale Retire
+prompts for `salesgliderrun.com` after that domain was already
+retired.
+
+**The rule.**
+
+1. A domain is **already retired** when either (a) an executed
+   `retire_domain` action exists for that host, or (b) domain
+   history `status` is `retired`. Age does not matter. Denied asks
+   do not count — Josh said not now, a later 5.1.8 may re-ask.
+2. The bounce loop, resurrection scan, domain-lifecycle, Slack
+   remind, and `requestIsolationAction` must not open or re-post an
+   actionable Retire ask for an already-retired domain. Leftover
+   pending asks are dismissed (denied, system) so deploy remind
+   cannot resurrect them.
+3. The confirm endpoint itself is fail-safe: a second tap on an
+   executed retire, or confirm of a leftover pending for an
+   already-retired domain, returns ok and **does not pull or buy**.
+   First-time retire still spends only after Josh approves.
+4. First retire always persists domain history `status=retired`
+   (even when no prior history row existed) so the durable mark
+   survives if isolation-action records are later noisy.
+5. Does not change protected-client cover (D174), attach-block /
+   burned-sender restaff lock (D176), or human approval for a
+   domain that is **not** yet retired.
+
+**Supersedes / amends.** Amends D146/D148/D162 (the "freshly
+retired" 7-day window is gone; executed retire is permanent
+suppression). Does not reverse D145/D146/D162 for domains that
+have not been retired, D174, or D176.
+
+**Guards.** canon D179: `domainAlreadyRetired` / `retireAlreadySettled`
+/ `dismissRetiredDomainAsks`; confirm short-circuit; CANON names
+D179. Tests: 8-day-old executed retire + recurrent 5.1.8 does not
+Slack; leftover pending confirm does not buy; first-time 5.1.8
+still asks.

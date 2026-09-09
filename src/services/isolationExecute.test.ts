@@ -733,11 +733,158 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     assert.ok(buy, "retire still opens a replacement buy");
     assert.equal(buy?.status, "approved");
     assert.equal(buy?.detail.phase, "awaiting_purchase");
+    assert.equal(
+      state.getDomainHistory("boldercyperpartnerpro.info")?.status,
+      "retired",
+      "D179: first retire always persists history even when the buy retries",
+    );
     assert.match(buy?.error ?? "", /10 seconds/);
     assert.ok(
       state.pendingIsolationActions().some((row) => row.id === buy?.id),
       "failed buy surfaces in the pending queue",
     );
+  });
+
+  it("D179: a second Josh tap on an already-executed retire does not buy again", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-retire-again-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire boldercyperpartnerhub.info",
+      proof: "proof",
+      detail: { domain: "boldercyperpartnerhub.info" },
+    });
+    state.upsertIsolationAction({
+      ...action,
+      status: "executed",
+      decidedBy: "Josh",
+      executedAt: "2026-09-02T15:10:00.000Z",
+    });
+    const buyCalls: unknown[] = [];
+    const removed: unknown[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        listCampaigns: async () => [],
+        listAllEmailAccounts: async () => [],
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          accountIds: number[],
+        ) => {
+          removed.push([campaignId, accountIds]);
+        },
+      } as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async (buyAction: { detail: Record<string, unknown> }) => {
+          buyCalls.push(buyAction.detail);
+          return {
+            domains: ["should-not-buy.info"],
+            mailboxesOrdered: 3,
+            awaitingNameservers: false,
+          };
+        },
+      } as never,
+    );
+    const result = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /Already retired/);
+    assert.deepEqual(buyCalls, []);
+    assert.deepEqual(removed, []);
+  });
+
+  it("D179: confirming a leftover pending retire for an already-retired domain does not buy", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-retire-stale-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const prior = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire boldercyperpartnerhub.info",
+      proof: "first",
+      detail: { domain: "boldercyperpartnerhub.info" },
+      now: "2026-09-02T15:00:00.000Z",
+    });
+    state.upsertIsolationAction({
+      ...prior,
+      status: "executed",
+      executedAt: "2026-09-02T15:10:00.000Z",
+    });
+    const priorBuy = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Replacement for retired boldercyperpartnerhub.info",
+      proof: "first",
+      detail: {
+        retiredDomain: "boldercyperpartnerhub.info",
+        domains: ["boldercyperpartnertry.info"],
+      },
+      now: "2026-09-02T15:10:00.000Z",
+    });
+    state.upsertIsolationAction({
+      ...priorBuy,
+      status: "executed",
+      executedAt: "2026-09-02T15:20:00.000Z",
+    });
+    const leftover = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire boldercyperpartnerhub.info",
+      proof: "stale 5.1.8 on 2026-09-09",
+      detail: { domain: "boldercyperpartnerhub.info" },
+      now: "2026-09-09T15:41:48.000Z",
+    });
+    state.upsertIsolationAction(leftover);
+    const buyCalls: unknown[] = [];
+    const removed: unknown[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        listCampaigns: async () => [
+          { id: 3897345, name: "BCP leftover", status: "ACTIVE" },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 99,
+            from_email: "idahirthe@boldercyperpartnerhub.info",
+            type: "OUTLOOK",
+            campaign_ids: [3897345],
+          },
+        ],
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          accountIds: number[],
+        ) => {
+          removed.push([campaignId, accountIds]);
+        },
+      } as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async (buyAction: { detail: Record<string, unknown> }) => {
+          buyCalls.push(buyAction.detail);
+          return {
+            domains: ["should-not-buy.info"],
+            mailboxesOrdered: 3,
+            awaitingNameservers: false,
+          };
+        },
+      } as never,
+    );
+    const result = await svc.decide(leftover.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(result.ok, true);
+    assert.match(result.message, /Already retired/);
+    assert.deepEqual(buyCalls, [], "duplicate confirm must not spend");
+    assert.deepEqual(removed, [], "already-retired confirm must not pull again");
+    assert.equal(state.getIsolationAction(leftover.id)?.status, "executed");
+    assert.match(state.getIsolationAction(leftover.id)?.error ?? "", /D179/);
   });
 });
 

@@ -7540,3 +7540,157 @@ describe("owner intent — D178 Insight close lives in the sequence body", () =>
     );
   });
 });
+
+describe("owner intent — D179 already-retired domains never re-ask or re-spend", () => {
+  it("D179: executed retire / history=retired suppress asks; confirm is a no-op", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    const retireAsk = await readFile(
+      new URL("../lib/retireAsk.ts", import.meta.url),
+      "utf8",
+    );
+    const execute = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const autostop = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actions,
+      /if \(input\.action\.kind === "retire_domain"\)/,
+      stop(
+        "requestIsolationAction itself refuses an already-retired domain (D179).",
+        "requestIsolationAction no longer short-circuits retire_domain on domainAlreadyRetired.",
+      ),
+    );
+    assert.match(
+      actions,
+      /export function domainAlreadyRetired/,
+      stop(
+        "Already-retired is a durable check, not a 7-day window (D179).",
+        "isolationActions.ts lost domainAlreadyRetired.",
+      ),
+    );
+    assert.doesNotMatch(
+      actions,
+      /7 \* 24 \* 60 \* 60 \* 1000/,
+      stop(
+        "The 7-day retire re-ask window is gone (D179).",
+        "isolationActions.ts still expires retired-domain suppression after a week.",
+      ),
+    );
+    assert.match(
+      actions,
+      /dismissRetiredDomainAsks/,
+      stop(
+        "Leftover pending Retire asks for already-retired domains are dismissed (D179).",
+        "isolationActions.ts no longer dismisses stale retire asks.",
+      ),
+    );
+    assert.match(
+      actions,
+      /retireAlreadySettled/,
+      stop(
+        "Confirm must see an already-settled retire before spending (D179).",
+        "isolationActions.ts lost retireAlreadySettled.",
+      ),
+    );
+    assert.match(
+      retireAsk,
+      /domainAlreadyRetired/,
+      stop(
+        "The retire/cover opener consults already-retired (D179).",
+        "retireAsk.ts no longer checks domainAlreadyRetired.",
+      ),
+    );
+    assert.match(
+      execute,
+      /retireAlreadySettled/,
+      stop(
+        "The confirm path no-ops an already-retired domain (D179).",
+        "isolationExecute.ts no longer consults retireAlreadySettled.",
+      ),
+    );
+    assert.match(
+      execute,
+      /No second purchase/,
+      stop(
+        "Duplicate retire confirm says no second purchase (D179).",
+        "isolationExecute.ts lost the already-retired confirm message.",
+      ),
+    );
+    assert.match(
+      execute,
+      /persistRetiredDomainHistory/,
+      stop(
+        "First retire always persists domain history (D179).",
+        "isolationExecute.ts no longer writes retired history on every retire.",
+      ),
+    );
+    assert.match(
+      autostop,
+      /domainRecentlyRetired|domainAlreadyRetired/,
+      stop(
+        "The 5.1.8 scan still skips an already-retired domain (D179).",
+        "campaignBounceAutostop.ts lost the retired-domain skip.",
+      ),
+    );
+    assert.match(
+      index,
+      /dismissRetiredDomainAsks/,
+      stop(
+        "Boot dismisses stale retire asks so remind cannot re-post them (D179).",
+        "index.ts no longer calls dismissRetiredDomainAsks.",
+      ),
+    );
+    assert.match(
+      index,
+      /Already retired — \$\{retireHost\} stays off/,
+      stop(
+        "The Slack confirm page itself is fail-safe for already-retired domains (D179).",
+        "index.ts /slack/action no longer refuses a leftover Retire button.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /already retired/,
+      stop(
+        "CANON states a known-retired domain is not re-asked (D179).",
+        "CANON.md lost the D179 already-retired rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D179/,
+      stop(
+        "CANON still names the already-retired suppress (D179).",
+        "CANON.md dropped D179 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D179 — Already-retired domains never re-open a Retire ask or spend again/,
+      stop(
+        "The already-retired rule is in the ledger (D179).",
+        "DECISIONS.md no longer has D179.",
+      ),
+    );
+  });
+});

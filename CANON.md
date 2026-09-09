@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D181** (2026-09-09). One page of current truth. When a new
+Canon as of **D182** (2026-09-09). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -70,6 +70,14 @@ or the day is done. Silent findings are a bug (D163).
   campaigns (D31/D92 still apply there). `insight` / `INSIGHT`
   alone do not match. Other clients' copy without that substring
   still gets D92.
+- **Send window** (D182): live campaigns send **Monday–Thursday
+  08:00–19:00 America/New_York**. No Friday, no weekends. Smartlead
+  is a single window — do not invent Friday. `min_time_btw_emails`
+  stays 10 and `max_leads_per_day` stays 10000. The build skill
+  writes this on setup. Custom non-standard windows (Cold Call
+  Followup-style afternoon) are left alone — there is no
+  schedule-window converge, so a hand-set afternoon campaign is
+  not overwritten back to the standing window.
 - Disconnected mailboxes are re-authed every health pass; reconnect results
   Slack as action results (D94).
 

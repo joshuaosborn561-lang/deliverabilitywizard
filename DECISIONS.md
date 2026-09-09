@@ -196,6 +196,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
+| D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 
 ---
 
@@ -5479,4 +5480,44 @@ domain with two consecutive fails or AS(42004) opens
 D174 never-retire MUST. Unit tests: Goliath retire ask and
 execution succeed; leftover D174 buy-retry / Porkbun tests
 stay.
+
+## D182 — Standing send window is Mon–Thu 8am–7pm ET
+
+**Decision (Josh, 2026-09-09).** The fleet-wide standing
+Smartlead send schedule is Monday–Thursday 08:00–19:00
+America/New_York. No Friday. No weekends. Keep
+`min_time_btw_emails: 10` and `max_leads_per_day: 10000`.
+Smartlead is a single window — do not invent a Friday slot.
+
+**Why.** The build skill shipped America/Chicago Monday–Thursday
+09:00–18:00 as "the settings we established". Josh moved the
+default to Eastern and opened the day 8am–7pm ET. Friday stays
+off: one Smartlead window cannot be Mon–Thu 8–7 plus a shorter
+Friday without a second schedule, and he chose no Friday.
+
+**The rule.**
+
+1. New campaigns get this window from
+   `src/ops/smartlead-campaign-settings.SKILL.md` via
+   `set_schedule`.
+2. Timezone is `America/New_York`. Days are `[1, 2, 3, 4]`.
+   Start is `08:00`. End is `19:00`.
+3. The Chicago 09:00–18:00 Mon–Thu default is retired. Do not
+   write it back.
+4. There is **no schedule-window converge**. Campaign-check
+   still converges only the gap floor (D138). Custom
+   non-standard windows (Cold Call Followup-style afternoon)
+   stay as set — the machine must not overwrite them to the
+   standing window.
+5. Does not change mailbox 30/day (D24), the 10-minute gap
+   (D30/D35/D138), client A/B rest, or bounce rules.
+
+**Supersedes / amends.** Supersedes the skill's
+America/Chicago 09:00–18:00 standing default. Does not reverse
+D138. Does not add a send-window writer.
+
+**Guards.** canon D182: skill + CANON name the ET 08:00–19:00
+Mon–Thu window and D182; skill does not ship Chicago 09:00–18:00
+as the default; days stay `[1, 2, 3, 4]` (no Friday); campaign-
+check does not write timezone / start_hour / days_of_the_week.
 

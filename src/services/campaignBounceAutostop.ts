@@ -788,9 +788,7 @@ export class CampaignBounceAutostopService {
       if (asked.opened) {
         openedCount += 1;
         console.log(
-          asked.covered
-            ? `[bounce-autostop] protected-client cover buy opened for ${domain} — not retiring (D174)`
-            : `[bounce-autostop] burned-domain ask opened for ${domain} — sender blocked (D146/D162)`,
+          `[bounce-autostop] burned-domain ask opened for ${domain} — sender blocked (D146/D162)`,
         );
       }
     }

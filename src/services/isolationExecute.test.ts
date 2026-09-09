@@ -607,9 +607,9 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     );
   });
 
-  it("D174: a pending retire for a protected client cannot execute", async () => {
+  it("D181: a pending Goliath retire executes like any other client", async () => {
     const state = new StateStore(
-      `/tmp/dw-iso-retire-prot-${process.pid}-${Date.now()}.json`,
+      `/tmp/dw-iso-retire-goliath-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
     const action = buildIsolationAction({
@@ -644,7 +644,7 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       },
     };
     const sent: string[] = [];
-    const buyCalls: unknown[] = [];
+    const buyCalls: Array<Record<string, unknown>> = [];
     const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       sl as never,
@@ -670,14 +670,15 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       role: "owner",
     });
     assert.equal(outcome.ok, true);
-    assert.deepEqual(removed, [], "protected retire must not pull inboxes");
-    assert.equal(state.getIsolationAction(action.id)?.status, "denied");
-    assert.match(state.getIsolationAction(action.id)?.error ?? "", /D174/);
-    assert.ok(
-      buyCalls.length >= 1,
-      "degrades to a cover replacement buy",
-    );
-    assert.ok(sent.some((text) => /Did not retire/i.test(text)));
+    assert.deepEqual(removed, [[10, [21]]], "Goliath retire pulls inboxes (D181)");
+    assert.equal(state.getIsolationAction(action.id)?.status, "executed");
+    assert.doesNotMatch(state.getIsolationAction(action.id)?.error ?? "", /D174/);
+    assert.equal(buyCalls.length, 1, "same tap buys the client-named replacement");
+    assert.match(String(buyCalls[0]?.parentDomain ?? ""), /goliath/);
+    assert.doesNotMatch(String(buyCalls[0]?.parentDomain ?? ""), /crosslaunchco/);
+    assert.ok(sent.some((text) => /Retired \*meetconnectnow\.com\*/i.test(text)));
+    assert.ok(!sent.some((text) => /Did not retire/i.test(text)));
+    assert.ok(!sent.some((text) => /protected client/i.test(text)));
   });
 
   it("D174: a buy that fails after the pull stays awaiting_purchase", async () => {

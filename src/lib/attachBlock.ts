@@ -1,8 +1,8 @@
 /**
  * D176 — durable attach blocklist. Once a domain or sender is marked
  * burned, AS(42004) / sender_blocked / restricted, or isolated off a
- * campaign, restaff must not put it back. Protected clients (D174)
- * never retire, so this list is the only durable "stay off" mark.
+ * campaign, restaff must not put it back. Retired domains stay off via
+ * history + this list (D65/D179); a live retire ask is itself a block.
  */
 import {
   groupReadingsByDomain,
@@ -75,9 +75,9 @@ export function mergeAttachBlock(
 }
 
 /**
- * A live burned-domain / protected-client cover ask is itself a block
- * so a deploy after today's unlink heals on the first restaff pass
- * without waiting for another 5.1.8 sample.
+ * A live burned-domain retire ask (or a leftover coverOnly buy) is
+ * itself a block so a deploy after an unlink heals on the first
+ * restaff pass without waiting for another 5.1.8 sample.
  */
 export function isolationAskBlocksDomain(
   domain: string | undefined,

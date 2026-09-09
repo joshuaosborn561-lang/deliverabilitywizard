@@ -7,10 +7,8 @@ import {
   type DomainMailboxReading,
 } from "../lib/domainControl.js";
 import { domainProof } from "../lib/isolationProof.js";
-import { isProtectedOwner } from "../lib/protectedClient.js";
 import { domainAlreadyRetired } from "../lib/isolationActions.js";
 import {
-  neutralizeProtectedRetireAsks,
   ownerOfDomain,
   refreshDomainOwnerCache,
   requestRetireOrCover,
@@ -40,13 +38,6 @@ export class DomainLifecycleService {
       accounts = snap.accounts;
       clients = snap.clients;
       refreshDomainOwnerCache(this.store, accounts, clients, this.config);
-      await neutralizeProtectedRetireAsks({
-        store: this.store,
-        slack: this.slack,
-        config: this.config,
-        accounts,
-        clients,
-      });
     }
     const pods = this.store.getIsolation().pods;
     const readings: DomainMailboxReading[] = this.store
@@ -118,13 +109,12 @@ export class DomainLifecycleService {
         this.config,
       );
       if (owner) this.store.upsertDomainOwner(owner);
-      const protectedClient = isProtectedOwner(owner, this.config);
       const history: DomainControlHistoryRecord = {
         domain,
         fleet: verdict.fleet,
         consecutiveFails,
         status:
-          consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS && !protectedClient
+          consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS
             ? "retire_pending"
             : consecutiveFails >= 1
               ? "watch"
@@ -145,7 +135,7 @@ export class DomainLifecycleService {
 
       const proof = domainProof(verdict, consecutiveFails);
       const preferRetire =
-        consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS && !protectedClient;
+        consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS;
       const asked = await requestRetireOrCover({
         store: this.store,
         slack: this.slack,

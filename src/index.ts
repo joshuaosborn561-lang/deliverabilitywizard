@@ -38,7 +38,6 @@ import {
   remindPendingIsolationActions,
 } from "./lib/isolationActions.js";
 import {
-  neutralizeProtectedRetireAsks,
   refreshDomainOwnerCache,
 } from "./lib/retireAsk.js";
 import {
@@ -821,13 +820,6 @@ async function main(): Promise<void> {
         inventory.clients,
         config,
       );
-      await neutralizeProtectedRetireAsks({
-        store: state,
-        slack,
-        config,
-        accounts: inventory.accounts,
-        clients: inventory.clients,
-      });
       await stage("isolation-buy-resume", () => isolationBuy.resume());
 
       logCanonScoreboard();

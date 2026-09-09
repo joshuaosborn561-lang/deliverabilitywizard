@@ -550,9 +550,7 @@ export class BounceResurrectionService {
       });
       if (asked.opened) {
         console.log(
-          asked.covered
-            ? `[bounce-resurrect] protected-client cover buy opened for ${domain} — not retiring (D174)`
-            : `[bounce-resurrect] burned-domain ask opened for ${domain} — sender block found in the incident scan (D146/D148)`,
+          `[bounce-resurrect] burned-domain ask opened for ${domain} — sender block found in the incident scan (D146/D148)`,
         );
       }
     } catch (error) {

@@ -187,6 +187,7 @@ export async function alertCanonMisses(input: {
   }
 
   await pageFirstOpenCanonFindings(input, result);
+  await pageMergeTagMisses(input, result);
   return result;
 }
 
@@ -201,6 +202,7 @@ const FINDING_LABEL: Record<string, string> = {
   no_placement_test: "no placement test",
   missing_canary: "no canary",
   inbox_missing_known_good: "inbox missing known-good test",
+  merge_tag_blank: "merge tags sending blank",
 };
 
 /**
@@ -232,9 +234,14 @@ async function pageFirstOpenCanonFindings(
   if (input.dryRun) return;
 
   for (const row of open) {
+    const otherFails = row.fails.filter((kind) => kind !== "merge_tag_blank");
+    if (otherFails.length === 0 && row.fails.includes("merge_tag_blank")) {
+      // D180 — dedicated merge-tag page carries fill rates / sample.
+      continue;
+    }
     const key = `findings:${row.campaignId}`;
     if (input.store.getCanonMissStamp(key) === "open") continue;
-    const labels = row.fails
+    const labels = otherFails
       .map((kind) => FINDING_LABEL[kind] ?? kind.replace(/_/g, " "))
       .join(", ");
     const text = [
@@ -249,6 +256,75 @@ async function pageFirstOpenCanonFindings(
     } catch (error) {
       console.warn(
         `[canon-miss] findings page failed for #${row.campaignId}`,
+        error,
+      );
+    }
+  }
+}
+
+/**
+ * D180 — merge-tag fill miss pages once per campaign per incident with
+ * the missing tags, fill rates, and a sent-body sample. Does not edit
+ * live copy or remap leads. Recovery clears the stamp.
+ */
+export function mergeTagMissText(input: {
+  campaignId: number;
+  name: string;
+  detail: string;
+}): string {
+  return [
+    `:rotating_light: CANON miss — merge tags sending blank`,
+    `• \`${input.name} #${input.campaignId}\` — ${input.detail}`,
+    "Do not auto-edit live copy or remap leads — Josh Apply / list change.",
+    "Investigate in-thread. The checklist keeps remediating; this page is the first alert.",
+  ].join("\n");
+}
+
+async function pageMergeTagMisses(
+  input: {
+    store: StateStore;
+    slack: Pick<SlackClient, "send">;
+    dryRun?: boolean;
+  },
+  result: { alerted: string[]; recovered: number[] },
+): Promise<void> {
+  const open = input.store
+    .listCampaignChecks()
+    .map((record) => {
+      const detail = (record.findings ?? [])
+        .filter((finding) => finding.startsWith("merge_tag_blank"))
+        .map((finding) => finding.replace(/^merge_tag_blank:\s*/, ""))
+        .join(" · ");
+      return detail
+        ? { campaignId: record.campaignId, name: record.name, detail }
+        : null;
+    })
+    .filter((row): row is { campaignId: number; name: string; detail: string } =>
+      row != null,
+    );
+  const openIds = new Set(open.map((row) => row.campaignId));
+
+  for (const record of input.store.listCampaignChecks()) {
+    const key = `merge_tag:${record.campaignId}`;
+    if (openIds.has(record.campaignId)) continue;
+    if (!input.store.getCanonMissStamp(key)) continue;
+    if (input.dryRun) continue;
+    input.store.clearCanonMissStamp(key);
+    result.recovered.push(record.campaignId);
+  }
+
+  if (input.dryRun) return;
+
+  for (const row of open) {
+    const key = `merge_tag:${row.campaignId}`;
+    if (input.store.getCanonMissStamp(key) === "open") continue;
+    try {
+      await input.slack.send(mergeTagMissText(row), undefined, "ops_alert");
+      input.store.setCanonMissStamp(key, "open");
+      result.alerted.push(`${row.campaignId}:merge_tag_blank`);
+    } catch (error) {
+      console.warn(
+        `[canon-miss] merge-tag page failed for #${row.campaignId}`,
         error,
       );
     }

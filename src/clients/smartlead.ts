@@ -401,8 +401,17 @@ export class SmartleadClient {
     );
   }
 
-  getCampaignStatistics(campaignId: number): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`);
+  getCampaignStatistics(
+    campaignId: number,
+    query: { limit?: number; offset?: number; email_status?: string } = {},
+  ): Promise<unknown> {
+    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`, {
+      query: {
+        limit: query.limit,
+        offset: query.offset,
+        email_status: query.email_status,
+      },
+    });
   }
 
   getCampaignSettings(campaignId: number): Promise<unknown> {

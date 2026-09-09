@@ -86,6 +86,16 @@ describe("campaign check first-pass helpers", () => {
       firstCheckPassed([{ kind: "generic_unapproved", detail: "generic" }]),
       false,
     );
+    assert.equal(
+      firstCheckPassed([
+        {
+          kind: "merge_tag_blank",
+          detail: "{{gateway_provider}} absent 0/80 (0%)",
+        },
+      ]),
+      true,
+      "D180 pages blank merge tags but does not block first-check identity",
+    );
   });
 
   it("D81: Goliath is a POC client; generics elsewhere need Slack approve", () => {
@@ -1284,5 +1294,79 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
 
     await service.run({ mode: "first" });
     assert.ok(wrote[0]?.includes("%signature%"), "SalesGlider still gets D92");
+  });
+
+  it("D180: first-check samples several lead offsets and flags a missing custom tag", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const leadOffsets: number[] = [];
+    let sequenceWrites = 0;
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921647,
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [
+          { id: 345263, name: "Insight", logo: "Insight" },
+        ],
+        getCampaignSequences: async () => [
+          {
+            seq_number: 1,
+            email_body:
+              "<div>Hey {{first_name}}, Microsoft shop with {{gateway_provider}} on top. Defender P2, which {{gateway_provider}} covers.</div><div>Josh Osborn</div><div>Insight</div>",
+          },
+        ],
+        getCampaignLeads: async (_id: number, query: { limit?: number; offset?: number }) => {
+          leadOffsets.push(query.offset ?? 0);
+          return {
+            total_leads: "2660",
+            data: [
+              {
+                lead: {
+                  first_name: "Gabe",
+                  custom_fields: { job_title: "CIO", Local_Sports_Team: "Thunder" },
+                },
+              },
+            ],
+          };
+        },
+        getCampaignStatistics: async () => ({
+          data: [
+            {
+              email_message:
+                "<div>Hey Gabe, Microsoft shop with  on top. Defender P2, which  covers.</div>",
+            },
+          ],
+        }),
+        updateCampaignSequences: async () => {
+          sequenceWrites += 1;
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.ok(leadOffsets.includes(0), "samples offset 0");
+    assert.ok(
+      leadOffsets.some((offset) => offset > 0),
+      `must sample more than offset 0, got ${leadOffsets.join(",")}`,
+    );
+    assert.equal(sequenceWrites, 0, "D180 must not rewrite live sequence copy");
+    const merge = result.findings[0]?.findings.find(
+      (finding) => finding.kind === "merge_tag_blank",
+    );
+    assert.ok(merge, "missing gateway_provider is a merge_tag_blank finding");
+    assert.match(merge?.detail ?? "", /gateway_provider/);
+    assert.match(merge?.detail ?? "", /absent/);
+    assert.equal(result.firstPassed, 1, "merge-tag miss does not block first-check");
+    assert.ok(state.getCampaignCheck(3921647)?.findings.some((f) => f.startsWith("merge_tag_blank")));
   });
 });

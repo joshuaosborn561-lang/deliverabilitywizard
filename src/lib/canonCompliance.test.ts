@@ -13,6 +13,10 @@ describe("canon compliance (D108)", () => {
     assert.equal(campaignCanonYes(["under_warmed: a@x 3d"]), false);
     assert.equal(campaignCanonYes(["missing_canary: none"]), false);
     assert.equal(campaignCanonYes(["mailbox_gap: 1m"]), false);
+    assert.equal(
+      campaignCanonYes(["merge_tag_blank: {{gateway_provider}} absent 0/80"]),
+      false,
+    );
   });
 
   it("board is all-yes only when every campaign is yes", () => {

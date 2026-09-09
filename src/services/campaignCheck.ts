@@ -78,6 +78,21 @@ import {
 } from "./warmupGate.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { type InventoryBook, type InventorySnapshot } from "./inventory.js";
+import {
+  detectSentMergeHoles,
+  extractCampaignLeads,
+  extractLeadTotal,
+  extractMergeTags,
+  extractSentBodies,
+  extractSequenceMergeTags,
+  formatMergeTagFinding,
+  judgeMergeTagFill,
+  leadInventoryGrew,
+  MERGE_TAG_SAMPLE_PAGE,
+  MERGE_TAG_SAMPLE_PAGES,
+  MERGE_TAG_SENT_SAMPLE,
+  sampleLeadOffsets,
+} from "../lib/mergeTags.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 80;
 
@@ -111,8 +126,8 @@ export interface CampaignCheckResult {
 
 /**
  * D81 — when a campaign id is new, run the first-check. After it passes,
- * hourly sweeps watch pod/shell, signatures, canaries, and the half-client
- * floor. Bounce auto-pause is not this checker.
+ * hourly sweeps watch pod/shell, signatures, canaries, the half-client
+ * floor, and merge-tag fill (D180). Bounce auto-pause is not this checker.
  */
 export class CampaignCheckService {
   constructor(
@@ -289,6 +304,10 @@ export class CampaignCheckService {
       if (!runFirst && !runHourly) continue;
 
       const kind: "first" | "hourly" = runFirst ? "first" : "hourly";
+      // D180 — first-check always samples; hourly resample of first-passed
+      // ACTIVE campaigns that use custom tags. Leftover signature-only
+      // inspects carry the last finding forward unless the lead list grew.
+      const sampleMergeTags = runFirst || hourlySweep || mode === "all";
       const inspected = await this.inspect({
         campaign,
         campaigns: campaignById,
@@ -305,6 +324,11 @@ export class CampaignCheckService {
         fleetDown,
         listedTestsFailed,
         depth: kind,
+        sampleMergeTags,
+        priorMergeTagLeadTotal: record.mergeTagLeadTotal,
+        priorMergeTagFindings: (record.findings ?? []).filter((finding) =>
+          finding.startsWith("merge_tag_blank"),
+        ),
       });
       let findings = inspected.findings;
       // D138 — the campaign-level minimum gap is converged, not assumed.
@@ -403,6 +427,10 @@ export class CampaignCheckService {
           sigApplied?.wroteTag || sigApplied?.wroteInsightClose
             ? now
             : record.sigAutoWrittenAt,
+        mergeTagCheckedAt: inspected.mergeTagCheckedAt ?? record.mergeTagCheckedAt,
+        mergeTagLeadTotal: inspected.mergeTagLeadTotal ?? record.mergeTagLeadTotal,
+        mergeTagCustomKeys:
+          inspected.mergeTagCustomKeys ?? record.mergeTagCustomKeys,
       };
       if (kind === "first") {
         next.firstCheckAt = now;
@@ -624,9 +652,15 @@ export class CampaignCheckService {
     fleetDown: boolean;
     listedTestsFailed: boolean;
     depth: "first" | "hourly";
+    sampleMergeTags: boolean;
+    priorMergeTagLeadTotal?: number | null;
+    priorMergeTagFindings?: string[];
   }): Promise<{
     findings: CampaignFinding[];
     sequences: SmartleadSequence[] | null;
+    mergeTagCheckedAt?: string | null;
+    mergeTagLeadTotal?: number | null;
+    mergeTagCustomKeys?: string[];
   }> {
     const findings: CampaignFinding[] = [];
     const { campaign } = input;
@@ -829,6 +863,16 @@ export class CampaignCheckService {
       );
     }
 
+    const mergeTag = await this.inspectMergeTags({
+      campaign,
+      sequences,
+      status,
+      sampleMergeTags: input.sampleMergeTags,
+      priorLeadTotal: input.priorMergeTagLeadTotal,
+      priorFindings: input.priorMergeTagFindings ?? [],
+    });
+    findings.push(...mergeTag.findings);
+
     if (status === "ACTIVE" && !excluded) {
       const floor = staffFloorForCampaign(
         campaign,
@@ -907,6 +951,172 @@ export class CampaignCheckService {
       // it is reported once above, never per campaign.
     }
 
-    return { findings, sequences };
+    return {
+      findings,
+      sequences,
+      mergeTagCheckedAt: mergeTag.checkedAt,
+      mergeTagLeadTotal: mergeTag.leadTotal,
+      mergeTagCustomKeys: mergeTag.customKeys,
+    };
   }
+
+  /**
+   * D180 — sample custom {{tags}} against lead custom_fields and a
+   * cheap sent-body page. Pages via the CANON-miss Slack contract;
+   * never writes sequence copy or remaps leads.
+   */
+  private async inspectMergeTags(input: {
+    campaign: SmartleadCampaign;
+    sequences: SmartleadSequence[] | null;
+    status: string;
+    sampleMergeTags: boolean;
+    priorLeadTotal?: number | null;
+    priorFindings: string[];
+  }): Promise<{
+    findings: CampaignFinding[];
+    checkedAt?: string | null;
+    leadTotal?: number | null;
+    customKeys?: string[];
+  }> {
+    const { campaign, sequences } = input;
+    if (isAnyShellCampaign(campaign) || !sequences?.length) {
+      return { findings: [] };
+    }
+    const extracted = extractSequenceMergeTags(sequences);
+    if (!extracted.customTags.length) {
+      return { findings: [], customKeys: [], leadTotal: input.priorLeadTotal ?? null };
+    }
+    if (typeof this.smartlead.getCampaignLeads !== "function") {
+      return {
+        findings: carryMergeTagFindings(input.priorFindings),
+        customKeys: extracted.customTags,
+        leadTotal: input.priorLeadTotal ?? null,
+      };
+    }
+
+    let total = 0;
+    const sending = ["ACTIVE", "START"].includes(input.status);
+    if (!input.sampleMergeTags) {
+      try {
+        const peek = await this.smartlead.getCampaignLeads(campaign.id, {
+          limit: 1,
+          offset: 0,
+        });
+        await sleep(WRITE_GAP_MS);
+        total = extractLeadTotal(peek);
+      } catch (error) {
+        console.warn(
+          `[campaign-check] could not peek leads for merge-tag fill #${campaign.id}`,
+          error,
+        );
+        return {
+          findings: carryMergeTagFindings(input.priorFindings),
+          customKeys: extracted.customTags,
+          leadTotal: input.priorLeadTotal ?? null,
+        };
+      }
+      if (!leadInventoryGrew(input.priorLeadTotal, total)) {
+        return {
+          findings: carryMergeTagFindings(input.priorFindings),
+          customKeys: extracted.customTags,
+          leadTotal: total || input.priorLeadTotal || null,
+        };
+      }
+    }
+
+    const leads: Array<Record<string, unknown>> = [];
+    const firstSeenIn: Record<string, string> = {};
+    for (const row of extracted.bodies) {
+      for (const tag of extractMergeTags(row.text)) {
+        if (firstSeenIn[tag] == null) firstSeenIn[tag] = row.label;
+      }
+    }
+    // First page both samples and reveals total_leads so later offsets
+    // are real (a guessed total of PAGE would collapse to offset 0).
+    try {
+      const firstPage = await this.smartlead.getCampaignLeads(campaign.id, {
+        limit: MERGE_TAG_SAMPLE_PAGE,
+        offset: 0,
+      });
+      await sleep(WRITE_GAP_MS);
+      leads.push(...extractCampaignLeads(firstPage));
+      total = extractLeadTotal(firstPage) || total || leads.length;
+    } catch (error) {
+      console.warn(
+        `[campaign-check] merge-tag lead sample failed #${campaign.id} offset=0`,
+        error,
+      );
+    }
+    const offsets = sampleLeadOffsets(
+      total,
+      MERGE_TAG_SAMPLE_PAGE,
+      MERGE_TAG_SAMPLE_PAGES,
+    ).filter((offset) => offset > 0);
+    for (const offset of offsets) {
+      try {
+        const page = await this.smartlead.getCampaignLeads(campaign.id, {
+          limit: MERGE_TAG_SAMPLE_PAGE,
+          offset,
+        });
+        await sleep(WRITE_GAP_MS);
+        leads.push(...extractCampaignLeads(page));
+      } catch (error) {
+        console.warn(
+          `[campaign-check] merge-tag lead sample failed #${campaign.id} offset=${offset}`,
+          error,
+        );
+      }
+    }
+
+    const fills = judgeMergeTagFill({
+      tags: extracted.customTags,
+      leads,
+      firstSeenIn,
+    });
+
+    let holes: ReturnType<typeof detectSentMergeHoles> = [];
+    if (
+      sending &&
+      typeof this.smartlead.getCampaignStatistics === "function"
+    ) {
+      try {
+        const stats = await this.smartlead.getCampaignStatistics(campaign.id, {
+          limit: MERGE_TAG_SENT_SAMPLE,
+          offset: 0,
+        });
+        await sleep(WRITE_GAP_MS);
+        holes = detectSentMergeHoles({
+          sentBodies: extractSentBodies(stats),
+          customTags: extracted.customTags,
+          sequenceTexts: extracted.bodies.map((row) => row.text),
+        });
+      } catch (error) {
+        console.warn(
+          `[campaign-check] merge-tag sent-body sample failed #${campaign.id}`,
+          error,
+        );
+      }
+    }
+
+    const detail = formatMergeTagFinding({ fills, holes });
+    const findings: CampaignFinding[] = detail
+      ? [{ kind: "merge_tag_blank", detail }]
+      : [];
+    return {
+      findings,
+      checkedAt: new Date().toISOString(),
+      leadTotal: total || leads.length,
+      customKeys: extracted.customTags,
+    };
+  }
+}
+
+function carryMergeTagFindings(prior: string[]): CampaignFinding[] {
+  const out: CampaignFinding[] = [];
+  for (const finding of prior) {
+    if (!finding.startsWith("merge_tag_blank:")) continue;
+    const detail = finding.slice("merge_tag_blank:".length).trim();
+    if (detail) out.push({ kind: "merge_tag_blank", detail });
+  }
+  return out;
 }

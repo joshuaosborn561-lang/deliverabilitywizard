@@ -333,6 +333,14 @@ do not upload. Never hand-transcribe JSON. If the script is missing, do the
 same comparison from the two files: every `{{tag}}` must be a system field
 or a `custom_fields` key present on enough sampled leads — not just offset 0.
 
+**Live (D180):** the same rule is the campaign-check merge-tag fill QA.
+Newly seen campaigns are sampled on `campaign-check-first`. ACTIVE
+campaigns that still use custom tags are re-sampled on the hourly sweep
+(and sooner if the lead list grew materially). A miss is
+`merge_tag_blank` on `/health` and a CANON-miss Slack page — the machine
+does **not** rewrite live copy or remap leads. Human Apply / list change
+only.
+
 ---
 
 ## Import rules
@@ -367,6 +375,7 @@ Nothing goes ACTIVE until every line passes.
 **Campaign**
 
 7. Merge tag gate passed (`check_merge_tags.py` exit 0, multi-offset sample).
+   After launch the same rule is D180 (`merge_tag_blank` on `/health`).
 8. `%signature%` on every variant and every step. No other client's brand hardcoded in the body.
 9. `client_id` on the **campaign** and on the mailboxes.
 10. Suppression and domain block list applied, scoped to that `client_id`.

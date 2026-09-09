@@ -352,6 +352,36 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     assert.equal(r.sends.length, 1);
   });
 
+  it("D180: pages a merge-tag fill miss once with fill rates, then stays silent", async () => {
+    const s = store();
+    await s.load();
+    s.upsertCampaignCheck({
+      campaignId: 3921647,
+      name: "Insight Consolidation Gateway SEG",
+      firstSeenAt: "2026-09-09T00:00:00.000Z",
+      firstCheckAt: "2026-09-09T00:00:00.000Z",
+      firstPassedAt: "2026-09-09T00:00:00.000Z",
+      lastSweepAt: null,
+      lastKind: "first",
+      findings: [
+        "merge_tag_blank: {{gateway_provider}} absent 0/160 (0%); closest: vendor · sent blank {{gateway_provider}}: \"shop with  on top\"",
+      ],
+    });
+    const r = recorder();
+    const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.ok(first.alerted.includes("3921647:merge_tag_blank"));
+    assert.equal(r.sends.length, 1);
+    assert.equal(r.sends[0].kind, "ops_alert");
+    assert.match(r.sends[0].text, /merge tags sending blank/);
+    assert.match(r.sends[0].text, /3921647/);
+    assert.match(r.sends[0].text, /gateway_provider/);
+    assert.match(r.sends[0].text, /0\/160/);
+    assert.match(r.sends[0].text, /Do not auto-edit live copy/);
+    const second = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
+    assert.equal(second.alerted.includes("3921647:merge_tag_blank"), false);
+    assert.equal(r.sends.length, 1, "one page per incident, not one per 15m");
+  });
+
   it("dry-run pages nothing and stamps nothing", async () => {
     const s = await seeded();
     const r = recorder();

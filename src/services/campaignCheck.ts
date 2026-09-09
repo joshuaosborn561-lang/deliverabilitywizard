@@ -49,13 +49,15 @@ import { isPocClient } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   appendSignatureTag,
+  bodyHasInsightClose,
   clientBrandList,
+  ensureInsightCloseOnSequences,
   findForeignBrand,
   missingSignatureTag,
   sequenceBodiesContainInsight,
   sequenceCopyHay,
+  sequencesNeedInsightClose,
   sequencesHaveSignaturePlaceholder,
-  stripSignatureTags,
 } from "../lib/signatureQa.js";
 import { isConnectedAccount, isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
@@ -216,6 +218,7 @@ export class CampaignCheckService {
 
     const now = new Date().toISOString();
     const sigFixed: Array<{ name: string; brand: string }> = [];
+    const insightFixed: string[] = [];
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
       const name = String(campaign.name ?? campaign.id);
@@ -254,6 +257,7 @@ export class CampaignCheckService {
       const openSigFinding = (record.findings ?? []).some(
         (finding) =>
           finding.startsWith("missing_signature_tag") ||
+          finding.startsWith("missing_insight_close") ||
           finding.startsWith("mailbox_sig"),
       );
       const openCoverageFinding = (record.findings ?? []).some(
@@ -368,13 +372,25 @@ export class CampaignCheckService {
             (finding) => finding.kind !== "missing_signature_tag",
           );
         }
+        if (sigApplied.wroteInsightClose) {
+          findings = findings.filter(
+            (finding) => finding.kind !== "missing_insight_close",
+          );
+        }
         if (sigApplied.wroteMailbox) {
+          findings = findings.filter((finding) => finding.kind !== "mailbox_sig");
+        }
+        // D178 — Insight-in-copy never rewrites shared mailbox fields.
+        if (sigApplied.skipMailbox) {
           findings = findings.filter((finding) => finding.kind !== "mailbox_sig");
         }
         // D95 — tell Josh the first time we write a campaign. A leftover
         // backfill already notified does not ping again every pass.
         if (sigApplied.wroteTag && !record.sigAutoWrittenAt) {
           sigFixed.push({ name, brand: sigApplied.brand });
+        }
+        if (sigApplied.wroteInsightClose && !record.sigAutoWrittenAt) {
+          insightFixed.push(name);
         }
       }
       const passed = firstCheckPassed(findings);
@@ -384,7 +400,9 @@ export class CampaignCheckService {
         lastKind: kind,
         findings: findings.map(formatFinding),
         sigAutoWrittenAt:
-          sigApplied?.wroteTag ? now : record.sigAutoWrittenAt,
+          sigApplied?.wroteTag || sigApplied?.wroteInsightClose
+            ? now
+            : record.sigAutoWrittenAt,
       };
       if (kind === "first") {
         next.firstCheckAt = now;
@@ -431,6 +449,18 @@ export class CampaignCheckService {
         `[campaign-check] signatures written=${sigFixed.length} (no Slack client)`,
       );
     }
+    if (insightFixed.length && this.slack) {
+      await this.slack.notifyActionResult(
+        [
+          `I wrote Josh Osborn / Insight into the sequence copy on ${insightFixed.length} campaign${insightFixed.length === 1 ? "" : "s"} (before the P.S.). Mailbox signatures were not changed:`,
+          ...insightFixed.map((row) => `• ${row}`),
+        ].join("\n"),
+      );
+    } else if (insightFixed.length) {
+      console.log(
+        `[campaign-check] insight closes written=${insightFixed.length} (no Slack client)`,
+      );
+    }
 
     await this.state.save();
     console.log(
@@ -463,6 +493,11 @@ export class CampaignCheckService {
    * on the campaign that is not the two-line Name / Brand rule is set
    * to that pair. Slack once per campaign the first time we append the
    * tag (D95). A mailbox-only leftover logs; it does not page (D71).
+   *
+   * D178 — copy containing `Insight` does not get a mailbox placeholder
+   * and never rewrites shared mailbox signature fields. The close
+   * `Josh Osborn` / `Insight` is written into the sequence body
+   * before any P.S. lines.
    */
   private async autoApplySignature(input: {
     campaignId: number;
@@ -472,7 +507,13 @@ export class CampaignCheckService {
     accounts: SmartleadAccountWithCampaigns[];
     findings: CampaignFinding[];
     otherClientBrands: string[];
-  }): Promise<{ brand: string; wroteTag: boolean; wroteMailbox: boolean } | null> {
+  }): Promise<{
+    brand: string;
+    wroteTag: boolean;
+    wroteMailbox: boolean;
+    wroteInsightClose: boolean;
+    skipMailbox: boolean;
+  } | null> {
     const needTag = input.findings.some(
       (finding) => finding.kind === "missing_signature_tag",
     );
@@ -481,30 +522,41 @@ export class CampaignCheckService {
     );
     let sequences = input.sequences;
     const insightInCopy = sequenceBodiesContainInsight(sequences);
-    const needStrip =
-      insightInCopy && sequencesHaveSignaturePlaceholder(sequences);
-    if (!needTag && !needMailbox && !needStrip) {
+    const needInsight =
+      insightInCopy &&
+      (sequencesHaveSignaturePlaceholder(sequences) ||
+        sequencesNeedInsightClose(sequences) ||
+        input.findings.some((finding) => finding.kind === "missing_insight_close"));
+    if (!needTag && !needMailbox && !needInsight) {
       return null;
     }
     if (this.config.dryRun) {
       console.log(
         `[campaign-check] dry-run signature #${input.campaignId} ${input.name}`,
       );
-      return { brand: input.brand, wroteTag: needTag && !insightInCopy, wroteMailbox: needMailbox };
+      return {
+        brand: input.brand,
+        wroteTag: needTag && !insightInCopy,
+        wroteMailbox: needMailbox && !insightInCopy,
+        wroteInsightClose: needInsight,
+        skipMailbox: insightInCopy,
+      };
     }
     try {
       let wroteTag = false;
-      if (sequences == null && (needTag || insightInCopy || needStrip)) {
+      let wroteInsightClose = false;
+      if (sequences == null && (needTag || insightInCopy || needInsight)) {
         sequences = await this.smartlead.getCampaignSequences(input.campaignId);
       }
       const rows = sequences ?? [];
       if (sequenceBodiesContainInsight(rows)) {
-        const { sequences: next, changed } = stripSignatureTags(rows);
+        const { sequences: next, changed } = ensureInsightCloseOnSequences(rows);
         if (changed.length) {
           await this.smartlead.updateCampaignSequences(input.campaignId, next);
           await sleep(WRITE_GAP_MS);
+          wroteInsightClose = true;
           console.log(
-            `[campaign-check] insight signature stripped #${input.campaignId} ${input.name} ${changed.join(", ")} (D177)`,
+            `[campaign-check] insight close written #${input.campaignId} ${input.name} ${changed.join(", ")} (D178)`,
           );
         }
       } else if (needTag) {
@@ -516,27 +568,37 @@ export class CampaignCheckService {
         }
       }
       let wroteMailbox = false;
-      for (const account of input.accounts) {
-        if (!campaignIdsOf(account).includes(input.campaignId)) continue;
-        const desired = desiredMailboxSignature({
-          fromName: account.from_name,
-          signature: account.signature,
-          clientBrand: input.brand,
-          otherClientBrands: input.otherClientBrands,
-        });
-        if (!desired) continue;
-        const actual = extractSignatureLines(account.signature).join("\n");
-        const want = extractSignatureLines(desired).join("\n");
-        if (actual === want) continue;
-        if (typeof account.id !== "number") continue;
-        await this.smartlead.updateEmailAccount(account.id, { signature: desired });
-        await sleep(WRITE_GAP_MS);
-        wroteMailbox = true;
+      // D178 — Insight campaigns share SalesGlider mailboxes. Never
+      // rewrite those email-account signature fields from this path.
+      if (!sequenceBodiesContainInsight(rows)) {
+        for (const account of input.accounts) {
+          if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+          const desired = desiredMailboxSignature({
+            fromName: account.from_name,
+            signature: account.signature,
+            clientBrand: input.brand,
+            otherClientBrands: input.otherClientBrands,
+          });
+          if (!desired) continue;
+          const actual = extractSignatureLines(account.signature).join("\n");
+          const want = extractSignatureLines(desired).join("\n");
+          if (actual === want) continue;
+          if (typeof account.id !== "number") continue;
+          await this.smartlead.updateEmailAccount(account.id, { signature: desired });
+          await sleep(WRITE_GAP_MS);
+          wroteMailbox = true;
+        }
       }
       console.log(
-        `[campaign-check] signature written #${input.campaignId} ${input.name} brand=${input.brand || "unknown"} tag=${wroteTag} mailbox=${wroteMailbox}`,
+        `[campaign-check] signature written #${input.campaignId} ${input.name} brand=${input.brand || "unknown"} tag=${wroteTag} mailbox=${wroteMailbox} insightClose=${wroteInsightClose}`,
       );
-      return { brand: input.brand, wroteTag, wroteMailbox };
+      return {
+        brand: input.brand,
+        wroteTag,
+        wroteMailbox,
+        wroteInsightClose,
+        skipMailbox: sequenceBodiesContainInsight(rows),
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(
@@ -728,8 +790,23 @@ export class CampaignCheckService {
       sequences = await this.smartlead.getCampaignSequences(campaign.id);
       await sleep(WRITE_GAP_MS);
       const insightInCopy = sequenceBodiesContainInsight(sequences);
+      if (insightInCopy) {
+        for (let i = findings.length - 1; i >= 0; i--) {
+          if (findings[i]!.kind === "mailbox_sig") findings.splice(i, 1);
+        }
+      }
       for (const row of sequenceCopyHay(sequences ?? [])) {
-        if (!insightInCopy && missingSignatureTag(row.text)) {
+        if (insightInCopy) {
+          if (
+            row.text.replace(/<[^>]+>/g, " ").trim() &&
+            !bodyHasInsightClose(row.text)
+          ) {
+            findings.push({
+              kind: "missing_insight_close",
+              detail: `${row.label} is missing Josh Osborn / Insight close`,
+            });
+          }
+        } else if (missingSignatureTag(row.text)) {
           findings.push({
             kind: "missing_signature_tag",
             detail: `${row.label} is missing %signature%`,
@@ -737,7 +814,7 @@ export class CampaignCheckService {
         }
         if (input.depth === "first" && expected) {
           const foreign = findForeignBrand(row.text, expected, input.allBrands);
-          if (foreign) {
+          if (foreign && !(insightInCopy && /insight/i.test(foreign))) {
             findings.push({
               kind: "foreign_brand_in_copy",
               detail: `${row.label} has ${foreign} in the copy`,

@@ -212,7 +212,7 @@ describe("IsolationExecuteService", () => {
     assert.equal(sequences[0]!.sequence_variants[0]!.subject, "hey");
   });
 
-  it("D177: leftover Add %signature% does not write when copy contains Insight", async () => {
+  it("D178: leftover Add %signature% writes Josh Osborn / Insight in the body", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-insight-${process.pid}-${Date.now()}.json`,
     );
@@ -224,7 +224,7 @@ describe("IsolationExecuteService", () => {
       detail: { campaignId: 3921647, campaignName: "SalesGlider tagged draft" },
     });
     state.upsertIsolationAction(action);
-    let written = 0;
+    const wrote: string[] = [];
     const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {
@@ -235,8 +235,11 @@ describe("IsolationExecuteService", () => {
             email_body: "<div>A note from Insight this week</div>",
           },
         ],
-        updateCampaignSequences: async () => {
-          written += 1;
+        updateCampaignSequences: async (
+          _id: number,
+          sequences: Array<{ email_body?: string }>,
+        ) => {
+          wrote.push(String(sequences[0]?.email_body ?? ""));
         },
       } as never,
       { send: async () => undefined } as never,
@@ -248,7 +251,9 @@ describe("IsolationExecuteService", () => {
       role: "operator",
     });
     assert.equal(result.ok, true);
-    assert.equal(written, 0, "Insight-in-copy sequences must stay signature-free");
+    assert.equal(wrote.length, 1, "Insight leftover must write the in-body close");
+    assert.equal(wrote[0]!.includes("%signature%"), false);
+    assert.match(wrote[0]!, /Josh Osborn<br>Insight/);
   });
 
   it("a bulk signature approve fixes every listed campaign in one tap (D87)", async () => {

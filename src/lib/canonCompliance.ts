@@ -9,6 +9,7 @@ export const CANON_CORE_KINDS = [
   "understaffed",
   "under_warmed",
   "missing_signature_tag",
+  "missing_insight_close",
   "mailbox_sig",
   "mailbox_gap",
   "mailbox_volume",

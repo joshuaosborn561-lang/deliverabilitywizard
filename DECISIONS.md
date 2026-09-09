@@ -107,7 +107,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D89 | Live — signature-ask collapse superseded by D92/D97 |
 | D90 | Superseded by D141 — burst survives recency-gated; the lifetime-rate rule is retired |
 | D91 | Retired-record (no paused-campaign hunt) — live |
-| D92 | Live — copy containing `Insight` exempted by D177 |
+| D92 | Live — copy containing `Insight` handled by D178 |
 | D93 | Live |
 | D94 | Live |
 | D95 | Live |
@@ -191,7 +191,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D174 | Live | Protected clients (seeded Goliath / 548611) never have a domain retired or burned; degrade to buy/cover; failed post-pull buys retry themselves; Porkbun checks are serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back, including Goliath-protected domains |
-| D177 | Live | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
+| D177 | Superseded by D178 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
+| D178 | Live | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; mailbox signature fields never rewritten |
 
 ---
 
@@ -5266,4 +5267,57 @@ Does not reverse D31, D74, D97, or D125 for other clients.
 `stripSignatureTags` in campaign-check / audit / leftover
 isolation write; CANON names D177. Tests: body with `Insight`
 does not get `%signature%` and leftover tags are stripped;
+SalesGlider copy without `Insight` still gets D92.
+
+## D178 — Insight close lives in the sequence body, never the mailbox
+
+**Decision (Josh, 2026-09-09).** D177 was the wrong fix. When
+sequence copy contains the exact substring `Insight` (capital I):
+
+1. Do **not** auto-append `%signature%` / `{{Signature}}` — those
+   resolve to the shared SalesGlider / salesglidergrowth mailbox
+   brand.
+2. **Do** write a plain close into `email_body` **before any
+   P.S. lines**:
+   `Josh Osborn`
+   `Insight`
+3. Strip SalesGlider-branded signature placeholders from the copy
+   and replace them with that close. Do not strip a Josh Osborn /
+   Insight close that is already there.
+4. **Never** rewrite mailbox / email-account signature fields on
+   this path. Those inboxes are shared with other SalesGlider
+   campaigns; D31 / D92 still write those fields when the copy
+   does **not** contain `Insight`.
+
+Not a campaign-name prefix. Not an Insight client-tag match.
+`insight` / `INSIGHT` alone do not count.
+
+**Why.** PR #205 / D177 stopped SalesGlider re-append (right
+motive) by stripping every placeholder and writing nothing. Josh
+clarified: Insight campaigns must sign as Josh Osborn / Insight,
+not SalesGlider and not empty — and that branding belongs in the
+sequence copy, not on the shared mailbox record.
+
+**The rule.**
+
+1. Any step / variant `email_body` contains `Insight` → do not
+   append a mailbox signature placeholder.
+2. Same pass: strip `%signature%` / `{{Signature}}` if present;
+   ensure `Josh Osborn` / `Insight` sits in the body before P.S.
+3. Copy without that substring still gets D92, including mailbox
+   signature writes.
+4. Does not change D31 mailbox signatures for other clients, and
+   does not mutate mailbox fields for Insight-in-copy campaigns.
+
+**Supersedes / amends.** Supersedes D177 (strip-and-leave-empty).
+Amends D92 (auto-write is not universal; Insight close is
+in-body). Does not reverse D31, D74, D97, or D125 for other
+clients.
+
+**Guards.** canon D178: `ensureInsightClose` /
+`ensureInsightCloseOnSequences` in campaign-check / leftover
+isolation write; mailbox `updateEmailAccount` skipped when copy
+contains `Insight`; CANON names D178. Tests: body with `Insight`
+gets Josh Osborn / Insight before P.S., leftover placeholders
+are stripped, mailbox signature fields are not written;
 SalesGlider copy without `Insight` still gets D92.

@@ -46,7 +46,7 @@ describe("merge tag fill judgment (D180)", () => {
         lead: { custom_fields: { job_title: "CIO", Local_Sports_Team: "Astros" } },
       }),
       flattenCampaignLead({
-        lead: { custom_fields: { job_title: "IT Director", vendor: "Proofpoint" } },
+        lead: { custom_fields: { job_title: "IT Director", gateway: "Proofpoint" } },
       }),
     ];
     const fills = judgeMergeTagFill({
@@ -58,7 +58,7 @@ describe("merge tag fill judgment (D180)", () => {
     assert.equal(fills[0]!.tag, "gateway_provider");
     assert.equal(fills[0]!.status, "absent");
     assert.equal(fills[0]!.present, 0);
-    assert.ok(fills[0]!.closest.includes("vendor"));
+    assert.ok(fills[0]!.closest.includes("gateway"));
     const detail = formatMergeTagFinding({ fills, holes: [] });
     assert.match(detail ?? "", /\{\{gateway_provider\}\} absent 0\/2/);
     assert.match(detail ?? "", /first in step 1 A/);

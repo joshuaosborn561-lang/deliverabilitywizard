@@ -257,7 +257,11 @@ export function visibleCopyText(html: string): string {
     .replace(/<\/(?:div|p|span)>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/gi, " ")
-    .replace(/\s+/g, " ")
+    // Keep a double space — that is the blank-merge hole. Collapse
+    // everything else so tags and newlines do not invent extras.
+    .replace(/[ \t]*\n[ \t]*/g, " ")
+    .replace(/ {3,}/g, "  ")
+    .replace(/\t/g, " ")
     .trim();
 }
 
@@ -321,26 +325,38 @@ function blankHoleContexts(
       for (;;) {
         const at = visible.indexOf(token, from);
         if (at < 0) break;
-        const left = visible.slice(Math.max(0, at - 28), at);
-        const right = visible.slice(at + token.length, at + token.length + 28);
+        const left = visible.slice(Math.max(0, at - 40), at);
+        const right = visible.slice(at + token.length, at + token.length + 40);
         from = at + token.length;
-        if (!/\w{3,}/.test(left) || !/\w{3,}/.test(right)) continue;
-        const hole = `${left.replace(/\s+$/g, " ")}${right.replace(/^\s+/g, " ")}`.replace(
-          /\s{2,}/g,
-          "  ",
-        );
-        // "shop with " + " on top" → "shop with  on top"
-        const collapsed = `${left.trimEnd()}  ${right.trimStart()}`;
-        for (const candidate of [collapsed, hole]) {
-          const key = `${tag}:${candidate}`;
-          if (seen.has(key) || candidate.trim().length < 12) continue;
-          seen.add(key);
-          out.push({ tag, hole: candidate });
-        }
+        const leftWords = lastWords(left, 2);
+        const rightWords = firstWords(right, 2);
+        if (!leftWords || !rightWords) continue;
+        // Immediate neighbors only — spintax after the tag must not
+        // poison the hole ("on top..." vs "on top... Defender").
+        const hole = `${leftWords}  ${rightWords}`;
+        const key = `${tag}:${hole}`;
+        if (seen.has(key) || hole.length < 10) continue;
+        seen.add(key);
+        out.push({ tag, hole });
       }
     }
   }
   return out;
+}
+
+function wordsOf(text: string): string[] {
+  return text
+    .trim()
+    .split(/\s+/)
+    .filter((word) => /[A-Za-z0-9]{2,}/.test(word));
+}
+
+function lastWords(text: string, n: number): string {
+  return wordsOf(text).slice(-n).join(" ");
+}
+
+function firstWords(text: string, n: number): string {
+  return wordsOf(text).slice(0, n).join(" ");
 }
 
 function clipSample(text: string, needle: string): string {

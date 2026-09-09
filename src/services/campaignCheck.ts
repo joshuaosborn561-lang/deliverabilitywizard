@@ -1112,12 +1112,11 @@ export class CampaignCheckService {
 }
 
 function carryMergeTagFindings(prior: string[]): CampaignFinding[] {
-  return prior
-    .map((finding) => {
-      const detail = finding.startsWith("merge_tag_blank:")
-        ? finding.slice("merge_tag_blank:".length).trim()
-        : "";
-      return detail ? { kind: "merge_tag_blank" as const, detail } : null;
-    })
-    .filter((row): row is CampaignFinding => row != null);
+  const out: CampaignFinding[] = [];
+  for (const finding of prior) {
+    if (!finding.startsWith("merge_tag_blank:")) continue;
+    const detail = finding.slice("merge_tag_blank:".length).trim();
+    if (detail) out.push({ kind: "merge_tag_blank", detail });
+  }
+  return out;
 }

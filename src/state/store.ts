@@ -247,6 +247,11 @@ export interface AppState {
   attachBlocks: Record<string, AttachBlockRecord>;
   /** D140 — last classified bounce verdict per campaign (id key). */
   bounceVerdicts: Record<string, BounceVerdictRecord>;
+  /**
+   * D191 — Outlook / Microsoft send-ceiling holds (tenant_rate_limit → 0
+   * until 15 minutes after the next UTC midnight).
+   */
+  sendCeilingHolds: Record<string, SendCeilingHoldRecord>;
   /** D90 — last lifetime bounce/sent reading per campaign for the 10-minute burst trip. */
   bounceSnapshots: Record<
     string,
@@ -346,6 +351,18 @@ export interface BounceVerdictRecord {
   dominant: string | null;
   summary: string;
   senderDomains: string[];
+}
+
+/** D191 — temporary override of D183 Outlook 15 while a tenant is capped. */
+export interface SendCeilingHoldRecord {
+  accountId: number;
+  email: string;
+  maxEmailPerDay: number;
+  restoreAt: string;
+  reason: "tenant_rate_limit";
+  campaignId?: number;
+  domains: string[];
+  heldAt: string;
 }
 
 /** D136 — a sending domain whose client story needs a human. */
@@ -470,6 +487,7 @@ const EMPTY_STATE: AppState = {
   warmupEnsuredAt: {},
   attachBlocks: {},
   bounceVerdicts: {},
+  sendCeilingHolds: {},
   bounceSnapshots: {},
   bouncePausedCampaigns: {},
   stageHealth: {},
@@ -539,6 +557,7 @@ export class StateStore {
         markerClients: parsed.markerClients ?? {},
         attachBlocks: parsed.attachBlocks ?? {},
         bounceVerdicts: parsed.bounceVerdicts ?? {},
+        sendCeilingHolds: parsed.sendCeilingHolds ?? {},
         bounceSnapshots: parsed.bounceSnapshots ?? {},
         bouncePausedCampaigns: parsed.bouncePausedCampaigns ?? {},
         stageHealth: parsed.stageHealth ?? {},
@@ -1222,6 +1241,22 @@ export class StateStore {
 
   listBounceVerdicts(): BounceVerdictRecord[] {
     return Object.values(this.state.bounceVerdicts);
+  }
+
+  getSendCeilingHold(accountId: number): SendCeilingHoldRecord | undefined {
+    return this.state.sendCeilingHolds[String(accountId)];
+  }
+
+  setSendCeilingHold(record: SendCeilingHoldRecord): void {
+    this.state.sendCeilingHolds[String(record.accountId)] = record;
+  }
+
+  clearSendCeilingHold(accountId: number): void {
+    delete this.state.sendCeilingHolds[String(accountId)];
+  }
+
+  listSendCeilingHolds(): SendCeilingHoldRecord[] {
+    return Object.values(this.state.sendCeilingHolds);
   }
 
   /** D136 — the monitor's domain→client audit replaces the full list each pass. */

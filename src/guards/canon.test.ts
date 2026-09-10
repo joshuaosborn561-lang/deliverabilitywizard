@@ -7471,25 +7471,25 @@ describe("owner intent — D183 Outlook send ceiling is 15/day", () => {
     );
     assert.match(
       check,
-      /mailboxMessagePerDayTarget\(account/,
+      /mailboxSendCeilingNow/,
       stop(
-        "Campaign-check volume QA is type-aware — Outlook-at-15 is compliant (D183).",
+        "Campaign-check volume QA is type-aware — Outlook-at-15 is compliant (D183/D191).",
         "campaignCheck.ts still wants config.messagePerDay on every mailbox.",
       ),
     );
     assert.match(
       fanOut,
-      /mailboxMessagePerDayTarget/,
+      /mailboxSendCeilingNow/,
       stop(
-        "Fan-out writes the type-aware daily cap (D183).",
+        "Fan-out writes the type-aware daily cap (D183/D191).",
         "clientFanOut.ts still hardcodes config.messagePerDay for every attach.",
       ),
     );
     assert.match(
       topUp,
-      /mailboxMessagePerDayTarget/,
+      /mailboxSendCeilingNow/,
       stop(
-        "Top-up writes the type-aware daily cap (D183).",
+        "Top-up writes the type-aware daily cap (D183/D191).",
         "campaignTopUp.ts still hardcodes config.messagePerDay for every move.",
       ),
     );
@@ -8935,6 +8935,141 @@ describe("owner intent — D190 burned-domain Slack once; Cayden Retire/Buy", ()
       stop(
         "The D190 burn-ask silence rule is in the ledger.",
         "DECISIONS.md no longer has D190.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D191 Outlook send ceiling holds at 0 during tenant_rate_limit", () => {
+  it("D191: tenant hold is 0 until UTC reset; converge respects it; D183 still 15", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const hold = await readFile(
+      new URL("../lib/sendCeilingHold.ts", import.meta.url),
+      "utf8",
+    );
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const ceiling = await readFile(
+      new URL("../lib/sendCeiling.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      hold,
+      /export function syncTenantRateLimitSendCeilingHolds/,
+      stop(
+        "Tenant Outlook holds are synced from bounce verdicts (D191).",
+        "sendCeilingHold.ts lost syncTenantRateLimitSendCeilingHolds.",
+      ),
+    );
+    assert.match(
+      hold,
+      /export function mailboxSendCeilingNow/,
+      stop(
+        "Writers use the hold-aware daily cap (D191).",
+        "sendCeilingHold.ts lost mailboxSendCeilingNow.",
+      ),
+    );
+    assert.match(
+      hold,
+      /TENANT_CEILING_HOLD_TARGET = 0/,
+      stop(
+        "The tenant hold is 0/day (D191).",
+        "sendCeilingHold.ts lost the 0 hold target.",
+      ),
+    );
+    assert.match(
+      hold,
+      /mailboxMessagePerDayTarget/,
+      stop(
+        "The hold wrapper still uses the D183 type-aware standing cap.",
+        "mailboxSendCeilingNow no longer calls mailboxMessagePerDayTarget.",
+      ),
+    );
+    assert.match(
+      settings,
+      /syncTenantRateLimitSendCeilingHolds/,
+      stop(
+        "mailboxSettings records tenant holds before volume writes (D191).",
+        "mailboxSettings.ts no longer syncs tenant ceiling holds.",
+      ),
+    );
+    assert.match(
+      settings,
+      /mailboxSendCeilingNow/,
+      stop(
+        "mailboxSettings writes the held target, not a naked 15 (D191).",
+        "mailboxSettings.ts still writes D183 15 over an active hold.",
+      ),
+    );
+    assert.match(
+      bounce,
+      /held at 0\/day until 15 minutes after midnight UTC/,
+      stop(
+        "The burst receipt names the Outlook 0-hold (D191).",
+        "burstReceiptText no longer mentions the tenant ceiling hold.",
+      ),
+    );
+    assert.match(
+      bounce,
+      /applyTenantRateLimitCeilingHolds/,
+      stop(
+        "The bounce loop writes the Outlook 0-hold (D191).",
+        "campaignBounceAutostop.ts no longer applies tenant ceiling holds.",
+      ),
+    );
+    assert.match(
+      bounce,
+      /this\.book\.peek\(\)/,
+      stop(
+        "Bounce hold writes use the accepted book, never a fetch (D84/D191).",
+        "bounce loop fetches inventory to apply the Outlook hold.",
+      ),
+    );
+    assert.match(
+      ceiling,
+      /export const OUTLOOK_MESSAGE_PER_DAY = 15/,
+      stop(
+        "D183 standing Outlook cap stays 15 (D191 does not drop it).",
+        "sendCeiling.ts lost OUTLOOK_MESSAGE_PER_DAY = 15.",
+      ),
+    );
+    assert.match(
+      canon,
+      /at \*\*0\*\*\/day until \*\*15 minutes after/,
+      stop(
+        "CANON states the Outlook tenant hold (D191).",
+        "CANON.md lost the D191 0-hold.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D191/,
+      stop(
+        "CANON names D191.",
+        "CANON.md dropped D191 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D191 — Outlook send ceiling holds at 0 during tenant_rate_limit/,
+      stop(
+        "The Outlook tenant hold is in the ledger (D191).",
+        "DECISIONS.md no longer has D191.",
       ),
     );
   });

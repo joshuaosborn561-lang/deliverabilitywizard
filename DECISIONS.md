@@ -197,12 +197,13 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
-| D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
+| D183 | Live — qualified by D191 | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Live — rest unlink of exclusive seats blocked by D189 | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 | D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
 | D189 | Live | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
+| D191 | Live | Outlook / Microsoft senders on a tenant_rate_limit incident hold at 0/day until 15 minutes after the next UTC midnight; D183 then restores 15. Converge / fan-out / top-up / campaign-check must not write 15 over the hold. |
 
 ---
 
@@ -5814,6 +5815,49 @@ addresses Cayden and never says "protected client" or "Cayden
 cannot approve" on those kinds; `BURN_ASK_REMIND_MS` is 7 days;
 `healStaleBurnAsks`; same-strike request + remind stay silent;
 CANON names D190.
+
+## D191 — Outlook send ceiling holds at 0 during tenant_rate_limit
+
+**Decision (Josh, 2026-09-10).** When a Microsoft tenant hits its
+daily external-recipient cap (`tenant_rate_limit` / 550 5.7.233),
+Outlook / Microsoft Smartlead senders on that tenant hold
+`max_email_per_day` = **0** until **15 minutes after the next UTC
+midnight**, then D183 restores **15**. Gmail/SMTP keep their
+standing cap. Campaigns stay ACTIVE (D148). The 15-minute
+mailbox-settings converge, fan-out, top-up, and campaign-check
+must not write 15 over an active hold.
+
+**Why.** Insight Outlook (25 salesglider* / joshuaosales IDs) were
+hand-zeroed three times on 2026-09-10 after tenant_rate_limit
+bursts. Each re-zero lasted ~15 minutes — the health
+`runGapEnforce` pass rewrote every Outlook mailbox to 15 (D183).
+The hold is the remediation; D183 is the standing cap after the
+Microsoft day rolls.
+
+**The rule.**
+
+1. An open `tenant_rate_limit` bounce verdict holds matching
+   Outlook / Microsoft accounts at 0. Match: bursting campaign,
+   other Insight lanes when the burst is Insight, sender-domain
+   family (`salesglidergo` ↔ `salesgliderops`), and Outlook
+   already at 0 so a hand-zero is recorded, not raised.
+2. Restore timestamp is 00:15 UTC the next day (or 00:15 the same
+   UTC day if the bounce is after midnight but before grace).
+3. `mailboxSettings` syncs holds from verdicts every gap pass and
+   writes 0 or restores 15. Bounce loop writes 0 from the
+   accepted inventory book only — never its own fetch (D84).
+4. Fan-out / top-up / campaign-check / placement audit use the
+   held target. Gmail is never held.
+5. Does not pause, START, unlink, or change D183's standing 15.
+
+**Supersedes / amends.** Qualifies D183: Outlook 15 is the
+standing cap, not a write over an active tenant hold. Does not
+reverse D148 (campaign stays ACTIVE) or D24 (write
+`max_email_per_day` / read `message_per_day`).
+
+**Guards.** canon D191: `syncTenantRateLimitSendCeilingHolds` /
+`mailboxSendCeilingNow`; mailboxSettings syncs before volume
+writes; bounce receipt names the 0-hold; CANON names D191.
 
 ---
 

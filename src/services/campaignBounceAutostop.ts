@@ -27,6 +27,11 @@ import {
   requestRetireOrCover,
 } from "../lib/retireAsk.js";
 import { accountEmail } from "../clients/smartlead.js";
+import { readMessagePerDay } from "../lib/mailboxSendSettings.js";
+import {
+  sendCeilingHoldActive,
+  syncTenantRateLimitSendCeilingHolds,
+} from "../lib/sendCeilingHold.js";
 import type { InventoryBook } from "./inventory.js";
 import { sleep } from "../lib/http.js";
 import { BounceResurrectionService } from "./bounceResurrection.js";
@@ -452,6 +457,17 @@ export class CampaignBounceAutostopService {
     // Three generations of API "off" writes (D80 converge, D124 force,
     // D155 null) were no-ops and are deleted.
 
+    // D191 — hold Outlook senders at 0 for an open tenant_rate_limit
+    // window. Uses the accepted book only (never its own inventory fetch).
+    if (this.state && this.book) {
+      try {
+        await this.applyTenantRateLimitCeilingHolds(dryRun);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        result.errors.push(`tenant-ceiling-hold: ${message}`);
+      }
+    }
+
     if (!dryRun) {
       await this.state?.save();
     }
@@ -812,6 +828,45 @@ export class CampaignBounceAutostopService {
     }
   }
 
+  /**
+   * D191 — write Outlook `max_email_per_day` to 0 for an open
+   * tenant_rate_limit hold. Never fetches inventory (D84).
+   */
+  private async applyTenantRateLimitCeilingHolds(
+    dryRun: boolean,
+  ): Promise<number> {
+    if (!this.state || !this.book) return 0;
+    const snap = this.book.peek();
+    if (!snap) return 0;
+    const nowMs = this.clock();
+    const synced = syncTenantRateLimitSendCeilingHolds({
+      store: this.state,
+      accounts: snap.accounts,
+      nowMs,
+    });
+    let wrote = 0;
+    if (!dryRun) {
+      for (const account of snap.accounts) {
+        if (!account.id) continue;
+        const hold = this.state.getSendCeilingHold(account.id);
+        if (!sendCeilingHoldActive(hold, nowMs)) continue;
+        const current = readMessagePerDay(account);
+        if (Number.isFinite(current) && current === 0) continue;
+        await this.smartlead.updateEmailAccount(account.id, {
+          max_email_per_day: 0,
+        });
+        wrote += 1;
+        await sleep(WRITE_GAP_MS);
+      }
+    }
+    if (synced.held || wrote) {
+      console.log(
+        `[bounce-autostop] D191 tenant ceiling hold: ${synced.held} Outlook recorded, ${wrote} written to 0`,
+      );
+    }
+    return wrote;
+  }
+
 }
 
 /**
@@ -834,7 +889,7 @@ export function burstReceiptText(finding: BounceBurstFinding): string {
   );
   const plans: Record<string, string> = {
     tenant_rate_limit:
-      "The tenant's Microsoft daily allowance is exhausted. The capped leads re-queue automatically once it resets at midnight UTC; real bad addresses stay dead.",
+      "The tenant's Microsoft daily allowance is exhausted. Outlook / Microsoft senders on that tenant are held at 0/day until 15 minutes after midnight UTC, then restore to 15 (D191). Gmail keeps sending. The capped leads re-queue automatically once it resets; real bad addresses stay dead.",
     sender_blocked:
       "Microsoft flagged the sender for outbound spam — the domain's retire ask is open in this channel. Its leads re-queue once you resolve it (Retire, or unblock in Defender and Cancel).",
     content_block:

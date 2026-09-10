@@ -554,4 +554,75 @@ describe("MailboxSettingsService", () => {
       signature: "Joshua Osborn\nSalesGlider",
     });
   });
+
+  it("D191: does not raise Outlook from 0 to 15 while a tenant_rate_limit hold is open", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-hold-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setBounceVerdict({
+      campaignId: 3921656,
+      at: new Date().toISOString(),
+      dominant: "tenant_rate_limit",
+      summary: "tenant_rate_limit×4",
+      senderDomains: ["salesglidergo.info"],
+    });
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 41,
+          type: "OUTLOOK",
+          from_email: "ada@salesglidergo.info",
+          from_name: "Ada Outlook",
+          message_per_day: 0,
+          minTimeToWaitInMins: 10,
+          signature: "Ada Outlook\nSalesGlider",
+          client_id: 345263,
+          campaign_ids: [3921656],
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 42,
+          type: "OUTLOOK",
+          from_email: "bert@salesgliderops.info",
+          from_name: "Bert Outlook",
+          message_per_day: 15,
+          minTimeToWaitInMins: 10,
+          signature: "Bert Outlook\nSalesGlider",
+          client_id: 345263,
+          campaign_ids: [3921656],
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run when only volume is held");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 0);
+    assert.equal(result.sendLimitHeld, 1);
+    assert.deepEqual(updates, [{ id: 42, fields: { max_email_per_day: 0 } }]);
+    assert.equal(state.getSendCeilingHold(41)?.maxEmailPerDay, 0);
+    assert.equal(state.getSendCeilingHold(42)?.maxEmailPerDay, 0);
+  });
 });

@@ -7706,7 +7706,7 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
     );
     assert.match(
       canon,
-      /NEVER blank or rewrite the signature on a mailbox that staffs an ACTIVE/,
+      /NEVER blank or\s+rewrite the signature on a mailbox that staffs an ACTIVE/,
       stop(
         "CANON forbids blanking ACTIVE SalesGlider mailbox signatures (D184).",
         "CANON.md lost the never-blank-ACTIVE-SG rule.",

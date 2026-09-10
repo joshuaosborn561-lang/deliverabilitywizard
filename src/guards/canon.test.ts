@@ -6527,11 +6527,19 @@ describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
         `suggestedCopySwap returned ${identity}`,
       ),
     );
+    assert.equal(
+      identity,
+      "Quick note... we're TechEvolution.",
+      stop(
+        "Identity openers lock to Quick note... we're {Company}. (D188).",
+        `suggestedCopySwap returned ${identity}`,
+      ),
+    );
     assert.doesNotMatch(
       identity,
-      /Quick note|pen-test|—/,
+      /pen-test|—/,
       stop(
-        "Identity openers must not become Quick note or use an em dash (D170).",
+        "Identity openers must not become pen-test or use an em dash (D170).",
         `suggestedCopySwap returned ${identity}`,
       ),
     );
@@ -8478,6 +8486,185 @@ describe("owner intent — D180 merge tags cannot silently send blank", () => {
       stop(
         "The merge-tag fill rule is in the ledger (D180).",
         "DECISIONS.md no longer has D180.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D188 live word Apply is human one-tap only", () => {
+  it("D188: no auto-Apply; identity locks to Quick note... we're {Company}.", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      suggestedCopySwap,
+      isBannedCopySwap,
+      isIdentityQuickNote,
+      pendingCopySwapAsks,
+      identityOpenerSubstitute,
+    } = await import("../lib/isolationActions.js");
+    const { isHumanCopySwapActor } = await import("../lib/isolationActors.js");
+
+    assert.equal(
+      suggestedCopySwap("{quick context,|for context,} we're TechEvolution."),
+      "Quick note... we're TechEvolution.",
+      stop(
+        "TechEvo identity REPLACE WITH is locked (D188).",
+        "suggestedCopySwap still flattens the spintax.",
+      ),
+    );
+    assert.equal(
+      identityOpenerSubstitute("{quick context,|for context,} we're TechEvolution."),
+      "Quick note... we're TechEvolution.",
+      stop(
+        "identityOpenerSubstitute keeps the company name (D188).",
+        "identity soften is not the locked Quick note line.",
+      ),
+    );
+    assert.equal(
+      isIdentityQuickNote("Quick note... we're TechEvolution."),
+      true,
+      stop(
+        "The locked identity form is not a banned Quick note (D188).",
+        "isIdentityQuickNote rejected Josh's lock.",
+      ),
+    );
+    assert.equal(
+      isBannedCopySwap("Quick note... we're TechEvolution."),
+      false,
+      stop(
+        "isBannedCopySwap allows the locked identity form (D188).",
+        "the locked REPLACE WITH is still banned.",
+      ),
+    );
+    assert.equal(
+      isBannedCopySwap("Quick note —"),
+      true,
+      stop(
+        "Bare Quick note — stays banned (D170/D188).",
+        "isBannedCopySwap no longer flags Quick note —.",
+      ),
+    );
+    assert.equal(
+      isHumanCopySwapActor({ name: "system", role: "owner" }),
+      false,
+      stop(
+        "A system actor cannot Apply a word swap (D188).",
+        "isHumanCopySwapActor treats system as a human tap.",
+      ),
+    );
+    assert.equal(
+      typeof pendingCopySwapAsks,
+      "function",
+      stop(
+        "Unanswered swap_copy asks are listed for the EOD brief (D188).",
+        "pendingCopySwapAsks is gone.",
+      ),
+    );
+
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      exec,
+      /isHumanCopySwapActor/,
+      stop(
+        "swapCopy approve requires a human tap (D188).",
+        "isolationExecute.ts no longer checks isHumanCopySwapActor.",
+      ),
+    );
+    assert.match(
+      exec,
+      /Did not rewrite anyone/,
+      stop(
+        "An empty ACTIVE sweep does not claim a fleet switch (D188).",
+        "isolationExecute.ts still announces Switched the word when nobody carried it.",
+      ),
+    );
+    assert.match(
+      exec,
+      /=== "ACTIVE"/,
+      stop(
+        "Word Apply stays ACTIVE-only (D133/D188).",
+        "isolationExecute.ts no longer filters ACTIVE before writing.",
+      ),
+    );
+
+    const remind = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      remind,
+      /Does not create, approve, or\s+\* Apply anything/,
+      stop(
+        "Remind / boot / digest must not Apply a word swap (D188).",
+        "remindPendingIsolationActions lost the never-Apply comment.",
+      ),
+    );
+    const remindFn = remind.slice(
+      remind.indexOf("export async function remindPendingIsolationActions"),
+      remind.indexOf("export function refreshCopySwapAction"),
+    );
+    assert.doesNotMatch(
+      remindFn,
+      /\.decide\(|swapCopy\(/,
+      stop(
+        "Remind never calls decide / swapCopy (D188).",
+        "remindPendingIsolationActions can Apply a pending swap.",
+      ),
+    );
+
+    const brief = await readFile(
+      new URL("../services/clientDayBrief.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      brief,
+      /pendingCopySwapAsks/,
+      stop(
+        "EOD names unanswered word-swap one-taps (D188).",
+        "clientDayBrief.ts no longer passes pendingCopySwapAsks.",
+      ),
+    );
+
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Never auto-Apply/,
+      stop(
+        "CANON forbids auto-Apply of live word edits (D188).",
+        "CANON.md lost the never-auto-Apply rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Quick note\.\.\. we're \{Company\}/,
+      stop(
+        "CANON locks identity REPLACE WITH (D188).",
+        "CANON.md lost the identity Quick note lock.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D188/,
+      stop(
+        "CANON names D188.",
+        "CANON.md dropped D188 when a later decision landed.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D188 — Live word Apply is human one-tap only/,
+      stop(
+        "The human-tap word-Apply rule is in the ledger (D188).",
+        "DECISIONS.md no longer has D188.",
       ),
     );
   });

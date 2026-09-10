@@ -89,4 +89,60 @@ describe("client day brief drafts (D89)", () => {
     assert.equal(result.loadedDrafts, undefined);
     assert.equal(statsReads, 0);
   });
+
+  it("D188: EOD names pending word-swap one-taps and does not Apply them", async () => {
+    const state = new StateStore(
+      `/tmp/dw-day-swap-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const { buildIsolationAction } = await import("../lib/isolationActions.js");
+    state.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "swap_copy",
+        title: "It was identity on TechEvo L1",
+        proof: "proof",
+        detail: {
+          campaignName: "TechEvo L1",
+          element: "{quick context,|for context,} we're TechEvolution.",
+          swap: "Quick note... we're TechEvolution.",
+        },
+        now: "2026-09-08T15:00:00.000Z",
+      }),
+    );
+    const briefs: Array<{
+      pendingWordSwaps?: Array<{ campaignName: string }>;
+    }> = [];
+    const service = new ClientDayBriefService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Live send", status: "ACTIVE", client_id: 9 },
+        ],
+        listClients: async () => [{ id: 9, name: "TechEvolution" }],
+        getCampaignAnalyticsByDate: async () => ({
+          sent_count: 4,
+          bounce_count: 0,
+        }),
+        getCampaignStatistics: async () => ({ total_leads: 0 }),
+        getCampaign: async () => null,
+        listAllEmailAccounts: async () => [],
+      } as unknown as SmartleadClient,
+      { listTests: async () => [] } as unknown as SmartDeliveryClient,
+      {
+        notifyClientDayBrief: async (summary: {
+          pendingWordSwaps?: Array<{ campaignName: string }>;
+        }) => {
+          briefs.push(summary);
+        },
+      } as unknown as SlackClient,
+      state,
+    );
+
+    await service.run({ endOfDay: true });
+    assert.deepEqual(
+      briefs[0]?.pendingWordSwaps?.map((row) => row.campaignName),
+      ["TechEvo L1"],
+    );
+    assert.equal(state.pendingIsolationActions()[0]?.status, "pending");
+  });
 });

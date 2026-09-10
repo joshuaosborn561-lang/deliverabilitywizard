@@ -46,7 +46,7 @@ export function copySwapProof(input: {
     `REMOVE this exact text: *${phrase}*.`,
     `REPLACE WITH: *${edit}*.`,
     "Suggested edit keeps the line’s job and drops the spam trigger.",
-    "Use suggested edit, or Write my own edit to type a different replacement. One tap applies fleet-wide on every ACTIVE campaign that still carries that phrase (D133).",
+    "Use suggested edit, or Write my own edit to type a different replacement. One tap applies fleet-wide on every ACTIVE campaign that still carries that phrase (D133). I do not Apply this on remind, boot, or digest (D188).",
     `Known-good email from the same inboxes ${input.controlLanded ? "landed" : "did not land"}... this is the copy, not dead inboxes. I have not edited the live email.`,
   ].join("\n");
 }

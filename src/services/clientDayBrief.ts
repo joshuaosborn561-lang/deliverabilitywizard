@@ -18,6 +18,7 @@ import { isClientInbox } from "../lib/clientInbox.js";
 import { parseCampaignLeadStats } from "../lib/leadRunout.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { businessDate } from "./sendVolume.js";
+import { pendingCopySwapAsks } from "../lib/isolationActions.js";
 import { isTerminalCampaignStatus } from "./campaignBounceAutostop.js";
 import { overallSplit } from "./resultMonitor.js";
 import type { StateStore } from "../state/store.js";
@@ -296,6 +297,9 @@ export class ClientDayBriefService {
         canaryFleetDownSince: options.endOfDay
           ? this.state.getCanaryFleetDown()?.since ?? null
           : null,
+        pendingWordSwaps: options.endOfDay
+          ? pendingCopySwapAsks(this.state)
+          : undefined,
       });
     }
     return result;

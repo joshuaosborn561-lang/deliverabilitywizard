@@ -455,6 +455,107 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     );
   });
 
+  it("D188: a system / digest actor cannot Apply a word swap", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-d188-sys-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "swap_copy",
+      title: "Switch the word",
+      proof: "proof",
+      detail: { campaignId: 1, element: "free", swap: "complimentary" },
+    });
+    state.upsertIsolationAction(action);
+    let wrote = false;
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        listCampaigns: async () => [{ id: 1, name: "Live", status: "ACTIVE" }],
+        getCampaignSequences: async () => {
+          wrote = true;
+          return [{ id: 1, subject: "free", email_body: "free consult" }];
+        },
+        updateCampaignSequences: async () => {
+          wrote = true;
+        },
+      } as never,
+      { send: async () => undefined } as never,
+      state,
+      {} as never,
+    );
+    const result = await svc.decide(action.id, "approve", {
+      name: "system",
+      role: "owner",
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /D188/);
+    assert.equal(wrote, false);
+    assert.equal(state.getIsolationAction(action.id)?.status, "pending");
+  });
+
+  it("D188: no ACTIVE carrier means no rewrite and no fleet-switch claim", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-d188-empty-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "swap_copy",
+      title: "It was identity on TechEvo",
+      proof: "proof",
+      detail: {
+        element: "{quick context,|for context,} we're TechEvolution.",
+        swap: "quick context, we're TechEvolution.",
+      },
+    });
+    state.upsertIsolationAction(action);
+    const writes: number[] = [];
+    const sent: string[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "TechEvo paused", status: "PAUSED" },
+          { id: 2, name: "TechEvo draft", status: "DRAFTED" },
+          { id: 3, name: "Live clean", status: "ACTIVE" },
+        ],
+        getCampaignSequences: async (id: number) => {
+          if (id === 3) {
+            return [{ id: 3, subject: "Hi", email_body: "nothing here" }];
+          }
+          writes.push(id);
+          return [
+            {
+              id,
+              subject: "Intro",
+              email_body: "{quick context,|for context,} we're TechEvolution.",
+            },
+          ];
+        },
+        updateCampaignSequences: async (id: number) => {
+          writes.push(id);
+        },
+      } as never,
+      { send: async (text: string) => void sent.push(text) } as never,
+      state,
+      {} as never,
+    );
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(writes, [], "non-ACTIVE carriers are not read or written");
+    assert.ok(
+      sent.some((text) => /Did not rewrite anyone/.test(text)),
+      `announce stays quiet: ${sent.join(" | ")}`,
+    );
+    assert.ok(
+      sent.every((text) => !/Switched the word fleet-wide/.test(text)),
+      "must not claim a fleet switch when nobody ACTIVE carried it",
+    );
+  });
+
   it("D134/D150: retiring a domain approves generic backfill and buys an ESP-matched replacement", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-retire-${process.pid}-${Date.now()}.json`,

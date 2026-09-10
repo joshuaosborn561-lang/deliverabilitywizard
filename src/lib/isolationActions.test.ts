@@ -18,6 +18,7 @@ import {
   refreshCopySwapAction,
   remindPendingIsolationActions,
   requestIsolationAction,
+  pendingCopySwapAsks,
   suggestedCopySwap,
 } from "./isolationActions.js";
 
@@ -515,9 +516,8 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
       },
     });
     const next = refreshCopySwapAction(action);
-    assert.match(String(next.detail.swap), /TechEvolution/i);
-    assert.doesNotMatch(String(next.detail.swap), /Quick note|pen-test|school-district/i);
-    assert.doesNotMatch(String(next.detail.swap), /—/);
+    assert.equal(String(next.detail.swap), "Quick note... we're TechEvolution.");
+    assert.doesNotMatch(String(next.detail.swap), /pen-test|school-district|—/);
     assert.equal(isBannedCopySwap(String(next.detail.swap)), false);
   });
 
@@ -534,9 +534,8 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     const line = "Hey — we're TechEvolution, reaching out about your IT stack.";
     assert.equal(classifyLineJob(line), "generic");
     const swap = suggestedCopySwap(line);
-    assert.match(swap, /TechEvolution/i);
-    assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
-    assert.doesNotMatch(swap, /—/);
+    assert.equal(swap, "Quick note... we're TechEvolution.");
+    assert.doesNotMatch(swap, /pen-test|school-district|—/);
     assert.match(preferEllipsis(line), /\.\.\./);
     assert.doesNotMatch(preferEllipsis(line), /—/);
   });
@@ -586,7 +585,7 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     const identity = suggestedCopySwap(
       "Hey, we're TechEvolution and we help IT teams stay online.",
     );
-    assert.match(identity, /TechEvolution/i);
+    assert.equal(identity, "Quick note... we're TechEvolution.");
     assert.doesNotMatch(identity, /I'd like to offer|Happy to offer/i);
     assert.doesNotMatch(identity, /—/);
   });
@@ -632,5 +631,42 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     assert.match(String(posted?.detail.swap), /Air\s*Pods/i);
     assert.match(notified[0]?.suggestedSwap ?? "", /Air\s*Pods/i);
     assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /Quick note/);
+  });
+});
+
+describe("D188 — identity REPLACE WITH lock; pending asks stay unanswered", () => {
+  it("locks the TechEvo identity spintax to Quick note... we're TechEvolution.", () => {
+    const find = "{quick context,|for context,} we're TechEvolution.";
+    const swap = suggestedCopySwap(find);
+    assert.equal(swap, "Quick note... we're TechEvolution.");
+    assert.equal(isBannedCopySwap(swap), false);
+    assert.equal(isBannedCopySwap("Quick note —"), true);
+    assert.equal(isBannedCopySwap("Quick note"), true);
+  });
+
+  it("lists pending swap_copy asks and does not Apply them", async () => {
+    const store = tempStore();
+    store.upsertIsolationAction(
+      buildIsolationAction({
+        kind: "swap_copy",
+        title: "It was identity on TechEvo L1",
+        proof: "proof",
+        detail: {
+          campaignName: "TechEvo L1",
+          element: "{quick context,|for context,} we're TechEvolution.",
+          swap: "Quick note... we're TechEvolution.",
+        },
+        now: "2026-09-08T15:00:00.000Z",
+      }),
+    );
+    const rows = pendingCopySwapAsks(store);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.campaignName, "TechEvo L1");
+    assert.match(rows[0]?.swap ?? "", /Quick note\.\.\. we're TechEvolution/);
+    const { slack, notified } = slackCapture();
+    const count = await remindPendingIsolationActions({ store, slack });
+    assert.equal(count, 1);
+    assert.deepEqual(notified, [store.pendingIsolationActions()[0]?.id]);
+    assert.equal(store.pendingIsolationActions()[0]?.status, "pending");
   });
 });

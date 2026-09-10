@@ -30,3 +30,22 @@ export function canDecideIsolationAction(
   }
   return role === "owner";
 }
+
+/**
+ * D188 — live word Apply is a human Slack /ops tap. Remind, boot,
+ * bounce remediation, chat, and a digest agent are not a tap.
+ * `system` / empty / wizard / digest names never count even if the
+ * role was forged as owner.
+ */
+export function isHumanCopySwapActor(actor: {
+  name?: string;
+  role: IsolationActorRole | "owner" | "operator";
+}): boolean {
+  if (actor.role !== "owner" && actor.role !== "operator") return false;
+  const name = String(actor.name ?? "")
+    .trim()
+    .toLowerCase();
+  if (!name) return false;
+  if (name === "system" || name === "wizard" || name === "digest") return false;
+  return true;
+}

@@ -240,6 +240,13 @@ export class SlackClient {
     }>;
     /** D85 — set when the unwarmed canary fleet has zero connected mailboxes. */
     canaryFleetDownSince?: string | null;
+    /** D188 — unanswered word-swap one-taps. Named only; never applied. */
+    pendingWordSwaps?: Array<{
+      campaignName: string;
+      element: string;
+      swap: string;
+      requestedAt: string;
+    }>;
   }): Promise<void> {
     const lines = [
       `*Client day — ${summary.date}*`,
@@ -349,6 +356,24 @@ export class SlackClient {
           ),
       );
       if (drafts.length > 10) lines.push(`• …and ${drafts.length - 10} more`);
+    }
+
+    // D188 — unanswered word-swap one-taps. Digest / remind is not Apply.
+    const pendingSwaps = summary.pendingWordSwaps ?? [];
+    if (pendingSwaps.length) {
+      lines.push(
+        "",
+        `Word-swap one-taps still waiting (${pendingSwaps.length}). I will not Apply these. Josh or Cayden tap Use suggested edit in the thread:`,
+        ...pendingSwaps.slice(0, 8).map((row) => {
+          const since = row.requestedAt.slice(0, 10);
+          const find = row.element.replace(/\s+/g, " ").slice(0, 80);
+          const withText = (row.swap || "(delete)").replace(/\s+/g, " ").slice(0, 80);
+          return `• ${row.campaignName} — \`${find}\` → \`${withText}\` (since ${since})`;
+        }),
+      );
+      if (pendingSwaps.length > 8) {
+        lines.push(`• …and ${pendingSwaps.length - 8} more`);
+      }
     }
 
     // D85 — one line for the fleet, not 48 findings.
@@ -1039,7 +1064,7 @@ export class SlackClient {
                     ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
                     : details.kind === "retire_domain"
                       ? "Josh: tap the button (opens a confirm page) to retire. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161/D173), and lets generics cover the campaigns until those warm (D150). Goliath / client 548611 follows the same Retire path (D181). Cayden cannot approve this."
-                      : "Josh or Cayden: *Use suggested edit* applies REPLACE WITH fleet-wide (D133). *Write my own edit* opens a Slack form that shows REMOVE again so you can type a different replacement.",
+                      : "Josh or Cayden: *Use suggested edit* applies REPLACE WITH fleet-wide (D133). I do not Apply this on remind, boot, or digest (D188). *Write my own edit* opens a Slack form that shows REMOVE again so you can type a different replacement.",
           ]
             .filter((line): line is string => line !== undefined)
             .join("\n");

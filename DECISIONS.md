@@ -148,7 +148,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D130 | Live — the engine teardown |
 | D131 | Live |
 | D132 | Live | One Smartlead account book; partial reads distrusted |
-| D133 | Live | Word-swap tap edits every ACTIVE campaign carrying the word |
+| D133 | Live — auto-Apply forbidden by D188 | Word-swap tap edits every ACTIVE campaign carrying the word |
 | D134 | Live | A domain-retire tap approves generic backfill for the campaigns it cut |
 | D135 | Live | POD-A/POD-B tags converged on client mailboxes in Smartlead |
 | D136 | Live | Domain→client advisory audit; EOD escalation, never a guess |
@@ -184,7 +184,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 | D168 | Live — pending-ask refresh + classifier harden added by D170 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
 | D169 | Live | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
-| D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
+| D170 | Live — offer REPLACE WITH lead-in locked by D171; identity REPLACE WITH locked by D188 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note — / pen-test); Local_Sports_Team is an offer even when truncated; identity openers lock to Quick note... we're {Company}. (D188); defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
 | D173 | Live | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
@@ -199,6 +199,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Live | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
+| D188 | Live | Live word Apply is human Slack /ops one-tap only — never auto-Apply from remind, boot, digest, or chat; unanswered asks on the EOD brief; identity REPLACE WITH locks to Quick note... we're {Company}.; already-applied non-ACTIVE TechEvo flatten stays |
 
 ---
 
@@ -5623,4 +5624,65 @@ the mix; campaign-check unlinks shared from Insight and blanks
 exclusive only; `desiredMailboxSignature` stays Name /
 SalesGlider; CANON names D184. Tests: Insight exclusive →
 empty; ACTIVE SG staff → SalesGlider, never blanked.
+
+## D188 — Live word Apply is human one-tap only; identity REPLACE WITH is Quick note... we're {Company}.
+
+**Decision (Josh, 2026-09-10).** The wizard fleet-applied a
+stale D133 REPLACE WITH again on non-ACTIVE TechEvo copy (same
+as 2026-09-08): `{quick context,|for context,} we're
+TechEvolution.` → `quick context, we're TechEvolution.` No
+ACTIVE campaign still carried the old spintax — live senders
+were not rewritten on this pass. That flatten is the wrong
+line versus the locked REPLACE WITH
+`Quick note... we're TechEvolution.` The Sep 8 one-tap on this
+same ask was still unanswered. Josh did not change copy.
+
+1. **Leave** the already-applied flatten on those non-ACTIVE
+   campaigns. Do **not** rewrite the fleet to the locked
+   `Quick note... we're TechEvolution.`
+2. **Never auto-Apply** live word edits. Remind, boot, bounce
+   remediation, chat, and a daily digest are not a tap. Josh
+   or Cayden tap *Use suggested edit* / *Write my own edit* in
+   Slack or confirm in /ops (D133). A `system` / empty /
+   wizard / digest actor is refused.
+3. Unanswered `swap_copy` one-taps are **named on the EOD
+   brief** and left pending. The digest does not Apply them.
+4. Identity-opener REPLACE WITH is locked to
+   `Quick note... we're {Company}.` for future Slack cards.
+   `isBannedCopySwap` still blocks bare / em-dash
+   `Quick note —` that dumps the company name. Do not flatten
+   `{quick context,|for context,}` into the WITH block.
+5. `swapCopy` writes **ACTIVE** campaigns only (D133).
+   PAUSED / DRAFT / STOPPED / COMPLETED stay untouched. An
+   apply that finds no ACTIVE carrier announces that it did
+   not rewrite anyone — it does not claim a fleet switch.
+
+**Why.** A digest / remind re-ran the Sep 8 ask and announced
+a fleet switch while using the banned-then-flattened
+substitute. Josh's lock was `Quick note... we're
+TechEvolution.`; `isBannedCopySwap` treated any "Quick note"
+as banned, so the card stored the flatten instead. Live
+senders were not carrying the old spintax. Rewriting
+non-ACTIVE copy again (to either line) is worse than leaving
+the flatten. Auto-Apply from a queue is not a human tap.
+
+**Tradeoff.** Pending word-hunts wait until EOD or a Slack
+tap. Identity cards now show Quick note... with the company
+name; offer cards stay on the D171 I'd-like-to-offer lead-in.
+Already-flattened non-ACTIVE TechEvo lines stay flattened.
+
+**Supersedes / amends.** Amends D133 (tap still fleet-wide on
+ACTIVE; never auto, never non-ACTIVE). Amends D170's
+identity-opener soften and the blanket `Quick note` ban —
+the locked form with company name is allowed. Does not
+reverse D152/D153/D168/D171 (offer jobs, modal, human tap).
+Does not rewrite existing TechEvo non-ACTIVE sequences.
+
+**Guards.** canon D188: `isHumanCopySwapActor` refuses
+system/digest; `swapCopy` ACTIVE-only and quiet when nobody
+carries the phrase; `identityOpenerSubstitute` /
+`isIdentityQuickNote`; `pendingCopySwapAsks` on the EOD
+brief; remind never calls decide; CANON names D188. Tests:
+TechEvo identity line → locked Quick note...; system actor
+cannot Apply; PAUSED not written; EOD lists pending asks.
 

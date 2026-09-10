@@ -10,7 +10,10 @@ import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import type { InventoryBook } from "./inventory.js";
 import type { SmartleadSequence } from "../types/index.js";
-import { canDecideIsolationAction } from "../lib/isolationActors.js";
+import {
+  canDecideIsolationAction,
+  isHumanCopySwapActor,
+} from "../lib/isolationActors.js";
 import {
   buildIsolationAction,
   persistRetiredDomainHistory,
@@ -103,6 +106,17 @@ export class IsolationExecuteService {
           action.kind === "swap_copy" || action.kind === "add_signature_tag"
             ? "Josh or Cayden can approve this copy edit."
             : "Only Josh can approve retiring a domain or buying replacements / the canary fleet.",
+      };
+    }
+    if (
+      decision === "approve" &&
+      action.kind === "swap_copy" &&
+      !isHumanCopySwapActor(actor)
+    ) {
+      return {
+        ok: false,
+        message:
+          "Live word Apply is Josh or Cayden one-tap only (D188). I will not auto-Apply from remind, boot, digest, or chat.",
       };
     }
     const retireHost = String(action.detail.domain ?? "").toLowerCase();
@@ -494,13 +508,17 @@ export class IsolationExecuteService {
     }
     await this.announce(
       "swap_copy",
-      [
-        `Switched the word fleet-wide: ${find} → ${swap || "(removed)"}.`,
-        edited.length
-          ? `Edited ${edited.length} ACTIVE campaign(s): ${edited.map((name) => `*${name}*`).join(", ")}.`
-          : "No ACTIVE campaign still carried it.",
-        "That word edit is the only change I made.",
-      ].join("\n"),
+      edited.length
+        ? [
+            `Switched the word fleet-wide on ACTIVE campaigns: ${find} → ${swap || "(removed)"}.`,
+            `Edited ${edited.length} ACTIVE campaign(s): ${edited.map((name) => `*${name}*`).join(", ")}.`,
+            "PAUSED / DRAFT / STOPPED / COMPLETED were left alone (D188).",
+            "That word edit is the only change I made.",
+          ].join("\n")
+        : [
+            `Did not rewrite anyone: no ACTIVE campaign still carried ${find}.`,
+            "Non-ACTIVE copy is left as-is — I do not fleet-Apply there (D188).",
+          ].join("\n"),
     );
     if (failed.length) {
       throw new Error(

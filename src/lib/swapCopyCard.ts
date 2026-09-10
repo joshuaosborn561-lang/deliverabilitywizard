@@ -32,7 +32,7 @@ export function swapCopySlackBody(input: {
     leftover ? "" : undefined,
     leftover || undefined,
     "",
-    "Josh or Cayden: *Use suggested edit* applies REPLACE WITH fleet-wide on every ACTIVE campaign that still carries that phrase (D133). *Write my own edit* opens a Slack form that shows REMOVE again so you can type a different replacement.",
+    "Josh or Cayden: *Use suggested edit* applies REPLACE WITH fleet-wide on every ACTIVE campaign that still carries that phrase (D133). I do not Apply this on remind, boot, or digest. Human one-tap only (D188). *Write my own edit* opens a Slack form that shows REMOVE again so you can type a different replacement.",
   ]
     .filter((line): line is string => line !== undefined)
     .join("\n");

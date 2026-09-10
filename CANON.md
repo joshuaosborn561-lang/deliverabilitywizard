@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D184** (2026-09-10). One page of current truth. When a new
+Canon as of **D188** (2026-09-10). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -300,21 +300,26 @@ or the day is done. Silent findings are a bug (D163).
   pen-test (D152/D168; blank delete only for pure spam tokens).
   `{{Local_Sports_Team}}` / sports-ticket openers stay an offer even when
   the hunt slice truncates before “tickets”; company-identity openers
-  (“we’re TechEvolution”) keep the company name with a light soften —
-  they are not the gift/offer template; gift-or-experience-offer
+  (“we’re TechEvolution”) lock to `Quick note... we're {Company}.`
+  (D188) — they are not the gift/offer template and not a flatten of
+  the original `{quick context,|for context,}` spintax; gift-or-experience-offer
   REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}`
   (or equivalent 2–3 way spintax including I'd like to offer) and keep
   the offer noun — not bare `Happy to send` / `Happy to offer` only
   (D171); default substitutes use `...` never an em dash (D170). Pending
   `swap_copy` asks are **recomputed** (`suggestedCopySwap` + `copySwapProof`)
   on remind and before first notify so a pre-D168 frozen “Quick note —”
-  cannot be re-paged; a still-banned default is never Slacked (D170).
+  (em dash, no company) cannot be re-paged; a still-banned default is never Slacked (D170).
   The Slack card leads with *REMOVE this exact text:* and *REPLACE WITH:*
   in fenced blocks under the campaign name so the substitute cannot be
   missed (D170). *Use suggested edit* plus *Write my own edit* (modal
   shows REMOVE again — D153) — and that one tap deletes/replaces across
   **every ACTIVE
-  campaign carrying it**, all steps and variants, shells excluded (D133). A
+  campaign carrying it**, all steps and variants, shells excluded (D133).
+  **Never auto-Apply** from remind, boot, bounce remediation, chat, or
+  a digest agent (D188) — human Slack /ops tap only; unanswered asks
+  sit on the EOD brief. Non-ACTIVE copy is never rewritten by this
+  path. A
   provider-split guess is never Slacked and never benches senders
   (D28/D36 are dead as drivers).
 - Domains are judged on the known-good email only. Two consecutive
@@ -348,12 +353,16 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    in fenced blocks under the campaign name (D170), a substitute that
    keeps the line’s job (offer openers keep the gift/tickets/experience
    and lead with `{I'd like to offer|Happy to offer}` —
-   D152/D168/D170/D171; remind refreshes a stale pending swap before Slack),
-   *Use suggested edit* / *Write my own edit* (D153).
+   D152/D168/D170/D171; identity openers lock to
+   `Quick note... we're {Company}.` — D188; remind refreshes a stale
+   pending swap before Slack and does **not** Apply),
+   *Use suggested edit* / *Write my own edit* (D153). Human one-tap
+   only (D188).
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
-   campaigns, loaded DRAFTs, domains needing a human, and under-warmed
-   inboxes an outside writer keeps re-adding after gate pulls
-   (D85/D89/D136/D143).
+   campaigns, loaded DRAFTs, domains needing a human, under-warmed
+   inboxes an outside writer keeps re-adding after gate pulls, and
+   unanswered word-swap one-taps (named only — never applied)
+   (D85/D89/D136/D143/D188).
 Plus `action_result` confirmations: a tapped button finished, a signature
 was auto-written (first time per campaign only, D92/D95), a reconnect
 happened or hard-failed (D94). Plus `ops_alert` pages — the machine
@@ -388,7 +397,9 @@ ESP-matched, **client-named** replacement buy + D134 backfill, D150/D161/D173/D1
 an already-retired domain's confirm is a no-op, D179), **buy
 domains/mailboxes** (Josh; Slack tap is the approval, asked once — D60;
 fail-#1 buy-ahead still exists until the domain actually retires),
-**change live copy** (Josh or Cayden, one word per tap, applied fleet-wide — D133). Everything else is
+**change live copy** (Josh or Cayden, one word per Slack /ops tap,
+applied fleet-wide on ACTIVE only — D133; never auto-Apply from
+remind, boot, digest, chat, or bounce remediation — D188). Everything else is
 autonomous. `REQUIRE_SPEND_APPROVAL` stays on; approvals are single-use,
 client spend carries the $25 domain / 25 mailbox monthly caps (D4/D15).
 Never spend, purge, or bypass warmup/holds from chat (D18).

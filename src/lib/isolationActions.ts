@@ -294,7 +294,10 @@ export function dismissPendingSignatureAsks(
   return dismissed;
 }
 
-/** Re-send Slack buttons for pending asks. Does not create or approve anything. */
+/**
+ * Re-send Slack buttons for pending asks. Does not create, approve, or
+ * Apply anything (D188 — a remind / boot / digest is not a word-edit tap).
+ */
 export async function remindPendingIsolationActions(input: {
   store: StateStore;
   slack: Pick<SlackClient, "notifyIsolationAction">;
@@ -366,10 +369,49 @@ export function refreshCopySwapAction(
 }
 
 export function isBannedCopySwap(swap: string): boolean {
-  if (/Quick note/i.test(swap)) return true;
-  if (/pen-test/i.test(swap)) return true;
-  if (/from our school-district/i.test(swap)) return true;
+  const trimmed = swap.trim();
+  // D188 — identity soften `Quick note... we're {Company}.` is the
+  // locked REPLACE WITH. The D170 ban is bare / em-dash Quick note
+  // that dumps the company name.
+  if (isIdentityQuickNote(trimmed)) return false;
+  if (/Quick note/i.test(trimmed)) return true;
+  if (/pen-test/i.test(trimmed)) return true;
+  if (/from our school-district/i.test(trimmed)) return true;
   return false;
+}
+
+/** D188 — Josh-locked identity REPLACE WITH (ellipsis + company). */
+export const IDENTITY_QUICK_NOTE_RE =
+  /^Quick note\.\.\.\s+we're\s+[A-Za-z][\w.&-]{1,}\.?$/i;
+
+export function isIdentityQuickNote(swap: string): boolean {
+  return IDENTITY_QUICK_NOTE_RE.test(swap.trim());
+}
+
+/** Pending unanswered swap_copy asks for the EOD digest (D188). Never apply. */
+export function pendingCopySwapAsks(
+  store: Pick<StateStore, "listIsolationActions">,
+): Array<{
+  id: string;
+  campaignName: string;
+  element: string;
+  swap: string;
+  requestedAt: string;
+}> {
+  return store
+    .listIsolationActions()
+    .filter((row) => row.kind === "swap_copy" && row.status === "pending")
+    .map((row) => ({
+      id: row.id,
+      campaignName:
+        typeof row.detail.campaignName === "string" && row.detail.campaignName.trim()
+          ? row.detail.campaignName
+          : row.title,
+      element: String(row.detail.element ?? ""),
+      swap: String(row.detail.swap ?? ""),
+      requestedAt: row.requestedAt,
+    }))
+    .sort((a, b) => a.requestedAt.localeCompare(b.requestedAt));
 }
 
 function persistRefreshedCopySwap(
@@ -648,6 +690,14 @@ function isCompanyIdentityLine(text: string): boolean {
   return COMPANY_IDENTITY_RE.test(text);
 }
 
+/** D188 — locked identity REPLACE WITH. Keeps the company name. */
+export function identityOpenerSubstitute(text: string): string {
+  const match = text.match(/\bwe(?:'re| are)\s+([A-Za-z][\w.&-]{1,})/i);
+  const company = match?.[1];
+  if (!company) return preferEllipsis(softenGeneric(text));
+  return `Quick note... we're ${company}.`;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -663,9 +713,10 @@ function escapeRegExp(value: string): string {
  * drop bait phrasing. Gift/offer REPLACE WITH defaults lead with
  * `{I'd like to offer|Happy to offer}` (D171) — not bare "Happy to
  * send" / "Happy to offer" only. The school-district pen-test bridge
- * is retired. "Quick note —" is not a default for offer or opener
- * jobs. Identity openers ("we're TechEvolution") keep the company
- * name with a light soften — they are not this offer template.
+ * is retired. "Quick note —" is not a default for offer jobs.
+ * Identity openers ("we're TechEvolution") lock to
+ * `Quick note... we're {Company}.` (D188) — they are not this
+ * offer template.
  * Defaults use "..." never an em dash. Pending asks are recomputed
  * on remind (D170) so a pre-D168 freeze cannot be re-paged.
  */
@@ -688,10 +739,10 @@ export function suggestedCopySwap(
   }
   if (job === "cta") return plainProseSubstitute(trimmed, ctaSubstitute(text));
 
-  // D170 — "we're TechEvolution" identity openers keep the company name
-  // with a light soften. Never "Quick note —".
+  // D188 — identity openers lock to `Quick note... we're {Company}.`
+  // Not a flatten of the original spintax, and not bare "Quick note —".
   if (isCompanyIdentityLine(text)) {
-    return plainProseSubstitute(trimmed, softenGeneric(text));
+    return plainProseSubstitute(trimmed, identityOpenerSubstitute(text));
   }
 
   // Generic: keep the line, lightly softened. Never "Quick note —" and

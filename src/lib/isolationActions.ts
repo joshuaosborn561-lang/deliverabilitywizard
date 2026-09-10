@@ -692,8 +692,8 @@ function isCompanyIdentityLine(text: string): boolean {
 
 /** D188 — locked identity REPLACE WITH. Keeps the company name. */
 export function identityOpenerSubstitute(text: string): string {
-  const match = text.match(/\bwe(?:'re| are)\s+([A-Za-z][\w.&-]{1,})/i);
-  const company = match?.[1];
+  const match = text.match(/\bwe(?:'re| are)\s+([A-Za-z][\w&-]{1,})/i);
+  const company = match?.[1]?.replace(/[.,;:]+$/, "");
   if (!company) return preferEllipsis(softenGeneric(text));
   return `Quick note... we're ${company}.`;
 }

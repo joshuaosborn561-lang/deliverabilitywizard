@@ -3147,6 +3147,118 @@ describe("owner intent — D148 nothing pauses: investigate, remediate, re-add",
   });
 });
 
+describe("owner intent — D185 bounce-resurrect TTL is not a pause and not a refill", () => {
+  it("D185: TTL expiry receipts the forfeit, leaves the lead dead, never pauses or refills", async () => {
+    const read = (path: string) =>
+      import("node:fs/promises").then((fs) =>
+        fs.readFile(new URL(path, import.meta.url), "utf8"),
+      );
+    const [service, canon, decisions] = await Promise.all([
+      read("../services/bounceResurrection.ts"),
+      read("../../CANON.md"),
+      read("../../DECISIONS.md"),
+    ]);
+
+    assert.match(
+      service,
+      /ttlExpiryReceiptText/,
+      stop(
+        "The TTL receipt is a named helper so the wording cannot drift (D185).",
+        "bounceResurrection.ts lost ttlExpiryReceiptText.",
+      ),
+    );
+    assert.match(
+      service,
+      /Not a pause\. Not a refill \(D185\)/,
+      stop(
+        "The TTL receipt must say it is not a pause and not a refill (D185).",
+        "bounceResurrection.ts lost the D185 receipt wording.",
+      ),
+    );
+    assert.match(
+      service,
+      /stays ACTIVE \(D148\)/,
+      stop(
+        "The TTL receipt must say the campaign stays ACTIVE (D185/D148).",
+        "bounceResurrection.ts no longer says the campaign stays ACTIVE.",
+      ),
+    );
+    assert.match(
+      service,
+      /does not re-queue until Retire \/ Defender unblock \/ copy Apply/,
+      stop(
+        "The TTL receipt must say re-queue waits for Retire / Defender unblock / copy Apply (D185).",
+        "bounceResurrection.ts lost the remediation-gate re-queue clause.",
+      ),
+    );
+    assert.match(
+      service,
+      /DEFER_EXPIRY_MS\) \{\s*[\s\S]*?markLeadResurrected/,
+      stop(
+        "A forfeited lead is ledgered dead so a later incident cannot consolation-queue it (D185).",
+        "The DEFER_EXPIRY_MS path no longer marks forfeited leads.",
+      ),
+    );
+    assert.equal(
+      /updateCampaignStatus/.test(service),
+      false,
+      stop(
+        "TTL expiry never writes campaign status (D185/D148).",
+        "bounceResurrection.ts now writes campaign status.",
+      ),
+    );
+    assert.equal(
+      /addLeadsToCampaign/.test(service),
+      false,
+      stop(
+        "TTL expiry never imports leads (D185/D52).",
+        "bounceResurrection.ts now calls addLeadsToCampaign.",
+      ),
+    );
+
+    assert.match(
+      canon,
+      /not a pause and not a refill/,
+      stop(
+        "CANON states TTL expiry is not a pause and not a refill (D185).",
+        "CANON.md lost the D185 not-a-pause / not-a-refill rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /leaves those leads dead/,
+      stop(
+        "CANON says the wizard leaves TTL-forfeited leads dead (D185).",
+        "CANON.md dropped the leave-dead clause.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Retire \/ Defender unblock \/ copy Apply/,
+      stop(
+        "CANON names the three remediation gates that actually release a resend (D185).",
+        "CANON.md lost the Retire / Defender / copy Apply clause.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D185/,
+      stop(
+        "CANON names D185.",
+        "CANON.md dropped D185 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D185 — Bounce-resurrect TTL is not a pause and not a refill/,
+      stop(
+        "The TTL-is-not-a-pause rule is in the ledger (D185).",
+        "DECISIONS.md no longer has D185.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D149 alerts and watches live on Railway", () => {
   it("D149: ops_alert is an allowed Slack kind", async () => {
     const { slackAllowed } = await import("../lib/slackAllow.js");

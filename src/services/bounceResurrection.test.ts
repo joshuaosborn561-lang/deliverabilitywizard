@@ -7,6 +7,7 @@ import {
   BounceResurrectionService,
   restorableLead,
   tenantGateOpen,
+  ttlExpiryReceiptText,
   verdictBlamesSender,
 } from "./bounceResurrection.js";
 
@@ -406,6 +407,7 @@ describe("D148 — bounces are investigated, remediated and re-queued, never pau
       requestedAt: iso(T0),
     });
     const sent: string[] = [];
+    const deleted: number[] = [];
     const service = new BounceResurrectionService(
       loadConfig({ DRY_RUN: "false" }),
       {
@@ -421,8 +423,8 @@ describe("D148 — bounces are investigated, remediated and re-queued, never pau
           ],
         }),
         fetchCampaignSequences: async () => [],
-        deleteCampaignLead: async () => {
-          throw new Error("expired leads are never re-queued");
+        deleteCampaignLead: async (campaignId: number) => {
+          deleted.push(campaignId);
         },
         restoreCampaignLead: async () => undefined,
       } as never,
@@ -450,6 +452,52 @@ describe("D148 — bounces are investigated, remediated and re-queued, never pau
     assert.equal(job?.dropped, 1);
     assert.equal(sent.length, 1);
     assert.match(sent[0]!, /expired un-resent/);
+    assert.equal(
+      sent[0],
+      ttlExpiryReceiptText({
+        campaignId: 9,
+        campaignName: "Stuck",
+        dropped: 1,
+      }),
+    );
+    assert.match(sent[0]!, /Not a pause\. Not a refill \(D185\)/);
+    assert.match(sent[0]!, /stays ACTIVE/);
+    assert.equal(
+      state.wasLeadResurrected(9, "lead@x.com"),
+      true,
+      "D185: a forfeited lead is ledgered dead",
+    );
+    assert.deepEqual(deleted, [], "TTL expiry never re-queues");
+
+    // D185 — Josh later retires the domain. A fresh incident still
+    // leaves the forfeited lead dead: not a consolation re-queue,
+    // not a pause, not a refill.
+    const pendingAsk = state
+      .listIsolationActions()
+      .find(
+        (row) =>
+          row.kind === "retire_domain" && row.detail.domain === "stuck.info",
+      );
+    assert.ok(pendingAsk);
+    state.upsertIsolationAction({ ...pendingAsk, status: "executed" });
+    now = T0 + 9 * 24 * 60 * 60 * 1000;
+    service.noteIncident(
+      { id: 9, name: "Stuck" },
+      {
+        campaignId: 9,
+        at: iso(now),
+        dominant: "sender_blocked",
+        summary: "sender_blocked×1",
+        senderDomains: ["stuck.info"],
+      },
+    );
+    await service.work();
+    assert.deepEqual(
+      deleted,
+      [],
+      "D185: a later incident does not consolation-queue a TTL-forfeited lead",
+    );
+    assert.equal(state.wasLeadResurrected(9, "lead@x.com"), true);
   });
 
   it("a fresh sender-fault verdict with no incident record re-opens via the sweep", async () => {

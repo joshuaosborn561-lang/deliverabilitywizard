@@ -43,7 +43,14 @@ export function campaignHasStep2DelayRule(campaign: {
   name?: string | null;
 }): boolean {
   if (isAnyShellCampaign(campaign)) return false;
-  if (isWordHuntShellCampaign(campaign)) return false;
+  if (
+    isWordHuntShellCampaign({
+      id: campaign.id ?? undefined,
+      name: campaign.name,
+    })
+  ) {
+    return false;
+  }
   return true;
 }
 

@@ -56,6 +56,12 @@ import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { isPocClient } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
+  campaignHasStep2DelayRule,
+  ensureStep2Delay,
+  formatStep2DelayFinding,
+  step2NeedsDelayFix,
+} from "../lib/sequenceDelay.js";
+import {
   appendSignatureTag,
   bodyHasInsightClose,
   clientBrandList,
@@ -397,11 +403,24 @@ export class CampaignCheckService {
         (matched
           ? brandFromClientDisplayName(clientDisplayName(matched))
           : "");
+      // D186 — step 2 waits 2 days. Mutate in memory first so a
+      // signature write on the same pass carries the delay (one
+      // sequencesForWrite POST). Write ourselves when signature
+      // does not touch sequences. Finding stays only on failure.
+      let sequences = inspected.sequences;
+      const delayNeeded = Boolean(
+        sequences &&
+          campaignHasStep2DelayRule(campaign) &&
+          step2NeedsDelayFix(sequences),
+      );
+      if (delayNeeded && sequences) {
+        sequences = ensureStep2Delay(sequences).sequences;
+      }
       const sigApplied = await this.autoApplySignature({
         campaignId: campaign.id,
         name,
         brand,
-        sequences: inspected.sequences,
+        sequences,
         accounts: accounts as SmartleadAccountWithCampaigns[],
         campaignById,
         findings,
@@ -440,6 +459,20 @@ export class CampaignCheckService {
         }
         if (sigApplied.wroteInsightClose && !record.sigAutoWrittenAt) {
           insightFixed.push(name);
+        }
+      }
+      if (delayNeeded && sequences) {
+        const sigWroteSequences = Boolean(
+          sigApplied?.wroteTag || sigApplied?.wroteInsightClose,
+        );
+        const wroteDelay = await this.autoApplyStep2Delay({
+          campaignId: campaign.id,
+          name,
+          sequences,
+          alreadyWriting: sigWroteSequences,
+        });
+        if (wroteDelay) {
+          findings = findings.filter((finding) => finding.kind !== "step2_delay");
         }
       }
       const unlinked = await this.unlinkInsightSharedStaff({
@@ -786,6 +819,43 @@ export class CampaignCheckService {
     return unlinked;
   }
 
+  /**
+   * D186 — write step 2 to 2 days when safe. `alreadyWriting` means
+   * a signature POST on this pass already carries the mutated
+   * sequences (same sequencesForWrite path).
+   */
+  private async autoApplyStep2Delay(input: {
+    campaignId: number;
+    name: string;
+    sequences: SmartleadSequence[];
+    alreadyWriting: boolean;
+  }): Promise<boolean> {
+    if (this.config.dryRun) return false;
+    if (input.alreadyWriting) {
+      console.log(
+        `[campaign-check] step 2 delay → 2d #${input.campaignId} ${input.name} (D186, with sequence write)`,
+      );
+      return true;
+    }
+    try {
+      await this.smartlead.updateCampaignSequences(
+        input.campaignId,
+        input.sequences,
+      );
+      await sleep(WRITE_GAP_MS);
+      console.log(
+        `[campaign-check] step 2 delay → 2d #${input.campaignId} ${input.name} (D186)`,
+      );
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[campaign-check] step 2 delay write failed #${input.campaignId}: ${message}`,
+      );
+      return false;
+    }
+  }
+
   private async inspect(input: {
     campaign: SmartleadCampaign;
     campaigns: Map<number, SmartleadCampaign>;
@@ -1037,6 +1107,12 @@ export class CampaignCheckService {
               detail: `${row.label} has ${foreign} in the copy`,
             });
           }
+        }
+      }
+      if (campaignHasStep2DelayRule(campaign)) {
+        const detail = formatStep2DelayFinding(sequences);
+        if (detail) {
+          findings.push({ kind: "step2_delay", detail });
         }
       }
     } catch (error) {

@@ -199,6 +199,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Live | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
+| D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
 
 ---
 
@@ -5623,4 +5624,56 @@ the mix; campaign-check unlinks shared from Insight and blanks
 exclusive only; `desiredMailboxSignature` stays Name /
 SalesGlider; CANON names D184. Tests: Insight exclusive →
 empty; ACTIVE SG staff → SalesGlider, never blanked.
+
+## D186 — Sequence step 2 waits 2 days
+
+**Decision (Josh standing order, 2026-09-10).** Every
+Smartlead client campaign's sequence step 2 (the second
+email) must have `seq_delay_details.delay_in_days = 2`.
+Step 1 stays `0`. Do not change step 3+.
+
+Live fleet already applied (do not undo): 61 campaigns
+updated to 2; 63 already at 2; 1-step canary/shells
+skipped.
+
+Numbering: Josh's note called this D185. Open PR #213
+already claims D185 (bounce-resurrect TTL). D127 — take
+the next free number across main and open PRs — so this
+entry is D186.
+
+**The rule.**
+
+1. Step 1 delay stays 0. This decision does not rewrite
+   step 1.
+2. Step 2 delay must be 2 days on every client campaign
+   that has a second email (`seq_number === 2`).
+3. Canary shells, pod-control shells, the DW Word Hunt
+   Shell, and 1-step instrumentation are skipped.
+4. Campaign-check / QA flags `step2_delay` when step 2
+   is missing, unset, or not 2, and auto-fixes when safe
+   — same `updateCampaignSequences` /
+   `sequencesForWrite` path as other sequence writes.
+   Copy, subjects, and step 3+ delays are untouched.
+   A successful write clears the finding; a failed write
+   keeps it.
+5. The build skill writes step 1 = 0 and step 2 = 2 on
+   setup.
+
+**Why.** Josh locked the second-email wait at two days
+across the live fleet. Without a check, a hand-made or
+imported sequence can drift back to 1 (or Smartlead's
+default) and stay there.
+
+**Supersedes / amends.** New rule. Does not reverse D101 /
+D103 / D110 (`sequencesForWrite` allowlist still includes
+`seq_delay_details`). Does not add a step-3+ converge.
+Does not change the D182 send window.
+
+**Guards.** canon D186: `STEP2_DELAY_DAYS = 2`;
+`ensureStep2Delay` mutates only `seq_number === 2`;
+campaign-check flags `step2_delay` and writes via
+`updateCampaignSequences`; shells / 1-step skipped;
+CANON + skill name D186. Tests: wrong delay → write 2
+and drop finding; already-2 / 1-step / word-hunt → no
+write; failed write keeps the finding.
 

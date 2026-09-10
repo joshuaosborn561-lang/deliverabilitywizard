@@ -306,6 +306,20 @@ One sentence per `<div>`, separated by `<div><br></div>`. Never a bare
 
 `%signature%` is its own final div. PS after signature, each on its own line.
 
+### Sequence step delays (D186)
+
+On `upload_sequence`, set `seq_delay_details.delay_in_days` explicitly:
+
+| Step | `delay_in_days` |
+|---|---|
+| 1 (first email) | **0** |
+| 2 (second email) | **2** |
+| 3+ | leave as uploaded — do not rewrite in this skill |
+
+Campaign-check flags `step2_delay` when step 2 is not 2 and writes it
+back via `sequencesForWrite`. Canary / pod-control / word-hunt shells
+and 1-step instrumentation are skipped. Do not change step 3+.
+
 Use the native `variants` array on `upload_sequence`. Never concatenate
 whole bodies with `|` as manual spintax.
 
@@ -388,6 +402,9 @@ Nothing goes ACTIVE until every line passes.
     bounce pausing, D90).
 14. No off-ICP leads (retail, student orgs, school districts).
 15. Every proof claim in the copy is client-approved.
+16. Sequence delays: step 1 `delay_in_days` is 0; step 2 is **2**
+    (D186). 1-step canary / shell campaigns are exempt. Do not
+    "fix" step 3+.
 
 **Suppression is a hard gate.** Never load a campaign before the client's
 existing-customer list is applied. An AP/billing export is not a domain
@@ -415,6 +432,9 @@ Fleet staffing, rest, warmup, and the two bars: D43 / D46 (Aug 2026).
 Client A/B rest and the generic 14-day send clock are the rotation system.
 The hold-rebuild tier was retired by D130 — leftover HOLD-UNTIL tags are
 inert residue (D128). Placement-test quota is unlimited (D45).
+
+Sequence step delays: Josh 2026-09-10 (D186) — step 1 stays 0, step 2
+is 2 days on every client campaign that has a second email.
 
 Health owns rest execution, top-up, fan-out, the live monitors, and bounce
 pausing (D90). Do not duplicate those here.

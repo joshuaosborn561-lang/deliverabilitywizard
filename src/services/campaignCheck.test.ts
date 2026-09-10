@@ -96,6 +96,11 @@ describe("campaign check first-pass helpers", () => {
       true,
       "D180 pages blank merge tags but does not block first-check identity",
     );
+    assert.equal(
+      firstCheckPassed([{ kind: "step2_delay", detail: "step 2 delay 1d (want 2)" }]),
+      true,
+      "D186 auto-fixes step-2 delay; it does not block first-check identity",
+    );
   });
 
   it("D81: Goliath is a POC client; generics elsewhere need Slack approve", () => {
@@ -1465,5 +1470,207 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     assert.match(merge?.detail ?? "", /absent/);
     assert.equal(result.firstPassed, 1, "merge-tag miss does not block first-check");
     assert.ok(state.getCampaignCheck(3921647)?.findings.some((f) => f.startsWith("merge_tag_blank")));
+  });
+});
+
+describe("D186 — step 2 delay must be 2 days", () => {
+  const twoStep = (step2Delay: number | undefined) => [
+    {
+      seq_number: 1,
+      email_body: "<div>Hi</div><div>%signature%</div>",
+      seq_delay_details: { delay_in_days: 0, delayInDays: 0 },
+    },
+    {
+      seq_number: 2,
+      email_body: "<div>Follow up</div><div>%signature%</div>",
+      seq_delay_details:
+        step2Delay == null
+          ? undefined
+          : { delay_in_days: step2Delay, delayInDays: step2Delay },
+    },
+    {
+      seq_number: 3,
+      email_body: "<div>Last</div><div>%signature%</div>",
+      seq_delay_details: { delay_in_days: 4, delayInDays: 4 },
+    },
+  ];
+
+  const mkSl = (opts: {
+    name?: string;
+    status?: string;
+    sequences: unknown[];
+    writes: unknown[][];
+    failWrite?: boolean;
+  }) =>
+    ({
+      listCampaigns: async () => [
+        {
+          id: 910,
+          name: opts.name ?? "Goliath Education Receipts",
+          status: opts.status ?? "ACTIVE",
+          client_id: 548611,
+        },
+      ],
+      listAllEmailAccounts: async () => [],
+      listClients: async () => [goliath],
+      getCampaignSequences: async () => opts.sequences,
+      updateCampaignSequences: async (_id: number, sequences: unknown[]) => {
+        if (opts.failWrite) throw new Error("HTTP 500");
+        opts.writes.push(sequences);
+      },
+    }) as unknown as SmartleadClient;
+
+  it("writes step 2 to 2 days and leaves step 1 / step 3+ alone", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: unknown[][] = [];
+    const service = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({ sequences: twoStep(1), writes }),
+      delivery(),
+      state,
+    );
+    const result = await service.run({ mode: "all" });
+    assert.equal(writes.length, 1, "one sequencesForWrite POST");
+    const posted = writes[0] as Array<{
+      seq_number: number;
+      email_body?: string;
+      seq_delay_details?: { delay_in_days?: number; delayInDays?: number };
+    }>;
+    assert.deepEqual(posted[0]!.seq_delay_details, {
+      delay_in_days: 0,
+      delayInDays: 0,
+    });
+    assert.equal(posted[0]!.email_body, "<div>Hi</div><div>%signature%</div>");
+    assert.deepEqual(posted[1]!.seq_delay_details, {
+      delay_in_days: 2,
+      delayInDays: 2,
+    });
+    assert.equal(posted[1]!.email_body, "<div>Follow up</div><div>%signature%</div>");
+    assert.deepEqual(posted[2]!.seq_delay_details, {
+      delay_in_days: 4,
+      delayInDays: 4,
+    });
+    const row = result.findings.find((r) => r.campaignId === 910);
+    assert.ok(
+      !(row?.findings ?? []).some((f) => f.kind === "step2_delay"),
+      "a successful write leaves no finding",
+    );
+  });
+
+  it("leaves a campaign already at 2 alone", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: unknown[][] = [];
+    const service = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({ sequences: twoStep(2), writes }),
+      delivery(),
+      state,
+    );
+    await service.run({ mode: "all" });
+    assert.deepEqual(writes, []);
+  });
+
+  it("skips 1-step campaigns and word-hunt shells", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: unknown[][] = [];
+    const oneStep = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({
+        sequences: [
+          {
+            seq_number: 1,
+            email_body: "<div>Hi</div><div>%signature%</div>",
+            seq_delay_details: { delay_in_days: 0 },
+          },
+        ],
+        writes,
+      }),
+      delivery(),
+      state,
+    );
+    await oneStep.run({ mode: "all" });
+    assert.deepEqual(writes, [], "1-step instrumentation has no step 2");
+
+    const state2 = new StateStore(stateFile());
+    await state2.load();
+    const huntWrites: unknown[][] = [];
+    const hunt = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({
+        name: "DW Word Hunt Shell",
+        sequences: twoStep(0),
+        writes: huntWrites,
+      }),
+      delivery(),
+      state2,
+    );
+    await hunt.run({ mode: "all" });
+    assert.deepEqual(huntWrites, [], "word-hunt shell is instrumentation");
+  });
+
+  it("carries the delay fix on a same-pass signature write", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: unknown[][] = [];
+    const service = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({
+        sequences: [
+          {
+            seq_number: 1,
+            email_body: "<div>Hi</div>",
+            seq_delay_details: { delay_in_days: 0 },
+          },
+          {
+            seq_number: 2,
+            email_body: "<div>Follow up</div>",
+            seq_delay_details: { delay_in_days: 1 },
+          },
+        ],
+        writes,
+      }),
+      delivery(),
+      state,
+    );
+    const result = await service.run({ mode: "first" });
+    assert.equal(writes.length, 1, "signature + delay share one sequence POST");
+    const posted = writes[0] as Array<{
+      seq_number: number;
+      email_body?: string;
+      seq_delay_details?: { delay_in_days?: number; delayInDays?: number };
+    }>;
+    assert.equal(posted[0]!.seq_delay_details?.delay_in_days, 0);
+    assert.ok(posted[0]!.email_body?.includes("%signature%"));
+    assert.equal(posted[1]!.seq_delay_details?.delay_in_days, 2);
+    assert.equal(posted[1]!.seq_delay_details?.delayInDays, 2);
+    assert.ok(posted[1]!.email_body?.includes("%signature%"));
+    const row = result.findings.find((r) => r.campaignId === 910);
+    assert.ok(
+      !(row?.findings ?? []).some(
+        (f) => f.kind === "step2_delay" || f.kind === "missing_signature_tag",
+      ),
+    );
+  });
+
+  it("keeps the finding when the write fails", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: unknown[][] = [];
+    const service = mkCheck(
+      loadConfig({} as NodeJS.ProcessEnv),
+      mkSl({ sequences: twoStep(3), writes, failWrite: true }),
+      delivery(),
+      state,
+    );
+    const result = await service.run({ mode: "all" });
+    const row = result.findings.find((r) => r.campaignId === 910);
+    assert.ok(
+      (row?.findings ?? []).some((f) => f.kind === "step2_delay"),
+      "the hole stays visible when the write fails",
+    );
+    assert.match(row?.findings.find((f) => f.kind === "step2_delay")?.detail ?? "", /3d/);
   });
 });

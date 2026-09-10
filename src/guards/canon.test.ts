@@ -825,18 +825,18 @@ describe("owner intent — D49 isolation autonomy", () => {
     );
     assert.equal(
       canDecideIsolationAction("buy_domains", "operator"),
-      false,
+      true,
       stop(
-        "Only Josh can approve buying replacement domains (D49).",
-        "Cayden can now approve a domain purchase.",
+        "Cayden can approve a burned-domain cover buy (D190).",
+        "Cayden still cannot approve a replacement purchase.",
       ),
     );
     assert.equal(
       canDecideIsolationAction("retire_domain", "operator"),
-      false,
+      true,
       stop(
-        "Only Josh can retire a domain (D49).",
-        "Cayden can now retire a domain.",
+        "Cayden can retire a burned domain (D190).",
+        "Cayden still cannot retire a domain.",
       ),
     );
     assert.equal(
@@ -8799,6 +8799,142 @@ describe("owner intent — D189 Insight is not client-rest detachable", () => {
       stop(
         "The Insight client-rest exclusion is in the ledger (D189).",
         "DECISIONS.md no longer has D189.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D190 burned-domain Slack once; Cayden Retire/Buy", () => {
+  it("D190: Cayden CTA, 7-day strike silence, leftover D174 copy healed", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { canDecideIsolationAction } = await import(
+      "../lib/isolationActors.js"
+    );
+    const { BURN_ASK_REMIND_MS } = await import("../lib/isolationActions.js");
+    assert.equal(
+      canDecideIsolationAction("buy_domains", "operator"),
+      true,
+      stop(
+        "Cayden can tap Buy replacements (D190).",
+        "buy_domains is still Josh-only.",
+      ),
+    );
+    assert.equal(
+      canDecideIsolationAction("retire_domain", "operator"),
+      true,
+      stop(
+        "Cayden can tap Retire (D190).",
+        "retire_domain is still Josh-only.",
+      ),
+    );
+    assert.equal(
+      canDecideIsolationAction("buy_canary_fleet", "operator"),
+      false,
+      stop(
+        "Canary fleet spend stays Josh-only (D54/D190).",
+        "Cayden can now buy the canary fleet.",
+      ),
+    );
+    assert.equal(
+      BURN_ASK_REMIND_MS,
+      7 * 86_400_000,
+      stop(
+        "Burn-ask Slack remind is 7 days (D190).",
+        `Burn-ask remind is ${BURN_ASK_REMIND_MS} ms.`,
+      ),
+    );
+
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(
+      new URL("../index.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      actions,
+      /healStaleBurnAsks/,
+      stop(
+        "Leftover D174 protected Buy-cover asks are healed (D190).",
+        "isolationActions.ts lost healStaleBurnAsks.",
+      ),
+    );
+    assert.match(
+      actions,
+      /shouldRemindBurnAsk/,
+      stop(
+        "Burn-ask remind is gated (D190).",
+        "remind still re-posts every pending retire/buy.",
+      ),
+    );
+    assert.match(
+      slack,
+      /Cayden: tap the button \(opens a confirm page\) to retire/,
+      stop(
+        "Retire Slack addresses Cayden (D190).",
+        "slack.ts still tells Josh to tap Retire.",
+      ),
+    );
+    assert.match(
+      slack,
+      /Cayden: tap the button \(opens a confirm page\) to buy client-named cover/,
+      stop(
+        "Cover-buy Slack addresses Cayden (D190).",
+        "slack.ts still tells Josh-only to buy cover.",
+      ),
+    );
+    assert.doesNotMatch(
+      slack,
+      /kind === "retire_domain"[\s\S]{0,400}Cayden cannot approve this/,
+      stop(
+        "Retire Slack no longer says Cayden cannot approve (D190).",
+        "slack.ts still blocks Cayden on retire_domain.",
+      ),
+    );
+    assert.match(
+      index,
+      /Cayden can retire a burned domain or buy cover replacements/,
+      stop(
+        "Slack interactions let Cayden tap Retire / cover Buy (D190).",
+        "index.ts still blocks the operator on retire/buy_domains.",
+      ),
+    );
+    assert.match(
+      canon,
+      /An unchanged known-good \/ AS\(42004\) strike pages Slack \*\*once\*\*/,
+      stop(
+        "CANON states burn-ask Slack is once per strike (D190).",
+        "CANON.md lost the D190 Slack silence rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D190/,
+      stop(
+        "CANON names D190.",
+        "CANON.md dropped D190 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D190 — Burned-domain Slack pages once; Cayden taps Retire \/ cover Buy/,
+      stop(
+        "The D190 burn-ask silence rule is in the ledger.",
+        "DECISIONS.md no longer has D190.",
       ),
     );
   });

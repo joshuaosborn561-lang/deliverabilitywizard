@@ -73,7 +73,7 @@ describe("IsolationExecuteService", () => {
     assert.doesNotMatch(next.email_body ?? "", /free/i);
   });
 
-  it("Cayden cannot approve a buy or retire", async () => {
+  it("Cayden can approve a cover buy or retire; canary stays Josh-only (D190)", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-${process.pid}-${Date.now()}.json`,
     );
@@ -106,7 +106,7 @@ describe("IsolationExecuteService", () => {
       state,
       { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
     );
-    const buyDenied = await svc.decide(buy.id, "approve", {
+    const buyOk = await svc.decide(buy.id, "approve", {
       name: "Cayden",
       role: "operator",
     });
@@ -114,14 +114,13 @@ describe("IsolationExecuteService", () => {
       name: "Cayden",
       role: "operator",
     });
-    const retireDenied = await svc.decide(retire.id, "approve", {
+    const retireOk = await svc.decide(retire.id, "approve", {
       name: "Cayden",
       role: "operator",
     });
-    assert.equal(buyDenied.ok, false);
+    assert.equal(buyOk.ok, true);
     assert.equal(canaryDenied.ok, false);
-    assert.equal(retireDenied.ok, false);
-    assert.equal(state.getIsolationAction(buy.id)?.status, "pending");
+    assert.equal(retireOk.ok, true);
     assert.equal(state.getIsolationAction(canary.id)?.status, "pending");
   });
 

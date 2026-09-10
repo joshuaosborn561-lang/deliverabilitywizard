@@ -25,7 +25,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D1 | Live (the import clock) — duration superseded by D50 (21 days) |
 | D2 | Live |
 | D3 | Live — qualified by D26/D27 |
-| D4 | Live |
+| D4 | Live — retire / cover-buy Slack taps also Cayden (D190) |
 | D5 | Superseded by D51/D79 — no per-sender pulls; numbers stay readings |
 | D6 | Superseded by D51/D59 — no benching path remains |
 | D7 | Superseded by D58/D82 — floor is half the client's inboxes |
@@ -195,13 +195,14 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D178 | Live — exclusive Insight mailbox blank carved out by D184 | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; shared mailbox fields never rewritten |
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
-| D181 | Live | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
+| D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Live — rest unlink of exclusive seats blocked by D189 | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 | D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
 | D189 | Live | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
+| D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 
 ---
 
@@ -5762,4 +5763,57 @@ skips Insight-only rest-mark; CANON names D189. Tests:
 Insight ACTIVE stays attached; Engagers still rest;
 name-prefix + 345263 is sticky; other-client `Insight `
 name still rests.
+
+## D190 — Burned-domain Slack pages once; Cayden taps Retire / cover Buy
+
+**Decision (Josh 2026-09-09 standing call; Cayden 2026-09-10 via
+#deliverability).** Finish shipping D181's Cayden approval and stop
+the leftover D174 Goliath "protected / Josh-only Buy" re-pages.
+
+1. Goliath / 548611 is not a never-retire client. Burned domains
+   open the normal Retire ask. No "protected client" Slack.
+2. **Cayden** (or Josh) taps Retire and cover Buy replacements.
+   Slack and the confirm page address Cayden. Copy reminds him to
+   mark the domain a bad outbound sender; it does not auto-buy.
+   Canary-fleet, isolation-domain, and generic-backfill taps stay
+   Josh-only. Chat `/ops` still cannot spend.
+3. For a given `(domain, kind, strike_key)` — known-good failing
+   inbox set, or AS(42004) on that host — Slack pages **once**.
+   Boot remind does not re-post on a 2–3 hour deploy cycle.
+   Silence until a new strike tier, new failing inboxes,
+   retire/cover completed, or a **7-day** cooldown.
+4. Cover already pending / approved / executed is not re-asked.
+   A live Retire ask swallows a later Buy-cover for the same domain.
+5. Leftover pending D174 "Buy cover — not retiring (protected
+   client)" rows are healed in place (Cayden-allowed, protected
+   copy stripped) and stay silent.
+6. The Oct 15 Goliath campaign PAUSE hold is unchanged and is not
+   a domain-retire carve-out. Replacements stay client-named
+   (`getgoliath*` / `goliathcybersecurity*`), never pool spins.
+7. Does not spend, START Goliath campaigns, or change BCP / Parlay
+   prefs. `REQUIRE_SPEND_APPROVAL` stays on.
+
+**Why.** After D181 shipped, `#deliverability` still got identical
+first-strike pages every ~2–3h for `crossscaleco.com` (known-good
+5/53, same five `breanna.*` mailboxes) titled "Buy cover — not
+retiring (protected client)" with "Cayden cannot approve / Josh:
+tap the button". Leftover pending D174 asks plus boot
+`remindPendingIsolationActions` re-fired the old copy. Agents
+correcting in-thread did nothing.
+
+**Supersedes / amends.** Amends D181 (Cayden CTA now actually
+executes). Amends D49 / D4 for Retire and cover-buy Slack taps
+only — canary fleet stays Josh. Amends boot isolation-remind
+for burn asks (day-scale, not every deploy). Does not reverse
+D174 buy-retry / Porkbun lock. Does not reverse D146/D150/
+D161/D173/D176/D179.
+
+**Guards.** canon D190: `canDecideIsolationAction` allows operator
+on `retire_domain` / `buy_domains`; Slack retire/cover copy
+addresses Cayden and never says "protected client" or "Cayden
+cannot approve" on those kinds; `BURN_ASK_REMIND_MS` is 7 days;
+`healStaleBurnAsks`; same-strike request + remind stay silent;
+CANON names D190.
+
+---
 

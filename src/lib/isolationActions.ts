@@ -23,11 +23,123 @@ export function buildIsolationAction(input: {
     proof: input.proof,
     detail: input.detail,
     allowed:
-      input.kind === "swap_copy" || input.kind === "add_signature_tag"
+      input.kind === "swap_copy" ||
+      input.kind === "add_signature_tag" ||
+      input.kind === "retire_domain" ||
+      input.kind === "buy_domains"
         ? "owner_or_operator"
         : "owner",
     requestedAt: now,
   };
+}
+
+/** D190 — burn-ask Slack remind is days, not hours / every deploy. */
+export const BURN_ASK_REMIND_MS = 7 * 86_400_000;
+
+export function isBurnAskKind(
+  kind: IsolationActionKind,
+): kind is "retire_domain" | "buy_domains" {
+  return kind === "retire_domain" || kind === "buy_domains";
+}
+
+export function burnStrikeKey(input: {
+  kind: "retire_domain" | "buy_domains";
+  domain: string;
+  failingEmails?: string[];
+  as42004?: boolean;
+}): string {
+  const host = input.domain.trim().toLowerCase();
+  if (input.as42004) return `${input.kind}:${host}:as42004`;
+  const emails = (input.failingEmails ?? [])
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+    .sort()
+    .join(",");
+  return `${input.kind}:${host}:kg:${emails}`;
+}
+
+export function isStaleProtectedBurnCopy(text: string): boolean {
+  return (
+    /protected client/i.test(text) ||
+    /never have a domain retired or burned/i.test(text) ||
+    /not retiring \(protected/i.test(text) ||
+    /Cayden cannot approve/i.test(text)
+  );
+}
+
+export function healStaleBurnAsks(
+  store: Pick<StateStore, "listIsolationActions" | "upsertIsolationAction">,
+  now = new Date().toISOString(),
+): number {
+  let healed = 0;
+  for (const action of store.listIsolationActions()) {
+    if (!isBurnAskKind(action.kind) || action.status !== "pending") continue;
+    const blob = `${action.title}\n${action.proof}`;
+    const needsCopy = isStaleProtectedBurnCopy(blob);
+    const needsAllow = action.allowed !== "owner_or_operator";
+    if (!needsCopy && !needsAllow) continue;
+    const host = String(action.detail.domain ?? "").toLowerCase();
+    const title = needsCopy
+      ? action.kind === "retire_domain"
+        ? `Retire ${host || "this domain"}`
+        : `Buy a replacement for ${host || "this domain"}`
+      : action.title;
+    const proof = needsCopy
+      ? [
+          action.proof
+            .replace(/Not offering a retire[\s\S]*?(?:\n|$)/gi, "")
+            .replace(/Protected clients never[^\n]*\n?/gi, "")
+            .replace(/Cayden cannot approve[^\n]*\n?/gi, "")
+            .trim(),
+          "Goliath / client 548611 follows the same Retire path as every other client (D181). This is not a never-retire carve-out.",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : action.proof;
+    store.upsertIsolationAction({
+      ...action,
+      title,
+      proof,
+      allowed: "owner_or_operator",
+      lastNotifiedAt: action.lastNotifiedAt ?? action.requestedAt ?? now,
+    });
+    healed += 1;
+  }
+  return healed;
+}
+
+function burnAskNotifiedAt(action: IsolationActionRecord): string {
+  return action.lastNotifiedAt ?? action.requestedAt;
+}
+
+export function shouldRemindBurnAsk(
+  action: IsolationActionRecord,
+  nowMs = Date.now(),
+): boolean {
+  if (!isBurnAskKind(action.kind)) return true;
+  const at = Date.parse(burnAskNotifiedAt(action));
+  if (!Number.isFinite(at)) return false;
+  return nowMs - at >= BURN_ASK_REMIND_MS;
+}
+
+function domainOfAction(action: IsolationActionRecord): string {
+  return String(action.detail.domain ?? "").toLowerCase();
+}
+
+function retireInFlightForDomain(
+  store: Pick<StateStore, "listIsolationActions">,
+  domain: string,
+): boolean {
+  const host = domain.trim().toLowerCase();
+  if (!host) return false;
+  return store.listIsolationActions().some(
+    (row) =>
+      row.kind === "retire_domain" &&
+      domainOfAction(row) === host &&
+      (row.status === "pending" ||
+        row.status === "approved" ||
+        row.status === "executed"),
+  );
 }
 
 function samePending(
@@ -42,6 +154,7 @@ function samePending(
     next.kind !== "buy_isolation_domain" &&
     next.kind !== "add_signature_tag" &&
     next.kind !== "retire_domain" &&
+    next.kind !== "buy_domains" &&
     existing.status !== "pending"
   ) {
     return false;
@@ -75,9 +188,9 @@ function samePending(
       existing.status === "executed"
     );
   }
-  if (next.kind === "retire_domain") {
-    // D179 — an executed / in-flight retire is the durable dedupe, not
-    // a 7-day window. A denied ask may be re-opened; failed stays
+  if (next.kind === "retire_domain" || next.kind === "buy_domains") {
+    // D179 / D190 — an executed / in-flight retire or cover buy is the
+    // durable dedupe. A denied ask may be re-opened; failed stays
     // retryable via the same record.
     return (
       String(existing.detail.domain ?? "").toLowerCase() ===
@@ -210,9 +323,16 @@ export async function requestIsolationAction(input: {
   slack: Pick<SlackClient, "notifyIsolationAction">;
   action: IsolationActionRecord;
 }): Promise<IsolationActionRecord | null> {
+  healStaleBurnAsks(input.store);
   if (input.action.kind === "retire_domain") {
     const host = String(input.action.detail.domain ?? "").toLowerCase();
     if (host && domainAlreadyRetired(input.store, host)) {
+      return null;
+    }
+  }
+  if (input.action.kind === "buy_domains") {
+    const host = String(input.action.detail.domain ?? "").toLowerCase();
+    if (host && retireInFlightForDomain(input.store, host)) {
       return null;
     }
   }
@@ -231,6 +351,32 @@ export async function requestIsolationAction(input: {
       if (!isBannedCopySwap(String(refreshed.detail.swap ?? ""))) {
         persistRefreshedCopySwap(input.store, refreshed);
       }
+      return null;
+    }
+    // D190 — same domain + kind stays silent unless the strike key
+    // actually changed (new failing inboxes / first→second fail / AS).
+    if (
+      isBurnAskKind(existing.kind) &&
+      existing.status === "pending" &&
+      isBurnAskKind(input.action.kind)
+    ) {
+      const prevKey = String(existing.detail.strikeKey ?? "");
+      const nextKey = String(input.action.detail.strikeKey ?? "");
+      if (nextKey && prevKey !== nextKey) {
+        const updated: IsolationActionRecord = {
+          ...existing,
+          title: input.action.title,
+          proof: input.action.proof,
+          allowed: "owner_or_operator",
+          detail: { ...existing.detail, ...input.action.detail },
+        };
+        input.store.upsertIsolationAction(updated);
+        // First time we learn a strike key on a leftover ask: stamp it,
+        // do not treat that as a new strike (D190).
+        if (!prevKey) return null;
+        await notifyAndStamp(input.store, input.slack, updated);
+        return updated;
+      }
     }
     return null;
   }
@@ -242,8 +388,21 @@ export async function requestIsolationAction(input: {
     return null;
   }
   input.store.upsertIsolationAction(action);
-  await notifyIsolationActionRecord(input.slack, action);
+  await notifyAndStamp(input.store, input.slack, action);
   return action;
+}
+
+async function notifyAndStamp(
+  store: Pick<StateStore, "upsertIsolationAction" | "getIsolationAction">,
+  slack: Pick<SlackClient, "notifyIsolationAction">,
+  action: IsolationActionRecord,
+): Promise<void> {
+  await notifyIsolationActionRecord(slack, action);
+  const stamped: IsolationActionRecord = {
+    ...(store.getIsolationAction(action.id) ?? action),
+    lastNotifiedAt: new Date().toISOString(),
+  };
+  store.upsertIsolationAction(stamped);
 }
 
 export async function notifyIsolationActionRecord(
@@ -256,8 +415,11 @@ export async function notifyIsolationActionRecord(
     actionId: action.id,
     kind: action.kind,
     who:
-      action.kind === "swap_copy" || action.kind === "add_signature_tag"
-        ? "Josh or Cayden"
+      action.kind === "swap_copy" ||
+      action.kind === "add_signature_tag" ||
+      action.kind === "retire_domain" ||
+      action.kind === "buy_domains"
+        ? "Cayden or Josh"
         : "Josh",
     element:
       typeof action.detail.element === "string" ? action.detail.element : undefined,
@@ -301,6 +463,7 @@ export async function remindPendingIsolationActions(input: {
 }): Promise<number> {
   dismissPendingSignatureAsks(input.store);
   dismissRetiredDomainAsks(input.store);
+  healStaleBurnAsks(input.store);
   const pending = input.store
     .pendingIsolationActions()
     .filter((row) => row.status === "pending");
@@ -315,6 +478,7 @@ export async function remindPendingIsolationActions(input: {
   for (const action of pending) {
     if (action.kind === "buy_canary_fleet" && boughtCanary) continue;
     if (action.kind === "add_signature_tag") continue;
+    if (isBurnAskKind(action.kind) && !shouldRemindBurnAsk(action)) continue;
     const next =
       action.kind === "swap_copy" ? refreshCopySwapAction(action) : action;
     if (action.kind === "swap_copy") {
@@ -326,7 +490,7 @@ export async function remindPendingIsolationActions(input: {
       }
       persistRefreshedCopySwap(input.store, next);
     }
-    await notifyIsolationActionRecord(input.slack, next);
+    await notifyAndStamp(input.store, input.slack, next);
     posted += 1;
   }
   return posted;

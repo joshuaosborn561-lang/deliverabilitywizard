@@ -1417,7 +1417,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     const spendNote =
       pending.kind === "buy_canary_fleet" || pending.kind === "buy_domains"
         ? " Confirming spends real money."
-        : "";
+        : pending.kind === "retire_domain"
+          ? " Cayden: mark this domain a bad outbound sender before you confirm. Confirming pulls inboxes and buys a client-named replacement."
+          : "";
     const verb =
       parsed.decision === "approve"
         ? `This will ${title.toLowerCase()} now.${spendNote}`
@@ -1693,16 +1695,22 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         }
 
         if (
-          (role === "unknown" || role === "operator") &&
+          role === "unknown" &&
           (parsed.kind === "buy_domains" ||
             parsed.kind === "buy_canary_fleet" ||
             parsed.kind === "retire_domain")
         ) {
           res.status(200).json({
-            text:
-              role === "operator"
-                ? "Only Josh can approve a purchase or a retire. The confirm page is the same rule."
-                : "I do not recognize this Slack user as Josh. Approve in Railway → /ops.",
+            text: "I do not recognize this Slack user as Josh or Cayden. Approve in Railway → /ops.",
+          });
+          return;
+        }
+        if (
+          role === "operator" &&
+          parsed.kind === "buy_canary_fleet"
+        ) {
+          res.status(200).json({
+            text: "Cayden can retire a burned domain or buy cover replacements. The canary fleet purchase stays Josh-only.",
           });
           return;
         }

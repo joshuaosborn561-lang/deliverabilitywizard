@@ -19,6 +19,10 @@ import {
   remindPendingIsolationActions,
   requestIsolationAction,
   suggestedCopySwap,
+  burnStrikeKey,
+  healStaleBurnAsks,
+  shouldRemindBurnAsk,
+  BURN_ASK_REMIND_MS,
 } from "./isolationActions.js";
 
 function slackCapture() {
@@ -632,5 +636,144 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     assert.match(String(posted?.detail.swap), /Air\s*Pods/i);
     assert.match(notified[0]?.suggestedSwap ?? "", /Air\s*Pods/i);
     assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /Quick note/);
+  });
+});
+
+describe("D190 — burn-ask Slack is once per strike, Cayden CTA", () => {
+  it("pages a known-good first strike once and stays silent on the same inboxes", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const emails = [
+      "breanna.e@crossscaleco.com",
+      "breanna_esco@crossscaleco.com",
+      "bre.escobar@crossscaleco.com",
+      "ebreanna@crossscaleco.com",
+      "escobar_b@crossscaleco.com",
+    ];
+    const ask = (proof: string) =>
+      buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy a replacement for crossscaleco.com",
+        proof,
+        detail: {
+          domain: "crossscaleco.com",
+          strikeKey: burnStrikeKey({
+            kind: "buy_domains",
+            domain: "crossscaleco.com",
+            failingEmails: emails,
+          }),
+        },
+      });
+    const first = await requestIsolationAction({
+      store,
+      slack,
+      action: ask("First fail. Known-good 5/53."),
+    });
+    const second = await requestIsolationAction({
+      store,
+      slack,
+      action: ask("First fail again. Same five inboxes."),
+    });
+    assert.ok(first);
+    assert.equal(first?.allowed, "owner_or_operator");
+    assert.equal(second, null);
+    assert.equal(notified.length, 1);
+    assert.equal(await remindPendingIsolationActions({ store, slack }), 0);
+    assert.equal(notified.length, 1);
+  });
+
+  it("heals leftover D174 protected Buy-cover copy and does not re-Slack it", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const leftover = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover for crossscaleco.com — not retiring (protected client)",
+      proof:
+        "Not offering a retire for crossscaleco.com: it is Goliath Cybersecurity (Dave Ackley) (client 548611) inventory. Protected clients never have a domain retired or burned (D174). Buying cover replacements instead. Cayden cannot approve a purchase. Josh: tap the button",
+      detail: { domain: "crossscaleco.com" },
+      now: "2026-09-10T12:00:00.000Z",
+    });
+    leftover.allowed = "owner";
+    store.upsertIsolationAction(leftover);
+    assert.equal(healStaleBurnAsks(store, "2026-09-10T18:00:00.000Z"), 1);
+    const healed = store.getIsolationAction(leftover.id);
+    assert.equal(healed?.allowed, "owner_or_operator");
+    assert.doesNotMatch(healed?.title ?? "", /protected/i);
+    assert.doesNotMatch(healed?.proof ?? "", /Cayden cannot/i);
+    assert.equal(await remindPendingIsolationActions({ store, slack }), 0);
+    assert.deepEqual(notified, []);
+    assert.equal(shouldRemindBurnAsk(healed!, Date.parse("2026-09-10T18:00:00.000Z")), false);
+  });
+
+  it("does not re-ask Buy cover after the cover buy already executed", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const bought = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy a replacement for crossscaleco.com",
+      proof: "Bought.",
+      detail: { domain: "crossscaleco.com" },
+    });
+    store.upsertIsolationAction({ ...bought, status: "executed" });
+    const again = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy a replacement for crossscaleco.com",
+        proof: "Same first fail.",
+        detail: { domain: "crossscaleco.com" },
+      }),
+    });
+    assert.equal(again, null);
+    assert.deepEqual(notified, []);
+  });
+
+  it("re-pages when the failing inbox set changes", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const first = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy a replacement for crossscaleco.com",
+        proof: "First fail, two inboxes.",
+        detail: {
+          domain: "crossscaleco.com",
+          strikeKey: burnStrikeKey({
+            kind: "buy_domains",
+            domain: "crossscaleco.com",
+            failingEmails: ["a@crossscaleco.com", "b@crossscaleco.com"],
+          }),
+        },
+      }),
+    });
+    const next = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "buy_domains",
+        title: "Buy a replacement for crossscaleco.com",
+        proof: "First fail, a new inbox joined.",
+        detail: {
+          domain: "crossscaleco.com",
+          strikeKey: burnStrikeKey({
+            kind: "buy_domains",
+            domain: "crossscaleco.com",
+            failingEmails: [
+              "a@crossscaleco.com",
+              "b@crossscaleco.com",
+              "c@crossscaleco.com",
+            ],
+          }),
+        },
+      }),
+    });
+    assert.ok(first);
+    assert.ok(next);
+    assert.equal(next?.id, first?.id);
+    assert.equal(notified.length, 2);
+    assert.equal(BURN_ASK_REMIND_MS, 7 * 86_400_000);
   });
 });

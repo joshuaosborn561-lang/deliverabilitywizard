@@ -356,7 +356,7 @@ export class IsolationBranchService {
         decided.verdict === "COPY"
           ? "I will not edit the live email until Josh or Cayden tap Make the changes."
           : decided.verdict === "INFRA"
-            ? "I will not rewrite the email. Domain retire or a replacement buy still waits for Josh."
+            ? "I will not rewrite the email. Domain retire or a replacement buy waits for Cayden (or Josh)."
             : "I will keep testing. A campaign in spam is a flag, not a domain death sentence.",
     });
     run.notes = proof;

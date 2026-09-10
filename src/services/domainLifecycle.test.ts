@@ -40,6 +40,38 @@ describe("DomainLifecycleService", () => {
     assert.equal(slack.actions.length, 1);
   });
 
+  it("D190: same first-strike on crossscaleco.com does not re-Slack on remind", async () => {
+    const state = await store();
+    const slack = new FakeSlack();
+    const svc = new DomainLifecycleService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      state,
+      slack as never,
+    );
+    await svc.afterReadings([
+      { email: "breanna.e@crossscaleco.com", placement: "SPAM", ranAt: "t1" },
+      { email: "breanna_esco@crossscaleco.com", placement: "SPAM", ranAt: "t1" },
+      { email: "bre.escobar@crossscaleco.com", placement: "SPAM", ranAt: "t1" },
+      { email: "ebreanna@crossscaleco.com", placement: "SPAM", ranAt: "t1" },
+      { email: "escobar_b@crossscaleco.com", placement: "SPAM", ranAt: "t1" },
+    ]);
+    assert.equal(slack.actions.length, 1);
+    assert.equal(state.listIsolationActions()[0]?.kind, "buy_domains");
+    assert.doesNotMatch(
+      JSON.stringify(slack.actions[0]),
+      /protected client|Cayden cannot/i,
+    );
+    const { remindPendingIsolationActions } = await import(
+      "../lib/isolationActions.js"
+    );
+    const posted = await remindPendingIsolationActions({
+      store: state,
+      slack: slack as never,
+    });
+    assert.equal(posted, 0);
+    assert.equal(slack.actions.length, 1);
+  });
+
   it("opens retire after two consecutive domain fails", async () => {
     const state = await store();
     const slack = new FakeSlack();

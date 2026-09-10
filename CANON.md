@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D189** (2026-09-10). One page of current truth. When a new
+Canon as of **D190** (2026-09-10). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -348,15 +348,25 @@ or the day is done. Silent findings are a bug (D163).
 
 Three owner pages plus receipts, plus `ops_alert` when the machine or
 healthy sending is broken (D71, D149, D163, D47 plain English):
-1. **Burned domain** — receipts + cancel/replace buttons; the retire tap
+1. **Burned domain** — receipts + cancel/replace buttons; **Cayden** (or Josh)
+   taps Retire or Buy replacements (D190). The retire tap
    pulls, buys the ESP-matched replacement (client-named when the burned
    domain is a client domain — never a generic/pool spin, D161/D173), and lets
-   generics cover the campaigns it cut (D134/D150). A domain that is
+   generics cover the campaigns it cut (D134/D150). Copy reminds Cayden to
+   mark the domain a bad outbound sender; it does not auto-buy. A domain that is
    **already retired** is not offered again (D179) — leftover Slack
    buttons and the confirm page are fail-safe no-ops, no second
    purchase. Goliath burned domains get the same Retire card as
-   every other client (D181). Blocked senders stay off ACTIVE
+   every other client (D181) — never "protected client" / never-retire
+   (D174 is gone). The Oct 15 Goliath *campaign* PAUSE hold is separate
+   and unchanged. Blocked senders stay off ACTIVE
    campaigns (D176); cover is new inventory, not reattach.
+   An unchanged known-good / AS(42004) strike pages Slack **once**;
+   boot remind does not re-fire for hours. Silence holds until a new
+   strike tier, new failing inboxes, retire/cover completed, or a
+   **7-day** cooldown (D190). Cover already bought or queued is not
+   re-asked. Leftover D174 "Buy cover — not retiring (protected)"
+   pending asks are healed in place and stay silent.
 2. **Isolated spam word** — *REMOVE this exact text:* and *REPLACE WITH:*
    in fenced blocks under the campaign name (D170), a substitute that
    keeps the line’s job (offer openers keep the gift/tickets/experience
@@ -396,11 +406,12 @@ Insight seats are unlinked from Insight only (D184).
 
 ## Spend and the human loop
 
-Three human moments (D49): **retire a domain** (Josh — one tap is pull +
-ESP-matched, **client-named** replacement buy + D134 backfill, D150/D161/D173/D181;
+Three human moments (D49): **retire a domain** (Cayden or Josh — one tap is pull +
+ESP-matched, **client-named** replacement buy + D134 backfill, D150/D161/D173/D181/D190;
 an already-retired domain's confirm is a no-op, D179), **buy
-domains/mailboxes** (Josh; Slack tap is the approval, asked once — D60;
-fail-#1 buy-ahead still exists until the domain actually retires),
+cover replacements** (Cayden or Josh; Slack tap is the approval, asked once per
+strike — D60/D190; fail-#1 buy-ahead still exists until the domain actually retires),
+**buy the canary fleet / isolation domain** (Josh),
 **change live copy** (Josh or Cayden, one word per tap, applied fleet-wide — D133). Everything else is
 autonomous. `REQUIRE_SPEND_APPROVAL` stays on; approvals are single-use,
 client spend carries the $25 domain / 25 mailbox monthly caps (D4/D15).

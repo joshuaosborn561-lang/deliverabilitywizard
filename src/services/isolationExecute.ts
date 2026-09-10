@@ -102,7 +102,9 @@ export class IsolationExecuteService {
         message:
           action.kind === "swap_copy" || action.kind === "add_signature_tag"
             ? "Josh or Cayden can approve this copy edit."
-            : "Only Josh can approve retiring a domain or buying replacements / the canary fleet.",
+            : action.kind === "retire_domain" || action.kind === "buy_domains"
+              ? "Cayden or Josh can approve this retire or replacement buy."
+              : "Only Josh can approve buying the canary fleet, the isolation domain, or generic backfill.",
       };
     }
     const retireHost = String(action.detail.domain ?? "").toLowerCase();

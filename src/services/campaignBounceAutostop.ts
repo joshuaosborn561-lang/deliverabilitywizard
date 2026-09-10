@@ -777,6 +777,7 @@ export class CampaignBounceAutostopService {
         domain,
         preferRetire: true,
         owner,
+        extraDetail: { as42004: true },
         proof: [
           `Microsoft's outbound spam filter blocked ${[...senders]
             .map((sender) => `\`${sender}\``)

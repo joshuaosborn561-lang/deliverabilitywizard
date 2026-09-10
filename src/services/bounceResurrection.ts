@@ -542,6 +542,7 @@ export class BounceResurrectionService {
         domain,
         preferRetire: true,
         owner: this.state.getDomainOwner(domain),
+        extraDetail: { as42004: true },
         proof: [
           `Found while re-queueing incident bounces: ${leadEmail} on campaign #${campaignId} bounced 550 5.1.8 from a ${domain} sender.`,
           `"${bounceReasonSnippet(ndr).slice(0, 160)}"`,

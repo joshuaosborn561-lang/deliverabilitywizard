@@ -144,6 +144,7 @@ export class DomainLifecycleService {
         preferRetire,
         proof,
         owner,
+        extraDetail: { failingEmails: verdict.failingEmails },
       });
       if (asked.covered) result.covered += 1;
       else if (asked.opened?.kind === "retire_domain") result.retire += 1;

@@ -23,6 +23,7 @@ import {
   buildIsolationAction,
   domainAlreadyRetired,
   requestIsolationAction,
+  burnStrikeKey,
 } from "./isolationActions.js";
 
 export function refreshDomainOwnerCache(
@@ -113,6 +114,10 @@ export async function requestRetireOrCover(input: {
     owner,
   });
   const ownerDetail = ownerOnActionDetail(owner);
+  const failingEmails = Array.isArray(input.extraDetail?.failingEmails)
+    ? (input.extraDetail.failingEmails as string[])
+    : undefined;
+  const as42004 = Boolean(input.extraDetail?.as42004);
 
   if (input.preferRetire) {
     const opened = await requestIsolationAction({
@@ -126,6 +131,12 @@ export async function requestRetireOrCover(input: {
           domain: host,
           quantity: 1,
           parentDomain: parent,
+          strikeKey: burnStrikeKey({
+            kind: "retire_domain",
+            domain: host,
+            failingEmails,
+            as42004,
+          }),
           ...ownerDetail,
           ...input.extraDetail,
         },
@@ -146,6 +157,12 @@ export async function requestRetireOrCover(input: {
         domain: host,
         quantity: 1,
         parentDomain: parent,
+        strikeKey: burnStrikeKey({
+          kind: "buy_domains",
+          domain: host,
+          failingEmails,
+          as42004,
+        }),
         ...ownerDetail,
         ...input.extraDetail,
       },

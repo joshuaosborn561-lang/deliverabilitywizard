@@ -156,6 +156,8 @@ export interface IsolationActionRecord {
   detail: Record<string, unknown>;
   allowed: "owner" | "owner_or_operator";
   requestedAt: string;
+  /** D190 — last Slack page for this ask; burn-ask remind is day-scale. */
+  lastNotifiedAt?: string;
   decidedAt?: string;
   decidedBy?: string;
   executedAt?: string;

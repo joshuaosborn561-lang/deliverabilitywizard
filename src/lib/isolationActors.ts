@@ -23,9 +23,14 @@ export function canDecideIsolationAction(
     | "add_signature_tag",
   role: IsolationActorRole | "owner" | "operator",
 ): boolean {
-  // Copy edits (one-word swap, %signature% append) are the operator-safe
-  // tier; everything else — spend, teardown, generics — stays owner-only.
-  if (kind === "swap_copy" || kind === "add_signature_tag") {
+  // Copy edits plus burned-domain Retire / replacement Buy (D190).
+  // Canary fleet, isolation-domain buy, and generic backfill stay Josh-only.
+  if (
+    kind === "swap_copy" ||
+    kind === "add_signature_tag" ||
+    kind === "retire_domain" ||
+    kind === "buy_domains"
+  ) {
     return role === "owner" || role === "operator";
   }
   return role === "owner";

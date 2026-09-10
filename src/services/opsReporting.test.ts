@@ -8,6 +8,7 @@ import {
   FleetSummaryService,
   PlacementResultsService,
   titleHasCanaryCopyPhrase,
+  OPS_PLACEMENT_REPORT_CAP,
 } from "./opsReporting.js";
 
 describe("titleHasCanaryCopyPhrase", () => {
@@ -202,6 +203,59 @@ describe("PlacementResultsService", () => {
     );
     assert.deepEqual(requested, ["101"]);
     assert.equal(result.rows[0]?.campaignName, "Campaign Seven");
+  });
+
+  it("D187: returns 80 live tests when more than 80 ACTIVE campaigns have tests", async () => {
+    const state = await stateFixture();
+    const listed = [];
+    const campaigns = [];
+    for (let i = 1; i <= 81; i += 1) {
+      const campaignId = 1000 + i;
+      listed.push({
+        spam_test_id: 2000 + i,
+        test_name: `Auto: Campaign ${i}`,
+        status: "COMPLETED",
+        created_at: new Date(Date.UTC(2026, 8, 1, 0, 0, i)).toISOString(),
+        campaign_id: campaignId,
+        inbox_count: 8,
+        spam_count: 2,
+        adjusted_total_email_count: 10,
+      });
+      campaigns.push({
+        id: campaignId,
+        name: `Campaign ${i}`,
+        status: "ACTIVE",
+      });
+      state.markCampaignTested({
+        campaignId,
+        campaignName: `Campaign ${i}`,
+        testedAt: new Date().toISOString(),
+        testIds: [String(2000 + i)],
+        mailboxCount: 3,
+        testsCreated: 1,
+      });
+    }
+    let providerCalls = 0;
+    const smartDelivery = {
+      listTests: async () => listed,
+      getProviderwiseReport: async () => {
+        providerCalls += 1;
+        return { result: [] };
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => campaigns,
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const result = await service.get();
+    assert.equal(OPS_PLACEMENT_REPORT_CAP, 80);
+    assert.equal(result.rows.length, 80);
+    assert.equal(providerCalls, 80);
   });
 
   it("returns the last snapshot instead of throwing when SmartDelivery 429s", async () => {

@@ -71,8 +71,8 @@ export interface PlacementResults {
   stale?: boolean;
 }
 
-/** D126 — live-sender cap after canary copy is filtered out. */
-export const OPS_PLACEMENT_REPORT_CAP = 40;
+/** D187 — live-sender cap after canary copy is filtered out (D126). */
+export const OPS_PLACEMENT_REPORT_CAP = 80;
 const OPS_PLACEMENT_LIST_PAGE = 100;
 const OPS_PLACEMENT_LIST_MAX_PAGES = 8;
 
@@ -277,9 +277,8 @@ export class PlacementResultsService {
           campaignsLoaded,
         }),
       )
-      // Match the production monitor's rate-limit ceiling — after the
-      // canary-copy tests are gone, so live senders still get reports.
-      .slice(0, 40);
+      // D187 — after canary-copy tests are gone, so live senders fit.
+      .slice(0, 80);
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     const rows: PlacementResultRow[] = new Array(tests.length);

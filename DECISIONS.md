@@ -141,7 +141,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D123 | Live |
 | D124 | Superseded by D157 — the force write never landed; the API discards the field |
 | D125 | Live |
-| D126 | Live |
+| D126 | Live — 40-report ceiling superseded by D187 (hide canary copy + filter-before-cap stay) |
 | D127 | Live — the canon rebuild |
 | D128 | Live — pause-stamp writes retired with D148 (the loop never pauses); qa-unpause keeps reading the stamp while pre-D148 stamps drain |
 | D129 | Live — the deletion pass |
@@ -199,6 +199,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Live | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
+| D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
 
 ---
 
@@ -5623,4 +5624,31 @@ the mix; campaign-check unlinks shared from Insight and blanks
 exclusive only; `desiredMailboxSignature` stays Name /
 SalesGlider; CANON names D184. Tests: Insight exclusive →
 empty; ACTIVE SG staff → SalesGlider, never blanked.
+
+---
+
+## D187 — Ops Placement lists up to 80 live tests
+
+**Decision (Cayden, 2026-09-10).** The `/ops` Placement results
+table lists up to **80** SmartDelivery tests for ACTIVE/START
+sending campaigns. The old 40-report ceiling hid the live
+board once it passed 40 campaigns (63 ACTIVE at the call).
+80 is headroom for continued growth. Canary-copy rows stay
+hidden, and that filter still runs **before** the cap (D126).
+
+**Why.** The employee scoreboard could not show every live
+campaign. 40 was a SmartDelivery rate-limit window, not a
+product rule that some ACTIVE tests stay off the tab.
+
+**Tradeoff.** A full refresh may pull more providerwise
+reports. Snapshot-on-429 and stop-after-first-throttle stay;
+the tab must not 503 when SmartDelivery throttles. This does
+not change the monitor's report cap, launch bar, or isolation
+queue.
+
+**Supersedes / amends.** Supersedes D126's 40-report ceiling
+only. D126's live-senders-only + hide-canary-copy rules stay.
+
+**Guards.** `OPS_PLACEMENT_REPORT_CAP === 80`; filter then
+`.slice(0, 80)`; CANON names D187; ledger header D187.
 

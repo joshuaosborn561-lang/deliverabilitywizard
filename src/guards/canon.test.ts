@@ -4416,7 +4416,7 @@ describe("owner intent — D125 campaign signatures are the two-line rule", () =
 });
 
 describe("owner intent — D126 ops Placement is live senders", () => {
-  it("D126: dashboard placement drops canary copy before the 40-test cap", async () => {
+  it("D126: dashboard placement drops canary copy before the live-test cap", async () => {
     const reporting = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../services/opsReporting.ts", import.meta.url), "utf8"),
     );
@@ -4437,13 +4437,13 @@ describe("owner intent — D126 ops Placement is live senders", () => {
       ),
     );
     const filterThenSlice = reporting.search(
-      /titleHasCanaryCopyPhrase[\s\S]*\.slice\(0, 40\)/,
+      /titleHasCanaryCopyPhrase[\s\S]*\.slice\(0, 80\)/,
     );
     assert.ok(
       filterThenSlice >= 0,
       stop(
-        "Canary copy is filtered before the 40-report ceiling (D126).",
-        "opsReporting.ts no longer filters canary copy before slice(0, 40).",
+        "Canary copy is filtered before the 80-report ceiling (D126/D187).",
+        "opsReporting.ts no longer filters canary copy before slice(0, 80).",
       ),
     );
   });
@@ -8478,6 +8478,73 @@ describe("owner intent — D180 merge tags cannot silently send blank", () => {
       stop(
         "The merge-tag fill rule is in the ledger (D180).",
         "DECISIONS.md no longer has D180.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D187 ops Placement lists 80 live tests", () => {
+  it("D187: ops Placement cap is 80 after canary copy is filtered", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const reporting = await readFile(
+      new URL("../services/opsReporting.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      reporting,
+      /OPS_PLACEMENT_REPORT_CAP = 80/,
+      stop(
+        "Ops Placement lists up to 80 live tests (D187).",
+        "opsReporting.ts no longer sets OPS_PLACEMENT_REPORT_CAP to 80.",
+      ),
+    );
+    assert.match(
+      reporting,
+      /\.slice\(0, 80\)/,
+      stop(
+        "The live-test window is 80 after canary copy is filtered (D187).",
+        "opsReporting.ts no longer slices to 80.",
+      ),
+    );
+    assert.equal(
+      reporting.includes(".slice(0, 40)"),
+      false,
+      stop(
+        "The 40-report ceiling is retired (D187).",
+        "opsReporting.ts still slices to 40.",
+      ),
+    );
+    assert.match(
+      canon,
+      /up to \*\*80\*\* live tests/,
+      stop(
+        "CANON states the 80 live-test Placement window (D187).",
+        "CANON.md lost the D187 80-test cap.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D187/,
+      stop(
+        "CANON names D187.",
+        "CANON.md dropped D187 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D187 — Ops Placement lists up to 80 live tests/,
+      stop(
+        "The 80-test Placement window is in the ledger (D187).",
+        "DECISIONS.md no longer has D187.",
       ),
     );
   });

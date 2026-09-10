@@ -168,7 +168,10 @@ function switchPanel(name) {
   if (name === "isolation") loadIsolation().catch((error) => toast(error.message));
   if (name === "audit") loadAudit().catch((error) => toast(error.message));
   if (name === "placement" && !state.placementRows.length) {
-    loadPlacement().catch((error) => toast(error.message));
+    loadPlacement().catch((error) => {
+      $("#placement-errors").textContent = error.message;
+      toast(error.message);
+    });
   }
 }
 
@@ -253,10 +256,17 @@ async function loadPlacement(force = false) {
   $("#placement-errors").textContent = "";
   const data = await api(`/placements${force ? "?force=1" : ""}`);
   state.placementRows = data.rows || [];
-  $("#placement-updated").textContent = `Updated ${formatDate(data.generatedAt)} · ${state.placementRows.length} tests`;
-  $("#placement-errors").textContent = data.errors?.length
-    ? `${data.errors.length} provider report(s) could not be loaded`
-    : "";
+  const stamp = formatDate(data.generatedAt);
+  $("#placement-updated").textContent = `${data.stale ? "Last snapshot" : "Updated"} ${stamp} · ${state.placementRows.length} tests`;
+  const errors = Array.isArray(data.errors) ? data.errors.filter(Boolean) : [];
+  $("#placement-errors").textContent = [
+    data.stale && state.placementRows.length
+      ? "Showing the last saved snapshot — SmartDelivery did not refresh this pass."
+      : "",
+    ...errors,
+  ]
+    .filter(Boolean)
+    .join(" ");
   renderPlacement();
 }
 
@@ -673,7 +683,10 @@ $("#refresh-dashboard").addEventListener("click", (event) =>
 $("#refresh-placement").addEventListener("click", (event) =>
   withLoadingButton(event.currentTarget, "Refreshing…", () =>
     loadPlacement(true),
-  ).catch((error) => toast(error.message)),
+  ).catch((error) => {
+    $("#placement-errors").textContent = error.message;
+    toast(error.message);
+  }),
 );
 $("#placement-search").addEventListener("input", renderPlacement);
 $$("[data-sort]").forEach((button) =>

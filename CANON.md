@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D186** (2026-09-10). One page of current truth. When a new
+Canon as of **D187** (2026-09-10). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -441,7 +441,8 @@ build's `deploy` identity — commit/branch/deployment from Railway's git
 metadata (D149). `/status`, `/run`, `/approvals/*` require `RUN_TOKEN`. `/ops` is the
 employee console (owner/operator roles, audit log); its Placement tab shows
 tests for ACTIVE sending campaigns only — canary-copy instrumentation is
-hidden (D126). Freeform chat goes to the Cursor agent which may open PRs
+hidden (D126) — and lists up to **80** live tests so a 63-campaign board
+still fits with room to grow (D187). Freeform chat goes to the Cursor agent which may open PRs
 but cannot spend, purge, bypass gates, or deploy (D18/D20). `main` deploys to Railway on merge; each deploy
 restarts the cron cycle (D122).
 

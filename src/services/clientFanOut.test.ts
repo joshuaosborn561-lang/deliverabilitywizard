@@ -348,4 +348,69 @@ describe("D139 — staffing never hands the gate its next pull", () => {
       `skip reason names the clock: ${result.skipped.join(" | ")}`,
     );
   });
+
+  it("D184: does not fan ACTIVE SG seats onto Insight, or Insight seats onto ACTIVE SG", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 3921651,
+          name: "Insight other",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 89,
+          name: "SalesGlider Nurture",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 44,
+          from_email: "insight@salesglidertop.org",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3921647],
+          client_id: 345263,
+        },
+        {
+          id: 68,
+          from_email: "engager@salesglidertop.org",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [89],
+          client_id: 345263,
+        },
+      ],
+      listClients: async () => [{ id: 345263, name: "SalesGlider" }],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const state = {
+      getPoolMailbox: () => undefined,
+      isCopyCanary: () => false,
+      getRestingInbox: () => undefined,
+      getDomainHistory: () => undefined,
+    } as unknown as StateStore;
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    await service.run({ dryRun: false });
+    assert.deepEqual(adds, [[3921651, [44]]]);
+  });
 });

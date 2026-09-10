@@ -1,13 +1,15 @@
 /**
- * D184 — Insight outbound is campaign-scoped, not a SalesGlider mailbox
- * rewrite. Smartlead has no campaign-level "don't append the mailbox
- * signature" switch (GET /campaigns/{id} and POST /settings expose
- * tracking, stop-on-reply, plain-text, schedule — not add_signature).
- * The campaign levers are: keep `%signature%` out of Insight copy
- * (D178) and, only when a mailbox sits on Insight campaigns and no
- * other non-shell campaign, blank the mailbox signature so Smartlead
- * has nothing to append. Shared SalesGlider mailboxes stay Name /
- * SalesGlider (D31). `desiredMailboxSignature` is unchanged.
+ * D184 — Insight outbound is a staffing split inside SalesGlider
+ * client 345263, not a fleet mailbox rewrite.
+ *
+ * Live pattern (2026-09-10): Insight campaigns staff only seats that
+ * are not on ACTIVE SalesGlider campaigns; those exclusive seats may
+ * carry an empty mailbox signature (the sequence already closes
+ * Josh Osborn / Insight); mailboxes that staff ACTIVE SG campaigns
+ * keep Name / SalesGlider and are never blanked. Smartlead has no
+ * campaign-level "don't append signature" switch. Do not converge
+ * salesglider* domains to empty. `desiredMailboxSignature` is
+ * unchanged.
  */
 
 import {
@@ -30,6 +32,8 @@ export const INSIGHT_CAMPAIGN_IDS: readonly number[] = [
   3921647, 3921651, 3921650, 3921654, 3921656, 3921653, 3921659,
 ];
 
+export const SALESGLIDER_CLIENT_ID = 345263;
+
 const INSIGHT_ID_SET = new Set(INSIGHT_CAMPAIGN_IDS);
 
 /** Empty mailbox signature — Smartlead then has nothing to append. */
@@ -39,6 +43,12 @@ const INSIGHT_SECOND_BRANDS = ["SalesGlider", "SalesGlider Growth"];
 
 export function isInsightCampaignId(id: number | null | undefined): boolean {
   return typeof id === "number" && INSIGHT_ID_SET.has(id);
+}
+
+export function campaignIsActive(
+  campaign: { status?: string | null } | undefined,
+): boolean {
+  return String(campaign?.status ?? "").toUpperCase() === "ACTIVE";
 }
 
 /**
@@ -55,6 +65,19 @@ export function isInsightCampaign(
   return sequenceBodiesContainInsight(sequences);
 }
 
+/**
+ * ACTIVE SalesGlider Engagers (and other non-Insight client-345263
+ * lives). Shells and Insight ids are never this.
+ */
+export function isActiveSalesGliderCampaign(
+  campaign: SmartleadCampaign | undefined,
+): boolean {
+  if (!campaign || !campaignIsActive(campaign)) return false;
+  if (isAnyShellCampaign(campaign)) return false;
+  if (isInsightCampaignId(campaign.id)) return false;
+  return campaign.client_id === SALESGLIDER_CLIENT_ID;
+}
+
 export function insightCampaignIdSet(
   campaigns: Iterable<{ id?: number | null }>,
 ): Set<number> {
@@ -65,12 +88,42 @@ export function insightCampaignIdSet(
   return out;
 }
 
+export function mailboxInsightCampaignIds(
+  account: SmartleadAccountWithCampaigns,
+  campaignById: Map<number, SmartleadCampaign>,
+): number[] {
+  const out: number[] = [];
+  for (const id of campaignIdsOf(account)) {
+    const campaign = campaignById.get(id);
+    if (campaign && isAnyShellCampaign(campaign)) continue;
+    if (isInsightCampaignId(id)) out.push(id);
+  }
+  return out;
+}
+
+export function mailboxActiveSalesGliderCampaigns(
+  account: SmartleadAccountWithCampaigns,
+  campaignById: Map<number, SmartleadCampaign>,
+): SmartleadCampaign[] {
+  const out: SmartleadCampaign[] = [];
+  for (const id of campaignIdsOf(account)) {
+    const campaign = campaignById.get(id);
+    if (isActiveSalesGliderCampaign(campaign)) out.push(campaign!);
+  }
+  return out;
+}
+
+export function mailboxStaffsActiveSalesGlider(
+  account: SmartleadAccountWithCampaigns,
+  campaignById: Map<number, SmartleadCampaign>,
+): boolean {
+  return mailboxActiveSalesGliderCampaigns(account, campaignById).length > 0;
+}
+
 /**
- * True when every non-shell membership is a named Insight campaign
- * and at least one such membership exists. An unknown campaign id
- * (not in the map) is treated as shared — do not blank. A mailbox
- * that also sits on SalesGlider Nurture (any status, non-shell) is
- * shared. Shells (canary / pod-control) do not count.
+ * On at least one Insight campaign and not on any ACTIVE SalesGlider
+ * campaign. PAUSED/STOPPED SG memberships do not count as shared.
+ * An unknown campaign id is treated as shared — do not blank.
  */
 export function mailboxIsExclusiveInsightStaff(
   account: SmartleadAccountWithCampaigns,
@@ -83,10 +136,39 @@ export function mailboxIsExclusiveInsightStaff(
     const campaign = campaignById.get(id);
     if (!campaign) return false;
     if (isAnyShellCampaign(campaign)) continue;
-    if (!isInsightCampaignId(id)) return false;
-    onInsight = true;
+    if (isInsightCampaignId(id)) {
+      onInsight = true;
+      continue;
+    }
+    if (campaignIsActive(campaign)) return false;
   }
   return onInsight;
+}
+
+/**
+ * Fan-out / top-up / on-week restore gate. Insight is not default
+ * client-345263 fan-out: only mailboxes already on Insight may spread
+ * across the Insight set, and never onto ACTIVE SG. ACTIVE SG staff
+ * never attach to Insight.
+ */
+export function canAttachMailboxToCampaign(
+  account: SmartleadAccountWithCampaigns,
+  target: SmartleadCampaign,
+  campaignById: Map<number, SmartleadCampaign>,
+  opts?: { insightRequiresExisting?: boolean },
+): boolean {
+  if (isAnyShellCampaign(target)) return true;
+  if (isInsightCampaignId(target.id)) {
+    if (mailboxStaffsActiveSalesGlider(account, campaignById)) return false;
+    if (opts?.insightRequiresExisting) {
+      return mailboxInsightCampaignIds(account, campaignById).length > 0;
+    }
+    return true;
+  }
+  if (isActiveSalesGliderCampaign(target)) {
+    return mailboxInsightCampaignIds(account, campaignById).length === 0;
+  }
+  return true;
 }
 
 /** Empty, whitespace, or the Josh Osborn / Insight two-line close. */

@@ -248,6 +248,12 @@ describe("CampaignAuditService signature QA", () => {
             status: "ACTIVE",
             client_id: 345263,
           },
+          {
+            id: 89,
+            name: "SalesGlider Nurture",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
         ],
         listAllEmailAccounts: async () => [
           {
@@ -267,6 +273,16 @@ describe("CampaignAuditService signature QA", () => {
             signature: "",
             client_id: 345263,
             campaign_ids: [3921647],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+          {
+            id: 13,
+            from_email: "shared@salesglidertop.org",
+            from_name: "Joshua Osborn",
+            signature: "Joshua Osborn\nSalesGlider",
+            client_id: 345263,
+            campaign_ids: [3921647, 89],
             is_smtp_success: true,
             is_imap_success: true,
           },
@@ -308,6 +324,16 @@ describe("CampaignAuditService signature QA", () => {
       ),
       false,
       "empty Insight mailbox signature is compliant",
+    );
+    assert.ok(
+      result.signatureIssues.some(
+        (issue) =>
+          issue.campaignId === 3921647 &&
+          issue.kind === "insight_shared_staff" &&
+          issue.detail.includes("shared@salesglidertop.org") &&
+          issue.detail.includes("#89"),
+      ),
+      "QA must flag Insight staff that also sit on ACTIVE SalesGlider",
     );
   });
 });

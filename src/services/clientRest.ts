@@ -20,6 +20,7 @@ import {
 } from "../lib/restCohort.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import { isExcluded } from "./campaignTopUp.js";
 import {
   dropMembership,
@@ -341,6 +342,18 @@ export class ClientRestService {
       const added: number[] = [];
       for (const campaignId of targets) {
         if (row.alreadyOnActive.includes(campaignId)) continue;
+        const target = campaignById.get(campaignId);
+        if (
+          target &&
+          !canAttachMailboxToCampaign(row.account, target, campaignById, {
+            insightRequiresExisting: true,
+          })
+        ) {
+          result.skipped.push(
+            `${row.email}: Insight / ACTIVE SalesGlider staffing split (D184)`,
+          );
+          continue;
+        }
         try {
           if (!dryRun) {
             await this.smartlead.addEmailAccountsToCampaign(campaignId, [

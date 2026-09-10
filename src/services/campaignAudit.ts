@@ -13,6 +13,7 @@ import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   insightDualSignatureMismatch,
   isInsightCampaign,
+  mailboxActiveSalesGliderCampaigns,
 } from "../lib/insightCampaigns.js";
 import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -69,7 +70,11 @@ export interface SupplyForecast {
 export interface SignatureQaIssue {
   campaignId: number;
   campaignName: string;
-  kind: "mailbox_sig" | "missing_signature_tag" | "foreign_brand_in_copy";
+  kind:
+    | "mailbox_sig"
+    | "insight_shared_staff"
+    | "missing_signature_tag"
+    | "foreign_brand_in_copy";
   detail: string;
 }
 
@@ -282,6 +287,9 @@ export class CampaignAuditService {
     allBrands: string[];
   }): Promise<SignatureQaIssue[]> {
     const issues: SignatureQaIssue[] = [];
+    const campaignById = new Map(
+      input.campaigns.map((campaign) => [campaign.id, campaign]),
+    );
     const live = input.campaigns.filter((campaign) => {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
       return !isAnyShellCampaign(campaign);
@@ -312,6 +320,26 @@ export class CampaignAuditService {
         if (!campaignIdsOf(account).includes(campaign.id)) continue;
         const email = accountEmail(account);
         if (!email) continue;
+        if (insightCampaign) {
+          const shared = mailboxActiveSalesGliderCampaigns(
+            account,
+            campaignById,
+          );
+          if (shared.length) {
+            const detail = `${email} also sits on ACTIVE SalesGlider ${shared
+              .map((row) => `#${row.id}`)
+              .join(", ")}`;
+            issues.push({
+              campaignId: campaign.id,
+              campaignName,
+              kind: "insight_shared_staff",
+              detail,
+            });
+            console.log(
+              `[campaign-audit] INSIGHT-SHARED #${campaign.id} ${campaign.name} — ${detail}`,
+            );
+          }
+        }
         const mismatch = insightCampaign
           ? insightDualSignatureMismatch({
               fromName: account.from_name,

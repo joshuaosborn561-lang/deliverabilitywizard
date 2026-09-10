@@ -28,7 +28,9 @@ import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   insightDualSignatureMismatch,
   isInsightCampaign,
+  mailboxActiveSalesGliderCampaigns,
   mailboxIsExclusiveInsightStaff,
+  mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
@@ -84,7 +86,11 @@ import {
   warmupClockStartedAt,
 } from "./warmupGate.js";
 import { isExcluded } from "./campaignTopUp.js";
-import { type InventoryBook, type InventorySnapshot } from "./inventory.js";
+import {
+  dropMembership,
+  type InventoryBook,
+  type InventorySnapshot,
+} from "./inventory.js";
 import {
   detectSentMergeHoles,
   extractCampaignLeads,
@@ -242,6 +248,7 @@ export class CampaignCheckService {
     const sigFixed: Array<{ name: string; brand: string }> = [];
     const insightFixed: string[] = [];
     const insightSigBlanked: string[] = [];
+    const insightSharedUnlinked: string[] = [];
     for (const campaign of campaigns as SmartleadCampaign[]) {
       result.examined += 1;
       const name = String(campaign.name ?? campaign.id);
@@ -281,7 +288,8 @@ export class CampaignCheckService {
         (finding) =>
           finding.startsWith("missing_signature_tag") ||
           finding.startsWith("missing_insight_close") ||
-          finding.startsWith("mailbox_sig"),
+          finding.startsWith("mailbox_sig") ||
+          finding.startsWith("insight_shared_staff"),
       );
       const openCoverageFinding = (record.findings ?? []).some(
         (finding) =>
@@ -434,6 +442,27 @@ export class CampaignCheckService {
           insightFixed.push(name);
         }
       }
+      const unlinked = await this.unlinkInsightSharedStaff({
+        campaignId: campaign.id,
+        name,
+        insight: isInsightCampaign(campaign, inspected.sequences),
+        accounts: accounts as SmartleadAccountWithCampaigns[],
+        campaignById,
+        findings,
+      });
+      if (unlinked.length) {
+        findings = findings.filter(
+          (finding) =>
+            !(
+              (finding.kind === "insight_shared_staff" ||
+                finding.kind === "mailbox_sig") &&
+              unlinked.some((email) => finding.detail.startsWith(`${email} `))
+            ),
+        );
+        insightSharedUnlinked.push(
+          ...unlinked.map((email) => `${name} ${email}`),
+        );
+      }
       const passed = firstCheckPassed(findings);
       const next: CampaignCheckRecord = {
         ...record,
@@ -509,13 +538,25 @@ export class CampaignCheckService {
     if (insightSigBlanked.length && this.slack) {
       await this.slack.notifyActionResult(
         [
-          `I blanked ${insightSigBlanked.length} exclusive Insight mailbox signature${insightSigBlanked.length === 1 ? "" : "s"} so Smartlead would not append SalesGlider under the Insight close. Shared SalesGlider mailboxes were not touched:`,
+          `I blanked ${insightSigBlanked.length} exclusive Insight mailbox signature${insightSigBlanked.length === 1 ? "" : "s"} so Smartlead would not append SalesGlider under the Insight close. Mailboxes on ACTIVE SalesGlider campaigns were not touched:`,
           ...insightSigBlanked.map((row) => `• ${row}`),
         ].join("\n"),
       );
     } else if (insightSigBlanked.length) {
       console.log(
         `[campaign-check] exclusive Insight mailbox signatures blanked=${insightSigBlanked.length} (no Slack client)`,
+      );
+    }
+    if (insightSharedUnlinked.length && this.slack) {
+      await this.slack.notifyActionResult(
+        [
+          `I unlinked ${insightSharedUnlinked.length} shared seat${insightSharedUnlinked.length === 1 ? "" : "s"} from Insight (kept ACTIVE SalesGlider memberships and Name / SalesGlider signatures):`,
+          ...insightSharedUnlinked.map((row) => `• ${row}`),
+        ].join("\n"),
+      );
+    } else if (insightSharedUnlinked.length) {
+      console.log(
+        `[campaign-check] Insight shared staff unlinked=${insightSharedUnlinked.length} (no Slack client)`,
       );
     }
 
@@ -556,9 +597,10 @@ export class CampaignCheckService {
    * body before any P.S. lines.
    *
    * D184 — named Insight campaigns: blank a mailbox signature only
-   * when that inbox is exclusively staffed on Insight (no other
-   * non-shell campaign). Shared SalesGlider mailboxes are a finding,
-   * never a write. `desiredMailboxSignature` stays Name / SalesGlider.
+   * when that inbox is exclusive Insight staff (not on any ACTIVE
+   * SalesGlider campaign). Shared seats are unlinked from Insight;
+   * their SalesGlider signatures stay. `desiredMailboxSignature`
+   * stays Name / SalesGlider.
    */
   private async autoApplySignature(input: {
     campaignId: number;
@@ -635,9 +677,12 @@ export class CampaignCheckService {
       const blankedEmails: string[] = [];
       const insightCampaign = isInsightCampaign({ id: input.campaignId }, rows);
       if (insightCampaign) {
-        // D184 — exclusive Insight staff only. Shared SG mailboxes stay.
+        // D184 — exclusive Insight staff only. NEVER blank ACTIVE SG staff.
         for (const account of input.accounts) {
           if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+          if (mailboxStaffsActiveSalesGlider(account, input.campaignById)) {
+            continue;
+          }
           if (!mailboxIsExclusiveInsightStaff(account, input.campaignById)) {
             continue;
           }
@@ -693,6 +738,52 @@ export class CampaignCheckService {
       );
       return null;
     }
+  }
+
+  /**
+   * D184 — pull a shared seat off Insight only. Never touch the
+   * SalesGlider memberships or the mailbox signature.
+   */
+  private async unlinkInsightSharedStaff(input: {
+    campaignId: number;
+    name: string;
+    insight: boolean;
+    accounts: SmartleadAccountWithCampaigns[];
+    campaignById: Map<number, SmartleadCampaign>;
+    findings: CampaignFinding[];
+  }): Promise<string[]> {
+    if (!input.insight) return [];
+    const need = input.findings.filter(
+      (finding) => finding.kind === "insight_shared_staff",
+    );
+    if (!need.length) return [];
+    if (this.config.dryRun) return [];
+    const unlinked: string[] = [];
+    for (const account of input.accounts) {
+      if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+      if (!mailboxStaffsActiveSalesGlider(account, input.campaignById)) {
+        continue;
+      }
+      const email = accountEmail(account);
+      if (!email || typeof account.id !== "number") continue;
+      try {
+        await this.smartlead.removeEmailAccountsFromCampaign(input.campaignId, [
+          account.id,
+        ]);
+        await sleep(WRITE_GAP_MS);
+        dropMembership(account, input.campaignId);
+        unlinked.push(email);
+        console.log(
+          `[campaign-check] D184 unlinked ${email} from Insight #${input.campaignId} ${input.name} (kept ACTIVE SalesGlider seats and signature)`,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[campaign-check] Insight unlink failed ${email} #${input.campaignId}: ${message}`,
+        );
+      }
+    }
+    return unlinked;
   }
 
   private async inspect(input: {
@@ -887,13 +978,27 @@ export class CampaignCheckService {
       const insightCampaign = isInsightCampaign(campaign, sequences);
       if (insightCampaign) {
         // D184 — empty is compliant on Insight. SalesGlider (or any
-        // second brand) under an Insight close is a finding.
+        // second brand) under an Insight close is a finding. A seat
+        // that also sits on an ACTIVE SalesGlider campaign is a
+        // staffing finding — do not blank that mailbox.
         for (let i = findings.length - 1; i >= 0; i--) {
           if (findings[i]!.kind === "mailbox_sig") findings.splice(i, 1);
         }
         for (const account of attached) {
           const email = accountEmail(account);
           if (!email) continue;
+          const shared = mailboxActiveSalesGliderCampaigns(
+            account,
+            input.campaigns,
+          );
+          if (shared.length) {
+            findings.push({
+              kind: "insight_shared_staff",
+              detail: `${email} also sits on ACTIVE SalesGlider ${shared
+                .map((row) => `#${row.id}`)
+                .join(", ")}`,
+            });
+          }
           const mismatch = insightDualSignatureMismatch({
             fromName: account.from_name,
             signature: account.signature,

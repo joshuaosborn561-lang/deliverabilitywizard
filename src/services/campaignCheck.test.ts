@@ -1193,10 +1193,11 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     );
   });
 
-  it("D184: does not blank a mailbox that also sits on an active SalesGlider campaign", async () => {
+  it("D184: unlinks Insight+ACTIVE-SG staff from Insight and does not blank the SG signature", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const mailboxWrites: Array<{ id: number; signature?: string }> = [];
+    const removed: Array<[number, number[]]> = [];
     const service = mkCheck(
       loadConfig({}),
       {
@@ -1246,6 +1247,12 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
         updateEmailAccount: async (id: number, fields: { signature?: string }) => {
           mailboxWrites.push({ id, signature: fields.signature });
         },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
       } as unknown as SmartleadClient,
       delivery(),
       state,
@@ -1255,18 +1262,20 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     assert.deepEqual(
       mailboxWrites,
       [],
-      "shared SalesGlider mailboxes must not be blanked (D184)",
+      "ACTIVE SalesGlider mailboxes must not be blanked (D184)",
     );
+    assert.deepEqual(removed, [[3921651, [44]]]);
     const insightFindings =
       result.findings.find((row) => row.campaignId === 3921651)?.findings ?? [];
     assert.equal(
-      insightFindings.some(
-        (finding) =>
-          finding.kind === "mailbox_sig" &&
-          finding.detail.includes("SalesGlider"),
-      ),
-      true,
-      "shared dual-sig is still a finding",
+      insightFindings.some((finding) => finding.kind === "insight_shared_staff"),
+      false,
+      "unlink clears the shared-staff finding",
+    );
+    assert.equal(
+      insightFindings.some((finding) => finding.kind === "mailbox_sig"),
+      false,
+      "unlinked seats do not leave a leftover mailbox_sig on Insight",
     );
   });
 

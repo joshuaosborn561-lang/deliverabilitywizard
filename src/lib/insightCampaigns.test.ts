@@ -7,9 +7,11 @@ import {
   insightDualSignatureMismatch,
   insightMailboxSignatureAllowed,
   insightMailboxSecondBrand,
+  canAttachMailboxToCampaign,
   isInsightCampaign,
   isInsightCampaignId,
   mailboxIsExclusiveInsightStaff,
+  mailboxStaffsActiveSalesGlider,
 } from "./insightCampaigns.js";
 import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -68,12 +70,52 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
     );
   });
 
-  it("exclusive Insight staff ignores shells; any other campaign is shared", () => {
-    const map = campaigns([
-      { id: 3921647, name: "Insight Consolidation Gateway SEG" },
-      { id: 3921651, name: "Insight other" },
-      { id: 89, name: "SalesGlider Nurture" },
-      { id: 501, name: "Canary shell: #3921647 Insight" },
+  it("exclusive Insight staff is not-on-ACTIVE-SG; shells and paused SG do not share", () => {
+    const map = new Map<number, SmartleadCampaign>([
+      [
+        3921647,
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        } as SmartleadCampaign,
+      ],
+      [
+        3921651,
+        {
+          id: 3921651,
+          name: "Insight other",
+          status: "ACTIVE",
+          client_id: 345263,
+        } as SmartleadCampaign,
+      ],
+      [
+        89,
+        {
+          id: 89,
+          name: "SalesGlider Nurture",
+          status: "ACTIVE",
+          client_id: 345263,
+        } as SmartleadCampaign,
+      ],
+      [
+        90,
+        {
+          id: 90,
+          name: "SalesGlider Engagers",
+          status: "PAUSED",
+          client_id: 345263,
+        } as SmartleadCampaign,
+      ],
+      [
+        501,
+        {
+          id: 501,
+          name: "Canary shell: #3921647 Insight",
+          status: "PAUSED",
+        } as SmartleadCampaign,
+      ],
     ]);
     assert.equal(
       mailboxIsExclusiveInsightStaff(account([3921647, 501]), map),
@@ -84,18 +126,87 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
       true,
     );
     assert.equal(
-      mailboxIsExclusiveInsightStaff(account([3921647, 89]), map),
-      false,
-      "shared with SalesGlider Nurture",
+      mailboxIsExclusiveInsightStaff(account([3921647, 90]), map),
+      true,
+      "PAUSED SalesGlider does not make the seat shared",
     );
     assert.equal(
-      mailboxIsExclusiveInsightStaff(account([89]), map),
+      mailboxIsExclusiveInsightStaff(account([3921647, 89]), map),
       false,
+      "ACTIVE SalesGlider Engagers is shared",
     );
+    assert.equal(
+      mailboxStaffsActiveSalesGlider(account([3921647, 89]), map),
+      true,
+    );
+    assert.equal(mailboxIsExclusiveInsightStaff(account([89]), map), false);
     assert.equal(
       mailboxIsExclusiveInsightStaff(account([3921647, 404]), map),
       false,
       "unknown membership is shared — do not blank",
+    );
+  });
+
+  it("does not attach ACTIVE SG staff onto Insight, or Insight staff onto ACTIVE SG", () => {
+    const map = new Map<number, SmartleadCampaign>([
+      [
+        3921647,
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        } as SmartleadCampaign,
+      ],
+      [
+        89,
+        {
+          id: 89,
+          name: "SalesGlider Nurture",
+          status: "ACTIVE",
+          client_id: 345263,
+        } as SmartleadCampaign,
+      ],
+    ]);
+    const insightSeat = account([3921647]);
+    const sgSeat = account([89]);
+    const unattached = account([]);
+    assert.equal(
+      canAttachMailboxToCampaign(insightSeat, map.get(3921651) ?? {
+        id: 3921651,
+        name: "Insight other",
+        status: "ACTIVE",
+        client_id: 345263,
+      } as SmartleadCampaign, map),
+      true,
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(sgSeat, map.get(3921647)!, map),
+      false,
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(insightSeat, map.get(89)!, map),
+      false,
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(unattached, map.get(3921647)!, map, {
+        insightRequiresExisting: true,
+      }),
+      false,
+      "Insight is not default client-345263 fan-out",
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(unattached, map.get(3921647)!, map),
+      true,
+      "top-up may add an exclusive seat that is not on ACTIVE SG",
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(unattached, map.get(89)!, map),
+      true,
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(sgSeat, map.get(89)!, map),
+      true,
     );
   });
 

@@ -7586,6 +7586,14 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
     );
     assert.match(
       insight,
+      /canAttachMailboxToCampaign/,
+      stop(
+        "Insight / ACTIVE SalesGlider attach is gated (D184).",
+        "insightCampaigns.ts lost canAttachMailboxToCampaign.",
+      ),
+    );
+    assert.match(
+      insight,
       /INSIGHT_MAILBOX_SIGNATURE_BLANK = ""/,
       stop(
         "Exclusive Insight auto-fix is an empty mailbox signature (D184).",
@@ -7617,11 +7625,59 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
       ),
     );
     assert.match(
+      check,
+      /unlinkInsightSharedStaff/,
+      stop(
+        "Shared Insight seats are unlinked from Insight only (D184).",
+        "campaignCheck.ts no longer unlinks Insight+ACTIVE-SG staff.",
+      ),
+    );
+    assert.match(
+      check,
+      /insight_shared_staff/,
+      stop(
+        "QA flags Insight staff that also sit on ACTIVE SalesGlider (D184).",
+        "campaignCheck.ts lost insight_shared_staff.",
+      ),
+    );
+    const fanOut = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      fanOut,
+      /insightRequiresExisting:\s*true/,
+      stop(
+        "Fan-out must not remix Insight onto default client-345263 inventory (D184).",
+        "clientFanOut.ts no longer sets insightRequiresExisting.",
+      ),
+    );
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      rest,
+      /insightRequiresExisting:\s*true/,
+      stop(
+        "On-week restore must not remix Insight / ACTIVE SG (D184).",
+        "clientRest.ts no longer sets insightRequiresExisting.",
+      ),
+    );
+    assert.match(
       audit,
       /insightDualSignatureMismatch/,
       stop(
         "Campaign-audit flags SalesGlider under an Insight close (D184).",
         "campaignAudit.ts no longer uses insightDualSignatureMismatch.",
+      ),
+    );
+    assert.match(
+      audit,
+      /insight_shared_staff/,
+      stop(
+        "Campaign-audit flags Insight staff that also sit on ACTIVE SalesGlider (D184).",
+        "campaignAudit.ts lost insight_shared_staff.",
       ),
     );
     assert.match(
@@ -7642,10 +7698,34 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
     );
     assert.match(
       canon,
-      /exclusively/,
+      /exclusive seats may carry an empty mailbox signature/,
       stop(
         "CANON states exclusive Insight staff may be blanked (D184).",
         "CANON.md lost the exclusive-staff carve-out.",
+      ),
+    );
+    assert.match(
+      canon,
+      /NEVER blank or rewrite the signature on a mailbox that staffs an ACTIVE/,
+      stop(
+        "CANON forbids blanking ACTIVE SalesGlider mailbox signatures (D184).",
+        "CANON.md lost the never-blank-ACTIVE-SG rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /insight_shared_staff/,
+      stop(
+        "CANON names the shared-staff QA finding (D184).",
+        "CANON.md dropped insight_shared_staff.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Do not fleet-converge/,
+      stop(
+        "CANON forbids fleet-emptying salesglider* domains (D184).",
+        "CANON.md lost the no-fleet-converge rule.",
       ),
     );
     assert.match(

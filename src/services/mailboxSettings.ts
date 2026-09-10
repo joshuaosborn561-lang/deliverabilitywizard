@@ -14,7 +14,10 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
-import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
+import {
+  mailboxIsExclusiveInsightStaff,
+  mailboxStaffsActiveSalesGlider,
+} from "../lib/insightCampaigns.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -172,11 +175,11 @@ export class MailboxSettingsService {
         otherClientBrands: otherBrands,
       });
       // D184 — exclusive Insight staff: do not converge back to
-      // SalesGlider. Shared SG mailboxes still use desiredSig above.
-      const exclusiveInsight = mailboxIsExclusiveInsightStaff(
-        account,
-        campaignById,
-      );
+      // SalesGlider. Mailboxes on ACTIVE SG campaigns are never
+      // blanked and keep the SalesGlider two-line target.
+      const exclusiveInsight =
+        mailboxIsExclusiveInsightStaff(account, campaignById) &&
+        !mailboxStaffsActiveSalesGlider(account, campaignById);
       if (mode === "full") {
         needsSignature =
           !exclusiveInsight &&

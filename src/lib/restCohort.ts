@@ -4,9 +4,9 @@
  *
  * Block 0 → A on, B off. Block 1 → reverse.
  *
- * D192 — the cut is ESP-balanced: ~50/50 within Outlook and within
- * Gmail (and a leftover "other" bucket). Alphabetical-only half
- * drifted live POD tags off the ESP 50/50 Josh locked.
+ * D192 — the cut is ESP-balanced ~50/50 within Outlook and within Gmail
+ * (and a leftover "other" bucket). Alphabetical-only half drifted live
+ * POD tags off the ESP 50/50 Josh locked.
  */
 
 import { normalizeSenderEspFamily } from "./esp.js";

@@ -82,8 +82,8 @@ or the day is done. Silent findings are a bug (D163).
   (D26) plus the named-id attach gate keep them from mixing:
   josh-personal never fans out as 345263 supply onto Insight.
   **D184 exclusive-blank Insight staff is retired / obsolete —
-  never revive** (empty exclusive seats inside 345263). Do not
-  fleet-converge salesglider* domains to empty.
+  never revive** (empty exclusive seats inside 345263). Do not fleet-converge
+  salesglider* domains to empty.
   `desiredMailboxSignature` for SalesGlider stays Name /
   SalesGlider. Do not re-introduce `%signature%` into Insight
   sequences. `insight` / `INSIGHT` alone do not match. Other

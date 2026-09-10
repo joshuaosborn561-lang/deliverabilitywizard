@@ -163,7 +163,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D145 | Amended by D146 / D162 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146; the scan must run without a burst / on PAUSED — D162) |
 | D146 | Live — 7-day re-ask window superseded by D179 | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the live-ask dedupe |
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
-| D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
+| D148 | Live — TTL-expiry receipt amended by D185 | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
 | D150 | Live — replacement naming amended by D161; one-ESP-per-domain buy amended by D175 | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
@@ -199,6 +199,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Live | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
+| D185 | Live | Bounce-resurrect TTL expiry is a receipt, not a pause and not a refill; campaign stays ACTIVE; forfeited leads stay dead; no consolation re-queue |
 
 ---
 
@@ -5623,4 +5624,59 @@ the mix; campaign-check unlinks shared from Insight and blanks
 exclusive only; `desiredMailboxSignature` stays Name /
 SalesGlider; CANON names D184. Tests: Insight exclusive →
 empty; ACTIVE SG staff → SalesGlider, never blanked.
+
+## D185 — Bounce-resurrect TTL is not a pause and not a refill
+
+**Decision (Josh, 2026-09-10).** "Bounce-resurrect TTL — not a
+pause, and not a refill." TechEvo SFL Startup Owners Jet Ski
+`#3847795` receipted `re-queued 0, 1 dead, 25 OOS, 1 expired
+unremediated`: one parked sender-fault lead's remediation gate
+never opened inside 7 days. Staffable 18/18, campaign-check
+clean, lifetime bounce ~29/1102 (~2.6%), placement path
+healthy (`uglyWithoutIsolation` empty). Campaign still ACTIVE
+(D148).
+
+The thin "1 lead expired un-resent" receipt looked like a
+problem to fix. It is not. The wizard leaves that lead dead.
+It does not re-queue until Retire / Defender unblock / copy
+Apply actually lands (while the incident is still open). After
+the TTL the chance is gone — a later incident must not
+consolation-queue the forfeited lead. No pause. No refill
+from that page.
+
+**The rule.**
+
+1. A bounce-resurrect job whose gate stays shut 7 days
+   forfeits its parked leads and receipts the forfeit (D148
+   expiry kept). That receipt is informational: **not a
+   pause, not a refill**.
+2. The campaign stays ACTIVE. This path never writes
+   campaign status and never imports / top-ups leads (D40 /
+   D52 / D148 untouched).
+3. Forfeited leads stay dead. The once-per-campaign ledger
+   marks them on expiry so a later incident cannot re-queue
+   them as a consolation. Re-queue only happens when Retire /
+   Defender unblock / copy Apply actually lands, while the
+   incident is still open.
+4. The Slack receipt names the campaign, says it stays
+   ACTIVE, says the wizard leaves those leads dead, and says
+   "Not a pause. Not a refill (D185)" so a chat session does
+   not treat the page as an action.
+
+**Why.** One expired lead on a healthy ACTIVE campaign is not
+inventory work and not a bounce-band pause. The 7-day gate
+already said the remediation never landed. Re-queuing, pausing,
+or refilling from the receipt would invent a fix Josh did not
+ask for.
+
+**Supersedes / amends.** Amends D148's expiry receipt (wording
++ ledger the forfeit). Does not reverse D40, D52, D147, or
+D148's gates / never-pause rule.
+
+**Guards.** owner-intent D185: `ttlExpiryReceiptText` carries
+ACTIVE / leaves dead / not a pause / not a refill; the
+`DEFER_EXPIRY_MS` path calls `markLeadResurrected`; CANON
+names D185. Service test: 7-day expiry receipts D185, ledgers
+the lead, and a later incident after the retire ask resolves
+still does not re-queue.
 

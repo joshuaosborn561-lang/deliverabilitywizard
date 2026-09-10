@@ -37,7 +37,11 @@ import type { StateStore } from "../state/store.js";
  * is re-queued at most once per campaign, so a recurring cap can never
  * become a resend loop. This re-sends leads Josh already imported — it
  * never sources leads (D52 untouched). A gate that never opens expires
- * after 7 days and the receipt says what was dropped.
+ * after 7 days and the receipt says what was dropped — that receipt is
+ * not a pause and not a refill (D185): the campaign stays ACTIVE, the
+ * forfeited leads stay dead, and a later incident does not re-queue
+ * them as a consolation. Re-queue only happens when Retire / Defender
+ * unblock / copy Apply actually lands, while the incident is still open.
  */
 
 /** Classes whose bounces are the sender's fault, not the address's. */
@@ -57,6 +61,24 @@ const VERDICT_MATCH_MS = 6 * 60 * 60 * 1000;
 /** A remediation gate that stays shut this long forfeits its resend. */
 export const DEFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 350;
+
+/**
+ * D185 — TTL expiry is a receipt, not a pause and not a refill.
+ * The campaign stays ACTIVE; the wizard leaves those leads dead.
+ */
+export function ttlExpiryReceiptText(job: {
+  campaignId: number;
+  campaignName: string;
+  dropped: number;
+}): string {
+  const n = job.dropped;
+  const leadWord = n === 1 ? "lead" : "leads";
+  const those = n === 1 ? "that lead" : "those leads";
+  return [
+    `${n} ${leadWord} expired un-resent on ${job.campaignName} #${job.campaignId} — their remediation gate never opened within 7 days.`,
+    `${job.campaignName} stays ACTIVE (D148). The wizard leaves ${those} dead. It does not re-queue until Retire / Defender unblock / copy Apply actually lands. Not a pause. Not a refill (D185).`,
+  ].join("\n");
+}
 
 /** Lead fields carried over so merge tags keep rendering after the re-add. */
 const CARRIED_FIELDS = [
@@ -317,7 +339,12 @@ export class BounceResurrectionService {
     const nowMs = this.clock();
 
     // A gate that never opened in 7 days forfeits the resend — say so.
+    // D185: this path never pauses, never refills, and the ledger keeps
+    // forfeited leads dead so a later incident cannot consolation-queue.
     if (nowMs - Date.parse(job.openedAt) > DEFER_EXPIRY_MS) {
+      for (const entry of job.deferred) {
+        this.state.markLeadResurrected(job.campaignId, entry.email, nowMs);
+      }
       job.dropped += job.deferred.length;
       job.deferred = [];
       job.scanDone = true;
@@ -637,9 +664,7 @@ export class BounceResurrectionService {
       );
     }
     if (job.done && job.dropped > 0) {
-      lines.push(
-        `${job.dropped} lead${job.dropped === 1 ? "" : "s"} expired un-resent — their remediation gate never opened within 7 days.`,
-      );
+      lines.push(ttlExpiryReceiptText(job));
     }
     if (!lines.length) {
       job.receipted = job.requeued;

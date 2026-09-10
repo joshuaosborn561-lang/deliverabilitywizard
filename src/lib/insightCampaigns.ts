@@ -1,15 +1,12 @@
 /**
- * D184 — Insight outbound is a staffing split inside SalesGlider
- * client 345263, not a fleet mailbox rewrite.
+ * D192 — Insight is Smartlead client 582890 (Josh personal domains
+ * only; mailbox sig `Josh Osborn\nInsight`). SalesGlider stays
+ * 345263 (`salesglider*` only). Insight ≠ SG. D184's exclusive-blank
+ * Insight staff inside 345263 is retired — never revive.
  *
- * Live pattern (2026-09-10): Insight campaigns staff only seats that
- * are not on ACTIVE SalesGlider campaigns; those exclusive seats may
- * carry an empty mailbox signature (the sequence already closes
- * Josh Osborn / Insight); mailboxes that staff ACTIVE SG campaigns
- * keep Name / SalesGlider and are never blanked. Smartlead has no
- * campaign-level "don't append signature" switch. Do not converge
- * salesglider* domains to empty. `desiredMailboxSignature` is
- * unchanged.
+ * Attach still refuses to mix the two (D26 one-client plus the
+ * named-id gate): josh-personal never fans out as 345263 supply
+ * onto Insight, and SG Engagers never sit on Insight campaigns.
  */
 
 import {
@@ -27,12 +24,14 @@ import {
   signatureHay,
 } from "./signatureQa.js";
 
-/** Live Insight campaigns Josh named (client 345263). */
+/** Live Insight campaigns Josh named (now client 582890 — D192). */
 export const INSIGHT_CAMPAIGN_IDS: readonly number[] = [
   3921647, 3921651, 3921650, 3921654, 3921656, 3921653, 3921659,
 ];
 
 export const SALESGLIDER_CLIENT_ID = 345263;
+/** Josh personal Insight client — not SalesGlider. */
+export const INSIGHT_CLIENT_ID = 582890;
 
 const INSIGHT_ID_SET = new Set(INSIGHT_CAMPAIGN_IDS);
 
@@ -45,10 +44,15 @@ export function isInsightCampaignId(id: number | null | undefined): boolean {
   return typeof id === "number" && INSIGHT_ID_SET.has(id);
 }
 
+export function isInsightClientId(id: number | null | undefined): boolean {
+  return id === INSIGHT_CLIENT_ID;
+}
+
 /**
- * D189 — client-rest must not unlink these. Named D184 ids, or any
- * campaign whose name starts with `Insight ` on SalesGlider (345263).
- * Status does not matter: once a seat leaves Insight, D184 restore
+ * D189 — client-rest must not unlink these. Named Insight ids (now
+ * on client 582890), or any campaign whose name starts with
+ * `Insight ` on Insight (582890) or leftover SalesGlider (345263).
+ * Status does not matter: once a seat leaves Insight, restore
  * cannot put it back (`insightRequiresExisting`).
  */
 export function isInsightRestStickyCampaign(
@@ -62,7 +66,12 @@ export function isInsightRestStickyCampaign(
 ): boolean {
   if (!campaign) return false;
   if (isInsightCampaignId(campaign.id)) return true;
-  if (campaign.client_id !== SALESGLIDER_CLIENT_ID) return false;
+  if (
+    campaign.client_id !== SALESGLIDER_CLIENT_ID &&
+    campaign.client_id !== INSIGHT_CLIENT_ID
+  ) {
+    return false;
+  }
   return String(campaign.name ?? "").startsWith("Insight ");
 }
 

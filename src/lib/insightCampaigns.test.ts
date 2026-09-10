@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { desiredMailboxSignature } from "./mailboxSignature.js";
 import {
   INSIGHT_CAMPAIGN_IDS,
+  INSIGHT_CLIENT_ID,
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   insightDualSignatureMismatch,
   insightMailboxSignatureAllowed,
@@ -10,9 +11,11 @@ import {
   canAttachMailboxToCampaign,
   isInsightCampaign,
   isInsightCampaignId,
+  isInsightClientId,
   isInsightRestStickyCampaign,
   mailboxIsExclusiveInsightStaff,
   mailboxStaffsActiveSalesGlider,
+  SALESGLIDER_CLIENT_ID,
 } from "./insightCampaigns.js";
 import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -52,6 +55,14 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
     assert.equal(isInsightCampaignId(88), false);
   });
 
+  it("D192: Insight is client 582890; SalesGlider stays 345263", () => {
+    assert.equal(INSIGHT_CLIENT_ID, 582890);
+    assert.equal(SALESGLIDER_CLIENT_ID, 345263);
+    assert.equal(isInsightClientId(582890), true);
+    assert.equal(isInsightClientId(345263), false);
+    assert.notEqual(INSIGHT_CLIENT_ID, SALESGLIDER_CLIENT_ID);
+  });
+
   it("D189: named ids and Insight-prefix + 345263 are rest-sticky; other clients are not", () => {
     assert.equal(
       isInsightRestStickyCampaign({
@@ -77,6 +88,15 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
         client_id: 345263,
       }),
       false,
+    );
+    assert.equal(
+      isInsightRestStickyCampaign({
+        id: 4000002,
+        name: "Insight Extra Lane",
+        client_id: 582890,
+      }),
+      true,
+      "Insight-named lane on client 582890 is rest-sticky (D192)",
     );
     assert.equal(
       isInsightRestStickyCampaign({

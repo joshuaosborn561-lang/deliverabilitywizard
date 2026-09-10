@@ -4,6 +4,10 @@ import { type SmartleadClientRecord } from "../clients/smartlead.js";
 import { matchClientForCampaign } from "../lib/campaignClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
+import {
+  INSIGHT_CLIENT_ID,
+  isInsightCampaignId,
+} from "../lib/insightCampaigns.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import type { InventorySnapshot } from "./inventory.js";
 
@@ -52,6 +56,39 @@ export class CampaignClientTagService {
       result.examined += 1;
       if (isAnyShellCampaign(campaign)) {
         result.skipped.push(`#${campaign.id} shell — no client tag`);
+        continue;
+      }
+      // D192 — named Insight campaigns stay client 582890. Never
+      // rewrite an existing tag (including never 582890 → 345263).
+      if (isInsightCampaignId(campaign.id)) {
+        if (campaign.client_id === INSIGHT_CLIENT_ID) continue;
+        if (typeof campaign.client_id === "number") {
+          result.skipped.push(
+            `#${campaign.id} Insight — already tagged ${campaign.client_id}, never rewrite (D192)`,
+          );
+          continue;
+        }
+        try {
+          if (!dryRun) {
+            await this.smartlead.setCampaignClientId(
+              campaign.id,
+              INSIGHT_CLIENT_ID,
+            );
+            await sleep(WRITE_GAP_MS);
+            campaign.client_id = INSIGHT_CLIENT_ID;
+          }
+          result.assigned.push({
+            campaignId: campaign.id,
+            name: String(campaign.name ?? campaign.id),
+            clientId: INSIGHT_CLIENT_ID,
+          });
+          console.log(
+            `[client-tag] #${campaign.id} ${campaign.name} → Insight ${INSIGHT_CLIENT_ID} (D192)`,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          result.errors.push(`#${campaign.id} ${campaign.name}: ${message}`);
+        }
         continue;
       }
       if (typeof campaign.client_id === "number") continue;

@@ -197,7 +197,7 @@ export class ClientRestService {
       email: string;
       groupKey: string;
     }> = [];
-    const byGroup = new Map<string, string[]>();
+    const byGroup = new Map<string, Array<{ email: string; type?: string | null }>>();
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -236,13 +236,13 @@ export class ClientRestService {
       }
       candidates.push({ account, email, groupKey });
       const list = byGroup.get(groupKey) ?? [];
-      list.push(email);
+      list.push({ email, type: account.type });
       byGroup.set(groupKey, list);
     }
 
     const cohortByEmail = new Map<string, RestCohort>();
-    for (const [, emails] of byGroup) {
-      for (const [email, cohort] of assignClientCohorts(emails)) {
+    for (const [, inboxes] of byGroup) {
+      for (const [email, cohort] of assignClientCohorts(inboxes)) {
         cohortByEmail.set(email, cohort);
       }
     }

@@ -7537,7 +7537,7 @@ describe("owner intent — D183 Outlook send ceiling is 15/day", () => {
 });
 
 describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
-  it("D184: exclusive Insight may be blanked; shared SalesGlider and desiredMailboxSignature stay", async () => {
+  it("D184: superseded by D192 — exclusive-blank staff is obsolete; Insight ≠ SG stays", async () => {
     const { readFile } = await import("node:fs/promises");
     const insight = await readFile(
       new URL("../lib/insightCampaigns.ts", import.meta.url),
@@ -7698,33 +7698,25 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
     );
     assert.match(
       canon,
-      /exclusive seats may carry an empty mailbox signature/,
+      /D184 exclusive-blank Insight staff is retired/,
       stop(
-        "CANON states exclusive Insight staff may be blanked (D184).",
-        "CANON.md lost the exclusive-staff carve-out.",
+        "CANON states D184 exclusive-blank Insight staff is retired (D192).",
+        "CANON.md lost the D184 retirement — do not revive exclusive-blank staff.",
       ),
     );
     assert.match(
       canon,
-      /NEVER blank or\s+rewrite the signature on a mailbox that staffs an ACTIVE/,
+      /never revive/,
       stop(
-        "CANON forbids blanking ACTIVE SalesGlider mailbox signatures (D184).",
-        "CANON.md lost the never-blank-ACTIVE-SG rule.",
-      ),
-    );
-    assert.match(
-      canon,
-      /insight_shared_staff/,
-      stop(
-        "CANON names the shared-staff QA finding (D184).",
-        "CANON.md dropped insight_shared_staff.",
+        "CANON forbids reviving D184 exclusive-blank Insight staff (D192).",
+        "CANON.md lost the never-revive clause.",
       ),
     );
     assert.match(
       canon,
       /Do not fleet-converge/,
       stop(
-        "CANON forbids fleet-emptying salesglider* domains (D184).",
+        "CANON forbids fleet-emptying salesglider* domains (D184/D192).",
         "CANON.md lost the no-fleet-converge rule.",
       ),
     );
@@ -7732,7 +7724,7 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
       canon,
       /desiredMailboxSignature/,
       stop(
-        "CANON says desiredMailboxSignature for SalesGlider is unchanged (D184).",
+        "CANON says desiredMailboxSignature for SalesGlider is unchanged (D184/D192).",
         "CANON.md dropped the no-SalesGlider-rewrite clause.",
       ),
     );
@@ -7740,7 +7732,7 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
       canon,
       /D184/,
       stop(
-        "CANON names D184.",
+        "CANON names D184 as retired by D192.",
         "CANON.md dropped D184 when a later decision landed.",
       ),
     );
@@ -8935,6 +8927,153 @@ describe("owner intent — D190 burned-domain Slack once; Cayden Retire/Buy", ()
       stop(
         "The D190 burn-ask silence rule is in the ledger.",
         "DECISIONS.md no longer has D190.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D192 Insight 582890; ESP pods; null generics stay null", () => {
+  it("D192: Insight is 582890; ESP-balanced cohorts; leftover generics are not attached", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const insight = await readFile(
+      new URL("../lib/insightCampaigns.ts", import.meta.url),
+      "utf8",
+    );
+    const restCohort = await readFile(
+      new URL("../lib/restCohort.ts", import.meta.url),
+      "utf8",
+    );
+    const audit = await readFile(
+      new URL("../services/domainClientAudit.ts", import.meta.url),
+      "utf8",
+    );
+    const tag = await readFile(
+      new URL("../services/campaignClientTag.ts", import.meta.url),
+      "utf8",
+    );
+    const fanOut = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      insight,
+      /export const INSIGHT_CLIENT_ID = 582890/,
+      stop(
+        "Insight is Smartlead client 582890 (D192).",
+        "insightCampaigns.ts lost INSIGHT_CLIENT_ID.",
+      ),
+    );
+    assert.match(
+      insight,
+      /export const SALESGLIDER_CLIENT_ID = 345263/,
+      stop(
+        "SalesGlider stays 345263 (D192).",
+        "insightCampaigns.ts lost SALESGLIDER_CLIENT_ID.",
+      ),
+    );
+    assert.match(
+      tag,
+      /INSIGHT_CLIENT_ID/,
+      stop(
+        "Campaign client-tag must pin named Insight ids to 582890 (D192).",
+        "campaignClientTag.ts no longer consults INSIGHT_CLIENT_ID.",
+      ),
+    );
+    assert.match(
+      tag,
+      /never rewrite/,
+      stop(
+        "Insight campaign client_id is never rewritten off 582890 (D192).",
+        "campaignClientTag.ts lost the never-rewrite Insight guard.",
+      ),
+    );
+    assert.match(
+      fanOut,
+      /insightRequiresExisting:\s*true/,
+      stop(
+        "Fan-out must not treat 345263 inventory as Insight supply (D192).",
+        "clientFanOut.ts no longer sets insightRequiresExisting.",
+      ),
+    );
+    assert.match(
+      restCohort,
+      /within Outlook and within Gmail/,
+      stop(
+        "A/B cohorts split inside each ESP (D192).",
+        "restCohort.ts lost the ESP-balanced split.",
+      ),
+    );
+    assert.match(
+      restCohort,
+      /cohortEspKind/,
+      stop(
+        "assignClientCohorts reads Smartlead account type (D192).",
+        "restCohort.ts no longer classifies Outlook vs Gmail.",
+      ),
+    );
+    assert.match(
+      audit,
+      /isIntentionalNullGenericDomain/,
+      stop(
+        "D142 must skip intentional null generics (D192).",
+        "domainClientAudit.ts no longer consults isIntentionalNullGenericDomain.",
+      ),
+    );
+    assert.match(
+      audit,
+      /copyCanary/,
+      stop(
+        "Canaries never get a client_id (D192).",
+        "domainClientAudit.ts no longer skips copy canaries.",
+      ),
+    );
+    assert.match(
+      canon,
+      /582890/,
+      stop(
+        "CANON names Insight client 582890 (D192).",
+        "CANON.md has no Insight / 582890 entry.",
+      ),
+    );
+    assert.match(
+      canon,
+      /ESP-balanced ~50\/50 within Outlook and within Gmail/,
+      stop(
+        "CANON states ESP-balanced A/B pods (D192).",
+        "CANON.md lost the ESP-balanced rest split.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Do not confident-attach/,
+      stop(
+        "CANON forbids attaching intentional null generics (D192).",
+        "CANON.md lost the null-generic skip.",
+      ),
+    );
+    assert.match(
+      canon,
+      /reporting-only/,
+      stop(
+        "CANON states ≥14d warmed is reporting-only; live gate stays 21d (D192).",
+        "CANON.md lost the 14d-reporting / 21d-gate split.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D192 — Protect Insight 582890 reorg/,
+      stop(
+        "The Insight / ESP-pod / null-generic protect is in the ledger (D192).",
+        "DECISIONS.md no longer has D192.",
       ),
     );
   });

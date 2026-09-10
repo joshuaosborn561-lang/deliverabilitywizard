@@ -95,4 +95,63 @@ describe("pods", () => {
     );
     assert.ok(Number.isInteger(isoWeekNumberNy(now)));
   });
+
+  it("D192: client pods are ESP-balanced within Outlook and Gmail", () => {
+    const now = new Date("2026-08-23T12:00:00Z");
+    const pods = buildPods({
+      now,
+      config: {
+        extraGenericMailboxes: [],
+        extraGenericDomains: [],
+        prewarmedDomains: [],
+      },
+      state: state(),
+      isolation: { emails: new Set(), domain: "" },
+      accounts: [
+        {
+          accountId: 1,
+          email: "aaa@client.com",
+          clientId: 582890,
+          clientName: "Insight",
+          type: "GMAIL",
+          onActiveCampaign: true,
+          resting: false,
+        },
+        {
+          accountId: 2,
+          email: "aab@client.com",
+          clientId: 582890,
+          clientName: "Insight",
+          type: "GMAIL",
+          onActiveCampaign: true,
+          resting: false,
+        },
+        {
+          accountId: 3,
+          email: "zzz@client.com",
+          clientId: 582890,
+          clientName: "Insight",
+          type: "OUTLOOK",
+          onActiveCampaign: true,
+          resting: false,
+        },
+        {
+          accountId: 4,
+          email: "zzy@client.com",
+          clientId: 582890,
+          clientName: "Insight",
+          type: "OUTLOOK",
+          onActiveCampaign: true,
+          resting: false,
+        },
+      ],
+    });
+    const byPool = Object.fromEntries(
+      pods
+        .filter((pod) => pod.pool === "A" || pod.pool === "B")
+        .map((pod) => [pod.pool, pod.mailboxes.map((mailbox) => mailbox.email).sort()]),
+    );
+    assert.deepEqual(byPool.A, ["aaa@client.com", "zzy@client.com"]);
+    assert.deepEqual(byPool.B, ["aab@client.com", "zzz@client.com"]);
+  });
 });

@@ -30,6 +30,8 @@ export interface PodAccountInput {
   clientId: number | null;
   clientName: string;
   fromName?: string;
+  /** Smartlead account.type — D192 ESP-balanced A/B. */
+  type?: string | null;
   onActiveCampaign: boolean;
   resting: boolean;
 }
@@ -90,8 +92,12 @@ export function buildPods(input: {
   const pods: Pod[] = [];
 
   for (const [clientKey, accounts] of byClient) {
-    const emails = accounts.map((account) => account.email);
-    const cohorts = assignClientCohorts(emails);
+    const cohorts = assignClientCohorts(
+      accounts.map((account) => ({
+        email: account.email,
+        type: account.type,
+      })),
+    );
     const grouped: Record<RestCohort, PodMailbox[]> = { A: [], B: [] };
     for (const account of accounts) {
       const cohort = cohorts.get(account.email.trim().toLowerCase());

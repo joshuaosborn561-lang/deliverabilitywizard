@@ -575,6 +575,7 @@ export async function loadPods(input: {
           clientId: client.clientId,
           clientName: client.clientName,
           fromName: account.from_name,
+          type: account.type,
           onActiveCampaign,
           resting: resting.has(email),
         },

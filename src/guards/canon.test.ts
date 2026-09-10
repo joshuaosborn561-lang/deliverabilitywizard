@@ -7536,6 +7536,145 @@ describe("owner intent — D183 Outlook send ceiling is 15/day", () => {
   });
 });
 
+describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
+  it("D184: exclusive Insight may be blanked; shared SalesGlider and desiredMailboxSignature stay", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const insight = await readFile(
+      new URL("../lib/insightCampaigns.ts", import.meta.url),
+      "utf8",
+    );
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const audit = await readFile(
+      new URL("../services/campaignAudit.ts", import.meta.url),
+      "utf8",
+    );
+    const signature = await readFile(
+      new URL("../lib/mailboxSignature.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      insight,
+      /3921647/,
+      stop(
+        "Named Insight campaign ids are the D184 scope.",
+        "insightCampaigns.ts lost the live Insight campaign ids.",
+      ),
+    );
+    assert.match(
+      insight,
+      /mailboxIsExclusiveInsightStaff/,
+      stop(
+        "Exclusive Insight staff is a real helper (D184).",
+        "insightCampaigns.ts no longer exports mailboxIsExclusiveInsightStaff.",
+      ),
+    );
+    assert.match(
+      insight,
+      /INSIGHT_MAILBOX_SIGNATURE_BLANK = ""/,
+      stop(
+        "Exclusive Insight auto-fix is an empty mailbox signature (D184).",
+        "insightCampaigns.ts no longer blanks to empty.",
+      ),
+    );
+    assert.match(
+      settings,
+      /mailboxIsExclusiveInsightStaff/,
+      stop(
+        "mailboxSettings must not converge exclusive Insight back to SalesGlider (D184).",
+        "mailboxSettings.ts no longer skips exclusive Insight signatures.",
+      ),
+    );
+    assert.match(
+      check,
+      /mailboxIsExclusiveInsightStaff/,
+      stop(
+        "Campaign-check blanks exclusive Insight mailboxes only (D184).",
+        "campaignCheck.ts no longer consults exclusive Insight staff.",
+      ),
+    );
+    assert.match(
+      check,
+      /INSIGHT_MAILBOX_SIGNATURE_BLANK/,
+      stop(
+        "Campaign-check exclusive auto-fix writes an empty mailbox signature (D184).",
+        "campaignCheck.ts no longer writes the Insight blank.",
+      ),
+    );
+    assert.match(
+      audit,
+      /insightDualSignatureMismatch/,
+      stop(
+        "Campaign-audit flags SalesGlider under an Insight close (D184).",
+        "campaignAudit.ts no longer uses insightDualSignatureMismatch.",
+      ),
+    );
+    assert.match(
+      signature,
+      /return `\$\{name\}\\n\$\{brand\}`/,
+      stop(
+        "desiredMailboxSignature stays Name / Brand — do not special-case SalesGlider to empty (D184).",
+        "mailboxSignature.ts changed the SalesGlider two-line target.",
+      ),
+    );
+    assert.equal(
+      signature.includes("Insight"),
+      false,
+      stop(
+        "desiredMailboxSignature must not grow an Insight / empty branch (D184).",
+        "mailboxSignature.ts now special-cases Insight.",
+      ),
+    );
+    assert.match(
+      canon,
+      /exclusively/,
+      stop(
+        "CANON states exclusive Insight staff may be blanked (D184).",
+        "CANON.md lost the exclusive-staff carve-out.",
+      ),
+    );
+    assert.match(
+      canon,
+      /desiredMailboxSignature/,
+      stop(
+        "CANON says desiredMailboxSignature for SalesGlider is unchanged (D184).",
+        "CANON.md dropped the no-SalesGlider-rewrite clause.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D184/,
+      stop(
+        "CANON names D184.",
+        "CANON.md dropped D184 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D184 — Insight dual-close is campaign-scoped/,
+      stop(
+        "The campaign-scoped Insight dual-close rule is in the ledger (D184).",
+        "DECISIONS.md no longer has D184.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D175 isolation-buy is one ESP per domain", () => {
   it("D175: never mix Google and Microsoft on one InboxKit domain", async () => {
     const { readFile } = await import("node:fs/promises");

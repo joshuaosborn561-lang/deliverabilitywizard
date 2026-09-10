@@ -232,4 +232,82 @@ describe("CampaignAuditService signature QA", () => {
       "SalesGlider still flags a missing tag",
     );
   });
+
+  it("D184: flags SalesGlider under an Insight close; empty Insight mailbox is fine", async () => {
+    const state = new StateStore(
+      `/tmp/campaign-audit-insight-dual-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = mkAudit(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921647,
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "joshua@salesglidertop.org",
+            from_name: "Joshua Osborn",
+            signature: "Joshua Osborn\nSalesGlider",
+            client_id: 345263,
+            campaign_ids: [3921647],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+          {
+            id: 12,
+            from_email: "clean@salesglidertop.org",
+            from_name: "Joshua Osborn",
+            signature: "",
+            client_id: 345263,
+            campaign_ids: [3921647],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [
+          { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+        ],
+        getCampaignSequences: async () => [
+          {
+            seq_number: 1,
+            email_body:
+              "<div>A note from Insight</div><div>Josh Osborn</div><div>Insight</div>",
+          },
+        ],
+      } as unknown as SmartleadClient,
+      {
+        listTests: async () => [],
+        enrichCampaignIds: async (rows: unknown[]) => rows,
+      } as unknown as SmartDeliveryClient,
+      state,
+    );
+
+    const result = await service.run(50);
+    assert.ok(
+      result.signatureIssues.some(
+        (issue) =>
+          issue.campaignId === 3921647 &&
+          issue.kind === "mailbox_sig" &&
+          issue.detail.includes("joshua@salesglidertop.org") &&
+          /SalesGlider/.test(issue.detail),
+      ),
+      "QA must flag SalesGlider under an Insight close",
+    );
+    assert.equal(
+      result.signatureIssues.some(
+        (issue) =>
+          issue.kind === "mailbox_sig" &&
+          issue.detail.includes("clean@salesglidertop.org"),
+      ),
+      false,
+      "empty Insight mailbox signature is compliant",
+    );
+  });
 });

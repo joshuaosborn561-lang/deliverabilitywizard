@@ -14,6 +14,7 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
+import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -170,12 +171,25 @@ export class MailboxSettingsService {
         clientBrand,
         otherClientBrands: otherBrands,
       });
+      // D184 — exclusive Insight staff: do not converge back to
+      // SalesGlider. Shared SG mailboxes still use desiredSig above.
+      const exclusiveInsight = mailboxIsExclusiveInsightStaff(
+        account,
+        campaignById,
+      );
       if (mode === "full") {
         needsSignature =
-          desiredSig != null && (account.signature ?? "") !== desiredSig;
+          !exclusiveInsight &&
+          desiredSig != null &&
+          (account.signature ?? "") !== desiredSig;
 
         needsWarmup = !canary && !warmupOn;
-      } else if (foreign && desiredSig && (account.signature ?? "") !== desiredSig) {
+      } else if (
+        !exclusiveInsight &&
+        foreign &&
+        desiredSig &&
+        (account.signature ?? "") !== desiredSig
+      ) {
         // D74 — do not wait six hours to pull a Peterson line off a Goliath send.
         needsSignature = true;
       }

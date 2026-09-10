@@ -285,4 +285,39 @@ describe("OneClientMembershipService", () => {
     assert.deepEqual(added, []);
     assert.ok(result.skipped.some((row) => row.includes("attach blocked")));
   });
+
+  it("D184: does not rewrite an exclusive Insight mailbox to SalesGlider", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 68,
+          from_email: "joshua@salesglidertop.org",
+          from_name: "Joshua Osborn",
+          signature: "Joshua Osborn\nRoofs by Peterson",
+          client_id: 345263,
+          campaign_ids: [3921647],
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+        { id: 99, name: "Peterson", logo: "Roofs by Peterson" },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.equal(result.signaturesSet, 0);
+    assert.deepEqual(updates, []);
+  });
 });

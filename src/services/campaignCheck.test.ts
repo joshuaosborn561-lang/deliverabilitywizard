@@ -1138,7 +1138,7 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     assert.ok(wrote[0]!.indexOf("Josh Osborn") < wrote[0]!.indexOf("P.S."));
   });
 
-  it("does not rewrite shared mailbox signature fields", async () => {
+  it("D184: blanks an exclusive Insight mailbox that still carries SalesGlider", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const mailboxWrites: Array<{ id: number; signature?: string }> = [];
@@ -1148,17 +1148,17 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
         listCampaigns: async () => [
           {
             id: 3921651,
-            name: "SalesGlider tagged draft",
-            status: "DRAFTED",
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
             client_id: 345263,
           },
         ],
         listAllEmailAccounts: async () => [
           {
             id: 44,
-            from_email: "lea@salesglidergrowth.com",
-            from_name: "Lea Carter",
-            signature: "Lea Carter\nSalesGlider",
+            from_email: "joshua@salesglidertop.org",
+            from_name: "Joshua Osborn",
+            signature: "Joshua Osborn\nSalesGlider",
             client_id: 345263,
             campaign_ids: [3921651],
             is_smtp_success: true,
@@ -1167,7 +1167,11 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
         ],
         listClients: async () => [salesGlider],
         getCampaignSequences: async () => [
-          { seq_number: 1, email_body: "<div>A note from Insight this week</div>" },
+          {
+            seq_number: 1,
+            email_body:
+              "<div>A note from Insight</div><br><br>Josh Osborn<br>Insight<br><br>P.S. Later.",
+          },
         ],
         updateCampaignSequences: async () => undefined,
         updateEmailAccount: async (id: number, fields: { signature?: string }) => {
@@ -1178,8 +1182,92 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
       state,
     );
 
-    await service.run({ mode: "first" });
-    assert.deepEqual(mailboxWrites, [], "Insight path must not touch mailbox signatures");
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(mailboxWrites, [{ id: 44, signature: "" }]);
+    assert.equal(
+      (result.findings[0]?.findings ?? []).some((finding) =>
+        finding.kind === "mailbox_sig",
+      ),
+      false,
+      "exclusive blank clears the dual-sig finding",
+    );
+  });
+
+  it("D184: does not blank a mailbox that also sits on an active SalesGlider campaign", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const mailboxWrites: Array<{ id: number; signature?: string }> = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921651,
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+          {
+            id: 89,
+            name: "SalesGlider Nurture",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 44,
+            from_email: "joshua@salesglidertop.org",
+            from_name: "Joshua Osborn",
+            signature: "Joshua Osborn\nSalesGlider",
+            client_id: 345263,
+            campaign_ids: [3921651, 89],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async (id: number) =>
+          id === 3921651
+            ? [
+                {
+                  seq_number: 1,
+                  email_body:
+                    "<div>A note from Insight</div><br><br>Josh Osborn<br>Insight<br><br>P.S. Later.",
+                },
+              ]
+            : [
+                {
+                  seq_number: 1,
+                  email_body: "<div>Sean, that offer's still open</div><div>%signature%</div>",
+                },
+              ],
+        updateCampaignSequences: async () => undefined,
+        updateEmailAccount: async (id: number, fields: { signature?: string }) => {
+          mailboxWrites.push({ id, signature: fields.signature });
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(
+      mailboxWrites,
+      [],
+      "shared SalesGlider mailboxes must not be blanked (D184)",
+    );
+    const insightFindings =
+      result.findings.find((row) => row.campaignId === 3921651)?.findings ?? [];
+    assert.equal(
+      insightFindings.some(
+        (finding) =>
+          finding.kind === "mailbox_sig" &&
+          finding.detail.includes("SalesGlider"),
+      ),
+      true,
+      "shared dual-sig is still a finding",
+    );
   });
 
   it("does not rewrite an empty shared mailbox signature either", async () => {

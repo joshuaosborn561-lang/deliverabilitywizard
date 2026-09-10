@@ -168,6 +168,17 @@ describe("alert noise", () => {
     assert.equal(reconnectFailureCategory("HTTP 429"), "rate-limit");
   });
 
+  it("explains SmartDelivery placement rate limits in plain English", () => {
+    assert.match(
+      humanizeAlertError("listTests: Rate limit exceeded"),
+      /SmartDelivery rate-limited us while loading placement test results/i,
+    );
+    assert.match(
+      humanizeAlertError("test 512404: Rate limit exceeded. Please try again later."),
+      /SmartDelivery rate-limited/i,
+    );
+  });
+
   it("explains warmup-gate rate limits in plain English", () => {
     assert.match(
       humanizeAlertError("list accounts: HTTP 429"),

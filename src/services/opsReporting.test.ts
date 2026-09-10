@@ -203,6 +203,133 @@ describe("PlacementResultsService", () => {
     assert.deepEqual(requested, ["101"]);
     assert.equal(result.rows[0]?.campaignName, "Campaign Seven");
   });
+
+  it("returns the last snapshot instead of throwing when SmartDelivery 429s", async () => {
+    const state = await stateFixture();
+    state.setPlacementResults({
+      generatedAt: "2026-09-09T12:00:00.000Z",
+      rows: [
+        {
+          id: "101",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          inboxPercent: 70,
+          spamPercent: 20,
+          googleInboxPercent: 75,
+          microsoftInboxPercent: 100,
+          totalSeeds: 10,
+          providers: [],
+        },
+      ],
+    });
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("Rate limit exceeded");
+      },
+      getProviderwiseReport: async () => {
+        throw new Error("should not fetch providers after listTests 429");
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const result = await service.get();
+    assert.equal(result.stale, true);
+    assert.equal(result.rows[0]?.id, "101");
+    assert.equal(result.rows[0]?.inboxPercent, 70);
+    assert.match(result.errors.join(" "), /SmartDelivery rate-limited/i);
+  });
+
+  it("still 200s with a human error when there is no snapshot to fall back to", async () => {
+    const state = await stateFixture();
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("Rate limit exceeded");
+      },
+      getProviderwiseReport: async () => ({ result: [] }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const result = await service.get();
+    assert.deepEqual(result.rows, []);
+    assert.match(result.errors.join(" "), /SmartDelivery rate-limited/i);
+  });
+
+  it("stops further providerwise pulls after a rate limit", async () => {
+    const state = await stateFixture();
+    state.markCampaignTested({
+      campaignId: 8,
+      campaignName: "Campaign Eight",
+      testedAt: new Date().toISOString(),
+      testIds: ["102"],
+      mailboxCount: 5,
+      testsCreated: 1,
+    });
+    const requested: string[] = [];
+    const smartDelivery = {
+      listTests: async () => [
+        {
+          spam_test_id: 101,
+          test_name: "Auto: Campaign Seven",
+          status: "COMPLETED",
+          created_at: "2026-08-02T00:00:00Z",
+          campaign_id: 7,
+          inbox_count: 7,
+          spam_count: 2,
+          adjusted_total_email_count: 10,
+        },
+        {
+          spam_test_id: 102,
+          test_name: "Auto: Campaign Eight",
+          status: "COMPLETED",
+          created_at: "2026-08-01T00:00:00Z",
+          campaign_id: 8,
+          inbox_count: 8,
+          spam_count: 1,
+          adjusted_total_email_count: 10,
+        },
+      ],
+      getProviderwiseReport: async (id: number | string) => {
+        requested.push(String(id));
+        throw new Error("Rate limit exceeded");
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+        { id: 8, name: "Campaign Eight", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const result = await service.get();
+    assert.deepEqual(requested, ["101"]);
+    assert.equal(result.rows.length, 2);
+    assert.match(result.errors.join(" "), /SmartDelivery rate-limited/i);
+  });
 });
 
 describe("FleetSummaryService", () => {

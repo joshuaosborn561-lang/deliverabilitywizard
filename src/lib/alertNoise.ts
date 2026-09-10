@@ -192,6 +192,14 @@ export function humanizeAlertError(message: string): string {
   if (rateLimited && getAccount) {
     return `Smartlead rate-limited us while reading mailbox ${getAccount[1]}. We'll retry next run.`;
   }
+  if (
+    rateLimited &&
+    /placement|spam-test|smartdelivery|listTests|providerwise|provider report|\btest\s+\d+/i.test(
+      raw,
+    )
+  ) {
+    return "SmartDelivery rate-limited us while loading placement test results. Showing the last snapshot when we have one — retry in a minute.";
+  }
   if (rateLimited) {
     return "Smartlead is rate-limiting us right now. We'll retry automatically.";
   }

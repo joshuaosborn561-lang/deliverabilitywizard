@@ -131,6 +131,27 @@ export interface FleetSummarySnapshot {
   disconnectedMailboxes: number;
 }
 
+/** Last successful /ops Placement table, used when SmartDelivery throttles. */
+export interface PlacementResultsSnapshot {
+  generatedAt: string;
+  rows: Array<{
+    id: string;
+    name: string;
+    campaignId?: number;
+    campaignName?: string;
+    status: string;
+    createdAt?: string;
+    runNumber?: number;
+    inboxPercent?: number;
+    tabPercent?: number;
+    spamPercent?: number;
+    googleInboxPercent?: number;
+    microsoftInboxPercent?: number;
+    totalSeeds: number;
+    providers: Array<{ name: string; inboxPercent: number }>;
+  }>;
+}
+
 export interface PendingResumeRecord {
   campaignId: number;
   campaignName?: string;
@@ -183,6 +204,8 @@ export interface AppState {
   opsAudit: OpsAuditRecord[];
   /** Last successful Smartlead fleet census, used when live reads are throttled. */
   fleetSummary: FleetSummarySnapshot | null;
+  /** Last successful /ops Placement table, used when SmartDelivery throttles. */
+  placementResults: PlacementResultsSnapshot | null;
   /**
    * Durable Cursor Cloud Agent id per Ops username so freeform chat can
    * continue the same Grok conversation across messages.
@@ -431,6 +454,7 @@ const EMPTY_STATE: AppState = {
   spendApprovals: {},
   opsAudit: [],
   fleetSummary: null,
+  placementResults: null,
   opsCursorAgents: {},
   bugRemediations: {},
   pendingResumes: {},
@@ -498,6 +522,7 @@ export class StateStore {
         spendApprovals: parsed.spendApprovals ?? {},
         opsAudit: parsed.opsAudit ?? [],
         fleetSummary: parsed.fleetSummary ?? null,
+        placementResults: parsed.placementResults ?? null,
         opsCursorAgents: parsed.opsCursorAgents ?? {},
         bugRemediations: parsed.bugRemediations ?? {},
         pendingResumes: parsed.pendingResumes ?? {},
@@ -768,6 +793,14 @@ export class StateStore {
 
   getFleetSummary(): FleetSummarySnapshot | null {
     return this.state.fleetSummary;
+  }
+
+  setPlacementResults(snapshot: PlacementResultsSnapshot): void {
+    this.state.placementResults = snapshot;
+  }
+
+  getPlacementResults(): PlacementResultsSnapshot | null {
+    return this.state.placementResults;
   }
 
   getPoolProvision(): PoolProvisionState {

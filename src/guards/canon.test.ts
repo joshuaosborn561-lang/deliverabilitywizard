@@ -7988,10 +7988,18 @@ describe("owner intent — D178 Insight close lives in the sequence body", () =>
     );
     assert.match(
       check,
-      /Insight campaigns share SalesGlider mailboxes/,
+      /skipMailbox/,
       stop(
-        "Campaign-check must skip mailbox signature writes for Insight-in-copy (D178).",
-        "campaignCheck.ts no longer documents the mailbox skip.",
+        "Campaign-check must skip D92 SalesGlider mailbox writes on Insight-in-copy (D178).",
+        "campaignCheck.ts no longer returns skipMailbox for Insight campaigns.",
+      ),
+    );
+    assert.match(
+      check,
+      /mailboxIsExclusiveInsightStaff/,
+      stop(
+        "Shared SalesGlider mailboxes stay skipped; only exclusive Insight staff may be blanked (D178/D184).",
+        "campaignCheck.ts no longer gates Insight mailbox writes on exclusive staff.",
       ),
     );
     assert.match(

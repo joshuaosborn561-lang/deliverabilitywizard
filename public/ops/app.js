@@ -116,7 +116,7 @@ async function loadDashboard(force = false) {
 
   const policies = [
     ["Campaign floor", `${data.policy.campaignSenderFloor} staffable`],
-    ["Mailbox cap", `${data.policy.mailboxDailyCap}/day`],
+    ["Mailbox cap", data.policy.mailboxDailyCap],
     ["Inbox threshold", `${data.policy.inboxThreshold}% same-ESP`],
     ["Bounce pause", data.policy.bounceAutostop || "off"],
     ["Bounce readings", `${data.policy.bounceThreshold}% / ${data.policy.bounceWarnThreshold}% are logs, not pulls`],

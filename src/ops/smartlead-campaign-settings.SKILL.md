@@ -97,17 +97,17 @@ Never auto-`START` a campaign someone paused or stopped by hand.
 
 ### Per-mailbox settings
 
-Every mailbox, without exception:
+Every mailbox, without exception (D183):
 
 | Setting | Value |
 |---|---|
-| Campaign emails per day | **30** (warmup mail not counted) |
+| Campaign emails per day | **15** Outlook / Microsoft (`type === OUTLOOK`); **30** Gmail/SMTP and every other type (warmup mail not counted) |
 | Minimum gap between emails | **10 minutes** |
 | Warmup | **ON**, always, including rest weeks |
 | Signature | plain `Name` newline `Brand` |
 
-**Real throughput ceiling: 50 senders × 30/day = 1,500 campaign emails per
-day.** Campaign-level `max_leads_per_day: 10000` is not a real number.
+**Real throughput ceiling is type-aware** (Outlook 15/day, Gmail/SMTP
+30/day). Campaign-level `max_leads_per_day: 10000` is not a real number.
 
 ---
 
@@ -372,7 +372,7 @@ Nothing goes ACTIVE until every line passes.
 5. **Launch placement ≥85% same-ESP, promo = miss**, full real sender set,
    after warmup. Failed test is diagnosed and relaunched on survivors, not
    waived.
-6. Signatures set to Name / **this campaign's** brand; 30/day, 10 minute gap, warmup on. A leftover brand from another client is a hard fail.
+6. Signatures set to Name / **this campaign's** brand; Outlook 15/day and Gmail/SMTP 30/day, 10 minute gap, warmup on. A leftover brand from another client is a hard fail.
 
 **Campaign**
 

@@ -7755,6 +7755,165 @@ describe("owner intent — D184 Insight dual-close is campaign-scoped", () => {
   });
 });
 
+describe("owner intent — D186 step 2 delay is 2 days", () => {
+  it("D186: step 2 delay is 2; step 1 stays 0; shells skipped; campaign-check auto-fixes", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const delay = await readFile(
+      new URL("../lib/sequenceDelay.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const kinds = await readFile(
+      new URL("../lib/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const skill = await readFile(
+      new URL("../ops/smartlead-campaign-settings.SKILL.md", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      delay,
+      /export const STEP2_DELAY_DAYS = 2/,
+      stop(
+        "Step 2 waits 2 days (D186).",
+        "sequenceDelay.ts lost STEP2_DELAY_DAYS = 2.",
+      ),
+    );
+    assert.match(
+      delay,
+      /export const STEP1_DELAY_DAYS = 0/,
+      stop(
+        "Step 1 delay stays 0 (D186).",
+        "sequenceDelay.ts lost STEP1_DELAY_DAYS = 0.",
+      ),
+    );
+    assert.match(
+      delay,
+      /Number\(sequence\.seq_number\) !== 2/,
+      stop(
+        "ensureStep2Delay mutates only seq_number === 2 (D186).",
+        "sequenceDelay.ts now rewrites other steps.",
+      ),
+    );
+    assert.match(
+      delay,
+      /isAnyShellCampaign/,
+      stop(
+        "Canary / pod-control shells skip the step-2 delay rule (D186).",
+        "sequenceDelay.ts no longer skips shells.",
+      ),
+    );
+    assert.match(
+      delay,
+      /isWordHuntShellCampaign/,
+      stop(
+        "The word-hunt shell skips the step-2 delay rule (D186).",
+        "sequenceDelay.ts no longer skips the word-hunt shell.",
+      ),
+    );
+    assert.match(
+      kinds,
+      /"step2_delay"/,
+      stop(
+        "Campaign-check findings include step2_delay (D186).",
+        "CAMPAIGN_CHECK_KINDS dropped step2_delay.",
+      ),
+    );
+    assert.match(
+      check,
+      /autoApplyStep2Delay/,
+      stop(
+        "Campaign-check auto-fixes step 2 delay (D186).",
+        "campaignCheck.ts lost autoApplyStep2Delay.",
+      ),
+    );
+    assert.match(
+      check,
+      /updateCampaignSequences/,
+      stop(
+        "Step-2 delay writes go through updateCampaignSequences / sequencesForWrite (D186).",
+        "campaignCheck.ts no longer writes sequences for D186.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
+      /seq_number\) === 3|seq_number === 3/,
+      stop(
+        "Campaign-check must not converge step 3+ delays (D186).",
+        "campaignCheck.ts now writes step 3+ delays.",
+      ),
+    );
+    assert.match(
+      skill,
+      /step 2 is \*\*2\*\*/,
+      stop(
+        "The build skill writes step 2 delay = 2 (D186).",
+        "smartlead-campaign-settings.SKILL.md lost the step-2 delay.",
+      ),
+    );
+    assert.match(
+      skill,
+      /D186/,
+      stop(
+        "The build skill names D186.",
+        "smartlead-campaign-settings.SKILL.md dropped D186.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Step 2 must be \*\*2 days\*\*/,
+      stop(
+        "CANON states step 2 waits 2 days (D186).",
+        "CANON.md lost the D186 step-2 delay rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /step2_delay/,
+      stop(
+        "CANON names the step2_delay finding (D186).",
+        "CANON.md dropped step2_delay.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Do not change step 3\+ delays/,
+      stop(
+        "CANON forbids a step 3+ delay converge (D186).",
+        "CANON.md lost the no-step-3+ clause.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D186/,
+      stop(
+        "CANON names D186.",
+        "CANON.md dropped D186 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D186 — Sequence step 2 waits 2 days/,
+      stop(
+        "The step-2 delay rule is in the ledger (D186).",
+        "DECISIONS.md no longer has D186.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D175 isolation-buy is one ESP per domain", () => {
   it("D175: never mix Google and Microsoft on one InboxKit domain", async () => {
     const { readFile } = await import("node:fs/promises");

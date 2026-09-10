@@ -94,7 +94,7 @@ export function mailboxSendCeilingNow(
   const id = account?.id;
   const hold =
     typeof id === "number" && Number.isFinite(id)
-      ? store?.getSendCeilingHold(id)
+      ? store?.getSendCeilingHold?.(id)
       : undefined;
   return effectiveMailboxMessagePerDay(standing, hold, nowMs);
 }
@@ -132,7 +132,7 @@ export function accountMatchesTenantRateLimitHold(
   verdict: BounceVerdictRecord,
   currentPerDay?: number,
 ): boolean {
-  if (!isOutlookMailboxType(account.type ?? account.platform)) return false;
+  if (!isOutlookMailboxType(account.type)) return false;
   const cids = campaignIdsOf(account);
   if (cids.includes(verdict.campaignId)) return true;
   if (

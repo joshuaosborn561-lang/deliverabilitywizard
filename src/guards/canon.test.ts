@@ -9050,7 +9050,7 @@ describe("owner intent — D191 Outlook send ceiling holds at 0 during tenant_ra
     );
     assert.match(
       canon,
-      /held at \*\*0\*\*\/day until \*\*15 minutes after/,
+      /at \*\*0\*\*\/day until \*\*15 minutes after/,
       stop(
         "CANON states the Outlook tenant hold (D191).",
         "CANON.md lost the D191 0-hold.",

@@ -10,6 +10,7 @@ import {
   canAttachMailboxToCampaign,
   isInsightCampaign,
   isInsightCampaignId,
+  isInsightRestStickyCampaign,
   mailboxIsExclusiveInsightStaff,
   mailboxStaffsActiveSalesGlider,
 } from "./insightCampaigns.js";
@@ -49,6 +50,53 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
     );
     assert.equal(isInsightCampaignId(3921647), true);
     assert.equal(isInsightCampaignId(88), false);
+  });
+
+  it("D189: named ids and Insight-prefix + 345263 are rest-sticky; other clients are not", () => {
+    assert.equal(
+      isInsightRestStickyCampaign({
+        id: 3921647,
+        name: "Insight Consolidation Gateway SEG",
+        client_id: 345263,
+      }),
+      true,
+    );
+    assert.equal(
+      isInsightRestStickyCampaign({
+        id: 4000001,
+        name: "Insight Extra Lane",
+        client_id: 345263,
+      }),
+      true,
+      "future Insight-named lane on SalesGlider",
+    );
+    assert.equal(
+      isInsightRestStickyCampaign({
+        id: 89,
+        name: "SalesGlider Engagers",
+        client_id: 345263,
+      }),
+      false,
+    );
+    assert.equal(
+      isInsightRestStickyCampaign({
+        id: 90,
+        name: "Insight Other Client",
+        client_id: 9,
+      }),
+      false,
+      "Insight name on another client is not the D184 pool",
+    );
+    assert.equal(
+      isInsightRestStickyCampaign({
+        id: 91,
+        name: "Insightful Staffing",
+        client_id: 345263,
+      }),
+      false,
+      "prefix requires 'Insight ' with a space",
+    );
+    assert.equal(isInsightRestStickyCampaign(undefined), false);
   });
 
   it("treats named ids as Insight even without sequences; copy is the other signal", () => {

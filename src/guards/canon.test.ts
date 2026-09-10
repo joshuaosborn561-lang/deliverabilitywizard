@@ -8708,3 +8708,98 @@ describe("owner intent — D187 ops Placement lists 80 live tests", () => {
     );
   });
 });
+
+describe("owner intent — D189 Insight is not client-rest detachable", () => {
+  it("D189: client-rest leaves Insight attached; Engagers still rest", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const insight = await readFile(
+      new URL("../lib/insightCampaigns.ts", import.meta.url),
+      "utf8",
+    );
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      insight,
+      /export function isInsightRestStickyCampaign/,
+      stop(
+        "Insight rest-sticky is a named helper (D189).",
+        "insightCampaigns.ts lost isInsightRestStickyCampaign.",
+      ),
+    );
+    assert.match(
+      insight,
+      /startsWith\("Insight "\)/,
+      stop(
+        "A SalesGlider campaign named Insight … is rest-sticky (D189).",
+        "insightCampaigns.ts lost the Insight name-prefix check.",
+      ),
+    );
+    assert.match(
+      rest,
+      /isInsightRestStickyCampaign/,
+      stop(
+        "Client-rest consults Insight stickiness before detach (D189).",
+        "clientRest.ts no longer calls isInsightRestStickyCampaign.",
+      ),
+    );
+    assert.match(
+      rest,
+      /Insight exclusive staff survives the fortnight/,
+      stop(
+        "Detach helper documents the Insight exception (D189).",
+        "clientRest.ts lost the D189 detach comment.",
+      ),
+    );
+    assert.doesNotMatch(
+      rest,
+      /updateCampaignStatus/,
+      stop(
+        "Client-rest must not START/STOP Insight campaigns (D189).",
+        "clientRest.ts now writes campaign status.",
+      ),
+    );
+    assert.match(
+      canon,
+      /does not unlink or bench mailboxes off Insight/,
+      stop(
+        "CANON states client-rest does not strip Insight (D189).",
+        "CANON.md lost the D189 Insight rest exclusion.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Engagers \/ other SalesGlider\s+ACTIVE rest is unchanged/,
+      stop(
+        "CANON keeps Engagers rest unchanged (D189).",
+        "CANON.md lost the Engagers-unchanged clause.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D189/,
+      stop(
+        "CANON names D189.",
+        "CANON.md dropped D189 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D189 — Client-rest does not strip Insight campaigns/,
+      stop(
+        "The Insight client-rest exclusion is in the ledger (D189).",
+        "DECISIONS.md no longer has D189.",
+      ),
+    );
+  });
+});

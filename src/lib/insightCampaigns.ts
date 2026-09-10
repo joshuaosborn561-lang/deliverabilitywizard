@@ -45,6 +45,27 @@ export function isInsightCampaignId(id: number | null | undefined): boolean {
   return typeof id === "number" && INSIGHT_ID_SET.has(id);
 }
 
+/**
+ * D189 — client-rest must not unlink these. Named D184 ids, or any
+ * campaign whose name starts with `Insight ` on SalesGlider (345263).
+ * Status does not matter: once a seat leaves Insight, D184 restore
+ * cannot put it back (`insightRequiresExisting`).
+ */
+export function isInsightRestStickyCampaign(
+  campaign:
+    | {
+        id?: number | null;
+        name?: string | null;
+        client_id?: number | null;
+      }
+    | undefined,
+): boolean {
+  if (!campaign) return false;
+  if (isInsightCampaignId(campaign.id)) return true;
+  if (campaign.client_id !== SALESGLIDER_CLIENT_ID) return false;
+  return String(campaign.name ?? "").startsWith("Insight ");
+}
+
 export function campaignIsActive(
   campaign: { status?: string | null } | undefined,
 ): boolean {

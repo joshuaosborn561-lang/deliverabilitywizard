@@ -95,6 +95,74 @@ describe("isRestDetachableCampaign", () => {
     );
     assert.equal(isRestDetachableCampaign(undefined, []), false);
   });
+
+  it("D189: ACTIVE Insight is not detachable; Engagers still are", () => {
+    assert.equal(
+      isRestDetachableCampaign(
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        [],
+      ),
+      false,
+      "named Insight id stays attached",
+    );
+    assert.equal(
+      isRestDetachableCampaign(
+        {
+          id: 4000001,
+          name: "Insight Extra Lane",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        [],
+      ),
+      false,
+      "Insight name prefix on client 345263",
+    );
+    assert.equal(
+      isRestDetachableCampaign(
+        {
+          id: 89,
+          name: "SalesGlider Engagers",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        [],
+      ),
+      true,
+      "Engagers A/B rest is unchanged",
+    );
+    assert.equal(
+      isRestDetachableCampaign(
+        {
+          id: 90,
+          name: "Insight Other Client",
+          status: "ACTIVE",
+          client_id: 9,
+        },
+        [],
+      ),
+      true,
+      "another client's Insight-named campaign still rests",
+    );
+    assert.equal(
+      isRestDetachableCampaign(
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "PAUSED",
+          client_id: 345263,
+        },
+        [],
+      ),
+      false,
+      "paused Insight still sticky — D184 cannot restore once unlinked",
+    );
+  });
 });
 
 describe("isExcludedOnlyMembership", () => {
@@ -985,6 +1053,294 @@ describe("ClientRestService", () => {
     assert.ok(
       result.skipped.some((row) => row.includes("last account on #2")),
       "skip reason must name the last-account guard",
+    );
+  });
+
+  it("D189: does not unlink off-week from ACTIVE Insight; Engagers still rest", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // B off
+    const insightEmails = [
+      "a@salesglidertop.org",
+      "b@salesglidertop.org",
+      "m@salesglidertop.org",
+      "z@salesglidertop.org",
+    ];
+    const engagerEmails = [
+      "c@salesglidergrowth.com",
+      "d@salesglidergrowth.com",
+      "n@salesglidergrowth.com",
+      "y@salesglidergrowth.com",
+    ];
+    const emails = [...insightEmails, ...engagerEmails];
+    const cohorts = assignClientCohorts(emails);
+    const offEmails = emails.filter((email) => isOffWeek(cohorts.get(email)!, now));
+    const offInsight = offEmails.filter((email) => insightEmails.includes(email));
+    const offEngagers = offEmails.filter((email) => engagerEmails.includes(email));
+    assert.ok(offInsight.length >= 1, "need an off-week exclusive Insight seat");
+    assert.ok(offEngagers.length >= 1, "need an off-week Engagers seat");
+
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-insight-sticky-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 4000001,
+          name: "Insight Extra Lane",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 89,
+          name: "SalesGlider Engagers",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      listAllEmailAccounts: async () =>
+        emails.map((from_email, index) => ({
+          id: 10 + index,
+          from_email,
+          client_id: 345263,
+          campaign_ids: insightEmails.includes(from_email)
+            ? [3921647, 4000001]
+            : [89],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        })),
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.equal(
+      removed.some((row) => row[0] === 3921647 || row[0] === 4000001),
+      false,
+      "must not unlink exclusive Insight seats",
+    );
+    for (const email of offInsight) {
+      assert.equal(
+        result.benched.some((row) => row.email === email),
+        false,
+        `${email} exclusive Insight must not be benched`,
+      );
+      assert.equal(
+        state.getRestingInbox(email),
+        undefined,
+        `${email} must not be marked resting while staying on Insight`,
+      );
+    }
+    for (const email of offEngagers) {
+      const row = result.benched.find((entry) => entry.email === email);
+      assert.ok(row, `expected ${email} Engagers seat benched`);
+      assert.ok(row.campaignIds.includes(89));
+      assert.equal(row.campaignIds.includes(3921647), false);
+      assert.ok(state.getRestingInbox(email));
+    }
+    assert.ok(
+      removed.some((row) => row[0] === 89),
+      "Engagers A/B rest is unchanged",
+    );
+  });
+
+  it("D189: shared Insight+Engagers off-week leaves Insight, benches Engagers", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // B off
+    const emails = [
+      "a@salesglidertop.org",
+      "b@salesglidertop.org",
+      "m@salesglidertop.org",
+      "z@salesglidertop.org",
+    ];
+    const offEmails = emails.filter(
+      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
+    );
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-insight-shared-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 89,
+          name: "SalesGlider Engagers",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      listAllEmailAccounts: async () =>
+        emails.map((from_email, index) => ({
+          id: 10 + index,
+          from_email,
+          client_id: 345263,
+          campaign_ids: [3921647, 89],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        })),
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.equal(
+      removed.some((row) => row[0] === 3921647),
+      false,
+      "shared seat must stay on Insight",
+    );
+    for (const email of offEmails) {
+      const row = result.benched.find((entry) => entry.email === email);
+      assert.ok(row, `expected ${email} benched from Engagers`);
+      assert.deepEqual(row.campaignIds, [89]);
+    }
+    assert.ok(
+      removed.some((row) => row[0] === 89),
+      "shared seat still benches off Engagers",
+    );
+  });
+
+  it("D189: on-week exclusive Insight is not re-POSTed onto Insight or Engagers", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const insightOn = "a@salesglidertop.org";
+    const engagerOn = "b@salesglidertop.org";
+    const emails = [insightOn, engagerOn, "m@salesglidertop.org", "z@salesglidertop.org"];
+    assert.equal(assignClientCohorts(emails).get(insightOn), "A");
+    assert.equal(isOffWeek("A", now), false);
+
+    const adds: Array<[number, number[]]> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-insight-onweek-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 89,
+          name: "SalesGlider Engagers",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: insightOn,
+          client_id: 345263,
+          campaign_ids: [3921647],
+          created_at: WARMED,
+        },
+        {
+          id: 21,
+          from_email: engagerOn,
+          client_id: 345263,
+          campaign_ids: [89],
+          created_at: WARMED,
+        },
+        {
+          id: 22,
+          from_email: "m@salesglidertop.org",
+          client_id: 345263,
+          campaign_ids: [3921647],
+          created_at: WARMED,
+        },
+        {
+          id: 23,
+          from_email: "z@salesglidertop.org",
+          client_id: 345263,
+          campaign_ids: [89],
+          created_at: WARMED,
+        },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false, now });
+    assert.equal(
+      adds.some((row) => row[0] === 3921647 && row[1].includes(20)),
+      false,
+      "already-on Insight must not be re-attached",
+    );
+    assert.equal(
+      adds.some((row) => row[0] === 89 && row[1].includes(20)),
+      false,
+      "exclusive Insight must not fan onto Engagers",
+    );
+    assert.equal(
+      removed.some((row) => row[0] === 3921647),
+      false,
+      "on-week must not detach Insight",
+    );
+    assert.ok(
+      result.skipped.some((row) =>
+        row.includes("Insight / ACTIVE SalesGlider staffing split"),
+      ),
+      "D184 split still blocks Insight → Engagers on restore",
     );
   });
 });

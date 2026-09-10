@@ -183,7 +183,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D166 | Live | pod-cover ticks every health pass so lastOkAt cannot freeze; /health names overdue stages |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 | D168 | Live — pending-ask refresh + classifier harden added by D170 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
-| D169 | Live | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
+| D169 | Live — qualified by D189 (Insight campaigns stay attached) | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
@@ -198,9 +198,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D181 | Live | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
-| D184 | Live | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
+| D184 | Live — rest unlink of exclusive seats blocked by D189 | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 | D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
+| D189 | Live | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 
 ---
 
@@ -5704,4 +5705,61 @@ only. D126's live-senders-only + hide-canary-copy rules stay.
 
 **Guards.** `OPS_PLACEMENT_REPORT_CAP === 80`; filter then
 `.slice(0, 80)`; CANON names D187; ledger header D187.
+
+---
+
+## D189 — Client-rest does not strip Insight campaigns
+
+**Decision (Josh, 2026-09-10).** Client A/B rest (D169) must
+not unlink or bench mailboxes off Insight campaigns for
+SalesGlider client 345263. The exclusive D184 Insight pool
+stays attached across the fortnight. Engagers / Staffing /
+other SalesGlider ACTIVE rest is unchanged. Do not START or
+STOP Insight campaigns. Goliath hold and BCP standing prefs
+stay.
+
+Scope: the named D184 ids (3921647, 3921651, 3921650,
+3921654, 3921656, 3921653, 3921659) and any campaign whose
+name starts with `Insight ` on client 345263.
+
+**Why.** On 2026-09-10 D184 restaffed all 7 Insight ACTIVE
+lanes to ~40 exclusive salesglider* blank-sig seats. The
+exclusive pool is only ~40 seats; the on-week A/B cohort
+had ~2 on-week and ~22 off-week (plus ~16 unassigned).
+D169 then benched the off-week half off Insight. D184
+on-week restore requires existing Insight membership
+(`insightRequiresExisting`), so once unlinked the seats
+stayed off — sticky collapse to ~1–3 seats. Repeated the
+same day (morning, 10am, 12:45, 1:28pm, 2:15pm CT).
+
+**The rule.**
+
+1. `isRestDetachableCampaign` returns false for Insight
+   campaigns (named ids, or `Insight ` + client 345263).
+   Off-week does not `removeEmailAccountsFromCampaign` on
+   those ids.
+2. Exclusive Insight seats with nothing else detachable
+   are not marked resting — they keep sending.
+3. A mailbox that also sits on ACTIVE SalesGlider Engagers
+   still benches off Engagers (D169). Insight membership
+   stays.
+4. On-week restore still uses `insightRequiresExisting`
+   (D184). This decision does not remix the pools and
+   does not START/STOP Insight.
+
+Numbering: open PR #217 claims D188 (live word Apply);
+open PR #213 claims D185. Next free number is D189.
+
+**Supersedes / amends.** Qualifies D169 inside client
+345263 Insight campaigns only. Does not reverse D169 for
+Engagers or any other client. Does not reverse D184
+staffing / signature rules. Does not change D43 / D59
+on-week "every ACTIVE" for non-Insight campaigns.
+
+**Guards.** canon D189: `isInsightRestStickyCampaign` /
+`isRestDetachableCampaign` false for Insight; client-rest
+skips Insight-only rest-mark; CANON names D189. Tests:
+Insight ACTIVE stays attached; Engagers still rest;
+name-prefix + 345263 is sticky; other-client `Insight `
+name still rests.
 

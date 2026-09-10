@@ -192,12 +192,13 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back |
 | D177 | Superseded by D178 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
-| D178 | Live | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; mailbox signature fields never rewritten |
+| D178 | Live — exclusive Insight mailbox blank carved out by D184 | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; shared mailbox fields never rewritten |
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
+| D184 | Live | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 
 ---
 
@@ -5564,4 +5565,62 @@ split.
 Outlook target is 15; mailboxSettings / campaign-check / fan-out
 / top-up use the type-aware helper; CANON names Outlook 15 and
 D183.
+
+## D184 — Insight dual-close is campaign-scoped; do not blank shared SalesGlider mailboxes
+
+**Decision (Josh, 2026-09-10; live pattern locked same day).**
+Insight outbound must not show a SalesGlider mailbox footer
+stacked under the in-body `Josh Osborn` / `Insight` close.
+This is a **staffing split** inside client 345263, not a
+salesglider* domain rewrite and not a change to
+`desiredMailboxSignature`.
+
+Live fix (do not undo): SalesGlider signatures restored on
+shared SG Engagers mailboxes; all 7 Insight campaigns restaffed
+onto 44 exclusive salesglider* seats **not** on SG ACTIVE
+Engagers; mailbox signature blanked **only** on those 44;
+68 shared seats unlinked from Insight (`stillShared=0`,
+`emptySig=44` per Insight campaign).
+
+Smartlead has **no** campaign-level "don't append the mailbox
+signature" switch.
+
+**The rule.**
+
+1. Insight campaigns (ids 3921647, 3921651, 3921650, 3921654,
+   3921656, 3921653, 3921659) must be staffed **only** with
+   mailboxes that are not also on ACTIVE SalesGlider campaigns.
+   Fan-out / top-up / on-week restore must not re-mix the pools.
+   A leftover shared seat is unlinked from Insight only — SG
+   memberships and signatures stay.
+2. Those Insight-exclusive mailboxes may have an empty
+   signature (sequence already has Josh Osborn / Insight). A
+   leftover SalesGlider line on an exclusive seat is blanked.
+3. NEVER blank or rewrite the signature on mailboxes that
+   staff ACTIVE SalesGlider campaigns. Name / SalesGlider
+   stays (D31).
+4. QA flags Insight staff that (a) also appear on SG ACTIVE
+   camps (`insight_shared_staff`) or (b) have SalesGlider in
+   the signature (`mailbox_sig`).
+5. Do not fleet-converge salesglider* domains to empty. Do
+   not put `%signature%` back into Insight sequences (D178).
+
+**Why.** Insight copy already closed Josh Osborn / Insight /
+P.S.; Smartlead still appended the mailbox signature.
+Blanking every Insight-staffed mailbox was wrong — SG Engagers
+still need the footer. The durable pattern is exclusive Insight
+seats + empty mailbox sig, not a client-wide empty.
+
+**Supersedes / amends.** Amends D178's "never rewrite mailbox
+fields" clause: exclusive Insight staff may be blanked. Amends
+D26/D84 same-client fan-out inside 345263: Insight and ACTIVE
+SG Engagers are separate pools. Does not reverse D31, D74,
+D92, or D125 for non-Insight clients.
+
+**Guards.** canon D184: `INSIGHT_CAMPAIGN_IDS` /
+`canAttachMailboxToCampaign` / exclusive staff; fan-out skips
+the mix; campaign-check unlinks shared from Insight and blanks
+exclusive only; `desiredMailboxSignature` stays Name /
+SalesGlider; CANON names D184. Tests: Insight exclusive →
+empty; ACTIVE SG staff → SalesGlider, never blanked.
 

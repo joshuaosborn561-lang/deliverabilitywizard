@@ -23,6 +23,7 @@ import {
   recordMembership,
   type InventorySnapshot,
 } from "./inventory.js";
+import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import type { StateStore } from "../state/store.js";
 
@@ -86,6 +87,9 @@ export class ClientFanOutService {
     const clientsById = new Map(clients.map((c) => [c.id, c]));
     const campaignClientById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c.client_id]),
+    );
+    const campaignById = new Map(
+      (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
     );
 
     const activeByGroup = new Map<string, SmartleadCampaign[]>();
@@ -211,6 +215,17 @@ export class ClientFanOutService {
 
         for (const campaign of groupCampaigns) {
           if (on.has(campaign.id)) continue;
+          // D184 — Insight and ACTIVE SalesGlider Engagers do not share seats.
+          if (
+            !canAttachMailboxToCampaign(account, campaign, campaignById, {
+              insightRequiresExisting: true,
+            })
+          ) {
+            result.skipped.push(
+              `${email}: Insight / ACTIVE SalesGlider staffing split (D184)`,
+            );
+            continue;
+          }
           if (generic && !campaignAllowsGenerics(campaign)) {
             result.skipped.push(
               `${email}: generics need POC or Slack approve on #${campaign.id}`,

@@ -10,6 +10,11 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import {
+  insightDualSignatureMismatch,
+  isInsightCampaign,
+  mailboxActiveSalesGliderCampaigns,
+} from "../lib/insightCampaigns.js";
 import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
@@ -65,7 +70,11 @@ export interface SupplyForecast {
 export interface SignatureQaIssue {
   campaignId: number;
   campaignName: string;
-  kind: "mailbox_sig" | "missing_signature_tag" | "foreign_brand_in_copy";
+  kind:
+    | "mailbox_sig"
+    | "insight_shared_staff"
+    | "missing_signature_tag"
+    | "foreign_brand_in_copy";
   detail: string;
 }
 
@@ -278,6 +287,9 @@ export class CampaignAuditService {
     allBrands: string[];
   }): Promise<SignatureQaIssue[]> {
     const issues: SignatureQaIssue[] = [];
+    const campaignById = new Map(
+      input.campaigns.map((campaign) => [campaign.id, campaign]),
+    );
     const live = input.campaigns.filter((campaign) => {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
       return !isAnyShellCampaign(campaign);
@@ -289,18 +301,59 @@ export class CampaignAuditService {
         typeof campaign.client_id === "number"
           ? input.brandByClientId.get(campaign.client_id) ?? ""
           : "";
-      if (!expected) continue;
+      if (!expected && !isInsightCampaign(campaign)) continue;
+
+      let sequences = null;
+      try {
+        sequences = await this.smartlead.getCampaignSequences(campaign.id);
+        await sleep(80);
+      } catch (error) {
+        console.warn(
+          `[campaign-audit] could not read sequences for #${campaign.id}`,
+          error,
+        );
+      }
+      const insightInCopy = sequenceBodiesContainInsight(sequences);
+      const insightCampaign = isInsightCampaign(campaign, sequences);
 
       for (const account of input.accounts) {
         if (!campaignIdsOf(account).includes(campaign.id)) continue;
         const email = accountEmail(account);
         if (!email) continue;
-        const mismatch = mailboxSignatureMismatch({
-          fromName: account.from_name,
-          signature: account.signature,
-          clientBrand: expected,
-          otherClientBrands: input.allBrands,
-        });
+        if (insightCampaign) {
+          const shared = mailboxActiveSalesGliderCampaigns(
+            account,
+            campaignById,
+          );
+          if (shared.length) {
+            const detail = `${email} also sits on ACTIVE SalesGlider ${shared
+              .map((row) => `#${row.id}`)
+              .join(", ")}`;
+            issues.push({
+              campaignId: campaign.id,
+              campaignName,
+              kind: "insight_shared_staff",
+              detail,
+            });
+            console.log(
+              `[campaign-audit] INSIGHT-SHARED #${campaign.id} ${campaign.name} — ${detail}`,
+            );
+          }
+        }
+        const mismatch = insightCampaign
+          ? insightDualSignatureMismatch({
+              fromName: account.from_name,
+              signature: account.signature,
+              otherClientBrands: input.allBrands,
+            })
+          : expected
+            ? mailboxSignatureMismatch({
+                fromName: account.from_name,
+                signature: account.signature,
+                clientBrand: expected,
+                otherClientBrands: input.allBrands,
+              })
+            : null;
         if (!mismatch) continue;
         const detail = `${email} ${mismatch}`;
         issues.push({
@@ -314,42 +367,33 @@ export class CampaignAuditService {
         );
       }
 
-      try {
-        const sequences = await this.smartlead.getCampaignSequences(campaign.id);
-        await sleep(80);
-        const insightInCopy = sequenceBodiesContainInsight(sequences);
-        for (const row of sequenceCopyHay(sequences ?? [])) {
-          if (!insightInCopy && missingSignatureTag(row.text)) {
-            const detail = `${row.label} is missing %signature%`;
-            issues.push({
-              campaignId: campaign.id,
-              campaignName,
-              kind: "missing_signature_tag",
-              detail,
-            });
-            console.log(
-              `[campaign-audit] SIG-MISSING-TAG #${campaign.id} ${campaign.name} — ${detail}`,
-            );
-          }
-          const foreign = findForeignBrand(row.text, expected, input.allBrands);
-          if (foreign) {
-            const detail = `${row.label} has ${foreign} in the copy`;
-            issues.push({
-              campaignId: campaign.id,
-              campaignName: String(campaign.name ?? campaign.id),
-              kind: "foreign_brand_in_copy",
-              detail,
-            });
-            console.log(
-              `[campaign-audit] SIG-FOREIGN-COPY #${campaign.id} ${campaign.name} — ${detail}`,
-            );
-          }
+      if (!sequences) continue;
+      for (const row of sequenceCopyHay(sequences)) {
+        if (!insightInCopy && missingSignatureTag(row.text)) {
+          const detail = `${row.label} is missing %signature%`;
+          issues.push({
+            campaignId: campaign.id,
+            campaignName,
+            kind: "missing_signature_tag",
+            detail,
+          });
+          console.log(
+            `[campaign-audit] SIG-MISSING-TAG #${campaign.id} ${campaign.name} — ${detail}`,
+          );
         }
-      } catch (error) {
-        console.warn(
-          `[campaign-audit] could not read sequences for #${campaign.id}`,
-          error,
-        );
+        const foreign = findForeignBrand(row.text, expected, input.allBrands);
+        if (foreign) {
+          const detail = `${row.label} has ${foreign} in the copy`;
+          issues.push({
+            campaignId: campaign.id,
+            campaignName: String(campaign.name ?? campaign.id),
+            kind: "foreign_brand_in_copy",
+            detail,
+          });
+          console.log(
+            `[campaign-audit] SIG-FOREIGN-COPY #${campaign.id} ${campaign.name} — ${detail}`,
+          );
+        }
       }
     }
 

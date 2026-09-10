@@ -18,6 +18,7 @@ import { GENERIC_TAG } from "../lib/markerClients.js";
 import { pocClientId } from "../lib/pocClient.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
+import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -209,7 +210,13 @@ export class OneClientMembershipService {
             otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
           })
         : null;
+      // D184 — do not rewrite exclusive Insight mailboxes to SalesGlider.
+      const exclusiveInsight = mailboxIsExclusiveInsightStaff(
+        account,
+        campaignById,
+      );
       const needsSignature =
+        !exclusiveInsight &&
         Boolean(desired) &&
         (account.signature ?? "") !== desired &&
         (Boolean(foreign) || needsGoliathIdentity);

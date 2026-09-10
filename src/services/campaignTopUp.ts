@@ -24,6 +24,11 @@ import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
+import {
+  canAttachMailboxToCampaign,
+  INSIGHT_MAILBOX_SIGNATURE_BLANK,
+  isInsightCampaignId,
+} from "../lib/insightCampaigns.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
@@ -447,7 +452,11 @@ export class CampaignTopUpService {
                 this.state,
               ) &&
               // D139 — supply that owes warmup days is not supply.
-              !(poolAccount && owesWarmup(poolAccount, key, this.config, this.state))
+              !(poolAccount && owesWarmup(poolAccount, key, this.config, this.state)) &&
+              !(
+                poolAccount &&
+                !canAttachMailboxToCampaign(poolAccount, campaign, campaignById)
+              )
             );
           },
         );
@@ -496,12 +505,15 @@ export class CampaignTopUpService {
               }
 
               identityAttempted = true;
+              const insightTarget = isInsightCampaignId(campaign.id);
               await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
-                signature: buildPoolSignature({
-                  firstName,
-                  lastName,
-                  clientBrand: brand,
-                }),
+                signature: insightTarget
+                  ? INSIGHT_MAILBOX_SIGNATURE_BLANK
+                  : buildPoolSignature({
+                      firstName,
+                      lastName,
+                      clientBrand: brand,
+                    }),
                 from_name: `${firstName} ${lastName}`,
                 client_id: clientId,
                 // D30/D24/D183: never leave a moved mailbox on blank gap / wrong cap.

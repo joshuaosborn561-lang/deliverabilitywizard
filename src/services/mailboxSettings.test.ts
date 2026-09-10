@@ -446,4 +446,112 @@ describe("MailboxSettingsService", () => {
     assert.equal(result.warmupDisabled, 1);
     assert.equal(result.warmupEnabled, 0);
   });
+
+  it("D184: exclusive Insight mailbox is not converged back to SalesGlider", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 68,
+          from_email: "joshua@salesglidertop.org",
+          from_name: "Joshua Osborn",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "",
+          client_id: 345263,
+          campaign_ids: [3921647],
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.run({ dryRun: false, mode: "full" });
+    assert.equal(result.signatureSet, 0);
+    assert.deepEqual(updates, []);
+  });
+
+  it("D184: shared SalesGlider mailbox still gets Name/SalesGlider (restore path)", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 69,
+          from_email: "joshua@salesglidertop.org",
+          from_name: "Joshua Osborn",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "",
+          client_id: 345263,
+          campaign_ids: [3921647, 89],
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 89,
+          name: "SalesGlider Nurture",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.run({ dryRun: false, mode: "full" });
+    assert.equal(result.signatureSet, 1);
+    assert.deepEqual(updates[0]?.fields, {
+      signature: "Joshua Osborn\nSalesGlider",
+    });
+  });
 });

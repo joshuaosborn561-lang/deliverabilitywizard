@@ -19,9 +19,9 @@ import { sleep } from "../lib/http.js";
 import { parseSenderBounceStats } from "../lib/bounceRate.js";
 import {
   OUTLOOK_MESSAGE_PER_DAY,
-  mailboxMessagePerDayTarget,
   totalDailySendCeiling,
 } from "../lib/sendCeiling.js";
+import { mailboxSendCeilingNow } from "../lib/sendCeilingHold.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import type { StateStore } from "../state/store.js";
 
@@ -501,7 +501,12 @@ export class PlacementAuditService {
 
     for (const account of sending) {
       const email = accountEmail(account)!.toLowerCase();
-      const target = mailboxMessagePerDayTarget(account, this.config);
+      const target = mailboxSendCeilingNow(
+        account,
+        this.config,
+        this.state,
+        Date.now(),
+      );
       const configuredRaw =
         (account as { message_per_day?: number }).message_per_day ??
         account.max_email_per_day;

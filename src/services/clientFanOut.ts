@@ -24,7 +24,7 @@ import {
   type InventorySnapshot,
 } from "./inventory.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
-import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { mailboxSendCeilingNow } from "../lib/sendCeilingHold.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -252,9 +252,11 @@ export class ClientFanOutService {
                 try {
                   await this.smartlead.updateEmailAccount(row.accountId, {
                     time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
-                    max_email_per_day: mailboxMessagePerDayTarget(
+                    max_email_per_day: mailboxSendCeilingNow(
                       row.account,
                       this.config,
+                      this.state,
+                      Date.now(),
                     ),
                   });
                   await sleep(120);
@@ -296,9 +298,11 @@ export class ClientFanOutService {
                   try {
                     await this.smartlead.updateEmailAccount(row.accountId, {
                       time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
-                      max_email_per_day: mailboxMessagePerDayTarget(
+                      max_email_per_day: mailboxSendCeilingNow(
                         row.account,
                         this.config,
+                        this.state,
+                        Date.now(),
                       ),
                     });
                     await sleep(120);

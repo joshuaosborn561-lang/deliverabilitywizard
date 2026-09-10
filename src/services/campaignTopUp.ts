@@ -29,7 +29,7 @@ import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
-import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { mailboxSendCeilingNow } from "../lib/sendCeilingHold.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
@@ -518,9 +518,11 @@ export class CampaignTopUpService {
                 client_id: clientId,
                 // D30/D24/D183: never leave a moved mailbox on blank gap / wrong cap.
                 time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
-                max_email_per_day: mailboxMessagePerDayTarget(
-                  { platform: pool.platform },
+                max_email_per_day: mailboxSendCeilingNow(
+                  { id: pool.smartleadAccountId, platform: pool.platform },
                   this.config,
+                  this.state,
+                  Date.now(),
                 ),
               });
               await sleep(200);

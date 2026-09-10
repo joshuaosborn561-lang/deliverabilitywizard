@@ -31,6 +31,11 @@ import {
   OUTLOOK_MESSAGE_PER_DAY,
   mailboxMessagePerDayTarget,
 } from "../lib/sendCeiling.js";
+import {
+  mailboxSendCeilingNow,
+  sendCeilingHoldActive,
+  syncTenantRateLimitSendCeilingHolds,
+} from "../lib/sendCeilingHold.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
@@ -55,6 +60,10 @@ export interface MailboxSettingsResult {
   mode: MailboxSettingsMode;
   scanned: number;
   sendLimitSet: number;
+  /** D191 — Outlook held at 0 during tenant_rate_limit. */
+  sendLimitHeld: number;
+  /** D191 — expired holds written back to the D183 standing cap. */
+  sendLimitRestored: number;
   minGapSet: number;
   signatureSet: number;
   warmupEnabled: number;
@@ -95,6 +104,8 @@ export class MailboxSettingsService {
       mode,
       scanned: 0,
       sendLimitSet: 0,
+      sendLimitHeld: 0,
+      sendLimitRestored: 0,
       minGapSet: 0,
       signatureSet: 0,
       warmupEnabled: 0,
@@ -134,6 +145,20 @@ export class MailboxSettingsService {
           : " (gap+volume; foreign-brand sigs; canary warmup off)"),
     );
 
+    const nowMs = Date.now();
+    if (this.store) {
+      const synced = syncTenantRateLimitSendCeilingHolds({
+        store: this.store,
+        accounts,
+        nowMs,
+      });
+      if (synced.held || synced.expired) {
+        console.log(
+          `[mailbox-settings] D191 tenant ceiling holds: ${synced.held} Outlook at 0, ${synced.expired} expired (restore ${OUTLOOK_MESSAGE_PER_DAY})`,
+        );
+      }
+    }
+
     let consecutiveFailures = 0;
 
     for (const account of accounts) {
@@ -141,9 +166,17 @@ export class MailboxSettingsService {
       if (!email || !account.id) continue;
 
       // Only write when the value differs — needless writes trip the limiter.
-      const target = mailboxMessagePerDayTarget(account, this.config);
+      const standing = mailboxMessagePerDayTarget(account, this.config);
+      const target = mailboxSendCeilingNow(
+        account,
+        this.config,
+        this.store,
+        nowMs,
+      );
       const current = readMessagePerDay(account);
       const needsLimit = !(Number.isFinite(current) && current === target);
+      const hold = this.store?.getSendCeilingHold(account.id);
+      const holding = sendCeilingHoldActive(hold, nowMs);
 
       const needsGap = needsMinTimeGap(account, targetGap);
 
@@ -220,7 +253,12 @@ export class MailboxSettingsService {
           await this.smartlead.updateEmailAccount(account.id, fields);
           await sleep(150);
         }
-        if (needsLimit) result.sendLimitSet += 1;
+        if (needsLimit) {
+          if (holding && target === 0) result.sendLimitHeld += 1;
+          else if (!holding && current === 0 && standing > 0) {
+            result.sendLimitRestored += 1;
+          } else result.sendLimitSet += 1;
+        }
         if (needsGap) result.minGapSet += 1;
         if (needsSignature) result.signatureSet += 1;
 
@@ -262,7 +300,7 @@ export class MailboxSettingsService {
     }
 
     console.log(
-      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→Outlook ${OUTLOOK_MESSAGE_PER_DAY} / others ${defaultTarget}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) on, ${result.warmupDisabled} canary warmup(s) off, ${result.errors.length} error(s)`,
+      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→Outlook ${OUTLOOK_MESSAGE_PER_DAY} / others ${defaultTarget}, ${result.sendLimitHeld} tenant-hold(s)→0, ${result.sendLimitRestored} restored, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) on, ${result.warmupDisabled} canary warmup(s) off, ${result.errors.length} error(s)`,
     );
     for (const e of result.errors.slice(0, 10)) {
       console.log(`[mailbox-settings]   error: ${e}`);
@@ -282,6 +320,8 @@ export class MailboxSettingsService {
       mode === "full" &&
       !dryRun &&
       (result.sendLimitSet ||
+        result.sendLimitHeld ||
+        result.sendLimitRestored ||
         result.minGapSet ||
         result.signatureSet ||
         result.warmupEnabled)
@@ -291,11 +331,19 @@ export class MailboxSettingsService {
           [
             `*Inbox settings*`,
             `${result.sendLimitSet} inbox${result.sendLimitSet === 1 ? "" : "es"} set to the type-aware daily cap (Outlook ${OUTLOOK_MESSAGE_PER_DAY}, Gmail/SMTP ${defaultTarget}).`,
+            result.sendLimitHeld
+              ? `${result.sendLimitHeld} Outlook held at 0/day (tenant_rate_limit, D191).`
+              : "",
+            result.sendLimitRestored
+              ? `${result.sendLimitRestored} Outlook restored to ${OUTLOOK_MESSAGE_PER_DAY}/day after the UTC cap reset.`
+              : "",
             `${result.minGapSet} set to ${targetGap} minutes apart.`,
             `${result.signatureSet} signature${result.signatureSet === 1 ? "" : "s"} set to name + company.`,
             `${result.warmupEnabled} warmup${result.warmupEnabled === 1 ? "" : "s"} turned on.`,
             `(Looked at ${result.scanned}.)`,
-          ].join("\n"),
+          ]
+            .filter(Boolean)
+            .join("\n"),
         );
       } catch (error) {
         console.warn("[mailbox-settings] Slack notify failed", error);

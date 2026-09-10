@@ -8,13 +8,15 @@ import {
 import { isBcpOwnedDomain } from "../lib/bcp.js";
 import { isFleetDomain } from "../lib/domainControl.js";
 import { effectiveIsolationDomain } from "../lib/isolationDomain.js";
-import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isGenericMailbox, isGenericPoolDomain } from "../lib/clientInbox.js";
 import {
   confidentClientForDomain,
   GENERIC_CLIENT_NAME,
   GENERIC_TAG,
   hasPoolMarkerTag,
+  isIntentionalNullGenericDomain,
   isMarkerClientName,
+  leftoverNullGenericTokenInDomain,
   POC_CLIENT_NAME,
 } from "../lib/markerClients.js";
 import { sleep } from "../lib/http.js";
@@ -63,9 +65,14 @@ export interface DomainClientAuditResult {
  * - everything else stays an advisory. split_clients is always advisory.
  *   A box that already carries a real client_id is never rewritten here.
  *
+ * D192 — do not confident-attach intentional null generics (Goliath
+ * leftovers / TJ / Vasco / GENERIC-tagged without client intent /
+ * generic-pool / EXTRA_GENERIC). Advisory/skip, never a write, when
+ * client_id is already null. Canaries never get a client_id.
+ *
  * Skipped on purpose: BCP-owned replacement domains (BCP even with no
- * client_id, D99), the isolation domain, the canary fleet, and retired
- * domains.
+ * client_id, D99), the isolation domain, the canary fleet, retired
+ * domains, and D192 null generics.
  */
 export class DomainClientAuditService {
   constructor(
@@ -112,9 +119,11 @@ export class DomainClientAuditService {
       const domain = email?.split("@")[1];
       if (!email || !domain) continue;
       if (isFleetDomain(domain, this.config.extraGenericDomains)) continue;
+      if (isGenericPoolDomain(domain)) continue;
       if (isBcpOwnedDomain(domain)) continue;
       if (isolationDomain && domain === isolationDomain) continue;
       if (this.state.getPoolMailbox(email)?.copyCanary) continue;
+      if (this.state.isCopyCanary?.(email)) continue;
       if (this.state.getDomainHistory(domain)?.status === "retired") continue;
       const list = byDomain.get(domain) ?? [];
       list.push(account);
@@ -150,6 +159,32 @@ export class DomainClientAuditService {
         const match = this.smartlead
           ? confidentClientForDomain(domain, clients)
           : null;
+        const leftoverToken = leftoverNullGenericTokenInDomain(domain);
+        const intentionalNull =
+          isIntentionalNullGenericDomain(
+            domain,
+            domainAccounts,
+            this.config.extraGenericDomains,
+          ) ||
+          isGenericPoolDomain(domain) ||
+          domainAccounts.every((account) => {
+            const email = accountEmail(account)?.toLowerCase() ?? "";
+            if (!email) return false;
+            if (this.state.getPoolMailbox(email)?.copyCanary) return true;
+            if (this.state.isCopyCanary?.(email)) return true;
+            return isGenericMailbox(account, email, this.config, this.state);
+          });
+        if (match && intentionalNull) {
+          advisories.push({
+            domain,
+            kind: "unmapped",
+            note: leftoverToken
+              ? `intentional null generic (${leftoverToken} leftover) — skip attach to ${match.clientName} (D192)`
+              : `intentional null generic / pool — skip attach to ${match.clientName} (D192)`,
+            at: now,
+          });
+          continue;
+        }
         if (match && !this.config.dryRun) {
           // D143 — a box that still owes warmup days is not attach supply.
           // Evaluated even when the write budget is already spent so the
@@ -159,6 +194,13 @@ export class DomainClientAuditService {
           );
           const ready = unassigned.filter((account) => {
             const email = accountEmail(account)?.toLowerCase() ?? "";
+            if (!email) return false;
+            if (this.state.getPoolMailbox(email)?.copyCanary) return false;
+            if (this.state.isCopyCanary?.(email)) return false;
+            if (hasPoolMarkerTag(account)) return false;
+            if (isGenericMailbox(account, email, this.config, this.state)) {
+              return false;
+            }
             return !owesWarmup(account, email, this.config, this.state);
           });
           const deferred = unassigned.length - ready.length;

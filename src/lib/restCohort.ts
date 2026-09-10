@@ -3,25 +3,79 @@
  * per client (A/B). The fortnight follows ISO weeks in America/New_York.
  *
  * Block 0 → A on, B off. Block 1 → reverse.
+ *
+ * D192 — the cut is ESP-balanced: ~50/50 within Outlook and within
+ * Gmail (and a leftover "other" bucket). Alphabetical-only half
+ * drifted live POD tags off the ESP 50/50 Josh locked.
  */
+
+import { normalizeSenderEspFamily } from "./esp.js";
 
 export type RestCohort = "A" | "B";
+export type CohortEspKind = "outlook" | "gmail" | "other";
+
+export interface ClientCohortInbox {
+  email: string;
+  /** Smartlead account.type (OUTLOOK / GMAIL / …). Omitted → other. */
+  type?: string | null;
+}
+
+export function cohortEspKind(
+  type: string | null | undefined,
+): CohortEspKind {
+  const family = normalizeSenderEspFamily(type);
+  if (family === "microsoft") return "outlook";
+  if (family === "google") return "gmail";
+  return "other";
+}
+
+export function normalizeCohortInboxes(
+  inboxes: Array<string | ClientCohortInbox>,
+): Array<{ email: string; esp: CohortEspKind }> {
+  const seen = new Set<string>();
+  const out: Array<{ email: string; esp: CohortEspKind }> = [];
+  for (const row of inboxes) {
+    const email =
+      typeof row === "string"
+        ? row.trim().toLowerCase()
+        : String(row.email ?? "")
+            .trim()
+            .toLowerCase();
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    out.push({
+      email,
+      esp: typeof row === "string" ? "other" : cohortEspKind(row.type),
+    });
+  }
+  return out;
+}
 
 /**
- * Even A/B split of one client's inboxes. Sorted by email so the cut is
- * stable across runs. First half (ceil) is A; the rest is B.
+ * Even A/B split of one client's inboxes. D192: split independently
+ * inside Outlook and inside Gmail so each pod stays ~50/50 ESP.
+ * Within an ESP, sort by email so the cut is stable. First half
+ * (ceil) is A; the rest is B. Email-only callers (no type) land in
+ * the "other" bucket and keep the old alphabetical half.
  */
-export function assignClientCohorts(emails: string[]): Map<string, RestCohort> {
-  const sorted = [
-    ...new Set(
-      emails.map((email) => email.trim().toLowerCase()).filter(Boolean),
-    ),
-  ].sort();
-  const mid = Math.ceil(sorted.length / 2);
+export function assignClientCohorts(
+  inboxes: Array<string | ClientCohortInbox>,
+): Map<string, RestCohort> {
+  const rows = normalizeCohortInboxes(inboxes);
+  const byEsp = new Map<CohortEspKind, string[]>();
+  for (const row of rows) {
+    const list = byEsp.get(row.esp) ?? [];
+    list.push(row.email);
+    byEsp.set(row.esp, list);
+  }
   const out = new Map<string, RestCohort>();
-  sorted.forEach((email, index) => {
-    out.set(email, index < mid ? "A" : "B");
-  });
+  for (const emails of byEsp.values()) {
+    const sorted = [...emails].sort();
+    const mid = Math.ceil(sorted.length / 2);
+    sorted.forEach((email, index) => {
+      out.set(email, index < mid ? "A" : "B");
+    });
+  }
   return out;
 }
 

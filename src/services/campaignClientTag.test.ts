@@ -30,4 +30,45 @@ describe("CampaignClientTagService", () => {
     assert.equal(result.assigned[0]?.clientId, 548611);
     assert.ok(result.skipped.some((row) => row.includes("shell")));
   });
+
+  it("D192: named Insight campaigns stay 582890 and are never rewritten to SalesGlider", async () => {
+    const writes: Array<[number, number]> = [];
+    const service = new CampaignClientTagService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921647,
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
+            client_id: 582890,
+          },
+          {
+            id: 3921651,
+            name: "Insight Pipeline",
+            status: "ACTIVE",
+          },
+          {
+            id: 88,
+            name: "SalesGlider Engagers",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listClients: async () => [
+          { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+          { id: 582890, name: "Josh Osborn", logo: "Insight" },
+        ],
+        setCampaignClientId: async (campaignId: number, clientId: number) => {
+          writes.push([campaignId, clientId]);
+        },
+      } as unknown as SmartleadClient,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(writes, [[3921651, 582890]]);
+    assert.ok(!writes.some((row) => row[0] === 3921647));
+    assert.ok(!writes.some((row) => row[1] === 345263));
+    assert.equal(result.assigned[0]?.clientId, 582890);
+  });
 });

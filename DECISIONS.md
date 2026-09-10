@@ -61,7 +61,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D40 | Live |
 | D41 | Mostly superseded (D43 cohorts, D50 clock, D71 Slack) — burn checklist and DKIM/DMARC advisory live |
 | D42 | Superseded by D43 |
-| D43 | Live — qualified by D169 (off-week also leaves PAUSED/STOPPED) |
+| D43 | Live — qualified by D169 (off-week also leaves PAUSED/STOPPED); split is ESP-balanced within Outlook/Gmail (D192) |
 | D44 | Historical one-shot (ran 2026-08-21) |
 | D45 | Live |
 | D46 | Live — enforced by D106 |
@@ -150,14 +150,14 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D132 | Live | One Smartlead account book; partial reads distrusted |
 | D133 | Live | Word-swap tap edits every ACTIVE campaign carrying the word |
 | D134 | Live | A domain-retire tap approves generic backfill for the campaigns it cut |
-| D135 | Live | POD-A/POD-B tags converged on client mailboxes in Smartlead |
+| D135 | Live — tags follow ESP-balanced pods (D192) | POD-A/POD-B tags converged on client mailboxes in Smartlead |
 | D136 | Live | Domain→client advisory audit; EOD escalation, never a guess |
 | D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
 | D138 | Live | Campaign-level min gap converged to the 10-minute floor |
 | D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
 | D140 | Live | A bounce burst reads the SMTP reasons; tenant caps alert once/day |
 | D141 | Amended by D148 | Burst detection lives (sampled sends <24h; ledger dumps inert; lifetime-rate retired); the pause action is retired — a burst investigates, remediates, re-queues |
-| D142 | Live — marker-client-records clause superseded by D160 | Generic is a pool, pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged (now moot) |
+| D142 | Live — marker-client-records clause superseded by D160; leftover Goliath/TJ/Vasco + pool nulls skip attach (D192) | Generic is a pool, pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged (now moot) |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
 | D144 | Live | Old-client teardown retired; Nieto / MSRS / Positive may be restored from Supabase |
 | D145 | Amended by D146 / D162 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146; the scan must run without a burst / on PAUSED — D162) |
@@ -183,7 +183,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D166 | Live | pod-cover ticks every health pass so lastOkAt cannot freeze; /health names overdue stages |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 | D168 | Live — pending-ask refresh + classifier harden added by D170 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
-| D169 | Live — qualified by D189 (Insight campaigns stay attached) | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
+| D169 | Live — qualified by D189 (Insight campaigns stay attached); A/B cut is ESP-balanced (D192) | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
@@ -192,17 +192,18 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back |
 | D177 | Superseded by D178 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
-| D178 | Live — exclusive Insight mailbox blank carved out by D184 | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; shared mailbox fields never rewritten |
+| D178 | Live — exclusive Insight mailbox blank retired by D192 | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; shared mailbox fields never rewritten |
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
-| D184 | Live — rest unlink of exclusive seats blocked by D189 | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
+| D184 | Superseded by D192 — exclusive-blank Insight staff inside 345263 is obsolete; never revive | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 | D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
-| D189 | Live | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
+| D189 | Live — Insight campaigns are now client 582890 (D192); named ids stay rest-sticky | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
+| D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
 
 ---
 
@@ -5814,6 +5815,83 @@ addresses Cayden and never says "protected client" or "Cayden
 cannot approve" on those kinds; `BURN_ASK_REMIND_MS` is 7 days;
 `healStaleBurnAsks`; same-strike request + remind stay silent;
 CANON names D190.
+
+## D192 — Protect Insight 582890 reorg; ESP A/B pods; null generics stay null
+
+**Decision (Josh live reorg 2026-09-10).** Protect the live
+Insight / generic-pool state so the next monitor and health
+cycles do not undo it.
+
+Live state locked the same day:
+
+1. **Insight is Smartlead client 582890** — Josh personal
+   domains only; mailbox signature `Josh Osborn` then
+   `Insight`. Seven Insight campaigns staffed 45/45
+   josh-only. Insight ≠ SalesGlider.
+2. **SalesGlider stays 345263** (`salesglider*` only).
+3. **D184 exclusive-blank Insight staff is retired /
+   obsolete — never revive.** Insight is no longer a
+   staffing split inside 345263.
+4. **True canaries + Goliath / TJ / Vasco leftovers stay
+   `client_id` null** (project generic pool; not Smartlead
+   clients).
+5. **"Warmed ≥14d" is reporting-only.** The wizard
+   live-send gate stays **21 days** (D1/D50/D105).
+6. **Live POD tags are ESP-balanced ~50/50 within Outlook
+   and within Gmail** per non-generic client.
+
+**Why.** Without this, the next cycles fight live state:
+
+1. D43 / D135 / D169 `assignClientCohorts` / pod-tags /
+   client-rest used an alphabetical half — that undoes
+   the ESP 50/50 Josh set.
+2. D142 domain-client-audit confident-attaches null
+   Goliath-token domains back to **548611**.
+3. CANON / DECISIONS had no Insight / 582890 entry, so
+   later passes could rewrite Insight campaigns to 345263
+   or fan salesglider* onto them.
+
+**The rule.**
+
+1. Insight campaign `client_id` stays **582890**. Never
+   rewrite those seven ids onto 345263. Josh-personal
+   domains never fan-out as 345263 supply onto Insight.
+   Canaries never get a `client_id`.
+2. `assignClientCohorts` (and therefore rest + POD-A/POD-B
+   tags) splits each client's inboxes ~50/50 **within
+   Outlook and within Gmail**. Stop alphabetical-only
+   drift.
+3. `domainClientAudit` / D142 does **not** confident-attach
+   intentional null generics (Goliath leftovers / TJ /
+   Vasco / GENERIC-tagged without client intent /
+   generic-pool / EXTRA_GENERIC). Advisory or skip, never
+   a write, when `client_id` is already null.
+4. D184 exclusive-blank staff inside 345263 is obsolete.
+   Do not revive empty exclusive seats as the Insight
+   model. D178 in-body close and D189 rest-sticky named
+   Insight ids stay.
+
+**Out of scope.** Ad-hoc insight_restaff scripts. The 21-day
+warmup gate. Bounce / isolation.
+
+Numbering: Josh's brief titled this D170. D170 is already
+the word-hunt swap-refresh rule; open PR #220 claims D191.
+D127 — next free number across main and open PRs is D192.
+
+**Supersedes / amends.** Supersedes D184 (exclusive-blank
+Insight staff inside 345263). Qualifies D43 / D135 / D169
+(ESP-balanced cut, not alphabetical half). Qualifies D142
+(null leftovers stay null). Qualifies D189 (Insight is
+now 582890; named ids stay rest-sticky). Does not reverse
+D50 / D105 (21-day live gate). Does not reverse D178.
+
+**Guards.** canon D192: `INSIGHT_CLIENT_ID === 582890`;
+Insight campaign ids are never tagged 345263;
+`assignClientCohorts` splits within Outlook and Gmail;
+`isIntentionalNullGenericDomain` / leftover tokens skip
+D142 attach; canaries stay null; CANON names D192. Tests:
+ESP-balanced pods; Goliath leftover skip; Insight 582890
+stays; 345263 does not fan onto Insight.
 
 ---
 

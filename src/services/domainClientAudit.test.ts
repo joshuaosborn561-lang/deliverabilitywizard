@@ -393,3 +393,80 @@ describe("DomainClientAuditService (D172)", () => {
     assert.doesNotMatch(starved?.note ?? "", /none resolve to a client/);
   });
 });
+
+describe("DomainClientAuditService (D192)", () => {
+  const warmed = new Date(Date.now() - 60 * 86_400_000).toISOString();
+
+  it("does not confident-attach null Goliath leftovers or canaries", async () => {
+    const state = new StateStore(
+      `/tmp/dw-d192-null-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      googleDomain: "canary-g.info",
+      microsoftDomain: "canary-o.info",
+      domains: ["canary-g.info", "canary-o.info"],
+      emails: ["seed@canary-g.info"],
+      updatedAt: new Date().toISOString(),
+    });
+
+    const writes: Array<{ id: number; client_id: unknown }> = [];
+    const smartlead = {
+      ensureTag: async (name: string) => ({ id: 71, name }),
+      assignTags: async () => undefined,
+      updateEmailAccount: async (
+        id: number,
+        fields: { client_id?: number | null },
+      ) => {
+        writes.push({ id, client_id: fields.client_id });
+      },
+    };
+    const clients = [
+      { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+      { id: 418275, name: "TJ Johnson", logo: "Culture Fits" },
+      { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+    ];
+    const accounts = [
+      {
+        id: 1,
+        from_email: "leftover@getgoliathcyber.info",
+        client_id: null,
+        campaign_ids: [],
+        created_at: warmed,
+        tags: [],
+      },
+      {
+        id: 2,
+        from_email: "tj@culturefitsnow.com",
+        client_id: null,
+        campaign_ids: [],
+        created_at: warmed,
+        tags: [{ tag_name: "GENERIC" }],
+      },
+      {
+        id: 3,
+        from_email: "seed@canary-g.info",
+        client_id: null,
+        campaign_ids: [],
+        created_at: warmed,
+        tags: [],
+      },
+    ];
+    const service = new DomainClientAuditService(
+      loadConfig({ DRY_RUN: "false" }),
+      state,
+      bookWith([], accounts, clients),
+      smartlead as never,
+      async () => {},
+    );
+    const { attached, advisories } = await service.run();
+
+    assert.deepEqual(writes, [], "null leftovers and canaries must not get a client_id");
+    assert.equal(attached.length, 0);
+    const goliath = advisories.find((row) => row.domain === "getgoliathcyber.info");
+    assert.equal(goliath?.kind, "unmapped");
+    assert.match(goliath?.note ?? "", /intentional null generic/);
+    assert.match(goliath?.note ?? "", /D192/);
+  });
+});

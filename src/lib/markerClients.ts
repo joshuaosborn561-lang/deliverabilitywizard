@@ -83,16 +83,80 @@ export function clientDomainTokens(client: {
 }
 
 /**
+ * D192 — leftover tokens that must stay `client_id` null. D142 used
+ * to confident-attach Goliath-token leftovers back to 548611 (and
+ * the same for TJ / Vasco). These are project generic-pool leftovers,
+ * not Smartlead clients. Advisory/skip, never a write, when the box
+ * is already null.
+ */
+export const NULL_GENERIC_LEFTOVER_TOKENS = [
+  "goliath",
+  "goliathcybersecurity",
+  "culturefits",
+  "culturefit",
+  "vasco",
+  "vascowarranty",
+] as const;
+
+export function domainBaseName(domain: string): string {
+  return domain
+    .toLowerCase()
+    .replace(/\.[a-z]+$/i, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+export function leftoverNullGenericTokenInDomain(
+  domain: string,
+): string | null {
+  const base = domainBaseName(domain);
+  if (!base) return null;
+  for (const token of NULL_GENERIC_LEFTOVER_TOKENS) {
+    if (base.includes(token)) return token;
+  }
+  return null;
+}
+
+/**
+ * D192 — do not write a client_id onto an intentional null generic.
+ * True when the domain is already unassigned and is generic-pool /
+ * EXTRA_GENERIC / GENERIC-tagged without client intent / a leftover
+ * Goliath-TJ-Vasco token. A box that already carries a real client_id
+ * is never rewritten here (D142).
+ */
+export function isIntentionalNullGenericDomain(
+  domain: string,
+  accounts: Array<{
+    client_id?: number | null;
+    tags?: Array<{ tag_name?: unknown; name?: unknown }>;
+  }>,
+  extraGenericDomains: string[] = [],
+): boolean {
+  const host = domain.trim().toLowerCase();
+  if (!host) return false;
+  if (extraGenericDomains.some((row) => row.trim().toLowerCase() === host)) {
+    return true;
+  }
+  const allNull = accounts.every((account) => account.client_id == null);
+  if (!allNull) return false;
+  if (leftoverNullGenericTokenInDomain(host)) return true;
+  if (accounts.length > 0 && accounts.every((account) => hasPoolMarkerTag(account))) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * D142 — the confident call: exactly one client whose distinctive token
  * appears in the domain's base name. Anything else stays an advisory for
  * Josh — the audit still never guesses. Leftover Generic/POC client
- * records contribute no tokens (D160).
+ * records contribute no tokens (D160). D192: leftover Goliath/TJ/Vasco
+ * tokens still *match* for the advisory, but the write path must skip.
  */
 export function confidentClientForDomain(
   domain: string,
   clients: Array<{ id: number; name?: string | null; logo?: string | null }>,
 ): { clientId: number; clientName: string } | null {
-  const base = domain.toLowerCase().replace(/\.[a-z]+$/i, "").replace(/[^a-z0-9]/g, "");
+  const base = domainBaseName(domain);
   if (!base) return null;
   const matches: Array<{ clientId: number; clientName: string }> = [];
   for (const client of clients) {

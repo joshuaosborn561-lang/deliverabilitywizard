@@ -5,7 +5,9 @@ import {
   confidentClientForDomain,
   GENERIC_TAG,
   hasPoolMarkerTag,
+  isIntentionalNullGenericDomain,
   isPoolMarkerTag,
+  leftoverNullGenericTokenInDomain,
   POC_TAG,
 } from "./markerClients.js";
 
@@ -54,6 +56,51 @@ describe("D142 confident domain→client matching", () => {
       { id: 999, name: "Parlay Partners", logo: null },
     ];
     assert.equal(confidentClientForDomain("winparlay.info", doubled), null);
+  });
+});
+
+describe("D192 intentional null generics", () => {
+  it("recognises Goliath / TJ / Vasco leftover tokens and skips attach when null", () => {
+    assert.equal(leftoverNullGenericTokenInDomain("getgoliathcyber.info"), "goliath");
+    assert.equal(
+      leftoverNullGenericTokenInDomain("culturefitsnow.com"),
+      "culturefits",
+    );
+    assert.equal(leftoverNullGenericTokenInDomain("tryvascowarranty.info"), "vasco");
+    assert.equal(leftoverNullGenericTokenInDomain("salesgliderbox.info"), null);
+    assert.equal(
+      isIntentionalNullGenericDomain("getgoliathleftover.info", [
+        { client_id: null, tags: [] },
+      ]),
+      true,
+    );
+    assert.equal(
+      isIntentionalNullGenericDomain("salesgliderbox.info", [
+        { client_id: null, tags: [] },
+      ]),
+      false,
+    );
+    assert.equal(
+      isIntentionalNullGenericDomain(
+        "cleartechco.com",
+        [{ client_id: null, tags: [] }],
+        ["cleartechco.com"],
+      ),
+      true,
+    );
+    assert.equal(
+      isIntentionalNullGenericDomain("winparlay.info", [
+        { client_id: null, tags: [{ tag_name: "GENERIC" }] },
+      ]),
+      true,
+    );
+    assert.equal(
+      isIntentionalNullGenericDomain("getgoliathleftover.info", [
+        { client_id: 548611, tags: [] },
+      ]),
+      false,
+      "a box already on Goliath is not rewritten; skip only applies to nulls",
+    );
   });
 });
 

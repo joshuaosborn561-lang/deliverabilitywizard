@@ -23,6 +23,7 @@ import {
   recordMembership,
   type InventorySnapshot,
 } from "./inventory.js";
+import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -236,7 +237,10 @@ export class ClientFanOutService {
                 try {
                   await this.smartlead.updateEmailAccount(row.accountId, {
                     time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
-                    max_email_per_day: this.config.messagePerDay,
+                    max_email_per_day: mailboxMessagePerDayTarget(
+                      row.account,
+                      this.config,
+                    ),
                   });
                   await sleep(120);
                 } catch (settingsError) {
@@ -277,7 +281,10 @@ export class ClientFanOutService {
                   try {
                     await this.smartlead.updateEmailAccount(row.accountId, {
                       time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
-                      max_email_per_day: this.config.messagePerDay,
+                      max_email_per_day: mailboxMessagePerDayTarget(
+                        row.account,
+                        this.config,
+                      ),
                     });
                     await sleep(120);
                   } catch (settingsError) {

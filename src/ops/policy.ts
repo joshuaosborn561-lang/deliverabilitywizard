@@ -75,7 +75,7 @@ export function classifyOpsMessage(
     return {
       type: "denied",
       reason:
-        "The console cannot change fleet policy. The staffing floor (half each client's inboxes) and the 30/day mailbox cap are owner decisions and require a reviewed code/config change (D82, D11/D24).",
+        "The console cannot change fleet policy. The staffing floor (half each client's inboxes) and the type-aware mailbox cap (Outlook 15 / Gmail-SMTP 30) are owner decisions and require a reviewed code/config change (D82, D11/D24/D183).",
     };
   }
 

@@ -32,7 +32,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D8 | Superseded by D45 (quota) — recurring tests + ≤50/test stay |
 | D9 | Superseded by D58/D81/D82 — generic staffing is POC/approval-gated |
 | D10 | Live (restates D3) |
-| D11 | Live — reworded by D24 |
+| D11 | Live — reworded by D24; Outlook cap qualified by D183 |
 | D12 | Superseded by D26 |
 | D13 | Live |
 | D14 | Live (swap reservations honoured; machinery off by default) |
@@ -44,7 +44,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D20 | Live |
 | D21 | Live — auto-merge OFF during the canon rebuild (D127) |
 | D22–D23 | Burned numbers — no entry exists |
-| D24 | Live |
+| D24 | Live — Outlook / Microsoft cap qualified by D183 |
 | D25 | Live — floor definition superseded by D58/D82 |
 | D26 | Live — qualified by D43 (resters skip fan-out) |
 | D27 | Live — qualified by D58/D81/D82 (POC or approval) |
@@ -197,6 +197,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
 | D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
+| D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 
 ---
 
@@ -5520,4 +5521,47 @@ D138. Does not add a send-window writer.
 Mon–Thu window and D182; skill does not ship Chicago 09:00–18:00
 as the default; days stay `[1, 2, 3, 4]` (no Friday); campaign-
 check does not write timezone / start_hour / days_of_the_week.
+
+---
+
+## D183 — Outlook send ceiling is 15/day; Gmail/SMTP stay at 30
+
+**Decision (Josh, 2026-09-09 ~8:45pm CT).** Every Outlook /
+Microsoft Smartlead sender (`account.type` microsoft family,
+typically `OUTLOOK`) converges to `message_per_day` /
+`max_email_per_day` = **15**. Gmail, SMTP, and every other type
+stay at `MESSAGE_PER_DAY` = **30**. Do not drop the global
+constant to 15.
+
+**Why.** Live Outlook accounts were already being set to 15 via
+API. `mailboxSettings` still compared every mailbox to
+`config.messagePerDay` (30 via D11/D24) and would overwrite those
+15s back to 30 on the next converge. Josh's standing order: cap
+Outlook/Microsoft at 15; leave Gmail/SMTP at 30.
+
+**The rule.**
+
+1. Per-account target from `account.type` (and pool `platform`
+   when that is all a writer has). Microsoft family → 15;
+   everything else → `MESSAGE_PER_DAY`.
+2. `mailboxSettings` `needsLimit` compares against that
+   per-account target. Fan-out, top-up, and canary attach write
+   the same target.
+3. Campaign-check `mailbox_volume` and send-audit low-ceiling
+   treat Outlook-at-15 as compliant. Gmail/SMTP at 15 is a
+   finding and is written back to 30.
+4. Write API stays `max_email_per_day`; read stays
+   `message_per_day` (D24).
+5. Does not change the 10-minute gap, warmup fields, or Gmail /
+   SMTP volume.
+
+**Supersedes / amends.** Qualifies D11/D24: the 30/day converge
+is the non-Outlook default, not a fleet-wide overwrite of
+Outlook 15. Does not reverse D24's warmups-not-included field
+split.
+
+**Guards.** canon D183: `MESSAGE_PER_DAY` default stays 30;
+Outlook target is 15; mailboxSettings / campaign-check / fan-out
+/ top-up use the type-aware helper; CANON names Outlook 15 and
+D183.
 

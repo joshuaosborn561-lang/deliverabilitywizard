@@ -200,7 +200,10 @@ const ConfigSchema = z.object({
   /** Minimum share of each ESP (Google / Microsoft) when topping up to 50. */
   campaignEspMixMinPercent: z.coerce.number().int().min(0).max(50).default(30),
   cronHealth: z.string().default("*/15 * * * *"),
-  /** Daily campaign send cap held on every mailbox (warmups not included). */
+  /**
+   * Daily campaign send cap for non-Outlook mailboxes (warmups not
+   * included). Outlook / Microsoft is 15 (D183) — do not drop this to 15.
+   */
   messagePerDay: z.coerce.number().int().min(1).default(30),
   /**
    * Minimum minutes between sends on every mailbox (Smartlead

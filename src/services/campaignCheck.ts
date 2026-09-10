@@ -69,6 +69,7 @@ import {
   readMessagePerDay,
   readMinTimeGapMins,
 } from "../lib/mailboxSendSettings.js";
+import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import {
   daysSince,
   isPrewarmedGeneric,
@@ -811,10 +812,11 @@ export class CampaignCheckService {
         });
       }
       const volume = readMessagePerDay(account);
-      if (Number.isFinite(volume) && volume !== this.config.messagePerDay) {
+      const wantVolume = mailboxMessagePerDayTarget(account, this.config);
+      if (Number.isFinite(volume) && volume !== wantVolume) {
         findings.push({
           kind: "mailbox_volume",
-          detail: `${email} ${volume}/day (want ${this.config.messagePerDay})`,
+          detail: `${email} ${volume}/day (want ${wantVolume})`,
         });
       }
     }

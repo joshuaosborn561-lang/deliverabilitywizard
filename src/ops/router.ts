@@ -244,7 +244,7 @@ export function createOpsRouter(opts: {
         },
         policy: {
           campaignSenderFloor: "half that client's inboxes",
-          mailboxDailyCap: opts.config.messagePerDay,
+          mailboxDailyCap: "Outlook 15 / Gmail-SMTP 30",
           warmupDays: opts.config.poolWarmupDays,
           freshInboxWarmupDays: opts.config.freshInboxWarmupDays,
           inboxThreshold: opts.config.remediationInboxThreshold,

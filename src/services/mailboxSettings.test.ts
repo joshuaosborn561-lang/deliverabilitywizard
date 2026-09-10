@@ -278,6 +278,115 @@ describe("MailboxSettingsService", () => {
     assert.equal(result.warmupDisabled, 0);
   });
 
+  it("D183: Outlook at 15 is left alone; Outlook at 30 is written back to 15", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 21,
+          type: "OUTLOOK",
+          from_email: "ada@ms.info",
+          from_name: "Ada Outlook",
+          message_per_day: 15,
+          minTimeToWaitInMins: 10,
+          signature: "Ada Outlook\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 22,
+          type: "OUTLOOK",
+          from_email: "bert@ms.info",
+          from_name: "Bert Outlook",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Bert Outlook\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run when only volume drifted");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 1);
+    assert.equal(result.minGapSet, 0);
+    assert.deepEqual(updates, [{ id: 22, fields: { max_email_per_day: 15 } }]);
+  });
+
+  it("D183: Gmail and SMTP stay at 30; a drifted SMTP is written to 30 not 15", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 31,
+          type: "GMAIL",
+          from_email: "gail@gmail.info",
+          from_name: "Gail Gmail",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Gail Gmail\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 32,
+          type: "SMTP",
+          from_email: "sam@smtp.info",
+          from_name: "Sam Smtp",
+          message_per_day: 15,
+          minTimeToWaitInMins: 10,
+          signature: "Sam Smtp\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run when only volume drifted");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 1);
+    assert.deepEqual(updates, [{ id: 32, fields: { max_email_per_day: 30 } }]);
+  });
+
   it("turns warmup off on the canary fleet during the 15-minute gap pass (D83)", async () => {
     const state = new StateStore(
       `/tmp/mailbox-canary-off-${process.pid}-${Date.now()}.json`,

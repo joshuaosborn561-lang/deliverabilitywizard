@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D182** (2026-09-09). One page of current truth. When a new
+Canon as of **D183** (2026-09-10). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -47,12 +47,18 @@ or the day is done. Silent findings are a bug (D163).
   Pre-warmed is a flag only Josh grants — generic-pool membership
   (`EXTRA_GENERIC_DOMAINS`, which also carries the GetIntroduced /
   QuickConnect fleets) never implies it (D142).
-- **Converged every pass**: 30 campaign sends/day (warmups excluded, D24),
-  10-minute minimum gap (D30/D35) — held at BOTH levels: the mailbox field
-  every health pass, and campaign `min_time_btwn_emails` written back to
-  the floor by the checker on sight (D138; a sender on N ACTIVE campaigns
-  still paces per campaign — the fan-out multiplication is a known,
-  deliberate residual, capped by 30/day), warmup ON for every mailbox **except the
+- **Converged every pass**: campaign sends/day (warmups excluded,
+  D24/D183) — **Outlook / Microsoft** Smartlead accounts
+  (`account.type` microsoft family, typically `OUTLOOK`) **15**;
+  Gmail/SMTP and every other type **30** (`MESSAGE_PER_DAY`). Do not
+  drop the global constant to 15. Outlook-at-15 is compliant, not a
+  `mailbox_volume` finding. Write as `max_email_per_day`; read as
+  `message_per_day` (D24). 10-minute minimum gap (D30/D35) — held at
+  BOTH levels: the mailbox field every health pass, and campaign
+  `min_time_btwn_emails` written back to the floor by the checker on
+  sight (D138; a sender on N ACTIVE campaigns still paces per
+  campaign — the fan-out multiplication is a known, deliberate
+  residual, capped by the type-aware daily cap), warmup ON for every mailbox **except the
   canary fleet, which is forced OFF** (D83), plain two-line signature
   `First Last\n{Client Brand}` (D31). On a living campaign, an empty,
   one-line, extra-line, or foreign-client signature is a `mailbox_sig`

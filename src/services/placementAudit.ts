@@ -17,7 +17,11 @@ import {
 import { isBcpCampaignName } from "../lib/bcp.js";
 import { sleep } from "../lib/http.js";
 import { parseSenderBounceStats } from "../lib/bounceRate.js";
-import { totalDailySendCeiling } from "../lib/sendCeiling.js";
+import {
+  OUTLOOK_MESSAGE_PER_DAY,
+  mailboxMessagePerDayTarget,
+  totalDailySendCeiling,
+} from "../lib/sendCeiling.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import type { StateStore } from "../state/store.js";
 
@@ -478,6 +482,7 @@ export class PlacementAuditService {
       disconnected: number;
       totalSent: number;
       estimatedCampaign: number;
+      expectedCampaign: number;
       lowCeiling: number;
       unknownSent: number;
     };
@@ -488,6 +493,7 @@ export class PlacementAuditService {
         disconnected: 0,
         totalSent: 0,
         estimatedCampaign: 0,
+        expectedCampaign: 0,
         lowCeiling: 0,
         unknownSent: 0,
       });
@@ -495,13 +501,14 @@ export class PlacementAuditService {
 
     for (const account of sending) {
       const email = accountEmail(account)!.toLowerCase();
+      const target = mailboxMessagePerDayTarget(account, this.config);
       const configuredRaw =
         (account as { message_per_day?: number }).message_per_day ??
         account.max_email_per_day;
       const configuredCeiling =
         typeof configuredRaw === "number" && configuredRaw > 0
           ? configuredRaw
-          : campaignCap;
+          : target;
       const cids = campaignIdsOf(account).filter((id) => activeIds.has(id));
       const disconnected =
         account.is_smtp_success === false || account.is_imap_success === false;
@@ -527,7 +534,8 @@ export class PlacementAuditService {
         const agg = byCampaign.get(cid)!;
         agg.senders += 1;
         if (disconnected) agg.disconnected += 1;
-        if (configuredCeiling < totalCeiling) agg.lowCeiling += 1;
+        if (configuredCeiling < target) agg.lowCeiling += 1;
+        agg.expectedCampaign += target;
         if (sent === null) agg.unknownSent += 1;
         else {
           agg.totalSent += sent;
@@ -563,13 +571,13 @@ export class PlacementAuditService {
     }
 
     for (const [id, agg] of byCampaign) {
-      const expected = agg.senders * campaignCap;
+      const expected = agg.expectedCampaign;
       const shortfall = Math.max(0, expected - agg.estimatedCampaign);
       const reasons: string[] = [];
       if (agg.senders === 0) reasons.push("no_senders");
       if (agg.lowCeiling > 0) {
         reasons.push(
-          `smartlead_message_per_day_low (${agg.lowCeiling}/${agg.senders} mailboxes at message_per_day < ${totalCeiling}; target ${campaignCap}/day warmups-not-included, warmup separate ${warmupPerDay}/day)`,
+          `smartlead_message_per_day_low (${agg.lowCeiling}/${agg.senders} mailboxes below their type-aware cap; Outlook ${OUTLOOK_MESSAGE_PER_DAY}/day, others ${campaignCap}/day warmups-not-included, warmup separate ${warmupPerDay}/day)`,
         );
       }
       if (agg.disconnected > 0) {

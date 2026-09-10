@@ -7393,6 +7393,149 @@ describe("owner intent — D182 standing send window is Mon–Thu 8am–7pm ET",
   });
 });
 
+describe("owner intent — D183 Outlook send ceiling is 15/day", () => {
+  it("D183: Outlook 15, Gmail/SMTP 30; MESSAGE_PER_DAY stays 30; writers are type-aware", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const ceiling = await readFile(
+      new URL("../lib/sendCeiling.ts", import.meta.url),
+      "utf8",
+    );
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const fanOut = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const canary = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.equal(
+      defaults.messagePerDay,
+      30,
+      stop(
+        "Gmail/SMTP stay at MESSAGE_PER_DAY=30 (D11/D24/D183).",
+        `MESSAGE_PER_DAY default is now ${defaults.messagePerDay} — do not drop the global constant to 15.`,
+      ),
+    );
+    assert.match(
+      ceiling,
+      /export const OUTLOOK_MESSAGE_PER_DAY = 15/,
+      stop(
+        "Outlook / Microsoft mailboxes target 15/day (D183).",
+        "sendCeiling.ts lost OUTLOOK_MESSAGE_PER_DAY = 15.",
+      ),
+    );
+    assert.match(
+      ceiling,
+      /mailboxMessagePerDayTarget/,
+      stop(
+        "The daily cap is type-aware (D183).",
+        "sendCeiling.ts lost mailboxMessagePerDayTarget.",
+      ),
+    );
+    assert.match(
+      settings,
+      /mailboxMessagePerDayTarget\(account/,
+      stop(
+        "mailboxSettings compares each account to its type-aware target (D183).",
+        "mailboxSettings.ts still converges every mailbox to a single fleet target.",
+      ),
+    );
+    assert.match(
+      settings,
+      /max_email_per_day/,
+      stop(
+        "Write API stays max_email_per_day (D24/D183).",
+        "mailboxSettings.ts no longer writes max_email_per_day.",
+      ),
+    );
+    assert.match(
+      check,
+      /mailboxMessagePerDayTarget\(account/,
+      stop(
+        "Campaign-check volume QA is type-aware — Outlook-at-15 is compliant (D183).",
+        "campaignCheck.ts still wants config.messagePerDay on every mailbox.",
+      ),
+    );
+    assert.match(
+      fanOut,
+      /mailboxMessagePerDayTarget/,
+      stop(
+        "Fan-out writes the type-aware daily cap (D183).",
+        "clientFanOut.ts still hardcodes config.messagePerDay for every attach.",
+      ),
+    );
+    assert.match(
+      topUp,
+      /mailboxMessagePerDayTarget/,
+      stop(
+        "Top-up writes the type-aware daily cap (D183).",
+        "campaignTopUp.ts still hardcodes config.messagePerDay for every move.",
+      ),
+    );
+    assert.match(
+      canary,
+      /mailboxMessagePerDayTarget/,
+      stop(
+        "Canary attach writes the type-aware daily cap (D183).",
+        "copyCanary.ts still hardcodes config.messagePerDay for Outlook canaries.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Outlook \/ Microsoft/,
+      stop(
+        "CANON states the Outlook 15 / Gmail-SMTP 30 split (D183).",
+        "CANON.md lost the D183 Outlook cap.",
+      ),
+    );
+    assert.match(
+      canon,
+      /\*\*15\*\*/,
+      stop(
+        "CANON names Outlook 15 (D183).",
+        "CANON.md lost the Outlook 15 figure.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D183/,
+      stop(
+        "CANON names D183.",
+        "CANON.md dropped D183 when a later decision landed.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D183 — Outlook send ceiling is 15\/day; Gmail\/SMTP stay at 30/,
+      stop(
+        "The Outlook 15/day rule is in the ledger (D183).",
+        "DECISIONS.md no longer has D183.",
+      ),
+    );
+  });
+});
+
 describe("owner intent — D175 isolation-buy is one ESP per domain", () => {
   it("D175: never mix Google and Microsoft on one InboxKit domain", async () => {
     const { readFile } = await import("node:fs/promises");

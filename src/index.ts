@@ -2415,7 +2415,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}`,
     );
     console.log(
-      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
+      `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (Outlook 15/day, Gmail/SMTP ${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
       `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (half-client-inbox floor; generics on POC ${config.pocClientNamePatterns.join("/") || "nobody"} or Slack approve${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,

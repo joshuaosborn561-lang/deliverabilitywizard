@@ -111,6 +111,9 @@ export class OneClientMembershipService {
       typeof this.state.listGenericBackfillApprovals === "function"
         ? this.state.listGenericBackfillApprovals()
         : {};
+    // D193 — restore targets are POC (Goliath) ACTIVE campaigns only.
+    // Leftover D134 approvals must not become a dump list for every
+    // displaced generic (that restaffed TechEvo / BCP / SG overnight).
     const activeOwnerCampaignIds = (campaigns as SmartleadCampaign[])
       .filter((campaign) => {
         if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
@@ -189,9 +192,19 @@ export class OneClientMembershipService {
       // must go back on live Goliath, not sit on the paused shell.
       const restore =
         generic && !onOwner && (pull.length > 0 || leftoverTagged)
-          ? activeOwnerCampaignIds.filter(
-              (id) => !memberships.some((row) => row.campaignId === id),
-            )
+          ? activeOwnerCampaignIds.filter((id) => {
+              if (memberships.some((row) => row.campaignId === id)) return false;
+              const campaign = campaignById.get(id);
+              // D193 — never restore a generic onto another client's id,
+              // even when the campaign name still matches a POC pattern.
+              if (
+                typeof campaign?.client_id === "number" &&
+                campaign.client_id !== owner
+              ) {
+                return false;
+              }
+              return true;
+            })
           : [];
 
       const clientBrand = brandByClientId.get(owner) ?? "";

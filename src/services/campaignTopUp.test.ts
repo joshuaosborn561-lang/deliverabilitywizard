@@ -400,4 +400,81 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(addCalls, 0, "blocked cleartechco must not fill the gap");
     assert.equal(result.assigned.length, 0);
   });
+
+  it("D193: leftover D134 approval does not fill a named client campaign from the pool", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "ada@trygetintroduced.info",
+      domain: "trygetintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Ada",
+      lastName: "Pool",
+      status: "available",
+    };
+    const { state } = fakeState(pool);
+    const approvedState = {
+      ...state,
+      listGenericBackfillApprovals: () => ({
+        "3847798": {
+          campaignId: 3847798,
+          approvedAt: "2026-09-01T00:00:00Z",
+          approvedBy: "josh",
+        },
+      }),
+    } as unknown as StateStore;
+    let addCalls = 0;
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [],
+        },
+        ...Array.from({ length: 4 }, (_, index) => ({
+          id: 500 + index,
+          from_email: `techevo-${index}@techevo.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 521881,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3847798],
+        })),
+      ],
+      listClients: async () => [
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async () => {
+        addCalls += 1;
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      approvedState,
+    );
+
+    const result = await service.run();
+    assert.equal(addCalls, 0, "TechEvo must stay client-inbox only");
+    assert.equal(result.assigned.length, 0);
+    assert.ok(
+      result.skipped.some((row) => row.includes("client-inbox only")),
+    );
+  });
 });

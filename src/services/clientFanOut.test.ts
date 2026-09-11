@@ -413,4 +413,87 @@ describe("D139 — staffing never hands the gate its next pull", () => {
     await service.run({ dryRun: false });
     assert.deepEqual(adds, [[3921651, [44]]]);
   });
+
+  it("D193: does not fan GENERIC pool senders onto a client campaign", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+        {
+          id: 3847800,
+          name: "TechEvo NE IT DM v2 Patriots",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "ada@trygetintroduced.info",
+          created_at: "2026-06-01T00:00:00Z",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nGoliath Cybersecurity",
+          campaign_ids: [3847798],
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        {
+          id: 22,
+          from_email: "corey@techevo.com",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3847798],
+          client_id: 521881,
+        },
+      ],
+      listClients: async () => [
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        isCopyCanary: () => false,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+        listGenericBackfillApprovals: () => ({
+          "3847798": {
+            campaignId: 3847798,
+            approvedAt: "2026-09-01T00:00:00Z",
+            approvedBy: "josh",
+          },
+          "3847800": {
+            campaignId: 3847800,
+            approvedAt: "2026-09-01T00:00:00Z",
+            approvedBy: "josh",
+          },
+        }),
+      } as unknown as StateStore,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(
+      adds,
+      [[3847800, [22]]],
+      "only the TechEvo-named inbox fans; GENERIC getintroduced stays off",
+    );
+    assert.ok(
+      result.skipped.some((row) => row.includes("ada@trygetintroduced.info")),
+    );
+  });
 });

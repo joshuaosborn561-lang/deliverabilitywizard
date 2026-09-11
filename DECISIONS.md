@@ -149,7 +149,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D131 | Live |
 | D132 | Live | One Smartlead account book; partial reads distrusted |
 | D133 | Live | Word-swap tap edits every ACTIVE campaign carrying the word |
-| D134 | Live | A domain-retire tap approves generic backfill for the campaigns it cut |
+| D134 | Amended by D193 — approval is still recorded; it does not staff named client campaigns | A domain-retire tap approves generic backfill for the campaigns it cut |
 | D135 | Live — tags follow ESP-balanced pods (D192) | POD-A/POD-B tags converged on client mailboxes in Smartlead |
 | D136 | Live | Domain→client advisory audit; EOD escalation, never a guess |
 | D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
@@ -204,6 +204,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D189 | Live — Insight campaigns are now client 582890 (D192); named ids stay rest-sticky | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
+| D193 | Live | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 
 ---
 
@@ -5892,6 +5893,69 @@ Insight campaign ids are never tagged 345263;
 D142 attach; canaries stay null; CANON names D192. Tests:
 ESP-balanced pods; Goliath leftover skip; Insight 582890
 stays; 345263 does not fan onto Insight.
+
+## D193 — Named client campaigns never receive GENERIC pool senders
+
+**Decision (Josh 2026-09-11, overnight signature-hole pages).**
+Client-tagged campaigns (BCP 542838, TechEvo 521881, SalesGlider
+345263, Parlay, Insight, …) must be staffed only with senders that
+belong to that client — matching `client_id` and/or a client-named
+domain / correct company signature.
+
+Never attach GENERIC-tagged or pool-brand senders
+(`getintroduced*` / `quickconnect*` / `appquickconnect*` and the
+other InboxKit pool brands) onto those lanes to fill seats. The
+GENERIC pool may still warm or sit unused. If a client lane is
+understaffed and no eligible client senders remain, leave it short
+and Slack ops — do not borrow GENERIC or another client's
+mailboxes.
+
+Leftover D134 Slack / retire-tap `genericBackfillApprovals` stay in
+state as a historical record. They are **not attach permission**.
+`campaignMayTakeGenerics` is POC-only (Goliath). one-client restore
+targets ACTIVE POC campaigns of the generic owner only — never every
+campaign that once had a D134 approval.
+
+Does not change standing pause/start prefs (Goliath hold until
+Oct 15, BCP standing-ON, Parlay SEG pauses). Does not START Goliath.
+Does not reverse D76 (generics still *belong* to Goliath for pull /
+signature reset). Does not reverse D161 client-named replacements.
+
+**Why.** 2026-09-11 ~8:20–8:55am CT: operators unlinked foreign
+GENERIC/getintroduced* senders (many with Goliath Cybersecurity /
+Generic / TechEvolution / SalesGlider remapped lines) off TechEvo
+#3847798, BCP #3763803 / #3763801 / #3763800 / #3763808 / #3763809,
+and SG #3739758 / #3748375. The next health loop put them back.
+`one-client.lastOkAt` ≈ 13:47:55Z coincided with foreign-account
+`updated_at`. `/health` showed `cross_client_membership`: 476.
+
+Root path, read from code (not assumed): `OneClientMembershipService`
+built `activeOwnerCampaignIds` from `campaignMayTakeGenerics`, which
+treated leftover D134 approvals as restore targets. Restore ran
+*before* the foreign pull. Goliath campaigns are PAUSED until Oct 15,
+so displaced generics (`!onOwner`) were dumped onto every approved
+ACTIVE client campaign, then pulled off as foreign next pass — a
+15-minute oscillation that rewrote signatures and paged `mailbox_sig`.
+Fan-out / top-up used the same `campaignMayTakeGenerics` gate, so a
+leftover approval also let those paths attach. mailbox-gap and
+pod-cover do not attach to live campaigns.
+
+**Rejected.** Leaving D134 attach live "until replacements warm" —
+the approvals never expired and Goliath is paused, so the dump had
+nowhere else to go. Asking operators to keep unlinking is not a
+fix (D98).
+
+**Supersedes / amends.** Amends D134 / D150 (approval recorded; no
+pool attach onto named clients). Amends D81/D82 (POC only; Slack
+approve is not attach). Qualifies D76 restore (Goliath/POC only,
+never the approval list). Does not reverse D58/D99 half-floor /
+BCP-from-BCP. Does not reverse D26/D75 one-client pull.
+
+**Guards.** canon D193: `campaignMayTakeGenerics` is false for a
+D134-approved TechEvo/BCP/SG campaign; one-client / fan-out / top-up
+do not add GENERIC getintroduced* onto those ids; CANON names D193.
+Tests: leftover approval does not restore / fan / top-up onto
+TechEvo; pool-brand hosts classify as generic.
 
 ---
 

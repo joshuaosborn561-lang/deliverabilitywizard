@@ -9078,3 +9078,114 @@ describe("owner intent — D192 Insight 582890; ESP pods; null generics stay nul
     );
   });
 });
+
+describe("owner intent — D193 named clients never take GENERIC pool senders", () => {
+  it("D193: leftover D134 approvals are not attach permission", async () => {
+    const { campaignMayTakeGenerics } = await import("../lib/genericBackfill.js");
+    const approval = {
+      "3847798": {
+        campaignId: 3847798,
+        approvedAt: "2026-09-01T00:00:00Z",
+        approvedBy: "josh",
+      },
+    };
+    assert.equal(
+      campaignMayTakeGenerics(
+        { id: 3847798, name: "TechEvo NE IT DM v2 Red Sox" },
+        "TechEvolution",
+        ["goliath"],
+        approval,
+      ),
+      false,
+      stop(
+        "Named client campaigns stay client-inbox only (D193).",
+        "campaignMayTakeGenerics still treats a D134 approval as attach permission.",
+      ),
+    );
+    assert.equal(
+      campaignMayTakeGenerics(
+        { id: 1, name: "Goliath Displacement M" },
+        "Goliath Cybersecurity",
+        ["goliath"],
+        {},
+      ),
+      true,
+      stop(
+        "POC / Goliath may still take generics (D81/D193).",
+        "campaignMayTakeGenerics no longer allows the POC client.",
+      ),
+    );
+
+    const { isGenericMailbox, isGenericPoolBrandDomain } = await import(
+      "../lib/clientInbox.js"
+    );
+    assert.equal(
+      isGenericPoolBrandDomain("trygetintroduced.info"),
+      true,
+      stop(
+        "getintroduced* hosts are generic-pool brand (D193).",
+        "isGenericPoolBrandDomain no longer matches getintroduced.",
+      ),
+    );
+    assert.equal(
+      isGenericMailbox(
+        {
+          client_id: 521881,
+          from_name: "Ada Pool",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "ada@appquickconnectsales.com",
+        { extraGenericMailboxes: [], extraGenericDomains: [], prewarmedDomains: [] },
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+      stop(
+        "A GENERIC-tagged pool-brand box is a generic even with a leftover client_id (D193).",
+        "isGenericMailbox no longer treats appquickconnect* as generic.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const oneClient = await readFile(
+      new URL("../services/oneClientMembership.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      oneClient,
+      /never restore a generic onto another client's id/,
+      stop(
+        "one-client restore refuses a different real client_id (D193).",
+        "oneClientMembership.ts lost the D193 restore client_id filter.",
+      ),
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D193\*\*/,
+      stop(
+        "CANON is current as of D193.",
+        "CANON.md was not updated with D193.",
+      ),
+    );
+    assert.match(
+      canon,
+      /not attach permission/,
+      stop(
+        "CANON says leftover D134 approvals are not attach permission (D193).",
+        "CANON.md lost the D193 client-inbox-only rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D193 — Named client campaigns never receive GENERIC pool senders/,
+      stop(
+        "The client-inbox-only generic gate is in the ledger (D193).",
+        "DECISIONS.md no longer has D193.",
+      ),
+    );
+  });
+});

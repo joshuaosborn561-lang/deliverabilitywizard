@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D192** (2026-09-10). One page of current truth. When a new
+Canon as of **D193** (2026-09-11). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -154,18 +154,28 @@ or the day is done. Silent findings are a bug (D163).
   (D135). Generics rest on their own clock: ~14 days of live send, then
   sit ~14, then supply again (D43). True canaries and Goliath / TJ /
   Vasco leftovers stay `client_id` null (project generic pool — D192).
-- **Generics** staff only a POC client (currently Goliath) or a campaign Josh
-  Slack-approved (D81/D82). "Generic" and "POC" are **mailbox tags**, never
+- **Generics** staff only a POC client (currently Goliath)
+  (D81/D82/D193). Named client campaigns (BCP, TechEvo, SalesGlider,
+  Parlay, Insight, …) stay **client-inbox only**. Leftover D134 Slack /
+  retire-tap approvals are a historical record, not attach permission —
+  one-client restore, fan-out, and top-up must not dump GENERIC-tagged
+  or pool-brand (`getintroduced*` / `quickconnect*` / `appquickconnect*`)
+  senders onto those lanes to fill seats. If a client lane is
+  understaffed and no eligible client senders remain, leave it short /
+  Slack ops — do not borrow GENERIC or another client's mailboxes.
+  "Generic" and "POC" are **mailbox tags**, never
   Smartlead clients — Josh does not pay for pool labels (D160). A box
   tagged GENERIC or POC is a generic to every classifier (also: pool
-  domain, `EXTRA_GENERIC_DOMAINS`, pool state, leftover D142 client_id
+  domain, pool-brand host, `EXTRA_GENERIC_DOMAINS`, pool state, leftover D142 client_id
   until detached). One-client never writes those boxes onto a client
   record; leftover Generic/POC `client_id`s are cleared. The mailbox-side
   owner re-point to a POC *client* stays staged and is now moot (D142).
   A domain-retire tap is one fell swoop (D150): pull the burned
   inboxes, buy a replacement domain whose Google/Outlook mailbox mix
-  matches what was retired, and auto-approve generics to cover the ACTIVE
-  campaigns it cut until those replacements warm (D134). **InboxKit
+  matches what was retired, and records a D134 generic-backfill
+  approval for the campaigns it cut. That approval does **not** attach
+  pool senders onto a named client campaign (D193) — cover is the
+  client-named replacement (D161). **InboxKit
   allows one ESP per domain** (D175): isolation-buy never requests
   Microsoft on a domain that already has Google (or the reverse). A
   fresh replacement is provisioned as one ESP (majority of the retired
@@ -351,8 +361,9 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
 1. **Burned domain** — receipts + cancel/replace buttons; **Cayden** (or Josh)
    taps Retire or Buy replacements (D190). The retire tap
    pulls, buys the ESP-matched replacement (client-named when the burned
-   domain is a client domain — never a generic/pool spin, D161/D173), and lets
-   generics cover the campaigns it cut (D134/D150). Copy reminds Cayden to
+   domain is a client domain — never a generic/pool spin, D161/D173). D134
+   still records a backfill approval; that approval does **not** attach
+   pool senders onto named client campaigns (D193). Copy reminds Cayden to
    mark the domain a bad outbound sender; it does not auto-buy. A domain that is
    **already retired** is not offered again (D179) — leftover Slack
    buttons and the confirm page are fail-safe no-ops, no second
@@ -408,7 +419,7 @@ SalesGlider (D31).
 ## Spend and the human loop
 
 Three human moments (D49): **retire a domain** (Cayden or Josh — one tap is pull +
-ESP-matched, **client-named** replacement buy + D134 backfill, D150/D161/D173/D181/D190;
+ESP-matched, **client-named** replacement buy + D134 record (not pool attach, D193), D150/D161/D173/D181/D190;
 an already-retired domain's confirm is a no-op, D179), **buy
 cover replacements** (Cayden or Josh; Slack tap is the approval, asked once per
 strike — D60/D190; fail-#1 buy-ahead still exists until the domain actually retires),

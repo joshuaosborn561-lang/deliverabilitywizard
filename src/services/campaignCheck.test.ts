@@ -103,7 +103,7 @@ describe("campaign check first-pass helpers", () => {
     );
   });
 
-  it("D81: Goliath is a POC client; generics elsewhere need Slack approve", () => {
+  it("D81/D193: Goliath is a POC client; Slack approve does not staff a named client", () => {
     assert.equal(isPocClient("Goliath Displacement", ["goliath"]), true);
     assert.equal(
       campaignMayTakeGenerics(
@@ -130,7 +130,8 @@ describe("campaign check first-pass helpers", () => {
         ["goliath"],
         { "2": { campaignId: 2, approvedAt: "2026-08-25T00:00:00Z", approvedBy: "josh" } },
       ),
-      true,
+      false,
+      "D193 — leftover D134 approvals are not attach permission",
     );
   });
 });

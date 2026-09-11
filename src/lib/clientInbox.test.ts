@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   isClientInbox,
   isGenericMailbox,
+  isGenericPoolBrandDomain,
   isRestEligibleMailbox,
 } from "./clientInbox.js";
 
@@ -62,6 +63,41 @@ describe("isClientInbox", () => {
         { getPoolMailbox: () => undefined },
       ),
       false,
+    );
+  });
+
+  it("D193: getintroduced / quickconnect / appquickconnect hosts are generics", () => {
+    assert.equal(isGenericPoolBrandDomain("trygetintroduced.info"), true);
+    assert.equal(isGenericPoolBrandDomain("appquickconnectsales.com"), true);
+    assert.equal(isGenericPoolBrandDomain("getquickconnectsales.info"), true);
+    assert.equal(isGenericPoolBrandDomain("techevolution.com"), false);
+    assert.equal(isGenericPoolBrandDomain("boldercyperpartnerhub.info"), false);
+    assert.equal(
+      isGenericMailbox(
+        {
+          client_id: 521881,
+          from_name: "Pool Sender",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "ada@trygetintroduced.info",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
+    assert.equal(
+      isClientInbox(
+        {
+          client_id: 521881,
+          from_name: "Pool Sender",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "ada@trygetintroduced.info",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      "leftover TechEvo client_id does not make a pool brand a client inbox",
     );
   });
 

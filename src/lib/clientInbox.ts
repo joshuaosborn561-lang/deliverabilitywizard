@@ -21,10 +21,34 @@ const POOL_PLAN_DOMAINS = new Set(
   ].map((domain) => domain.trim().toLowerCase()),
 );
 
+/**
+ * Pool-brand tokens that mark a sending domain as generic even when the
+ * exact host is missing from the frozen plan / EXTRA_GENERIC list
+ * (getintroduced* / quickconnect* / appquickconnect* variants).
+ * BCP-named domains are exempted earlier in isGenericMailbox (D169).
+ */
+const GENERIC_POOL_BRAND_TOKENS = [
+  "getintroduced",
+  "quickconnect",
+  "appquickconnect",
+  "meetconnect",
+  "outreachdesk",
+] as const;
+
 /** True when the sending domain is in the InboxKit generic-pool plan. */
 export function isGenericPoolDomain(domain: string | undefined): boolean {
   if (!domain) return false;
   return POOL_PLAN_DOMAINS.has(domain.trim().toLowerCase());
+}
+
+/** True when the host carries a known generic-pool brand token. */
+export function isGenericPoolBrandDomain(domain: string | undefined): boolean {
+  if (!domain) return false;
+  const host = domain.trim().toLowerCase();
+  if (!host) return false;
+  const base = host.replace(/\.[a-z0-9]+$/i, "").replace(/[^a-z0-9]/g, "");
+  if (!base) return false;
+  return GENERIC_POOL_BRAND_TOKENS.some((token) => base.includes(token));
 }
 
 /**
@@ -76,6 +100,9 @@ export function isGenericMailbox(
   // extraGenericMailbox from-name must not pull them out of A/B rest.
   if (domain && isBcpOwnedDomain(domain)) return false;
   if (isGenericPoolDomain(domain)) return true;
+  // D193 — getintroduced* / quickconnect* / appquickconnect* (and the
+  // other pool brands) are generic even when the exact host is new.
+  if (isGenericPoolBrandDomain(domain)) return true;
   // D142 — generic-pool membership by domain, independent of pre-warmed.
   if (domain && config.extraGenericDomains.includes(domain)) return true;
   // D160 — GENERIC / POC mailbox tags are the pool label, not a client.

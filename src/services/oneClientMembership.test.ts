@@ -286,6 +286,85 @@ describe("OneClientMembershipService", () => {
     assert.ok(result.skipped.some((row) => row.includes("attach blocked")));
   });
 
+  it("D193: does not restore GENERIC pool senders onto a client campaign", async () => {
+    const added: Array<[number, number[]]> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/one-client-d193-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.approveGenericBackfill({
+      campaignId: 3847798,
+      approvedAt: "2026-09-01T00:00:00Z",
+      approvedBy: "josh",
+    });
+    state.approveGenericBackfill({
+      campaignId: 3763803,
+      approvedAt: "2026-09-01T00:00:00Z",
+      approvedBy: "josh",
+    });
+    const service = serviceWith(
+      {
+        listCampaigns: async () => [
+          {
+            id: 1,
+            name: "Goliath Displacement M",
+            status: "PAUSED",
+            client_id: 548611,
+          },
+          {
+            id: 3847798,
+            name: "TechEvo NE IT DM v2 Red Sox",
+            status: "ACTIVE",
+            client_id: 521881,
+          },
+          {
+            id: 3763803,
+            name: "BCP Logistics Under-1k (With Team)",
+            status: "ACTIVE",
+            client_id: 542838,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "ada@trygetintroduced.info",
+            from_name: "Ada Pool",
+            signature: "Ada Pool\nGoliath Cybersecurity",
+            client_id: 521881,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [3847798],
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+          { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+          { id: 542838, name: "BCP", logo: "Bolder Cyber Partners" },
+        ],
+        addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+          added.push([campaignId, [...ids]]);
+        },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      },
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(
+      added,
+      [],
+      "D193 — leftover D134 approvals must not dump generics onto TechEvo / BCP",
+    );
+    assert.deepEqual(removed, [[3847798, [11]]]);
+    assert.equal(result.restored.length, 0);
+    assert.equal(result.pulled[0]?.email, "ada@trygetintroduced.info");
+  });
+
   it("D184: does not rewrite an exclusive Insight mailbox to SalesGlider", async () => {
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const service = serviceWith({

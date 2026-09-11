@@ -14,16 +14,19 @@ export function hasGenericBackfillApproval(
 }
 
 /**
- * Generics may sit on a POC client, or on any campaign Josh Slack-approved.
+ * Generics may sit on a POC client only (currently Goliath).
+ *
+ * D193 — leftover D134 Slack / retire-tap approvals are a historical
+ * record, not attach permission. A named client campaign (TechEvo,
+ * BCP, SalesGlider, Parlay, Insight, …) stays client-inbox only.
+ * Understaffed client lanes stay short; they do not borrow the pool.
  */
 export function campaignMayTakeGenerics(
   campaign: { id: number; name?: string | null },
   clientName: string | null | undefined,
   pocPatterns: string[],
-  approvals: Record<string, GenericBackfillApproval | undefined>,
+  _approvals?: Record<string, GenericBackfillApproval | undefined>,
 ): boolean {
-  if (isPocClient(`${campaign.name ?? ""} ${clientName ?? ""}`, pocPatterns)) {
-    return true;
-  }
-  return hasGenericBackfillApproval(approvals, campaign.id);
+  void _approvals;
+  return isPocClient(`${campaign.name ?? ""} ${clientName ?? ""}`, pocPatterns);
 }

@@ -443,7 +443,7 @@ describe("CampaignTopUpService safety", () => {
           tags: [{ tag_name: "GENERIC" }],
           campaign_ids: [],
         },
-        ...Array.from({ length: 4 }, (_, index) => ({
+        ...Array.from({ length: 10 }, (_, index) => ({
           id: 500 + index,
           from_email: `techevo-${index}@techevo.com`,
           created_at: "2026-06-01T00:00:00Z",
@@ -451,7 +451,9 @@ describe("CampaignTopUpService safety", () => {
           type: "GMAIL",
           is_smtp_success: true,
           is_imap_success: true,
-          campaign_ids: [3847798],
+          // Only one seat is live — floor is 5, so the campaign is short
+          // and would have taken pool filler before D193.
+          campaign_ids: index === 0 ? [3847798] : [],
         })),
       ],
       listClients: async () => [

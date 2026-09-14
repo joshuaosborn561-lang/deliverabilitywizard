@@ -6,6 +6,7 @@ import {
   isoWeekNumberNy,
   onWeekCohort,
   restFortnightBlock,
+  restRolloverSnapshot,
 } from "./restCohort.js";
 
 describe("restCohort", () => {
@@ -82,6 +83,41 @@ describe("restCohort", () => {
     assert.equal(onWeekCohort(week3), "B");
     assert.equal(isOffWeek("A", week3), true);
     assert.equal(isOffWeek("B", week3), false);
+  });
+
+  it("counts NY calendar days until the A/B fortnight swaps", () => {
+    const week1Thursday = new Date("2026-01-01T17:00:00Z");
+    const fromWeek1 = restRolloverSnapshot(week1Thursday);
+    assert.equal(fromWeek1.daysUntil, 4);
+    assert.equal(fromWeek1.nextRolloverYmd, "2026-01-05");
+    assert.equal(fromWeek1.onWeekCohort, "A");
+    assert.equal(fromWeek1.offWeekCohort, "B");
+    assert.equal(fromWeek1.fortnightBlock, 0);
+
+    const week2Monday = new Date("2026-01-05T17:00:00Z");
+    const fromWeek2 = restRolloverSnapshot(week2Monday);
+    assert.equal(fromWeek2.daysUntil, 14);
+    assert.equal(fromWeek2.nextRolloverYmd, "2026-01-19");
+    assert.equal(fromWeek2.onWeekCohort, "B");
+    assert.equal(fromWeek2.fortnightBlock, 1);
+
+    const sundayBeforeSwap = new Date("2026-01-18T17:00:00Z");
+    const fromSunday = restRolloverSnapshot(sundayBeforeSwap);
+    assert.equal(fromSunday.daysUntil, 1);
+    assert.equal(fromSunday.nextRolloverYmd, "2026-01-19");
+    assert.equal(fromSunday.onWeekCohort, "B");
+  });
+
+  it("walks across a year boundary when week 53 and week 1 share a block", () => {
+    // 2026-12-28 is Monday of ISO week 53 (block 0). Week 1 of 2027 is
+    // also block 0; the pods swap Monday 2027-01-11 (week 2).
+    const week53Monday = new Date("2026-12-28T17:00:00Z");
+    assert.equal(isoWeekNumberNy(week53Monday), 53);
+    assert.equal(restFortnightBlock(week53Monday), 0);
+    const snapshot = restRolloverSnapshot(week53Monday);
+    assert.equal(snapshot.daysUntil, 14);
+    assert.equal(snapshot.nextRolloverYmd, "2027-01-11");
+    assert.equal(snapshot.onWeekCohort, "A");
   });
 
 });

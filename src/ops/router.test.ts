@@ -145,11 +145,29 @@ describe("ops HTTP boundary", () => {
         fleet: { sendingMailboxes: number };
         policy: { clientRest: boolean; freshInboxWarmupDays: number };
         campaignSetupPrompt: string;
+        restRollover: {
+          daysUntil: number;
+          nextRolloverYmd: string;
+          onWeekCohort: "A" | "B";
+          offWeekCohort: "A" | "B";
+        };
       };
       assert.equal(dashboardBody.fleet.sendingMailboxes, 1);
       assert.equal(dashboardBody.policy.clientRest, true);
       assert.equal(dashboardBody.policy.freshInboxWarmupDays, 21);
       assert.match(dashboardBody.campaignSetupPrompt, /2 weeks on \/ 2 weeks off/);
+      assert.equal(typeof dashboardBody.restRollover.daysUntil, "number");
+      assert.ok(
+        dashboardBody.restRollover.daysUntil >= 1 &&
+          dashboardBody.restRollover.daysUntil <= 21,
+        "A/B rollover is within the NY fortnight walk",
+      );
+      assert.match(dashboardBody.restRollover.nextRolloverYmd, /^\d{4}-\d{2}-\d{2}$/);
+      assert.match(dashboardBody.restRollover.onWeekCohort, /^[AB]$/);
+      assert.notEqual(
+        dashboardBody.restRollover.onWeekCohort,
+        dashboardBody.restRollover.offWeekCohort,
+      );
 
       const placements = await fetch(`${fixture.base}/placements`, {
         headers: { cookie: session.cookie },

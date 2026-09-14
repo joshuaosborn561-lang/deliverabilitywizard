@@ -473,7 +473,9 @@ merge-tag fill — D108/D180), open `canonFindings` by kind, per-stage `stageHea
 (D84) with `overdue` / `overdueStages` / `lastSkipReason` (D166), and the
 build's `deploy` identity — commit/branch/deployment from Railway's git
 metadata (D149). `/status`, `/run`, `/approvals/*` require `RUN_TOKEN`. `/ops` is the
-employee console (owner/operator roles, audit log); its Placement tab shows
+employee console (owner/operator roles, audit log); Overview shows **days
+until the next D43 A/B fortnight swap** and which pod is sending
+(America/New_York ISO weeks); its Placement tab shows
 tests for ACTIVE sending campaigns only — canary-copy instrumentation is
 hidden (D126) — and lists up to **80** live tests so a 63-campaign board
 still fits with room to grow (D187). Freeform chat goes to the Cursor agent which may open PRs

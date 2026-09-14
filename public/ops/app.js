@@ -93,10 +93,30 @@ function make(tag, className, text) {
   return element;
 }
 
+function formatNyYmd(ymd) {
+  if (!ymd || typeof ymd !== "string") return "unknown date";
+  const [year, month, day] = ymd.split("-").map(Number);
+  if (![year, month, day].every((part) => Number.isFinite(part))) return ymd;
+  const date = new Date(Date.UTC(year, month - 1, day, 17, 0, 0));
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
+function daysUntilLabel(days) {
+  if (days === 0) return "today";
+  if (days === 1) return "1 day";
+  return `${days} days`;
+}
+
 async function loadDashboard(force = false) {
   const data = await api(`/dashboard${force ? "?force=1" : ""}`);
   state.dashboard = data;
   const count = (value) => (value == null ? "—" : value);
+  const rollover = data.restRollover;
   const cards = [
     ["Sending mailboxes", count(data.fleet.sendingMailboxes), data.fleet.activeCampaigns == null ? "Live Smartlead count unavailable" : `Across ${data.fleet.activeCampaigns} active campaigns`],
     ["Resting (off-week)", data.pool.restingInboxes || 0, data.policy.clientRest ? "Per-client A/B · generics on send clock" : "Sender rest is off"],
@@ -105,6 +125,17 @@ async function loadDashboard(force = false) {
     ["Warming generics", data.pool.byStatus.warming || 0, `${data.policy.warmupDays}-day pool / ${data.policy.freshInboxWarmupDays}-day fresh`],
     ["Disconnected", count(data.fleet.disconnectedMailboxes), "SMTP or IMAP failed"],
   ];
+  if (rollover && Number.isFinite(rollover.daysUntil)) {
+    const swapDate = formatNyYmd(rollover.nextRolloverYmd);
+    const onPod = rollover.onWeekCohort || "A";
+    cards.splice(1, 0, [
+      "A/B rollover",
+      daysUntilLabel(rollover.daysUntil),
+      data.policy.clientRest
+        ? `Pod ${onPod} sending · swaps ${swapDate}`
+        : `Rest loop off · calendar swaps ${swapDate}`,
+    ]);
+  }
   const kpis = $("#kpis");
   kpis.replaceChildren(
     ...cards.map(([label, value, note]) => {
@@ -114,6 +145,11 @@ async function loadDashboard(force = false) {
     }),
   );
 
+  const restPolicy = data.policy.clientRest
+    ? rollover && Number.isFinite(rollover.daysUntil)
+      ? `Pod ${rollover.onWeekCohort} on · ${daysUntilLabel(rollover.daysUntil)} to swap`
+      : "Per-client A/B · 2 on / 2 off"
+    : "Off";
   const policies = [
     ["Campaign floor", `${data.policy.campaignSenderFloor} staffable`],
     ["Mailbox cap", data.policy.mailboxDailyCap],
@@ -121,7 +157,7 @@ async function loadDashboard(force = false) {
     ["Bounce pause", data.policy.bounceAutostop || "off"],
     ["Bounce readings", `${data.policy.bounceThreshold}% / ${data.policy.bounceWarnThreshold}% are logs, not pulls`],
     ["Fresh / pool warmup", `${data.policy.freshInboxWarmupDays}d fresh · ${data.policy.warmupDays}d pool`],
-    ["Client rest", data.policy.clientRest ? "Per-client A/B · 2 on / 2 off" : "Off"],
+    ["Client rest", restPolicy],
     ["Generic sit / ESP mix", `${data.policy.genericSendRestDays}d send · ${data.policy.espMixMinPercent}% each ESP`],
   ];
   $("#policy-grid").replaceChildren(

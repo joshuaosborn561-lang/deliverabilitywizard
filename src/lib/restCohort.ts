@@ -124,3 +124,60 @@ export function isOffWeek(
 export function onWeekCohort(now: Date = new Date()): RestCohort {
   return restFortnightBlock(now) === 0 ? "A" : "B";
 }
+
+export interface RestRolloverSnapshot {
+  /** Whole America/New_York calendar days until the pods swap. */
+  daysUntil: number;
+  /** NY civil date (YYYY-MM-DD) of the next swap. */
+  nextRolloverYmd: string;
+  onWeekCohort: RestCohort;
+  offWeekCohort: RestCohort;
+  fortnightBlock: 0 | 1;
+}
+
+function formatNyYmd(parts: { year: number; month: number; day: number }): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+}
+
+/**
+ * Midday UTC stand-in for an America/New_York civil date. 17:00 UTC is
+ * noon EST / 1pm EDT, so ISO-week math never slips across the NY date line.
+ */
+function nyCivilNoonUtc(
+  year: number,
+  month: number,
+  day: number,
+): Date {
+  return new Date(Date.UTC(year, month - 1, day, 17, 0, 0));
+}
+
+/**
+ * Days until the D43 A/B fortnight flips. The block follows NY ISO weeks
+ * (`floor(week / 2) % 2`), so this walks civil days until that value changes
+ * instead of assuming a strict 14-day grid (week 1 of a year is a singleton).
+ */
+export function restRolloverSnapshot(
+  now: Date = new Date(),
+): RestRolloverSnapshot {
+  const fortnightBlock = restFortnightBlock(now);
+  const on = onWeekCohort(now);
+  const today = nyYmd(now);
+  const cursor = nyCivilNoonUtc(today.year, today.month, today.day);
+  let daysUntil = 0;
+  for (let step = 1; step <= 21; step += 1) {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    if (restFortnightBlock(cursor) !== fortnightBlock) {
+      daysUntil = step;
+      break;
+    }
+  }
+  const next = nyYmd(cursor);
+  return {
+    daysUntil,
+    nextRolloverYmd: formatNyYmd(next),
+    onWeekCohort: on,
+    offWeekCohort: on === "A" ? "B" : "A",
+    fortnightBlock,
+  };
+}

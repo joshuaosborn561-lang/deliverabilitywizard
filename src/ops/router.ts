@@ -8,6 +8,7 @@ import { classifyOpsMessage, opsHelp } from "./policy.js";
 import type { CursorAssistantService } from "./cursorAssistant.js";
 import type { IsolationExecuteService } from "../services/isolationExecute.js";
 import { canDecideIsolationAction } from "../lib/isolationActors.js";
+import { restRolloverSnapshot } from "../lib/restCohort.js";
 
 export interface OpsRuntime {
   deliverability: () => Promise<{
@@ -263,6 +264,7 @@ export function createOpsRouter(opts: {
         pendingIsolation: opts.state.pendingIsolationActions().length,
         recentAudit: opts.state.listOpsAudit(30),
         campaignSetupPrompt: campaignSetupPrompt(),
+        restRollover: restRolloverSnapshot(),
       });
     } catch (error) {
       res.status(503).json({ error: safeMessage(error) });

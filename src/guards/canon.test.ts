@@ -636,6 +636,54 @@ describe("owner intent — D43 rest model", () => {
       ),
     );
   });
+
+  it("D43: /ops Overview shows days until the NY ISO fortnight swap", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const router = await readFile(
+      new URL("../ops/router.ts", import.meta.url),
+      "utf8",
+    );
+    const app = await readFile(
+      new URL("../../public/ops/app.js", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      router,
+      /restRollover: restRolloverSnapshot\(\)/,
+      stop(
+        "/ops dashboard serves the D43 fortnight countdown.",
+        "router.ts no longer includes restRollover on /dashboard.",
+      ),
+    );
+    assert.match(
+      app,
+      /A\/B rollover/,
+      stop(
+        "Overview KPI is labeled A/B rollover.",
+        "public/ops/app.js lost the A/B rollover card.",
+      ),
+    );
+    assert.match(
+      app,
+      /daysUntilLabel\(rollover\.daysUntil\)/,
+      stop(
+        "Overview renders days until the pods swap.",
+        "public/ops/app.js no longer shows restRollover.daysUntil.",
+      ),
+    );
+    assert.match(
+      canon,
+      /days\s+until the next D43 A\/B fortnight swap/,
+      stop(
+        "CANON says /ops Overview shows days until the A/B swap.",
+        "CANON.md lost the Overview rollover sentence.",
+      ),
+    );
+  });
 });
 
 describe("owner intent — D46 launch bar", () => {

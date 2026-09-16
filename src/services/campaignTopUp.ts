@@ -15,7 +15,7 @@ import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { owesWarmup } from "./warmupGate.js";
 import {
   allowsGenericStaff,
-  countClientInboxesByKey,
+  countClientInboxFloors,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
@@ -179,7 +179,7 @@ export class CampaignTopUpService {
       }
     }
 
-    const clientInboxCounts = countClientInboxesByKey(
+    const clientInboxFloors = countClientInboxFloors(
       accounts as SmartleadAccountWithCampaigns[],
       campaigns as SmartleadCampaign[],
       clients,
@@ -191,12 +191,13 @@ export class CampaignTopUpService {
         campaign.id,
         staffFloorForCampaign(
           campaign,
-          clientInboxCounts,
+          clientInboxFloors.eligible,
           typeof campaign.client_id === "number"
             ? clientDisplayName(clientsById.get(campaign.client_id) ?? {
                 id: campaign.client_id,
               })
             : "",
+          clientInboxFloors.onWeek,
         ),
       ]),
     );
@@ -381,7 +382,7 @@ export class CampaignTopUpService {
 
     if (!needy.length) {
       console.log(
-        "[top-up] All managed campaigns at or above their half-client-inbox floor",
+        "[top-up] All managed campaigns at or above their on-week client-pod floor",
       );
       return result;
     }

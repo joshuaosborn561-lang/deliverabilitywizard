@@ -9,7 +9,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import {
-  countClientInboxesByKey,
+  countClientInboxFloors,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
@@ -94,7 +94,7 @@ export class CampaignHealthService {
     };
 
     console.log(
-      `[health] Starting campaign health (${dryRun ? "DRY RUN" : "LIVE"}, D58 half-client-inbox floors; generics on Goliath only)`,
+      `[health] Starting campaign health (${dryRun ? "DRY RUN" : "LIVE"}, D196 on-week client-pod floors; generics on Goliath only)`,
     );
 
     let campaigns: SmartleadCampaign[] = [];
@@ -214,7 +214,7 @@ export class CampaignHealthService {
   ): CampaignHealthSnapshot[] {
     const membership = new Map<number, number>();
     const staffable = new Map<number, number>();
-    const clientInboxCounts = countClientInboxesByKey(
+    const clientInboxFloors = countClientInboxFloors(
       accounts,
       campaigns,
       clients,
@@ -262,8 +262,9 @@ export class CampaignHealthService {
             : null;
         const floor = staffFloorForCampaign(
           c,
-          clientInboxCounts,
+          clientInboxFloors.eligible,
           clientName,
+          clientInboxFloors.onWeek,
         );
         return {
           campaignId: c.id,
@@ -305,7 +306,7 @@ export class CampaignHealthService {
         continue;
       }
       // D128 — no snapshot means the pass could not compute this client's
-      // half-inbox floor; skip rather than resume against a guessed number
+      // on-week floor; skip rather than resume against a guessed number
       // (the old code fell back to the dead 50-sender floor here).
       if (!snap) {
         console.log(

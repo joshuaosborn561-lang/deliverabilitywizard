@@ -4,9 +4,12 @@ import {
   allowsGenericStaff,
   clientCountKey,
   clientInboxStaffFloor,
+  countClientInboxFloors,
   countClientInboxesByKey,
+  formatStaffFloorDetail,
   staffFloorForCampaign,
 } from "./clientStaffFloor.js";
+import { onWeekCohort } from "./restCohort.js";
 
 describe("clientInboxStaffFloor", () => {
   it("is half the client's own inboxes, rounded down", () => {
@@ -139,5 +142,145 @@ describe("countClientInboxesByKey / staffFloorForCampaign", () => {
       },
     );
     assert.equal(counts.get(clientCountKey(9)), 2);
+  });
+});
+
+describe("D196 on-week staff floor", () => {
+  const emptyConfig = {
+    extraGenericMailboxes: [] as string[],
+    extraGenericDomains: [] as string[],
+    prewarmedDomains: [] as string[],
+  };
+  const emptyState = { getPoolMailbox: () => undefined };
+  const salesGlider = { id: 345263, name: "SalesGlider" };
+  const campaign = {
+    id: 3969109,
+    name: "SG PE Origination - Thesis - A",
+    status: "ACTIVE" as const,
+    client_id: 345263,
+  };
+
+  function sgEligibleAccounts(): Array<{
+    id: number;
+    from_email: string;
+    client_id: number;
+    type: string;
+  }> {
+    const outlook = Array.from({ length: 63 }, (_, i) => ({
+      id: i + 1,
+      from_email: `outlook-${String(i).padStart(3, "0")}@salesglider.com`,
+      client_id: 345263,
+      type: "OUTLOOK",
+    }));
+    const gmail = Array.from({ length: 31 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `gmail-${String(i).padStart(3, "0")}@salesglider.com`,
+      client_id: 345263,
+      type: "GMAIL",
+    }));
+    return [...outlook, ...gmail];
+  }
+
+  it("B week with ESP-odd 94 (A48/B46) floors at 46, not ceil-half 47", () => {
+    const bWeek = new Date("2026-01-15T17:00:00Z");
+    assert.equal(onWeekCohort(bWeek), "B");
+    const floors = countClientInboxFloors(
+      sgEligibleAccounts(),
+      [campaign],
+      [salesGlider],
+      emptyConfig,
+      emptyState,
+      bWeek,
+    );
+    assert.equal(floors.eligible.get(clientCountKey(345263)), 94);
+    assert.equal(floors.onWeek.get(clientCountKey(345263)), 46);
+    const floor = staffFloorForCampaign(
+      campaign,
+      floors.eligible,
+      "SalesGlider",
+      floors.onWeek,
+    );
+    assert.equal(floor, 46);
+    assert.equal(clientInboxStaffFloor(94), 47, "half of 94 stays 47");
+    assert.equal(Math.max(0, floor - 46), 0, "46 staffable B seats is not understaffed");
+    assert.equal(Math.max(0, floor - 45), 1, "45 staffable is short 1");
+    assert.equal(
+      formatStaffFloorDetail(46, floor, 94),
+      "staffable 46/46 (on-week client pod)",
+    );
+  });
+
+  it("A week floors at the larger ESP-odd pod (48), not half (47)", () => {
+    const aWeek = new Date("2026-01-01T17:00:00Z");
+    assert.equal(onWeekCohort(aWeek), "A");
+    const floors = countClientInboxFloors(
+      sgEligibleAccounts(),
+      [campaign],
+      [salesGlider],
+      emptyConfig,
+      emptyState,
+      aWeek,
+    );
+    assert.equal(floors.onWeek.get(clientCountKey(345263)), 48);
+    const floor = staffFloorForCampaign(
+      campaign,
+      floors.eligible,
+      "SalesGlider",
+      floors.onWeek,
+    );
+    assert.equal(floor, 48);
+    assert.equal(Math.max(0, floor - 48), 0);
+    assert.equal(Math.max(0, floor - 47), 1);
+  });
+
+  it("even split still reads as half this client's inboxes", () => {
+    const accounts = Array.from({ length: 80 }, (_, i) => ({
+      id: i + 1,
+      from_email: `box-${String(i).padStart(3, "0")}@client.info`,
+      client_id: 9,
+    }));
+    const floors = countClientInboxFloors(
+      accounts,
+      [{ id: 1, name: "Vasco - Service", status: "ACTIVE", client_id: 9 }],
+      [{ id: 9, name: "Vasco Warranty" }],
+      emptyConfig,
+      emptyState,
+      new Date("2026-01-15T17:00:00Z"),
+    );
+    assert.equal(floors.eligible.get(clientCountKey(9)), 80);
+    assert.equal(floors.onWeek.get(clientCountKey(9)), 40);
+    const floor = staffFloorForCampaign(
+      { client_id: 9, name: "Vasco - Service" },
+      floors.eligible,
+      "Vasco Warranty",
+      floors.onWeek,
+    );
+    assert.equal(floor, 40);
+    assert.equal(
+      formatStaffFloorDetail(40, floor, 80),
+      "staffable 40/40 (half this client's inboxes)",
+    );
+  });
+
+  it("generics still do not count toward the on-week floor (D193)", () => {
+    const bWeek = new Date("2026-01-15T17:00:00Z");
+    const floors = countClientInboxFloors(
+      [
+        ...sgEligibleAccounts(),
+        {
+          id: 900,
+          from_email: "spare@crosslaunchco.com",
+          client_id: 345263,
+          type: "GMAIL",
+        },
+      ],
+      [campaign],
+      [salesGlider],
+      { ...emptyConfig, extraGenericDomains: ["crosslaunchco.com"] },
+      emptyState,
+      bWeek,
+    );
+    assert.equal(floors.eligible.get(clientCountKey(345263)), 94);
+    assert.equal(floors.onWeek.get(clientCountKey(345263)), 46);
   });
 });

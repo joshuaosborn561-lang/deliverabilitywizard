@@ -27,7 +27,7 @@ import {
   sequenceCopyHay,
 } from "../lib/signatureQa.js";
 import {
-  countClientInboxesByKey,
+  countClientInboxFloors,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
@@ -162,7 +162,7 @@ export class CampaignAuditService {
       console.warn("[campaign-audit] could not list tests", error);
     }
 
-    const clientInboxCounts = countClientInboxesByKey(
+    const clientInboxFloors = countClientInboxFloors(
       accounts as SmartleadAccountWithCampaigns[],
       campaigns as SmartleadCampaign[],
       clients,
@@ -180,7 +180,12 @@ export class CampaignAuditService {
           typeof c.client_id === "number"
             ? clientDisplayName(clients.find((row) => row.id === c.client_id))
             : "";
-        const floor = staffFloorForCampaign(c, clientInboxCounts, clientName);
+        const floor = staffFloorForCampaign(
+          c,
+          clientInboxFloors.eligible,
+          clientName,
+          clientInboxFloors.onWeek,
+        );
         return {
           id: c.id,
           name: String(c.name ?? `campaign ${c.id}`),
@@ -228,7 +233,7 @@ export class CampaignAuditService {
     };
 
     console.log(
-      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their half-client floor (short ${result.totalShortfall} total); ${signatureIssues.length} signature QA miss(es)`,
+      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their on-week client-pod floor (short ${result.totalShortfall} total); ${signatureIssues.length} signature QA miss(es)`,
     );
     for (const r of rows) {
       const brands = r.domains

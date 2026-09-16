@@ -2,7 +2,7 @@
  * D81 / D82 — first-seen campaign audit, then hourly sweeps.
  *
  * First check is identity / safety. Hourly watches pods, signatures,
- * canaries, the half-client floor, step-2 delay (D186), and merge-tag
+ * canaries, the on-week client-pod floor (D196), step-2 delay (D186), and merge-tag
  * fill (D180). Bounce auto-pause is not this checker (Cayden's D80).
  * Goliath is a POC client, not a special rule pile. Every serving
  * inbox needs a known-good canary; every campaign needs its copy on

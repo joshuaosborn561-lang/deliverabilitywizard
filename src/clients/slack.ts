@@ -66,24 +66,32 @@ export class SlackClient {
     text: string,
     blocks?: unknown[],
     kind?: SlackAllowKind,
-  ): Promise<void> {
+  ): Promise<{ channel?: string; ts?: string } | undefined> {
     if (!slackAllowed(kind)) {
       console.log(
         `[slack-quiet] dropped ${kind ?? "unclassified"}: ${text.replace(/\n/g, " ").slice(0, 200)}`,
       );
-      return;
+      return undefined;
     }
     if (readSlackBotToken(this.creds)) {
-      await this.sendViaBot(text, blocks);
-      return;
+      return this.sendViaBot(text, blocks);
     }
     if (this.creds.webhookUrl) {
       await this.sendViaWebhook(text, blocks);
-      return;
+      return undefined;
     }
     throw new Error(
       "Slack is not configured. Set SLACK_WEBHOOK_URL or SLACK_BOT_TOKEN (+ SLACK_CHANNEL_ID).",
     );
+  }
+
+  /**
+   * D195 — the token that posts isolation ask cards (`send` → `sendViaBot`).
+   * Used as the `chat.update` fallback identity when a resolve tap has no
+   * `response_url` (modal submit / confirm page).
+   */
+  postingBotToken(): string {
+    return readSlackBotToken(this.creds);
   }
 
   async notifyActionResult(text: string): Promise<void> {
@@ -199,12 +207,15 @@ export class SlackClient {
     }
   }
 
-  private async sendViaBot(text: string, blocks?: unknown[]): Promise<void> {
+  private async sendViaBot(
+    text: string,
+    blocks?: unknown[],
+  ): Promise<{ channel?: string; ts?: string }> {
     const channel = this.creds.channelId || this.creds.channelLabel;
     if (!channel) {
       throw new Error("SLACK_CHANNEL_ID (or SLACK_CHANNEL) is required with SLACK_BOT_TOKEN");
     }
-    await this.postChatMessage({
+    return this.postChatMessage({
       token: readSlackBotToken(this.creds),
       channel,
       text,
@@ -218,7 +229,7 @@ export class SlackClient {
     text: string;
     blocks?: unknown[];
     metadata?: { event_type: string; event_payload: Record<string, string | number> };
-  }): Promise<void> {
+  }): Promise<{ channel?: string; ts?: string }> {
     const payload: Record<string, unknown> = {
       channel: input.channel,
       text: input.text,
@@ -237,12 +248,20 @@ export class SlackClient {
       body: JSON.stringify(payload),
     });
 
-    const body = (await response.json()) as { ok?: boolean; error?: string };
+    const body = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      channel?: string;
+      ts?: string;
+    };
     if (!response.ok || !body.ok) {
       throw new Error(
         `Slack chat.postMessage failed: ${body.error || `HTTP ${response.status}`}`,
       );
     }
+    // D195 — return the posted coordinates so the ask can stamp
+    // detail.slackChannel + detail.slackTs for a later button strip.
+    return { channel: body.channel ?? input.channel, ts: body.ts };
   }
 
   async notifyQuotaBlocked(details: {
@@ -1071,7 +1090,7 @@ export class SlackClient {
     element?: string;
     suggestedSwap?: string;
     campaignName?: string;
-  }): Promise<void> {
+  }): Promise<{ channel?: string; ts?: string } | undefined> {
     const approveLabel =
       details.kind === "swap_copy"
         ? "Use suggested edit"
@@ -1126,8 +1145,13 @@ export class SlackClient {
     );
     const secret = this.creds.actionLinkSecret?.trim();
     const base = this.creds.publicBaseUrl?.trim();
+    // D195 — swap_copy Use suggested / Not now are NATIVE buttons (no
+    // confirm-page url) so the tap reaches /slack/interactions and hands us
+    // a response_url to strip the buttons with. Write my own is already
+    // native (D153). Buy / retire / generics keep their confirm-page url.
+    const wantsConfirmUrl = details.kind !== "swap_copy";
     const approveUrl =
-      secret && base
+      wantsConfirmUrl && secret && base
         ? slackActionHref({
             baseUrl: base,
             secret,
@@ -1136,7 +1160,7 @@ export class SlackClient {
           })
         : undefined;
     const denyUrl =
-      secret && base
+      wantsConfirmUrl && secret && base
         ? slackActionHref({
             baseUrl: base,
             secret,
@@ -1149,7 +1173,7 @@ export class SlackClient {
       console.log(
         `[slack-quiet] dropped isolation ${details.kind}: ${details.title}`,
       );
-      return;
+      return undefined;
     }
     const elements: Array<Record<string, unknown>> = [
       {
@@ -1178,7 +1202,7 @@ export class SlackClient {
       value: denyValue,
       ...(denyUrl ? { url: denyUrl } : {}),
     });
-    await this.send(
+    return this.send(
       text,
       [
         {

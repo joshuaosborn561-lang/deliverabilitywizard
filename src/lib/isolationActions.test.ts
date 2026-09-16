@@ -5,6 +5,7 @@ import { StateStore } from "../state/store.js";
 import {
   buildIsolationAction,
   classifyLineJob,
+  companyIdentitySubstitute,
   dismissPendingSignatureAsks,
   dismissRetiredDomainAsks,
   domainAlreadyRetired,
@@ -571,21 +572,21 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     assert.equal(OFFER_LEAD_SPINTAX, "{I'd like to offer|Happy to offer}");
     assert.equal(
       suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
-      `${OFFER_LEAD_SPINTAX} a pair of AirPods if useful.`,
+      `${OFFER_LEAD_SPINTAX} a pair of AirPods if you would like, on me.`,
     );
     assert.equal(
       suggestedCopySwap("I've got a jet ski you can take out this weekend."),
-      `${OFFER_LEAD_SPINTAX} a jet ski outing if useful.`,
+      `${OFFER_LEAD_SPINTAX} a jet ski outing on me.`,
     );
     assert.equal(
       suggestedCopySwap(
         "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
       ),
-      `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if useful.`,
+      `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if you're interested.`,
     );
     assert.equal(
       suggestedCopySwap("I've got Red Sox tickets if you want them."),
-      `${OFFER_LEAD_SPINTAX} Red Sox tickets if useful.`,
+      `${OFFER_LEAD_SPINTAX} Red Sox tickets if you're interested.`,
     );
     const identity = suggestedCopySwap(
       "Hey, we're TechEvolution and we help IT teams stay online.",
@@ -636,6 +637,82 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     assert.match(String(posted?.detail.swap), /Air\s*Pods/i);
     assert.match(notified[0]?.suggestedSwap ?? "", /Air\s*Pods/i);
     assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /Quick note/);
+  });
+});
+
+describe("D195 — Josh soft-gift voice + identity substitute", () => {
+  it("AirPods land on me, not 'if useful'", () => {
+    const swap = suggestedCopySwap("{I've got|I have} a pair of Air Pods for you.");
+    assert.equal(swap, `${OFFER_LEAD_SPINTAX} a pair of AirPods if you would like, on me.`);
+    assert.doesNotMatch(swap, /if useful/i);
+  });
+
+  it("jet ski is an outing on me", () => {
+    const swap = suggestedCopySwap("I've got a jet ski you can take out this weekend.");
+    assert.equal(swap, `${OFFER_LEAD_SPINTAX} a jet ski outing on me.`);
+    assert.doesNotMatch(swap, /if useful/i);
+  });
+
+  it("tickets are offered if you're interested", () => {
+    const swap = suggestedCopySwap("I've got Red Sox tickets if you want them.");
+    assert.equal(swap, `${OFFER_LEAD_SPINTAX} Red Sox tickets if you're interested.`);
+    const local = suggestedCopySwap(
+      "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
+    );
+    assert.equal(local, `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if you're interested.`);
+    assert.doesNotMatch(swap, /if useful/i);
+  });
+
+  it("no offer default anywhere ends in 'if useful.'", () => {
+    for (const line of [
+      "{I've got|I have} a pair of Air Pods for you.",
+      "I've got a jet ski you can take out this weekend.",
+      "I've got Red Sox tickets if you want them.",
+      "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
+    ]) {
+      assert.doesNotMatch(suggestedCopySwap(line), /if useful/i);
+    }
+  });
+
+  it("companyIdentitySubstitute is 'so you know, we're {Brand}.'", () => {
+    assert.equal(
+      companyIdentitySubstitute("{quick context,|for context,} we're TechEvolution."),
+      "so you know, we're TechEvolution.",
+    );
+    // No double period.
+    assert.doesNotMatch(
+      companyIdentitySubstitute("we're TechEvolution."),
+      /\.\./,
+    );
+    const swap = suggestedCopySwap(
+      "Hey, we're TechEvolution and we help IT teams stay online.",
+    );
+    assert.match(swap, /so you know, we're TechEvolution\./);
+    assert.doesNotMatch(swap, /I'd like to offer|Happy to offer/i);
+    assert.doesNotMatch(swap, /—/);
+  });
+});
+
+describe("D195 — notifyIsolationAction stamps slackChannel + slackTs", () => {
+  it("records the posted channel + ts on the ask for a later strip", async () => {
+    const store = tempStore();
+    const slack = {
+      notifyIsolationAction: async () => ({ channel: "C0BJQUTV7A8", ts: "1758057600.001" }),
+    } as unknown as SlackClient;
+    const posted = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire freshburn.info",
+        proof: "AS(42004)",
+        detail: { domain: "freshburn.info" },
+      }),
+    });
+    assert.ok(posted);
+    const saved = store.getIsolationAction(posted!.id);
+    assert.equal(saved?.detail.slackChannel, "C0BJQUTV7A8");
+    assert.equal(saved?.detail.slackTs, "1758057600.001");
   });
 });
 

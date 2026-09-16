@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D194** (2026-09-16). One page of current truth. When a new
+Canon as of **D195** (2026-09-16). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -320,7 +320,7 @@ or the day is done. Silent findings are a bug (D163).
   keeps the line’s job** — a job classifier (spam-token / gift-or-experience
   offer / CTA / generic) so an AirPods, tickets, or jet-ski opener keeps
   that offer and is never replaced with “Quick note —” or a school-district
-  pen-test (D152/D168; blank delete only for pure spam tokens).
+  pen-test (D152/D168/D195; blank delete only for pure spam tokens; soft-gift defaults use on me / if you're interested — never weak "if useful"; identity intros prefer so you know, we're {Brand}.).
   `{{Local_Sports_Team}}` / sports-ticket openers stay an offer even when
   the hunt slice truncates before “tickets”; company-identity openers
   (“we’re TechEvolution”) keep the company name with a light soften —
@@ -426,6 +426,11 @@ Cayden or Josh and reuses the existing retire execute path when a
 pending ask exists — it does not invent a new spend. Standing
 START/PAUSE prefs write project state and never change the Goliath
 Oct 15 hold or Insight SEG pause.
+**After a resolve tap (D195)** — Apply / Write my own / Not now / Allow
+generics / Buy rewrite the original Slack parent via `response_url`
+`replace_original` (preferred) or posting-bot `chat.update` so the
+decision buttons disappear. `swap_copy` Use suggested / Not now are
+native buttons (no confirm-page URL) so Slack sends `response_url`.
 
 ## Spend and the human loop
 

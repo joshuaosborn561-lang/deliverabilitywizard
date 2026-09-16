@@ -9352,10 +9352,10 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D194\*\*/,
+      /D194/,
       stop(
-        "CANON is current as of D194.",
-        "CANON.md was not updated with D194.",
+        "CANON still names D194.",
+        "CANON.md lost the D194 Slack one-tap contract.",
       ),
     );
     assert.match(
@@ -9380,6 +9380,120 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
       stop(
         "The Deliverability Slack one-tap rule is in the ledger (D194).",
         "DECISIONS.md no longer has D194.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D195 strip Slack buttons; Josh soft-gift voice", () => {
+  it("D195: resolveIsolationAsk + native swap_copy buttons + Josh voice", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { suggestedCopySwap, companyIdentitySubstitute, OFFER_LEAD_SPINTAX } =
+      await import("../lib/isolationActions.js");
+    const {
+      resolveIsolationAskMessage,
+      slackAskResolveStatusFor,
+      slackAskResolvedLabel,
+      closedIsolationAskBlocks,
+    } = await import("../lib/slackAskResolve.js");
+
+    assert.equal(typeof resolveIsolationAskMessage, "function");
+    assert.equal(
+      slackAskResolvedLabel(slackAskResolveStatusFor("swap_copy", "approve")),
+      "Resolved — edit applied",
+    );
+    const closed = closedIsolationAskBlocks({
+      title: "TechEvo",
+      status: "edit_applied",
+      resultText: "Done.",
+    });
+    assert.ok(!JSON.stringify(closed).includes('"type":"actions"'));
+
+    assert.equal(OFFER_LEAD_SPINTAX, "{I'd like to offer|Happy to offer}");
+    assert.match(
+      suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
+      /if you would like, on me/,
+    );
+    assert.doesNotMatch(
+      suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
+      /if useful/,
+    );
+    assert.match(
+      suggestedCopySwap("I've got a jet ski you can take out this weekend."),
+      /outing on me/,
+    );
+    assert.match(
+      suggestedCopySwap("I've got Red Sox tickets if you want them."),
+      /if you're interested/,
+    );
+    assert.equal(
+      companyIdentitySubstitute("{quick context,|for context,} we're TechEvolution."),
+      "so you know, we're TechEvolution.",
+    );
+
+    const slack = await readFile(new URL("../clients/slack.ts", import.meta.url), "utf8");
+    assert.match(
+      slack,
+      /resolveIsolationAsk/,
+      stop(
+        "Slack client can strip isolation ask buttons (D195).",
+        "slack.ts lost resolveIsolationAsk.",
+      ),
+    );
+    assert.match(
+      slack,
+      /useNativeDecide = details\.kind === "swap_copy"/,
+      stop(
+        "swap_copy Use suggested / Not now are native buttons (D195).",
+        "slack.ts put confirm-page URLs back on swap_copy decide buttons.",
+      ),
+    );
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /closeSlackAskAfterDecide/,
+      stop(
+        "Interactions close the original Slack parent after decide (D195).",
+        "index.ts no longer strips ask buttons after resolve.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D195\*\*/,
+      stop(
+        "CANON is current as of D195.",
+        "CANON.md was not updated with D195.",
+      ),
+    );
+    assert.match(
+      canon,
+      /replace_original/,
+      stop(
+        "CANON names response_url replace_original after resolve (D195).",
+        "CANON.md lost the D195 button-strip rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /on me \/ if you're interested/,
+      stop(
+        "CANON names Josh soft-gift voice (D195).",
+        "CANON.md lost the D195 soft-gift note.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D195 — Strip Slack decision buttons after resolve/,
+      stop(
+        "The D195 button-strip + soft-gift rule is in the ledger.",
+        "DECISIONS.md no longer has D195.",
       ),
     );
   });

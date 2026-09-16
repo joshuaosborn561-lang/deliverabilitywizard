@@ -27,6 +27,10 @@ import {
   deliverabilitySigningSecrets,
 } from "./lib/deliverabilitySlack.js";
 import {
+  slackAskResolveStatusFor,
+  slackAskResolvedLabel,
+} from "./lib/slackAskResolve.js";
+import {
   SWAP_EDIT_CALLBACK_ID,
   SWAP_EDIT_INPUT_BLOCK_ID,
   swapTextFromViewSubmission,
@@ -1499,6 +1503,14 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           parsed.decision,
           { name: "Josh", role: "owner" },
         );
+        if (result.ok) {
+          await closeSlackAskAfterDecide({
+            actionId: parsed.id,
+            kind: state.getIsolationAction(parsed.id)?.kind,
+            decision: parsed.decision,
+            resultText: result.message,
+          });
+        }
         res
           .status(result.ok ? 200 : 409)
           .type("html")
@@ -1521,6 +1533,56 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
     },
   );
+
+
+  async function closeSlackAskAfterDecide(input: {
+    responseUrl?: string;
+    actionId?: string;
+    kind?: string;
+    decision: "approve" | "deny";
+    resultText: string;
+    title?: string;
+  }): Promise<void> {
+    const pending = input.actionId
+      ? state.getIsolationAction(input.actionId)
+      : undefined;
+    const status = slackAskResolveStatusFor(input.kind ?? pending?.kind, input.decision);
+    const channel =
+      typeof pending?.detail.slackChannel === "string"
+        ? pending.detail.slackChannel
+        : undefined;
+    const ts =
+      typeof pending?.detail.slackTs === "string"
+        ? pending.detail.slackTs
+        : undefined;
+    const title =
+      input.title ||
+      (typeof pending?.detail.campaignName === "string"
+        ? pending.detail.campaignName
+        : pending?.title);
+    const closed = await slack.resolveIsolationAsk({
+      responseUrl: input.responseUrl,
+      channel,
+      ts,
+      title,
+      status,
+      resultText: input.resultText,
+    });
+    if (!closed.ok) {
+      console.warn(
+        `[slack-ask-resolve] could not strip buttons (${closed.error ?? "unknown"})`,
+      );
+      await slack.notifyActionResult(
+        `${slackAskResolvedLabel(status)}\n${input.resultText}`,
+      );
+      return;
+    }
+    // response_url replace already updated the parent; still post a short
+    // receipt when we only chat.updated (parent may not notify watchers).
+    if (closed.via === "chat.update") {
+      await slack.notifyActionResult(input.resultText);
+    }
+  }
 
   app.post(
     "/slack/interactions",
@@ -1631,7 +1693,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           void isolationExecute
             .decide(actionId, "approve", { name, role })
             .then(async (result) => {
-              await slack.notifyActionResult(result.message);
+              await closeSlackAskAfterDecide({
+                actionId,
+                kind: "swap_copy",
+                decision: "approve",
+                resultText: result.message,
+              });
             })
             .catch((error) => {
               console.error("[slack-interactions] swap edit apply failed", error);
@@ -1658,16 +1725,24 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             isolationExecute,
           })
             .then(async (result) => {
-              const text = result.message;
-              if (payload.response_url) {
-                await fetch(payload.response_url, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ text }),
-                });
-                return;
-              }
-              await slack.notifyActionResult(text);
+              const decision =
+                actionId === "dlv_deny_copy" ||
+                actionId === "dlv_retire_deny" ||
+                actionId === "dlv_generics_not_now" ||
+                actionId === "dlv_keep_paused"
+                  ? "deny"
+                  : "approve";
+              const isolationId =
+                typeof payload.message?.metadata?.event_payload?.isolationActionId ===
+                "string"
+                  ? String(payload.message.metadata.event_payload.isolationActionId)
+                  : undefined;
+              await closeSlackAskAfterDecide({
+                responseUrl: payload.response_url,
+                actionId: isolationId,
+                decision,
+                resultText: result.message,
+              });
             })
             .catch((error) => {
               console.error("[slack-interactions] dlv action failed", error);
@@ -1771,16 +1846,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         void isolationExecute
           .decide(parsed.id, parsed.decision, { name, role })
           .then(async (result) => {
-            const text = result.message;
-            if (payload.response_url) {
-              await fetch(payload.response_url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text }),
-              });
-              return;
-            }
-            await slack.notifyActionResult(text);
+            await closeSlackAskAfterDecide({
+              responseUrl: payload.response_url,
+              actionId: parsed.id,
+              kind: parsed.kind,
+              decision: parsed.decision as "approve" | "deny",
+              resultText: result.message,
+            });
           })
           .catch((error) => {
             console.error("[slack-interactions] decide failed", error);

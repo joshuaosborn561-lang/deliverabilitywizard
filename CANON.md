@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D193** (2026-09-11). One page of current truth. When a new
+Canon as of **D194** (2026-09-16). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -415,6 +415,17 @@ the P.S. (D178). Insight is client 582890 with mailbox sig
 `Josh Osborn` / `Insight` (D192). D184 exclusive-blank staff is
 retired — never revive. SalesGlider mailboxes stay Name /
 SalesGlider (D31).
+**Deliverability one-taps (D194)** — the SalesGlider Deliverability Slack
+bot owns `#deliverability` (`C0BJQUTV7A8`) interactive buttons
+(`dlv_apply_copy` / `dlv_deny_copy`, `dlv_retire_approve` /
+`dlv_retire_deny`, `dlv_leave_active` / `dlv_keep_paused`,
+`dlv_generics_not_now`). `#campaign-watchdog` stays on the separate
+Cursor / Lead Top Up Slack identity; this app does not post there.
+Apply-copy and generics-not-now are Josh-only. Retire/Buy one-tap is
+Cayden or Josh and reuses the existing retire execute path when a
+pending ask exists — it does not invent a new spend. Standing
+START/PAUSE prefs write project state and never change the Goliath
+Oct 15 hold or Insight SEG pause.
 
 ## Spend and the human loop
 

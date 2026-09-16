@@ -9213,10 +9213,10 @@ describe("owner intent — D193 named clients never take GENERIC pool senders", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D193\*\*/,
+      /D193/,
       stop(
-        "CANON is current as of D193.",
-        "CANON.md was not updated with D193.",
+        "CANON still names the D193 client-inbox-only rule.",
+        "CANON.md lost D193.",
       ),
     );
     assert.match(
@@ -9233,6 +9233,153 @@ describe("owner intent — D193 named clients never take GENERIC pool senders", 
       stop(
         "The client-inbox-only generic gate is in the ledger (D193).",
         "DECISIONS.md no longer has D193.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D194 Deliverability Slack one-taps", () => {
+  it("D194: #deliverability interactive buttons; Watchdog identity stays separate", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      DELIVERABILITY_SLACK_CHANNEL_ID,
+      DLV_APPLY_COPY,
+      DLV_DENY_COPY,
+      DLV_RETIRE_APPROVE,
+      DLV_RETIRE_DENY,
+      DLV_LEAVE_ACTIVE,
+      DLV_KEEP_PAUSED,
+      DLV_GENERICS_NOT_NOW,
+      WATCHDOG_SLACK_CHANNEL_NAME,
+      lockedStandingPrefReason,
+    } = await import("../lib/deliverabilitySlack.js");
+    const { loadConfig } = await import("../config.js");
+    const defaults = loadConfig({} as NodeJS.ProcessEnv);
+
+    assert.equal(
+      defaults.deliverabilitySlackChannelId,
+      "C0BJQUTV7A8",
+      stop(
+        "Deliverability one-taps default to #deliverability C0BJQUTV7A8 (D194).",
+        `Channel default is now ${defaults.deliverabilitySlackChannelId}.`,
+      ),
+    );
+    assert.equal(DELIVERABILITY_SLACK_CHANNEL_ID, "C0BJQUTV7A8");
+    assert.equal(WATCHDOG_SLACK_CHANNEL_NAME, "#campaign-watchdog");
+    assert.equal(DLV_APPLY_COPY, "dlv_apply_copy");
+    assert.equal(DLV_DENY_COPY, "dlv_deny_copy");
+    assert.equal(DLV_RETIRE_APPROVE, "dlv_retire_approve");
+    assert.equal(DLV_RETIRE_DENY, "dlv_retire_deny");
+    assert.equal(DLV_LEAVE_ACTIVE, "dlv_leave_active");
+    assert.equal(DLV_KEEP_PAUSED, "dlv_keep_paused");
+    assert.equal(DLV_GENERICS_NOT_NOW, "dlv_generics_not_now");
+    assert.match(
+      lockedStandingPrefReason({ campaignName: "Goliath MDR", clientId: 548611 }) ??
+        "",
+      /Goliath/,
+      stop(
+        "Goliath hold standing pref is locked (D194).",
+        "lockedStandingPrefReason no longer blocks Goliath.",
+      ),
+    );
+    assert.match(
+      lockedStandingPrefReason({
+        campaignName: "Insight Consolidation Gateway SEG",
+      }) ?? "",
+      /Insight SEG/,
+      stop(
+        "Insight SEG pause standing pref is locked (D194).",
+        "lockedStandingPrefReason no longer blocks Insight SEG.",
+      ),
+    );
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /\/slack\/interactions/,
+      stop(
+        "Interactivity stays on /slack/interactions (D194).",
+        "index.ts lost the interactions route.",
+      ),
+    );
+    assert.match(
+      index,
+      /\/slack\/events/,
+      stop(
+        "Optional /slack/events exists for Slack url_verification (D194).",
+        "index.ts has no /slack/events route.",
+      ),
+    );
+    assert.match(
+      index,
+      /isDlvActionId/,
+      stop(
+        "dlv_* buttons are routed on the existing interactions path (D194).",
+        "index.ts no longer dispatches Deliverability one-taps.",
+      ),
+    );
+    assert.match(
+      index,
+      /campaign-watchdog/,
+      stop(
+        "The events route names that Watchdog traffic is not stolen (D194).",
+        "index.ts lost the Watchdog non-takeover note.",
+      ),
+    );
+
+    const slack = await readFile(new URL("../clients/slack.ts", import.meta.url), "utf8");
+    assert.match(
+      slack,
+      /notifyDeliverabilityDecision/,
+      stop(
+        "Slack client posts Deliverability decision cards (D194).",
+        "slack.ts lost notifyDeliverabilityDecision.",
+      ),
+    );
+    assert.doesNotMatch(
+      slack,
+      /#campaign-watchdog["']/,
+      stop(
+        "Decision cards must not hardcode #campaign-watchdog as a destination (D194).",
+        "slack.ts posts to the Watchdog channel.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D194\*\*/,
+      stop(
+        "CANON is current as of D194.",
+        "CANON.md was not updated with D194.",
+      ),
+    );
+    assert.match(
+      canon,
+      /dlv_apply_copy/,
+      stop(
+        "CANON names the Deliverability one-tap action_ids (D194).",
+        "CANON.md lost the D194 Slack one-tap contract.",
+      ),
+    );
+    assert.match(
+      canon,
+      /#campaign-watchdog.*stays on the separate/,
+      stop(
+        "CANON keeps Watchdog on its own Slack identity (D194).",
+        "CANON.md lost the Watchdog-separate rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D194 — Deliverability Slack bot owns #deliverability one-taps/,
+      stop(
+        "The Deliverability Slack one-tap rule is in the ledger (D194).",
+        "DECISIONS.md no longer has D194.",
       ),
     );
   });

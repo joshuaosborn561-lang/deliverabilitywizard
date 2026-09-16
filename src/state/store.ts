@@ -33,6 +33,10 @@ import {
 } from "../lib/attachBlock.js";
 import type { CampaignCheckRecord } from "../lib/campaignCheck.js";
 import type { GenericBackfillApproval } from "../lib/genericBackfill.js";
+import type {
+  CampaignStandingPref,
+  DeliverabilityDecisionRecord,
+} from "../lib/deliverabilitySlack.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -274,6 +278,13 @@ export interface AppState {
    * one connected mailbox.
    */
   canaryFleetDown: CanaryFleetDownRecord | null;
+  /**
+   * D194 — Josh/Cayden standing START/PAUSE prefs from #deliverability
+   * one-taps. Goliath hold / Insight SEG pause are refused at the handler.
+   */
+  campaignStandingPrefs: Record<string, CampaignStandingPref>;
+  /** D194 — recorded Deliverability Slack button decisions. */
+  deliverabilityDecisions: Record<string, DeliverabilityDecisionRecord>;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -476,6 +487,8 @@ const EMPTY_STATE: AppState = {
   stageAlertedAt: {},
   canonMissAlerted: {},
   canaryFleetDown: null,
+  campaignStandingPrefs: {},
+  deliverabilityDecisions: {},
 };
 
 export class StateStore {
@@ -545,6 +558,8 @@ export class StateStore {
         stageAlertedAt: parsed.stageAlertedAt ?? {},
         canonMissAlerted: parsed.canonMissAlerted ?? {},
         canaryFleetDown: parsed.canaryFleetDown ?? null,
+        campaignStandingPrefs: parsed.campaignStandingPrefs ?? {},
+        deliverabilityDecisions: parsed.deliverabilityDecisions ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1587,6 +1602,26 @@ export class StateStore {
 
   getIsolationAction(id: string): IsolationActionRecord | undefined {
     return this.state.isolation.actions[id];
+  }
+
+  setCampaignStandingPref(pref: CampaignStandingPref): void {
+    this.state.campaignStandingPrefs[String(pref.campaignId)] = pref;
+  }
+
+  getCampaignStandingPref(campaignId: number): CampaignStandingPref | undefined {
+    return this.state.campaignStandingPrefs[String(campaignId)];
+  }
+
+  listCampaignStandingPrefs(): CampaignStandingPref[] {
+    return Object.values(this.state.campaignStandingPrefs);
+  }
+
+  recordDeliverabilityDecision(record: DeliverabilityDecisionRecord): void {
+    this.state.deliverabilityDecisions[record.id] = record;
+  }
+
+  listDeliverabilityDecisions(): DeliverabilityDecisionRecord[] {
+    return Object.values(this.state.deliverabilityDecisions);
   }
 
   listIsolationActions(): IsolationActionRecord[] {

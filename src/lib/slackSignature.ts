@@ -20,6 +20,34 @@ export function slackSignatureValid(input: {
   return timingSafeEqual(expected, got);
 }
 
+/** D194 — accept either the dedicated Deliverability secret or the legacy Wizard secret. */
+export function slackSignatureValidAny(input: {
+  signingSecrets: string[];
+  timestamp: string;
+  rawBody: string;
+  signature: string;
+  nowMs?: number;
+}): boolean {
+  const secrets = [...new Set(input.signingSecrets.map((s) => s.trim()).filter(Boolean))];
+  return secrets.some((signingSecret) =>
+    slackSignatureValid({
+      signingSecret,
+      timestamp: input.timestamp,
+      rawBody: input.rawBody,
+      signature: input.signature,
+      nowMs: input.nowMs,
+    }),
+  );
+}
+
+/** Slack Events API url_verification — used by `/slack/events`. */
+export function slackUrlVerificationChallenge(body: unknown): string | undefined {
+  if (!body || typeof body !== "object") return undefined;
+  const rec = body as { type?: unknown; challenge?: unknown };
+  if (rec.type !== "url_verification") return undefined;
+  return typeof rec.challenge === "string" ? rec.challenge : undefined;
+}
+
 export function isolationActionValue(
   kind: string,
   id: string,

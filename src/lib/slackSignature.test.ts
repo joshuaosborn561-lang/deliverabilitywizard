@@ -5,6 +5,8 @@ import {
   isolationActionValue,
   parseIsolationActionValue,
   slackSignatureValid,
+  slackSignatureValidAny,
+  slackUrlVerificationChallenge,
 } from "./slackSignature.js";
 
 describe("slack signature", () => {
@@ -61,6 +63,30 @@ describe("slack signature", () => {
         isolationActionValue("swap_copy", "swap_copy-1", "edit"),
       ),
       { kind: "swap_copy", id: "swap_copy-1", decision: "edit" },
+    );
+  });
+
+  it("D194: accepts any of the configured signing secrets", () => {
+    const timestamp = String(Math.floor(Date.now() / 1000));
+    const rawBody = "payload=%7B%7D";
+    const signature = `v0=${createHmac("sha256", "dlv")
+      .update(`v0:${timestamp}:${rawBody}`)
+      .digest("hex")}`;
+    assert.equal(
+      slackSignatureValidAny({
+        signingSecrets: ["legacy", "dlv"],
+        timestamp,
+        rawBody,
+        signature,
+      }),
+      true,
+    );
+    assert.equal(
+      slackUrlVerificationChallenge({
+        type: "url_verification",
+        challenge: "c",
+      }),
+      "c",
     );
   });
 });

@@ -22,6 +22,15 @@ const ConfigSchema = z.object({
   slackOauthRedirectUri: z.string().default(
     "https://deliverabilitywizard-production.up.railway.app/slack/oauth",
   ),
+  /**
+   * D194 — dedicated SalesGlider Deliverability Slack app (interactive
+   * one-taps in #deliverability). Empty token/secret fall back to the
+   * legacy SLACK_* pair at the call site. Channel defaults to the
+   * #deliverability id; never the Watchdog channel.
+   */
+  deliverabilitySlackBotToken: z.string().default(""),
+  deliverabilitySlackSigningSecret: z.string().default(""),
+  deliverabilitySlackChannelId: z.string().default("C0BJQUTV7A8"),
   inboxkitApiKey: z.string().default(""),
   inboxkitWorkspaceId: z.string().default(""),
   /** Dedicated InboxKit workspace for the 75 generic recovery-pool mailboxes */
@@ -448,6 +457,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     slackOauthRedirectUri:
       env.SLACK_OAUTH_REDIRECT_URI ??
       "https://deliverabilitywizard-production.up.railway.app/slack/oauth",
+    deliverabilitySlackBotToken: env.DELIVERABILITY_SLACK_BOT_TOKEN ?? "",
+    deliverabilitySlackSigningSecret:
+      env.DELIVERABILITY_SLACK_SIGNING_SECRET ?? "",
+    deliverabilitySlackChannelId:
+      env.DELIVERABILITY_SLACK_CHANNEL_ID ?? "C0BJQUTV7A8",
     inboxkitApiKey: env.INBOXKIT_API_KEY ?? "",
     inboxkitWorkspaceId: env.INBOXKIT_WORKSPACE_ID ?? "",
     genericPoolWorkspaceId:

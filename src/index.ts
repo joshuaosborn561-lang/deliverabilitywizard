@@ -18,8 +18,14 @@ import { SlackClient } from "./clients/slack.js";
 import { slackRoleOf } from "./lib/isolationActors.js";
 import {
   parseIsolationActionValue,
-  slackSignatureValid,
+  slackSignatureValidAny,
+  slackUrlVerificationChallenge,
 } from "./lib/slackSignature.js";
+import {
+  handleDeliverabilitySlackAction,
+  isDlvActionId,
+  deliverabilitySigningSecrets,
+} from "./lib/deliverabilitySlack.js";
 import {
   SWAP_EDIT_CALLBACK_ID,
   SWAP_EDIT_INPUT_BLOCK_ID,
@@ -202,6 +208,8 @@ async function main(): Promise<void> {
     channelLabel: config.slackChannel,
     actionLinkSecret: config.slackSigningSecret,
     publicBaseUrl: publicBaseUrlFromEnv(process.env),
+    deliverabilityBotToken: config.deliverabilitySlackBotToken,
+    deliverabilityChannelId: config.deliverabilitySlackChannelId,
   });
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, smartlead, slack, state);
@@ -1523,8 +1531,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           ? req.body.toString("utf8")
           : String(req.body ?? "");
         if (
-          !slackSignatureValid({
-            signingSecret: config.slackSigningSecret,
+          !slackSignatureValidAny({
+            signingSecrets: deliverabilitySigningSecrets(config),
             timestamp: String(req.header("x-slack-request-timestamp") ?? ""),
             rawBody,
             signature: String(req.header("x-slack-signature") ?? ""),
@@ -1555,6 +1563,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             };
           };
           response_url?: string;
+          message?: {
+            metadata?: {
+              event_type?: string;
+              event_payload?: Record<string, unknown>;
+            };
+          };
         };
 
         const role = slackRoleOf(
@@ -1627,6 +1641,37 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
 
         if (payload.type && payload.type !== "block_actions") {
           res.status(200).json({ text: "That interaction is not one I handle." });
+          return;
+        }
+
+        const actionId = payload.actions?.[0]?.action_id ?? "";
+        if (isDlvActionId(actionId)) {
+          res.status(200).json({
+            text: "Working on it — I will post here when it is done.",
+          });
+          void handleDeliverabilitySlackAction({
+            actionId,
+            value: payload.actions?.[0]?.value,
+            messageMetadata: payload.message?.metadata?.event_payload ?? null,
+            actor: { name, role },
+            state,
+            isolationExecute,
+          })
+            .then(async (result) => {
+              const text = result.message;
+              if (payload.response_url) {
+                await fetch(payload.response_url, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ text }),
+                });
+                return;
+              }
+              await slack.notifyActionResult(text);
+            })
+            .catch((error) => {
+              console.error("[slack-interactions] dlv action failed", error);
+            });
           return;
         }
 
@@ -1750,6 +1795,44 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
     },
   );
+
+  app.post(
+    "/slack/events",
+    express.raw({ type: "*/*" }),
+    (req, res) => {
+      const rawBody = Buffer.isBuffer(req.body)
+        ? req.body.toString("utf8")
+        : String(req.body ?? "");
+      if (
+        !slackSignatureValidAny({
+          signingSecrets: deliverabilitySigningSecrets(config),
+          timestamp: String(req.header("x-slack-request-timestamp") ?? ""),
+          rawBody,
+          signature: String(req.header("x-slack-signature") ?? ""),
+        })
+      ) {
+        console.warn("[slack-events] bad signature");
+        res.status(401).json({ error: "Bad Slack signature" });
+        return;
+      }
+      let body: unknown = {};
+      try {
+        body = rawBody ? JSON.parse(rawBody) : {};
+      } catch {
+        res.status(400).json({ error: "Invalid JSON" });
+        return;
+      }
+      const challenge = slackUrlVerificationChallenge(body);
+      if (challenge !== undefined) {
+        res.status(200).json({ challenge });
+        return;
+      }
+      // D194 — Events URL is for verification + future Deliverability
+      // subscriptions only. Do not steal #campaign-watchdog traffic.
+      res.status(200).json({ ok: true });
+    },
+  );
+
   app.get("/slack/oauth", async (req, res) => {
     const error = String(req.query.error ?? "");
     if (error) {

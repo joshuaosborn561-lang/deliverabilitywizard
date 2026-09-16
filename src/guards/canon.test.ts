@@ -6693,17 +6693,17 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
       {
         line: "{I've got|I have} a pair of Air Pods for you.",
         offer: /Air\s*Pods/i,
-        rest: /a pair of AirPods if useful/,
+        rest: /a pair of AirPods if you would like, on me/,
       },
       {
         line: "I've got a jet ski you can take out this weekend.",
         offer: /jet\s*ski/i,
-        rest: /jet ski outing if useful/,
+        rest: /jet ski outing on me/,
       },
       {
         line: "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
         offer: /Local_Sports_Team/,
-        rest: /\{\{Local_Sports_Team\}\} tickets if useful/,
+        rest: /\{\{Local_Sports_Team\}\} tickets if you're interested/,
       },
     ];
     for (const row of cases) {
@@ -9352,9 +9352,9 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D194\*\*/,
+      /\bD194\b/,
       stop(
-        "CANON is current as of D194.",
+        "CANON still names the D194 Deliverability one-tap contract.",
         "CANON.md was not updated with D194.",
       ),
     );
@@ -9380,6 +9380,165 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
       stop(
         "The Deliverability Slack one-tap rule is in the ledger (D194).",
         "DECISIONS.md no longer has D194.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D195 strip ask buttons after resolve; soft-gift voice", () => {
+  it("D195: resolved ask has no actions block; strip prefers response_url", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { buildResolvedAskBlocks, resolvedAskLabel, resolveIsolationAskMessage } =
+      await import("../lib/slackAskResolve.js");
+
+    const blocks = buildResolvedAskBlocks({
+      summary: "*TechEvo AirPods*",
+      resolvedLabel: resolvedAskLabel("swap_copy", "approve"),
+    });
+    assert.equal(
+      blocks.some((b) => (b as { type?: string }).type === "actions"),
+      false,
+      stop(
+        "A resolved ask drops its action buttons (D195).",
+        "buildResolvedAskBlocks still emits an actions block.",
+      ),
+    );
+
+    const calls: string[] = [];
+    const okFetch = (async (url: string) => {
+      calls.push(url);
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    }) as unknown as Parameters<typeof resolveIsolationAskMessage>[0]["fetchImpl"];
+    const viaResponse = await resolveIsolationAskMessage({
+      responseUrl: "https://hooks.slack.com/actions/x",
+      channel: "C1",
+      ts: "1.2",
+      botToken: "xoxb",
+      summary: "*x*",
+      kind: "swap_copy",
+      decision: "approve",
+      fetchImpl: okFetch,
+    });
+    assert.equal(
+      viaResponse.via,
+      "response_url",
+      stop(
+        "Strip prefers the tap's response_url with replace_original (D195).",
+        `resolve used ${viaResponse.via}`,
+      ),
+    );
+
+    const chatCalls: string[] = [];
+    const chatFetch = (async (url: string) => {
+      chatCalls.push(url);
+      return { ok: true, status: 200, json: async () => ({ ok: true }) };
+    }) as unknown as Parameters<typeof resolveIsolationAskMessage>[0]["fetchImpl"];
+    const viaUpdate = await resolveIsolationAskMessage({
+      channel: "C1",
+      ts: "1.2",
+      botToken: "xoxb-posting",
+      summary: "*x*",
+      kind: "retire_domain",
+      decision: "approve",
+      fetchImpl: chatFetch,
+    });
+    assert.equal(
+      viaUpdate.via,
+      "chat_update",
+      stop(
+        "chat.update is the fallback with the posting token (D195).",
+        `resolve used ${viaUpdate.via}`,
+      ),
+    );
+    assert.equal(chatCalls[0], "https://slack.com/api/chat.update");
+
+    // swap_copy Use suggested / Not now must be native buttons (no url) so
+    // the tap yields a response_url; other kinds keep the confirm-page url.
+    const slack = await readFile(new URL("../clients/slack.ts", import.meta.url), "utf8");
+    assert.match(
+      slack,
+      /wantsConfirmUrl = details\.kind !== "swap_copy"/,
+      stop(
+        "swap_copy Use suggested / Not now are native buttons (D195).",
+        "slack.ts still puts a confirm-page url on swap_copy buttons.",
+      ),
+    );
+    assert.match(
+      slack,
+      /detail\.slackChannel/,
+      stop(
+        "notifyIsolationAction stamps the posted channel + ts (D195).",
+        "slack.ts / isolationActions.ts lost the slackChannel stamp.",
+      ),
+    );
+
+    const actions = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      actions,
+      /companyIdentitySubstitute/,
+      stop(
+        "Identity openers use so-you-know-we're-Brand (D195).",
+        "isolationActions.ts lost companyIdentitySubstitute.",
+      ),
+    );
+    assert.doesNotMatch(
+      actions,
+      /if useful\./,
+      stop(
+        "Offer defaults drop the weak 'if useful.' ending (D195).",
+        "isolationActions.ts still ends an offer with 'if useful.'",
+      ),
+    );
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /resolveIsolationAskMessage|stripResolvedAsk/,
+      stop(
+        "The interactions stack strips ask buttons after a decide (D195).",
+        "index.ts does not wire the resolve helper.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D195\*\*/,
+      stop(
+        "CANON is current as of D195.",
+        "CANON.md was not updated with D195.",
+      ),
+    );
+    assert.match(
+      canon,
+      /so you know, we're/,
+      stop(
+        "CANON names the D195 soft-gift / identity voice.",
+        "CANON.md lost the D195 voice.",
+      ),
+    );
+    assert.match(
+      canon,
+      /strip.*after.*resolve|buttons.*after.*resolve/i,
+      stop(
+        "CANON names the D195 button-strip-after-resolve rule.",
+        "CANON.md lost the D195 strip rule.",
+      ),
+    );
+
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D195 — /,
+      stop(
+        "The D195 strip + voice rule is in the ledger (D195).",
+        "DECISIONS.md no longer has D195.",
       ),
     );
   });

@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D194** (2026-09-16). One page of current truth. When a new
+Canon as of **D195** (2026-09-16). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -383,7 +383,23 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    keeps the line’s job (offer openers keep the gift/tickets/experience
    and lead with `{I'd like to offer|Happy to offer}` —
    D152/D168/D170/D171; remind refreshes a stale pending swap before Slack),
-   *Use suggested edit* / *Write my own edit* (D153).
+   *Use suggested edit* / *Write my own edit* (D153). **Soft-gift voice
+   (D195):** the REPLACE endings read as a gift, not a hedge — AirPods
+   `if you would like, on me.`, an experience `outing on me.`, tickets
+   `if you're interested.` (never `if useful.`); company-identity openers
+   become `so you know, we're {Brand}.` (no double period), not a
+   brace-strip-only soften. The D171 lead-in is unchanged.
+**Buttons cleared after resolve (D195).** Once an ask resolves (Use
+suggested / Write my own / Not now / Allow-generics / Buy / retire), the
+`#deliverability` card loses its buttons so nobody re-taps a settled ask.
+A `chat.update` from the wrong identity returns `cant_update_message` —
+the card is usually posted as *Deliverability Wizard* — so the strip goes
+through the tap's `response_url` (`replace_original`, section blocks, no
+actions block) first, else `chat.update` with the **posting** token using
+the `slackChannel` + `slackTs` stamped when the card was posted. `swap_copy`
+*Use suggested* / *Not now* are native buttons (no confirm-page url) so Slack
+sends a `response_url`; *Write my own* stays native (D153); buy / retire /
+generics keep their confirm pages and strip via the stamped channel + ts.
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed
    inboxes an outside writer keeps re-adding after gate pulls

@@ -19,6 +19,7 @@ import {
   remindPendingIsolationActions,
   requestIsolationAction,
   suggestedCopySwap,
+  companyIdentitySubstitute,
   burnStrikeKey,
   healStaleBurnAsks,
   shouldRemindBurnAsk,
@@ -567,30 +568,30 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     );
   });
 
-  it("D171 — gift/offer defaults lead with {I'd like to offer|Happy to offer}", () => {
+  it("D171/D195 — gift/offer defaults lead with {I'd like to offer|Happy to offer}", () => {
     assert.equal(OFFER_LEAD_SPINTAX, "{I'd like to offer|Happy to offer}");
     assert.equal(
       suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
-      `${OFFER_LEAD_SPINTAX} a pair of AirPods if useful.`,
+      `${OFFER_LEAD_SPINTAX} a pair of AirPods if you would like, on me.`,
     );
     assert.equal(
       suggestedCopySwap("I've got a jet ski you can take out this weekend."),
-      `${OFFER_LEAD_SPINTAX} a jet ski outing if useful.`,
+      `${OFFER_LEAD_SPINTAX} a jet ski outing on me.`,
     );
     assert.equal(
       suggestedCopySwap(
         "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
       ),
-      `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if useful.`,
+      `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if you're interested.`,
     );
     assert.equal(
       suggestedCopySwap("I've got Red Sox tickets if you want them."),
-      `${OFFER_LEAD_SPINTAX} Red Sox tickets if useful.`,
+      `${OFFER_LEAD_SPINTAX} Red Sox tickets if you're interested.`,
     );
     const identity = suggestedCopySwap(
       "Hey, we're TechEvolution and we help IT teams stay online.",
     );
-    assert.match(identity, /TechEvolution/i);
+    assert.match(identity, /so you know, we're TechEvolution/i);
     assert.doesNotMatch(identity, /I'd like to offer|Happy to offer/i);
     assert.doesNotMatch(identity, /—/);
   });
@@ -775,5 +776,45 @@ describe("D190 — burn-ask Slack is once per strike, Cayden CTA", () => {
     assert.equal(next?.id, first?.id);
     assert.equal(notified.length, 2);
     assert.equal(BURN_ASK_REMIND_MS, 7 * 86_400_000);
+  });
+});
+
+
+describe("suggestedCopySwap — D195 Josh soft-gift + identity voice", () => {
+  it("AirPods prefer if you would like, on me (not if useful)", () => {
+    const swap = suggestedCopySwap(
+      "{I've got|Got} {an extra pair|a spare pair} of AirPods {for you|with your name on them}... {on me|no catch}.",
+    );
+    assert.match(swap, /I'd like to offer\|Happy to offer/);
+    assert.match(swap, /AirPods/i);
+    assert.match(swap, /if you would like, on me/i);
+    assert.doesNotMatch(swap, /if useful/i);
+  });
+
+  it("jet ski prefers outing on me", () => {
+    const swap = suggestedCopySwap(
+      "{I've got|Got} {an hour on a jet ski|a one hour jet ski rental}",
+    );
+    assert.match(swap, /jet ski outing on me/i);
+    assert.doesNotMatch(swap, /if useful/i);
+  });
+
+  it("Local_Sports_Team tickets prefer if you're interested", () => {
+    const swap = suggestedCopySwap(
+      "{I've got|Got} {an extra pair|a couple} of {{Local_Sports_Team}} tickets {for you|with your name on them}",
+    );
+    assert.match(swap, /Local_Sports_Team.*tickets/i);
+    assert.match(swap, /if you're interested/i);
+    assert.doesNotMatch(swap, /if useful/i);
+  });
+
+  it("company intro prefers so you know, we're Brand over brace-strip", () => {
+    assert.equal(
+      companyIdentitySubstitute("{quick context,|for context,} we're TechEvolution."),
+      "so you know, we're TechEvolution.",
+    );
+    const card = suggestedCopySwap("{quick context,|for context,} we're TechEvolution.");
+    assert.match(card, /so you know, we're TechEvolution/i);
+    assert.doesNotMatch(card, /^quick context,/i);
   });
 });

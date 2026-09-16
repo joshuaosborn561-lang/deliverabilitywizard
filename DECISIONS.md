@@ -206,6 +206,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
 | D193 | Live | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
+| D195 | Live | After D133 Apply/Not now (and Allow generics / Buy resolve), strip Slack action buttons via response_url replace_original or posting-bot chat.update; soft-gift defaults use on me / if you're interested; identity intro prefers so you know, we're Brand |
 
 ---
 
@@ -6011,3 +6012,62 @@ standing prefs refused; CANON names D194.
 
 ---
 
+
+## D195 — Strip Slack decision buttons after resolve; Josh soft-gift + identity voice
+
+**Decision (Josh, 2026-09-16).** After Use suggested edit / Write my own /
+Not now / Allow-generics resolve / Buy resolve, the ORIGINAL Slack parent
+must lose its interactive buttons. Soft-gift REPLACE defaults must match
+Josh's locked voice from today's TechEvo Write-my-own taps — not weak
+"if useful." Identity openers prefer "so you know, we're {Brand}." over
+brace-strip-only.
+
+**The bug.** `/slack/interactions` posted a new `response_url` message
+(`{ text }`) and left the parent actions row live. Confirm-page and
+modal paths never touched the parent. `chat.update` with the Watchdog /
+`ai_reply_handler2` token returns `cant_update_message` — only the
+posting identity or `response_url` can rewrite those parents (often
+posted as Deliverability Wizard via webhook username override or the
+volume bot-token file).
+
+**The rule.**
+
+1. After a successful decide (approve or deny) for isolation asks,
+   rewrite the original parent: `response_url` with
+   `replace_original: true` and blocks that keep a short summary plus
+   a single closed status line (`Resolved — edit applied` /
+   `Resolved — not now` / generics / buy). No `actions` block.
+2. `swap_copy` Use suggested / Not now are **native** buttons (no
+   confirm-page URL) so Slack sends `response_url`. Write my own stays
+   native (D153). Buy / retire / generics may keep confirm-page URLs.
+3. When posting an ask via `chat.postMessage`, stamp
+   `detail.slackChannel` + `detail.slackTs`. Modal submit and
+   confirm-page paths call `chat.update` with the **posting** bot
+   token when `response_url` is absent.
+4. Soft-gift `suggestedCopySwap` defaults (D171 lead-in kept):
+   - AirPods → `{I'd like to offer|Happy to offer} a pair of AirPods if you would like, on me.`
+   - Jet ski → `{I'd like to offer|Happy to offer} a jet ski outing on me.`
+   - Tickets → `{I'd like to offer|Happy to offer} {{Local_Sports_Team}} tickets if you're interested.`
+   - Avoid weak "if useful."
+5. Company identity lines → `so you know, we're {Brand}.` — not
+   brace-strip-only `quick context, we're Brand.`
+
+**Why.** Stale Use suggested / Allow generics / Buy rows after Done /
+Switched / Not now confuse Josh. Defaults that say "if useful" force
+Write my own every time.
+
+**Rejected.** Stripping with a non-posting bot token. Leaving URL
+confirm pages for swap_copy (they skip `response_url`). Auto-applying
+live copy without a tap.
+
+**Supersedes / amends.** Amends D133/D152/D153/D168/D170/D171/D194 for
+post-resolve UX and suggestion defaults. Does not change the live-copy
+Josh gate or fleet-wide apply semantics.
+
+**Guards.** canon D195: `resolveIsolationAskMessage` /
+`slack.resolveIsolationAsk`; swap_copy buttons have no `url`;
+`offerSubstitute` / `companyIdentitySubstitute` match Josh voice;
+tests in `isolationActions.test.ts` + `slackAskResolve.test.ts`.
+CANON names D195.
+
+---

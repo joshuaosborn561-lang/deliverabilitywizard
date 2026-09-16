@@ -89,12 +89,21 @@ describe("isolation Slack URL buttons", () => {
     )[1]?.elements;
     assert.equal(actions?.length, 3);
     assert.equal(actions?.[0]?.text?.text, "Use suggested edit");
-    assert.ok(actions?.[0]?.url, "suggested edit still uses confirm-page URL");
+    assert.equal(
+      actions?.[0]?.url,
+      undefined,
+      "D195: swap_copy Use suggested is native so response_url can strip the row",
+    );
     assert.equal(actions?.[1]?.text?.text, "Write my own edit");
     assert.equal(actions?.[1]?.action_id, "isolation_swap_edit");
     assert.equal(actions?.[1]?.url, undefined, "modal button must not set url");
     assert.match(actions?.[1]?.value ?? "", /:edit$/);
     assert.equal(actions?.[2]?.text?.text, "Not now");
+    assert.equal(
+      actions?.[2]?.url,
+      undefined,
+      "D195: swap_copy Not now is native so response_url can strip the row",
+    );
   });
 
   it("D194: decision cards post to #deliverability, never Watchdog", async () => {

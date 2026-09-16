@@ -9506,10 +9506,10 @@ describe("owner intent — D195 strip ask buttons after resolve; soft-gift voice
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D195\*\*/,
+      /D195/,
       stop(
-        "CANON is current as of D195.",
-        "CANON.md was not updated with D195.",
+        "CANON still names D195 (strip after resolve / soft-gift voice).",
+        "CANON.md lost D195.",
       ),
     );
     assert.match(
@@ -9539,6 +9539,145 @@ describe("owner intent — D195 strip ask buttons after resolve; soft-gift voice
       stop(
         "The D195 strip + voice rule is in the ledger (D195).",
         "DECISIONS.md no longer has D195.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D196 on-week client-pod staff floor", () => {
+  it("D196: ESP-odd B week floors at the on-week pod, not ceil half", async () => {
+    const { clientCountKey, clientInboxStaffFloor, countClientInboxFloors, staffFloorForCampaign } =
+      await import("../lib/clientStaffFloor.js");
+    const { onWeekCohort } = await import("../lib/restCohort.js");
+
+    const outlook = Array.from({ length: 63 }, (_, i) => ({
+      id: i + 1,
+      from_email: `outlook-${String(i).padStart(3, "0")}@salesglider.com`,
+      client_id: 345263,
+      type: "OUTLOOK",
+    }));
+    const gmail = Array.from({ length: 31 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `gmail-${String(i).padStart(3, "0")}@salesglider.com`,
+      client_id: 345263,
+      type: "GMAIL",
+    }));
+    const campaign = {
+      id: 3969109,
+      name: "SG PE Origination - Thesis - A",
+      client_id: 345263,
+    };
+    const args = [
+      [...outlook, ...gmail],
+      [{ id: 3969109, name: campaign.name, status: "ACTIVE", client_id: 345263 }],
+      [{ id: 345263, name: "SalesGlider" }],
+      {
+        extraGenericMailboxes: [],
+        extraGenericDomains: [],
+        prewarmedDomains: [],
+      },
+      { getPoolMailbox: () => undefined },
+    ] as const;
+
+    const bWeek = new Date("2026-01-15T17:00:00Z");
+    assert.equal(onWeekCohort(bWeek), "B");
+    const bFloors = countClientInboxFloors(...args, bWeek);
+    assert.equal(bFloors.eligible.get(clientCountKey(345263)), 94);
+    assert.equal(
+      staffFloorForCampaign(campaign, bFloors.eligible, "SalesGlider", bFloors.onWeek),
+      46,
+      stop(
+        "B-week floor is the on-week pod (46), not half of 94 (D196).",
+        `Floor is ${staffFloorForCampaign(campaign, bFloors.eligible, "SalesGlider", bFloors.onWeek)}.`,
+      ),
+    );
+    assert.equal(clientInboxStaffFloor(94), 47);
+    const bFloor = 46;
+    assert.equal(Math.max(0, bFloor - 46), 0);
+    assert.equal(
+      Math.max(0, bFloor - 45),
+      1,
+      stop(
+        "45 of 46 on-week B seats is understaffed by 1 (D196).",
+        "A short on-week pod is no longer flagged.",
+      ),
+    );
+
+    const aWeek = new Date("2026-01-01T17:00:00Z");
+    assert.equal(onWeekCohort(aWeek), "A");
+    const aFloors = countClientInboxFloors(...args, aWeek);
+    assert.equal(
+      staffFloorForCampaign(campaign, aFloors.eligible, "SalesGlider", aFloors.onWeek),
+      48,
+      stop(
+        "A-week floor is the on-week pod (48) (D196).",
+        `A-week floor is ${staffFloorForCampaign(campaign, aFloors.eligible, "SalesGlider", aFloors.onWeek)}.`,
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const src = await readFile(
+      new URL("../lib/clientStaffFloor.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      src,
+      /onWeekCounts/,
+      stop(
+        "staffFloorForCampaign reads the on-week pod (D196).",
+        "clientStaffFloor.ts no longer takes onWeekCounts.",
+      ),
+    );
+    assert.match(
+      src,
+      /isClientInbox/,
+      stop(
+        "Generics stay out of the named-client floor (D193/D196).",
+        "clientStaffFloor.ts stopped excluding generics.",
+      ),
+    );
+
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      check,
+      /onWeekInboxCounts/,
+      stop(
+        "Campaign check floors against the on-week pod (D196).",
+        "campaignCheck.ts no longer passes on-week counts.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /on-week pod|on-week client pod/,
+      stop(
+        "CANON states the on-week staff-floor caveat (D196).",
+        "CANON.md lost the on-week floor wording.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D196\*\*/,
+      stop(
+        "CANON is dated D196.",
+        "CANON.md header was not bumped.",
+      ),
+    );
+
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D196 — Staff floor is the on-week client pod/,
+      stop(
+        "The on-week floor is in the ledger (D196).",
+        "DECISIONS.md no longer has D196.",
       ),
     );
   });

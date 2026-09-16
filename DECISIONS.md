@@ -76,7 +76,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D55 | Live |
 | D56 | Live |
 | D57 | Burned number — no entry exists |
-| D58 | Superseded by D82 (POC pattern) — half-client floor lives on there |
+| D58 | Superseded by D82 (POC pattern) — half-client floor size qualified by D196 (on-week pod) |
 | D59 | Historical one-shot (ran 2026-08-24) — on-week every ACTIVE extended by D169 |
 | D60 | Live |
 | D61 | Historical one-shot (ran 2026-08-24; destructive) |
@@ -97,7 +97,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D79 | Retired-record (no per-sender bounce pull) — live |
 | D80 | Superseded by D88/D90; the off-write is gone — the API discards the field (D157) |
 | D81 | Live — amended by D82/D122 |
-| D82 | Live |
+| D82 | Live — floor size qualified by D196 (on-week pod, not always ceil half) |
 | D83 | Live |
 | D84 | Live — the autopause write-on-drift clause is retired by D157 (no write exists); attach-blocked inventory skipped by D176 |
 | D85 | Live — signature-ask clause superseded by D92/D97 |
@@ -207,6 +207,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D193 | Live | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
+| D196 | Live | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
 
 ---
 
@@ -6066,6 +6067,54 @@ D40, or any spend gate.
 `chat.update`; `swap_copy` buttons carry no confirm url; the posted channel +
 ts are stamped; `companyIdentitySubstitute` exists and no offer default ends
 in "if useful."; CANON names D195.
+
+---
+
+## D196 — Staff floor is the on-week client pod, not ceil(half)
+
+**Decision (Josh 2026-09-16, SalesGlider #345263 false understaffed).**
+The live staff floor for a named client campaign is the size of that
+client's **on-week** A/B cohort (eligible, non-generic seats in the
+sending pod). It is not `ceil(n/2)` / `floor(n/2)` of all eligible
+client inboxes.
+
+ESP-balanced A/B (D192) splits independently inside Outlook and
+inside Gmail (`ceil` of each ESP to A). Odd ESP counts leave B
+smaller than half. SalesGlider 345263: 94 eligible → Outlook 63
+(A32/B31) + Gmail 31 (A16/B15) → A48 / B46. NY ISO week 38 is a
+B fortnight. ACTIVE SG campaigns staffed all 46 on-week B seats
+and still paged `understaffed` / "not enough inboxes" because
+`staffFloorForCampaign` demanded 47.
+
+Understaffed means an on-week seat that should be attached is
+missing. A full on-week pod is compliant even when that pod is
+smaller than half. Do not borrow GENERIC / pool senders to chase
+the old half (D193). No InboxKit buy.
+
+`clientInboxStaffFloor` (even-split half) stays as the fallback
+when on-week counts are not supplied, and as the label when the
+numbers match ("half this client's inboxes"). Otherwise the
+detail says "on-week client pod". No named-client exception —
+Vasco uses the same rule (D82).
+
+**Why.** Health / campaign-check / top-up remediates a 46/47
+short it can never close without violating D193 or buying seats.
+The false finding lasts the whole B fortnight.
+
+**Rejected.** Lowering the floor to `min(half, onWeek)` only —
+that would hide a missing A-week seat when A is 48 and half is
+47. Redefining "eligible" to exclude off-week from the *total*
+then taking half (would be 23). Generic backfill.
+
+**Supersedes / amends.** Qualifies D58/D82 half-client floor
+(size is the on-week pod). Does not reverse D43/D59 (on-week
+staffs every ACTIVE). Does not reverse D192 ESP-balanced cut.
+Does not reverse D193 (no GENERIC backfill). Does not reverse
+D99/D176 (held / attach-blocked still do not inflate the floor).
+
+**Guards.** canon D196: 94 eligible ESP-odd, onWeek=B → floor 46;
+45 staffable is short 1; A week 48 seats is not understaffed
+against 48; generics excluded; CANON names the on-week caveat.
 
 ---
 

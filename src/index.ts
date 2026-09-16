@@ -2617,7 +2617,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(`[boot] Monitor cron: ${config.cronMonitor} (measure/remediate/DNS)`);
     console.log(
-      `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; D58 half-client-inbox floor; auto-resume protective pauses)` : "disabled"}`,
+      `[boot] Campaign health: ${config.enableCampaignHealth ? `ENABLED (${config.cronHealth}; D196 on-week client-pod floor; auto-resume protective pauses)` : "disabled"}`,
     );
     console.log(
       `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
@@ -2632,7 +2632,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (Outlook 15/day, Gmail/SMTP ${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
-      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (half-client-inbox floor; generics on POC ${config.pocClientNamePatterns.join("/") || "nobody"} or Slack approve${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (on-week client-pod floor; generics on POC ${config.pocClientNamePatterns.join("/") || "nobody"} or Slack approve${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
     );
     console.log(
       `[boot] Pool provisioner: ${config.enablePoolProvisioner ? `ENABLED (${config.cronPoolProvision})` : "disabled"} phase=${state.get().poolProvision.phase}`,

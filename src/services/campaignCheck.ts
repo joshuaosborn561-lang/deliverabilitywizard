@@ -20,7 +20,9 @@ import {
 } from "../lib/campaignCheck.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import {
-  countClientInboxesByKey,
+  clientCountKey,
+  countClientInboxFloors,
+  formatStaffFloorDetail,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -145,8 +147,9 @@ export interface CampaignCheckResult {
 
 /**
  * D81 — when a campaign id is new, run the first-check. After it passes,
- * hourly sweeps watch pod/shell, signatures, canaries, the half-client
- * floor, and merge-tag fill (D180). Bounce auto-pause is not this checker.
+ * hourly sweeps watch pod/shell, signatures, canaries, the on-week
+ * client-pod floor (D196), and merge-tag fill (D180). Bounce auto-pause
+ * is not this checker.
  */
 export class CampaignCheckService {
   constructor(
@@ -188,7 +191,7 @@ export class CampaignCheckService {
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
     );
-    const clientInboxCounts = countClientInboxesByKey(
+    const clientInboxFloors = countClientInboxFloors(
       accounts as SmartleadAccountWithCampaigns[],
       campaigns as SmartleadCampaign[],
       clients,
@@ -340,7 +343,8 @@ export class CampaignCheckService {
         tested,
         listedTests,
         knownGoodEmails,
-        clientInboxCounts,
+        clientInboxCounts: clientInboxFloors.eligible,
+        onWeekInboxCounts: clientInboxFloors.onWeek,
         connectedCanaries,
         fleetSize: fleetEmails.length,
         fleetDown,
@@ -613,7 +617,7 @@ export class CampaignCheckService {
       action: buildIsolationAction({
         kind: "generic_backfill",
         title: `Generics on ${name}`,
-        proof: `Pool generics are attached to #${campaign.id} ${name}. Floor stays half this client's inboxes. Tap Allow generics if they should stay.`,
+        proof: `Pool generics are attached to #${campaign.id} ${name}. Floor stays the on-week client pod (D193/D196). Tap Allow generics if they should stay.`,
         detail: { campaignId: campaign.id, campaignName: name },
       }),
     });
@@ -867,6 +871,7 @@ export class CampaignCheckService {
     listedTests: SpamTestSummary[];
     knownGoodEmails: Set<string>;
     clientInboxCounts: Map<string, number>;
+    onWeekInboxCounts: Map<string, number>;
     connectedCanaries: number;
     fleetSize: number;
     fleetDown: boolean;
@@ -1137,12 +1142,15 @@ export class CampaignCheckService {
         campaign,
         input.clientInboxCounts,
         clientName,
+        input.onWeekInboxCounts,
       );
       const shortBy = Math.max(0, floor - serving.length);
       if (input.depth === "hourly" && shortBy > 0) {
+        const eligible =
+          input.clientInboxCounts.get(clientCountKey(campaign.client_id)) ?? 0;
         findings.push({
           kind: "understaffed",
-          detail: `staffable ${serving.length}/${floor} (half this client's inboxes)`,
+          detail: formatStaffFloorDetail(serving.length, floor, eligible),
         });
       }
       if (

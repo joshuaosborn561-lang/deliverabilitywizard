@@ -205,6 +205,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
 | D193 | Live | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
+| D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 
 ---
 
@@ -5956,6 +5957,57 @@ D134-approved TechEvo/BCP/SG campaign; one-client / fan-out / top-up
 do not add GENERIC getintroduced* onto those ids; CANON names D193.
 Tests: leftover approval does not restore / fan / top-up onto
 TechEvo; pool-brand hosts classify as generic.
+
+## D194 — Deliverability Slack bot owns #deliverability one-taps
+
+**Decision (Josh 2026-09-16).** Ship a dedicated Slack app/bot for
+`#deliverability` (`C0BJQUTV7A8`) with pressable Block Kit buttons
+that update deliverability state. Stop answering those gates as
+"reply as Josh via Cursor MCP" text.
+
+1. Interactivity stays on the existing Wizard HTTP path:
+   `POST /slack/interactions` (signing-secret verified) plus
+   optional `POST /slack/events` for url_verification. Not Socket
+   Mode. Not a second Bolt process.
+2. Dedicated env (no secrets in repo):
+   `DELIVERABILITY_SLACK_BOT_TOKEN`,
+   `DELIVERABILITY_SLACK_SIGNING_SECRET`,
+   `DELIVERABILITY_SLACK_CHANNEL_ID` (default `C0BJQUTV7A8`).
+   Empty token/secret fall back to the legacy `SLACK_*` pair so
+   one app can serve both until Josh installs the new one.
+3. First action_ids: `dlv_apply_copy` / `dlv_deny_copy` (Josh-only
+   Apply vs leave live copy — calls existing `swap_copy` decide
+   when a pending ask exists), `dlv_retire_approve` /
+   `dlv_retire_deny` (Cayden or Josh; reuses the existing retire /
+   cover-buy isolation execute when a pending ask exists; does
+   **not** invent a new spend when none exists),
+   `dlv_leave_active` / `dlv_keep_paused` (standing START/PAUSE
+   pref for `campaign_id` in message metadata — records project
+   state, does not auto-START/PAUSE), `dlv_generics_not_now`
+   (Josh-only Allow-generics gate → Not now; never Allow).
+4. `#campaign-watchdog` stays owned by the separate Cursor / Lead
+   Top Up Slack identity. This app does not post there.
+5. Does not change the Goliath Oct 15 campaign PAUSE hold or the
+   Insight SEG pause standing pref. `REQUIRE_SPEND_APPROVAL`
+   stays on.
+
+**Why.** Josh asked for pressable buttons in #deliverability that
+update CANON / project prefs, not more chat-as-Josh text. Watchdog
+already has its own Slack identity; taking that channel over would
+mix two owners.
+
+**Rejected.** A parallel Bolt stack. Posting Watchdog alerts from
+this bot. Auto-spending on Retire/Buy when no pending wizard ask
+exists. Flipping Goliath / Insight SEG standing prefs from a tap.
+
+**Supersedes / amends.** Amends D71 / D49 / D190 only for the
+dedicated #deliverability one-tap surface. Does not reverse D40
+(no auto-START), D181/D190 Goliath hold, or D193 client-inbox-only.
+
+**Guards.** canon D194: default channel `C0BJQUTV7A8`; `dlv_*`
+action_ids handled on `/slack/interactions`; Watchdog channel
+never used by the decision-card helper; Goliath / Insight SEG
+standing prefs refused; CANON names D194.
 
 ---
 

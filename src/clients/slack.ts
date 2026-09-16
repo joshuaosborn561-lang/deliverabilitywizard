@@ -16,6 +16,14 @@ import {
   SWAP_EDIT_ACTION_ID,
   swapEditModalView,
 } from "../lib/slackSwapEdit.js";
+import {
+  DELIVERABILITY_SLACK_CHANNEL_ID,
+  WATCHDOG_SLACK_CHANNEL_NAME,
+  buildDeliverabilityDecisionCard,
+  deliverabilityBotToken,
+  deliverabilityChannelId,
+  type DlvCardKind,
+} from "../lib/deliverabilitySlack.js";
 
 export interface SlackCredentials {
   webhookUrl?: string;
@@ -27,6 +35,10 @@ export interface SlackCredentials {
   /** Used to sign /slack/action links so buttons work even when posted by another bot. */
   actionLinkSecret?: string;
   publicBaseUrl?: string;
+  /** D194 — dedicated Deliverability bot. Falls back to botToken when empty. */
+  deliverabilityBotToken?: string;
+  /** D194 — #deliverability (C0BJQUTV7A8). Never #campaign-watchdog. */
+  deliverabilityChannelId?: string;
 }
 
 export function readSlackBotToken(creds: SlackCredentials): string {
@@ -76,6 +88,49 @@ export class SlackClient {
 
   async notifyActionResult(text: string): Promise<void> {
     await this.send(text, undefined, "action_result");
+  }
+
+  /**
+   * D194 — post a Block Kit decision card into #deliverability with the
+   * dedicated bot. Does not post to #campaign-watchdog.
+   */
+  async notifyDeliverabilityDecision(input: {
+    kind: DlvCardKind;
+    campaignId: number;
+    campaignName: string;
+    reason: string;
+    isolationActionId?: string;
+    clientId?: number;
+  }): Promise<void> {
+    const card = buildDeliverabilityDecisionCard(input);
+    const channel = deliverabilityChannelId({
+      deliverabilitySlackChannelId: this.creds.deliverabilityChannelId,
+    });
+    if (
+      channel.toLowerCase() === WATCHDOG_SLACK_CHANNEL_NAME ||
+      channel === "campaign-watchdog"
+    ) {
+      throw new Error(
+        "Deliverability one-taps must not post to #campaign-watchdog (D194).",
+      );
+    }
+    const token =
+      deliverabilityBotToken({
+        deliverabilitySlackBotToken: this.creds.deliverabilityBotToken,
+        slackBotToken: readSlackBotToken(this.creds),
+      }) || readSlackBotToken(this.creds);
+    if (!token) {
+      throw new Error(
+        "Deliverability Slack bot is not configured. Set DELIVERABILITY_SLACK_BOT_TOKEN (or SLACK_BOT_TOKEN).",
+      );
+    }
+    await this.postChatMessage({
+      token,
+      channel: channel || DELIVERABILITY_SLACK_CHANNEL_ID,
+      text: card.text,
+      blocks: card.blocks,
+      metadata: card.metadata,
+    });
   }
 
   /**
@@ -149,19 +204,34 @@ export class SlackClient {
     if (!channel) {
       throw new Error("SLACK_CHANNEL_ID (or SLACK_CHANNEL) is required with SLACK_BOT_TOKEN");
     }
-
-    const payload: Record<string, unknown> = {
+    await this.postChatMessage({
+      token: readSlackBotToken(this.creds),
       channel,
       text,
+      blocks,
+    });
+  }
+
+  private async postChatMessage(input: {
+    token: string;
+    channel: string;
+    text: string;
+    blocks?: unknown[];
+    metadata?: { event_type: string; event_payload: Record<string, string | number> };
+  }): Promise<void> {
+    const payload: Record<string, unknown> = {
+      channel: input.channel,
+      text: input.text,
       unfurl_links: false,
       unfurl_media: false,
     };
-    if (blocks?.length) payload.blocks = blocks;
+    if (input.blocks?.length) payload.blocks = input.blocks;
+    if (input.metadata) payload.metadata = input.metadata;
 
     const response = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${readSlackBotToken(this.creds)}`,
+        Authorization: `Bearer ${input.token}`,
         "Content-Type": "application/json; charset=utf-8",
       },
       body: JSON.stringify(payload),

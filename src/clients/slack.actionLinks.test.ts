@@ -96,4 +96,35 @@ describe("isolation Slack URL buttons", () => {
     assert.match(actions?.[1]?.value ?? "", /:edit$/);
     assert.equal(actions?.[2]?.text?.text, "Not now");
   });
+
+  it("D194: decision cards post to #deliverability, never Watchdog", async () => {
+    const client = new SlackClient({
+      channelLabel: "#test",
+      deliverabilityBotToken: "xoxb-test",
+      deliverabilityChannelId: "C0BJQUTV7A8",
+    });
+    const posts: Array<Record<string, unknown>> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, init?: { body?: string }) => {
+      posts.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+      return {
+        ok: true,
+        json: async () => ({ ok: true }),
+      } as Response;
+    }) as typeof fetch;
+    try {
+      await client.notifyDeliverabilityDecision({
+        kind: "standing",
+        campaignId: 3739758,
+        campaignName: "SG Engagers",
+        reason: "Standing pref.",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    assert.equal(posts[0]?.channel, "C0BJQUTV7A8");
+    assert.notEqual(posts[0]?.channel, "#campaign-watchdog");
+    const meta = posts[0]?.metadata as { event_payload?: { campaign_id?: number } };
+    assert.equal(meta.event_payload?.campaign_id, 3739758);
+  });
 });

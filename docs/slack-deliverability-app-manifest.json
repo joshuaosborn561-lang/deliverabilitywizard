@@ -1,0 +1,31 @@
+{
+  "display_information": {
+    "name": "SalesGlider Deliverability",
+    "description": "Interactive one-tap decisions for #deliverability. Does not post to #campaign-watchdog.",
+    "background_color": "#0f172a"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Deliverability",
+      "always_online": true
+    }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": ["chat:write", "commands"]
+    }
+  },
+  "settings": {
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://deliverabilitywizard-production.up.railway.app/slack/interactions"
+    },
+    "event_subscriptions": {
+      "request_url": "https://deliverabilitywizard-production.up.railway.app/slack/events",
+      "bot_events": []
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

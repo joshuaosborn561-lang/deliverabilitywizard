@@ -63,7 +63,8 @@ unset. `/health` is the only unauthenticated operational endpoint.
 ## Environment variables
 
 Copy `.env.example` and fill in the required keys: `SMARTLEAD_API_KEY`
-plus Slack (`SLACK_WEBHOOK_URL`, or bot token + channel). The full set
+plus Slack (`SLACK_WEBHOOK_URL`, or bot token + channel). Dedicated
+#deliverability one-taps use `DELIVERABILITY_SLACK_*` (D194). The full set
 lives in `src/config.ts`; the load-bearing ones:
 
 | Variable | Default | Description |
@@ -79,6 +80,9 @@ lives in `src/config.ts`; the load-bearing ones:
 | `MAX_MAILBOXES_PER_TEST` | `50` | SmartDelivery API limit per test |
 | `TOP_UP_EXCLUDE_CAMPAIGNS` | MSRS / HVAC / Roofers ids | Campaigns the staffing loop leaves alone |
 | `REQUIRE_SPEND_APPROVAL` | `true` | Hold real-money spend for `/approvals`; single-use approvals, $25 domain / 25 mailbox monthly caps |
+| `DELIVERABILITY_SLACK_BOT_TOKEN` | _(empty)_ | Dedicated xoxb for #deliverability interactive one-taps (D194). Falls back to `SLACK_BOT_TOKEN` |
+| `DELIVERABILITY_SLACK_SIGNING_SECRET` | _(empty)_ | Signing secret for `/slack/interactions` + `/slack/events`. Falls back to `SLACK_SIGNING_SECRET` |
+| `DELIVERABILITY_SLACK_CHANNEL_ID` | `C0BJQUTV7A8` | #deliverability. Never #campaign-watchdog |
 | `RUN_TOKEN` | _(empty)_ | Required to enable `/status`, `/run`, `/approvals/*` |
 | `OPS_UI_ENABLED` + owner/operator usernames, tokens, `OPS_SESSION_SECRET` | — | Employee console; never reuse `RUN_TOKEN` for login |
 | `DRY_RUN` | `false` | Plan writes without applying; skips pool buys entirely |

@@ -25,7 +25,12 @@ import {
   handleDeliverabilitySlackAction,
   isDlvActionId,
   deliverabilitySigningSecrets,
+  DLV_APPLY_COPY,
+  DLV_RETIRE_APPROVE,
+  DLV_LEAVE_ACTIVE,
+  parseDlvButtonValue,
 } from "./lib/deliverabilitySlack.js";
+import { resolveIsolationAskMessage } from "./lib/slackAskResolve.js";
 import {
   SWAP_EDIT_CALLBACK_ID,
   SWAP_EDIT_INPUT_BLOCK_ID,
@@ -1334,6 +1339,64 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     return kind;
   };
 
+  // D195 — map a dlv_* action to the resolved-summary kind.
+  const dlvKindForStrip = (actionId: string): string => {
+    if (actionId.includes("copy")) return "swap_copy";
+    if (actionId.includes("retire")) return "retire_domain";
+    if (actionId.includes("generics")) return "generic_backfill";
+    return "standing";
+  };
+
+  // D195 — after an ask resolves, strip its buttons. Prefer the tap's
+  // response_url (replace_original); fall back to chat.update with the
+  // posting token when the ask carries the stamped channel + ts. Best
+  // effort — a strip failure never fails the decision.
+  const stripResolvedAsk = async (opts: {
+    actionId?: string;
+    kind: string;
+    decision: "approve" | "deny";
+    responseUrl?: string;
+    summary?: string;
+    detail?: string;
+  }): Promise<void> => {
+    const action = opts.actionId
+      ? state.getIsolationAction(opts.actionId)
+      : undefined;
+    const campaignName =
+      typeof action?.detail.campaignName === "string" &&
+      action.detail.campaignName.trim()
+        ? action.detail.campaignName
+        : undefined;
+    const summary =
+      opts.summary ??
+      `*${campaignName ?? action?.title ?? "Deliverability ask"}*`;
+    try {
+      const result = await resolveIsolationAskMessage({
+        responseUrl: opts.responseUrl,
+        channel:
+          typeof action?.detail.slackChannel === "string"
+            ? action.detail.slackChannel
+            : undefined,
+        ts:
+          typeof action?.detail.slackTs === "string"
+            ? action.detail.slackTs
+            : undefined,
+        botToken: slack.postingBotToken(),
+        summary,
+        kind: opts.kind,
+        decision: opts.decision,
+        detail: opts.detail,
+      });
+      if (!result.ok && result.via !== "none") {
+        console.warn(
+          `[slack] could not strip resolved ask buttons via ${result.via}: ${result.error ?? "unknown"}`,
+        );
+      }
+    } catch (error) {
+      console.warn("[slack] strip resolved ask failed", error);
+    }
+  };
+
   const readSignedSlackAction = (src: Record<string, unknown>) => {
     const id = typeof src.id === "string" ? src.id : "";
     const decision = typeof src.decision === "string" ? src.decision : "";
@@ -1494,6 +1557,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             }),
           });
         }
+        const decideKind = pending?.kind ?? "request";
         const result = await isolationExecute.decide(
           parsed.id,
           parsed.decision,
@@ -1508,6 +1572,19 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
               body: result.message,
             }),
           );
+        // D195 — confirm-page POST has no response_url; strip the original
+        // Slack card's buttons via chat.update using the stamped channel + ts.
+        if (
+          result.ok &&
+          (parsed.decision === "approve" || parsed.decision === "deny")
+        ) {
+          void stripResolvedAsk({
+            actionId: parsed.id,
+            kind: decideKind,
+            decision: parsed.decision,
+            detail: result.message,
+          });
+        }
       } catch (error) {
         res
           .status(500)
@@ -1631,6 +1708,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           void isolationExecute
             .decide(actionId, "approve", { name, role })
             .then(async (result) => {
+              // D195 — no response_url on a view_submission; strip via
+              // chat.update using the stamped channel + ts.
+              if (result.ok) {
+                await stripResolvedAsk({
+                  actionId,
+                  kind: "swap_copy",
+                  decision: "approve",
+                  detail: result.message,
+                });
+              }
               await slack.notifyActionResult(result.message);
             })
             .catch((error) => {
@@ -1649,16 +1736,38 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           res.status(200).json({
             text: "Working on it — I will post here when it is done.",
           });
+          const dlvValue = payload.actions?.[0]?.value;
+          const dlvMeta = payload.message?.metadata?.event_payload ?? null;
+          const dlvIsolationId =
+            parseDlvButtonValue(dlvValue, dlvMeta)?.isolationActionId;
+          const dlvDecision: "approve" | "deny" =
+            actionId === DLV_APPLY_COPY ||
+            actionId === DLV_RETIRE_APPROVE ||
+            actionId === DLV_LEAVE_ACTIVE
+              ? "approve"
+              : "deny";
           void handleDeliverabilitySlackAction({
             actionId,
-            value: payload.actions?.[0]?.value,
-            messageMetadata: payload.message?.metadata?.event_payload ?? null,
+            value: dlvValue,
+            messageMetadata: dlvMeta,
             actor: { name, role },
             state,
             isolationExecute,
           })
             .then(async (result) => {
               const text = result.message;
+              // D195 — strip the dlv card buttons via the tap's response_url
+              // (replace_original) once the one-tap resolves.
+              if (result.ok) {
+                await stripResolvedAsk({
+                  actionId: dlvIsolationId,
+                  kind: dlvKindForStrip(actionId),
+                  decision: dlvDecision,
+                  responseUrl: payload.response_url,
+                  detail: text,
+                });
+                return;
+              }
               if (payload.response_url) {
                 await fetch(payload.response_url, {
                   method: "POST",
@@ -1768,10 +1877,24 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.status(200).json({
           text: "Working on it — I will post here when it is done.",
         });
+        const decideDecision = parsed.decision;
         void isolationExecute
           .decide(parsed.id, parsed.decision, { name, role })
           .then(async (result) => {
             const text = result.message;
+            // D195 — swap_copy Use suggested / Not now are native buttons, so
+            // the tap hands us a response_url. Strip the buttons with
+            // replace_original; the resolved summary carries the outcome.
+            if (result.ok && parsed.kind === "swap_copy") {
+              await stripResolvedAsk({
+                actionId: parsed.id,
+                kind: parsed.kind,
+                decision: decideDecision,
+                responseUrl: payload.response_url,
+                detail: text,
+              });
+              return;
+            }
             if (payload.response_url) {
               await fetch(payload.response_url, {
                 method: "POST",

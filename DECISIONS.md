@@ -206,6 +206,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
 | D193 | Live | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
+| D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 
 ---
 
@@ -6008,6 +6009,63 @@ dedicated #deliverability one-tap surface. Does not reverse D40
 action_ids handled on `/slack/interactions`; Watchdog channel
 never used by the decision-card helper; Goliath / Insight SEG
 standing prefs refused; CANON names D194.
+
+---
+
+## D195 — Strip Slack ask buttons after resolve; Josh soft-gift / identity voice
+
+**Decision (Josh 2026-09-16).** Two fixes to the #deliverability decision
+cards.
+
+1. **Strip the buttons once an ask is resolved.** After *Use suggested* /
+   *Write my own* / *Not now* / *Allow generics* resolve / *Buy* resolve,
+   the D133 parent card in `#deliverability` must lose its action buttons so
+   nobody double-taps a settled ask. A `chat.update` with the Watchdog /
+   `ai_reply_handler2` token returns `cant_update_message` — the card is
+   usually posted as *Deliverability Wizard* — so the strip goes through:
+   - **the tap's `response_url` with `replace_original: true`** first (native
+     buttons hand us a signed URL that edits the exact message regardless of
+     posting identity), section blocks only, **no actions block**; then
+   - **`chat.update` with the posting bot token** when the ask carries the
+     `detail.slackChannel` + `detail.slackTs` stamped at post time (the
+     modal-submit and confirm-page paths, which have no `response_url`).
+
+   `swap_copy` **Use suggested** / **Not now** are therefore **native**
+   buttons (no confirm-page `url`) so Slack sends a `response_url`. *Write my
+   own* stays native (D153). Buy / retire / generics may keep their URL
+   confirm pages (they strip via the stamped channel + ts). When
+   `notifyIsolationAction` posts the card, the returned channel + ts are
+   stamped on the isolation action.
+
+2. **Josh's locked TechEvo soft-gift + identity voice.** The suggested
+   REPLACE endings stop saying the weak "if useful." The D171 lead-in
+   (`{I'd like to offer|Happy to offer}`) is unchanged:
+   - AirPods → `{I'd like to offer|Happy to offer} a pair of AirPods if you
+     would like, on me.`
+   - Jet ski → `{I'd like to offer|Happy to offer} a jet ski outing on me.`
+   - Tickets → `{I'd like to offer|Happy to offer} {{Local_Sports_Team}}
+     tickets if you're interested.`
+   - Company-identity openers use `so you know, we're {Brand}.` (no double
+     period) — not a brace-strip-only soften.
+
+**Why.** Resolved asks kept their buttons because the wrong identity's token
+cannot edit a Deliverability Wizard message; the response_url the button tap
+carries is the only reliable editor when the poster differs. And Josh wanted
+the gift to read as a gift ("on me"), not a hedge ("if useful").
+
+**Rejected.** Using a non-posting bot token for `chat.update` as the primary
+path (returns `cant_update_message`). Changing live Smartlead copy. Reversing
+the D171 lead-in.
+
+**Supersedes / amends.** Amends D170/D171 offer *endings* (lead-in kept) and
+the D153/D194 Slack card lifecycle. Does not reverse D133 (fleet-wide apply),
+D40, or any spend gate.
+
+**Guards.** canon D195: `buildResolvedAskBlocks` emits no actions block;
+`resolveIsolationAskMessage` prefers `response_url`, falls back to
+`chat.update`; `swap_copy` buttons carry no confirm url; the posted channel +
+ts are stamped; `companyIdentitySubstitute` exists and no offer default ends
+in "if useful."; CANON names D195.
 
 ---
 

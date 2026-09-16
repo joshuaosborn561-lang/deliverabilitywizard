@@ -397,9 +397,17 @@ async function notifyAndStamp(
   slack: Pick<SlackClient, "notifyIsolationAction">,
   action: IsolationActionRecord,
 ): Promise<void> {
-  await notifyIsolationActionRecord(slack, action);
+  const posted = await notifyIsolationActionRecord(slack, action);
+  const current = store.getIsolationAction(action.id) ?? action;
+  // D195 — remember where the card landed so a later resolve can strip its
+  // buttons via chat.update with the posting token when there is no
+  // response_url (modal-submit / confirm-page paths).
+  const detail: Record<string, unknown> = { ...current.detail };
+  if (posted?.channel) detail.slackChannel = posted.channel;
+  if (posted?.ts) detail.slackTs = posted.ts;
   const stamped: IsolationActionRecord = {
-    ...(store.getIsolationAction(action.id) ?? action),
+    ...current,
+    detail,
     lastNotifiedAt: new Date().toISOString(),
   };
   store.upsertIsolationAction(stamped);
@@ -408,8 +416,8 @@ async function notifyAndStamp(
 export async function notifyIsolationActionRecord(
   slack: Pick<SlackClient, "notifyIsolationAction">,
   action: IsolationActionRecord,
-): Promise<void> {
-  await slack.notifyIsolationAction({
+): Promise<{ channel?: string; ts?: string } | undefined> {
+  return slack.notifyIsolationAction({
     title: action.title,
     proof: action.proof,
     actionId: action.id,
@@ -730,22 +738,45 @@ function offerLead(rest: string): string {
   return `${OFFER_LEAD_SPINTAX} ${rest}`;
 }
 
+/**
+ * D195 — Josh-locked TechEvo soft-gift voice. The offer is a gift, not a
+ * weak "if useful": AirPods land "if you would like, on me.", experiences
+ * are "on me.", and tickets are "if you're interested." The D171 lead-in
+ * (`{I'd like to offer|Happy to offer}`) is unchanged.
+ */
 function offerSubstitute(text: string): string {
   const phrase = extractOfferPhrase(text);
-  if (!phrase) return offerLead("that if useful.");
+  if (!phrase) return offerLead("that on me.");
   const experiential = /jet[\s-]?ski|round of golf|tee time/i.test(phrase);
   if (/air\s*pods?|airpods/i.test(phrase)) {
-    return offerLead("a pair of AirPods if useful.");
+    return offerLead("a pair of AirPods if you would like, on me.");
   }
   if (experiential) {
-    return offerLead(`a ${phrase.replace(/^a\s+/i, "")} outing if useful.`);
+    return offerLead(`a ${phrase.replace(/^a\s+/i, "")} outing on me.`);
   }
-  return offerLead(`${phrase} if useful.`);
+  return offerLead(`${phrase} if you're interested.`);
 }
 
 function ctaSubstitute(text: string): string {
   if (isOfferLine(text)) return offerSubstitute(text);
-  return "Happy to send more if useful.";
+  return "Happy to send more if that would help.";
+}
+
+/**
+ * D195 — company-identity openers ("{quick context,|for context,} we're
+ * TechEvolution.") become a plain "so you know, we're {Brand}." rather than
+ * a brace-strip-only soften. Keeps the company name; drops the throat-clear.
+ */
+function extractCompanyBrand(text: string): string | undefined {
+  const match = text.match(/\bwe(?:'re| are)\s+([A-Za-z][\w&'-]*)/i);
+  const brand = match?.[1]?.replace(/[.'\-]+$/, "").trim();
+  return brand || undefined;
+}
+
+export function companyIdentitySubstitute(text: string): string {
+  const brand = extractCompanyBrand(text);
+  if (!brand) return softenGeneric(text);
+  return `so you know, we're ${brand}.`;
 }
 
 function softenGeneric(text: string): string {
@@ -852,10 +883,10 @@ export function suggestedCopySwap(
   }
   if (job === "cta") return plainProseSubstitute(trimmed, ctaSubstitute(text));
 
-  // D170 — "we're TechEvolution" identity openers keep the company name
-  // with a light soften. Never "Quick note —".
+  // D170/D195 — "we're TechEvolution" identity openers keep the company
+  // name as "so you know, we're {Brand}." Never "Quick note —".
   if (isCompanyIdentityLine(text)) {
-    return plainProseSubstitute(trimmed, softenGeneric(text));
+    return plainProseSubstitute(trimmed, companyIdentitySubstitute(text));
   }
 
   // Generic: keep the line, lightly softened. Never "Quick note —" and

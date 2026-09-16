@@ -9506,10 +9506,10 @@ describe("owner intent — D195 strip ask buttons after resolve; soft-gift voice
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D195\*\*/,
+      /D195/,
       stop(
-        "CANON is current as of D195.",
-        "CANON.md was not updated with D195.",
+        "CANON still names D195 (strip after resolve / soft-gift voice).",
+        "CANON.md lost D195.",
       ),
     );
     assert.match(

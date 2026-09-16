@@ -6693,17 +6693,17 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
       {
         line: "{I've got|I have} a pair of Air Pods for you.",
         offer: /Air\s*Pods/i,
-        rest: /a pair of AirPods if useful/,
+        rest: /a pair of AirPods if you would like, on me/,
       },
       {
         line: "I've got a jet ski you can take out this weekend.",
         offer: /jet\s*ski/i,
-        rest: /jet ski outing if useful/,
+        rest: /jet ski outing on me/,
       },
       {
         line: "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
         offer: /Local_Sports_Team/,
-        rest: /\{\{Local_Sports_Team\}\} tickets if useful/,
+        rest: /\{\{Local_Sports_Team\}\} tickets if you're interested/,
       },
     ];
     for (const row of cases) {
@@ -9352,10 +9352,10 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D194\*\*/,
+      /Canon as of \*\*D\d+\*\*/,
       stop(
-        "CANON is current as of D194.",
-        "CANON.md was not updated with D194.",
+        "CANON keeps a well-formed 'Canon as of **Dn**' header (meta guard owns currency).",
+        "CANON.md lost its 'Canon as of' header.",
       ),
     );
     assert.match(

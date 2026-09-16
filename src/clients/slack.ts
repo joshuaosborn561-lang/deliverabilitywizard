@@ -17,6 +17,10 @@ import {
   swapEditModalView,
 } from "../lib/slackSwapEdit.js";
 import {
+  resolveIsolationAskMessage,
+  type SlackAskResolveStatus,
+} from "../lib/slackAskResolve.js";
+import {
   DELIVERABILITY_SLACK_CHANNEL_ID,
   WATCHDOG_SLACK_CHANNEL_NAME,
   buildDeliverabilityDecisionCard,
@@ -66,7 +70,7 @@ export class SlackClient {
     text: string,
     blocks?: unknown[],
     kind?: SlackAllowKind,
-  ): Promise<void> {
+  ): Promise<{ channel?: string; ts?: string } | void> {
     if (!slackAllowed(kind)) {
       console.log(
         `[slack-quiet] dropped ${kind ?? "unclassified"}: ${text.replace(/\n/g, " ").slice(0, 200)}`,
@@ -74,11 +78,12 @@ export class SlackClient {
       return;
     }
     if (readSlackBotToken(this.creds)) {
-      await this.sendViaBot(text, blocks);
-      return;
+      return this.sendViaBot(text, blocks);
     }
     if (this.creds.webhookUrl) {
       await this.sendViaWebhook(text, blocks);
+      // Incoming webhooks do not return channel/ts — response_url must
+      // close those parents (D195).
       return;
     }
     throw new Error(
@@ -199,12 +204,15 @@ export class SlackClient {
     }
   }
 
-  private async sendViaBot(text: string, blocks?: unknown[]): Promise<void> {
+  private async sendViaBot(
+    text: string,
+    blocks?: unknown[],
+  ): Promise<{ channel?: string; ts?: string }> {
     const channel = this.creds.channelId || this.creds.channelLabel;
     if (!channel) {
       throw new Error("SLACK_CHANNEL_ID (or SLACK_CHANNEL) is required with SLACK_BOT_TOKEN");
     }
-    await this.postChatMessage({
+    return this.postChatMessage({
       token: readSlackBotToken(this.creds),
       channel,
       text,
@@ -218,7 +226,7 @@ export class SlackClient {
     text: string;
     blocks?: unknown[];
     metadata?: { event_type: string; event_payload: Record<string, string | number> };
-  }): Promise<void> {
+  }): Promise<{ channel?: string; ts?: string }> {
     const payload: Record<string, unknown> = {
       channel: input.channel,
       text: input.text,
@@ -237,12 +245,47 @@ export class SlackClient {
       body: JSON.stringify(payload),
     });
 
-    const body = (await response.json()) as { ok?: boolean; error?: string };
+    const body = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      channel?: string;
+      ts?: string;
+    };
     if (!response.ok || !body.ok) {
       throw new Error(
         `Slack chat.postMessage failed: ${body.error || `HTTP ${response.status}`}`,
       );
     }
+    return { channel: body.channel, ts: body.ts };
+  }
+
+  /**
+   * D195 — strip action buttons on the original ask after decide.
+   * Prefers response_url replace_original; else chat.update with the
+   * posting bot (file token / deliverability token / env token).
+   */
+  async resolveIsolationAsk(input: {
+    responseUrl?: string;
+    channel?: string;
+    ts?: string;
+    title?: string;
+    status: SlackAskResolveStatus;
+    resultText: string;
+  }): Promise<{ ok: boolean; via?: string; error?: string }> {
+    const token =
+      deliverabilityBotToken({
+        deliverabilitySlackBotToken: this.creds.deliverabilityBotToken,
+        slackBotToken: readSlackBotToken(this.creds),
+      }) || readSlackBotToken(this.creds);
+    return resolveIsolationAskMessage({
+      responseUrl: input.responseUrl,
+      token: token || undefined,
+      channel: input.channel,
+      ts: input.ts,
+      title: input.title,
+      status: input.status,
+      resultText: input.resultText,
+    });
   }
 
   async notifyQuotaBlocked(details: {
@@ -1071,7 +1114,7 @@ export class SlackClient {
     element?: string;
     suggestedSwap?: string;
     campaignName?: string;
-  }): Promise<void> {
+  }): Promise<{ channel?: string; ts?: string } | void> {
     const approveLabel =
       details.kind === "swap_copy"
         ? "Use suggested edit"
@@ -1151,6 +1194,10 @@ export class SlackClient {
       );
       return;
     }
+    // D195 — copy swaps use native buttons so response_url can strip
+    // them after Apply / Not now / Write-my-own. Other kinds keep the
+    // confirm-page URL when configured.
+    const useNativeDecide = details.kind === "swap_copy";
     const elements: Array<Record<string, unknown>> = [
       {
         type: "button",
@@ -1158,7 +1205,7 @@ export class SlackClient {
         style: "primary",
         action_id: "isolation_approve",
         value: approveValue,
-        ...(approveUrl ? { url: approveUrl } : {}),
+        ...(!useNativeDecide && approveUrl ? { url: approveUrl } : {}),
       },
     ];
     // D153 — native interactive button (no url). URL buttons skip
@@ -1176,9 +1223,12 @@ export class SlackClient {
       text: { type: "plain_text", text: "Not now" },
       action_id: "isolation_deny",
       value: denyValue,
-      ...(denyUrl ? { url: denyUrl } : {}),
+      ...(!useNativeDecide && denyUrl ? { url: denyUrl } : {}),
     });
-    await this.send(
+    // D195 — swap_copy Use suggested / Not now must be native buttons
+    // (no url) so /slack/interactions gets response_url and can
+    // replace_original to strip the row. Confirm-page URLs skip that.
+    const posted = await this.send(
       text,
       [
         {
@@ -1192,6 +1242,7 @@ export class SlackClient {
       ],
       kind,
     );
+    return posted ?? undefined;
   }
 
   async notifyLeadRunout(details: { text: string }): Promise<void> {

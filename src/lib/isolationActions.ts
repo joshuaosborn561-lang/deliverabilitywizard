@@ -397,10 +397,16 @@ async function notifyAndStamp(
   slack: Pick<SlackClient, "notifyIsolationAction">,
   action: IsolationActionRecord,
 ): Promise<void> {
-  await notifyIsolationActionRecord(slack, action);
+  const posted = await notifyIsolationActionRecord(slack, action);
+  const current = store.getIsolationAction(action.id) ?? action;
   const stamped: IsolationActionRecord = {
-    ...(store.getIsolationAction(action.id) ?? action),
+    ...current,
     lastNotifiedAt: new Date().toISOString(),
+    detail: {
+      ...current.detail,
+      ...(posted?.channel ? { slackChannel: posted.channel } : {}),
+      ...(posted?.ts ? { slackTs: posted.ts } : {}),
+    },
   };
   store.upsertIsolationAction(stamped);
 }
@@ -408,8 +414,8 @@ async function notifyAndStamp(
 export async function notifyIsolationActionRecord(
   slack: Pick<SlackClient, "notifyIsolationAction">,
   action: IsolationActionRecord,
-): Promise<void> {
-  await slack.notifyIsolationAction({
+): Promise<{ channel?: string; ts?: string } | void> {
+  return slack.notifyIsolationAction({
     title: action.title,
     proof: action.proof,
     actionId: action.id,
@@ -731,21 +737,30 @@ function offerLead(rest: string): string {
 }
 
 function offerSubstitute(text: string): string {
+  // D195 — Josh locked soft-gift voice (2026-09-16): lead with
+  // {I'd like to offer|Happy to offer}, prefer "on me" / "if you're
+  // interested" / "if you would like, on me". Avoid weak "if useful."
   const phrase = extractOfferPhrase(text);
-  if (!phrase) return offerLead("that if useful.");
+  if (!phrase) return offerLead("that on me.");
   const experiential = /jet[\s-]?ski|round of golf|tee time/i.test(phrase);
   if (/air\s*pods?|airpods/i.test(phrase)) {
-    return offerLead("a pair of AirPods if useful.");
+    return offerLead("a pair of AirPods if you would like, on me.");
+  }
+  if (/jet[\s-]?ski/i.test(phrase)) {
+    return offerLead("a jet ski outing on me.");
   }
   if (experiential) {
-    return offerLead(`a ${phrase.replace(/^a\s+/i, "")} outing if useful.`);
+    return offerLead(`a ${phrase.replace(/^a\s+/i, "")} outing on me.`);
   }
-  return offerLead(`${phrase} if useful.`);
+  if (/tickets?/i.test(phrase)) {
+    return offerLead(`${phrase} if you're interested.`);
+  }
+  return offerLead(`${phrase} on me.`);
 }
 
 function ctaSubstitute(text: string): string {
   if (isOfferLine(text)) return offerSubstitute(text);
-  return "Happy to send more if useful.";
+  return "Happy to send more if you're interested.";
 }
 
 function softenGeneric(text: string): string {
@@ -812,12 +827,25 @@ function isCompanyIdentityLine(text: string): boolean {
   return COMPANY_IDENTITY_RE.test(text);
 }
 
+/**
+ * D195 — identity openers prefer "so you know, we're {Brand}." over
+ * brace-strip-only ("quick context, we're Brand.").
+ */
+export function companyIdentitySubstitute(text: string): string {
+  const brandMatch = text.match(/\bwe(?:'re| are)\s+([A-Za-z][\w.&-]{1,})/i);
+  const brand = brandMatch?.[1]?.trim()?.replace(/[.,;:]+$/, "");
+  if (brand) {
+    return preferEllipsis(`so you know, we're ${brand}.`);
+  }
+  return preferEllipsis(softenGeneric(text));
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
- * D152 / D168 / D170 / D171 — propose a substitute that still does the
+ * D152 / D168 / D170 / D171 / D195 — propose a substitute that still does the
  * job of the line and stayed (or should stay) out of spam. Blank delete
  * is a last resort for pure spam tokens (winner / congratulations),
  * never the default for an opener, offer, or CTA the campaign still
@@ -829,7 +857,7 @@ function escapeRegExp(value: string): string {
  * send" / "Happy to offer" only. The school-district pen-test bridge
  * is retired. "Quick note —" is not a default for offer or opener
  * jobs. Identity openers ("we're TechEvolution") keep the company
- * name with a light soften — they are not this offer template.
+ * name as "so you know, we're {Brand}." (D195) — not brace-strip-only.
  * Defaults use "..." never an em dash. Pending asks are recomputed
  * on remind (D170) so a pre-D168 freeze cannot be re-paged.
  */
@@ -852,10 +880,10 @@ export function suggestedCopySwap(
   }
   if (job === "cta") return plainProseSubstitute(trimmed, ctaSubstitute(text));
 
-  // D170 — "we're TechEvolution" identity openers keep the company name
-  // with a light soften. Never "Quick note —".
+  // D170/D195 — identity openers: prefer "so you know, we're Brand."
+  // Never brace-strip-only "quick context," and never "Quick note —".
   if (isCompanyIdentityLine(text)) {
-    return plainProseSubstitute(trimmed, softenGeneric(text));
+    return plainProseSubstitute(trimmed, companyIdentitySubstitute(text));
   }
 
   // Generic: keep the line, lightly softened. Never "Quick note —" and

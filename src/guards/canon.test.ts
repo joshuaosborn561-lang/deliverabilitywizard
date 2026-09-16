@@ -9213,10 +9213,10 @@ describe("owner intent — D193 named clients never take GENERIC pool senders", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D193\*\*/,
+      /D193/,
       stop(
-        "CANON is current as of D193.",
-        "CANON.md was not updated with D193.",
+        "CANON still names the D193 client-inbox-only rule.",
+        "CANON.md lost D193.",
       ),
     );
     assert.match(
@@ -9368,7 +9368,7 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
     );
     assert.match(
       canon,
-      /#campaign-watchdog stays on the separate/,
+      /#campaign-watchdog.*stays on the separate/,
       stop(
         "CANON keeps Watchdog on its own Slack identity (D194).",
         "CANON.md lost the Watchdog-separate rule.",

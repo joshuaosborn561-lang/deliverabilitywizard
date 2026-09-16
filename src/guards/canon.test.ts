@@ -6693,17 +6693,17 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
       {
         line: "{I've got|I have} a pair of Air Pods for you.",
         offer: /Air\s*Pods/i,
-        rest: /a pair of AirPods if useful/,
+        rest: /a pair of AirPods if you would like, on me/,
       },
       {
         line: "I've got a jet ski you can take out this weekend.",
         offer: /jet\s*ski/i,
-        rest: /jet ski outing if useful/,
+        rest: /jet ski outing on me/,
       },
       {
         line: "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
         offer: /Local_Sports_Team/,
-        rest: /\{\{Local_Sports_Team\}\} tickets if useful/,
+        rest: /\{\{Local_Sports_Team\}\} tickets if you're interested/,
       },
     ];
     for (const row of cases) {
@@ -6750,9 +6750,9 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
       );
       assert.doesNotMatch(
         swap,
-        /—|Quick note|pen-test|school-district/,
+        /—|Quick note|pen-test|school-district|if useful/,
         stop(
-          "Offer defaults stay off Quick note / pen-test / em dash (D171).",
+          "Offer defaults stay off Quick note / pen-test / em dash / weak if useful (D171/D195).",
           `${row.line} → ${swap}`,
         ),
       );

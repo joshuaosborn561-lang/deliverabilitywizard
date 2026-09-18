@@ -16,7 +16,8 @@
  *   (5.7.233) — all bounce fresh sends. A dump of stale bounces logs
  *   loudly and pauses nothing.
  *
- * Smartlead bounce_autopause_threshold stays off at 100 (D80/D124).
+ * Smartlead High Bounce Rate Auto Protection is UI-only (D157) — there
+ * is no API off-write; attribution is paused_reason "bounce protection".
  */
 
 export const BOUNCE_BURST_COUNT = 10;

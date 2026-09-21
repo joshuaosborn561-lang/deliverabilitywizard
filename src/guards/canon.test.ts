@@ -9766,10 +9766,10 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     for (const [name, src] of Object.entries(files)) {
       assert.match(
         src,
-        /detachWouldBreakOnWeekMin/,
+        /detachWouldBreak(OnWeekMin|StaffableFloor)/,
         stop(
-          `${name} refuses to peel an ACTIVE campaign below 40 (D197).`,
-          `${name} no longer consults detachWouldBreakOnWeekMin.`,
+          `${name} refuses to peel an ACTIVE campaign below 40 (D197/D199).`,
+          `${name} no longer consults the on-week peel floor.`,
         ),
       );
     }
@@ -9797,9 +9797,9 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D19[78]\*\*/,
+      /Canon as of \*\*D19[789]\*\*/,
       stop(
-        "CANON still names the D197/D198 era.",
+        "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
       ),
     );
@@ -9932,9 +9932,9 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D198\*\*/,
+      /Canon as of \*\*D19[89]\*\*/,
       stop(
-        "CANON is dated D198.",
+        "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
       ),
     );
@@ -9952,6 +9952,167 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
       stop(
         "Dedicated generics are in the ledger (D198).",
         "DECISIONS.md no longer has D198.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D199 peel floor is staffable attached, not raw membership", () => {
+  it("D199: staffable floor + exclusive+sig dedication; pod-cover does not unlink live", async () => {
+    const { ON_WEEK_MIN_SENDERS, countStaffableMemberships, detachWouldBreakStaffableFloor } =
+      await import("../lib/clientStaffFloor.js");
+    assert.equal(
+      ON_WEEK_MIN_SENDERS,
+      40,
+      stop(
+        "The standing on-week minimum is still 40 (D199).",
+        `ON_WEEK_MIN_SENDERS is ${ON_WEEK_MIN_SENDERS}.`,
+      ),
+    );
+    const counts = countStaffableMemberships(
+      [
+        ...Array.from({ length: 40 }, (_, i) => ({
+          id: i + 1,
+          from_email: `live-${i}@parlay.test`,
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [10],
+        })),
+        ...Array.from({ length: 32 }, (_, i) => ({
+          id: 100 + i,
+          from_email: `dead-${i}@parlay.test`,
+          is_smtp_success: false,
+          campaign_ids: [10],
+        })),
+      ],
+      {},
+    );
+    assert.equal(
+      counts.get(10),
+      40,
+      stop(
+        "Disconnected leftovers do not inflate the peel floor (D199).",
+        `staffable count is ${counts.get(10)}.`,
+      ),
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        40,
+        { is_smtp_success: true, is_imap_success: true },
+        "live@parlay.test",
+        {},
+      ),
+      true,
+      stop(
+        "A staffable detach at 40 breaks the floor (D199).",
+        "detachWouldBreakStaffableFloor no longer protects ACTIVE at 40.",
+      ),
+    );
+
+    const { dedicatedGenericClientId } = await import("../lib/dedicatedGeneric.js");
+    assert.equal(
+      dedicatedGenericClientId(
+        {
+          client_id: null,
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nParlay",
+        },
+        "ada@trygetintroduced.info",
+        { getPoolMailbox: () => undefined },
+        {
+          genericOwnerId: 548611,
+          exclusiveClientId: 77,
+          clientBrand: "Parlay",
+        },
+      ),
+      77,
+      stop(
+        "Exclusive attach + client-sig is dedicated (D199).",
+        "dedicatedGenericClientId still requires client_id / tag for restaff seats.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const files = {
+      oneClient: await readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+      clientRest: await readFile(
+        new URL("../services/clientRest.ts", import.meta.url),
+        "utf8",
+      ),
+      genericRest: await readFile(
+        new URL("../services/genericSendRest.ts", import.meta.url),
+        "utf8",
+      ),
+      topUp: await readFile(
+        new URL("../services/campaignTopUp.ts", import.meta.url),
+        "utf8",
+      ),
+      check: await readFile(
+        new URL("../services/campaignCheck.ts", import.meta.url),
+        "utf8",
+      ),
+    };
+    for (const [name, src] of Object.entries(files)) {
+      assert.match(
+        src,
+        /countStaffableMemberships|detachWouldBreakStaffableFloor/,
+        stop(
+          `${name} peels against staffable attached, not raw membership (D199).`,
+          `${name} still peels on raw campaign_ids length.`,
+        ),
+      );
+    }
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /pod-cover[\s\S]{0,400}must not unlink/,
+      stop(
+        "pod-cover is documented as a no-unlink for live ACTIVE seats (D199).",
+        "index.ts lost the D199 pod-cover live-unlink ban.",
+      ),
+    );
+    const podControls = await readFile(
+      new URL("../services/podControls.ts", import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(
+      podControls,
+      /removeEmailAccountsFromCampaign/,
+      stop(
+        "pod-cover / podControls must not unlink live campaign seats (D199).",
+        "podControls.ts now removes email accounts from campaigns.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D199\*\*/,
+      stop("CANON is dated D199.", "CANON.md header was not bumped."),
+    );
+    assert.match(
+      canon,
+      /staffable attached|staffable peel/,
+      stop(
+        "CANON names the staffable peel floor (D199).",
+        "CANON.md lost the D199 staffable-vs-raw membership rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D199 — /,
+      stop(
+        "The staffable peel floor is in the ledger (D199).",
+        "DECISIONS.md no longer has D199.",
       ),
     );
   });

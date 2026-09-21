@@ -751,6 +751,10 @@ async function main(): Promise<void> {
       // at the 6-hour monitor. The watchdog tick always runs so lastOkAt
       // cannot freeze when the board is already covered (prod 2026-08-27
       // → 2026-09-02: six silent days, consecutiveFailures=0).
+      // D199 — pod-cover grows known-good tests. It must not unlink
+      // seats from ACTIVE live campaigns (D197 already said so; the
+      // Sep 21 restaff peel was client-rest / one-client counting raw
+      // membership, not this stage).
       await stage("pod-cover", async () => {
         if (!config.enablePodControls) {
           console.log("[pod-cover] idle — ENABLE_POD_CONTROLS is off");

@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import { StateStore } from "../state/store.js";
 import {
   dedicatedGenericClientId,
+  exclusiveNamedClientId,
   isDedicatedToClient,
   isRealNamedClientId,
+  resolveDedicatedGenericClientId,
 } from "./dedicatedGeneric.js";
 
 const emptyState = { getPoolMailbox: () => undefined };
@@ -129,6 +131,73 @@ describe("dedicatedGenericClientId (D198)", () => {
         { client_id: null, tags: [{ tag_name: "GENERIC" }] },
         "spare@pool.info",
         emptyState,
+        { genericOwnerId: 548611 },
+      ),
+      null,
+    );
+  });
+});
+
+describe("D199 exclusive attach + client-sig", () => {
+  it("treats exclusive TechEvo attach with a TechEvolution sig as dedicated", () => {
+    assert.equal(
+      dedicatedGenericClientId(
+        {
+          client_id: null,
+          tags: [{ tag_name: "GENERIC" }],
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nTechEvolution",
+        },
+        "ada@trygetintroduced.info",
+        emptyState,
+        {
+          genericOwnerId: 548611,
+          exclusiveClientId: 521881,
+          clientBrand: "TechEvolution",
+        },
+      ),
+      521881,
+    );
+    assert.equal(
+      exclusiveNamedClientId(
+        [
+          { clientId: 521881, shell: false },
+          { clientId: 548611, shell: true },
+        ],
+        { genericOwnerId: 548611 },
+      ),
+      521881,
+    );
+  });
+
+  it("does not infer dedication from a Goliath signature", () => {
+    assert.equal(
+      resolveDedicatedGenericClientId(
+        {
+          client_id: null,
+          tags: [{ tag_name: "GENERIC" }],
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nGoliath Cybersecurity",
+        },
+        "ada@trygetintroduced.info",
+        [{ clientId: 521881, shell: false }],
+        emptyState,
+        {
+          genericOwnerId: 548611,
+          brandByClientId: new Map([[521881, "TechEvolution"]]),
+        },
+      ),
+      null,
+    );
+  });
+
+  it("does not infer dedication when the box sits on two named clients", () => {
+    assert.equal(
+      exclusiveNamedClientId(
+        [
+          { clientId: 77, shell: false },
+          { clientId: 521881, shell: false },
+        ],
         { genericOwnerId: 548611 },
       ),
       null,

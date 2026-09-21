@@ -1503,4 +1503,74 @@ describe("ClientRestService", () => {
     );
     assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
   });
+
+  it("D199: disconnected leftovers must not let off-week rest drop staffable below 40", async () => {
+    const now = new Date("2026-01-15T17:00:00Z"); // B on
+    const emails = Array.from(
+      { length: 40 },
+      (_, i) => `seat-${String(i).padStart(2, "0")}@client.info`,
+    );
+    const offEmails = emails.filter(
+      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
+    );
+    assert.ok(offEmails.length >= 1, "need off-week seats to prove the skip");
+
+    const removedIds: number[] = [];
+    const state = new StateStore(
+      `/tmp/client-rest-d199-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const staffable = emails.map((from_email, index) => ({
+      id: 10 + index,
+      from_email,
+      client_id: 9,
+      campaign_ids: [1],
+      created_at: WARMED,
+      is_smtp_success: true,
+      is_imap_success: true,
+    }));
+    const zombies = Array.from({ length: 32 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `dead-${String(i).padStart(2, "0")}@client.info`,
+      client_id: 9,
+      campaign_ids: [1],
+      created_at: WARMED,
+      is_smtp_success: false,
+    }));
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Parlay Sports", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [...staffable, ...zombies],
+      listClients: async () => [{ id: 9, name: "Parlay", logo: "Parlay" }],
+      removeEmailAccountsFromCampaign: async (
+        _campaignId: number,
+        ids: number[],
+      ) => {
+        removedIds.push(...ids);
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, now });
+    const peeledStaffable = removedIds.filter((id) => id >= 10 && id < 50);
+    assert.deepEqual(
+      peeledStaffable,
+      [],
+      "D199 — 32 disconnected must not look like surplus that can bench on-week staffable seats",
+    );
+    for (const email of offEmails) {
+      assert.equal(
+        result.benched.some((row) => row.email === email),
+        false,
+        `${email} must stay — peeling would drop Parlay staffable below 40`,
+      );
+    }
+  });
 });

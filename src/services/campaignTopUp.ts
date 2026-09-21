@@ -10,14 +10,18 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { owesWarmup } from "./warmupGate.js";
 import {
   allowsGenericStaff,
   countClientInboxFloors,
+  countStaffableMemberships,
   detachWouldBreakOnWeekMin,
+  detachWouldBreakStaffableFloor,
+  noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
@@ -252,6 +256,13 @@ export class CampaignTopUpService {
       if (email) campaignsByEmail.set(email, campaignIdsOf(account));
     }
 
+    const brandByClientId = new Map<number, string>();
+    for (const client of clients) {
+      brandByClientId.set(
+        client.id,
+        brandFromClientDisplayName(clientDisplayName(client)),
+      );
+    }
     await this.pullNonGoliathGenerics({
       dryRun,
       campaigns: campaigns as SmartleadCampaign[],
@@ -261,6 +272,7 @@ export class CampaignTopUpService {
       genericOwnerId: pocClientId(clients, this.config.pocClientNamePatterns),
       campaignsByEmail,
       projected,
+      brandByClientId,
       result,
     });
 
@@ -351,14 +363,23 @@ export class CampaignTopUpService {
       for (const id of on) {
         if (id === keep) continue;
         if (sameClient(campaignById.get(id), keepCampaign)) continue;
+        const donor = accountByEmail.get(row.email.toLowerCase());
         if (
-          detachWouldBreakOnWeekMin(
-            campaignById.get(id),
-            projected.get(id) ?? 0,
-          )
+          donor
+            ? detachWouldBreakStaffableFloor(
+                campaignById.get(id),
+                projected.get(id) ?? 0,
+                donor,
+                row.email,
+                this.state,
+              )
+            : detachWouldBreakOnWeekMin(
+                campaignById.get(id),
+                projected.get(id) ?? 0,
+              )
         ) {
           result.skipped.push(
-            `${row.email}: #${id} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+            `${row.email}: #${id} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
           );
           continue;
         }
@@ -686,11 +707,12 @@ export class CampaignTopUpService {
   /**
    * D58 — rotating-pool generics come off every campaign that is not
    * Goliath. The paused pod-control shell is left alone (D56).
-   * D197 — do not peel those generics when the ACTIVE campaign is already
-   * at the on-week minimum of 40; surplus above 40 may still come off.
-   * D198 — a generic dedicated to this campaign's named client stays;
-   * it is not foreign Goliath. Multi-client / wrong-client dedicated
-   * seats still peel (floor-gated).
+   * D197 / D199 — do not peel those generics when the ACTIVE campaign
+   * is already at 40 *staffable*; surplus above 40 may still come off.
+   * D198 / D199 — a generic dedicated to this campaign's named client
+   * (client_id / tag / exclusive + client-sig) stays; it is not foreign
+   * Goliath. Multi-client / wrong-client dedicated seats still peel
+   * (floor-gated).
    */
   private async pullNonGoliathGenerics(input: {
     dryRun: boolean;
@@ -701,25 +723,30 @@ export class CampaignTopUpService {
     genericOwnerId: number | null;
     campaignsByEmail: Map<string, number[]>;
     projected: Map<number, number>;
+    brandByClientId: Map<number, string>;
     result: TopUpResult;
   }): Promise<void> {
-    const membership = new Map<number, number>();
-    for (const account of input.accounts) {
-      for (const id of campaignIdsOf(account)) {
-        membership.set(id, (membership.get(id) ?? 0) + 1);
-      }
-    }
+    const membership = countStaffableMemberships(input.accounts, this.state);
+    const brandByClientId = input.brandByClientId;
     const byCampaign = new Map<number, Array<{ accountId: number; email: string }>>();
     for (const account of input.accounts) {
       const email = accountEmail(account)?.toLowerCase();
       if (!email || !account.id) continue;
       if (this.state.isCopyCanary(email)) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
-      const dedicatedClientId = dedicatedGenericClientId(
+      const dedicatedClientId = resolveDedicatedGenericClientId(
         account,
         email,
+        campaignIdsOf(account).map((id) => {
+          const campaign = input.campaignById.get(id);
+          return {
+            clientId:
+              typeof campaign?.client_id === "number" ? campaign.client_id : null,
+            shell: campaign ? isAnyShellCampaign(campaign) : false,
+          };
+        }),
         this.state,
-        { genericOwnerId: input.genericOwnerId },
+        { genericOwnerId: input.genericOwnerId, brandByClientId },
       );
       const remaining: number[] = [];
       for (const campaignId of campaignIdsOf(account)) {
@@ -741,14 +768,22 @@ export class CampaignTopUpService {
           continue;
         }
         const current = membership.get(campaignId) ?? 0;
-        if (detachWouldBreakOnWeekMin(campaign, current)) {
+        if (
+          detachWouldBreakStaffableFloor(
+            campaign,
+            current,
+            account,
+            email,
+            this.state,
+          )
+        ) {
           remaining.push(campaignId);
           input.result.skipped.push(
-            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
           );
           continue;
         }
-        membership.set(campaignId, current - 1);
+        noteStaffableDetach(membership, campaignId, account, email, this.state);
         const list = byCampaign.get(campaignId) ?? [];
         list.push({ accountId: account.id, email });
         byCampaign.set(campaignId, list);

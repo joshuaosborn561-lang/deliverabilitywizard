@@ -1,18 +1,24 @@
+import { brandInText } from "./clientBrand.js";
+import { signatureHay } from "./signatureQa.js";
+
 /**
- * D198 — a generic mailbox dedicated to one named client.
+ * D198 / D199 — a generic mailbox dedicated to one named client.
  *
  * Marks (first match wins):
  *   1. pool-mailbox `assignedClientId`
  *   2. Smartlead mailbox `client_id` (the client tag)
  *   3. a `client:<id>` mailbox tag
+ *   4. D199 — exclusive attach on one named client's campaigns
+ *      *and* a signature (or from-name) carrying that client's brand
  *
  * The POC / Goliath owner is *not* a dedicated named-client assignment —
  * those seats stay on the rotating generic pool (D76 / D43 send-clock).
  * Marker Generic/POC ids are never an owner (D160).
  *
  * Dedicated seats belong to that client: one-client / generic-rest /
- * pullNonGoliathGenerics must not treat them as foreign Goliath when
- * they sit on that client's campaigns. Multi-client links still peel.
+ * pullNonGoliathGenerics / client-rest must not treat them as foreign
+ * Goliath when they sit on that client's campaigns. Multi-client links
+ * still peel (floor-gated).
  */
 
 export function isRealNamedClientId(
@@ -28,11 +34,24 @@ export interface DedicatedGenericOpts {
   /** POC / Goliath — rotating pool, not a named-client dedication. */
   genericOwnerId?: number | null;
   isMarkerClientId?: (id: number | null | undefined) => boolean;
+  /**
+   * D199 — exclusive attach on this named client plus a matching
+   * client signature is dedication even without client_id / tag.
+   */
+  exclusiveClientId?: number | null;
+  clientBrand?: string | null;
 }
 
 export interface DedicatedGenericAccount {
   client_id?: number | null;
   tags?: Array<{ tag_name?: unknown; name?: unknown }>;
+  from_name?: string | null;
+  signature?: string | null;
+}
+
+export interface DedicatedMembershipHint {
+  clientId: number | null;
+  shell?: boolean;
 }
 
 export interface DedicatedGenericState {
@@ -88,7 +107,78 @@ export function dedicatedGenericClientId(
     }
     return candidate;
   }
-  return null;
+  return dedicatedFromExclusiveClientSig(account, opts, isMarker);
+}
+
+/**
+ * One named client across non-shell memberships, or null when the
+ * mailbox is multi-client / unmarked (D199).
+ */
+export function exclusiveNamedClientId(
+  memberships: DedicatedMembershipHint[],
+  opts: DedicatedGenericOpts = {},
+): number | null {
+  const ids = [
+    ...new Set(
+      memberships
+        .filter((row) => !row.shell)
+        .map((row) => row.clientId)
+        .filter((id): id is number =>
+          isRealNamedClientId(id, opts.isMarkerClientId),
+        ),
+    ),
+  ].filter((id) => {
+    if (typeof opts.genericOwnerId === "number" && id === opts.genericOwnerId) {
+      return false;
+    }
+    return true;
+  });
+  return ids.length === 1 ? ids[0]! : null;
+}
+
+function dedicatedFromExclusiveClientSig(
+  account: DedicatedGenericAccount,
+  opts: DedicatedGenericOpts,
+  isMarker?: (id: number | null | undefined) => boolean,
+): number | null {
+  const exclusive = opts.exclusiveClientId;
+  if (!isRealNamedClientId(exclusive, isMarker)) return null;
+  if (
+    typeof opts.genericOwnerId === "number" &&
+    exclusive === opts.genericOwnerId
+  ) {
+    return null;
+  }
+  const brand = String(opts.clientBrand ?? "").trim();
+  if (!brand) return null;
+  const hay = signatureHay({
+    fromName: account.from_name,
+    signature: account.signature,
+  });
+  if (!brandInText(hay, brand)) return null;
+  return exclusive;
+}
+
+/**
+ * D198 marks first, then D199 exclusive attach + client-sig.
+ */
+export function resolveDedicatedGenericClientId(
+  account: DedicatedGenericAccount,
+  email: string,
+  memberships: DedicatedMembershipHint[],
+  state: DedicatedGenericState,
+  opts: DedicatedGenericOpts & { brandByClientId?: Map<number, string> } = {},
+): number | null {
+  const exclusive =
+    opts.exclusiveClientId ?? exclusiveNamedClientId(memberships, opts);
+  const brand =
+    opts.clientBrand ??
+    (exclusive != null ? opts.brandByClientId?.get(exclusive) : undefined);
+  return dedicatedGenericClientId(account, email, state, {
+    ...opts,
+    exclusiveClientId: exclusive,
+    clientBrand: brand,
+  });
 }
 
 export function isDedicatedToClient(

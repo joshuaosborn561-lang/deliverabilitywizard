@@ -6,8 +6,11 @@ import {
   clientInboxStaffFloor,
   countClientInboxFloors,
   countClientInboxesByKey,
+  countStaffableMemberships,
   detachWouldBreakOnWeekMin,
+  detachWouldBreakStaffableFloor,
   formatStaffFloorDetail,
+  noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
   staffFloorForCampaign,
 } from "./clientStaffFloor.js";
@@ -32,6 +35,83 @@ describe("detachWouldBreakOnWeekMin (D197)", () => {
     assert.equal(detachWouldBreakOnWeekMin({ status: "PAUSED" }, 40), false);
     assert.equal(detachWouldBreakOnWeekMin({ status: "STOPPED" }, 1), false);
     assert.equal(detachWouldBreakOnWeekMin(undefined, 40), false);
+  });
+});
+
+describe("countStaffableMemberships / D199 peel floor", () => {
+  const live = {
+    id: 1,
+    from_email: "live@parlay.test",
+    is_smtp_success: true,
+    is_imap_success: true,
+    campaign_ids: [10],
+  };
+  const dead = {
+    id: 2,
+    from_email: "dead@parlay.test",
+    is_smtp_success: false,
+    is_imap_success: false,
+    campaign_ids: [10],
+  };
+
+  it("ignores disconnected leftovers so a 40-seat restaff is not surplus", () => {
+    const staffable = Array.from({ length: 40 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `seat-${i}@parlay.test`,
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [10],
+    }));
+    const zombies = Array.from({ length: 32 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `dead-${i}@parlay.test`,
+      is_smtp_success: false,
+      campaign_ids: [10],
+    }));
+    const counts = countStaffableMemberships([...staffable, ...zombies], {});
+    assert.equal(counts.get(10), 40);
+    assert.equal(
+      detachWouldBreakOnWeekMin({ status: "ACTIVE" }, counts.get(10) ?? 0),
+      true,
+      "40 staffable + 32 disconnected is already at the floor",
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        counts.get(10) ?? 0,
+        live,
+        live.from_email,
+        {},
+      ),
+      true,
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        counts.get(10) ?? 0,
+        dead,
+        dead.from_email,
+        {},
+      ),
+      false,
+      "disconnected leftovers may still come off",
+    );
+  });
+
+  it("does not unlock a live seat after peeling a disconnected leftover", () => {
+    const counts = new Map([[10, 40]]);
+    noteStaffableDetach(counts, 10, dead, dead.from_email, {});
+    assert.equal(counts.get(10), 40);
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        counts.get(10) ?? 0,
+        live,
+        live.from_email,
+        {},
+      ),
+      true,
+    );
   });
 });
 

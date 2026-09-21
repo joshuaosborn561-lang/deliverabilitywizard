@@ -13,7 +13,7 @@ import {
   findForeignBrand,
 } from "../lib/clientBrand.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import { pocClientId } from "../lib/pocClient.js";
@@ -22,7 +22,9 @@ import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import {
-  detachWouldBreakOnWeekMin,
+  countStaffableMemberships,
+  detachWouldBreakStaffableFloor,
+  noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
 } from "../lib/clientStaffFloor.js";
 import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
@@ -75,13 +77,15 @@ interface AccountPlan {
  * count. Signature is rewritten to the owner client's brand when a
  * leftover line is another client.
  *
- * D197 / D198 — do not pull a seat off an ACTIVE campaign that is
- * already at the on-week minimum of 40. Dedicated named-client
- * generics are not foreign-pulled, not restored onto Goliath, and
- * not signature-rewritten to the POC brand even above 40. Surplus
- * *undedicated* rotating-pool generics above 40 may still come off.
- * Multi-client links on a dedicated seat still peel the foreign camp
- * (floor-gated).
+ * D197 / D198 / D199 — do not pull a seat off an ACTIVE campaign
+ * when that would drop the *staffable* attached count below 40.
+ * Raw membership (disconnected leftovers) does not inflate the
+ * floor. Dedicated named-client generics — including exclusive
+ * attach + client-sig seats — are not foreign-pulled, not restored
+ * onto Goliath, and not signature-rewritten to the POC brand even
+ * above 40. Surplus *undedicated* rotating-pool generics above 40
+ * may still come off. Multi-client links on a dedicated seat still
+ * peel the foreign camp (floor-gated).
  */
 export class OneClientMembershipService {
   constructor(
@@ -148,12 +152,10 @@ export class OneClientMembershipService {
       .map((campaign) => campaign.id);
 
     const plans: AccountPlan[] = [];
-    const membershipCounts = new Map<number, number>();
-    for (const account of accounts as SmartleadAccountWithCampaigns[]) {
-      for (const id of campaignIdsOf(account)) {
-        membershipCounts.set(id, (membershipCounts.get(id) ?? 0) + 1);
-      }
-    }
+    const membershipCounts = countStaffableMemberships(
+      accounts as SmartleadAccountWithCampaigns[],
+      this.state,
+    );
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -184,9 +186,13 @@ export class OneClientMembershipService {
 
       const generic = isGenericMailbox(account, email, this.config, this.state);
       const dedicatedClientId = generic
-        ? dedicatedGenericClientId(account, email, this.state, {
-            genericOwnerId,
-          })
+        ? resolveDedicatedGenericClientId(
+            account,
+            email,
+            memberships,
+            this.state,
+            { genericOwnerId, brandByClientId },
+          )
         : null;
       // D160 — a leftover Generic/POC client_id is a billable pool label
       // we are draining, not an owner. Memberships still resolve through
@@ -220,16 +226,28 @@ export class OneClientMembershipService {
       for (const campaignId of rawPull) {
         const remaining = membershipCounts.get(campaignId) ?? 0;
         if (
-          detachWouldBreakOnWeekMin(campaignById.get(campaignId), remaining)
+          detachWouldBreakStaffableFloor(
+            campaignById.get(campaignId),
+            remaining,
+            account,
+            email,
+            this.state,
+          )
         ) {
           protectedByMin = true;
           result.skipped.push(
-            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
           );
           continue;
         }
         pull.push(campaignId);
-        membershipCounts.set(campaignId, remaining - 1);
+        noteStaffableDetach(
+          membershipCounts,
+          campaignId,
+          account,
+          email,
+          this.state,
+        );
       }
       const onOwner = memberships.some(
         (row) => !row.shell && row.clientId === owner,

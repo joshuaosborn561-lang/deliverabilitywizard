@@ -208,8 +208,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — floor is max(on-week pod, 40) per D197 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
-| D197 | Live — dedicated named-client seats stay even above 40 (D198) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
-| D198 | Live | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D198 | Live — exclusive + client-sig also dedicated (D199) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D199 | Live | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 
 ---
 
@@ -6240,6 +6241,74 @@ seat and peels a multi-client link; generic-rest and
 `pullNonGoliathGenerics` skip dedicated-to-this-client;
 `ON_WEEK_MIN_SENDERS === 40`; CANON names dedicated generics and
 the on-week 40 floor.
+
+---
+
+## D199 — Peel floor is staffable attached; exclusive + client-sig is dedicated
+
+**Decision (Josh 2026-09-21, D197/D198 still peeled the morning restaff).**
+Every ACTIVE non-canary campaign keeps **at least 40 staffable
+senders on the on-week POD**. The D197 floor stays
+`max(on-week client pod, 40)`, but the peel counter is the
+**staffable attached** count — the same eligibility `/health` and
+campaign-check use (connected, not resting, not canary, not
+warmup-blocked). Disconnected / leftover raw `campaign_ids` are
+not surplus.
+
+client-rest, one-client, generic-send-rest, top-up
+`pullNonGoliathGenerics` (and cross-client generic release), and
+campaign-check Insight shared-staff unlink must not remove a
+*staffable* seat when that would leave the ACTIVE campaign under
+40 staffable. Peeling a disconnected leftover does not unlock
+another live seat. **pod-cover** grows known-good tests; it does
+not unlink live ACTIVE campaign seats.
+
+**Dedicated client-assigned generics** (D198 marks plus D199):
+exclusive attach on one named client's campaigns **and** a
+signature / from-name carrying that client's brand, or a
+`client:<id>` tag / mailbox `client_id` / pool `assignedClientId`,
+are not foreign Goliath / rotating pool. one-client, client-rest,
+generic-rest, and `pullNonGoliathGenerics` must not peel them as
+unapproved leftovers, even above 40. A dedicated seat on a second
+client's campaign still peels that foreign membership
+(floor-gated). Surplus *undedicated* rotating-pool seats above 40
+staffable may still come off.
+
+Warmup-gate pulls (D105), attach-block / retire (D176), Goliath
+mute / standing holds, and last-account on PAUSED/STOPPED stay as
+they are. No spend / Retire UI change.
+
+**Why.** After D197 (PR #229) and D198 (PR #230, `2cfc138`; later
+deploys on `main@161049d6`) Canon QA on Mon Sep 21 still saw
+client-rest / one-client / pod-cover-cycle peels yank exclusive
+on-week restaff seats within ~20–30 minutes. TechEvo / Parlay /
+Insight dropped below 40 (counts like 8, 3, 19). D197 counted
+**raw membership**, so 40 live exclusives + 32 disconnected
+looked like surplus 72 and the live seats were peeled. D198 only
+recognised `client_id` / `assignedClientId` / `client:<id>` — ops
+restaffed exclusive attach + client sig, which one-client still
+treated as Goliath (D76). pod-cover itself does not unlink live
+seats; it shared the health cycle with the peels.
+
+**Rejected.** Reversing D193 (wizard auto-filling named clients
+from the rotating pool). Deleting D76 for undedicated leftovers.
+A grace-window attach stamp. Counting the wizard's own A/B split
+as "on-week" for the peel (that would bench half of a 40-seat
+POD-B restaff).
+
+**Supersedes / amends.** Qualifies D197: the 40 floor is staffable
+attached, not raw membership. Qualifies D198: exclusive attach +
+client-sig is a dedication mark. Qualifies D26/D75/D76/D43/D169/
+D193 the same way D197 did, with the tighter counter. Does not
+reverse D105 warmup pulls or D176 attach-block.
+
+**Guards.** canon D199: `countStaffableMemberships` ignores
+disconnected leftovers; `detachWouldBreakStaffableFloor` at 40
+staffable; exclusive + client-sig is dedicated; one-client /
+client-rest / generic-rest / top-up / Insight unlink consult the
+staffable floor; pod-cover / podControls do not
+`removeEmailAccountsFromCampaign` on live campaigns; CANON names
+the staffable peel floor and exclusive + client-sig dedication.
 
 ---
 

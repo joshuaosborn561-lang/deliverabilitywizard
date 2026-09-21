@@ -606,4 +606,139 @@ describe("CampaignTopUpService safety", () => {
     assert.deepEqual(removed, []);
     assert.equal(result.pulledGenerics.length, 0);
   });
+
+  it("D199: does not peel exclusive + client-sig generics as Goliath", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "ada@trygetintroduced.info",
+      domain: "trygetintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Ada",
+      lastName: "Pool",
+      status: "assigned",
+    };
+    const { state } = fakeState(pool);
+    const removed: number[][] = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Parlay Sports", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nParlay",
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          client_id: null,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [2],
+        },
+        ...Array.from({ length: 41 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `parlay-${index}@parlay.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 9,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 9, name: "Parlay", logo: "Parlay" },
+      ],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(ids);
+        void campaignId;
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.deepEqual(removed, []);
+    assert.equal(result.pulledGenerics.length, 0);
+  });
+
+  it("D199: 40 staffable + disconnected leftovers do not peel below 40", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Spare",
+      lastName: "Sender",
+      status: "assigned",
+    };
+    const { state } = fakeState(pool);
+    const removed: number[] = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Parlay Sports", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        },
+        ...Array.from({ length: 39 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `parlay-${index}@parlay.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 9,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        })),
+        ...Array.from({ length: 32 }, (_, index) => ({
+          id: 200 + index,
+          from_email: `dead-${index}@parlay.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 9,
+          is_smtp_success: false,
+          campaign_ids: [2],
+        })),
+      ],
+      listClients: async () => [{ id: 9, name: "Parlay" }],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(...ids);
+        void campaignId;
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(removed.includes(10), false);
+    assert.equal(result.pulledGenerics.length, 0);
+  });
 });

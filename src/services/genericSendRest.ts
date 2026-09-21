@@ -4,13 +4,18 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
   campaignIdsOf,
+  clientDisplayName,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { pocClientId } from "../lib/pocClient.js";
+import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
-  detachWouldBreakOnWeekMin,
+  countStaffableMemberships,
+  detachWouldBreakStaffableFloor,
+  noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
 } from "../lib/clientStaffFloor.js";
 import { sleep } from "../lib/http.js";
@@ -84,12 +89,17 @@ export class GenericSendRestService {
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );
-    const membership = new Map<number, number>();
-    for (const account of accounts as SmartleadAccountWithCampaigns[]) {
-      for (const id of campaignIdsOf(account)) {
-        membership.set(id, (membership.get(id) ?? 0) + 1);
-      }
+    const brandByClientId = new Map<number, string>();
+    for (const client of clients) {
+      brandByClientId.set(
+        client.id,
+        brandFromClientDisplayName(clientDisplayName(client)),
+      );
     }
+    const membership = countStaffableMemberships(
+      accounts as SmartleadAccountWithCampaigns[],
+      this.state,
+    );
 
     const owed = this.config.genericSendRestDays;
 
@@ -105,9 +115,22 @@ export class GenericSendRestService {
       // pods, not the rotating 14-day send clock. Same generic must not
       // rotate across clients.
       if (
-        dedicatedGenericClientId(account, email, this.state, {
-          genericOwnerId,
-        }) != null
+        resolveDedicatedGenericClientId(
+          account,
+          email,
+          campaignIdsOf(account).map((id) => {
+            const campaign = campaignById.get(id);
+            return {
+              clientId:
+                typeof campaign?.client_id === "number"
+                  ? campaign.client_id
+                  : null,
+              shell: campaign ? isAnyShellCampaign(campaign) : false,
+            };
+          }),
+          this.state,
+          { genericOwnerId, brandByClientId },
+        ) != null
       ) {
         result.skipped.push(`${email}: dedicated client generic (D198)`);
         continue;
@@ -170,10 +193,16 @@ export class GenericSendRestService {
       for (const campaignId of onCampaigns) {
         const remaining = membership.get(campaignId) ?? 0;
         if (
-          detachWouldBreakOnWeekMin(campaignById.get(campaignId), remaining)
+          detachWouldBreakStaffableFloor(
+            campaignById.get(campaignId),
+            remaining,
+            account,
+            email,
+            this.state,
+          )
         ) {
           result.skipped.push(
-            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
           );
           continue;
         }
@@ -190,7 +219,13 @@ export class GenericSendRestService {
             ]);
             await sleep(150);
           }
-          membership.set(campaignId, remaining - 1);
+          noteStaffableDetach(
+            membership,
+            campaignId,
+            account,
+            email,
+            this.state,
+          );
           removed.push(campaignId);
         } catch (error) {
           const message =

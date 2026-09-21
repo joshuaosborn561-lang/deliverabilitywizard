@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { StateStore } from "../state/store.js";
 import {
   dedicatedGenericClientId,
   isDedicatedToClient,
@@ -93,6 +94,32 @@ describe("dedicatedGenericClientId (D198)", () => {
         { genericOwnerId: 548611 },
       ),
       null,
+    );
+  });
+
+  it("calls StateStore.isMarkerClientId without losing this", async () => {
+    const state = new StateStore(
+      `/tmp/dedicated-generic-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setMarkerClientIds({ genericId: 900001, pocId: 900002 });
+    assert.equal(
+      dedicatedGenericClientId(
+        { client_id: 900001 },
+        "ada@trygetintroduced.info",
+        state,
+        { genericOwnerId: 548611 },
+      ),
+      null,
+    );
+    assert.equal(
+      dedicatedGenericClientId(
+        { client_id: 77 },
+        "ada@trygetintroduced.info",
+        state,
+        { genericOwnerId: 548611 },
+      ),
+      77,
     );
   });
 

@@ -18,7 +18,7 @@
 export function isRealNamedClientId(
   id: number | null | undefined,
   isMarkerClientId?: (id: number | null | undefined) => boolean,
-): boolean {
+): id is number {
   if (typeof id !== "number" || !Number.isFinite(id)) return false;
   if (isMarkerClientId?.(id)) return false;
   return true;
@@ -67,7 +67,11 @@ export function dedicatedGenericClientId(
   state: DedicatedGenericState,
   opts: DedicatedGenericOpts = {},
 ): number | null {
-  const isMarker = opts.isMarkerClientId ?? state.isMarkerClientId;
+  const isMarker =
+    opts.isMarkerClientId ??
+    (typeof state.isMarkerClientId === "function"
+      ? (id: number | null | undefined) => state.isMarkerClientId!(id)
+      : undefined);
   const pool = state.getPoolMailbox(email.trim().toLowerCase());
   const candidates = [
     pool?.assignedClientId,
@@ -94,7 +98,12 @@ export function isDedicatedToClient(
   state: DedicatedGenericState,
   opts: DedicatedGenericOpts = {},
 ): boolean {
-  if (!isRealNamedClientId(clientId, opts.isMarkerClientId ?? state.isMarkerClientId)) {
+  const isMarker =
+    opts.isMarkerClientId ??
+    (typeof state.isMarkerClientId === "function"
+      ? (id: number | null | undefined) => state.isMarkerClientId!(id)
+      : undefined);
+  if (!isRealNamedClientId(clientId, isMarker)) {
     return false;
   }
   return dedicatedGenericClientId(account, email, state, opts) === clientId;

@@ -431,7 +431,7 @@ describe("ClientRestService", () => {
         {
           id: 55,
           from_email: "generic@pool.info",
-          client_id: 9,
+          client_id: null,
           from_name: "Pool User",
           campaign_ids: [1],
           created_at: WARMED,

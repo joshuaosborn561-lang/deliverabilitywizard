@@ -9797,10 +9797,10 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D197\*\*/,
+      /Canon as of \*\*D19[78]\*\*/,
       stop(
-        "CANON is dated D197.",
-        "CANON.md header was not bumped.",
+        "CANON still names the D197/D198 era.",
+        "CANON.md header lost the ≥40 floor generation.",
       ),
     );
     assert.match(
@@ -9809,6 +9809,149 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
       stop(
         "The ≥40 peel rule is in the ledger (D197).",
         "DECISIONS.md no longer has D197.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D198 dedicated named-client generics are not Goliath", () => {
+  it("D198: dedicated override wins; rotating leftovers stay Goliath; floor stays 40", async () => {
+    const { ownerClientId, foreignCampaignIds } = await import(
+      "../lib/oneClient.js"
+    );
+    assert.equal(
+      ownerClientId(
+        77,
+        [{ campaignId: 10, clientId: 77, shell: false }],
+        { generic: true, genericOwnerId: 548611, dedicatedClientId: 77 },
+      ),
+      77,
+      stop(
+        "A generic dedicated to Parlay belongs to Parlay, not Goliath (D198).",
+        "ownerClientId still treats dedicated seats as Goliath.",
+      ),
+    );
+    assert.equal(
+      ownerClientId(
+        null,
+        [{ campaignId: 10, clientId: 77, shell: false }],
+        { generic: true, genericOwnerId: 548611 },
+      ),
+      548611,
+      stop(
+        "Undedicated rotating generics still belong to Goliath (D76/D198).",
+        "ownerClientId dropped the D76 Goliath override for undedicated seats.",
+      ),
+    );
+    assert.deepEqual(
+      foreignCampaignIds(77, [
+        { campaignId: 10, clientId: 77, shell: false },
+        { campaignId: 20, clientId: 88, shell: false },
+      ]),
+      [20],
+      stop(
+        "A dedicated seat on a second client is still foreign (D198).",
+        "foreignCampaignIds no longer peels the multi-client link.",
+      ),
+    );
+
+    const { dedicatedGenericClientId } = await import(
+      "../lib/dedicatedGeneric.js"
+    );
+    assert.equal(
+      dedicatedGenericClientId(
+        { client_id: 521881, tags: [{ tag_name: "GENERIC" }] },
+        "ada@trygetintroduced.info",
+        { getPoolMailbox: () => undefined },
+        { genericOwnerId: 548611 },
+      ),
+      521881,
+      stop(
+        "TechEvo client_id on a generic is a dedicated mark (D198).",
+        "dedicatedGenericClientId no longer reads mailbox client_id.",
+      ),
+    );
+    assert.equal(
+      dedicatedGenericClientId(
+        { client_id: 548611 },
+        "aarav@getoutreachdesk.info",
+        { getPoolMailbox: () => undefined },
+        { genericOwnerId: 548611 },
+      ),
+      null,
+      stop(
+        "Goliath / POC client_id is not a named-client dedication (D198).",
+        "dedicatedGenericClientId treats Goliath as a named-client assignment.",
+      ),
+    );
+
+    const { ON_WEEK_MIN_SENDERS } = await import("../lib/clientStaffFloor.js");
+    assert.equal(
+      ON_WEEK_MIN_SENDERS,
+      40,
+      stop(
+        "The standing on-week minimum is still 40 (D197/D198).",
+        `ON_WEEK_MIN_SENDERS is ${ON_WEEK_MIN_SENDERS}.`,
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const files = {
+      oneClient: await readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+      genericRest: await readFile(
+        new URL("../services/genericSendRest.ts", import.meta.url),
+        "utf8",
+      ),
+      topUp: await readFile(
+        new URL("../services/campaignTopUp.ts", import.meta.url),
+        "utf8",
+      ),
+      clientRest: await readFile(
+        new URL("../services/clientRest.ts", import.meta.url),
+        "utf8",
+      ),
+    };
+    for (const [name, src] of Object.entries(files)) {
+      assert.match(
+        src,
+        /dedicatedGenericClientId/,
+        stop(
+          `${name} honours dedicated named-client generics (D198).`,
+          `${name} no longer consults dedicatedGenericClientId.`,
+        ),
+      );
+    }
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D198\*\*/,
+      stop(
+        "CANON is dated D198.",
+        "CANON.md header was not bumped.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Dedicated generics\s+per named client are OK and preferred/,
+      stop(
+        "CANON names the dedicated-generic model (D198).",
+        "CANON.md lost the dedicated named-client generic rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D198 — Dedicated named-client generics/,
+      stop(
+        "Dedicated generics are in the ledger (D198).",
+        "DECISIONS.md no longer has D198.",
       ),
     );
   });

@@ -81,7 +81,7 @@ describe("OneClientMembershipService", () => {
     assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
   });
 
-  it("treats a leftover-tagged pool generic as Goliath and restores it (D76)", async () => {
+  it("treats an undedicated rotating generic as Goliath and restores it (D76)", async () => {
     const removed: Array<[number, number[]]> = [];
     const added: Array<[number, number[]]> = [];
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
@@ -90,6 +90,52 @@ describe("OneClientMembershipService", () => {
         { id: 1, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
         { id: 3, name: "Goliath Displacement L", status: "ACTIVE", client_id: 548611 },
         { id: 8, name: "Goliath L1 AirPods", status: "STOPPED", client_id: 548611 },
+        { id: 2, name: "Peterson C3", status: "ACTIVE", client_id: 548610 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "aaravsanchez@getoutreachdesk.info",
+          from_name: "Aarav Sanchez",
+          signature: "Aarav Sanchez\nRoofs by Peterson",
+          client_id: null,
+          campaign_ids: [2],
+        },
+        ...padAccounts(2, 548610),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 548610, name: "Peterson", logo: "Roofs by Peterson" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        added.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (campaignId: number, ids: number[]) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(added, [
+      [1, [11]],
+      [3, [11]],
+    ]);
+    assert.deepEqual(removed, [[2, [11]]]);
+    assert.equal(result.restored.length, 2);
+    assert.equal(result.pulled[0]?.email, "aaravsanchez@getoutreachdesk.info");
+    assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
+  });
+
+  it("D198: a dedicated generic on Peterson is not peeled or rewritten to Goliath", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const added: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        { id: 1, name: "Goliath Displacement M", status: "ACTIVE", client_id: 548611 },
         { id: 2, name: "Peterson C3", status: "ACTIVE", client_id: 548610 },
       ],
       listAllEmailAccounts: async () => [
@@ -119,18 +165,15 @@ describe("OneClientMembershipService", () => {
     });
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(added, [
-      [1, [11]],
-      [3, [11]],
-    ]);
-    assert.deepEqual(removed, [[2, [11]]]);
-    assert.equal(result.restored.length, 2);
-    assert.equal(result.pulled[0]?.email, "aaravsanchez@getoutreachdesk.info");
-    assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
-    assert.equal(updates[0]?.fields.client_id, 548611);
+    assert.deepEqual(removed, []);
+    assert.deepEqual(added, []);
+    assert.equal(result.pulled.length, 0);
+    assert.equal(result.restored.length, 0);
+    assert.equal(result.signaturesSet, 0);
+    assert.deepEqual(updates, []);
   });
 
-  it("puts a shell-only leftover-tagged generic back on live Goliath (D76)", async () => {
+  it("D198: a dedicated named-client generic on a Goliath shell is not dumped onto live Goliath", async () => {
     const added: Array<[number, number[]]> = [];
     const removed: Array<[number, number[]]> = [];
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
@@ -167,16 +210,11 @@ describe("OneClientMembershipService", () => {
     });
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(added, [
-      [1, [11]],
-      [4, [11]],
-    ]);
+    assert.deepEqual(added, []);
     assert.deepEqual(removed, []);
-    assert.deepEqual(
-      result.restored.map((row) => row.campaignId).sort(),
-      [1, 4],
-    );
-    assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
+    assert.equal(result.restored.length, 0);
+    assert.equal(result.signaturesSet, 0);
+    assert.deepEqual(updates, []);
   });
 
   it("does not dump a shell-only extra with no client_id onto Goliath", async () => {
@@ -440,12 +478,110 @@ describe("OneClientMembershipService", () => {
     assert.equal(result.restored.length, 0);
     assert.equal(result.signaturesSet, 0);
     assert.deepEqual(updates, []);
-    assert.ok(
-      result.skipped.some((row) => row.includes("on-week min 40")),
-    );
   });
 
-  it("D197: surplus exclusive generics above 40 may still be pulled", async () => {
+  it("D198: dedicated generic on Parlay / TechEvo is not peeled even above 40", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const added: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 1,
+          name: "Goliath Displacement M",
+          status: "PAUSED",
+          client_id: 548611,
+        },
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "ada@trygetintroduced.info",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nTechEvolution",
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3847798],
+        },
+        ...padAccounts(3847798, 521881),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        added.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, []);
+    assert.deepEqual(added, []);
+    assert.equal(result.pulled.length, 0);
+    assert.equal(result.restored.length, 0);
+    assert.deepEqual(updates, []);
+  });
+
+  it("D198: a dedicated generic linked to two named clients still peels the foreign camp", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        { id: 10, name: "Parlay Sports", status: "ACTIVE", client_id: 77 },
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "ada@trygetintroduced.info",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nParlay",
+          client_id: 77,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [10, 3847798],
+        },
+        ...padAccounts(10, 77),
+        ...padAccounts(3847798, 521881, 40, 900),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 77, name: "Parlay", logo: "Parlay" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, [[3847798, [11]]]);
+    assert.equal(result.pulled[0]?.email, "ada@trygetintroduced.info");
+    assert.equal(result.restored.length, 0);
+  });
+
+  it("D76: surplus undedicated rotating generics above 40 may still be pulled", async () => {
     const removed: Array<[number, number[]]> = [];
     const service = serviceWith({
       listCampaigns: async () => [
@@ -462,7 +598,7 @@ describe("OneClientMembershipService", () => {
           from_email: "ada@trygetintroduced.info",
           from_name: "Ada Pool",
           signature: "Ada Pool\nTechEvolution",
-          client_id: 521881,
+          client_id: null,
           tags: [{ tag_name: "GENERIC" }],
           campaign_ids: [3847798],
         },

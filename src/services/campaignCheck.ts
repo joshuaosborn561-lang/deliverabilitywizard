@@ -19,6 +19,7 @@ import {
   type CampaignFinding,
 } from "../lib/campaignCheck.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
   clientCountKey,
   countClientInboxFloors,
@@ -997,7 +998,16 @@ export class CampaignCheckService {
         this.config,
         this.state,
       );
-      if (generic && !mayTakeGenerics) {
+      const dedicatedClientId = generic
+        ? dedicatedGenericClientId(account, email, this.state, {
+            genericOwnerId: pocOwner?.id ?? null,
+          })
+        : null;
+      if (
+        generic &&
+        !mayTakeGenerics &&
+        dedicatedClientId !== campaign.client_id
+      ) {
         findings.push({
           kind: "generic_unapproved",
           detail: `${email} is a generic — needs Josh Slack approve (POC clients are pre-allowed)`,
@@ -1014,6 +1024,7 @@ export class CampaignCheckService {
       const owner = ownerClientId(account.client_id, memberships, {
         generic,
         genericOwnerId: generic ? (pocOwner?.id ?? null) : null,
+        dedicatedClientId,
       });
       const foreign = foreignCampaignIds(owner, memberships);
       if (foreign.length) {

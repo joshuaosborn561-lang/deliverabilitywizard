@@ -43,7 +43,7 @@ describe("GenericSendRestService", () => {
         {
           id: 7,
           from_email: "warm@pool.info",
-          client_id: 9,
+          client_id: null,
           campaign_ids: [1],
         },
         {
@@ -118,7 +118,7 @@ describe("GenericSendRestService", () => {
         {
           id: 7,
           from_email: "warm@pool.info",
-          client_id: 9,
+          client_id: null,
           campaign_ids: [1],
         },
         ...Array.from({ length: 39 }, (_, i) => ({
@@ -150,5 +150,75 @@ describe("GenericSendRestService", () => {
     assert.deepEqual(removed, []);
     assert.equal(result.benched.length, 0);
     assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
+  });
+
+  it("D198: does not bench a dedicated named-client generic on the send clock", async () => {
+    const state = new StateStore(
+      `/tmp/generic-rest-d198-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "ada@trygetintroduced.info",
+      domain: "trygetintroduced.info",
+      firstName: "Ada",
+      lastName: "Pool",
+      platform: "GOOGLE",
+      status: "assigned",
+      smartleadAccountId: 7,
+      assignedClientId: 9,
+    });
+    state.markGenericSendStartedAt(
+      "ada@trygetintroduced.info",
+      "2026-01-01T00:00:00Z",
+    );
+
+    const removed: number[] = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Parlay Sports", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 7,
+          from_email: "ada@trygetintroduced.info",
+          client_id: 9,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [1],
+        },
+        ...Array.from({ length: 41 }, (_, i) => ({
+          id: 100 + i,
+          from_email: `pad-${i}@client.info`,
+          client_id: 9,
+          campaign_ids: [1],
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 9, name: "Parlay", logo: "Parlay" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(campaignId);
+        void ids;
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new GenericSendRestService(
+      loadConfig({ ENABLE_GENERIC_SEND_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-01-16T00:00:00Z"),
+    });
+    assert.deepEqual(removed, []);
+    assert.equal(result.benched.length, 0);
+    assert.ok(
+      result.skipped.some((row) => row.includes("dedicated client generic")),
+    );
   });
 });

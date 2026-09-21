@@ -20,6 +20,10 @@ import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
+import {
+  detachWouldBreakOnWeekMin,
+  ON_WEEK_MIN_SENDERS,
+} from "../lib/clientStaffFloor.js";
 import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
@@ -66,6 +70,14 @@ interface AccountPlan {
  * are not clients). The paused pod-control shell does not count.
  * Signature is rewritten to the owner client's brand when a leftover
  * line is another client.
+ *
+ * D197 — do not pull a seat off an ACTIVE campaign that is already at
+ * the on-week minimum of 40. Exclusive generic + client-sig min-40
+ * top-ups were being treated as Goliath-owned foreign memberships and
+ * peeled within one health pass. Surplus above 40 may still come off.
+ * When a pull is skipped for the floor, do not restore that box onto
+ * Goliath or rewrite its client signature — that would undo the
+ * exclusive attach.
  */
 export class OneClientMembershipService {
   constructor(
@@ -132,6 +144,12 @@ export class OneClientMembershipService {
       .map((campaign) => campaign.id);
 
     const plans: AccountPlan[] = [];
+    const membershipCounts = new Map<number, number>();
+    for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      for (const id of campaignIdsOf(account)) {
+        membershipCounts.set(id, (membershipCounts.get(id) ?? 0) + 1);
+      }
+    }
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -182,12 +200,30 @@ export class OneClientMembershipService {
         continue;
       }
 
-      const pull = foreignCampaignIds(owner, memberships);
+      const rawPull = foreignCampaignIds(owner, memberships);
+      const pull: number[] = [];
+      let protectedByMin = false;
+      for (const campaignId of rawPull) {
+        const remaining = membershipCounts.get(campaignId) ?? 0;
+        if (
+          detachWouldBreakOnWeekMin(campaignById.get(campaignId), remaining)
+        ) {
+          protectedByMin = true;
+          result.skipped.push(
+            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+          );
+          continue;
+        }
+        pull.push(campaignId);
+        membershipCounts.set(campaignId, remaining - 1);
+      }
       const onOwner = memberships.some(
         (row) => !row.shell && row.clientId === owner,
       );
-      const leftoverTagged = leftoverReal;
-      const needsGoliathIdentity = leftoverReal;
+      // D197 — a floor-protected exclusive seat stays on the named client.
+      // Do not also dump it onto Goliath or rewrite its client signature.
+      const leftoverTagged = leftoverReal && !protectedByMin;
+      const needsGoliathIdentity = leftoverReal && !protectedByMin;
       // Shell-only leftover-tagged generics (Aarav after the first pass)
       // must go back on live Goliath, not sit on the paused shell.
       const restore =
@@ -230,6 +266,7 @@ export class OneClientMembershipService {
       );
       const needsSignature =
         !exclusiveInsight &&
+        !protectedByMin &&
         Boolean(desired) &&
         (account.signature ?? "") !== desired &&
         (Boolean(foreign) || needsGoliathIdentity);
@@ -250,7 +287,7 @@ export class OneClientMembershipService {
         restore,
         signature: needsSignature && desired ? desired : undefined,
         clearMarkerClientId: leftoverMarker,
-        writeOwnerClientId: leftoverReal,
+        writeOwnerClientId: leftoverReal && !protectedByMin,
       });
     }
 

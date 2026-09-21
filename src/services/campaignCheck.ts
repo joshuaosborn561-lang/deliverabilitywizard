@@ -22,7 +22,9 @@ import { isGenericMailbox } from "../lib/clientInbox.js";
 import {
   clientCountKey,
   countClientInboxFloors,
+  detachWouldBreakOnWeekMin,
   formatStaffFloorDetail,
+  ON_WEEK_MIN_SENDERS,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -780,6 +782,8 @@ export class CampaignCheckService {
   /**
    * D184 — pull a shared seat off Insight only. Never touch the
    * SalesGlider memberships or the mailbox signature.
+   * D197 — do not unlink when Insight is already at the on-week
+   * minimum of 40.
    */
   private async unlinkInsightSharedStaff(input: {
     campaignId: number;
@@ -795,6 +799,10 @@ export class CampaignCheckService {
     );
     if (!need.length) return [];
     if (this.config.dryRun) return [];
+    const campaign = input.campaignById.get(input.campaignId);
+    let remaining = input.accounts.filter((account) =>
+      campaignIdsOf(account).includes(input.campaignId),
+    ).length;
     const unlinked: string[] = [];
     for (const account of input.accounts) {
       if (!campaignIdsOf(account).includes(input.campaignId)) continue;
@@ -803,12 +811,19 @@ export class CampaignCheckService {
       }
       const email = accountEmail(account);
       if (!email || typeof account.id !== "number") continue;
+      if (detachWouldBreakOnWeekMin(campaign, remaining)) {
+        console.log(
+          `[campaign-check] D197 kept ${email} on Insight #${input.campaignId} ${input.name} (on-week min ${ON_WEEK_MIN_SENDERS})`,
+        );
+        continue;
+      }
       try {
         await this.smartlead.removeEmailAccountsFromCampaign(input.campaignId, [
           account.id,
         ]);
         await sleep(WRITE_GAP_MS);
         dropMembership(account, input.campaignId);
+        remaining -= 1;
         unlinked.push(email);
         console.log(
           `[campaign-check] D184 unlinked ${email} from Insight #${input.campaignId} ${input.name} (kept ACTIVE SalesGlider seats and signature)`,

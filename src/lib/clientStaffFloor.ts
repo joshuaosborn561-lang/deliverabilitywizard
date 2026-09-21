@@ -14,10 +14,29 @@ import { assignClientCohorts, onWeekCohort } from "./restCohort.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
+ * D197 — every ACTIVE on-week campaign keeps at least this many attached
+ * senders. Cleanup / rest / one-client may only peel surplus above it.
+ */
+export const ON_WEEK_MIN_SENDERS = 40;
+
+/**
+ * True when taking one more seat off this campaign would break D197.
+ * ACTIVE only — PAUSED/STOPPED hygiene (D169) still uses last-account.
+ */
+export function detachWouldBreakOnWeekMin(
+  campaign: { status?: string | null } | undefined,
+  remainingBeforeDetach: number,
+): boolean {
+  if (String(campaign?.status ?? "").toUpperCase() !== "ACTIVE") return false;
+  return remainingBeforeDetach <= ON_WEEK_MIN_SENDERS;
+}
+
+/**
  * D58 / D82 — even-split half of that client's own inboxes.
  * Odd totals round down. No named-client exception (Vasco is not special).
  * D196 — live campaign floor is the on-week pod, not this half, when
  * ESP-balanced A/B (D192) leaves one cohort smaller than half.
+ * D197 — never below the standing on-week minimum of 40.
  */
 export function clientInboxStaffFloor(clientInboxCount: number): number {
   if (!Number.isFinite(clientInboxCount) || clientInboxCount <= 0) return 0;
@@ -163,12 +182,13 @@ export function countOnWeekClientInboxesByKey(
 }
 
 /**
- * Live staff floor for a named client campaign (D58/D82/D196).
+ * Live staff floor for a named client campaign (D58/D82/D196/D197).
  *
  * When `onWeekCounts` is provided (every production caller), the floor
- * is that client's on-week pod — understaffed means an on-week seat
- * that should be attached is missing. ESP-odd splits (D192) can leave
- * B smaller than half; that is not a short.
+ * is max(that client's on-week pod, 40). Understaffed means an on-week
+ * seat that should be attached is missing, or the campaign is under the
+ * standing 40. ESP-odd splits (D192) can leave B smaller than half;
+ * that is not a short when the pod itself is ≥40.
  *
  * Without `onWeekCounts`, falls back to half of `clientInboxCounts`
  * (unit tests / D58 Vasco "no exception" guard).
@@ -181,7 +201,7 @@ export function staffFloorForCampaign(
 ): number {
   const key = clientCountKey(campaign.client_id);
   if (onWeekCounts) {
-    return onWeekCounts.get(key) ?? 0;
+    return Math.max(onWeekCounts.get(key) ?? 0, ON_WEEK_MIN_SENDERS);
   }
   return clientInboxStaffFloor(clientInboxCounts.get(key) ?? 0);
 }
@@ -194,6 +214,10 @@ export function formatStaffFloorDetail(
 ): string {
   const half = clientInboxStaffFloor(eligibleCount);
   const label =
-    floor === half ? "half this client's inboxes" : "on-week client pod";
+    floor === half
+      ? "half this client's inboxes"
+      : floor === ON_WEEK_MIN_SENDERS && half < ON_WEEK_MIN_SENDERS
+        ? "on-week minimum 40"
+        : "on-week client pod";
   return `staffable ${serving}/${floor} (${label})`;
 }

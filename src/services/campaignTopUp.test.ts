@@ -479,4 +479,65 @@ describe("CampaignTopUpService safety", () => {
       result.skipped.some((row) => row.includes("client-inbox only")),
     );
   });
+
+  it("D197: does not pull exclusive generics off a named campaign at 40", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Spare",
+      lastName: "Sender",
+      status: "assigned",
+    };
+    const { state } = fakeState(pool);
+    const removed: number[][] = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Parlay Sports", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        },
+        ...Array.from({ length: 39 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `parlay-${index}@parlay.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 9,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        })),
+      ],
+      listClients: async () => [{ id: 9, name: "Parlay" }],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(ids);
+        void campaignId;
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.deepEqual(removed, []);
+    assert.equal(result.pulledGenerics.length, 0);
+    assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
+  });
 });

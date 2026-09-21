@@ -46,7 +46,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D22–D23 | Burned numbers — no entry exists |
 | D24 | Live — Outlook / Microsoft cap qualified by D183 |
 | D25 | Live — floor definition superseded by D58/D82 |
-| D26 | Live — qualified by D43 (resters skip fan-out) |
+| D26 | Live — qualified by D43 (resters skip fan-out); ACTIVE foreign pull will not drop a campaign below 40 (D197) |
 | D27 | Live — qualified by D58/D81/D82 (POC or approval) |
 | D28 | Superseded by D69/D93/D96 — no provider-split guesses |
 | D29 | Superseded by D91 |
@@ -61,7 +61,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D40 | Live |
 | D41 | Mostly superseded (D43 cohorts, D50 clock, D71 Slack) — burn checklist and DKIM/DMARC advisory live |
 | D42 | Superseded by D43 |
-| D43 | Live — qualified by D169 (off-week also leaves PAUSED/STOPPED); split is ESP-balanced within Outlook/Gmail (D192) |
+| D43 | Live — qualified by D169 (off-week also leaves PAUSED/STOPPED); split is ESP-balanced within Outlook/Gmail (D192); ACTIVE detach will not drop a campaign below 40 (D197) |
 | D44 | Historical one-shot (ran 2026-08-21) |
 | D45 | Live |
 | D46 | Live — enforced by D106 |
@@ -91,7 +91,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
 | D74 | Live — log-only clause superseded by D75 |
 | D75 | Live |
-| D76 | Live |
+| D76 | Live — exclusive min-40 generic identity rewrite / restore qualified by D197 |
 | D77 | Live — Goliath-only unpause generalized by D82 |
 | D78 | Superseded by D80→D88 |
 | D79 | Retired-record (no per-sender bounce pull) — live |
@@ -204,10 +204,11 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D189 | Live — Insight campaigns are now client 582890 (D192); named ids stay rest-sticky | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
-| D193 | Live | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
+| D193 | Live — peel of exclusive min-40 generic seats qualified by D197 | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
-| D196 | Live | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
+| D196 | Live — floor is max(on-week pod, 40) per D197 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
+| D197 | Live | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
 
 ---
 
@@ -6115,6 +6116,71 @@ D99/D176 (held / attach-blocked still do not inflate the floor).
 **Guards.** canon D196: 94 eligible ESP-odd, onWeek=B → floor 46;
 45 staffable is short 1; A week 48 seats is not understaffed
 against 48; generics excluded; CANON names the on-week caveat.
+
+---
+
+## D197 — On-week ACTIVE campaigns keep ≥40 senders; do not peel below that
+
+**Decision (Josh 2026-09-21, min-40 restaff peeled within ~30 minutes).**
+Every ACTIVE campaign on the on-week POD keeps **at least 40 attached
+senders**. The live staff floor is `max(on-week client pod, 40)`
+(D196 still wins when the pod is 46 or 48).
+
+Balance / cleanup stages must not unlink a seat from an ACTIVE
+campaign when that would drop the attach count below 40:
+
+- **one-client** — exclusive generic + client-sig top-ups are not
+  foreign-pulled, not restored onto Goliath, and not signature-
+  rewritten to the POC brand while the named campaign is at the
+  floor. Surplus above 40 may still come off.
+- **client-rest** — off-week named seats rest only as surplus
+  above 40. PAUSED/STOPPED hygiene is unchanged (D169).
+- **generic-send-rest** — the 14-day send clock does not bench a
+  generic off an ACTIVE campaign at the floor.
+- **top-up `pullNonGoliathGenerics`** (and cross-client generic
+  release) — same floor. The wizard still does not *attach* pool
+  senders onto named clients (D193).
+- **campaign-check Insight shared-staff unlink** — same floor.
+- **pod-cover** does not unlink live campaign seats; no change.
+
+Warmup-gate pulls (D105), attach-block / retire (D176), and
+last-account on PAUSED/STOPPED stay as they are.
+
+**Why.** 2026-09-21 ~10:07am CT a min-40 restaff brought Parlay /
+BCP / TechEvo (and Insight exclusives) to ≥40 on POD-B with
+exclusive generic attach + client sigs. By ~10:45am CT those
+counts were back down (Parlay 40→24, BCP 40→31, TechEvo 40→22,
+Insight exclusives mostly gone). Health logs at 15:26Z–15:28Z
+lined up with client-rest / one-client.
+
+Verified in code (not assumed): `OneClientMembershipService`
+treats every generic as Goliath-owned (D76) and pulls named-
+client memberships as foreign — the D193 test even asserted that
+pull. The same health pass then runs `campaign-health` →
+`pullNonGoliathGenerics`, which stripped every remaining generic
+off non-POC campaigns with no floor. client-rest skips generics
+but will bench off-week *named* seats that were used to hit 40.
+pod-cover does not unlink live seats.
+
+**Rejected.** A grace window / attach-protection stamp (state
+would forget across deploys and miss already-sitting exclusives).
+Reversing D193 attach (wizard auto-filling named clients from the
+pool). Deleting one-client or D76.
+
+**Supersedes / amends.** Qualifies D26/D75 (foreign pull yields
+to the 40 floor). Qualifies D43/D169 (off-week ACTIVE detach
+yields to the 40 floor). Qualifies D76 (no Goliath restore /
+sig rewrite while a floor-protected exclusive seat remains).
+Qualifies D193 (existing exclusive min-40 generic seats are not
+peeled; new attaches stay forbidden). Qualifies D196 (floor is
+max(on-week pod, 40)). Qualifies D184 Insight shared-staff
+unlink the same way. Does not reverse D105 warmup pulls.
+
+**Guards.** canon D197: `ON_WEEK_MIN_SENDERS === 40`;
+`detachWouldBreakOnWeekMin` on ACTIVE at 40; one-client / top-up
+/ client-rest / generic-rest / Insight unlink consult it; a
+24-seat on-week pod floors at 40; CANON names the 40 floor and
+the peel exception.
 
 ---
 

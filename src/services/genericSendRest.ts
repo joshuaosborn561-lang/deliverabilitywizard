@@ -7,6 +7,10 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import {
+  detachWouldBreakOnWeekMin,
+  ON_WEEK_MIN_SENDERS,
+} from "../lib/clientStaffFloor.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
@@ -148,6 +152,14 @@ export class GenericSendRestService {
       const removed: number[] = [];
       for (const campaignId of onCampaigns) {
         const remaining = membership.get(campaignId) ?? 0;
+        if (
+          detachWouldBreakOnWeekMin(campaignById.get(campaignId), remaining)
+        ) {
+          result.skipped.push(
+            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+          );
+          continue;
+        }
         if (remaining <= 1) {
           result.skipped.push(
             `${email}: last account on #${campaignId} — wait for top-up`,

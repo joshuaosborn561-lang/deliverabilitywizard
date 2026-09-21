@@ -6,7 +6,9 @@ import {
   clientInboxStaffFloor,
   countClientInboxFloors,
   countClientInboxesByKey,
+  detachWouldBreakOnWeekMin,
   formatStaffFloorDetail,
+  ON_WEEK_MIN_SENDERS,
   staffFloorForCampaign,
 } from "./clientStaffFloor.js";
 import { onWeekCohort } from "./restCohort.js";
@@ -18,6 +20,18 @@ describe("clientInboxStaffFloor", () => {
     assert.equal(clientInboxStaffFloor(25), 12);
     assert.equal(clientInboxStaffFloor(1), 0);
     assert.equal(clientInboxStaffFloor(0), 0);
+  });
+});
+
+describe("detachWouldBreakOnWeekMin (D197)", () => {
+  it("protects ACTIVE campaigns at or below 40 and ignores PAUSED", () => {
+    assert.equal(ON_WEEK_MIN_SENDERS, 40);
+    assert.equal(detachWouldBreakOnWeekMin({ status: "ACTIVE" }, 40), true);
+    assert.equal(detachWouldBreakOnWeekMin({ status: "ACTIVE" }, 24), true);
+    assert.equal(detachWouldBreakOnWeekMin({ status: "ACTIVE" }, 41), false);
+    assert.equal(detachWouldBreakOnWeekMin({ status: "PAUSED" }, 40), false);
+    assert.equal(detachWouldBreakOnWeekMin({ status: "STOPPED" }, 1), false);
+    assert.equal(detachWouldBreakOnWeekMin(undefined, 40), false);
   });
 });
 
@@ -259,6 +273,36 @@ describe("D196 on-week staff floor", () => {
     assert.equal(
       formatStaffFloorDetail(40, floor, 80),
       "staffable 40/40 (half this client's inboxes)",
+    );
+  });
+
+  it("D197: an on-week pod smaller than 40 still floors at 40", () => {
+    const accounts = Array.from({ length: 48 }, (_, i) => ({
+      id: i + 1,
+      from_email: `box-${String(i).padStart(3, "0")}@parlay.info`,
+      client_id: 7,
+    }));
+    const bWeek = new Date("2026-01-15T17:00:00Z");
+    const floors = countClientInboxFloors(
+      accounts,
+      [{ id: 1, name: "Parlay Sports", status: "ACTIVE", client_id: 7 }],
+      [{ id: 7, name: "Parlay" }],
+      emptyConfig,
+      emptyState,
+      bWeek,
+    );
+    assert.equal(floors.eligible.get(clientCountKey(7)), 48);
+    assert.equal(floors.onWeek.get(clientCountKey(7)), 24);
+    const floor = staffFloorForCampaign(
+      { client_id: 7, name: "Parlay Sports" },
+      floors.eligible,
+      "Parlay",
+      floors.onWeek,
+    );
+    assert.equal(floor, 40);
+    assert.equal(
+      formatStaffFloorDetail(24, floor, 48),
+      "staffable 24/40 (on-week minimum 40)",
     );
   });
 

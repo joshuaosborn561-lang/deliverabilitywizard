@@ -16,6 +16,8 @@ import { owesWarmup } from "./warmupGate.js";
 import {
   allowsGenericStaff,
   countClientInboxFloors,
+  detachWouldBreakOnWeekMin,
+  ON_WEEK_MIN_SENDERS,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
@@ -346,6 +348,17 @@ export class CampaignTopUpService {
       for (const id of on) {
         if (id === keep) continue;
         if (sameClient(campaignById.get(id), keepCampaign)) continue;
+        if (
+          detachWouldBreakOnWeekMin(
+            campaignById.get(id),
+            projected.get(id) ?? 0,
+          )
+        ) {
+          result.skipped.push(
+            `${row.email}: #${id} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+          );
+          continue;
+        }
         try {
           if (!dryRun) {
             await this.smartlead.removeEmailAccountsFromCampaign(id, [
@@ -670,6 +683,8 @@ export class CampaignTopUpService {
   /**
    * D58 — generics come off every campaign that is not Goliath. The paused
    * pod-control shell is left alone (D56).
+   * D197 — do not peel those generics when the ACTIVE campaign is already
+   * at the on-week minimum of 40; surplus above 40 may still come off.
    */
   private async pullNonGoliathGenerics(input: {
     dryRun: boolean;
@@ -681,6 +696,12 @@ export class CampaignTopUpService {
     projected: Map<number, number>;
     result: TopUpResult;
   }): Promise<void> {
+    const membership = new Map<number, number>();
+    for (const account of input.accounts) {
+      for (const id of campaignIdsOf(account)) {
+        membership.set(id, (membership.get(id) ?? 0) + 1);
+      }
+    }
     const byCampaign = new Map<number, Array<{ accountId: number; email: string }>>();
     for (const account of input.accounts) {
       const email = accountEmail(account)?.toLowerCase();
@@ -698,6 +719,15 @@ export class CampaignTopUpService {
           remaining.push(campaignId);
           continue;
         }
+        const current = membership.get(campaignId) ?? 0;
+        if (detachWouldBreakOnWeekMin(campaign, current)) {
+          remaining.push(campaignId);
+          input.result.skipped.push(
+            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+          );
+          continue;
+        }
+        membership.set(campaignId, current - 1);
         const list = byCampaign.get(campaignId) ?? [];
         list.push({ accountId: account.id, email });
         byCampaign.set(campaignId, list);

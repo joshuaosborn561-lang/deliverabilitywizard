@@ -16,6 +16,26 @@ const WARMED = "2025-01-01T00:00:00.000Z";
 /** Still inside the 21-day owe window relative to wall clock (owesWarmup uses Date.now). */
 const YOUNG = new Date(Date.now() - 3 * 86_400_000).toISOString();
 
+/**
+ * Generic-pool seats that keep ACTIVE membership ≥40 so A/B rest can
+ * still bench surplus. They count toward detach remaining but never
+ * enter the client A/B split (isGenericMailbox).
+ */
+function heldMin40Pads(
+  campaignIds: number[],
+  _clientId: number,
+  count = 40,
+): Array<Record<string, unknown>> {
+  return Array.from({ length: count }, (_, i) => ({
+    id: 9000 + i,
+    from_email: `pad-${i}@crosslaunchco.com`,
+    campaign_ids: campaignIds,
+    created_at: WARMED,
+    is_smtp_success: true,
+    is_imap_success: true,
+  }));
+}
+
 describe("isExcludedOnlyMembership", () => {
   it("does not treat a leftover campaign id as excluded (D63)", () => {
     const byId = new Map([
@@ -206,8 +226,8 @@ describe("ClientRestService", () => {
         { id: 1, name: "Live", status: "ACTIVE", client_id: 9 },
         { id: 2, name: "Also", status: "ACTIVE", client_id: 9 },
       ],
-      listAllEmailAccounts: async () =>
-        emails.map((from_email, index) => ({
+      listAllEmailAccounts: async () => [
+        ...emails.map((from_email, index) => ({
           id: 10 + index,
           from_email,
           client_id: 9,
@@ -216,6 +236,8 @@ describe("ClientRestService", () => {
           is_smtp_success: true,
           is_imap_success: true,
         })),
+        ...heldMin40Pads([1, 2], 9),
+      ],
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
         ids: number[],
@@ -699,8 +721,8 @@ describe("ClientRestService", () => {
         { id: 2, name: "With Team", status: "PAUSED", client_id: 542838 },
         { id: 3, name: "Stopped client-named", status: "STOPPED", client_id: 542838 },
       ],
-      listAllEmailAccounts: async () =>
-        emails.map((from_email, index) => ({
+      listAllEmailAccounts: async () => [
+        ...emails.map((from_email, index) => ({
           id: 10 + index,
           from_email,
           client_id: 542838,
@@ -709,6 +731,8 @@ describe("ClientRestService", () => {
           is_smtp_success: true,
           is_imap_success: true,
         })),
+        ...heldMin40Pads([1], 542838),
+      ],
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
         ids: number[],
@@ -766,14 +790,16 @@ describe("ClientRestService", () => {
         { id: 3841904, name: "Pod control shell", status: "PAUSED" },
         { id: 9, name: "Old run", status: "COMPLETED", client_id: 9 },
       ],
-      listAllEmailAccounts: async () =>
-        emails.map((from_email, index) => ({
+      listAllEmailAccounts: async () => [
+        ...emails.map((from_email, index) => ({
           id: 10 + index,
           from_email,
           client_id: 9,
           campaign_ids: [1, 3841904, 9],
           created_at: WARMED,
         })),
+        ...heldMin40Pads([1], 9),
+      ],
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
         ids: number[],
@@ -1105,8 +1131,8 @@ describe("ClientRestService", () => {
           client_id: 345263,
         },
       ],
-      listAllEmailAccounts: async () =>
-        emails.map((from_email, index) => ({
+      listAllEmailAccounts: async () => [
+        ...emails.map((from_email, index) => ({
           id: 10 + index,
           from_email,
           client_id: 345263,
@@ -1117,6 +1143,8 @@ describe("ClientRestService", () => {
           is_smtp_success: true,
           is_imap_success: true,
         })),
+        ...heldMin40Pads([89], 345263),
+      ],
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
         ids: number[],
@@ -1196,8 +1224,8 @@ describe("ClientRestService", () => {
           client_id: 345263,
         },
       ],
-      listAllEmailAccounts: async () =>
-        emails.map((from_email, index) => ({
+      listAllEmailAccounts: async () => [
+        ...emails.map((from_email, index) => ({
           id: 10 + index,
           from_email,
           client_id: 345263,
@@ -1206,6 +1234,8 @@ describe("ClientRestService", () => {
           is_smtp_success: true,
           is_imap_success: true,
         })),
+        ...heldMin40Pads([89], 345263),
+      ],
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
         ids: number[],
@@ -1342,5 +1372,62 @@ describe("ClientRestService", () => {
       ),
       "D184 split still blocks Insight → Engagers on restore",
     );
+  });
+
+  it("D197: does not bench off-week named seats when ACTIVE is at 40", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // B off
+    const emails = Array.from(
+      { length: 40 },
+      (_, i) => `seat-${String(i).padStart(2, "0")}@client.info`,
+    );
+    const offEmails = emails.filter(
+      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
+    );
+    assert.ok(offEmails.length >= 1, "need off-week seats to prove the skip");
+
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-min40-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Parlay Sports", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () =>
+        emails.map((from_email, index) => ({
+          id: 10 + index,
+          from_email,
+          client_id: 9,
+          campaign_ids: [1],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        })),
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, now });
+    assert.deepEqual(removed, []);
+    for (const email of offEmails) {
+      assert.equal(
+        result.benched.some((row) => row.email === email),
+        false,
+        `${email} must stay — peeling would drop Parlay below 40`,
+      );
+    }
+    assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
   });
 });

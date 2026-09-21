@@ -9661,10 +9661,10 @@ describe("owner intent — D196 on-week client-pod staff floor", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D196\*\*/,
+      /D196/,
       stop(
-        "CANON is dated D196.",
-        "CANON.md header was not bumped.",
+        "CANON still names D196.",
+        "CANON.md lost D196.",
       ),
     );
 
@@ -9678,6 +9678,137 @@ describe("owner intent — D196 on-week client-pod staff floor", () => {
       stop(
         "The on-week floor is in the ledger (D196).",
         "DECISIONS.md no longer has D196.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", () => {
+  it("D197: cleanup stages must not peel an ACTIVE campaign below 40", async () => {
+    const { ON_WEEK_MIN_SENDERS, detachWouldBreakOnWeekMin, staffFloorForCampaign, clientCountKey, countClientInboxFloors } =
+      await import("../lib/clientStaffFloor.js");
+    assert.equal(
+      ON_WEEK_MIN_SENDERS,
+      40,
+      stop(
+        "The standing on-week minimum is 40 senders (D197).",
+        `ON_WEEK_MIN_SENDERS is ${ON_WEEK_MIN_SENDERS}.`,
+      ),
+    );
+    assert.equal(
+      detachWouldBreakOnWeekMin({ status: "ACTIVE" }, 40),
+      true,
+      stop(
+        "Detaching from an ACTIVE campaign at 40 breaks the floor (D197).",
+        "detachWouldBreakOnWeekMin no longer protects ACTIVE at 40.",
+      ),
+    );
+    assert.equal(
+      detachWouldBreakOnWeekMin({ status: "PAUSED" }, 40),
+      false,
+      stop(
+        "PAUSED hygiene is not the 40 floor (D169/D197).",
+        "detachWouldBreakOnWeekMin now blocks PAUSED detaches.",
+      ),
+    );
+
+    const accounts = Array.from({ length: 48 }, (_, i) => ({
+      id: i + 1,
+      from_email: `box-${String(i).padStart(3, "0")}@parlay.info`,
+      client_id: 7,
+    }));
+    const floors = countClientInboxFloors(
+      accounts,
+      [{ id: 1, name: "Parlay Sports", status: "ACTIVE", client_id: 7 }],
+      [{ id: 7, name: "Parlay" }],
+      { extraGenericMailboxes: [], extraGenericDomains: [], prewarmedDomains: [] },
+      { getPoolMailbox: () => undefined },
+      new Date("2026-01-15T17:00:00Z"),
+    );
+    assert.equal(floors.onWeek.get(clientCountKey(7)), 24);
+    assert.equal(
+      staffFloorForCampaign(
+        { client_id: 7, name: "Parlay Sports" },
+        floors.eligible,
+        "Parlay",
+        floors.onWeek,
+      ),
+      40,
+      stop(
+        "A 24-seat on-week pod still floors at 40 (D197).",
+        "staffFloorForCampaign no longer applies the standing 40 minimum.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const files = {
+      oneClient: await readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+      clientRest: await readFile(
+        new URL("../services/clientRest.ts", import.meta.url),
+        "utf8",
+      ),
+      genericRest: await readFile(
+        new URL("../services/genericSendRest.ts", import.meta.url),
+        "utf8",
+      ),
+      topUp: await readFile(
+        new URL("../services/campaignTopUp.ts", import.meta.url),
+        "utf8",
+      ),
+      check: await readFile(
+        new URL("../services/campaignCheck.ts", import.meta.url),
+        "utf8",
+      ),
+    };
+    for (const [name, src] of Object.entries(files)) {
+      assert.match(
+        src,
+        /detachWouldBreakOnWeekMin/,
+        stop(
+          `${name} refuses to peel an ACTIVE campaign below 40 (D197).`,
+          `${name} no longer consults detachWouldBreakOnWeekMin.`,
+        ),
+      );
+    }
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /max\(that client's on-week pod, 40\)|on-week minimum 40/,
+      stop(
+        "CANON states the standing 40 floor (D197).",
+        "CANON.md lost the ≥40 on-week minimum.",
+      ),
+    );
+    assert.match(
+      canon,
+      /exclusive generic \+ client-sig seats/,
+      stop(
+        "CANON names the exclusive-generic peel exception (D197).",
+        "CANON.md lost the D197 peel exception.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D197\*\*/,
+      stop(
+        "CANON is dated D197.",
+        "CANON.md header was not bumped.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D197 — On-week ACTIVE campaigns keep ≥40 senders/,
+      stop(
+        "The ≥40 peel rule is in the ledger (D197).",
+        "DECISIONS.md no longer has D197.",
       ),
     );
   });

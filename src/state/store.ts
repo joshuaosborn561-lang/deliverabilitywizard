@@ -154,6 +154,8 @@ export interface PlacementResultsSnapshot {
     totalSeeds: number;
     providers: Array<{ name: string; inboxPercent: number }>;
   }>;
+  /** False when a catalog walk was truncated or smaller than known live tests. */
+  complete?: boolean;
 }
 
 export interface PendingResumeRecord {

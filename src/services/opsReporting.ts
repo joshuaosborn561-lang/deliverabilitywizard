@@ -69,12 +69,20 @@ export interface PlacementResults {
   rows: PlacementResultRow[];
   errors: string[];
   stale?: boolean;
+  /** False when the catalog walk 429'd or found fewer live tests than we know exist. */
+  complete?: boolean;
 }
 
 /** D187 — live-sender cap after canary copy is filtered out (D126). */
 export const OPS_PLACEMENT_REPORT_CAP = 80;
 const OPS_PLACEMENT_LIST_PAGE = 100;
 const OPS_PLACEMENT_LIST_MAX_PAGES = 8;
+/** Fail fast on providerwise pulls — retries stampede a 429 window. */
+export const OPS_PLACEMENT_LIVE_RETRIES = 0;
+/** One retry on catalog pages so a mid-walk 429 can still fill the live cap. */
+export const OPS_PLACEMENT_LIST_RETRIES = 1;
+/** After SmartDelivery 429s the board, do not poke it again for this long. */
+export const OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
 export interface FleetSummary {
   generatedAt: string;
@@ -139,6 +147,7 @@ export class PlacementResultsService {
     | { expiresAt: number; value: PlacementResults }
     | undefined;
   private inFlight: Promise<PlacementResults> | null = null;
+  private rateLimitedUntil = 0;
   private readonly forceRefreshFloorMs = 30 * 1000;
 
   constructor(
@@ -146,20 +155,51 @@ export class PlacementResultsService {
     private readonly book: InventoryBook,
     private readonly state: StateStore,
     private readonly cacheMs = 5 * 60 * 1000,
+    private readonly rateLimitCooldownMs = OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS,
   ) {}
 
   async get(force = false): Promise<PlacementResults> {
     if (this.inFlight) return this.inFlight;
+    const now = Date.now();
+    const fallback = this.cache?.value ?? this.fromPersisted();
+    if (now < this.rateLimitedUntil && fallback) {
+      const value = this.snapshotView(fallback, {
+        stale: true,
+        errors: force
+          ? [humanizeAlertError("listTests: Rate limit exceeded")]
+          : [],
+      });
+      this.cache = {
+        expiresAt: Math.max(this.cache?.expiresAt ?? 0, this.rateLimitedUntil),
+        value,
+      };
+      return value;
+    }
     if (
       this.cache &&
-      ((!force && this.cache.expiresAt > Date.now()) ||
+      ((!force && this.cache.expiresAt > now) ||
         (force &&
-          Date.now() -
-            Date.parse(this.cache.value.generatedAt) <
+          this.snapshotLooksComplete(this.cache.value) &&
+          now - Date.parse(this.cache.value.generatedAt) <
             this.forceRefreshFloorMs))
     ) {
-      return this.cache.value;
+      return force ? this.cache.value : this.quietView(this.cache.value);
     }
+
+    const generatedAtMs = fallback ? Date.parse(fallback.generatedAt) : NaN;
+    const snapshotFresh =
+      Number.isFinite(generatedAtMs) && now - generatedAtMs < this.cacheMs;
+    if (
+      !force &&
+      fallback &&
+      snapshotFresh &&
+      this.snapshotLooksComplete(fallback)
+    ) {
+      const value = this.quietView(fallback);
+      this.cache = { expiresAt: generatedAtMs + this.cacheMs, value };
+      return value;
+    }
+
     this.inFlight = this.loadSafe(force).finally(() => {
       this.inFlight = null;
     });
@@ -176,7 +216,36 @@ export class PlacementResultsService {
         providers: [...row.providers],
       })),
       errors: [],
-      stale: true,
+      complete: snapshot.complete,
+    };
+  }
+
+  /**
+   * A 4-row leftover from a truncated catalog walk must not block a refresh.
+   * A complete persist (or a pre-flag snapshot of 40+, the old D126 cap) can.
+   */
+  private snapshotLooksComplete(value: PlacementResults): boolean {
+    if (value.complete === false) return false;
+    if (value.complete === true) return true;
+    return value.rows.length >= 40;
+  }
+
+  /** Tab-open view: keep the snapshot, drop the red rate-limit banner. */
+  private quietView(value: PlacementResults): PlacementResults {
+    if (!value.rows.length || !value.errors.length) return value;
+    return { ...value, errors: [] };
+  }
+
+  private snapshotView(
+    fallback: PlacementResults,
+    opts: { stale: boolean; errors: string[] },
+  ): PlacementResults {
+    return {
+      generatedAt: fallback.generatedAt,
+      rows: fallback.rows,
+      errors: uniqueErrors(opts.errors),
+      stale: opts.stale,
+      complete: fallback.complete,
     };
   }
 
@@ -185,6 +254,7 @@ export class PlacementResultsService {
     this.state.setPlacementResults({
       generatedAt: value.generatedAt,
       rows: value.rows,
+      complete: value.complete,
     });
     void this.state.save().catch((error) => {
       console.warn("[ops-placement] snapshot save failed", error);
@@ -196,15 +266,23 @@ export class PlacementResultsService {
       return await this.load(force);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (isRateLimitNoise(message)) {
+        this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+      }
       const fallback = this.cache?.value ?? this.fromPersisted();
       const note = humanizeAlertError(`listTests: ${message}`);
       if (fallback) {
-        const value = {
-          ...fallback,
+        const value = this.snapshotView(fallback, {
           stale: true,
-          errors: uniqueErrors([note, ...(fallback.errors ?? [])]),
+          errors: force ? [note] : [],
+        });
+        this.cache = {
+          expiresAt: Math.max(
+            Date.now() + this.cacheMs,
+            this.rateLimitedUntil,
+          ),
+          value,
         };
-        this.cache = { expiresAt: Date.now() + this.cacheMs, value };
         return value;
       }
       return {
@@ -267,107 +345,291 @@ export class PlacementResultsService {
           campaignsLoaded,
         }),
       errors,
+      force,
     );
 
-    const tests = listed
-      .filter((test) =>
-        isLivePlacementTest(test, {
-          campaignByTest,
-          liveById,
-          campaignsLoaded,
-        }),
-      )
-      // D187 — after canary-copy tests are gone, so live senders fit.
-      .slice(0, 80);
+    const listedLive = listed.tests.filter((test) =>
+      isLivePlacementTest(test, {
+        campaignByTest,
+        liveById,
+        campaignsLoaded,
+      }),
+    );
+    const previousSnapshot = this.cache?.value ?? this.fromPersisted();
+    const assembled = this.assembleLiveRows({
+      listedLive,
+      previousById,
+      previousSnapshot,
+      liveById,
+      campaignsLoaded,
+      campaignByTest,
+    });
+    const expected = this.expectedLiveTestCount(liveById, campaignsLoaded);
+    const covered = new Set(
+      assembled
+        .map((row) => row.campaignId)
+        .filter((id): id is number => id != null),
+    );
+    const coversLive =
+      campaignsLoaded &&
+      expected > 0 &&
+      covered.size >= Math.min(OPS_PLACEMENT_REPORT_CAP, expected);
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
-    const rows: PlacementResultRow[] = new Array(tests.length);
-    let skipProviders = false;
-    for (let index = 0; index < tests.length; index += 1) {
-      const test = tests[index]!;
+    const listedIds = new Set(
+      listedLive
+        .map((test) => testIdOf(test))
+        .filter((id): id is string => Boolean(id)),
+    );
+    let skipProviders = listed.truncated;
+    for (const row of assembled) {
+      const haveEsp =
+        typeof row.googleInboxPercent === "number" &&
+        typeof row.microsoftInboxPercent === "number";
+      if (skipProviders || !listedIds.has(row.id)) continue;
+      if (!force && haveEsp) continue;
+      try {
+        applyProviderwise(
+          row,
+          await this.smartDelivery.getProviderwiseReport(row.id, {
+            retries: OPS_PLACEMENT_LIVE_RETRIES,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isRateLimitNoise(message)) {
+          this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+          skipProviders = true;
+          if (force) {
+            errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
+          }
+        } else {
+          errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
+        }
+      }
+      if (gapMs) await sleep(gapMs);
+    }
+
+    const value: PlacementResults = {
+      generatedAt: new Date().toISOString(),
+      rows: assembled,
+      errors: uniqueErrors(force ? errors : []),
+      complete: coversLive,
+      stale: listed.truncated && assembled.length > 0,
+    };
+    if (!assembled.length) {
+      return {
+        generatedAt: value.generatedAt,
+        rows: [],
+        errors: uniqueErrors(errors),
+      };
+    }
+    if (value.complete || assembled.length > (previousSnapshot?.rows.length ?? 0)) {
+      this.cache = { expiresAt: Date.now() + this.cacheMs, value };
+      this.persist(value);
+      return value;
+    }
+    this.cache = {
+      expiresAt: Math.max(
+        Date.now() + this.rateLimitCooldownMs,
+        this.rateLimitedUntil,
+      ),
+      value,
+    };
+    return value;
+  }
+
+  /**
+   * The catalog is newest-first and mostly canary-copy. A 429 after page 1
+   * can list only a handful of live tests — and persisting that is how the
+   * board got stuck at four rows. Membership comes from testedCampaigns for
+   * every ACTIVE campaign, plus anything this pass did list.
+   */
+  private assembleLiveRows(opts: {
+    listedLive: SpamTestSummary[];
+    previousById: Map<string, PlacementResultRow>;
+    previousSnapshot: PlacementResults | null;
+    liveById: Map<number, { name: string }>;
+    campaignsLoaded: boolean;
+    campaignByTest: Map<string, { campaignId: number; campaignName: string }>;
+  }): PlacementResultRow[] {
+    const byId = new Map<string, PlacementResultRow>();
+    const remember = (row: PlacementResultRow) => {
+      if (!row.id) return;
+      const prior = byId.get(row.id);
+      if (!prior) {
+        byId.set(row.id, row);
+        return;
+      }
+      byId.set(row.id, {
+        ...prior,
+        ...row,
+        providers: row.providers.length ? row.providers : prior.providers,
+        googleInboxPercent: row.googleInboxPercent ?? prior.googleInboxPercent,
+        microsoftInboxPercent:
+          row.microsoftInboxPercent ?? prior.microsoftInboxPercent,
+        inboxPercent: row.inboxPercent ?? prior.inboxPercent,
+        spamPercent: row.spamPercent ?? prior.spamPercent,
+        tabPercent: row.tabPercent ?? prior.tabPercent,
+        createdAt: row.createdAt ?? prior.createdAt,
+        name: row.name || prior.name,
+      });
+    };
+
+    if (opts.campaignsLoaded) {
+      for (const record of Object.values(this.state.get().testedCampaigns)) {
+        if (!opts.liveById.has(record.campaignId)) continue;
+        const liveName = opts.liveById.get(record.campaignId)?.name;
+        if (titleHasCanaryCopyPhrase(record.campaignName, liveName)) continue;
+        for (const testId of record.testIds) {
+          const id = String(testId);
+          if (!id) continue;
+          const previous = opts.previousById.get(id);
+          remember({
+            id,
+            name: previous?.name ?? `Auto: ${record.campaignName}`,
+            campaignId: record.campaignId,
+            campaignName: record.campaignName || liveName,
+            status: previous?.status ?? "UNKNOWN",
+            createdAt: previous?.createdAt ?? record.testedAt,
+            runNumber: previous?.runNumber,
+            inboxPercent: previous?.inboxPercent,
+            tabPercent: previous?.tabPercent,
+            spamPercent: previous?.spamPercent,
+            googleInboxPercent: previous?.googleInboxPercent,
+            microsoftInboxPercent: previous?.microsoftInboxPercent,
+            totalSeeds: previous?.totalSeeds ?? 0,
+            providers: previous?.providers ? [...previous.providers] : [],
+          });
+        }
+      }
+    }
+
+    for (const row of opts.previousSnapshot?.rows ?? []) {
+      if (opts.campaignsLoaded && row.campaignId != null) {
+        if (!opts.liveById.has(row.campaignId)) continue;
+        const liveName = opts.liveById.get(row.campaignId)?.name;
+        if (titleHasCanaryCopyPhrase(row.campaignName, row.name, liveName)) {
+          continue;
+        }
+      }
+      remember({ ...row, providers: [...row.providers] });
+    }
+
+    for (const test of opts.listedLive) {
       const id = testIdOf(test);
       if (!id) continue;
-      const mapped = campaignByTest.get(id);
+      const mapped = opts.campaignByTest.get(id);
       const campaignId = resolveCampaignId(mapped?.campaignId, test);
-      const previous = previousById.get(id);
-      const row: PlacementResultRow = {
+      const previous = opts.previousById.get(id) ?? byId.get(id);
+      remember({
         id,
-        name: String(test.test_name ?? `Test ${id}`),
+        name: String(test.test_name ?? previous?.name ?? `Test ${id}`),
         campaignId,
         campaignName:
           mapped?.campaignName ||
-          (campaignId != null ? liveById.get(campaignId)?.name : undefined),
-        status: String(test.status ?? "UNKNOWN"),
-        createdAt: test.created_at,
-        runNumber: test.current_test_run_no,
+          (campaignId != null
+            ? opts.liveById.get(campaignId)?.name
+            : undefined) ||
+          previous?.campaignName,
+        status: String(test.status ?? previous?.status ?? "UNKNOWN"),
+        createdAt: test.created_at ?? previous?.createdAt,
+        runNumber: test.current_test_run_no ?? previous?.runNumber,
         ...overallFromTest(test),
         providers: previous?.providers ? [...previous.providers] : [],
         googleInboxPercent: previous?.googleInboxPercent,
         microsoftInboxPercent: previous?.microsoftInboxPercent,
-      };
-      const haveEsp =
-        typeof row.googleInboxPercent === "number" &&
-        typeof row.microsoftInboxPercent === "number";
-      if (!skipProviders && (force || !haveEsp)) {
-        try {
-          applyProviderwise(
-            row,
-            await this.smartDelivery.getProviderwiseReport(id),
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          errors.push(humanizeAlertError(`test ${id}: ${message}`));
-          if (isRateLimitNoise(message)) skipProviders = true;
-        }
-        if (gapMs) await sleep(gapMs);
-      }
-      rows[index] = row;
+      });
     }
-    const value = {
-      generatedAt: new Date().toISOString(),
-      rows: rows.filter(Boolean),
-      errors: uniqueErrors(errors),
-    };
-    this.cache = { expiresAt: Date.now() + this.cacheMs, value };
-    this.persist(value);
-    return value;
+
+    return [...byId.values()]
+      .sort((a, b) => {
+        const byDate = String(b.createdAt ?? "").localeCompare(
+          String(a.createdAt ?? ""),
+        );
+        if (byDate !== 0) return byDate;
+        return String(b.id).localeCompare(String(a.id));
+      })
+      .slice(0, 80);
+  }
+
+  private expectedLiveTestCount(
+    liveById: Map<number, { name: string }>,
+    campaignsLoaded: boolean,
+  ): number {
+    if (!campaignsLoaded) return 0;
+    const tested = this.state.get().testedCampaigns;
+    let count = 0;
+    for (const id of liveById.keys()) {
+      if (tested[String(id)]?.testIds?.length) count += 1;
+    }
+    return count;
   }
 
   /**
    * Page SmartDelivery until the live-sender cap is filled. Full-catalog
    * pagination used to 429 the employee refresh before a single provider
-   * report ran.
+   * report ran. A 429 after page 1 must not be treated as "the whole board"
+   * — newest pages are mostly canary-copy, so a truncated walk can look like
+   * only a handful of live tests.
    */
   private async listNewestTests(
     isLive: (test: SpamTestSummary) => boolean,
     errors: string[],
-  ): Promise<SpamTestSummary[]> {
+    force: boolean,
+  ): Promise<{
+    tests: SpamTestSummary[];
+    truncated: boolean;
+    exhausted: boolean;
+  }> {
     const all: SpamTestSummary[] = [];
     let offset = 0;
+    let truncated = false;
+    let exhausted = false;
+    const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     for (let page = 0; page < OPS_PLACEMENT_LIST_MAX_PAGES; page += 1) {
       let raw: unknown;
       try {
-        raw = await this.smartDelivery.listTests({
-          limit: OPS_PLACEMENT_LIST_PAGE,
-          offset,
-        });
+        raw = await this.smartDelivery.listTests(
+          {
+            limit: OPS_PLACEMENT_LIST_PAGE,
+            offset,
+          },
+          { retries: OPS_PLACEMENT_LIST_RETRIES },
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        errors.push(humanizeAlertError(`listTests: ${message}`));
-        if (all.length) return all;
-        throw error;
+        if (isRateLimitNoise(message)) {
+          this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+        }
+        if (force || !all.length) {
+          errors.push(humanizeAlertError(`listTests: ${message}`));
+        }
+        if (all.length) {
+          truncated = true;
+          break;
+        }
+        truncated = true;
+        break;
       }
       const rows = normalizeTestList(raw);
       all.push(...rows);
       const live = all.filter(isLive).length;
-      if (rows.length < OPS_PLACEMENT_LIST_PAGE) break;
+      if (rows.length < OPS_PLACEMENT_LIST_PAGE) {
+        exhausted = true;
+        break;
+      }
       if (live >= OPS_PLACEMENT_REPORT_CAP) break;
       offset += rows.length;
+      if (gapMs) await sleep(gapMs);
     }
-    return all.sort((a, b) =>
-      String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
-    );
+    return {
+      tests: all.sort((a, b) =>
+        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
+      ),
+      truncated,
+      exhausted,
+    };
   }
 }
 

@@ -289,20 +289,23 @@ function renderPlacement() {
 }
 
 async function loadPlacement(force = false) {
-  $("#placement-errors").textContent = "";
+  const banner = $("#placement-errors");
+  banner.textContent = "";
+  banner.className = "error";
   const data = await api(`/placements${force ? "?force=1" : ""}`);
   state.placementRows = data.rows || [];
   const stamp = formatDate(data.generatedAt);
   $("#placement-updated").textContent = `${data.stale ? "Last snapshot" : "Updated"} ${stamp} · ${state.placementRows.length} tests`;
   const errors = Array.isArray(data.errors) ? data.errors.filter(Boolean) : [];
-  $("#placement-errors").textContent = [
-    data.stale && state.placementRows.length
-      ? "Showing the last saved snapshot — SmartDelivery did not refresh this pass."
-      : "",
-    ...errors,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  if (data.stale && state.placementRows.length) {
+    banner.textContent =
+      errors[0] ||
+      "Showing the last saved snapshot — SmartDelivery did not refresh this pass.";
+    banner.className = "muted";
+  } else if (errors.length) {
+    banner.textContent = errors.join(" ");
+    banner.className = "error";
+  }
   renderPlacement();
 }
 

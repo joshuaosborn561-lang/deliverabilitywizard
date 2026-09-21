@@ -35,7 +35,9 @@ describe("one client per inbox (D75)", () => {
     );
   });
 
-  it("gives a leftover-tagged generic to Goliath (D76)", () => {
+  it("D198: real client_id on a generic is dedicated (not forced to Goliath)", () => {
+    // Pre-D198 this returned Goliath (D76 leftover scrub). Josh 2026-09-21:
+    // assigning client_id on a pool mailbox dedicates it to that client.
     assert.equal(
       ownerClientId(
         548610,
@@ -43,9 +45,9 @@ describe("one client per inbox (D75)", () => {
           { campaignId: 1, clientId: 548611, shell: false },
           { campaignId: 2, clientId: 548610, shell: false },
         ],
-        { generic: true, genericOwnerId: 548611 },
+        { generic: true, genericOwnerId: 548611, markerClientId: false },
       ),
-      548611,
+      548610,
     );
     assert.equal(
       ownerClientId(null, [
@@ -53,6 +55,40 @@ describe("one client per inbox (D75)", () => {
         { campaignId: 3, clientId: 99, shell: false },
       ], { generic: true, genericOwnerId: 548611 }),
       548611,
+    );
+  });
+});
+
+describe("ownerClientId D198 dedicated generics", () => {
+  it("dedicated generic with real client_id is owned by that client, not Goliath", () => {
+    assert.equal(
+      ownerClientId(521881, [{ campaignId: 1, clientId: 521881, shell: false }], {
+        generic: true,
+        genericOwnerId: 111, // Goliath
+        markerClientId: false,
+      }),
+      521881,
+    );
+  });
+
+  it("free-pool generic still belongs to Goliath (D76)", () => {
+    assert.equal(
+      ownerClientId(null, [{ campaignId: 1, clientId: 521881, shell: false }], {
+        generic: true,
+        genericOwnerId: 111,
+      }),
+      111,
+    );
+  });
+
+  it("marker client_id on a generic still belongs to Goliath", () => {
+    assert.equal(
+      ownerClientId(999, [{ campaignId: 1, clientId: 521881, shell: false }], {
+        generic: true,
+        genericOwnerId: 111,
+        markerClientId: true,
+      }),
+      111,
     );
   });
 });

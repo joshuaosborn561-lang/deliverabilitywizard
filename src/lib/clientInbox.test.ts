@@ -4,6 +4,7 @@ import {
   isClientInbox,
   isGenericMailbox,
   isGenericPoolBrandDomain,
+  isPoolGenericSeat,
   isRestEligibleMailbox,
 } from "./clientInbox.js";
 
@@ -71,6 +72,34 @@ describe("isClientInbox", () => {
     assert.equal(isGenericPoolBrandDomain("appquickconnectsales.com"), true);
     assert.equal(isGenericPoolBrandDomain("getquickconnectsales.info"), true);
     assert.equal(isGenericPoolBrandDomain("techevolution.com"), false);
+    assert.equal(
+      isPoolGenericSeat(
+        {
+          client_id: 521881,
+          from_name: "Corey Tech",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "corey@techevolution.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      "D200 — a leftover GENERIC tag does not make a named TechEvo domain exclusive-attach",
+    );
+    assert.equal(
+      isPoolGenericSeat(
+        {
+          client_id: 521881,
+          from_name: "Ada Pool",
+          tags: [{ tag_name: "GENERIC" }],
+        },
+        "ada@trygetintroduced.info",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+      "D200 — pool-brand hosts stay exclusive-attach",
+    );
     assert.equal(isGenericPoolBrandDomain("boldercyperpartnerhub.info"), false);
     assert.equal(
       isGenericMailbox(

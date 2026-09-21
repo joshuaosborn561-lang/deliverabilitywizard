@@ -9797,7 +9797,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D19[789]\*\*/,
+      /Canon as of \*\*D(19[789]|200)\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9932,7 +9932,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D19[89]\*\*/,
+      /Canon as of \*\*D(19[89]|200)\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10096,7 +10096,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D199\*\*/,
+      /Canon as of \*\*D(199|200)\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10113,6 +10113,149 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
       stop(
         "The staffable peel floor is in the ledger (D199).",
         "DECISIONS.md no longer has D199.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D200 exclusive-attach is pool generics only", () => {
+  it("D200: named same-client seats stay; pool multi-link and foreign still peel", async () => {
+    const { peelCampaignIds } = await import("../lib/oneClient.js");
+    assert.deepEqual(
+      peelCampaignIds(
+        521881,
+        [
+          { campaignId: 3847798, clientId: 521881, shell: false },
+          { campaignId: 3847801, clientId: 521881, shell: false },
+        ],
+        { poolGeneric: false },
+      ),
+      [],
+      stop(
+        "Named TechEvo seats may sit on every TechEvo campaign (D200).",
+        "peelCampaignIds still peels same-client named multi-link.",
+      ),
+    );
+    assert.deepEqual(
+      peelCampaignIds(
+        521881,
+        [
+          { campaignId: 3847798, clientId: 521881, shell: false },
+          { campaignId: 3847801, clientId: 521881, shell: false },
+        ],
+        { poolGeneric: true },
+      ),
+      [3847798],
+      stop(
+        "Pool generics stay exclusive even on the same client (D200).",
+        "peelCampaignIds no longer peels a pool generic extra link.",
+      ),
+    );
+    assert.deepEqual(
+      peelCampaignIds(
+        521881,
+        [
+          { campaignId: 3847798, clientId: 521881, shell: false },
+          { campaignId: 10, clientId: 77, shell: false },
+        ],
+        { poolGeneric: false },
+      ),
+      [10],
+      stop(
+        "A foreign-client tag still peels on a named seat (D200).",
+        "peelCampaignIds dropped the foreign-client peel.",
+      ),
+    );
+
+    const { isPoolGenericSeat } = await import("../lib/clientInbox.js");
+    const fleet = {
+      extraGenericMailboxes: [],
+      extraGenericDomains: [],
+      prewarmedDomains: [],
+    };
+    assert.equal(
+      isPoolGenericSeat(
+        { client_id: 521881, tags: [{ tag_name: "GENERIC" }] },
+        "corey@techevolution.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      stop(
+        "A leftover GENERIC tag does not make techevolution* exclusive-attach (D200).",
+        "isPoolGenericSeat treats named TechEvo domains as pool generics.",
+      ),
+    );
+    assert.equal(
+      isPoolGenericSeat(
+        { client_id: 521881, tags: [{ tag_name: "GENERIC" }] },
+        "ada@trygetintroduced.info",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+      stop(
+        "Pool-brand hosts stay exclusive-attach (D200).",
+        "isPoolGenericSeat no longer recognises trygetintroduced* as pool.",
+      ),
+    );
+
+    const { ON_WEEK_MIN_SENDERS } = await import("../lib/clientStaffFloor.js");
+    assert.equal(
+      ON_WEEK_MIN_SENDERS,
+      40,
+      stop(
+        "The standing on-week minimum is still 40 (D199/D200).",
+        `ON_WEEK_MIN_SENDERS is ${ON_WEEK_MIN_SENDERS}.`,
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const files = {
+      oneClient: await readFile(
+        new URL("../services/oneClientMembership.ts", import.meta.url),
+        "utf8",
+      ),
+      topUp: await readFile(
+        new URL("../services/campaignTopUp.ts", import.meta.url),
+        "utf8",
+      ),
+    };
+    for (const [name, src] of Object.entries(files)) {
+      assert.match(
+        src,
+        /peelCampaignIds|isPoolGenericSeat/,
+        stop(
+          `${name} carves named seats out of exclusive-attach (D200).`,
+          `${name} still keys multi-link peels off campaign_ids.length alone.`,
+        ),
+      );
+    }
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D200\*\*/,
+      stop("CANON is dated D200.", "CANON.md header was not bumped."),
+    );
+    assert.match(
+      canon,
+      /Exclusive-attach \/ no-multi-link is pool generics only/,
+      stop(
+        "CANON names pool-only exclusivity (D200).",
+        "CANON.md lost the D200 pool-only exclusive-attach rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D200 — Exclusive-attach \/ no-multi-link is pool generics only/,
+      stop(
+        "Pool-only exclusivity is in the ledger (D200).",
+        "DECISIONS.md no longer has D200.",
       ),
     );
   });

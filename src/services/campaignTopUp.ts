@@ -9,7 +9,8 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
+import { ownerClientId, peelCampaignIds, type MembershipRow } from "../lib/oneClient.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
@@ -326,9 +327,9 @@ export class CampaignTopUpService {
       // Neediest first, so a shallow pool helps the worst campaign.
       .sort((a, b) => a.senders - b.senders);
 
-    // D26: same-client multi-campaign membership is allowed. Only release a
-    // generic from a campaign when that campaign belongs to a *different*
-    // client than the one the mailbox is branded for.
+    // D26 / D200: same-client multi-campaign membership is allowed on
+    // *named* seats. Pool generics stay exclusive — extra same-client
+    // links still release. Foreign-client links always release.
     const activeIds = new Set(
       (campaigns as SmartleadCampaign[])
         .filter((c) => isManagedCampaign(c))
@@ -360,10 +361,23 @@ export class CampaignTopUpService {
       const keepCampaign = campaignById.get(keep);
 
       const remaining = new Set(on);
+      const donorAccount = accountByEmail.get(row.email.toLowerCase());
+      const namedSeat =
+        donorAccount != null &&
+        !isPoolGenericSeat(
+          donorAccount,
+          row.email,
+          this.config,
+          this.state,
+        );
       for (const id of on) {
         if (id === keep) continue;
-        if (sameClient(campaignById.get(id), keepCampaign)) continue;
-        const donor = accountByEmail.get(row.email.toLowerCase());
+        // D200 — named seats may stay on every same-client campaign.
+        // Pool generics do not (exclusive-attach).
+        if (namedSeat && sameClient(campaignById.get(id), keepCampaign)) {
+          continue;
+        }
+        const donor = donorAccount;
         if (
           donor
             ? detachWouldBreakStaffableFloor(
@@ -712,7 +726,8 @@ export class CampaignTopUpService {
    * D198 / D199 — a generic dedicated to this campaign's named client
    * (client_id / tag / exclusive + client-sig) stays; it is not foreign
    * Goliath. Multi-client / wrong-client dedicated seats still peel
-   * (floor-gated).
+   * (floor-gated). D200 — pool generics multi-linked across campaigns
+   * (even the same client) peel extras; named seats do not.
    */
   private async pullNonGoliathGenerics(input: {
     dryRun: boolean;
@@ -734,19 +749,35 @@ export class CampaignTopUpService {
       if (!email || !account.id) continue;
       if (this.state.isCopyCanary(email)) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
+      const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
+        const campaign = input.campaignById.get(id);
+        return {
+          campaignId: id,
+          clientId:
+            typeof campaign?.client_id === "number" ? campaign.client_id : null,
+          shell: campaign ? isAnyShellCampaign(campaign) : false,
+        };
+      });
       const dedicatedClientId = resolveDedicatedGenericClientId(
         account,
         email,
-        campaignIdsOf(account).map((id) => {
-          const campaign = input.campaignById.get(id);
-          return {
-            clientId:
-              typeof campaign?.client_id === "number" ? campaign.client_id : null,
-            shell: campaign ? isAnyShellCampaign(campaign) : false,
-          };
-        }),
+        memberships,
         this.state,
         { genericOwnerId: input.genericOwnerId, brandByClientId },
+      );
+      const poolGeneric = isPoolGenericSeat(
+        account,
+        email,
+        this.config,
+        this.state,
+      );
+      const owner = ownerClientId(account.client_id, memberships, {
+        generic: true,
+        genericOwnerId: input.genericOwnerId,
+        dedicatedClientId,
+      });
+      const exclusivePeel = new Set(
+        peelCampaignIds(owner, memberships, { poolGeneric }),
       );
       const remaining: number[] = [];
       for (const campaignId of campaignIdsOf(account)) {
@@ -755,12 +786,17 @@ export class CampaignTopUpService {
           remaining.push(campaignId);
           continue;
         }
-        if (input.campaignAllowsGenerics(campaign)) {
+        // D200 — pool exclusive-attach extras peel even on a dedicated
+        // or Goliath campaign. Named seats never enter exclusivePeel
+        // for same-client links.
+        const exclusiveExtra = exclusivePeel.has(campaignId);
+        if (!exclusiveExtra && input.campaignAllowsGenerics(campaign)) {
           remaining.push(campaignId);
           continue;
         }
         // D198 — dedicated to this named client: not foreign Goliath.
         if (
+          !exclusiveExtra &&
           dedicatedClientId != null &&
           campaign.client_id === dedicatedClientId
         ) {

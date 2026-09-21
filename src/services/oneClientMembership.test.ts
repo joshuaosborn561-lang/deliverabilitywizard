@@ -586,6 +586,147 @@ describe("OneClientMembershipService", () => {
     assert.equal(result.restored.length, 0);
   });
 
+  it("D200: same-client named TechEvo seat on two camps is not peeled", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+        {
+          id: 3847801,
+          name: "TechEvo SE IT DM v2",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "corey@techevolution.com",
+          from_name: "Corey Tech",
+          signature: "Corey Tech\nTechEvolution",
+          client_id: 521881,
+          tags: [{ tag_name: "client:521881" }],
+          campaign_ids: [3847798, 3847801],
+        },
+        ...padAccounts(3847798, 521881),
+        ...padAccounts(3847801, 521881, 40, 900),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(
+      removed,
+      [],
+      "D200 — named techevolution* on two TechEvo camps must not peel as multi-link",
+    );
+    assert.equal(result.pulled.length, 0);
+  });
+
+  it("D200: pool generic on two TechEvo camps still peels the extra link", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+        {
+          id: 3847801,
+          name: "TechEvo SE IT DM v2",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "ada@trygetintroduced.info",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nTechEvolution",
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }, { tag_name: "client:521881" }],
+          campaign_ids: [3847798, 3847801],
+        },
+        ...padAccounts(3847798, 521881),
+        ...padAccounts(3847801, 521881, 40, 900),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, [[3847798, [11]]]);
+    assert.equal(result.pulled[0]?.email, "ada@trygetintroduced.info");
+    assert.equal(result.restored.length, 0);
+  });
+
+  it("D200: named TechEvo seat with a foreign-client tag still peels", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+        { id: 10, name: "Parlay Sports", status: "ACTIVE", client_id: 77 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "corey@techevolution.com",
+          from_name: "Corey Tech",
+          signature: "Corey Tech\nTechEvolution",
+          client_id: 521881,
+          campaign_ids: [3847798, 10],
+        },
+        ...padAccounts(3847798, 521881),
+        ...padAccounts(10, 77, 40, 900),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+        { id: 77, name: "Parlay", logo: "Parlay" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, [[10, [11]]]);
+    assert.equal(result.pulled[0]?.email, "corey@techevolution.com");
+  });
+
   it("D76: surplus undedicated rotating generics above 40 may still be pulled", async () => {
     const removed: Array<[number, number[]]> = [];
     const service = serviceWith({

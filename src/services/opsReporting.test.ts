@@ -258,6 +258,54 @@ describe("PlacementResultsService", () => {
     assert.equal(providerCalls, 80);
   });
 
+  it("serves a fresh snapshot on tab-open without calling SmartDelivery", async () => {
+    const state = await stateFixture();
+    state.setPlacementResults({
+      generatedAt: new Date().toISOString(),
+      rows: [
+        {
+          id: "101",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          inboxPercent: 70,
+          spamPercent: 20,
+          googleInboxPercent: 75,
+          microsoftInboxPercent: 100,
+          totalSeeds: 10,
+          providers: [],
+        },
+      ],
+    });
+    let listCalls = 0;
+    const smartDelivery = {
+      listTests: async () => {
+        listCalls += 1;
+        throw new Error("Rate limit exceeded");
+      },
+      getProviderwiseReport: async () => {
+        throw new Error("should not fetch providers for a fresh snapshot");
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+    );
+    const result = await service.get();
+    assert.equal(listCalls, 0);
+    assert.equal(result.rows[0]?.id, "101");
+    assert.equal(result.stale, undefined);
+    assert.deepEqual(result.errors, []);
+  });
+
   it("returns the last snapshot instead of throwing when SmartDelivery 429s", async () => {
     const state = await stateFixture();
     state.setPlacementResults({
@@ -278,8 +326,10 @@ describe("PlacementResultsService", () => {
         },
       ],
     });
+    let listCalls = 0;
     const smartDelivery = {
       listTests: async () => {
+        listCalls += 1;
         throw new Error("Rate limit exceeded");
       },
       getProviderwiseReport: async () => {
@@ -296,12 +346,23 @@ describe("PlacementResultsService", () => {
       bookOf(smartlead),
       state,
       1,
+      60_000,
     );
-    const result = await service.get();
-    assert.equal(result.stale, true);
-    assert.equal(result.rows[0]?.id, "101");
-    assert.equal(result.rows[0]?.inboxPercent, 70);
-    assert.match(result.errors.join(" "), /SmartDelivery rate-limited/i);
+    const opened = await service.get();
+    assert.equal(opened.stale, true);
+    assert.equal(opened.rows[0]?.id, "101");
+    assert.equal(opened.rows[0]?.inboxPercent, 70);
+    assert.deepEqual(
+      opened.errors,
+      [],
+      "tab-open keeps the snapshot without a red rate-limit banner",
+    );
+
+    const refreshed = await service.get(true);
+    assert.equal(refreshed.stale, true);
+    assert.equal(refreshed.rows[0]?.id, "101");
+    assert.match(refreshed.errors.join(" "), /SmartDelivery rate-limited/i);
+    assert.equal(listCalls, 1, "cooldown skips a second SmartDelivery poke");
   });
 
   it("still 200s with a human error when there is no snapshot to fall back to", async () => {
@@ -379,10 +440,28 @@ describe("PlacementResultsService", () => {
       state,
       1,
     );
-    const result = await service.get();
+    const result = await service.get(true);
     assert.deepEqual(requested, ["101"]);
     assert.equal(result.rows.length, 2);
     assert.match(result.errors.join(" "), /SmartDelivery rate-limited/i);
+  });
+
+  it("ops Placement tab does not stack the snapshot sentence on the rate-limit error", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const app = await readFile(
+      new URL("../../public/ops/app.js", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      app,
+      /banner\.className = "muted"/,
+      "stale snapshot notice is muted, not a red error",
+    );
+    assert.equal(
+      /Showing the last saved snapshot[\s\S]{0,250}\.\.\.errors/.test(app),
+      false,
+      "stale banner and errors[] used to be concatenated into one red line",
+    );
   });
 });
 

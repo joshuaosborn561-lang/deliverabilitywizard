@@ -75,6 +75,10 @@ export interface PlacementResults {
 export const OPS_PLACEMENT_REPORT_CAP = 80;
 const OPS_PLACEMENT_LIST_PAGE = 100;
 const OPS_PLACEMENT_LIST_MAX_PAGES = 8;
+/** Fail fast on the employee board — retries stampede a 429 window. */
+export const OPS_PLACEMENT_LIVE_RETRIES = 0;
+/** After SmartDelivery 429s the board, do not poke it again for this long. */
+export const OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
 export interface FleetSummary {
   generatedAt: string;
@@ -139,6 +143,7 @@ export class PlacementResultsService {
     | { expiresAt: number; value: PlacementResults }
     | undefined;
   private inFlight: Promise<PlacementResults> | null = null;
+  private rateLimitedUntil = 0;
   private readonly forceRefreshFloorMs = 30 * 1000;
 
   constructor(
@@ -146,20 +151,46 @@ export class PlacementResultsService {
     private readonly book: InventoryBook,
     private readonly state: StateStore,
     private readonly cacheMs = 5 * 60 * 1000,
+    private readonly rateLimitCooldownMs = OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS,
   ) {}
 
   async get(force = false): Promise<PlacementResults> {
     if (this.inFlight) return this.inFlight;
+    const now = Date.now();
     if (
       this.cache &&
-      ((!force && this.cache.expiresAt > Date.now()) ||
+      ((!force && this.cache.expiresAt > now) ||
         (force &&
-          Date.now() -
-            Date.parse(this.cache.value.generatedAt) <
+          now - Date.parse(this.cache.value.generatedAt) <
             this.forceRefreshFloorMs))
     ) {
-      return this.cache.value;
+      return force ? this.cache.value : this.quietView(this.cache.value);
     }
+
+    const fallback = this.cache?.value ?? this.fromPersisted();
+    if (now < this.rateLimitedUntil && fallback) {
+      const value = this.snapshotView(fallback, {
+        stale: true,
+        errors: force
+          ? [humanizeAlertError("listTests: Rate limit exceeded")]
+          : [],
+      });
+      this.cache = {
+        expiresAt: Math.max(this.cache?.expiresAt ?? 0, this.rateLimitedUntil),
+        value,
+      };
+      return value;
+    }
+
+    const generatedAtMs = fallback ? Date.parse(fallback.generatedAt) : NaN;
+    const snapshotFresh =
+      Number.isFinite(generatedAtMs) && now - generatedAtMs < this.cacheMs;
+    if (!force && fallback && snapshotFresh) {
+      const value = this.quietView(fallback);
+      this.cache = { expiresAt: generatedAtMs + this.cacheMs, value };
+      return value;
+    }
+
     this.inFlight = this.loadSafe(force).finally(() => {
       this.inFlight = null;
     });
@@ -176,7 +207,24 @@ export class PlacementResultsService {
         providers: [...row.providers],
       })),
       errors: [],
-      stale: true,
+    };
+  }
+
+  /** Tab-open view: keep the snapshot, drop the red rate-limit banner. */
+  private quietView(value: PlacementResults): PlacementResults {
+    if (!value.rows.length || !value.errors.length) return value;
+    return { ...value, errors: [] };
+  }
+
+  private snapshotView(
+    fallback: PlacementResults,
+    opts: { stale: boolean; errors: string[] },
+  ): PlacementResults {
+    return {
+      generatedAt: fallback.generatedAt,
+      rows: fallback.rows,
+      errors: uniqueErrors(opts.errors),
+      stale: opts.stale,
     };
   }
 
@@ -196,15 +244,23 @@ export class PlacementResultsService {
       return await this.load(force);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      if (isRateLimitNoise(message)) {
+        this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+      }
       const fallback = this.cache?.value ?? this.fromPersisted();
       const note = humanizeAlertError(`listTests: ${message}`);
       if (fallback) {
-        const value = {
-          ...fallback,
+        const value = this.snapshotView(fallback, {
           stale: true,
-          errors: uniqueErrors([note, ...(fallback.errors ?? [])]),
+          errors: force ? [note] : [],
+        });
+        this.cache = {
+          expiresAt: Math.max(
+            Date.now() + this.cacheMs,
+            this.rateLimitedUntil,
+          ),
+          value,
         };
-        this.cache = { expiresAt: Date.now() + this.cacheMs, value };
         return value;
       }
       return {
@@ -267,6 +323,7 @@ export class PlacementResultsService {
           campaignsLoaded,
         }),
       errors,
+      force,
     );
 
     const tests = listed
@@ -312,13 +369,22 @@ export class PlacementResultsService {
         try {
           applyProviderwise(
             row,
-            await this.smartDelivery.getProviderwiseReport(id),
+            await this.smartDelivery.getProviderwiseReport(id, {
+              retries: OPS_PLACEMENT_LIVE_RETRIES,
+            }),
           );
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
-          errors.push(humanizeAlertError(`test ${id}: ${message}`));
-          if (isRateLimitNoise(message)) skipProviders = true;
+          if (isRateLimitNoise(message)) {
+            this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+            skipProviders = true;
+            if (force) {
+              errors.push(humanizeAlertError(`test ${id}: ${message}`));
+            }
+          } else {
+            errors.push(humanizeAlertError(`test ${id}: ${message}`));
+          }
         }
         if (gapMs) await sleep(gapMs);
       }
@@ -342,19 +408,28 @@ export class PlacementResultsService {
   private async listNewestTests(
     isLive: (test: SpamTestSummary) => boolean,
     errors: string[],
+    force: boolean,
   ): Promise<SpamTestSummary[]> {
     const all: SpamTestSummary[] = [];
     let offset = 0;
     for (let page = 0; page < OPS_PLACEMENT_LIST_MAX_PAGES; page += 1) {
       let raw: unknown;
       try {
-        raw = await this.smartDelivery.listTests({
-          limit: OPS_PLACEMENT_LIST_PAGE,
-          offset,
-        });
+        raw = await this.smartDelivery.listTests(
+          {
+            limit: OPS_PLACEMENT_LIST_PAGE,
+            offset,
+          },
+          { retries: OPS_PLACEMENT_LIVE_RETRIES },
+        );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        errors.push(humanizeAlertError(`listTests: ${message}`));
+        if (isRateLimitNoise(message)) {
+          this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+        }
+        if (force || !all.length) {
+          errors.push(humanizeAlertError(`listTests: ${message}`));
+        }
         if (all.length) return all;
         throw error;
       }

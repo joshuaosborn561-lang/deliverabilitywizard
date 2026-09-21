@@ -1,4 +1,4 @@
-import { apiRequest, ApiError } from "../lib/http.js";
+import { apiRequest, ApiError, type RequestOptions } from "../lib/http.js";
 import {
   classifySeedEsp,
   mailFolderOf,
@@ -141,13 +141,14 @@ export class SmartDeliveryClient {
    */
   async listTests(
     body: Record<string, unknown> = {},
+    request: Pick<RequestOptions, "retries"> = {},
   ): Promise<SpamTestSummary[]> {
     if (body.limit !== undefined || body.offset !== undefined) {
       return apiRequest<SpamTestSummary[]>(
         BASE_URL,
         this.apiKey,
         "spam-test/report",
-        { method: "POST", body },
+        { method: "POST", body, ...request },
       );
     }
 
@@ -159,7 +160,7 @@ export class SmartDeliveryClient {
         BASE_URL,
         this.apiKey,
         "spam-test/report",
-        { method: "POST", body: { ...body, limit, offset } },
+        { method: "POST", body: { ...body, limit, offset }, ...request },
       );
       const rows = normalizeTestList(raw);
       all.push(...rows);
@@ -265,12 +266,13 @@ export class SmartDeliveryClient {
 
   getProviderwiseReport(
     spamTestId: string | number,
+    request: Pick<RequestOptions, "retries"> = {},
   ): Promise<{ status?: string; result?: ProviderwiseRow[]; overallTotalCount?: number }> {
     return apiRequest(
       BASE_URL,
       this.apiKey,
       `spam-test/report/${spamTestId}/providerwise`,
-      { method: "POST", body: {} },
+      { method: "POST", body: {}, ...request },
     );
   }
 

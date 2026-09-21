@@ -176,9 +176,13 @@ or the day is done. Silent findings are a bug (D163).
   ACTIVE rest is unchanged. Warmup stays
   on; resting is not staffable. PAUSED/STOPPED attachments are still in
   the A/B pods; they cannot hoard inventory out of the ACTIVE pool.
-  On-week staffs **every ACTIVE** campaign for that client (D59),
-  including boxes whose only current memberships are PAUSED/STOPPED,
-  and clears those leftover attachments. Client-named BCP domains
+  On-week **named** seats staff **every ACTIVE** campaign for that
+  client (D59), including boxes whose only current memberships
+  are PAUSED/STOPPED, and clears those leftover attachments.
+  Pool / dedicated generics restore onto **exactly one** ACTIVE
+  (prefer already-on among targets, else thinnest by staffable
+  membership, tie → lowest id) and peel same-client ACTIVE extras
+  above the on-week floor (D200). Client-named BCP domains
   (`boldercyper*`) are client inventory, never skipped as generics
   (D99/D169). Excluded / canary / pod-control shells are not touched.
   The split is visible in Smartlead as POD-A/POD-B mailbox tags,

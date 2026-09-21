@@ -9,6 +9,7 @@ import {
   ClientRestService,
   isExcludedOnlyMembership,
   isRestDetachableCampaign,
+  pickExclusiveOnWeekTarget,
 } from "./clientRest.js";
 
 /** Old enough that owesWarmup is false under the 21-day clock. */
@@ -198,6 +199,53 @@ describe("isExcludedOnlyMembership", () => {
     assert.equal(
       isExcludedOnlyMembership([1, 3841904], byId, []),
       false,
+    );
+  });
+});
+
+describe("pickExclusiveOnWeekTarget", () => {
+  it("D200: prefers an already-on target over a thinner unused camp", () => {
+    assert.equal(
+      pickExclusiveOnWeekTarget(
+        [10, 20, 30],
+        [20],
+        new Map([
+          [10, 41],
+          [20, 50],
+          [30, 42],
+        ]),
+      ),
+      20,
+    );
+  });
+
+  it("D200: idle generic picks the thinnest staffable camp; tie → lowest id", () => {
+    assert.equal(
+      pickExclusiveOnWeekTarget(
+        [30, 10, 20],
+        [],
+        new Map([
+          [10, 45],
+          [20, 42],
+          [30, 42],
+        ]),
+      ),
+      20,
+    );
+  });
+
+  it("D200: already-on extras pick the thinnest sitting camp, then lowest id", () => {
+    assert.equal(
+      pickExclusiveOnWeekTarget(
+        [10, 20, 30],
+        [10, 30],
+        new Map([
+          [10, 48],
+          [20, 41],
+          [30, 48],
+        ]),
+      ),
+      10,
     );
   });
 });
@@ -1572,5 +1620,356 @@ describe("ClientRestService", () => {
         `${email} must stay — peeling would drop Parlay staffable below 40`,
       );
     }
+  });
+
+  it("D200: dedicated generic on-week restore attaches exactly one ACTIVE (already-on)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const onEmail = "ada@trygetintroduced.info";
+    assert.equal(
+      assignClientCohorts([onEmail, "zoe@trygetintroduced.info"]).get(onEmail),
+      "A",
+    );
+    const adds: Array<[number, number[]]> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-d200-already-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: onEmail,
+      domain: "trygetintroduced.info",
+      firstName: "Ada",
+      lastName: "Pool",
+      platform: "GOOGLE",
+      status: "assigned",
+      smartleadAccountId: 20,
+      assignedClientId: 521881,
+    });
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3847798, name: "TechEvo A", status: "ACTIVE", client_id: 521881 },
+        { id: 3847801, name: "TechEvo B", status: "ACTIVE", client_id: 521881 },
+        { id: 3847804, name: "TechEvo C", status: "ACTIVE", client_id: 521881 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: onEmail,
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3847801],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 21,
+          from_email: "zoe@trygetintroduced.info",
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3847798],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        ...heldMin40Pads([3847798, 3847801, 3847804], 521881),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvo", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    await service.run({ dryRun: false, now });
+    assert.equal(
+      adds.filter((row) => row[1].includes(20)).length,
+      0,
+      "already-on exclusive generic must not fan onto the other TechEvo camps",
+    );
+    assert.equal(
+      removed.some((row) => row[1].includes(20) && row[0] === 3847801),
+      false,
+      "must keep the already-on exclusive camp",
+    );
+  });
+
+  it("D200: idle dedicated generic attaches only the thinnest ACTIVE (tie → lowest id)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const onEmail = "ada@trygetintroduced.info";
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-d200-thin-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: onEmail,
+      domain: "trygetintroduced.info",
+      firstName: "Ada",
+      lastName: "Pool",
+      platform: "GOOGLE",
+      status: "assigned",
+      smartleadAccountId: 20,
+      assignedClientId: 521881,
+    });
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3847804, name: "TechEvo C", status: "ACTIVE", client_id: 521881 },
+        { id: 3847798, name: "TechEvo A", status: "ACTIVE", client_id: 521881 },
+        { id: 3847801, name: "TechEvo B", status: "ACTIVE", client_id: 521881 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: onEmail,
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 21,
+          from_email: "zoe@trygetintroduced.info",
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3847798],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        ...heldMin40Pads([3847798], 521881, 48),
+        ...heldMin40Pads([3847801], 521881, 42).map((row, i) => ({
+          ...row,
+          id: 9200 + i,
+        })),
+        ...heldMin40Pads([3847804], 521881, 42).map((row, i) => ({
+          ...row,
+          id: 9400 + i,
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvo", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, now });
+    const adaAdds = adds.filter((row) => row[1].includes(20)).map((row) => row[0]);
+    assert.deepEqual(
+      adaAdds,
+      [3847801],
+      "idle exclusive generic must attach the thinnest camp; 3847801 beats 3847804 on id",
+    );
+    assert.ok(result.restored.some((row) => row.email === onEmail));
+  });
+
+  it("D200: dedicated generic already on two ACTIVE camps peels the extra above the floor", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const onEmail = "ada@trygetintroduced.info";
+    const adds: Array<[number, number[]]> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-d200-peel-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: onEmail,
+      domain: "trygetintroduced.info",
+      firstName: "Ada",
+      lastName: "Pool",
+      platform: "GOOGLE",
+      status: "assigned",
+      smartleadAccountId: 20,
+      assignedClientId: 521881,
+    });
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3847798, name: "TechEvo A", status: "ACTIVE", client_id: 521881 },
+        { id: 3847801, name: "TechEvo B", status: "ACTIVE", client_id: 521881 },
+        { id: 3, name: "TechEvo paused", status: "PAUSED", client_id: 521881 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: onEmail,
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3847798, 3847801, 3],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 21,
+          from_email: "zoe@trygetintroduced.info",
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 22,
+          from_email: "keep-paused@techevolution.com",
+          client_id: 521881,
+          campaign_ids: [3],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        ...heldMin40Pads([3847798], 521881, 48),
+        ...heldMin40Pads([3847801], 521881, 48).map((row, i) => ({
+          ...row,
+          id: 9200 + i,
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvo", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    await service.run({ dryRun: false, now });
+    assert.equal(
+      adds.filter((row) => row[1].includes(20)).length,
+      0,
+      "already-on exclusive generic must not add a third camp",
+    );
+    const adaRemoved = removed
+      .filter((row) => row[1].includes(20))
+      .map((row) => row[0])
+      .sort((a, b) => a - b);
+    assert.ok(
+      adaRemoved.includes(3847801),
+      "must peel the extra same-client ACTIVE (thicker / higher id)",
+    );
+    assert.ok(adaRemoved.includes(3), "D169 hygiene still clears PAUSED");
+    assert.equal(
+      adaRemoved.includes(3847798),
+      false,
+      "must keep the chosen exclusive ACTIVE",
+    );
+  });
+
+  it("D200: named client seats still restore onto every ACTIVE (D59/D169)", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const onEmail = "corey@techevolution.com";
+    assert.equal(
+      assignClientCohorts([onEmail, "zoe@techevolution.com"]).get(onEmail),
+      "A",
+    );
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-d200-named-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3847798, name: "TechEvo A", status: "ACTIVE", client_id: 521881 },
+        { id: 3847801, name: "TechEvo B", status: "ACTIVE", client_id: 521881 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: onEmail,
+          client_id: 521881,
+          campaign_ids: [3847798],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 21,
+          from_email: "zoe@techevolution.com",
+          client_id: 521881,
+          campaign_ids: [3847798, 3847801],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [
+        { id: 521881, name: "TechEvo", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    await service.run({ dryRun: false, now });
+    assert.ok(
+      adds.some((row) => row[0] === 3847801 && row[1].includes(20)),
+      "named techevolution* still multi-attaches every ACTIVE (D59)",
+    );
+    assert.equal(
+      adds.some((row) => row[0] === 3847798 && row[1].includes(20)),
+      false,
+      "already-on named seat is not re-POSTed",
+    );
   });
 });

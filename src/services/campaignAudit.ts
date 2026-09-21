@@ -13,7 +13,7 @@ import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   insightDualSignatureMismatch,
   isInsightCampaign,
-  mailboxActiveSalesGliderCampaigns,
+  mailboxActiveForeignNamedCampaigns,
 } from "../lib/insightCampaigns.js";
 import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -326,12 +326,12 @@ export class CampaignAuditService {
         const email = accountEmail(account);
         if (!email) continue;
         if (insightCampaign) {
-          const shared = mailboxActiveSalesGliderCampaigns(
+          const shared = mailboxActiveForeignNamedCampaigns(
             account,
             campaignById,
           );
           if (shared.length) {
-            const detail = `${email} also sits on ACTIVE SalesGlider ${shared
+            const detail = `${email} also sits on ACTIVE ${shared
               .map((row) => `#${row.id}`)
               .join(", ")}`;
             issues.push({

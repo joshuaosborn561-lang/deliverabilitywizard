@@ -12,7 +12,7 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
-import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
@@ -27,7 +27,11 @@ import {
   noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
 } from "../lib/clientStaffFloor.js";
-import { foreignCampaignIds, ownerClientId, type MembershipRow } from "../lib/oneClient.js";
+import {
+  ownerClientId,
+  peelCampaignIds,
+  type MembershipRow,
+} from "../lib/oneClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import { signatureHay } from "../lib/signatureQa.js";
@@ -86,6 +90,11 @@ interface AccountPlan {
  * above 40. Surplus *undedicated* rotating-pool generics above 40
  * may still come off. Multi-client links on a dedicated seat still
  * peel the foreign camp (floor-gated).
+ *
+ * D200 — exclusive-attach / no-multi-link is pool generics only.
+ * Same-client named seats (techevolution* tagged to TechEvo) may
+ * sit on every campaign of that client. Pool generics multi-linked
+ * across campaigns — even the same client — still peel extras.
  */
 export class OneClientMembershipService {
   constructor(
@@ -220,7 +229,13 @@ export class OneClientMembershipService {
         continue;
       }
 
-      const rawPull = foreignCampaignIds(owner, memberships);
+      const poolGeneric = isPoolGenericSeat(
+        account,
+        email,
+        this.config,
+        this.state,
+      );
+      const rawPull = peelCampaignIds(owner, memberships, { poolGeneric });
       const pull: number[] = [];
       let protectedByMin = false;
       for (const campaignId of rawPull) {

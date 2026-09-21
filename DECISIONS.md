@@ -46,7 +46,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D22–D23 | Burned numbers — no entry exists |
 | D24 | Live — Outlook / Microsoft cap qualified by D183 |
 | D25 | Live — floor definition superseded by D58/D82 |
-| D26 | Live — qualified by D43 (resters skip fan-out); ACTIVE foreign pull will not drop a campaign below 40 (D197) |
+| D26 | Live — qualified by D43 (resters skip fan-out); ACTIVE foreign pull will not drop a campaign below 40 (D197); exclusive-attach / no-multi-link is pool generics only (D200) |
 | D27 | Live — qualified by D58/D81/D82 (POC or approval) |
 | D28 | Superseded by D69/D93/D96 — no provider-split guesses |
 | D29 | Superseded by D91 |
@@ -208,9 +208,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — floor is max(on-week pod, 40) per D197 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
-| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
-| D198 | Live — exclusive + client-sig also dedicated (D199) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
-| D199 | Live | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
+| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); exclusive-attach is pool-only (D200) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
+| D200 | Live | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 
 ---
 
@@ -6309,6 +6310,55 @@ client-rest / generic-rest / top-up / Insight unlink consult the
 staffable floor; pod-cover / podControls do not
 `removeEmailAccountsFromCampaign` on live campaigns; CANON names
 the staffable peel floor and exclusive + client-sig dedication.
+
+---
+
+## D200 — Exclusive-attach / no-multi-link is pool generics only
+
+**Decision (Josh 2026-09-21 ~3:48pm CT, standing after D199).**
+Exclusive-attach / no-multi-link applies to **pool generics
+only**. Same-client named seats (e.g. techevolution* mailboxes
+tagged to TechEvo client 521881) **may** be linked across
+multiple campaigns for that same client. Do **not** peel them
+for "multi-link" / exclusive-attach.
+
+Still peel:
+1. Pool / generic seats multi-linked across campaigns, even
+   the same client.
+2. Seats whose `client_id` / tag is a foreign client on this
+   campaign.
+3. Rotating undedicated pool shares that break exclusivity.
+
+The D199 staffable ≥40 peel floor stays. Dedicated exclusive +
+client-sig remains a dedication mark (D199) — it does not make
+a *named* seat exclusive to one campaign. D26 fan-out for
+named client inventory is unchanged.
+
+**Why.** D199 (PR #233, `main@91d92471`) fixed the staffable≥40
+peel floor and treated exclusive + client-sig as dedicated.
+Ops / triage the same afternoon still peeled same-client named
+TechEvo seats as multi-link. Josh: that is wrong. Named seats
+belong on every ACTIVE campaign of their client (D26/D84).
+Pool generics stay exclusive so the same rotating id does not
+share camps.
+
+**Rejected.** Treating any `campaign_ids.length > 1` as peelable.
+Peeling named TechEvo / Parlay / SG seats to keep one campaign.
+Reversing D199's staffable floor or D193's no-new-pool-attach.
+
+**Supersedes / amends.** Qualifies D26/D75: same-client
+multi-campaign is required for named seats, forbidden for pool
+generics. Qualifies D198/D199: "do not rotate the same generic
+id across camps" is pool-only; exclusive + client-sig does not
+mean "named seat on one campaign only". Does not reverse D199's
+staffable floor or D198's dedicated-is-not-Goliath rule.
+
+**Guards.** canon D200: `isPoolGenericSeat` is false for
+techevolution* even with a leftover GENERIC tag; `peelCampaignIds`
+keeps a named TechEvo seat on two TechEvo camps, peels a pool
+generic extra link, and still peels a foreign-client tag;
+one-client / top-up consult it; `ON_WEEK_MIN_SENDERS === 40`;
+CANON names pool-only exclusivity.
 
 ---
 

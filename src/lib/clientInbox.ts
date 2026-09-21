@@ -118,3 +118,32 @@ export function isGenericMailbox(
   if (state.getPoolMailbox(normalized)) return true;
   return isPrewarmedGeneric(account, normalized, config, state);
 }
+
+/**
+ * D200 — exclusive-attach / no-multi-link applies to these seats only.
+ * Named client domains (techevolution*, salesglider*, boldercyper*, …)
+ * are not exclusive even when they carry a leftover GENERIC tag or a
+ * client_id. Pool-plan / pool-brand / EXTRA_GENERIC / pool-state /
+ * pre-warmed fleet seats stay exclusive.
+ */
+export function isPoolGenericSeat(
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  email: string,
+  config: Pick<
+    AppConfig,
+    "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains"
+  >,
+  state: Pick<StateStore, "getPoolMailbox"> & {
+    isMarkerClientId?: StateStore["isMarkerClientId"];
+  },
+): boolean {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized.includes("@")) return false;
+  const domain = emailDomainOf(normalized);
+  if (domain && isBcpOwnedDomain(domain)) return false;
+  if (isGenericPoolDomain(domain)) return true;
+  if (isGenericPoolBrandDomain(domain)) return true;
+  if (domain && config.extraGenericDomains.includes(domain)) return true;
+  if (state.getPoolMailbox(normalized)) return true;
+  return isPrewarmedGeneric(account, normalized, config, state);
+}

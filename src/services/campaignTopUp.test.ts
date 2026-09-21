@@ -741,4 +741,185 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(removed.includes(10), false);
     assert.equal(result.pulledGenerics.length, 0);
   });
+
+  it("D200: named TechEvo seat on two same-client camps is not released", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "corey@techevolution.com",
+      domain: "techevolution.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 11,
+      firstName: "Corey",
+      lastName: "Tech",
+      status: "assigned",
+      assignedClientId: 521881,
+    };
+    const { state } = fakeState(pool);
+    const removed: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+        {
+          id: 3847801,
+          name: "TechEvo SE IT DM v2",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: pool.email,
+          from_name: "Corey Tech",
+          signature: "Corey Tech\nTechEvolution",
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          client_id: 521881,
+          campaign_ids: [3847798, 3847801],
+        },
+        ...Array.from({ length: 41 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `techevo-a-${index}@techevo.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 521881,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3847798],
+        })),
+        ...Array.from({ length: 41 }, (_, index) => ({
+          id: 200 + index,
+          from_email: `techevo-b-${index}@techevo.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 521881,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3847801],
+        })),
+      ],
+      listClients: async () => [
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.deepEqual(removed, []);
+    assert.equal(result.released.length, 0);
+    assert.equal(result.pulledGenerics.length, 0);
+  });
+
+  it("D200: pool generic on two TechEvo camps still releases the extra link", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "ada@trygetintroduced.info",
+      domain: "trygetintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 11,
+      firstName: "Ada",
+      lastName: "Pool",
+      status: "assigned",
+      assignedClientId: 521881,
+    };
+    const { state } = fakeState(pool);
+    const removed: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+        {
+          id: 3847801,
+          name: "TechEvo SE IT DM v2",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: pool.email,
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nTechEvolution",
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3847798, 3847801],
+        },
+        ...Array.from({ length: 41 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `techevo-a-${index}@techevo.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 521881,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3847798],
+        })),
+        ...Array.from({ length: 41 }, (_, index) => ({
+          id: 200 + index,
+          from_email: `techevo-b-${index}@techevo.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 521881,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3847801],
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.ok(
+      removed.length >= 1,
+      "D200 — pool generic multi-link must still peel",
+    );
+    assert.ok(
+      result.released.length + result.pulledGenerics.length >= 1,
+      "pool generic extra TechEvo link is peelable",
+    );
+  });
 });

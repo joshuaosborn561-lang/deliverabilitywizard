@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { foreignCampaignIds, ownerClientId } from "./oneClient.js";
+import { foreignCampaignIds, ownerClientId, peelCampaignIds } from "./oneClient.js";
 
 describe("one client per inbox (D75)", () => {
   it("keeps every campaign for the owner client and the shell", () => {
@@ -72,6 +72,50 @@ describe("one client per inbox (D75)", () => {
       ]),
       [20],
       "a dedicated Parlay seat on TechEvo is still foreign",
+    );
+  });
+});
+
+describe("D200 exclusive-attach is pool generics only", () => {
+  const techevoA = { campaignId: 3847798, clientId: 521881, shell: false };
+  const techevoB = { campaignId: 3847801, clientId: 521881, shell: false };
+  const parlay = { campaignId: 10, clientId: 77, shell: false };
+  const shell = { campaignId: 99, clientId: 521881, shell: true };
+
+  it("does not peel a same-client named seat on two TechEvo camps", () => {
+    assert.deepEqual(
+      peelCampaignIds(521881, [techevoA, techevoB, shell], {
+        poolGeneric: false,
+      }),
+      [],
+      "named techevolution* on two TechEvo camps stays",
+    );
+  });
+
+  it("peels a pool generic multi-linked across two same-client camps", () => {
+    assert.deepEqual(
+      peelCampaignIds(521881, [techevoA, techevoB, shell], {
+        poolGeneric: true,
+      }),
+      [3847798],
+      "pool generic keeps the last TechEvo camp and peels the extra",
+    );
+  });
+
+  it("still peels a foreign-client tag on a named seat", () => {
+    assert.deepEqual(
+      peelCampaignIds(521881, [techevoA, parlay], { poolGeneric: false }),
+      [10],
+      "Parlay on a TechEvo-owned named seat is foreign",
+    );
+  });
+
+  it("peels foreign plus extra same-client links on a pool generic", () => {
+    assert.deepEqual(
+      peelCampaignIds(521881, [techevoA, techevoB, parlay], {
+        poolGeneric: true,
+      }),
+      [10, 3847798],
     );
   });
 });

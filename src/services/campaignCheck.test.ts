@@ -905,6 +905,86 @@ describe("CampaignCheckService", () => {
     );
   });
 
+  it("D98: leftover first-pass keeps inbox_missing_known_good at hourly depth", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 3847791,
+      name: "TechEvo SFL IT DM AirPods",
+      firstSeenAt: "2026-08-25T00:00:00.000Z",
+      firstCheckAt: "2026-08-25T00:05:00.000Z",
+      firstPassedAt: null,
+      lastSweepAt: "2026-09-21T22:00:00.000Z",
+      lastKind: "hourly",
+      findings: [
+        "inbox_missing_known_good: 1 serving inbox(es) not on a known-good copy canary: aarav@client.com",
+      ],
+    });
+    const sl = {
+      listCampaigns: async () => [
+        {
+          id: 3847791,
+          name: "TechEvo SFL IT DM AirPods",
+          status: "ACTIVE",
+          client_id: 548611,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 22,
+          from_email: "aarav@client.com",
+          from_name: "Aarav Sanchez",
+          signature: "Aarav Sanchez\nGoliath Cybersecurity",
+          client_id: 548611,
+          campaign_ids: [3847791],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [goliath, peterson],
+      getCampaignSequences: async () => [
+        {
+          seq_number: 1,
+          email_body: "<div>Hi</div><div>%signature%</div>",
+        },
+      ],
+    } as unknown as SmartleadClient;
+    const service = mkCheck(
+      loadConfig({}),
+      sl,
+      delivery([
+        {
+          id: "t-canary",
+          test_name: "Canary copy: #3847791 TechEvo SFL IT DM AirPods",
+          status: "active",
+          every_days: 1,
+          campaign_id: 3847791,
+        },
+        {
+          id: "t-place",
+          test_name: "TechEvo SFL IT DM AirPods",
+          status: "active",
+          every_days: 1,
+          campaign_id: 3847791,
+        },
+      ]),
+      state,
+    );
+
+    const leftover = await service.run({ mode: "first" });
+    assert.equal(
+      leftover.findings[0]?.kind,
+      "hourly",
+      "coverage leftover must inspect at hourly depth even when firstPassedAt is null",
+    );
+    assert.ok(
+      (state.getCampaignCheck(3847791)?.findings ?? []).some((finding) =>
+        finding.startsWith("inbox_missing_known_good"),
+      ),
+      "leftover first-pass must not wipe a still-open known-good hole",
+    );
+  });
+
   it("D81: the pod control shell must stay paused; a paused shell passes", async () => {
     const make = async (status: string) => {
       const store = new StateStore(stateFile());

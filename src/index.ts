@@ -716,13 +716,6 @@ async function main(): Promise<void> {
       );
       await stage("qa-unpause", () => unpauseAfterSigQa.run({ inventory }));
 
-      let campaignCheckResult: unknown = null;
-      if (config.enableCampaignCheck) {
-        campaignCheckResult = await stage("campaign-check-first", () =>
-          campaignCheck.run({ mode: "first", inventory }),
-        );
-      }
-
       if (config.enableWarmupGate) {
         await stage("warmup-gate", () => runWarmupGate(inventory));
       }
@@ -730,6 +723,17 @@ async function main(): Promise<void> {
       const healthResult = await stage("campaign-health", () =>
         campaignHealth.run({ inventory }),
       );
+
+      // D98 — leftover coverage after restaff, not before. campaign-health
+      // fan-out / top-up changes the serving set; a first-check leftover
+      // that ran earlier left pod-cover reading a stale (or wiped)
+      // inbox_missing_known_good and idling as "covered".
+      let campaignCheckResult: unknown = null;
+      if (config.enableCampaignCheck) {
+        campaignCheckResult = await stage("campaign-check-first", () =>
+          campaignCheck.run({ mode: "first", inventory }),
+        );
+      }
 
       // D84 / D116 — placement coverage is fixed on the pass that finds
       // it, not only at the daily 9:00 scan. The D84 hourly throttle

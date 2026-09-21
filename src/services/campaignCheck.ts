@@ -332,7 +332,13 @@ export class CampaignCheckService {
       const runHourly = healthLeftover || hourlySweep || hourlyLeftoverSig;
       if (!runFirst && !runHourly) continue;
 
-      const kind: "first" | "hourly" = runFirst ? "first" : "hourly";
+      // D98 — leftover coverage (known-good / placement / canary) is
+      // hourly-only. First-check does not flag those holes, so a
+      // firstPassedAt=null leftover that still used kind=first wiped
+      // inbox_missing_known_good and pod-cover idled as "covered"
+      // (TechEvo #3847791 2026-09-21).
+      const kind: "first" | "hourly" =
+        runFirst && !openCoverageFinding ? "first" : "hourly";
       // D180 — first-check always samples; hourly resample of first-passed
       // ACTIVE campaigns that use custom tags. Leftover signature-only
       // inspects carry the last finding forward unless the lead list grew.

@@ -4,13 +4,15 @@ import type { SmartleadClient } from "../clients/smartlead.js";
 import {
   accountEmail,
   campaignIdsOf,
+  clientDisplayName,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
+import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { pocClientId } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
@@ -27,7 +29,9 @@ import {
   isInsightRestStickyCampaign,
 } from "../lib/insightCampaigns.js";
 import {
-  detachWouldBreakOnWeekMin,
+  countStaffableMemberships,
+  detachWouldBreakStaffableFloor,
+  noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
 } from "../lib/clientStaffFloor.js";
 import { isExcluded } from "./campaignTopUp.js";
@@ -65,9 +69,11 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * those seats (`insightRequiresExisting`) and the lanes collapsed to
  * ~1. Engagers / other SalesGlider ACTIVE rest is unchanged.
  *
- * D197 — off-week detach will not take an ACTIVE campaign below 40
- * attached senders. Surplus above 40 (and PAUSED/STOPPED hygiene)
- * still rests.
+ * D197 / D199 — off-week detach will not take an ACTIVE campaign
+ * below 40 *staffable* senders. Raw membership leftovers do not
+ * count as surplus. Exclusive + client-sig generics are dedicated
+ * (D199) and rest with this client's pods. Surplus above 40
+ * (and PAUSED/STOPPED hygiene) still rests.
  */
 
 /** Live-client statuses rest may detach from (D169). COMPLETED/DRAFT stay. */
@@ -201,12 +207,17 @@ export class ClientRestService {
       activeByClient.set(clientId, list);
     }
 
-    const membership = new Map<number, number>();
-    for (const account of accounts as SmartleadAccountWithCampaigns[]) {
-      for (const id of campaignIdsOf(account)) {
-        membership.set(id, (membership.get(id) ?? 0) + 1);
-      }
+    const brandByClientId = new Map<number, string>();
+    for (const client of clients) {
+      brandByClientId.set(
+        client.id,
+        brandFromClientDisplayName(clientDisplayName(client)),
+      );
     }
+    const membership = countStaffableMemberships(
+      accounts as SmartleadAccountWithCampaigns[],
+      this.state,
+    );
 
     const candidates: Array<{
       account: SmartleadAccountWithCampaigns;
@@ -244,9 +255,22 @@ export class ClientRestService {
         this.config,
         this.state,
       )
-        ? dedicatedGenericClientId(account, email, this.state, {
-            genericOwnerId,
-          })
+        ? resolveDedicatedGenericClientId(
+            account,
+            email,
+            campaignIdsOf(account).map((id) => {
+              const campaign = campaignById.get(id);
+              return {
+                clientId:
+                  typeof campaign?.client_id === "number"
+                    ? campaign.client_id
+                    : null,
+                shell: campaign ? isAnyShellCampaign(campaign) : false,
+              };
+            }),
+            this.state,
+            { genericOwnerId, brandByClientId },
+          )
         : null;
       // D43 — rotating pool generics stay on the send clock.
       // D198 — dedicated named-client generics rest with that client's
@@ -320,11 +344,21 @@ export class ClientRestService {
       // D198 — a dedicated seat that still has a send-clock rest
       // record moves onto client A/B; do not skip it as a rotating generic.
       if (existing?.kind === "generic") {
-        const dedicated = dedicatedGenericClientId(
+        const dedicated = resolveDedicatedGenericClientId(
           account,
           email,
+          campaignIdsOf(account).map((id) => {
+            const campaign = campaignById.get(id);
+            return {
+              clientId:
+                typeof campaign?.client_id === "number"
+                  ? campaign.client_id
+                  : null,
+              shell: campaign ? isAnyShellCampaign(campaign) : false,
+            };
+          }),
           this.state,
-          { genericOwnerId },
+          { genericOwnerId, brandByClientId },
         );
         if (dedicated == null) continue;
         if (!dryRun) this.state.clearRestingInbox(email);
@@ -530,10 +564,16 @@ export class ClientRestService {
     for (const campaignId of campaignIds) {
       const remaining = membership.get(campaignId) ?? 0;
       if (
-        detachWouldBreakOnWeekMin(campaignById.get(campaignId), remaining)
+        detachWouldBreakStaffableFloor(
+          campaignById.get(campaignId),
+          remaining,
+          account,
+          email,
+          this.state,
+        )
       ) {
         result.skipped.push(
-          `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+          `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
         );
         continue;
       }
@@ -551,7 +591,7 @@ export class ClientRestService {
           await sleep(150);
           dropMembership(account, campaignId);
         }
-        membership.set(campaignId, remaining - 1);
+        noteStaffableDetach(membership, campaignId, account, email, this.state);
         removed.push(campaignId);
       } catch (error) {
         const message =

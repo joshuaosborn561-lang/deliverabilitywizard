@@ -19,11 +19,12 @@ import {
   type CampaignFinding,
 } from "../lib/campaignCheck.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
-import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
+  accountIsPeelStaffable,
   clientCountKey,
   countClientInboxFloors,
-  detachWouldBreakOnWeekMin,
+  detachWouldBreakStaffableFloor,
   formatStaffFloorDetail,
   ON_WEEK_MIN_SENDERS,
   staffFloorForCampaign,
@@ -783,8 +784,8 @@ export class CampaignCheckService {
   /**
    * D184 — pull a shared seat off Insight only. Never touch the
    * SalesGlider memberships or the mailbox signature.
-   * D197 — do not unlink when Insight is already at the on-week
-   * minimum of 40.
+   * D197 / D199 — do not unlink when Insight is already at 40
+   * *staffable* senders.
    */
   private async unlinkInsightSharedStaff(input: {
     campaignId: number;
@@ -801,9 +802,13 @@ export class CampaignCheckService {
     if (!need.length) return [];
     if (this.config.dryRun) return [];
     const campaign = input.campaignById.get(input.campaignId);
-    let remaining = input.accounts.filter((account) =>
-      campaignIdsOf(account).includes(input.campaignId),
-    ).length;
+    let remaining = input.accounts.filter((account) => {
+      if (!campaignIdsOf(account).includes(input.campaignId)) return false;
+      const email = accountEmail(account);
+      return Boolean(
+        email && accountIsPeelStaffable(account, email, this.state),
+      );
+    }).length;
     const unlinked: string[] = [];
     for (const account of input.accounts) {
       if (!campaignIdsOf(account).includes(input.campaignId)) continue;
@@ -812,9 +817,17 @@ export class CampaignCheckService {
       }
       const email = accountEmail(account);
       if (!email || typeof account.id !== "number") continue;
-      if (detachWouldBreakOnWeekMin(campaign, remaining)) {
+      if (
+        detachWouldBreakStaffableFloor(
+          campaign,
+          remaining,
+          account,
+          email,
+          this.state,
+        )
+      ) {
         console.log(
-          `[campaign-check] D197 kept ${email} on Insight #${input.campaignId} ${input.name} (on-week min ${ON_WEEK_MIN_SENDERS})`,
+          `[campaign-check] D199 kept ${email} on Insight #${input.campaignId} ${input.name} (on-week min ${ON_WEEK_MIN_SENDERS})`,
         );
         continue;
       }
@@ -824,7 +837,7 @@ export class CampaignCheckService {
         ]);
         await sleep(WRITE_GAP_MS);
         dropMembership(account, input.campaignId);
-        remaining -= 1;
+        if (accountIsPeelStaffable(account, email, this.state)) remaining -= 1;
         unlinked.push(email);
         console.log(
           `[campaign-check] D184 unlinked ${email} from Insight #${input.campaignId} ${input.name} (kept ACTIVE SalesGlider seats and signature)`,
@@ -998,10 +1011,25 @@ export class CampaignCheckService {
         this.config,
         this.state,
       );
+      const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
+        const other = input.campaigns.get(id);
+        return {
+          campaignId: id,
+          clientId: typeof other?.client_id === "number" ? other.client_id : null,
+          shell: other ? isAnyShellCampaign(other) : false,
+        };
+      });
       const dedicatedClientId = generic
-        ? dedicatedGenericClientId(account, email, this.state, {
-            genericOwnerId: pocOwner?.id ?? null,
-          })
+        ? resolveDedicatedGenericClientId(
+            account,
+            email,
+            memberships,
+            this.state,
+            {
+              genericOwnerId: pocOwner?.id ?? null,
+              brandByClientId: input.brandByClientId,
+            },
+          )
         : null;
       if (
         generic &&
@@ -1013,14 +1041,6 @@ export class CampaignCheckService {
           detail: `${email} is a generic — needs Josh Slack approve (POC clients are pre-allowed)`,
         });
       }
-      const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
-        const other = input.campaigns.get(id);
-        return {
-          campaignId: id,
-          clientId: typeof other?.client_id === "number" ? other.client_id : null,
-          shell: other ? isAnyShellCampaign(other) : false,
-        };
-      });
       const owner = ownerClientId(account.client_id, memberships, {
         generic,
         genericOwnerId: generic ? (pocOwner?.id ?? null) : null,

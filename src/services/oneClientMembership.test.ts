@@ -97,7 +97,7 @@ describe("OneClientMembershipService", () => {
           id: 11,
           from_email: "aaravsanchez@getoutreachdesk.info",
           from_name: "Aarav Sanchez",
-          signature: "Aarav Sanchez\nRoofs by Peterson",
+          signature: "Aarav Sanchez\nGoliath Cybersecurity",
           client_id: null,
           campaign_ids: [2],
         },
@@ -126,7 +126,12 @@ describe("OneClientMembershipService", () => {
     assert.deepEqual(removed, [[2, [11]]]);
     assert.equal(result.restored.length, 2);
     assert.equal(result.pulled[0]?.email, "aaravsanchez@getoutreachdesk.info");
-    assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
+    assert.equal(
+      result.signaturesSet,
+      0,
+      "already Goliath-signed; D199 exclusive+Peterson-sig would have been dedicated",
+    );
+    void updates;
   });
 
   it("D198: a dedicated generic on Peterson is not peeled or rewritten to Goliath", async () => {
@@ -597,7 +602,7 @@ describe("OneClientMembershipService", () => {
           id: 11,
           from_email: "ada@trygetintroduced.info",
           from_name: "Ada Pool",
-          signature: "Ada Pool\nTechEvolution",
+          signature: "Ada Pool\nGoliath Cybersecurity",
           client_id: null,
           tags: [{ tag_name: "GENERIC" }],
           campaign_ids: [3847798],
@@ -619,6 +624,111 @@ describe("OneClientMembershipService", () => {
     const result = await service.run({ dryRun: false });
     assert.deepEqual(removed, [[3847798, [11]]]);
     assert.equal(result.pulled[0]?.email, "ada@trygetintroduced.info");
+  });
+
+  it("D199: exclusive + client-sig restaff is not peeled as Goliath even without client_id", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const added: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 1,
+          name: "Goliath Displacement M",
+          status: "PAUSED",
+          client_id: 548611,
+        },
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "ada@trygetintroduced.info",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nTechEvolution",
+          client_id: null,
+          tags: [{ tag_name: "GENERIC" }],
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3847798],
+        },
+        ...padAccounts(3847798, 521881),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        added.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, []);
+    assert.deepEqual(added, []);
+    assert.equal(result.pulled.length, 0);
+  });
+
+  it("D199: 40 staffable exclusives + disconnected leftovers must not peel below 40", async () => {
+    const removed: number[] = [];
+    const exclusives = Array.from({ length: 40 }, (_, i) => ({
+      id: 300 + i,
+      from_email: `spare-${i}@trygetintroduced.info`,
+      from_name: "Ada Pool",
+      signature: "Ada Pool\nGoliath Cybersecurity",
+      client_id: null,
+      tags: [{ tag_name: "GENERIC" }],
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [3847798],
+    }));
+    const zombies = Array.from({ length: 32 }, (_, i) => ({
+      id: 400 + i,
+      from_email: `dead-${i}@techevo.test`,
+      client_id: 521881,
+      is_smtp_success: false,
+      campaign_ids: [3847798],
+    }));
+    const service = serviceWith({
+      listCampaigns: async () => [
+        {
+          id: 3847798,
+          name: "TechEvo NE IT DM v2 Red Sox",
+          status: "ACTIVE",
+          client_id: 521881,
+        },
+      ],
+      listAllEmailAccounts: async () => [...exclusives, ...zombies],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        _campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(...ids);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    const peeledLive = removed.filter((id) => id >= 300 && id < 400);
+    assert.deepEqual(
+      peeledLive,
+      [],
+      "D199 — peeling live exclusives because 32 disconnected inflated raw membership is the Sep 21 hole",
+    );
+    assert.equal(result.pulled.length, 0);
   });
 
   it("D184: does not rewrite an exclusive Insight mailbox to SalesGlider", async () => {

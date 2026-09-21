@@ -1,27 +1,93 @@
 import {
   accountEmail,
+  campaignIdsOf,
   resolveAccountClient,
   type SmartleadAccountWithCampaigns,
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
-import type { SmartleadCampaign } from "../types/index.js";
+import type { SmartleadCampaign, SmartleadEmailAccount } from "../types/index.js";
 import { isClientInbox } from "./clientInbox.js";
 import { senderIsAttachBlocked } from "./attachBlock.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
 import { assignClientCohorts, onWeekCohort } from "./restCohort.js";
+import { isStaffableSender } from "./staffableSender.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
- * D197 / D198 — every ACTIVE on-week campaign keeps at least this many
- * attached senders. Cleanup / rest / one-client may only peel surplus
- * above it (dedicated named-client generics are not surplus).
+ * D197 / D198 / D199 — every ACTIVE on-week campaign keeps at least this
+ * many *staffable* senders. Cleanup / rest / one-client may only peel
+ * surplus above it (dedicated named-client generics are not surplus).
+ * Raw Smartlead membership (disconnected / resting / canary leftovers)
+ * must not inflate the peel counter — that is how D197 still dropped
+ * TechEvo / Parlay / Insight to 8 / 3 / 19 after a min-40 restaff.
  */
 export const ON_WEEK_MIN_SENDERS = 40;
 
+export type PeelStaffableState = {
+  getRestingInbox?: (email: string) => unknown;
+  isCopyCanary?: (email: string) => boolean;
+};
+
 /**
- * True when taking one more seat off this campaign would break D197.
+ * Same eligibility the campaign floor / `/health` uses (D25 / D199).
+ * Disconnected, resting, canary, and warmup-blocked seats do not staff.
+ */
+export function accountIsPeelStaffable(
+  account: Pick<
+    SmartleadEmailAccount,
+    "is_smtp_success" | "is_imap_success" | "warmup_details"
+  >,
+  email: string,
+  state: PeelStaffableState = {},
+): boolean {
+  const key = email.trim().toLowerCase();
+  return isStaffableSender(account, {
+    resting: Boolean(state.getRestingInbox?.(key)),
+    copyCanary: Boolean(state.isCopyCanary?.(key)),
+  });
+}
+
+/** Staffable attached count per campaign — the D199 peel floor input. */
+export function countStaffableMemberships(
+  accounts: SmartleadAccountWithCampaigns[],
+  state: PeelStaffableState = {},
+): Map<number, number> {
+  const counts = new Map<number, number>();
+  for (const account of accounts) {
+    const email = accountEmail(account);
+    if (!email || !accountIsPeelStaffable(account, email, state)) continue;
+    for (const id of campaignIdsOf(account)) {
+      counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+/**
+ * Decrement the staffable peel counter only when the seat being
+ * removed actually staffs. Peeling a disconnected leftover must not
+ * unlock another live on-week seat.
+ */
+export function noteStaffableDetach(
+  counts: Map<number, number>,
+  campaignId: number,
+  account: Pick<
+    SmartleadEmailAccount,
+    "is_smtp_success" | "is_imap_success" | "warmup_details"
+  >,
+  email: string,
+  state: PeelStaffableState = {},
+): void {
+  if (!accountIsPeelStaffable(account, email, state)) return;
+  counts.set(campaignId, Math.max(0, (counts.get(campaignId) ?? 0) - 1));
+}
+
+/**
+ * True when taking one more *staffable* seat off this campaign would
+ * break the standing 40 (D197/D199). `remainingBeforeDetach` is the
+ * staffable attached count, never raw membership.
  * ACTIVE only — PAUSED/STOPPED hygiene (D169) still uses last-account.
  */
 export function detachWouldBreakOnWeekMin(
@@ -30,6 +96,25 @@ export function detachWouldBreakOnWeekMin(
 ): boolean {
   if (String(campaign?.status ?? "").toUpperCase() !== "ACTIVE") return false;
   return remainingBeforeDetach <= ON_WEEK_MIN_SENDERS;
+}
+
+/**
+ * D199 — refuse only when the seat being removed is itself staffable
+ * and the campaign is already at/under 40 staffable. Disconnected
+ * leftovers may still come off; they do not staff the floor.
+ */
+export function detachWouldBreakStaffableFloor(
+  campaign: { status?: string | null } | undefined,
+  remainingStaffable: number,
+  account: Pick<
+    SmartleadEmailAccount,
+    "is_smtp_success" | "is_imap_success" | "warmup_details"
+  >,
+  email: string,
+  state: PeelStaffableState = {},
+): boolean {
+  if (!accountIsPeelStaffable(account, email, state)) return false;
+  return detachWouldBreakOnWeekMin(campaign, remainingStaffable);
 }
 
 /**

@@ -9917,7 +9917,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     for (const [name, src] of Object.entries(files)) {
       assert.match(
         src,
-        /dedicatedGenericClientId/,
+        /dedicatedGenericClientId|resolveDedicatedGenericClientId/,
         stop(
           `${name} honours dedicated named-client generics (D198).`,
           `${name} no longer consults dedicatedGenericClientId.`,

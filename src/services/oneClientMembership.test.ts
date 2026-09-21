@@ -97,7 +97,7 @@ describe("OneClientMembershipService", () => {
           id: 11,
           from_email: "aaravsanchez@getoutreachdesk.info",
           from_name: "Aarav Sanchez",
-          signature: "Aarav Sanchez\nRoofs by Peterson",
+          signature: "Aarav Sanchez\nGoliath Cybersecurity",
           client_id: null,
           campaign_ids: [2],
         },
@@ -126,7 +126,12 @@ describe("OneClientMembershipService", () => {
     assert.deepEqual(removed, [[2, [11]]]);
     assert.equal(result.restored.length, 2);
     assert.equal(result.pulled[0]?.email, "aaravsanchez@getoutreachdesk.info");
-    assert.equal(updates[0]?.fields.signature, "Aarav Sanchez\nGoliath Cybersecurity");
+    assert.equal(
+      result.signaturesSet,
+      0,
+      "already Goliath-signed; D199 exclusive+Peterson-sig would have been dedicated",
+    );
+    void updates;
   });
 
   it("D198: a dedicated generic on Peterson is not peeled or rewritten to Goliath", async () => {

@@ -540,4 +540,70 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(result.pulledGenerics.length, 0);
     assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
   });
+
+  it("D198: does not pull a dedicated generic off Parlay even above 40", async () => {
+    const pool: PoolMailboxRecord = {
+      email: "ada@trygetintroduced.info",
+      domain: "trygetintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Ada",
+      lastName: "Pool",
+      status: "assigned",
+      assignedClientId: 9,
+    };
+    const { state } = fakeState(pool);
+    const removed: number[][] = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 2, name: "Parlay Sports", status: "ACTIVE", client_id: 9 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: pool.email,
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          client_id: 9,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [2],
+        },
+        ...Array.from({ length: 41 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `parlay-${index}@parlay.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 9,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [2],
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 9, name: "Parlay" },
+      ],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push(ids);
+        void campaignId;
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.deepEqual(removed, []);
+    assert.equal(result.pulledGenerics.length, 0);
+  });
 });

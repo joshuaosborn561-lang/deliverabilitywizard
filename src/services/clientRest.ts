@@ -10,6 +10,8 @@ import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { pocClientId } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import {
@@ -39,7 +41,9 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
 
 /**
  * D43 — per-client A/B rest. Half of that client's inboxes sit for two
- * weeks (off live campaigns, warmup on). Generics are not in this loop.
+ * weeks (off live campaigns, warmup on). Rotating pool generics are not
+ * in this loop. D198 — generics dedicated to a named client rest here
+ * with that client's pods (own A/B split).
  *
  * D169 — off-week detach is ACTIVE + PAUSED + STOPPED. A PAUSED/STOPPED
  * membership still holds the box in the A/B pod; filtering bench to
@@ -173,8 +177,12 @@ export class ClientRestService {
       return result;
     }
 
-    const { campaigns, accounts } =
+    const { campaigns, accounts, clients = [] } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
+    const genericOwnerId = pocClientId(
+      clients,
+      this.config.pocClientNamePatterns,
+    );
 
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
@@ -206,6 +214,10 @@ export class ClientRestService {
       groupKey: string;
     }> = [];
     const byGroup = new Map<string, Array<{ email: string; type?: string | null }>>();
+    const dedicatedByGroup = new Map<
+      string,
+      Array<{ email: string; type?: string | null }>
+    >();
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -226,8 +238,29 @@ export class ClientRestService {
         result.skipped.push(`${email}: attach blocked (D176)`);
         continue;
       }
-      if (isGenericMailbox(account, email, this.config, this.state)) continue;
-      const groupKey = clientRestGroupKey(account, email, campaignClientById);
+      const dedicatedClientId = isGenericMailbox(
+        account,
+        email,
+        this.config,
+        this.state,
+      )
+        ? dedicatedGenericClientId(account, email, this.state, {
+            genericOwnerId,
+          })
+        : null;
+      // D43 — rotating pool generics stay on the send clock.
+      // D198 — dedicated named-client generics rest with that client's
+      // A/B pods (own split, so named-inbox cohorts do not flip).
+      if (
+        isGenericMailbox(account, email, this.config, this.state) &&
+        dedicatedClientId == null
+      ) {
+        continue;
+      }
+      const groupKey =
+        dedicatedClientId != null
+          ? `id:${dedicatedClientId}`
+          : clientRestGroupKey(account, email, campaignClientById);
       if (!groupKey) {
         result.skipped.push(`${email}: no client group`);
         continue;
@@ -243,13 +276,19 @@ export class ClientRestService {
         continue;
       }
       candidates.push({ account, email, groupKey });
-      const list = byGroup.get(groupKey) ?? [];
+      const target = dedicatedClientId != null ? dedicatedByGroup : byGroup;
+      const list = target.get(groupKey) ?? [];
       list.push({ email, type: account.type });
-      byGroup.set(groupKey, list);
+      target.set(groupKey, list);
     }
 
     const cohortByEmail = new Map<string, RestCohort>();
     for (const [, inboxes] of byGroup) {
+      for (const [email, cohort] of assignClientCohorts(inboxes)) {
+        cohortByEmail.set(email, cohort);
+      }
+    }
+    for (const [, inboxes] of dedicatedByGroup) {
       for (const [email, cohort] of assignClientCohorts(inboxes)) {
         cohortByEmail.set(email, cohort);
       }
@@ -278,7 +317,18 @@ export class ClientRestService {
       }
 
       const existing = this.state.getRestingInbox(email);
-      if (existing?.kind === "generic") continue;
+      // D198 — a dedicated seat that still has a send-clock rest
+      // record moves onto client A/B; do not skip it as a rotating generic.
+      if (existing?.kind === "generic") {
+        const dedicated = dedicatedGenericClientId(
+          account,
+          email,
+          this.state,
+          { genericOwnerId },
+        );
+        if (dedicated == null) continue;
+        if (!dryRun) this.state.clearRestingInbox(email);
+      }
 
       // D169 — detachable = ACTIVE + PAUSED + STOPPED. The old ACTIVE-only
       // filter left off-week boxes parked on PAUSED/STOPPED forever.

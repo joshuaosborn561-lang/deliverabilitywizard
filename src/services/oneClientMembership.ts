@@ -13,6 +13,7 @@ import {
   findForeignBrand,
 } from "../lib/clientBrand.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import { pocClientId } from "../lib/pocClient.js";
@@ -64,20 +65,23 @@ interface AccountPlan {
 }
 
 /**
- * D75 / D76 / D160 — every health pass: an inbox may only sit on one
- * client's campaigns. Generics belong to Goliath even with a leftover
- * real client_id. A leftover Generic/POC client_id is cleared (those
- * are not clients). The paused pod-control shell does not count.
- * Signature is rewritten to the owner client's brand when a leftover
- * line is another client.
+ * D75 / D76 / D160 / D198 — every health pass: an inbox may only sit
+ * on one client's campaigns. Rotating / undedicated generics belong to
+ * Goliath (D76). A generic dedicated to a named client (mailbox
+ * client_id, pool assignedClientId, or client:<id> tag) belongs to
+ * that client — not Goliath — while it sits on that client's
+ * campaigns (D198). A leftover Generic/POC client_id is cleared
+ * (those are not clients). The paused pod-control shell does not
+ * count. Signature is rewritten to the owner client's brand when a
+ * leftover line is another client.
  *
- * D197 — do not pull a seat off an ACTIVE campaign that is already at
- * the on-week minimum of 40. Exclusive generic + client-sig min-40
- * top-ups were being treated as Goliath-owned foreign memberships and
- * peeled within one health pass. Surplus above 40 may still come off.
- * When a pull is skipped for the floor, do not restore that box onto
- * Goliath or rewrite its client signature — that would undo the
- * exclusive attach.
+ * D197 / D198 — do not pull a seat off an ACTIVE campaign that is
+ * already at the on-week minimum of 40. Dedicated named-client
+ * generics are not foreign-pulled, not restored onto Goliath, and
+ * not signature-rewritten to the POC brand even above 40. Surplus
+ * *undedicated* rotating-pool generics above 40 may still come off.
+ * Multi-client links on a dedicated seat still peel the foreign camp
+ * (floor-gated).
  */
 export class OneClientMembershipService {
   constructor(
@@ -179,14 +183,23 @@ export class OneClientMembershipService {
       result.examined += 1;
 
       const generic = isGenericMailbox(account, email, this.config, this.state);
+      const dedicatedClientId = generic
+        ? dedicatedGenericClientId(account, email, this.state, {
+            genericOwnerId,
+          })
+        : null;
       // D160 — a leftover Generic/POC client_id is a billable pool label
       // we are draining, not an owner. Memberships still resolve through
       // the POC owner (Goliath). A generic with no client_id stays bare.
       const leftoverMarker =
         typeof account.client_id === "number" &&
         this.state.isMarkerClientId(account.client_id);
+      // D198 — a named-client dedication is assignment, not a stale
+      // Goliath leftover. Only undedicated rotating-pool leftovers
+      // rewrite identity back to the POC.
       const leftoverReal =
         generic &&
+        dedicatedClientId == null &&
         !leftoverMarker &&
         typeof genericOwnerId === "number" &&
         typeof account.client_id === "number" &&
@@ -194,6 +207,7 @@ export class OneClientMembershipService {
       const owner = ownerClientId(account.client_id, memberships, {
         generic,
         genericOwnerId,
+        dedicatedClientId,
       });
       if (owner == null) {
         result.skipped.push(`${email}: no single owner client`);
@@ -226,8 +240,12 @@ export class OneClientMembershipService {
       const needsGoliathIdentity = leftoverReal && !protectedByMin;
       // Shell-only leftover-tagged generics (Aarav after the first pass)
       // must go back on live Goliath, not sit on the paused shell.
+      // D198 — dedicated named-client seats never dump onto Goliath.
       const restore =
-        generic && !onOwner && (pull.length > 0 || leftoverTagged)
+        generic &&
+        dedicatedClientId == null &&
+        !onOwner &&
+        (pull.length > 0 || leftoverTagged)
           ? activeOwnerCampaignIds.filter((id) => {
               if (memberships.some((row) => row.campaignId === id)) return false;
               const campaign = campaignById.get(id);
@@ -266,6 +284,7 @@ export class OneClientMembershipService {
       );
       const needsSignature =
         !exclusiveInsight &&
+        dedicatedClientId == null &&
         !protectedByMin &&
         Boolean(desired) &&
         (account.signature ?? "") !== desired &&

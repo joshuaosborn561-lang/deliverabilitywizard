@@ -91,7 +91,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
 | D74 | Live — log-only clause superseded by D75 |
 | D75 | Live |
-| D76 | Live — exclusive min-40 generic identity rewrite / restore qualified by D197 |
+| D76 | Live — exclusive min-40 generic identity rewrite / restore qualified by D197; dedicated named-client seats belong to that client, not Goliath (D198) |
 | D77 | Live — Goliath-only unpause generalized by D82 |
 | D78 | Superseded by D80→D88 |
 | D79 | Retired-record (no per-sender bounce pull) — live |
@@ -204,11 +204,12 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D189 | Live — Insight campaigns are now client 582890 (D192); named ids stay rest-sticky | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
-| D193 | Live — peel of exclusive min-40 generic seats qualified by D197 | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
+| D193 | Live — peel of exclusive min-40 generic seats qualified by D197; dedicated named-client seats are not foreign Goliath (D198) | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — floor is max(on-week pod, 40) per D197 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
-| D197 | Live | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D197 | Live — dedicated named-client seats stay even above 40 (D198) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D198 | Live | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 
 ---
 
@@ -6181,6 +6182,64 @@ unlink the same way. Does not reverse D105 warmup pulls.
 / client-rest / generic-rest / Insight unlink consult it; a
 24-seat on-week pod floors at 40; CANON names the 40 floor and
 the peel exception.
+
+---
+
+## D198 — Dedicated named-client generics; do not treat them as Goliath
+
+**Decision (Josh 2026-09-21, standing after the morning restaff peel).**
+Every ACTIVE campaign keeps **at least 40 senders on the on-week
+POD** (`max(on-week client pod, 40)` — D196/D197). A/B rotation
+still applies; off-week rests.
+
+**Dedicated generics per named client are OK and preferred.**
+Assign specific generic mailboxes to one client (Smartlead
+`client_id` / a `client:<id>` tag / pool `assignedClientId`), set
+that client's signature, and split them across POD A and POD B so
+the resting week still hits 40 when that POD is on. Do **not**
+rotate the same generic id across clients or camps.
+
+Those dedicated seats are **not** Goliath-owned (qualifies D76):
+one-client, generic-send-rest, and top-up `pullNonGoliathGenerics`
+must not peel them as foreign Goliath while they sit on that
+client's campaigns, even above 40. A dedicated seat linked to a
+second client's campaign still peels the foreign membership
+(floor-gated). Rotating / undedicated pool generics stay D76 —
+Goliath owner, 14-day send clock, surplus above 40 may come off.
+
+New rotating-pool attaches onto named clients stay forbidden
+(D193). Dedicated assignment is the cover model when a named
+lane cannot hit 40 from client inboxes alone. An ACTIVE on-week
+campaign under 40 is an `understaffed` finding.
+
+**Why.** D197 blocked detaches below 40 and shipped on main
+`de8ae2d` / PR #229. That was necessary and incomplete: one-client
+still treated every generic as Goliath (D76), so exclusive
+Parlay / TechEvo attaches were foreign forever and
+signature-rewritten; `pullNonGoliathGenerics` still stripped
+undedicated leftovers; the rotating free pool linked the same
+generic ids across client camps, then triage unlinked them under
+40 (Parlay 40→24, TechEvo 40→19 after the morning restaff).
+
+**Rejected.** Reversing D193 (wizard auto-filling named clients
+from the rotating pool). Deleting D76 for undedicated leftovers.
+A grace-window attach stamp (state forgets across deploys).
+
+**Supersedes / amends.** Qualifies D76: leftover *undedicated*
+generics still belong to Goliath; a seat marked dedicated to a
+named client belongs to that client. Qualifies D193: existing
+dedicated seats are not peeled as unapproved / foreign Goliath;
+new rotating-pool attaches stay forbidden. Extends D197: dedicated
+seats stay even above 40; the 40 floor still gates every other
+peel. Qualifies D43: dedicated named-client generics rest with
+that client's A/B pods, not the rotating send clock.
+
+**Guards.** canon D198: `dedicatedGenericClientId` / `ownerClientId`
+dedicated override; one-client keeps a dedicated Parlay/TechEvo
+seat and peels a multi-client link; generic-rest and
+`pullNonGoliathGenerics` skip dedicated-to-this-client;
+`ON_WEEK_MIN_SENDERS === 40`; CANON names dedicated generics and
+the on-week 40 floor.
 
 ---
 

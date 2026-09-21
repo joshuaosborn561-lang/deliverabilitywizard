@@ -431,7 +431,7 @@ describe("ClientRestService", () => {
         {
           id: 55,
           from_email: "generic@pool.info",
-          client_id: 9,
+          client_id: null,
           from_name: "Pool User",
           campaign_ids: [1],
           created_at: WARMED,
@@ -1429,5 +1429,78 @@ describe("ClientRestService", () => {
       );
     }
     assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
+  });
+
+  it("D198: dedicated named-client generics rest with that client's A/B pods", async () => {
+    const now = new Date("2026-01-01T17:00:00Z"); // A on
+    const onEmail = "ada@trygetintroduced.info";
+    assert.equal(assignClientCohorts([onEmail, "zoe@trygetintroduced.info"]).get(onEmail), "A");
+    const adds: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-d198-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: onEmail,
+      domain: "trygetintroduced.info",
+      firstName: "Ada",
+      lastName: "Pool",
+      platform: "GOOGLE",
+      status: "assigned",
+      smartleadAccountId: 20,
+      assignedClientId: 77,
+    });
+
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "Parlay Sports", status: "ACTIVE", client_id: 77 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 20,
+          from_email: onEmail,
+          client_id: 77,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 21,
+          from_email: "zoe@trygetintroduced.info",
+          client_id: 77,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [1],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 77, name: "Parlay", logo: "Parlay" },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, now });
+    assert.ok(
+      result.restored.some((row) => row.email === onEmail),
+      "dedicated Parlay generic must join the on-week pod, not be skipped as rotating pool",
+    );
+    assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
   });
 });

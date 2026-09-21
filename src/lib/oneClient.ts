@@ -12,10 +12,24 @@ export interface MembershipRow {
 export function ownerClientId(
   mailboxClientId: number | null | undefined,
   memberships: MembershipRow[],
-  opts?: { generic?: boolean; genericOwnerId?: number | null },
+  opts?: {
+    generic?: boolean;
+    genericOwnerId?: number | null;
+    /** D198 — named-client dedicated generic; wins over the D76 Goliath owner. */
+    dedicatedClientId?: number | null;
+  },
 ): number | null {
-  // D76 — pool / extra-fleet generics belong to Goliath even when a leftover
-  // client_id still names Peterson or the field is empty.
+  // D198 — a generic dedicated to a named client belongs to that client,
+  // not Goliath. Multi-client links still peel via foreignCampaignIds.
+  if (
+    typeof opts?.dedicatedClientId === "number" &&
+    Number.isFinite(opts.dedicatedClientId)
+  ) {
+    return opts.dedicatedClientId;
+  }
+  // D76 — rotating / undedicated pool generics belong to Goliath even
+  // when a leftover client_id is empty. Dedicated named-client seats
+  // are handled above (D198).
   if (
     opts?.generic &&
     typeof opts.genericOwnerId === "number" &&

@@ -14,8 +14,9 @@ import { assignClientCohorts, onWeekCohort } from "./restCohort.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
- * D197 — every ACTIVE on-week campaign keeps at least this many attached
- * senders. Cleanup / rest / one-client may only peel surplus above it.
+ * D197 / D198 — every ACTIVE on-week campaign keeps at least this many
+ * attached senders. Cleanup / rest / one-client may only peel surplus
+ * above it (dedicated named-client generics are not surplus).
  */
 export const ON_WEEK_MIN_SENDERS = 40;
 

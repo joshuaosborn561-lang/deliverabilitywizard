@@ -7,6 +7,8 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { pocClientId } from "../lib/pocClient.js";
 import {
   detachWouldBreakOnWeekMin,
   ON_WEEK_MIN_SENDERS,
@@ -73,8 +75,12 @@ export class GenericSendRestService {
       return result;
     }
 
-    const { campaigns, accounts } =
+    const { campaigns, accounts, clients = [] } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
+    const genericOwnerId = pocClientId(
+      clients,
+      this.config.pocClientNamePatterns,
+    );
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );
@@ -93,6 +99,17 @@ export class GenericSendRestService {
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
       if (this.state.isCopyCanary(email)) {
         result.skipped.push(`${email}: copy canary`);
+        continue;
+      }
+      // D198 — dedicated named-client seats rest with that client's A/B
+      // pods, not the rotating 14-day send clock. Same generic must not
+      // rotate across clients.
+      if (
+        dedicatedGenericClientId(account, email, this.state, {
+          genericOwnerId,
+        }) != null
+      ) {
+        result.skipped.push(`${email}: dedicated client generic (D198)`);
         continue;
       }
       result.examined += 1;

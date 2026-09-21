@@ -10,6 +10,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { dedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { owesWarmup } from "./warmupGate.js";
@@ -21,6 +22,7 @@ import {
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
+import { pocClientId } from "../lib/pocClient.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
@@ -256,6 +258,7 @@ export class CampaignTopUpService {
       accounts: accounts as SmartleadAccountWithCampaigns[],
       campaignById,
       campaignAllowsGenerics,
+      genericOwnerId: pocClientId(clients, this.config.pocClientNamePatterns),
       campaignsByEmail,
       projected,
       result,
@@ -681,10 +684,13 @@ export class CampaignTopUpService {
   }
 
   /**
-   * D58 — generics come off every campaign that is not Goliath. The paused
-   * pod-control shell is left alone (D56).
+   * D58 — rotating-pool generics come off every campaign that is not
+   * Goliath. The paused pod-control shell is left alone (D56).
    * D197 — do not peel those generics when the ACTIVE campaign is already
    * at the on-week minimum of 40; surplus above 40 may still come off.
+   * D198 — a generic dedicated to this campaign's named client stays;
+   * it is not foreign Goliath. Multi-client / wrong-client dedicated
+   * seats still peel (floor-gated).
    */
   private async pullNonGoliathGenerics(input: {
     dryRun: boolean;
@@ -692,6 +698,7 @@ export class CampaignTopUpService {
     accounts: SmartleadAccountWithCampaigns[];
     campaignById: Map<number, SmartleadCampaign>;
     campaignAllowsGenerics: (campaign: SmartleadCampaign | undefined) => boolean;
+    genericOwnerId: number | null;
     campaignsByEmail: Map<string, number[]>;
     projected: Map<number, number>;
     result: TopUpResult;
@@ -708,6 +715,12 @@ export class CampaignTopUpService {
       if (!email || !account.id) continue;
       if (this.state.isCopyCanary(email)) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
+      const dedicatedClientId = dedicatedGenericClientId(
+        account,
+        email,
+        this.state,
+        { genericOwnerId: input.genericOwnerId },
+      );
       const remaining: number[] = [];
       for (const campaignId of campaignIdsOf(account)) {
         const campaign = input.campaignById.get(campaignId);
@@ -716,6 +729,14 @@ export class CampaignTopUpService {
           continue;
         }
         if (input.campaignAllowsGenerics(campaign)) {
+          remaining.push(campaignId);
+          continue;
+        }
+        // D198 — dedicated to this named client: not foreign Goliath.
+        if (
+          dedicatedClientId != null &&
+          campaign.client_id === dedicatedClientId
+        ) {
           remaining.push(campaignId);
           continue;
         }

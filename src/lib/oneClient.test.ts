@@ -55,4 +55,23 @@ describe("one client per inbox (D75)", () => {
       548611,
     );
   });
+
+  it("gives a dedicated named-client generic to that client (D198)", () => {
+    assert.equal(
+      ownerClientId(
+        77,
+        [{ campaignId: 10, clientId: 77, shell: false }],
+        { generic: true, genericOwnerId: 548611, dedicatedClientId: 77 },
+      ),
+      77,
+    );
+    assert.deepEqual(
+      foreignCampaignIds(77, [
+        { campaignId: 10, clientId: 77, shell: false },
+        { campaignId: 20, clientId: 88, shell: false },
+      ]),
+      [20],
+      "a dedicated Parlay seat on TechEvo is still foreign",
+    );
+  });
 });

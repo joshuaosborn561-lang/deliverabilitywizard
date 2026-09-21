@@ -12,15 +12,32 @@ export interface MembershipRow {
 export function ownerClientId(
   mailboxClientId: number | null | undefined,
   memberships: MembershipRow[],
-  opts?: { generic?: boolean; genericOwnerId?: number | null },
+  opts?: {
+    generic?: boolean;
+    genericOwnerId?: number | null;
+    /** D198 — true when mailboxClientId is Generic/POC marker, not a real client. */
+    markerClientId?: boolean;
+  },
 ): number | null {
-  // D76 — pool / extra-fleet generics belong to Goliath even when a leftover
-  // client_id still names Peterson or the field is empty.
+  // D76 — free-pool generics belong to Goliath even with a leftover
+  // client_id or an empty field.
+  // D198 — *dedicated* generics (Josh 2026-09-21): a pool mailbox whose
+  // client_id is set to a real named client is owned by that client, not
+  // Goliath. one-client must not foreign-pull it off that client's
+  // campaigns or rewrite its signature back to the POC brand.
   if (
     opts?.generic &&
     typeof opts.genericOwnerId === "number" &&
     Number.isFinite(opts.genericOwnerId)
   ) {
+    if (
+      typeof mailboxClientId === "number" &&
+      Number.isFinite(mailboxClientId) &&
+      mailboxClientId !== opts.genericOwnerId &&
+      !opts.markerClientId
+    ) {
+      return mailboxClientId;
+    }
     return opts.genericOwnerId;
   }
   if (typeof mailboxClientId === "number" && Number.isFinite(mailboxClientId)) {

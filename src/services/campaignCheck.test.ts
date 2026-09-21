@@ -1232,6 +1232,16 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
             is_smtp_success: true,
             is_imap_success: true,
           },
+          ...Array.from({ length: 40 }, (_, i) => ({
+            id: 200 + i,
+            from_email: `insight-pad-${i}@salesglidertop.org`,
+            from_name: "Josh Osborn",
+            signature: "Josh Osborn\nInsight",
+            client_id: 345263,
+            campaign_ids: [3921651],
+            is_smtp_success: true,
+            is_imap_success: true,
+          })),
         ],
         listClients: async () => [salesGlider],
         getCampaignSequences: async (id: number) =>
@@ -1282,6 +1292,89 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
       insightFindings.some((finding) => finding.kind === "mailbox_sig"),
       false,
       "unlinked seats do not leave a leftover mailbox_sig on Insight",
+    );
+  });
+
+  it("D197: does not unlink Insight shared staff when the campaign is at 40", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const removed: Array<[number, number[]]> = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921651,
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+          {
+            id: 89,
+            name: "SalesGlider Nurture",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 44,
+            from_email: "joshua@salesglidertop.org",
+            from_name: "Joshua Osborn",
+            signature: "Joshua Osborn\nSalesGlider",
+            client_id: 345263,
+            campaign_ids: [3921651, 89],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+          ...Array.from({ length: 39 }, (_, i) => ({
+            id: 200 + i,
+            from_email: `insight-pad-${i}@salesglidertop.org`,
+            from_name: "Josh Osborn",
+            signature: "Josh Osborn\nInsight",
+            client_id: 345263,
+            campaign_ids: [3921651],
+            is_smtp_success: true,
+            is_imap_success: true,
+          })),
+        ],
+        listClients: async () => [salesGlider],
+        getCampaignSequences: async (id: number) =>
+          id === 3921651
+            ? [
+                {
+                  seq_number: 1,
+                  email_body:
+                    "<div>A note from Insight</div><br><br>Josh Osborn<br>Insight<br><br>P.S. Later.",
+                },
+              ]
+            : [
+                {
+                  seq_number: 1,
+                  email_body: "<div>Sean, that offer's still open</div><div>%signature%</div>",
+                },
+              ],
+        updateCampaignSequences: async () => undefined,
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(removed, []);
+    const insightFindings =
+      result.findings.find((row) => row.campaignId === 3921651)?.findings ?? [];
+    assert.equal(
+      insightFindings.some((finding) => finding.kind === "insight_shared_staff"),
+      true,
+      "shared-staff finding stays when D197 blocks the unlink",
     );
   });
 

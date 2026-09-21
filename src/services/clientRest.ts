@@ -24,6 +24,10 @@ import {
   canAttachMailboxToCampaign,
   isInsightRestStickyCampaign,
 } from "../lib/insightCampaigns.js";
+import {
+  detachWouldBreakOnWeekMin,
+  ON_WEEK_MIN_SENDERS,
+} from "../lib/clientStaffFloor.js";
 import { isExcluded } from "./campaignTopUp.js";
 import {
   dropMembership,
@@ -56,6 +60,10 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * used to strip the exclusive Insight pool; D184 restore then refused
  * those seats (`insightRequiresExisting`) and the lanes collapsed to
  * ~1. Engagers / other SalesGlider ACTIVE rest is unchanged.
+ *
+ * D197 — off-week detach will not take an ACTIVE campaign below 40
+ * attached senders. Surplus above 40 (and PAUSED/STOPPED hygiene)
+ * still rests.
  */
 
 /** Live-client statuses rest may detach from (D169). COMPLETED/DRAFT stay. */
@@ -320,6 +328,7 @@ export class ClientRestService {
         membership,
         dryRun,
         result,
+        campaignById,
       );
       if (removed.length || !row.existing) {
         const record = {
@@ -410,6 +419,7 @@ export class ClientRestService {
         membership,
         dryRun,
         result,
+        campaignById,
       );
       if (!dryRun) this.state.clearRestingInbox(row.email);
       if (added.length || row.existing || cleared.length) {
@@ -464,10 +474,19 @@ export class ClientRestService {
     membership: Map<number, number>,
     dryRun: boolean,
     result: ClientRestResult,
+    campaignById: Map<number, SmartleadCampaign>,
   ): Promise<number[]> {
     const removed: number[] = [];
     for (const campaignId of campaignIds) {
       const remaining = membership.get(campaignId) ?? 0;
+      if (
+        detachWouldBreakOnWeekMin(campaignById.get(campaignId), remaining)
+      ) {
+        result.skipped.push(
+          `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D197)`,
+        );
+        continue;
+      }
       if (remaining <= 1) {
         result.skipped.push(
           `${email}: last account on #${campaignId} — wait for top-up`,

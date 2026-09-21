@@ -10232,6 +10232,35 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       );
     }
 
+    const clientRest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      clientRest,
+      /pickExclusiveOnWeekTarget/,
+      stop(
+        "Client-rest on-week restore is exclusive for pool generics (D200).",
+        "clientRest.ts no longer picks one ACTIVE for pool/dedicated generics.",
+      ),
+    );
+    assert.match(
+      clientRest,
+      /isGenericMailbox/,
+      stop(
+        "Exclusive on-week restore keys off isGenericMailbox (D200).",
+        "clientRest.ts lost the generic exclusive-restore branch.",
+      ),
+    );
+    assert.match(
+      clientRest,
+      /exclusiveExtras/,
+      stop(
+        "On-week restore peels same-client ACTIVE extras on pool generics (D200).",
+        "clientRest.ts no longer peels exclusive extras on restore.",
+      ),
+    );
+
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     const decisions = await readFile(
       new URL("../../DECISIONS.md", import.meta.url),
@@ -10248,6 +10277,22 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       stop(
         "CANON names pool-only exclusivity (D200).",
         "CANON.md lost the D200 pool-only exclusive-attach rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /exactly one.*ACTIVE/,
+      stop(
+        "CANON says pool/dedicated generics restore onto exactly one ACTIVE (D200).",
+        "CANON.md lost the exclusive on-week restore rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /prefer already-on among targets/,
+      stop(
+        "CANON names already-on then thinnest exclusive restore (D200).",
+        "CANON.md lost the exclusive-restore pick order.",
       ),
     );
     assert.match(

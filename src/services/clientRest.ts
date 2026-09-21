@@ -53,9 +53,13 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * membership still holds the box in the A/B pod; filtering bench to
  * ACTIVE only left BCP With Team (PAUSED) and STOPPED client-named
  * campaigns hoarding the off-week half, so ACTIVE stayed thin. On-week
- * restore still targets every ACTIVE client campaign (D59) and also
- * clears leftover PAUSED/STOPPED attachments so they cannot trap the
- * on-week half. Excluded / canary / pod-control shells stay untouched.
+ * restore for *named* seats still targets every ACTIVE client campaign
+ * (D59) and also clears leftover PAUSED/STOPPED attachments so they
+ * cannot trap the on-week half. D200 — pool / dedicated generics
+ * (`isGenericMailbox`) restore onto at most one ACTIVE (prefer
+ * already-on among targets; else thinnest by staffable membership,
+ * tie → lowest id) and peel same-client ACTIVE extras above the
+ * on-week floor. Excluded / canary / pod-control shells stay untouched.
  *
  * D154 — on-week restore must not re-staff inboxes that still owe warmup.
  * Health runs client-rest *before* the warmup gate every pass; without this
@@ -134,6 +138,33 @@ export function isExcludedOnlyMembership(
     known.length > 0 &&
     known.every((campaign) => isExcluded(campaign, excluded))
   );
+}
+
+/**
+ * D200 — exclusive on-week restore for pool / dedicated generics.
+ * Prefer an already-on target so a sitting exclusive seat does not hop.
+ * Otherwise pick the thinnest ACTIVE by staffable membership; tie →
+ * lowest campaign id.
+ */
+export function pickExclusiveOnWeekTarget(
+  targets: number[],
+  alreadyOnActive: number[],
+  staffableByCampaign: Map<number, number>,
+): number | null {
+  if (!targets.length) return null;
+  const alreadyOn = new Set(alreadyOnActive);
+  const alreadyOnTargets = targets.filter((id) => alreadyOn.has(id));
+  const pool = alreadyOnTargets.length > 0 ? alreadyOnTargets : targets;
+  let chosen = pool[0]!;
+  let chosenStaffable = staffableByCampaign.get(chosen) ?? 0;
+  for (const id of pool.slice(1)) {
+    const staffable = staffableByCampaign.get(id) ?? 0;
+    if (staffable < chosenStaffable || (staffable === chosenStaffable && id < chosen)) {
+      chosen = id;
+      chosenStaffable = staffable;
+    }
+  }
+  return chosen;
 }
 
 export function clientRestGroupKey(
@@ -452,16 +483,32 @@ export class ClientRestService {
       const parsedId = row.groupKey.startsWith("id:")
         ? Number(row.groupKey.slice(3))
         : clientId;
-      // D59 — on-week (B this fortnight) sits on every ACTIVE campaign for
-      // that client, not just the campaigns it happened to be on before a hold.
+      // D59 — named on-week seats sit on every ACTIVE campaign for that
+      // client. D200 — pool / dedicated generics restore onto at most
+      // one ACTIVE (prefer already-on; else thinnest, tie → lowest id).
       const targets = this.onWeekTargets(
         Number.isFinite(parsedId) ? parsedId : null,
         row.groupKey,
         campaigns as SmartleadCampaign[],
         activeByClient,
       );
+      const generic = isGenericMailbox(
+        row.account,
+        row.email,
+        this.config,
+        this.state,
+      );
+      const exclusiveTarget = generic
+        ? pickExclusiveOnWeekTarget(targets, row.alreadyOnActive, membership)
+        : null;
+      const attachTargets = generic
+        ? exclusiveTarget != null &&
+          !row.alreadyOnActive.includes(exclusiveTarget)
+          ? [exclusiveTarget]
+          : []
+        : targets;
       const added: number[] = [];
-      for (const campaignId of targets) {
+      for (const campaignId of attachTargets) {
         if (row.alreadyOnActive.includes(campaignId)) continue;
         const target = campaignById.get(campaignId);
         if (
@@ -496,10 +543,22 @@ export class ClientRestService {
         const campaign = campaignById.get(id);
         return String(campaign?.status ?? "").toUpperCase() !== "ACTIVE";
       });
+      // D200 — peel same-client ACTIVE extras on pool / dedicated
+      // generics so exclusive attach is not re-broken this pass.
+      const exclusiveExtras = generic
+        ? row.alreadyOnActive.filter((id) => {
+            if (id === exclusiveTarget) return false;
+            if (!targets.includes(id)) return false;
+            return isRestDetachableCampaign(
+              campaignById.get(id),
+              this.config.topUpExcludeCampaigns,
+            );
+          })
+        : [];
       const cleared = await this.detachFromCampaigns(
         row.account,
         row.email,
-        leftoverPausedOrStopped,
+        [...exclusiveExtras, ...leftoverPausedOrStopped],
         membership,
         dryRun,
         result,

@@ -1295,6 +1295,105 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     );
   });
 
+  it("D26: unlinks Insight+ACTIVE-Parlay staff from Insight and leaves the Parlay signature", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const mailboxWrites: Array<{ id: number; signature?: string }> = [];
+    const removed: Array<[number, number[]]> = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3921650,
+            name: "Insight M365 Tool",
+            status: "ACTIVE",
+            client_id: 582890,
+          },
+          {
+            id: 3847842,
+            name: "Parlay Trendrr Sales DM Tickets",
+            status: "ACTIVE",
+            client_id: 77,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 44,
+            from_email: "megan.parker5@vascowarrantynow.info",
+            from_name: "Megan Parker",
+            signature: "Megan Parker\nParlay Tech",
+            client_id: null,
+            campaign_ids: [3921650, 3847842],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+          ...Array.from({ length: 40 }, (_, i) => ({
+            id: 200 + i,
+            from_email: `insight-pad-${i}@nowculturefits.info`,
+            from_name: "Josh Osborn",
+            signature: "Josh Osborn\nInsight",
+            client_id: 582890,
+            campaign_ids: [3921650],
+            is_smtp_success: true,
+            is_imap_success: true,
+          })),
+        ],
+        listClients: async () => [
+          { id: 582890, name: "Insight", logo: "Insight" },
+          { id: 77, name: "Parlay", logo: "Parlay Tech" },
+        ],
+        getCampaignSequences: async (id: number) =>
+          id === 3921650
+            ? [
+                {
+                  seq_number: 1,
+                  email_body:
+                    "<div>A note from Insight</div><br><br>Josh Osborn<br>Insight<br><br>P.S. Later.",
+                },
+              ]
+            : [
+                {
+                  seq_number: 1,
+                  email_body: "<div>Hey {{first_name}}</div><div>%signature%</div>",
+                },
+              ],
+        updateCampaignSequences: async () => undefined,
+        updateEmailAccount: async (id: number, fields: { signature?: string }) => {
+          mailboxWrites.push({ id, signature: fields.signature });
+        },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(
+      mailboxWrites,
+      [],
+      "Parlay mailboxes must not be blanked or rewritten",
+    );
+    assert.deepEqual(removed, [[3921650, [44]]]);
+    const insightFindings =
+      result.findings.find((row) => row.campaignId === 3921650)?.findings ?? [];
+    assert.equal(
+      insightFindings.some((finding) => finding.kind === "insight_shared_staff"),
+      false,
+      "unlink clears the shared-staff finding",
+    );
+    assert.equal(
+      insightFindings.some((finding) => finding.kind === "mailbox_sig"),
+      false,
+      "unlinked seats do not leave a leftover mailbox_sig on Insight",
+    );
+  });
+
   it("D197: does not unlink Insight shared staff when the campaign is at 40", async () => {
     const state = new StateStore(stateFile());
     await state.load();

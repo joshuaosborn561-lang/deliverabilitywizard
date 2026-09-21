@@ -14,6 +14,7 @@ import {
   isInsightClientId,
   isInsightRestStickyCampaign,
   mailboxIsExclusiveInsightStaff,
+  mailboxStaffsActiveForeignNamedClient,
   mailboxStaffsActiveSalesGlider,
   SALESGLIDER_CLIENT_ID,
 } from "./insightCampaigns.js";
@@ -275,6 +276,51 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
     assert.equal(
       canAttachMailboxToCampaign(sgSeat, map.get(89)!, map),
       true,
+    );
+  });
+
+  it("does not attach Parlay (or any other named-client) staff onto Insight", () => {
+    const map = new Map<number, SmartleadCampaign>([
+      [
+        3921650,
+        {
+          id: 3921650,
+          name: "Insight M365 Tool",
+          status: "ACTIVE",
+          client_id: 582890,
+        } as SmartleadCampaign,
+      ],
+      [
+        3847842,
+        {
+          id: 3847842,
+          name: "Parlay Trendrr Sales DM Tickets",
+          status: "ACTIVE",
+          client_id: 77,
+        } as SmartleadCampaign,
+      ],
+    ]);
+    const parlaySeat = account([3847842]);
+    const insightSeat = account([3921650]);
+    const shared = account([3921650, 3847842]);
+    assert.equal(
+      canAttachMailboxToCampaign(parlaySeat, map.get(3921650)!, map),
+      false,
+      "Parlay ACTIVE staff must not top-up Insight",
+    );
+    assert.equal(
+      canAttachMailboxToCampaign(insightSeat, map.get(3847842)!, map),
+      false,
+      "Insight staff must not attach onto Parlay",
+    );
+    assert.equal(
+      mailboxStaffsActiveForeignNamedClient(shared, map),
+      true,
+    );
+    assert.equal(
+      mailboxStaffsActiveSalesGlider(shared, map),
+      false,
+      "Parlay is not SalesGlider — the old SG-only gate missed this",
     );
   });
 

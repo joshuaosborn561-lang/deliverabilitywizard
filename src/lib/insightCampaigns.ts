@@ -151,6 +151,40 @@ export function mailboxStaffsActiveSalesGlider(
 }
 
 /**
+ * ACTIVE named-client campaign that is not Insight (Parlay, BCP,
+ * SalesGlider Engagers, …). Shells, Insight ids, and Insight client
+ * 582890 do not count. A missing client_id is not a named client.
+ */
+export function isActiveForeignNamedCampaign(
+  campaign: SmartleadCampaign | undefined,
+): boolean {
+  if (!campaign || !campaignIsActive(campaign)) return false;
+  if (isAnyShellCampaign(campaign)) return false;
+  if (isInsightCampaignId(campaign.id)) return false;
+  if (isInsightClientId(campaign.client_id)) return false;
+  return typeof campaign.client_id === "number";
+}
+
+export function mailboxActiveForeignNamedCampaigns(
+  account: SmartleadAccountWithCampaigns,
+  campaignById: Map<number, SmartleadCampaign>,
+): SmartleadCampaign[] {
+  const out: SmartleadCampaign[] = [];
+  for (const id of campaignIdsOf(account)) {
+    const campaign = campaignById.get(id);
+    if (isActiveForeignNamedCampaign(campaign)) out.push(campaign!);
+  }
+  return out;
+}
+
+export function mailboxStaffsActiveForeignNamedClient(
+  account: SmartleadAccountWithCampaigns,
+  campaignById: Map<number, SmartleadCampaign>,
+): boolean {
+  return mailboxActiveForeignNamedCampaigns(account, campaignById).length > 0;
+}
+
+/**
  * On at least one Insight campaign and not on any ACTIVE SalesGlider
  * campaign. PAUSED/STOPPED SG memberships do not count as shared.
  * An unknown campaign id is treated as shared — do not blank.
@@ -178,8 +212,9 @@ export function mailboxIsExclusiveInsightStaff(
 /**
  * Fan-out / top-up / on-week restore gate. Insight is not default
  * client-345263 fan-out: only mailboxes already on Insight may spread
- * across the Insight set, and never onto ACTIVE SG. ACTIVE SG staff
- * never attach to Insight.
+ * across the Insight set, and never onto another named client's
+ * ACTIVE campaign (D26 / D193; SalesGlider is the D184 case).
+ * Seats already on Parlay / BCP / SG / … never attach to Insight.
  */
 export function canAttachMailboxToCampaign(
   account: SmartleadAccountWithCampaigns,
@@ -188,14 +223,16 @@ export function canAttachMailboxToCampaign(
   opts?: { insightRequiresExisting?: boolean },
 ): boolean {
   if (isAnyShellCampaign(target)) return true;
-  if (isInsightCampaignId(target.id)) {
-    if (mailboxStaffsActiveSalesGlider(account, campaignById)) return false;
+  if (isInsightCampaignId(target.id) || isInsightClientId(target.client_id)) {
+    if (mailboxStaffsActiveForeignNamedClient(account, campaignById)) {
+      return false;
+    }
     if (opts?.insightRequiresExisting) {
       return mailboxInsightCampaignIds(account, campaignById).length > 0;
     }
     return true;
   }
-  if (isActiveSalesGliderCampaign(target)) {
+  if (isActiveForeignNamedCampaign(target)) {
     return mailboxInsightCampaignIds(account, campaignById).length === 0;
   }
   return true;

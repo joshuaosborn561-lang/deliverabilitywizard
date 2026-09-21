@@ -33,9 +33,9 @@ import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   insightDualSignatureMismatch,
   isInsightCampaign,
-  mailboxActiveSalesGliderCampaigns,
+  mailboxActiveForeignNamedCampaigns,
   mailboxIsExclusiveInsightStaff,
-  mailboxStaffsActiveSalesGlider,
+  mailboxStaffsActiveForeignNamedClient,
 } from "../lib/insightCampaigns.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
@@ -590,7 +590,7 @@ export class CampaignCheckService {
     if (insightSharedUnlinked.length && this.slack) {
       await this.slack.notifyActionResult(
         [
-          `I unlinked ${insightSharedUnlinked.length} shared seat${insightSharedUnlinked.length === 1 ? "" : "s"} from Insight (kept ACTIVE SalesGlider memberships and Name / SalesGlider signatures):`,
+          `I unlinked ${insightSharedUnlinked.length} shared seat${insightSharedUnlinked.length === 1 ? "" : "s"} from Insight (kept the other named-client memberships and signatures):`,
           ...insightSharedUnlinked.map((row) => `• ${row}`),
         ].join("\n"),
       );
@@ -636,11 +636,10 @@ export class CampaignCheckService {
    * The close `Josh Osborn` / `Insight` is written into the sequence
    * body before any P.S. lines.
    *
-   * D184 — named Insight campaigns: blank a mailbox signature only
-   * when that inbox is exclusive Insight staff (not on any ACTIVE
-   * SalesGlider campaign). Shared seats are unlinked from Insight;
-   * their SalesGlider signatures stay. `desiredMailboxSignature`
-   * stays Name / SalesGlider.
+   * D184 / D26 — named Insight campaigns: blank a mailbox signature
+   * only when that inbox is exclusive Insight staff (not on any other
+   * named client's ACTIVE campaign). Shared seats are unlinked from
+   * Insight; their other-client signatures stay.
    */
   private async autoApplySignature(input: {
     campaignId: number;
@@ -717,10 +716,11 @@ export class CampaignCheckService {
       const blankedEmails: string[] = [];
       const insightCampaign = isInsightCampaign({ id: input.campaignId }, rows);
       if (insightCampaign) {
-        // D184 — exclusive Insight staff only. NEVER blank ACTIVE SG staff.
+        // D184 / D26 — exclusive Insight staff only. NEVER blank a
+        // mailbox that still staffs another named client's ACTIVE lane.
         for (const account of input.accounts) {
           if (!campaignIdsOf(account).includes(input.campaignId)) continue;
-          if (mailboxStaffsActiveSalesGlider(account, input.campaignById)) {
+          if (mailboxStaffsActiveForeignNamedClient(account, input.campaignById)) {
             continue;
           }
           if (!mailboxIsExclusiveInsightStaff(account, input.campaignById)) {
@@ -781,8 +781,8 @@ export class CampaignCheckService {
   }
 
   /**
-   * D184 — pull a shared seat off Insight only. Never touch the
-   * SalesGlider memberships or the mailbox signature.
+   * D184 / D26 — pull a shared seat off Insight only. Never touch the
+   * other named-client memberships or the mailbox signature.
    * D197 — do not unlink when Insight is already at the on-week
    * minimum of 40.
    */
@@ -807,7 +807,7 @@ export class CampaignCheckService {
     const unlinked: string[] = [];
     for (const account of input.accounts) {
       if (!campaignIdsOf(account).includes(input.campaignId)) continue;
-      if (!mailboxStaffsActiveSalesGlider(account, input.campaignById)) {
+      if (!mailboxStaffsActiveForeignNamedClient(account, input.campaignById)) {
         continue;
       }
       const email = accountEmail(account);
@@ -827,7 +827,7 @@ export class CampaignCheckService {
         remaining -= 1;
         unlinked.push(email);
         console.log(
-          `[campaign-check] D184 unlinked ${email} from Insight #${input.campaignId} ${input.name} (kept ACTIVE SalesGlider seats and signature)`,
+          `[campaign-check] D184 unlinked ${email} from Insight #${input.campaignId} ${input.name} (kept other named-client seats and signature)`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1078,24 +1078,24 @@ export class CampaignCheckService {
       const insightInCopy = sequenceBodiesContainInsight(sequences);
       const insightCampaign = isInsightCampaign(campaign, sequences);
       if (insightCampaign) {
-        // D184 — empty is compliant on Insight. SalesGlider (or any
-        // second brand) under an Insight close is a finding. A seat
-        // that also sits on an ACTIVE SalesGlider campaign is a
-        // staffing finding — do not blank that mailbox.
+        // D184 / D26 — empty is compliant on Insight. A second brand
+        // under an Insight close is a finding. A seat that also sits
+        // on another named client's ACTIVE campaign is a staffing
+        // finding — do not blank that mailbox.
         for (let i = findings.length - 1; i >= 0; i--) {
           if (findings[i]!.kind === "mailbox_sig") findings.splice(i, 1);
         }
         for (const account of attached) {
           const email = accountEmail(account);
           if (!email) continue;
-          const shared = mailboxActiveSalesGliderCampaigns(
+          const shared = mailboxActiveForeignNamedCampaigns(
             account,
             input.campaigns,
           );
           if (shared.length) {
             findings.push({
               kind: "insight_shared_staff",
-              detail: `${email} also sits on ACTIVE SalesGlider ${shared
+              detail: `${email} also sits on ACTIVE ${shared
                 .map((row) => `#${row.id}`)
                 .join(", ")}`,
             });

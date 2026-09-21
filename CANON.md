@@ -133,7 +133,9 @@ or the day is done. Silent findings are a bug (D163).
 - **Fan-out**: a client-owned inbox belongs on every ACTIVE campaign for its
   client even if it currently sits on zero campaigns (D84). Insight
   (582890) and SalesGlider (345263) are **different clients** (D192)
-  — do not fan 345263 inventory onto Insight campaigns; do not rewrite
+  — do not fan 345263 inventory onto Insight campaigns; do not attach
+  a seat that already staffs another named client's ACTIVE campaign
+  (Parlay, BCP, SalesGlider, …) onto Insight (D26/D193); do not rewrite
   Insight campaign `client_id` off 582890. Client-rest does not strip
   named Insight campaigns (D189). BCP-owned domains
   count as BCP even with no `client_id` (D99). Resting inboxes are skipped,

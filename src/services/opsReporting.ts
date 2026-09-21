@@ -161,17 +161,6 @@ export class PlacementResultsService {
   async get(force = false): Promise<PlacementResults> {
     if (this.inFlight) return this.inFlight;
     const now = Date.now();
-    if (
-      this.cache &&
-      ((!force && this.cache.expiresAt > now) ||
-        (force &&
-          this.snapshotLooksComplete(this.cache.value) &&
-          now - Date.parse(this.cache.value.generatedAt) <
-            this.forceRefreshFloorMs))
-    ) {
-      return force ? this.cache.value : this.quietView(this.cache.value);
-    }
-
     const fallback = this.cache?.value ?? this.fromPersisted();
     if (now < this.rateLimitedUntil && fallback) {
       const value = this.snapshotView(fallback, {
@@ -185,6 +174,16 @@ export class PlacementResultsService {
         value,
       };
       return value;
+    }
+    if (
+      this.cache &&
+      ((!force && this.cache.expiresAt > now) ||
+        (force &&
+          this.snapshotLooksComplete(this.cache.value) &&
+          now - Date.parse(this.cache.value.generatedAt) <
+            this.forceRefreshFloorMs))
+    ) {
+      return force ? this.cache.value : this.quietView(this.cache.value);
     }
 
     const generatedAtMs = fallback ? Date.parse(fallback.generatedAt) : NaN;
@@ -349,114 +348,87 @@ export class PlacementResultsService {
       force,
     );
 
-    const tests = listed.tests
-      .filter((test) =>
-        isLivePlacementTest(test, {
-          campaignByTest,
-          liveById,
-          campaignsLoaded,
-        }),
-      )
-      // D187 — after canary-copy tests are gone, so live senders fit.
-      .slice(0, 80);
-
+    const listedLive = listed.tests.filter((test) =>
+      isLivePlacementTest(test, {
+        campaignByTest,
+        liveById,
+        campaignsLoaded,
+      }),
+    );
     const previousSnapshot = this.cache?.value ?? this.fromPersisted();
+    const assembled = this.assembleLiveRows({
+      listedLive,
+      previousById,
+      previousSnapshot,
+      liveById,
+      campaignsLoaded,
+      campaignByTest,
+    });
     const expected = this.expectedLiveTestCount(liveById, campaignsLoaded);
+    const covered = new Set(
+      assembled
+        .map((row) => row.campaignId)
+        .filter((id): id is number => id != null),
+    );
     const coversLive =
       campaignsLoaded &&
       expected > 0 &&
-      tests.length >= Math.min(OPS_PLACEMENT_REPORT_CAP, expected);
-    const shrinks = (previousSnapshot?.rows.length ?? 0) > tests.length;
-    if (shrinks && (listed.truncated || !coversLive) && previousSnapshot) {
-      console.warn(
-        `[ops-placement] keeping ${previousSnapshot.rows.length}-row snapshot (` +
-          `${tests.length} live this pass` +
-          `${listed.truncated ? ", catalog truncated" : ""})`,
-      );
-      const kept = this.snapshotView(previousSnapshot, {
-        stale: true,
-        errors: force ? uniqueErrors(errors) : [],
-      });
-      this.cache = {
-        expiresAt: Math.max(
-          Date.now() + this.cacheMs,
-          this.rateLimitedUntil,
-        ),
-        value: kept,
-      };
-      return kept;
-    }
+      covered.size >= Math.min(OPS_PLACEMENT_REPORT_CAP, expected);
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
-    const rows: PlacementResultRow[] = new Array(tests.length);
-    let skipProviders = false;
-    for (let index = 0; index < tests.length; index += 1) {
-      const test = tests[index]!;
-      const id = testIdOf(test);
-      if (!id) continue;
-      const mapped = campaignByTest.get(id);
-      const campaignId = resolveCampaignId(mapped?.campaignId, test);
-      const previous = previousById.get(id);
-      const row: PlacementResultRow = {
-        id,
-        name: String(test.test_name ?? `Test ${id}`),
-        campaignId,
-        campaignName:
-          mapped?.campaignName ||
-          (campaignId != null ? liveById.get(campaignId)?.name : undefined),
-        status: String(test.status ?? "UNKNOWN"),
-        createdAt: test.created_at,
-        runNumber: test.current_test_run_no,
-        ...overallFromTest(test),
-        providers: previous?.providers ? [...previous.providers] : [],
-        googleInboxPercent: previous?.googleInboxPercent,
-        microsoftInboxPercent: previous?.microsoftInboxPercent,
-      };
+    const listedIds = new Set(
+      listedLive
+        .map((test) => testIdOf(test))
+        .filter((id): id is string => Boolean(id)),
+    );
+    let skipProviders = listed.truncated;
+    for (const row of assembled) {
       const haveEsp =
         typeof row.googleInboxPercent === "number" &&
         typeof row.microsoftInboxPercent === "number";
-      if (!skipProviders && (force || !haveEsp)) {
-        try {
-          applyProviderwise(
-            row,
-            await this.smartDelivery.getProviderwiseReport(id, {
-              retries: OPS_PLACEMENT_LIVE_RETRIES,
-            }),
-          );
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          if (isRateLimitNoise(message)) {
-            this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
-            skipProviders = true;
-            if (force) {
-              errors.push(humanizeAlertError(`test ${id}: ${message}`));
-            }
-          } else {
-            errors.push(humanizeAlertError(`test ${id}: ${message}`));
+      if (skipProviders || !listedIds.has(row.id)) continue;
+      if (!force && haveEsp) continue;
+      try {
+        applyProviderwise(
+          row,
+          await this.smartDelivery.getProviderwiseReport(row.id, {
+            retries: OPS_PLACEMENT_LIVE_RETRIES,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isRateLimitNoise(message)) {
+          this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+          skipProviders = true;
+          if (force) {
+            errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
           }
+        } else {
+          errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
         }
-        if (gapMs) await sleep(gapMs);
       }
-      rows[index] = row;
+      if (gapMs) await sleep(gapMs);
     }
+
     const value: PlacementResults = {
       generatedAt: new Date().toISOString(),
-      rows: rows.filter(Boolean),
-      errors: uniqueErrors(errors),
-      complete: false,
+      rows: assembled,
+      errors: uniqueErrors(force ? errors : []),
+      complete: coversLive,
+      stale: listed.truncated && assembled.length > 0,
     };
-    const completeWalk =
-      !listed.truncated && (listed.exhausted || coversLive);
-
-    if (completeWalk && coversLive) {
-      value.complete = true;
+    if (!assembled.length) {
+      return {
+        generatedAt: value.generatedAt,
+        rows: [],
+        errors: uniqueErrors(errors),
+      };
+    }
+    if (value.complete || assembled.length > (previousSnapshot?.rows.length ?? 0)) {
       this.cache = { expiresAt: Date.now() + this.cacheMs, value };
       this.persist(value);
       return value;
     }
-
-    value.stale = Boolean(previousSnapshot);
     this.cache = {
       expiresAt: Math.max(
         Date.now() + this.rateLimitCooldownMs,
@@ -465,6 +437,120 @@ export class PlacementResultsService {
       value,
     };
     return value;
+  }
+
+  /**
+   * The catalog is newest-first and mostly canary-copy. A 429 after page 1
+   * can list only a handful of live tests — and persisting that is how the
+   * board got stuck at four rows. Membership comes from testedCampaigns for
+   * every ACTIVE campaign, plus anything this pass did list.
+   */
+  private assembleLiveRows(opts: {
+    listedLive: SpamTestSummary[];
+    previousById: Map<string, PlacementResultRow>;
+    previousSnapshot: PlacementResults | null;
+    liveById: Map<number, { name: string }>;
+    campaignsLoaded: boolean;
+    campaignByTest: Map<string, { campaignId: number; campaignName: string }>;
+  }): PlacementResultRow[] {
+    const byId = new Map<string, PlacementResultRow>();
+    const remember = (row: PlacementResultRow) => {
+      if (!row.id) return;
+      const prior = byId.get(row.id);
+      if (!prior) {
+        byId.set(row.id, row);
+        return;
+      }
+      byId.set(row.id, {
+        ...prior,
+        ...row,
+        providers: row.providers.length ? row.providers : prior.providers,
+        googleInboxPercent: row.googleInboxPercent ?? prior.googleInboxPercent,
+        microsoftInboxPercent:
+          row.microsoftInboxPercent ?? prior.microsoftInboxPercent,
+        inboxPercent: row.inboxPercent ?? prior.inboxPercent,
+        spamPercent: row.spamPercent ?? prior.spamPercent,
+        tabPercent: row.tabPercent ?? prior.tabPercent,
+        createdAt: row.createdAt ?? prior.createdAt,
+        name: row.name || prior.name,
+      });
+    };
+
+    if (opts.campaignsLoaded) {
+      for (const record of Object.values(this.state.get().testedCampaigns)) {
+        if (!opts.liveById.has(record.campaignId)) continue;
+        const liveName = opts.liveById.get(record.campaignId)?.name;
+        if (titleHasCanaryCopyPhrase(record.campaignName, liveName)) continue;
+        for (const testId of record.testIds) {
+          const id = String(testId);
+          if (!id) continue;
+          const previous = opts.previousById.get(id);
+          remember({
+            id,
+            name: previous?.name ?? `Auto: ${record.campaignName}`,
+            campaignId: record.campaignId,
+            campaignName: record.campaignName || liveName,
+            status: previous?.status ?? "UNKNOWN",
+            createdAt: previous?.createdAt ?? record.testedAt,
+            runNumber: previous?.runNumber,
+            inboxPercent: previous?.inboxPercent,
+            tabPercent: previous?.tabPercent,
+            spamPercent: previous?.spamPercent,
+            googleInboxPercent: previous?.googleInboxPercent,
+            microsoftInboxPercent: previous?.microsoftInboxPercent,
+            totalSeeds: previous?.totalSeeds ?? 0,
+            providers: previous?.providers ? [...previous.providers] : [],
+          });
+        }
+      }
+    }
+
+    for (const row of opts.previousSnapshot?.rows ?? []) {
+      if (opts.campaignsLoaded && row.campaignId != null) {
+        if (!opts.liveById.has(row.campaignId)) continue;
+        const liveName = opts.liveById.get(row.campaignId)?.name;
+        if (titleHasCanaryCopyPhrase(row.campaignName, row.name, liveName)) {
+          continue;
+        }
+      }
+      remember({ ...row, providers: [...row.providers] });
+    }
+
+    for (const test of opts.listedLive) {
+      const id = testIdOf(test);
+      if (!id) continue;
+      const mapped = opts.campaignByTest.get(id);
+      const campaignId = resolveCampaignId(mapped?.campaignId, test);
+      const previous = opts.previousById.get(id) ?? byId.get(id);
+      remember({
+        id,
+        name: String(test.test_name ?? previous?.name ?? `Test ${id}`),
+        campaignId,
+        campaignName:
+          mapped?.campaignName ||
+          (campaignId != null
+            ? opts.liveById.get(campaignId)?.name
+            : undefined) ||
+          previous?.campaignName,
+        status: String(test.status ?? previous?.status ?? "UNKNOWN"),
+        createdAt: test.created_at ?? previous?.createdAt,
+        runNumber: test.current_test_run_no ?? previous?.runNumber,
+        ...overallFromTest(test),
+        providers: previous?.providers ? [...previous.providers] : [],
+        googleInboxPercent: previous?.googleInboxPercent,
+        microsoftInboxPercent: previous?.microsoftInboxPercent,
+      });
+    }
+
+    return [...byId.values()]
+      .sort((a, b) => {
+        const byDate = String(b.createdAt ?? "").localeCompare(
+          String(a.createdAt ?? ""),
+        );
+        if (byDate !== 0) return byDate;
+        return String(b.id).localeCompare(String(a.id));
+      })
+      .slice(0, 80);
   }
 
   private expectedLiveTestCount(
@@ -523,7 +609,8 @@ export class PlacementResultsService {
           truncated = true;
           break;
         }
-        throw error;
+        truncated = true;
+        break;
       }
       const rows = normalizeTestList(raw);
       all.push(...rows);

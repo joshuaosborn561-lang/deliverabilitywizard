@@ -386,8 +386,14 @@ describe("PlacementResultsService", () => {
       1,
     );
     const result = await service.get();
-    assert.deepEqual(result.rows, []);
-    assert.match(result.errors.join(" "), /SmartDelivery rate-limited/i);
+    assert.equal(result.rows.length, 1);
+    assert.equal(result.rows[0]?.campaignName, "Campaign Seven");
+    assert.equal(result.stale, true);
+    assert.deepEqual(
+      result.errors,
+      [],
+      "tab-open still shows the known live test without a red banner",
+    );
   });
 
   it("stops further providerwise pulls after a rate limit", async () => {
@@ -545,6 +551,68 @@ describe("PlacementResultsService", () => {
     assert.ok(listCalls >= 2, "paged once then 429'd");
   });
 
+  it("shows every known live test when the saved snapshot and the catalog page are only 4", async () => {
+    const state = await stateFixture();
+    const campaigns = [];
+    const snapshotRows = [];
+    for (let i = 1; i <= 12; i += 1) {
+      const campaignId = 300 + i;
+      campaigns.push({
+        id: campaignId,
+        name: `Campaign ${campaignId}`,
+        status: "ACTIVE",
+      });
+      state.markCampaignTested({
+        campaignId,
+        campaignName: `Campaign ${campaignId}`,
+        testedAt: new Date().toISOString(),
+        testIds: [String(7000 + i)],
+        mailboxCount: 3,
+        testsCreated: 1,
+      });
+      if (i <= 4) {
+        snapshotRows.push({
+          id: String(7000 + i),
+          name: `Auto: Campaign ${campaignId}`,
+          campaignId,
+          campaignName: `Campaign ${campaignId}`,
+          status: "COMPLETED",
+          inboxPercent: 70,
+          spamPercent: 20,
+          googleInboxPercent: 75,
+          microsoftInboxPercent: 100,
+          totalSeeds: 10,
+          providers: [],
+        });
+      }
+    }
+    state.setPlacementResults({
+      generatedAt: new Date().toISOString(),
+      rows: snapshotRows,
+    });
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("Rate limit exceeded");
+      },
+      getProviderwiseReport: async () => {
+        throw new Error("should not fetch providers when the catalog 429s");
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => campaigns,
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+    );
+    const result = await service.get();
+    assert.equal(result.rows.length, 12);
+    assert.equal(state.getPlacementResults()?.rows.length, 12);
+    assert.equal(result.complete, true);
+  });
+
   it("retries a 4-row incomplete snapshot instead of treating it as the whole board", async () => {
     const state = await stateFixture();
     state.setPlacementResults({
@@ -615,6 +683,9 @@ describe("PlacementResultsService", () => {
     const smartlead = {
       listCampaigns: async () => [
         { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+        { id: 8, name: "Campaign Eight", status: "ACTIVE" },
+        { id: 9, name: "Campaign Nine", status: "ACTIVE" },
+        { id: 10, name: "Campaign Ten", status: "ACTIVE" },
       ],
     } as unknown as SmartleadClient;
     const service = new PlacementResultsService(

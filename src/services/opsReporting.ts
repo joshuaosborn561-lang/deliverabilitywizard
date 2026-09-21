@@ -69,14 +69,18 @@ export interface PlacementResults {
   rows: PlacementResultRow[];
   errors: string[];
   stale?: boolean;
+  /** False when the catalog walk 429'd or found fewer live tests than we know exist. */
+  complete?: boolean;
 }
 
 /** D187 — live-sender cap after canary copy is filtered out (D126). */
 export const OPS_PLACEMENT_REPORT_CAP = 80;
 const OPS_PLACEMENT_LIST_PAGE = 100;
 const OPS_PLACEMENT_LIST_MAX_PAGES = 8;
-/** Fail fast on the employee board — retries stampede a 429 window. */
+/** Fail fast on providerwise pulls — retries stampede a 429 window. */
 export const OPS_PLACEMENT_LIVE_RETRIES = 0;
+/** One retry on catalog pages so a mid-walk 429 can still fill the live cap. */
+export const OPS_PLACEMENT_LIST_RETRIES = 1;
 /** After SmartDelivery 429s the board, do not poke it again for this long. */
 export const OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
@@ -161,6 +165,7 @@ export class PlacementResultsService {
       this.cache &&
       ((!force && this.cache.expiresAt > now) ||
         (force &&
+          this.snapshotLooksComplete(this.cache.value) &&
           now - Date.parse(this.cache.value.generatedAt) <
             this.forceRefreshFloorMs))
     ) {
@@ -185,7 +190,12 @@ export class PlacementResultsService {
     const generatedAtMs = fallback ? Date.parse(fallback.generatedAt) : NaN;
     const snapshotFresh =
       Number.isFinite(generatedAtMs) && now - generatedAtMs < this.cacheMs;
-    if (!force && fallback && snapshotFresh) {
+    if (
+      !force &&
+      fallback &&
+      snapshotFresh &&
+      this.snapshotLooksComplete(fallback)
+    ) {
       const value = this.quietView(fallback);
       this.cache = { expiresAt: generatedAtMs + this.cacheMs, value };
       return value;
@@ -207,7 +217,18 @@ export class PlacementResultsService {
         providers: [...row.providers],
       })),
       errors: [],
+      complete: snapshot.complete,
     };
+  }
+
+  /**
+   * A 4-row leftover from a truncated catalog walk must not block a refresh.
+   * A complete persist (or a pre-flag snapshot of 40+, the old D126 cap) can.
+   */
+  private snapshotLooksComplete(value: PlacementResults): boolean {
+    if (value.complete === false) return false;
+    if (value.complete === true) return true;
+    return value.rows.length >= 40;
   }
 
   /** Tab-open view: keep the snapshot, drop the red rate-limit banner. */
@@ -225,6 +246,7 @@ export class PlacementResultsService {
       rows: fallback.rows,
       errors: uniqueErrors(opts.errors),
       stale: opts.stale,
+      complete: fallback.complete,
     };
   }
 
@@ -233,6 +255,7 @@ export class PlacementResultsService {
     this.state.setPlacementResults({
       generatedAt: value.generatedAt,
       rows: value.rows,
+      complete: value.complete,
     });
     void this.state.save().catch((error) => {
       console.warn("[ops-placement] snapshot save failed", error);
@@ -326,7 +349,7 @@ export class PlacementResultsService {
       force,
     );
 
-    const tests = listed
+    const tests = listed.tests
       .filter((test) =>
         isLivePlacementTest(test, {
           campaignByTest,
@@ -336,6 +359,33 @@ export class PlacementResultsService {
       )
       // D187 — after canary-copy tests are gone, so live senders fit.
       .slice(0, 80);
+
+    const previousSnapshot = this.cache?.value ?? this.fromPersisted();
+    const expected = this.expectedLiveTestCount(liveById, campaignsLoaded);
+    const coversLive =
+      campaignsLoaded &&
+      expected > 0 &&
+      tests.length >= Math.min(OPS_PLACEMENT_REPORT_CAP, expected);
+    const shrinks = (previousSnapshot?.rows.length ?? 0) > tests.length;
+    if (shrinks && (listed.truncated || !coversLive) && previousSnapshot) {
+      console.warn(
+        `[ops-placement] keeping ${previousSnapshot.rows.length}-row snapshot (` +
+          `${tests.length} live this pass` +
+          `${listed.truncated ? ", catalog truncated" : ""})`,
+      );
+      const kept = this.snapshotView(previousSnapshot, {
+        stale: true,
+        errors: force ? uniqueErrors(errors) : [],
+      });
+      this.cache = {
+        expiresAt: Math.max(
+          Date.now() + this.cacheMs,
+          this.rateLimitedUntil,
+        ),
+        value: kept,
+      };
+      return kept;
+    }
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     const rows: PlacementResultRow[] = new Array(tests.length);
@@ -390,28 +440,67 @@ export class PlacementResultsService {
       }
       rows[index] = row;
     }
-    const value = {
+    const value: PlacementResults = {
       generatedAt: new Date().toISOString(),
       rows: rows.filter(Boolean),
       errors: uniqueErrors(errors),
+      complete: false,
     };
-    this.cache = { expiresAt: Date.now() + this.cacheMs, value };
-    this.persist(value);
+    const completeWalk =
+      !listed.truncated && (listed.exhausted || coversLive);
+
+    if (completeWalk && coversLive) {
+      value.complete = true;
+      this.cache = { expiresAt: Date.now() + this.cacheMs, value };
+      this.persist(value);
+      return value;
+    }
+
+    value.stale = Boolean(previousSnapshot);
+    this.cache = {
+      expiresAt: Math.max(
+        Date.now() + this.rateLimitCooldownMs,
+        this.rateLimitedUntil,
+      ),
+      value,
+    };
     return value;
+  }
+
+  private expectedLiveTestCount(
+    liveById: Map<number, { name: string }>,
+    campaignsLoaded: boolean,
+  ): number {
+    if (!campaignsLoaded) return 0;
+    const tested = this.state.get().testedCampaigns;
+    let count = 0;
+    for (const id of liveById.keys()) {
+      if (tested[String(id)]?.testIds?.length) count += 1;
+    }
+    return count;
   }
 
   /**
    * Page SmartDelivery until the live-sender cap is filled. Full-catalog
    * pagination used to 429 the employee refresh before a single provider
-   * report ran.
+   * report ran. A 429 after page 1 must not be treated as "the whole board"
+   * — newest pages are mostly canary-copy, so a truncated walk can look like
+   * only a handful of live tests.
    */
   private async listNewestTests(
     isLive: (test: SpamTestSummary) => boolean,
     errors: string[],
     force: boolean,
-  ): Promise<SpamTestSummary[]> {
+  ): Promise<{
+    tests: SpamTestSummary[];
+    truncated: boolean;
+    exhausted: boolean;
+  }> {
     const all: SpamTestSummary[] = [];
     let offset = 0;
+    let truncated = false;
+    let exhausted = false;
+    const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     for (let page = 0; page < OPS_PLACEMENT_LIST_MAX_PAGES; page += 1) {
       let raw: unknown;
       try {
@@ -420,7 +509,7 @@ export class PlacementResultsService {
             limit: OPS_PLACEMENT_LIST_PAGE,
             offset,
           },
-          { retries: OPS_PLACEMENT_LIVE_RETRIES },
+          { retries: OPS_PLACEMENT_LIST_RETRIES },
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -430,19 +519,30 @@ export class PlacementResultsService {
         if (force || !all.length) {
           errors.push(humanizeAlertError(`listTests: ${message}`));
         }
-        if (all.length) return all;
+        if (all.length) {
+          truncated = true;
+          break;
+        }
         throw error;
       }
       const rows = normalizeTestList(raw);
       all.push(...rows);
       const live = all.filter(isLive).length;
-      if (rows.length < OPS_PLACEMENT_LIST_PAGE) break;
+      if (rows.length < OPS_PLACEMENT_LIST_PAGE) {
+        exhausted = true;
+        break;
+      }
       if (live >= OPS_PLACEMENT_REPORT_CAP) break;
       offset += rows.length;
+      if (gapMs) await sleep(gapMs);
     }
-    return all.sort((a, b) =>
-      String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
-    );
+    return {
+      tests: all.sort((a, b) =>
+        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
+      ),
+      truncated,
+      exhausted,
+    };
   }
 }
 

@@ -16,21 +16,23 @@ const WARMED = "2025-01-01T00:00:00.000Z";
 /** Still inside the 21-day owe window relative to wall clock (owesWarmup uses Date.now). */
 const YOUNG = new Date(Date.now() - 3 * 86_400_000).toISOString();
 
-/** Held seats that keep ACTIVE membership ≥40 so A/B rest can still bench surplus. */
+/**
+ * Generic-pool seats that keep ACTIVE membership ≥40 so A/B rest can
+ * still bench surplus. They count toward detach remaining but never
+ * enter the client A/B split (isGenericMailbox).
+ */
 function heldMin40Pads(
   campaignIds: number[],
-  clientId: number,
+  _clientId: number,
   count = 40,
 ): Array<Record<string, unknown>> {
   return Array.from({ length: count }, (_, i) => ({
     id: 9000 + i,
-    from_email: `pad-${i}@held.example`,
-    client_id: clientId,
+    from_email: `pad-${i}@crosslaunchco.com`,
     campaign_ids: campaignIds,
     created_at: WARMED,
     is_smtp_success: true,
     is_imap_success: true,
-    tags: [{ tag_name: "HOLD-UNTIL-2099-01-01" }],
   }));
 }
 

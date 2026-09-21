@@ -762,24 +762,25 @@ describe("D190 — burn-ask Slack is once per strike, Cayden CTA", () => {
   it("heals leftover D174 protected Buy-cover copy and does not re-Slack it", async () => {
     const store = tempStore();
     const { slack, notified } = slackCapture();
+    const now = new Date().toISOString();
     const leftover = buildIsolationAction({
       kind: "buy_domains",
       title: "Buy cover for crossscaleco.com — not retiring (protected client)",
       proof:
         "Not offering a retire for crossscaleco.com: it is Goliath Cybersecurity (Dave Ackley) (client 548611) inventory. Protected clients never have a domain retired or burned (D174). Buying cover replacements instead. Cayden cannot approve a purchase. Josh: tap the button",
       detail: { domain: "crossscaleco.com" },
-      now: "2026-09-10T12:00:00.000Z",
+      now,
     });
     leftover.allowed = "owner";
     store.upsertIsolationAction(leftover);
-    assert.equal(healStaleBurnAsks(store, "2026-09-10T18:00:00.000Z"), 1);
+    assert.equal(healStaleBurnAsks(store, now), 1);
     const healed = store.getIsolationAction(leftover.id);
     assert.equal(healed?.allowed, "owner_or_operator");
     assert.doesNotMatch(healed?.title ?? "", /protected/i);
     assert.doesNotMatch(healed?.proof ?? "", /Cayden cannot/i);
     assert.equal(await remindPendingIsolationActions({ store, slack }), 0);
     assert.deepEqual(notified, []);
-    assert.equal(shouldRemindBurnAsk(healed!, Date.parse("2026-09-10T18:00:00.000Z")), false);
+    assert.equal(shouldRemindBurnAsk(healed!, Date.now()), false);
   });
 
   it("does not re-ask Buy cover after the cover buy already executed", async () => {

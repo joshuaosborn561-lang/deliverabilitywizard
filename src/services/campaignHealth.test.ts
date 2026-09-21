@@ -143,9 +143,9 @@ describe("CampaignHealthService", () => {
     const result = await health.run({ dryRun: true });
     assert.equal(result.snapshots[0]?.membership, 50);
     assert.equal(result.snapshots[0]?.staffable, 0);
-    assert.equal(result.snapshots[0]?.floor, 25);
-    assert.equal(result.snapshots[0]?.needed, 25);
-    assert.equal(result.stillShort[0]?.shortBy, 25);
+    assert.equal(result.snapshots[0]?.floor, 40);
+    assert.equal(result.snapshots[0]?.needed, 40);
+    assert.equal(result.stillShort[0]?.shortBy, 40);
   });
 
   it("does not auto-START a STOPPED campaign even with pendingResume (D40)", async () => {

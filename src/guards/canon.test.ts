@@ -10311,8 +10311,11 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     const {
       POD_INVENTORY_MIN_SENDERS,
       ON_WEEK_MIN_SENDERS,
+      POD_ESP_MIX_MIN_FRACTION,
       podGenericTopUpCap,
       namedClientPodInventoryFloor,
+      podEspMixMinSeats,
+      podEspMixHolds,
     } = await import("../lib/clientStaffFloor.js");
     assert.equal(
       POD_INVENTORY_MIN_SENDERS,
@@ -10360,6 +10363,38 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
       stop(
         "A named POD already above 40 keeps its named size (D203).",
         "namedClientPodInventoryFloor dropped a named-above-40 pod back to 40.",
+      ),
+    );
+    assert.equal(
+      POD_ESP_MIX_MIN_FRACTION,
+      1 / 3,
+      stop(
+        "Each POD keeps a ~1/3 Outlook/Gmail mix floor (D203).",
+        `POD_ESP_MIX_MIN_FRACTION is ${POD_ESP_MIX_MIN_FRACTION}.`,
+      ),
+    );
+    assert.equal(
+      podEspMixMinSeats(40),
+      14,
+      stop(
+        "A 40-seat POD owes 14 seats per ESP when both exist (D203).",
+        `podEspMixMinSeats(40) is ${podEspMixMinSeats(40)}.`,
+      ),
+    );
+    assert.equal(
+      podEspMixHolds({ outlook: 40, gmail: 0, clientHasBothEsps: true, podSeats: 40 }),
+      false,
+      stop(
+        "A POD must not go monoculture when the client has both ESPs (D203).",
+        "podEspMixHolds accepts an all-Outlook POD on a dual-ESP client.",
+      ),
+    );
+    assert.equal(
+      podEspMixHolds({ outlook: 40, gmail: 0, clientHasBothEsps: false, podSeats: 40 }),
+      true,
+      stop(
+        "A one-ESP client is not required to invent the other ESP (D203).",
+        "podEspMixHolds now fails a one-ESP client.",
       ),
     );
 
@@ -10459,6 +10494,30 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
       stop(
         "CANON says ample-named SalesGlider must not carry pool generics (D203).",
         "CANON.md lost the SalesGlider no-pool-generic rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /neither ESP may sit under ~1\/3/,
+      stop(
+        "CANON names the per-POD ~1/3 ESP mix floor (D203).",
+        "CANON.md lost the per-POD mix floor.",
+      ),
+    );
+    assert.match(
+      canon,
+      /must not go monoculture/,
+      stop(
+        "CANON forbids a monoculture POD (D203).",
+        "CANON.md lost the no-monoculture rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /ESP mix floor/,
+      stop(
+        "The ledger records the per-POD ESP mix floor (D203).",
+        "DECISIONS.md D203 lost the ESP mix add-on.",
       ),
     );
     assert.match(

@@ -11,7 +11,9 @@
  * D203 — this split is **named senders only** and **static**. Never
  * retag or move named seats between POD-A and POD-B to staff the
  * on-week campaign. Exclusive client-signed generics layer on top of
- * each POD (own split so named cohorts do not flip — D198).
+ * each POD (own split so named cohorts do not flip — D198). On top
+ * of this within-ESP A/B cut, each POD also keeps a ~1/3 Outlook /
+ * Gmail mix floor when the client has both ESPs (no monoculture).
  */
 
 import { normalizeSenderEspFamily } from "./esp.js";

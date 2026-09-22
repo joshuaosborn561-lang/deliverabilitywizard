@@ -54,6 +54,36 @@ export function namedClientPodInventoryFloor(namedStaffableInPod: number): numbe
   return Math.max(named, POD_INVENTORY_MIN_SENDERS);
 }
 
+/**
+ * D203 — per-POD ESP mix floor on top of D192. When the client has
+ * both Outlook and Gmail, neither ESP may sit under ~1/3 of that
+ * POD's seats (14 of a 40-seat POD). A one-ESP client is not
+ * required to invent the other.
+ */
+export const POD_ESP_MIX_MIN_FRACTION = 1 / 3;
+
+export function podEspMixMinSeats(
+  podSeats: number = POD_INVENTORY_MIN_SENDERS,
+): number {
+  if (!Number.isFinite(podSeats) || podSeats <= 0) return 0;
+  return Math.ceil(podSeats * POD_ESP_MIX_MIN_FRACTION);
+}
+
+export function podEspMixHolds(input: {
+  outlook: number;
+  gmail: number;
+  clientHasBothEsps: boolean;
+  podSeats?: number;
+}): boolean {
+  if (!input.clientHasBothEsps) return true;
+  const outlook = Number.isFinite(input.outlook) ? Math.max(0, input.outlook) : 0;
+  const gmail = Number.isFinite(input.gmail) ? Math.max(0, input.gmail) : 0;
+  const podSeats =
+    input.podSeats ?? Math.max(outlook + gmail, POD_INVENTORY_MIN_SENDERS);
+  const floor = podEspMixMinSeats(podSeats);
+  return outlook >= floor && gmail >= floor;
+}
+
 export type PeelStaffableState = {
   getRestingInbox?: (email: string) => unknown;
   isCopyCanary?: (email: string) => boolean;

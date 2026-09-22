@@ -138,7 +138,12 @@ or the day is done. Silent findings are a bug (D163).
   rest, **40 per POD** via named + exclusive client-signed
   generics). On-week POD's 40 staff ACTIVE campaigns (fan-out);
   off-week POD's 40 rest ready. If bad senders are peeled, restore
-  that client back to 40-40. Peels consult the **staffable
+  that client back to 40-40. Each POD also keeps an **ESP mix
+  floor** (D203): when the client has both Outlook and Gmail,
+  neither ESP may sit under ~1/3 of that POD's seats (**14 of a
+  40-seat POD**). A POD must not go monoculture. D192
+  ESP-balanced ~50/50 across A/B *within* each ESP still stands
+  — this is a per-POD mix floor on top. Peels consult the **staffable
   attached** count on that ACTIVE campaign, never raw
   `campaign_ids` length as a surplus counter (D199). Same-client
   `campaign_ids.length > 1` is not a peel reason on named seats
@@ -175,6 +180,9 @@ or the day is done. Silent findings are a bug (D163).
   per non-generic client (D192) — not an alphabetical-only half.
   Never retag or move named seats between POD-A and POD-B to staff
   the on-week campaign (D203). Generics are not part of that named cut.
+  On top of the D192 cut, each POD keeps the D203 mix floor: when
+  both ESPs exist on the client, prefer neither Outlook nor Gmail
+  under ~1/3 of that POD's 40.
   Off-week comes OFF **ACTIVE, PAUSED, and STOPPED** client
   campaign memberships — never left on at 0/day, and never left parked
   on a paused/stopped campaign that is not sending (D169) — **and
@@ -213,7 +221,8 @@ or the day is done. Silent findings are a bug (D163).
   client-signed generics are authorized as thin per-POD top-up
   when that POD's named half is under 40. Do **not** disperse the
   free generic pool beyond the shortfall-to-40 per POD. Prefer
-  named first. SalesGlider with ample salesglider* named inventory
+  named first; when topping a short POD, prefer the ESP that is
+  under the ~1/3 mix floor. SalesGlider with ample salesglider* named inventory
   (each POD already ≥40 named) must not carry pool generics.
   **Dedicated generics
   per named client are OK and preferred** (D198): assign specific

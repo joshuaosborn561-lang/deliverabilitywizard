@@ -25,7 +25,9 @@ tool — it never staffs a campaign.
 
 **Floor is 40 staffable senders per POD at client inventory**
 (`max(half that client's named inboxes per POD, 40 per POD)` — D203),
-with at least **~30% Google and ~30% Microsoft**. The on-week POD's 40
+with at least **~30% Google and ~30% Microsoft** on the campaign and,
+when the client has both ESPs, **neither Outlook nor Gmail under ~1/3
+of each POD's 40** (14 of 40; no monoculture). The on-week POD's 40
 fan out onto every ACTIVE campaign — do not treat 40 as unique senders
 on one campaign. Staffable means all of:
 
@@ -389,8 +391,10 @@ Nothing goes ACTIVE until every line passes.
 
 1. **40 or more staffable senders on the on-week POD** (named first;
    exclusive client-signed generics only for the shortfall — D203),
-   ~30% Google and ~30% Microsoft, after excluding unexpired HOLD-UNTIL
-   tags, client off-week rest, generic sit, and copy-canary boxes.
+   ~30% Google and ~30% Microsoft on the campaign, and when the client
+   has both ESPs neither Outlook nor Gmail under ~1/3 of that POD's 40,
+   after excluding unexpired HOLD-UNTIL tags, client off-week rest,
+   generic sit, and copy-canary boxes.
 2. **Zero resting mailboxes attached.** Read back. No `MESSAGE_PER_DAY=0`.
 3. **Every attached mailbox clears warmup** (21 days from InboxKit import;
    pre-warmed fleets waived).

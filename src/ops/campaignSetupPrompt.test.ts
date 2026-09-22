@@ -5,9 +5,10 @@ import { campaignSetupPrompt } from "./campaignSetupPrompt.js";
 describe("campaignSetupPrompt", () => {
   it("tells Claude the current campaign-setup rails", () => {
     const prompt = campaignSetupPrompt();
-    assert.match(prompt, /half that client's own inboxes/);
+    assert.match(prompt, /40 per POD/);
+    assert.match(prompt, /half that client's named inboxes/);
     assert.match(prompt, /Vasco is not special/);
-    assert.match(prompt, /Split that client's inboxes into A and B/);
+    assert.match(prompt, /Split that client's \*\*named\*\* inboxes into a \*\*static\*\* even A\/B/);
     assert.match(prompt, /30% Google/);
     assert.match(prompt, /14 days of live send/);
     assert.match(prompt, /21 days/);

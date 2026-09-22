@@ -244,7 +244,7 @@ export function createOpsRouter(opts: {
           message: state.poolProvision.lastMessage,
         },
         policy: {
-          campaignSenderFloor: "half that client's inboxes",
+          campaignSenderFloor: "max(half that client's named inboxes per POD, 40 per POD)",
           mailboxDailyCap: "Outlook 15 / Gmail-SMTP 30",
           warmupDays: opts.config.poolWarmupDays,
           freshInboxWarmupDays: opts.config.freshInboxWarmupDays,

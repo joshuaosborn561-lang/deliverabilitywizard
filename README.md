@@ -37,7 +37,7 @@ to look. Behaviour questions end at CANON.md.
 Standing posture, in one breath (decision numbers and detail in CANON.md):
 pulls are **kill-only** — placement scores, bounce rates, blacklists and
 leftover HOLD-UNTIL tags never yank a mailbox; one client per sender,
-staffing floor is half that client's own inboxes; every mailbox owes 21
+staffing floor is max(half that client's named inboxes per POD, 40 per POD) at client inventory; every mailbox owes 21
 warmup days from InboxKit import unless its fleet is pre-warmed; the
 canary fleet diagnoses and never staffs; Slack carries exactly three pages
 (burned domain, isolated spam word, EOD scoreboard) plus action receipts;

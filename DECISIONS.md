@@ -204,14 +204,15 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D189 | Live — Insight campaigns are now client 582890 (D192); named ids stay rest-sticky | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
-| D193 | Live — peel of exclusive min-40 generic seats qualified by D197; dedicated named-client seats are not foreign Goliath (D198) | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
+| D193 | Live — peel of exclusive min-40 generic seats qualified by D197; dedicated named-client seats are not foreign Goliath (D198); "leave it short / client-inbox only" for the min-40 fill path narrowed by D203 | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
-| D196 | Live — floor is max(on-week pod, 40) per D197 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
-| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); exclusive-attach is pool-only (D200) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
-| D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
-| D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
-| D200 | Live | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
+| D196 | Live — floor is max(named on-week pod, 40 per POD inventory) per D197/D203 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
+| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); exclusive-attach is pool-only (D200); 40 is per-POD client inventory (D203) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only); 40/POD inventory by D203 | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
+| D200 | Live — 40/POD inventory by D203 | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
+| D203 | Live | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
 
 ---
 
@@ -6359,6 +6360,96 @@ keeps a named TechEvo seat on two TechEvo camps, peels a pool
 generic extra link, and still peels a foreign-client tag;
 one-client / top-up consult it; `ON_WEEK_MIN_SENDERS === 40`;
 CANON names pool-only exclusivity.
+
+---
+
+## D203 — Named-client PODs are a static named split; 40 staffable seats per POD at inventory
+
+**Decision (Josh 2026-09-22, HARD).** POD A/B for a named client is a
+**static even split of that client's named senders only**,
+ESP-balanced within Outlook and within Gmail (D192). Never retag
+or move named seats between POD-A and POD-B to staff the on-week
+campaign.
+
+**Each POD must have 40 senders ("cylinders") at the client
+inventory level** — not 40 unique senders on a campaign, not
+on-week-only. Target is **40 POD-A + 40 POD-B** staffable seats
+per named client. The operational floor is
+`max(half-client-named-per-pod structural rest, 40 per POD via
+named + exclusive client-signed generics)`.
+
+Generics **layer on top of each POD** to fill that POD up to 40
+when the named half is short. That is client-wide inventory, not
+campaign-only. On-week POD's 40 staff ACTIVE campaigns (fan-out);
+off-week POD's 40 rest ready. If bad senders are peeled, restore
+that client back to 40-40.
+
+Do **not** disperse the free generic pool beyond the
+shortfall-to-40 per POD. Prefer named first. SalesGlider with
+ample salesglider* named inventory (each POD already ≥40 named)
+must not carry pool generics.
+
+**D203 narrows D193** for the min-40 fill path only. Josh
+authorizes exclusive client-signed generics as thin per-POD
+top-up. D193 still forbids dumping rotating GENERIC / pool-brand
+senders onto a named lane past the shortfall, leftover D134
+approvals are still not attach permission, and another named
+client's mailboxes are still not borrowed. "Named clients
+client-inbox only" is no longer the rule for the seats that
+bring a short POD up to 40.
+
+PowerGRYD / POC carve-outs stay as already documented (D81/D82).
+Do not invent new POC rules. Named-client 40/POD applies to
+normal clients.
+
+**Each POD also keeps an ESP mix floor (Josh add-on 2026-09-22).**
+When the client has both Outlook and Gmail, neither ESP may sit
+under ~1/3 of that POD's seats (**14 of a 40-seat POD**). A POD
+must not go monoculture. D192 ESP-balanced ~50/50 across A/B
+*within* each ESP still stands; this is an explicit per-POD mix
+floor on top. When topping a short POD, prefer the ESP that is
+under the mix floor. A client that only has one ESP is not
+required to invent the other.
+
+**Why.** Operators and the machine were reading D193 as "never
+generics on named clients" and reading D197 as "40 on a
+campaign". That produced two wrong moves: retagging named seats
+across A/B to staff the on-week campaign, and leaving a named
+client short of 40/POD (or over-dispersing the free pool onto
+SalesGlider, which already has ≥40 named per POD). Josh locked
+the cylinders: static named split, 40-40 inventory, thin
+exclusive top-up only for the shortfall. The same day he added
+the per-POD mix floor so a 40-seat POD cannot go all-Outlook or
+all-Gmail when the client has both.
+
+**Rejected.** Moving named seats between POD-A and POD-B to
+fill the on-week campaign. Treating 40 as a per-campaign unique
+headcount. Dumping the free generic pool onto a client whose
+named half is already ≥40. Reversing D193 for rotating-pool
+dump past the shortfall. New PowerGRYD / POC carve-outs.
+Replacing D192's within-ESP A/B cut with the per-POD mix floor
+(both stand). Requiring a second ESP on a one-ESP client.
+
+**Supersedes / amends.** Narrows D193: exclusive client-signed
+generics may fill a named POD up to 40; rotating-pool dump past
+the shortfall stays forbidden. Qualifies D58/D82/D196/D197: the
+40 is per-POD client inventory (40-A + 40-B), and the live
+campaign floor is that on-week POD (still
+`max(named on-week pod, 40)`). Extends D198/D199: dedicated /
+exclusive + client-sig generics are the authorized top-up layer
+on each POD. Adds a per-POD ~1/3 Outlook/Gmail mix floor on
+top of D192 (does not reverse the within-ESP A/B cut). Does
+not reverse D200 pool-only exclusive-attach, D81/D82 POC, or
+D105 warmup pulls.
+
+**Guards.** canon D203: `POD_INVENTORY_MIN_SENDERS === 40`;
+`podGenericTopUpCap(46) === 0` (SalesGlider-ample named);
+`podGenericTopUpCap(24) === 16`; `podEspMixMinSeats(40) === 14`;
+monoculture fails when the client has both ESPs; named A/B
+split is documented static / never-retag; CANON names 40/POD
+inventory, the ~1/3 per-POD mix floor, and the D193 narrow
+for the min-40 fill path; floor prompts no longer say only
+"half that client's own inboxes" without the 40/POD minimum.
 
 ---
 

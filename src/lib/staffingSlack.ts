@@ -50,7 +50,7 @@ export function staffingSlackLines(input: {
     );
   } else {
     lines.push(
-      "Each client's floor is half its own inboxes. Spare inboxes stay on Goliath only.",
+      "Each named client's floor is 40 staffable seats per POD (named first; exclusive client-signed generics only for the shortfall). Spare rotating-pool inboxes stay on Goliath beyond that.",
     );
   }
   for (const [name, n] of byCampaign) {

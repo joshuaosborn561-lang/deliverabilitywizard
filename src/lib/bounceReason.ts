@@ -8,6 +8,8 @@
  * remedy: a tenant cap needs volume/tenant changes, an invalid-recipient
  * wave needs the list re-verified, a content block feeds the canary
  * diagnosis (spintax escalation is the D141 follow-up).
+ * D201 — tenant Slack names the Outlook NDR sender, not a sibling
+ * mailbox on the same campaign (meetconnecthub / techevolutiontek).
  */
 
 export type BounceClass =
@@ -17,20 +19,59 @@ export type BounceClass =
   | "content_block"
   | "other";
 
-/** D140/D147 — the NDR reply in a lead's message history, if any. */
-export function ndrBodyFromHistory(history: unknown): string | null {
+function historyEntries(
+  history: unknown,
+): Array<Record<string, unknown>> {
   const rows = Array.isArray(
     (history as { history?: unknown[] } | null)?.history,
   )
     ? ((history as { history: Array<Record<string, unknown>> }).history ?? [])
     : [];
-  const ndr = rows.find(
-    (entry) =>
-      String(entry.type ?? "").toUpperCase() === "REPLY" &&
-      /delivery has failed|mail delivery|undeliverable|returned/i.test(
-        String(entry.email_body ?? ""),
-      ),
+  return rows;
+}
+
+export function isNdrReply(entry: Record<string, unknown>): boolean {
+  return (
+    String(entry.type ?? "").toUpperCase() === "REPLY" &&
+    /delivery has failed|mail delivery|undeliverable|returned/i.test(
+      String(entry.email_body ?? ""),
+    )
   );
+}
+
+function isSentEntry(entry: Record<string, unknown>): boolean {
+  return String(entry.type ?? "").toUpperCase() === "SENT";
+}
+
+function sentFrom(entry: Record<string, unknown>): string | null {
+  const from = String(entry.from ?? entry.from_email ?? "").trim();
+  return from || null;
+}
+
+/**
+ * D201 — the mailbox that produced the NDR, not the first SENT in the
+ * thread. Mixed-staff campaigns (TechEvo + dedicated generics, or
+ * meetconnecthub Gmail + Outlook) put a sibling mailbox first; blaming
+ * that domain for a 5.7.233 is false attribution.
+ */
+export function senderEmailForNdr(history: unknown): string | null {
+  const entries = historyEntries(history);
+  const ndrIndex = entries.findIndex(isNdrReply);
+  if (ndrIndex < 0) return null;
+  for (let i = ndrIndex - 1; i >= 0; i--) {
+    const from = isSentEntry(entries[i]!) ? sentFrom(entries[i]!) : null;
+    if (from) return from;
+  }
+  for (let i = ndrIndex + 1; i < entries.length; i++) {
+    const from = isSentEntry(entries[i]!) ? sentFrom(entries[i]!) : null;
+    if (from) return from;
+  }
+  return null;
+}
+
+/** D140/D147 — the NDR reply in a lead's message history, if any. */
+export function ndrBodyFromHistory(history: unknown): string | null {
+  const ndr = historyEntries(history).find(isNdrReply);
   return ndr ? String(ndr.email_body ?? "") : null;
 }
 
@@ -116,10 +157,18 @@ export function summarizeBounceSamples(samples: BounceSample[]): {
   return { dominant, summary };
 }
 
-/** Sender domains seen in the samples, for tenant-level attribution. */
-export function sampleSenderDomains(samples: BounceSample[]): string[] {
+/**
+ * Sender domains seen in the samples. Pass a class to keep only that
+ * class — D201 tenant Slack must not inherit sibling-campaign senders
+ * from an invalid_recipient / content_block sample on the same burst.
+ */
+export function sampleSenderDomains(
+  samples: BounceSample[],
+  bounceClass?: BounceClass,
+): string[] {
   const domains = new Set<string>();
   for (const sample of samples) {
+    if (bounceClass && sample.bounceClass !== bounceClass) continue;
     const domain = sample.senderEmail?.split("@")[1]?.toLowerCase();
     if (domain) domains.add(domain);
   }

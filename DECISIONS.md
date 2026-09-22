@@ -155,7 +155,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D137 | Live | Unarmed word-hunt rig asks Josh to buy its isolation domain |
 | D138 | Live | Campaign-level min gap converged to the 10-minute floor |
 | D139 | Live | Staffing refuses under-warmed inboxes — the gate's pull sticks |
-| D140 | Live | A bounce burst reads the SMTP reasons; tenant caps alert once/day |
+| D140 | Live — tenant-page attribution qualified by D201 | A bounce burst reads the SMTP reasons; tenant caps alert once/day |
 | D141 | Amended by D148 | Burst detection lives (sampled sends <24h; ledger dumps inert; lifetime-rate retired); the pause action is retired — a burst investigates, remediates, re-queues |
 | D142 | Live — marker-client-records clause superseded by D160; leftover Goliath/TJ/Vasco + pool nulls skip attach (D192) | Generic is a pool, pre-warmed is a Josh-granted flag; confident unmapped domains auto-attach; POC mailbox-owner re-point staged (now moot) |
 | D143 | Live | Warmup owed is not attach supply; gate ledgers boomerang pulls (external re-adds) onto the EOD brief; warmup re-enable dedupes; pod-tags first in the monitor |
@@ -212,6 +212,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 | D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Live | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
+| D201 | Live | A tenant_rate_limit Slack names only the Outlook sender domain on the 5.7.233 NDR — never a sibling campaign mailbox (meetconnecthub / techevolutiontek false attribution) |
 
 ---
 
@@ -6359,6 +6360,50 @@ keeps a named TechEvo seat on two TechEvo camps, peels a pool
 generic extra link, and still peels a foreign-client tag;
 one-client / top-up consult it; `ON_WEEK_MIN_SENDERS === 40`;
 CANON names pool-only exclusivity.
+
+---
+
+## D201 — Tenant-cap Slack names the Outlook NDR sender, not a sibling mailbox
+
+**Decision (Josh 2026-09-22, `#deliverability` correction on
+`#3847795`).** A `tenant_rate_limit` (Microsoft 550 5.7.233) page
+names **only** the Outlook / Microsoft sender domain(s) on the
+sampled NDR that actually carried that class. It does **not**
+inherit every sender on the burst, and it does **not** take the
+first SENT in the lead's thread.
+
+Pair the NDR with the nearest SENT (the mailbox that produced the
+bounce). Skip a Gmail / Google sender — a 5.7.233 cannot come from
+Gmail. Campaign stays ACTIVE (D148). No unlink, no Retire, no
+Apply, no spend from this path.
+
+**Why.** Live 2026-09-22: the bounce loop paged
+`techevolutiontek.info` as the capped Microsoft tenant on TechEvo
+SFL Startup Owners Jet Ski `#3847795`. The sampled burst was
+`tenant_rate_limit×1`. The real 5.7.233 tenant was
+`crosslaunchcoget.info` Outlook (already held at mpd 0). TechEvo
+Outlook seats `#21128780` / `#21128756` are a different tenant;
+zeroing them overnight would have cut Mon–Thu TechEvo capacity.
+Same hole as meetconnecthub: a Gmail (or sibling Outlook) mailbox
+on the mixed-staff campaign was the first SENT in history, so it
+stole the tenant page. Josh restored TechEvo to mpd 15 and left
+`#3847795` ACTIVE.
+
+**Rejected.** Paging every sampled sender domain when dominant is
+`tenant_rate_limit`. Taking `history.find(SENT)`. Unlinking or
+retiring the named client domain. Pausing the campaign. Treating
+a Gmail domain as a Microsoft tenant.
+
+**Supersedes / amends.** Qualifies D140: once-per-tenant-per-day
+Slack still fires, but the tenant is the Outlook NDR sender, not
+every mailbox on the campaign. Does not reverse D148 (nothing
+pauses) or D145/D146 (5.1.8 retire asks still any-sample).
+
+**Guards.** canon D201: `senderEmailForNdr` pairs nearest SENT;
+`tenantCapPageDomains` drops non-tenant_rate_limit and Gmail
+senders; the burst Slack names `crosslaunchcoget.info` and not
+`techevolutiontek.info` on the 2026-09-22 shape; CANON names the
+sibling-mailbox carve-out.
 
 ---
 

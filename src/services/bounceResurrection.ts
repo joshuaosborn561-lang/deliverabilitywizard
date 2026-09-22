@@ -5,6 +5,7 @@ import {
   bounceReasonSnippet,
   classifyBounceText,
   ndrBodyFromHistory,
+  senderEmailForNdr,
   type BounceClass,
 } from "../lib/bounceReason.js";
 import { ymdUtc } from "../lib/campaignDayStats.js";
@@ -658,13 +659,7 @@ export class BounceResurrectionService {
 
 /** The mailbox domain a bounced send went out from, read off its history. */
 function senderDomainFromHistory(history: unknown): string | null {
-  const entries = (history as { history?: Array<Record<string, unknown>> })
-    ?.history;
-  if (!Array.isArray(entries)) return null;
-  const sent = entries.find(
-    (entry) => String(entry.type ?? "").toUpperCase() === "SENT",
-  );
-  const from = String(sent?.from ?? "").toLowerCase();
+  const from = senderEmailForNdr(history)?.toLowerCase() ?? "";
   const domain = from.split("@")[1]?.trim();
   return domain || null;
 }

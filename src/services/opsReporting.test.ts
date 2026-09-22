@@ -7,6 +7,8 @@ import type { InventoryBook } from "./inventory.js";
 import {
   FleetSummaryService,
   PlacementResultsService,
+  latestPlacementAt,
+  newestPlacementTestId,
   titleHasCanaryCopyPhrase,
   OPS_PLACEMENT_REPORT_CAP,
 } from "./opsReporting.js";
@@ -448,7 +450,7 @@ describe("PlacementResultsService", () => {
       1,
     );
     const result = await service.get(true);
-    assert.deepEqual(requested, ["101"]);
+    assert.deepEqual(requested, ["102"], "a 429 spends the one call on the newer test");
     assert.equal(result.rows.length, 2);
     assert.match(result.errors.join(" "), /SmartDelivery rate-limited/i);
   });
@@ -745,6 +747,165 @@ describe("PlacementResultsService", () => {
       /Showing the last saved snapshot[\s\S]{0,250}\.\.\.errors/.test(app),
       false,
       "stale banner and errors[] used to be concatenated into one red line",
+    );
+  });
+
+  it("keeps the newest test per campaign and does not date it with the first mark", async () => {
+    const state = await stateFixture();
+    const testedAt = "2026-07-01T00:00:00.000Z";
+    state.markCampaignTested({
+      campaignId: 7,
+      campaignName: "Campaign Seven",
+      testedAt,
+      testIds: ["999", "1000"],
+      mailboxCount: 5,
+      testsCreated: 2,
+    });
+    state.setPlacementResults({
+      generatedAt: "2026-09-01T00:00:00.000Z",
+      rows: [
+        {
+          id: "999",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          createdAt: testedAt,
+          inboxPercent: 10,
+          spamPercent: 80,
+          googleInboxPercent: 10,
+          microsoftInboxPercent: 10,
+          totalSeeds: 10,
+          providers: [],
+        },
+      ],
+    });
+    const fetched: string[] = [];
+    const smartDelivery = {
+      listTests: async () => [],
+      getProviderwiseReport: async (id: number | string) => {
+        fetched.push(String(id));
+        return {
+          status: "COMPLETED",
+          result: [
+            {
+              provider_name: "G Suite",
+              inbox_count: 8,
+              spam_count: 2,
+              adjusted_total_email_count: 10,
+            },
+            {
+              provider_name: "Office365",
+              inbox_count: 6,
+              spam_count: 4,
+              adjusted_total_email_count: 10,
+            },
+          ],
+        };
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+    );
+    const result = await service.get(true);
+    assert.deepEqual(
+      result.rows.map((row) => row.id),
+      ["1000"],
+    );
+    assert.deepEqual(fetched, ["1000"]);
+    assert.notEqual(result.rows[0]?.createdAt, testedAt);
+    assert.equal(result.rows[0]?.googleInboxPercent, 80);
+    assert.equal(state.getPlacementResults()?.rows[0]?.id, "1000");
+  });
+
+  it("dates a scored test from its latest run instead of the schedule start", async () => {
+    const state = await stateFixture();
+    state.setPlacementResults({
+      generatedAt: "2026-09-21T00:00:00.000Z",
+      complete: false,
+      rows: [
+        {
+          id: "101",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          inboxPercent: 70,
+          spamPercent: 20,
+          googleInboxPercent: 75,
+          microsoftInboxPercent: 100,
+          totalSeeds: 10,
+          providers: [],
+        },
+      ],
+    });
+    let providerCalls = 0;
+    const smartDelivery = {
+      listTests: async () => [
+        {
+          spam_test_id: 101,
+          test_name: "Auto: Campaign Seven",
+          status: "active",
+          created_at: "2026-08-01T00:00:00.000Z",
+          campaign_id: 7,
+          inbox_count: 7,
+          spam_count: 2,
+          adjusted_total_email_count: 10,
+        },
+      ],
+      getProviderwiseReport: async () => {
+        providerCalls += 1;
+        return { result: [] };
+      },
+      getTestDetails: async () => ({
+        status: "active",
+        schedule_start_time: "2026-08-01T00:00:00.000Z",
+        every_days: 1,
+        current_test_run_no: 52,
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+    );
+    const result = await service.get(true);
+    assert.equal(providerCalls, 0, "a scored row spends the call on its run date");
+    assert.equal(result.rows[0]?.runNumber, 52);
+    assert.equal(result.rows[0]?.createdAt, "2026-09-21T00:00:00.000Z");
+    assert.equal(state.getPlacementResults()?.rows[0]?.createdAt, "2026-09-21T00:00:00.000Z");
+  });
+});
+
+describe("latestPlacementAt", () => {
+  it("prefers the latest scheduled run over the day the test was created", () => {
+    assert.equal(newestPlacementTestId(["999", "1000", "101"]), "1000");
+    assert.equal(
+      latestPlacementAt(
+        {
+          created_at: "2026-08-01T00:00:00.000Z",
+          schedule_start_time: "2026-08-01T00:00:00.000Z",
+          every_days: 1,
+          current_test_run_no: 52,
+        },
+        Date.parse("2026-09-22T00:00:00.000Z"),
+      ),
+      "2026-09-21T00:00:00.000Z",
     );
   });
 });

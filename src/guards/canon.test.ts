@@ -4309,6 +4309,23 @@ describe("owner intent — D98 find a hole, fix it", () => {
     const index = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("../index.ts", import.meta.url), "utf8"),
     );
+    const healthIdx = index.indexOf('stage("campaign-health"');
+    const checkIdx = index.indexOf('stage("campaign-check-first"');
+    assert.ok(
+      healthIdx >= 0 && checkIdx >= 0 && healthIdx < checkIdx,
+      stop(
+        "Leftover coverage runs after campaign-health restaff so pod-cover sees a fresh known-good finding (D98).",
+        "index.ts runs campaign-check-first before campaign-health again.",
+      ),
+    );
+    assert.match(
+      check,
+      /runFirst && !openCoverageFinding/,
+      stop(
+        "Coverage leftover inspects at hourly depth so first-check cannot wipe inbox_missing_known_good (D98).",
+        "campaignCheck.ts leftover kind prefers first-check even when a coverage hole is open.",
+      ),
+    );
     assert.match(
       index,
       /\[copy-canary\] \$\{err\}/,

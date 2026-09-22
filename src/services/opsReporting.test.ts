@@ -590,12 +590,32 @@ describe("PlacementResultsService", () => {
       generatedAt: new Date().toISOString(),
       rows: snapshotRows,
     });
+    let listCalls = 0;
+    const fetched: string[] = [];
     const smartDelivery = {
       listTests: async () => {
+        listCalls += 1;
         throw new Error("Rate limit exceeded");
       },
-      getProviderwiseReport: async () => {
-        throw new Error("should not fetch providers when the catalog 429s");
+      getProviderwiseReport: async (id: number | string) => {
+        fetched.push(String(id));
+        return {
+          status: "COMPLETED",
+          result: [
+            {
+              provider_name: "G Suite",
+              inbox_count: 8,
+              spam_count: 2,
+              adjusted_total_email_count: 10,
+            },
+            {
+              provider_name: "Office365",
+              inbox_count: 6,
+              spam_count: 4,
+              adjusted_total_email_count: 10,
+            },
+          ],
+        };
       },
     } as unknown as SmartDeliveryClient;
     const smartlead = {
@@ -609,6 +629,16 @@ describe("PlacementResultsService", () => {
     );
     const result = await service.get();
     assert.equal(result.rows.length, 12);
+    assert.equal(listCalls, 0, "a mostly unscored board does not burn the catalog");
+    assert.equal(fetched.length, 8, "only the rows still missing Google/Microsoft are fetched");
+    const filled = result.rows.filter((row) => row.id === "7012");
+    assert.equal(filled[0]?.status, "COMPLETED");
+    assert.equal(filled[0]?.googleInboxPercent, 80);
+    assert.equal(filled[0]?.microsoftInboxPercent, 60);
+    assert.equal(
+      result.rows.filter((row) => row.status === "UNKNOWN").length,
+      0,
+    );
     assert.equal(state.getPlacementResults()?.rows.length, 12);
     assert.equal(result.complete, true);
   });

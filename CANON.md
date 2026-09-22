@@ -171,11 +171,10 @@ or the day is done. Silent findings are a bug (D163).
   a retire unlink writes `burned`; boot heals live asks plus known
   missing blocks so a deploy does not wait for another sample.
 - **Rest (pods)**: each client's **named** senders split into a
-  **static** even A/B (D43/D203) that is **ESP-balanced ~50/50
-  within Outlook and within Gmail** per non-generic client (D192)
-  — not an alphabetical-only half. Never retag or move named
-  seats between POD-A and POD-B to staff the on-week campaign
-  (D203). Generics are not part of that named cut.
+  **static** even A/B (D43/D203) that is **ESP-balanced ~50/50 within Outlook and within Gmail**
+  per non-generic client (D192) — not an alphabetical-only half.
+  Never retag or move named seats between POD-A and POD-B to staff
+  the on-week campaign (D203). Generics are not part of that named cut.
   Off-week comes OFF **ACTIVE, PAUSED, and STOPPED** client
   campaign memberships — never left on at 0/day, and never left parked
   on a paused/stopped campaign that is not sending (D169) — **and

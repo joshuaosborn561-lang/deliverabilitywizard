@@ -175,6 +175,25 @@ function placementDateIsStale(row: PlacementResultRow, now = Date.now()): boolea
   return now - parsed > OPS_PLACEMENT_STALE_DATE_MS;
 }
 
+/** Google/Microsoft alone is not a finished row. Inbox, spam, seeds, date, and run are the rest of the table. */
+function placementRowNeedsScore(row: PlacementResultRow): boolean {
+  return (
+    !placementRowHasResult(row) ||
+    typeof row.inboxPercent !== "number" ||
+    typeof row.spamPercent !== "number" ||
+    !row.totalSeeds
+  );
+}
+
+function placementRowNeedsDate(row: PlacementResultRow): boolean {
+  return placementDateIsStale(row) || row.runNumber == null;
+}
+
+function placementRowIsFilled(row: PlacementResultRow): boolean {
+  if (String(row.status ?? "").toUpperCase() === "NOT FOUND") return true;
+  return !placementRowNeedsScore(row) && !placementRowNeedsDate(row);
+}
+
 function placementDetailsRecord(raw: Record<string, unknown>): Record<string, unknown> {
   for (const key of ["data", "test", "spam_test"]) {
     const nested = raw[key];
@@ -473,51 +492,46 @@ export class PlacementResultsService {
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     let skipProviders = false;
-    // Newest ids are already first. Alternate a missing score and a stale
-    // date so one 429 cannot spend the whole window on only one of them.
-    const needScore = assembled.filter((row) => !placementRowHasResult(row));
-    const needDate = assembled.filter(
-      (row) => placementRowHasResult(row) && placementDateIsStale(row),
-    );
-    const jobs: Array<{ kind: "score" | "date"; row: PlacementResultRow }> = [];
-    const jobCount = Math.max(needScore.length, needDate.length);
-    for (let index = 0; index < jobCount; index += 1) {
-      const score = needScore[index];
-      const date = needDate[index];
-      if (score) jobs.push({ kind: "score", row: score });
-      if (date) jobs.push({ kind: "date", row: date });
-    }
-    for (const job of jobs) {
+    // Finish one row before the next. A 429 used to leave every row with a
+    // different hole: Google without Inbox, or a score without a date.
+    for (const row of assembled) {
       if (skipProviders) break;
+      if (!placementRowNeedsScore(row) && !placementRowNeedsDate(row)) continue;
       try {
-        if (job.kind === "score") await this.scorePlacementRow(job.row);
-        else await this.refreshPlacementDate(job.row);
+        if (placementRowNeedsScore(row)) {
+          await this.scorePlacementRow(row);
+          if (gapMs) await sleep(gapMs);
+        }
+        if (skipProviders) break;
+        if (placementRowNeedsDate(row)) {
+          await this.refreshPlacementDate(row);
+          if (gapMs) await sleep(gapMs);
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (isMissingSpamTestNoise(message)) {
-          job.row.status = "NOT FOUND";
+          row.status = "NOT FOUND";
           continue;
         }
         if (isRateLimitNoise(message)) {
           this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
           skipProviders = true;
           if (force) {
-            errors.push(humanizeAlertError(`test ${job.row.id}: ${message}`));
+            errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
           }
         } else {
-          errors.push(humanizeAlertError(`test ${job.row.id}: ${message}`));
+          errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
         }
       }
-      if (gapMs) await sleep(gapMs);
     }
 
-    const scored = assembled.filter((row) => placementRowHasResult(row)).length;
+    const filled = assembled.filter((row) => placementRowIsFilled(row)).length;
     const value: PlacementResults = {
       generatedAt: new Date().toISOString(),
       rows: assembled,
       errors: uniqueErrors(force ? errors : []),
-      complete: coversLive && scored === assembled.length && assembled.length > 0,
-      stale: (listed.truncated || scored < assembled.length) && assembled.length > 0,
+      complete: coversLive && filled === assembled.length && assembled.length > 0,
+      stale: (listed.truncated || filled < assembled.length) && assembled.length > 0,
     };
     if (!assembled.length) {
       return {
@@ -839,6 +853,9 @@ function placementBoardSignature(rows: PlacementResultRow[]): string {
         row.createdAt ?? "",
         row.runNumber ?? "",
         row.status,
+        row.inboxPercent ?? "",
+        row.spamPercent ?? "",
+        row.totalSeeds ?? "",
         row.googleInboxPercent ?? "",
         row.microsoftInboxPercent ?? "",
       ].join(":"),
@@ -906,6 +923,53 @@ function applyProviderwise(
   row.microsoftInboxPercent = providers.find((provider) =>
     /office\s*365|outlook|microsoft|o365/i.test(provider.name),
   )?.inboxPercent;
+  applyProviderTotals(row, report);
+}
+
+/** List rows carry the overall counts. Provider reports do too, and the catalog is often skipped. */
+function applyProviderTotals(
+  row: PlacementResultRow,
+  report: { result?: ProviderwiseRow[] },
+): void {
+  if (
+    typeof row.inboxPercent === "number" &&
+    typeof row.spamPercent === "number" &&
+    row.totalSeeds > 0
+  ) {
+    return;
+  }
+  let inbox = 0;
+  let spam = 0;
+  let tab = 0;
+  let seeds = 0;
+  let counted = false;
+  for (const provider of report.result ?? []) {
+    const total =
+      (typeof provider.adjusted_total_email_count === "number" &&
+      provider.adjusted_total_email_count > 0
+        ? provider.adjusted_total_email_count
+        : undefined) ??
+      (typeof provider.total_email_count === "number" &&
+      provider.total_email_count > 0
+        ? provider.total_email_count
+        : undefined) ??
+      (typeof provider.mailbox_count === "number" && provider.mailbox_count > 0
+        ? provider.mailbox_count
+        : undefined);
+    if (typeof provider.inbox_count !== "number" || typeof total !== "number") {
+      continue;
+    }
+    counted = true;
+    inbox += provider.inbox_count;
+    spam += typeof provider.spam_count === "number" ? provider.spam_count : 0;
+    tab += typeof provider.tab_count === "number" ? provider.tab_count : 0;
+    seeds += total;
+  }
+  if (!counted || seeds <= 0) return;
+  row.inboxPercent = (inbox / seeds) * 100;
+  row.spamPercent = (spam / seeds) * 100;
+  row.tabPercent = (tab / seeds) * 100;
+  row.totalSeeds = seeds;
 }
 
 function uniqueErrors(errors: string[]): string[] {

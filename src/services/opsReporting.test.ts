@@ -619,6 +619,11 @@ describe("PlacementResultsService", () => {
           ],
         };
       },
+      getTestDetails: async () => ({
+        updated_at: new Date().toISOString(),
+        test_run_no: 4,
+        status: "ACTIVE",
+      }),
     } as unknown as SmartDeliveryClient;
     const smartlead = {
       listCampaigns: async () => campaigns,
@@ -824,6 +829,75 @@ describe("PlacementResultsService", () => {
     assert.notEqual(result.rows[0]?.createdAt, testedAt);
     assert.equal(result.rows[0]?.googleInboxPercent, 80);
     assert.equal(state.getPlacementResults()?.rows[0]?.id, "1000");
+  });
+
+  it("fills inbox, spam, seeds, date, and run when a row only had ESP scores", async () => {
+    const state = await stateFixture();
+    state.setPlacementResults({
+      generatedAt: "2026-09-21T00:00:00.000Z",
+      rows: [
+        {
+          id: "101",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "COMPLETED",
+          googleInboxPercent: 80,
+          microsoftInboxPercent: 100,
+          totalSeeds: 0,
+          providers: [],
+        },
+      ],
+    });
+    const smartDelivery = {
+      listTests: async () => [],
+      getProviderwiseReport: async () => ({
+        status: "ACTIVE",
+        result: [
+          {
+            provider_name: "G Suite",
+            inbox_count: 85,
+            spam_count: 2,
+            tab_count: 0,
+            adjusted_total_email_count: 87,
+          },
+          {
+            provider_name: "Office365",
+            inbox_count: 71,
+            spam_count: 0,
+            tab_count: 0,
+            adjusted_total_email_count: 71,
+          },
+        ],
+      }),
+      getTestDetails: async () => ({
+        updated_at: "2026-09-22T06:37:03.220Z",
+        test_run_no: 5,
+        status: "ACTIVE",
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+    );
+    const result = await service.get(true);
+    const row = result.rows[0];
+    assert.equal(row?.status, "ACTIVE");
+    assert.equal(row?.googleInboxPercent, (85 / 87) * 100);
+    assert.equal(row?.microsoftInboxPercent, 100);
+    assert.equal(row?.inboxPercent, (156 / 158) * 100);
+    assert.equal(row?.spamPercent, (2 / 158) * 100);
+    assert.equal(row?.totalSeeds, 158);
+    assert.equal(row?.createdAt, "2026-09-22T06:37:03.220Z");
+    assert.equal(row?.runNumber, 5);
+    assert.equal(result.complete, true);
   });
 
   it("dates a scored test from its latest run instead of the schedule start", async () => {

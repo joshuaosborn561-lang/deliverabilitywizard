@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 import { readFile } from "node:fs/promises";
 import { loadConfig } from "../config.js";
 import { StateStore } from "../state/store.js";
-import { CampaignBounceAutostopService } from "./campaignBounceAutostop.js";
+import {
+  CampaignBounceAutostopService,
+  tenantCapPageDomains,
+} from "./campaignBounceAutostop.js";
 
 function store(): StateStore {
   return new StateStore(
@@ -341,6 +344,117 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
     assert.ok(
       Date.parse(foldedJob!.windowEnd) >= Date.parse(job!.windowEnd),
       "the incident window widened to cover the new bounces",
+    );
+  });
+
+  it("D201: pages the Outlook NDR sender, not the first SENT sibling on the thread", async () => {
+    const statusWrites: string[] = [];
+    const sent: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(8, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        ...mkSl(statusWrites),
+        getLeadMessageHistory: async () => ({
+          history: [
+            { type: "SENT", from: "tomaskub@techevolutiontek.info" },
+            { type: "SENT", from: "ada@crosslaunchcoget.info" },
+            { type: "REPLY", email_body: NDR },
+          ],
+        }),
+      } as never,
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+      undefined,
+      () => FIXED_T,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(result.bursts[0]?.verdict?.senderDomains, [
+      "crosslaunchcoget.info",
+    ]);
+    const pages = sent.filter((text) =>
+      /hit its Microsoft daily sending cap/.test(text),
+    );
+    assert.equal(pages.length, 1);
+    assert.match(pages[0]!, /crosslaunchcoget\.info hit its Microsoft/);
+    assert.doesNotMatch(pages[0]!, /techevolutiontek/);
+  });
+
+  it("D201: a mixed burst does not page sibling-campaign senders as the tenant", async () => {
+    const TENANT_NDR =
+      "<html>Delivery has failed. Remote server returned '550 5.7.233 - Your message can't be sent because your tenant has exceeded its daily limit for sending email to external recipients (tenant external recipient rate limit).'</html>";
+    const BAD_ADDR =
+      "<html>Delivery has failed. Remote server returned '550 5.1.1 The email account that you tried to reach does not exist.'</html>";
+    const statusWrites: string[] = [];
+    const sent: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(8, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        ...mkSl(statusWrites),
+        getLeadMessageHistory: async (_campaignId: number, leadId: number) => ({
+          history:
+            leadId === 111
+              ? [
+                  { type: "SENT", from: "ada@crosslaunchcoget.info" },
+                  { type: "REPLY", email_body: TENANT_NDR },
+                ]
+              : [
+                  { type: "SENT", from: "tomaskub@techevolutiontek.info" },
+                  { type: "REPLY", email_body: BAD_ADDR },
+                ],
+        }),
+      } as never,
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+      undefined,
+      () => FIXED_T,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.equal(result.bursts[0]?.verdict?.dominant, "tenant_rate_limit");
+    assert.deepEqual(result.bursts[0]?.verdict?.senderDomains, [
+      "crosslaunchcoget.info",
+    ]);
+    const pages = sent.filter((text) =>
+      /hit its Microsoft daily sending cap/.test(text),
+    );
+    assert.equal(pages.length, 1);
+    assert.doesNotMatch(pages.join("\n"), /techevolutiontek/);
+  });
+
+  it("D201: a Gmail mailbox is never the Microsoft tenant", () => {
+    assert.deepEqual(
+      tenantCapPageDomains(
+        [
+          {
+            leadEmail: "a",
+            senderEmail: "x@meetconnecthub.com",
+            bounceClass: "tenant_rate_limit",
+            snippet: "",
+          },
+          {
+            leadEmail: "b",
+            senderEmail: "ada@crosslaunchcoget.info",
+            bounceClass: "tenant_rate_limit",
+            snippet: "",
+          },
+        ],
+        new Map([
+          ["x@meetconnecthub.com", "GMAIL"],
+          ["ada@crosslaunchcoget.info", "OUTLOOK"],
+        ]),
+      ),
+      ["crosslaunchcoget.info"],
     );
   });
 

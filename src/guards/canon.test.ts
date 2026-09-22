@@ -9797,7 +9797,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|200)\*\*/,
+      /Canon as of \*\*D(19[789]|20[01])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9932,7 +9932,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|200)\*\*/,
+      /Canon as of \*\*D(19[89]|20[01])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10096,7 +10096,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|200)\*\*/,
+      /Canon as of \*\*D(199|20[01])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10268,8 +10268,8 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D200\*\*/,
-      stop("CANON is dated D200.", "CANON.md header was not bumped."),
+      /Exclusive-attach \/ no-multi-link is pool generics only \(D200\)/,
+      stop("CANON still names D200.", "CANON.md lost the D200 cite."),
     );
     assert.match(
       canon,
@@ -10301,6 +10301,81 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       stop(
         "Pool-only exclusivity is in the ledger (D200).",
         "DECISIONS.md no longer has D200.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D201 tenant-cap Slack names the Outlook NDR sender", () => {
+  it("D201: sibling campaign mailboxes and Gmail never steal the 5.7.233 page", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lib = await readFile(
+      new URL("../lib/bounceReason.ts", import.meta.url),
+      "utf8",
+    );
+    const loop = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      lib,
+      /export function senderEmailForNdr/,
+      stop(
+        "The NDR is paired with the nearest SENT, not the first in the thread (D201).",
+        "bounceReason.ts lost senderEmailForNdr.",
+      ),
+    );
+    assert.match(
+      loop,
+      /tenantCapPageDomains/,
+      stop(
+        "Tenant Slack filters to tenant_rate_limit Outlook senders (D201).",
+        "campaignBounceAutostop.ts lost tenantCapPageDomains.",
+      ),
+    );
+    assert.match(
+      loop,
+      /senderEmailForNdr/,
+      stop(
+        "The burst sampler uses the paired NDR sender (D201).",
+        "campaignBounceAutostop.ts went back to history.find(SENT).",
+      ),
+    );
+    assert.doesNotMatch(
+      loop,
+      /entries\.find\(\s*\(entry\) => String\(entry\.type/,
+      stop(
+        "The burst sampler does not take the first SENT (D201).",
+        "campaignBounceAutostop.ts still uses history.find(SENT).",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D201\*\*/,
+      stop("CANON is dated D201.", "CANON.md header was not bumped."),
+    );
+    assert.match(
+      canon,
+      /sibling campaign mailbox/,
+      stop(
+        "CANON names the sibling-mailbox carve-out (D201).",
+        "CANON.md lost the D201 tenant-attribution rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D201 — Tenant-cap Slack names the Outlook NDR sender/,
+      stop(
+        "Tenant-cap attribution is in the ledger (D201).",
+        "DECISIONS.md no longer has D201.",
       ),
     );
   });

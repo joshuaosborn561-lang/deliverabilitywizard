@@ -6,6 +6,8 @@ import {
   leadCategoryOf,
   leadCategoryWantsNdrRead,
   preferNdrRows,
+  sampleSenderDomains,
+  senderEmailForNdr,
   summarizeBounceSamples,
 } from "./bounceReason.js";
 
@@ -83,5 +85,65 @@ describe("bounce reason classification (D140)", () => {
       preferNdrRows(rows).map((row) => row.lead_email),
       ["b", "c"],
     );
+  });
+
+  it("D201: pairs the NDR with the nearest SENT, not the first in the thread", () => {
+    const ndr =
+      "Delivery has failed. Remote server returned '550 5.7.233 tenant external recipient rate limit'";
+    assert.equal(
+      senderEmailForNdr({
+        history: [
+          { type: "SENT", from: "tomaskub@techevolutiontek.info" },
+          { type: "SENT", from: "ada@crosslaunchcoget.info" },
+          { type: "REPLY", email_body: ndr },
+        ],
+      }),
+      "ada@crosslaunchcoget.info",
+      "chrono: sibling TechEvo SENT first must not steal the 5.7.233",
+    );
+    assert.equal(
+      senderEmailForNdr({
+        history: [
+          { type: "REPLY", email_body: ndr },
+          { type: "SENT", from: "ada@crosslaunchcoget.info" },
+          { type: "SENT", from: "tomaskub@techevolutiontek.info" },
+        ],
+      }),
+      "ada@crosslaunchcoget.info",
+      "newest-first: first SENT after the NDR is the bouncing mailbox",
+    );
+    assert.equal(
+      senderEmailForNdr({
+        history: [
+          { type: "SENT", from: "x@meetconnecthub.com" },
+          { type: "REPLY", email_body: ndr },
+        ],
+      }),
+      "x@meetconnecthub.com",
+    );
+  });
+
+  it("D201: tenant Slack domains come only from tenant_rate_limit samples", () => {
+    const samples = [
+      {
+        leadEmail: "a",
+        senderEmail: "ada@crosslaunchcoget.info",
+        bounceClass: "tenant_rate_limit" as const,
+        snippet: "",
+      },
+      {
+        leadEmail: "b",
+        senderEmail: "tomaskub@techevolutiontek.info",
+        bounceClass: "invalid_recipient" as const,
+        snippet: "",
+      },
+    ];
+    assert.deepEqual(sampleSenderDomains(samples), [
+      "crosslaunchcoget.info",
+      "techevolutiontek.info",
+    ]);
+    assert.deepEqual(sampleSenderDomains(samples, "tenant_rate_limit"), [
+      "crosslaunchcoget.info",
+    ]);
   });
 });

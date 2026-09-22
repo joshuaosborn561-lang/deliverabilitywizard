@@ -9,9 +9,11 @@ import {
   preferNdrRows,
   sampleSenderDomains,
   senderBlockScanHint,
+  senderEmailForNdr,
   summarizeBounceSamples,
   type BounceSample,
 } from "../lib/bounceReason.js";
+import { normalizeSenderEspFamily } from "../lib/esp.js";
 import { statsFromAnalytics, ymdUtc } from "../lib/campaignDayStats.js";
 import {
   freshBounceSamples,
@@ -541,7 +543,11 @@ export class CampaignBounceAutostopService {
   ): Promise<BounceVerdictRecord | undefined> {
     const samples = await this.collectNdrSamples(campaignId, rows, 4);
     const { dominant, summary } = summarizeBounceSamples(samples);
-    const senderDomains = sampleSenderDomains(samples);
+    const typeByEmail = await this.senderTypesByEmail(samples);
+    const senderDomains =
+      dominant === "tenant_rate_limit"
+        ? tenantCapPageDomains(samples, typeByEmail)
+        : sampleSenderDomains(samples);
     const record: BounceVerdictRecord = {
       campaignId,
       at: new Date().toISOString(),
@@ -691,20 +697,12 @@ export class CampaignBounceAutostopService {
           leadId as number | string,
         );
         await sleep(120);
-        const entries = Array.isArray(
-          (history as { history?: unknown[] } | null)?.history,
-        )
-          ? ((history as { history: Array<Record<string, unknown>> }).history ?? [])
-          : [];
-        const sent = entries.find(
-          (entry) => String(entry.type ?? "").toUpperCase() === "SENT",
-        );
         const ndrBody = ndrBodyFromHistory(history);
         if (!ndrBody) continue;
         const snippet = bounceReasonSnippet(ndrBody);
         samples.push({
           leadEmail,
-          senderEmail: sent ? String(sent.from ?? "") || null : null,
+          senderEmail: senderEmailForNdr(history),
           bounceClass: classifyBounceText(snippet + " " + ndrBody),
           snippet,
         });
@@ -796,6 +794,31 @@ export class CampaignBounceAutostopService {
     return openedCount;
   }
 
+  private async senderTypesByEmail(
+    samples: BounceSample[],
+  ): Promise<Map<string, string> | undefined> {
+    if (!this.book) return undefined;
+    const wanted = new Set(
+      samples
+        .map((sample) => sample.senderEmail?.toLowerCase())
+        .filter((email): email is string => Boolean(email)),
+    );
+    if (!wanted.size) return undefined;
+    try {
+      const snap = await this.book.get();
+      const types = new Map<string, string>();
+      for (const account of snap.accounts) {
+        const email = accountEmail(account)?.toLowerCase();
+        if (!email || !wanted.has(email)) continue;
+        const type = String(account.type ?? "").trim();
+        if (type) types.set(email, type);
+      }
+      return types.size ? types : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async accountIdsForSenders(senders: Set<string>): Promise<number[]> {
     if (!this.book) return [];
     try {
@@ -812,6 +835,29 @@ export class CampaignBounceAutostopService {
     }
   }
 
+}
+
+/**
+ * D201 — a 5.7.233 page names only the Outlook mailbox domain(s) on the
+ * tenant_rate_limit samples. Sibling campaign senders and Gmail
+ * (meetconnecthub / techevolutiontek) are not the capped tenant.
+ */
+export function tenantCapPageDomains(
+  samples: BounceSample[],
+  typeByEmail?: Map<string, string>,
+): string[] {
+  const domains = new Set<string>();
+  for (const sample of samples) {
+    if (sample.bounceClass !== "tenant_rate_limit") continue;
+    const email = sample.senderEmail?.toLowerCase();
+    if (!email) continue;
+    const domain = email.split("@")[1];
+    if (!domain) continue;
+    const type = typeByEmail?.get(email);
+    if (type && normalizeSenderEspFamily(type) === "google") continue;
+    domains.add(domain);
+  }
+  return [...domains];
 }
 
 /**

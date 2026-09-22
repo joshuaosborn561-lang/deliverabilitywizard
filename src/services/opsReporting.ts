@@ -10,7 +10,11 @@ import {
   campaignIdsOf,
 } from "../clients/smartlead.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
-import { humanizeAlertError, isRateLimitNoise } from "../lib/alertNoise.js";
+import {
+  humanizeAlertError,
+  isMissingSpamTestNoise,
+  isRateLimitNoise,
+} from "../lib/alertNoise.js";
 import type { StateStore } from "../state/store.js";
 import { sleep } from "../lib/http.js";
 import type {
@@ -83,6 +87,12 @@ export const OPS_PLACEMENT_LIVE_RETRIES = 0;
 export const OPS_PLACEMENT_LIST_RETRIES = 1;
 /** After SmartDelivery 429s the board, do not poke it again for this long. */
 export const OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+/**
+ * When more than this many known tests still have no score, skip the
+ * newest-first catalog. That walk is mostly canary-copy and 429s before
+ * the live tests are reached, which left the board at 4 scored rows.
+ */
+export const OPS_PLACEMENT_CATALOG_SKIP_MISSING = 8;
 
 export interface FleetSummary {
   generatedAt: string;
@@ -92,6 +102,22 @@ export interface FleetSummary {
   disconnectedMailboxes: number;
   stale?: boolean;
   error?: string;
+}
+
+/**
+ * Google or Microsoft inbox % is the result the Placement tab is missing
+ * when a row still says UNKNOWN. Inbox-only list rows still need this.
+ */
+export function placementRowHasResult(row: {
+  status?: string;
+  googleInboxPercent?: number;
+  microsoftInboxPercent?: number;
+}): boolean {
+  if (String(row.status ?? "").toUpperCase() === "NOT FOUND") return true;
+  return (
+    typeof row.googleInboxPercent === "number" ||
+    typeof row.microsoftInboxPercent === "number"
+  );
 }
 
 function pct(value: number, total: number): number | undefined {
@@ -177,9 +203,9 @@ export class PlacementResultsService {
     }
     if (
       this.cache &&
+      this.snapshotLooksComplete(this.cache.value) &&
       ((!force && this.cache.expiresAt > now) ||
         (force &&
-          this.snapshotLooksComplete(this.cache.value) &&
           now - Date.parse(this.cache.value.generatedAt) <
             this.forceRefreshFloorMs))
     ) {
@@ -225,6 +251,8 @@ export class PlacementResultsService {
    * A complete persist (or a pre-flag snapshot of 40+, the old D126 cap) can.
    */
   private snapshotLooksComplete(value: PlacementResults): boolean {
+    if (!value.rows.length) return false;
+    if (value.rows.some((row) => !placementRowHasResult(row))) return false;
     if (value.complete === false) return false;
     if (value.complete === true) return true;
     return value.rows.length >= 40;
@@ -337,25 +365,28 @@ export class PlacementResultsService {
       }
     }
 
-    const listed = await this.listNewestTests(
-      (test) =>
-        isLivePlacementTest(test, {
-          campaignByTest,
-          liveById,
-          campaignsLoaded,
-        }),
-      errors,
-      force,
-    );
-
-    const listedLive = listed.tests.filter((test) =>
+    const previousSnapshot = this.cache?.value ?? this.fromPersisted();
+    const known = this.assembleLiveRows({
+      listedLive: [],
+      previousById,
+      previousSnapshot,
+      liveById,
+      campaignsLoaded,
+      campaignByTest,
+    });
+    const missingKnown = known.filter((row) => !placementRowHasResult(row)).length;
+    const isLive = (test: SpamTestSummary) =>
       isLivePlacementTest(test, {
         campaignByTest,
         liveById,
         campaignsLoaded,
-      }),
-    );
-    const previousSnapshot = this.cache?.value ?? this.fromPersisted();
+      });
+    const listed =
+      missingKnown >= OPS_PLACEMENT_CATALOG_SKIP_MISSING
+        ? { tests: [] as SpamTestSummary[], truncated: false, exhausted: false }
+        : await this.listNewestTests(isLive, errors, force);
+
+    const listedLive = listed.tests.filter(isLive);
     const assembled = this.assembleLiveRows({
       listedLive,
       previousById,
@@ -376,27 +407,33 @@ export class PlacementResultsService {
       covered.size >= Math.min(OPS_PLACEMENT_REPORT_CAP, expected);
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
-    const listedIds = new Set(
-      listedLive
-        .map((test) => testIdOf(test))
-        .filter((id): id is string => Boolean(id)),
-    );
-    let skipProviders = listed.truncated;
+    let skipProviders = false;
     for (const row of assembled) {
-      const haveEsp =
-        typeof row.googleInboxPercent === "number" &&
-        typeof row.microsoftInboxPercent === "number";
-      if (skipProviders || !listedIds.has(row.id)) continue;
-      if (!force && haveEsp) continue;
+      if (skipProviders || placementRowHasResult(row)) continue;
       try {
-        applyProviderwise(
-          row,
-          await this.smartDelivery.getProviderwiseReport(row.id, {
-            retries: OPS_PLACEMENT_LIVE_RETRIES,
-          }),
-        );
+        const report = await this.smartDelivery.getProviderwiseReport(row.id, {
+          retries: OPS_PLACEMENT_LIVE_RETRIES,
+        });
+        applyProviderwise(row, report);
+        if (
+          typeof row.googleInboxPercent === "number" ||
+          typeof row.microsoftInboxPercent === "number"
+        ) {
+          const reported = String(report.status ?? "").trim();
+          if (!reported || reported.toUpperCase() === "UNKNOWN") {
+            row.status = "COMPLETED";
+          } else {
+            row.status = reported;
+          }
+        } else if (isMissingSpamTestNoise(String(report.status ?? ""))) {
+          row.status = "NOT FOUND";
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        if (isMissingSpamTestNoise(message)) {
+          row.status = "NOT FOUND";
+          continue;
+        }
         if (isRateLimitNoise(message)) {
           this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
           skipProviders = true;
@@ -410,12 +447,16 @@ export class PlacementResultsService {
       if (gapMs) await sleep(gapMs);
     }
 
+    const scored = assembled.filter((row) => placementRowHasResult(row)).length;
+    const previousScored = (previousSnapshot?.rows ?? []).filter((row) =>
+      placementRowHasResult(row),
+    ).length;
     const value: PlacementResults = {
       generatedAt: new Date().toISOString(),
       rows: assembled,
       errors: uniqueErrors(force ? errors : []),
-      complete: coversLive,
-      stale: listed.truncated && assembled.length > 0,
+      complete: coversLive && scored === assembled.length && assembled.length > 0,
+      stale: (listed.truncated || scored < assembled.length) && assembled.length > 0,
     };
     if (!assembled.length) {
       return {
@@ -424,7 +465,11 @@ export class PlacementResultsService {
         errors: uniqueErrors(errors),
       };
     }
-    if (value.complete || assembled.length > (previousSnapshot?.rows.length ?? 0)) {
+    if (
+      value.complete ||
+      assembled.length > (previousSnapshot?.rows.length ?? 0) ||
+      scored > previousScored
+    ) {
       this.cache = { expiresAt: Date.now() + this.cacheMs, value };
       this.persist(value);
       return value;

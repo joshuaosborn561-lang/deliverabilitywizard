@@ -23,8 +23,11 @@ tool — it never staffs a campaign.
 
 ## 1. Fleet staffing
 
-**Floor is 50 staffable senders per campaign**, with at least **~30% Google
-and ~30% Microsoft**. Staffable means all of:
+**Floor is 40 staffable senders per POD at client inventory**
+(`max(half that client's named inboxes per POD, 40 per POD)` — D203),
+with at least **~30% Google and ~30% Microsoft**. The on-week POD's 40
+fan out onto every ACTIVE campaign — do not treat 40 as unique senders
+on one campaign. Staffable means all of:
 
 - connected SMTP **and** IMAP
 - not carrying an unexpired `HOLD-UNTIL-*` tag (see holds, below)
@@ -32,9 +35,12 @@ and ~30% Microsoft**. Staffable means all of:
 - not a copy-canary box (the canary fleet never staffs, D54/D55)
 - warmup age gate cleared
 
-Client inboxes fill first. **Generics fill the remaining gap** up to 50. A
-campaign below 50 staffable senders does not launch. Do not buy a third
-client-domain set to hit the floor.
+Named client inboxes fill first. **Exclusive client-signed generics fill
+the remaining gap** up to 40 per POD when the named half is short (D203).
+Do not dump the free generic pool past that shortfall. SalesGlider with
+≥40 named per POD must not carry pool generics. A named client below
+40/POD inventory does not launch. Do not buy a third client-domain set
+to hit the floor.
 
 Leave these campaigns alone (do not staff, rest, or top-up): Smartlead ids
 `3628940`, `3611325`, `3611268` (MSRS / HVAC / Roofers).
@@ -52,13 +58,15 @@ rotation system.
 
 ### Client rest (A/B per client)
 
-That client's inboxes are split **evenly A/B** (stable sort by email). 2 weeks
-on / 2 weeks off, New York ISO fortnights. Off-week half is **removed from
-live campaigns**. Warmup stays on. Parking a box at `MESSAGE_PER_DAY=0` is not
-rest — unlink it.
+That client's **named** inboxes are split into a **static** even A/B
+(ESP-balanced within Outlook and within Gmail — D192/D203). Never retag
+named seats between POD-A and POD-B to staff the on-week campaign. 2 weeks
+on / 2 weeks off, New York ISO fortnights. Off-week POD is **removed from
+live campaigns** and rests ready at 40. Warmup stays on. Parking a box at
+`MESSAGE_PER_DAY=0` is not rest — unlink it.
 
 The cycle is run by the health job, not this skill. When standing up a
-campaign, **off-week boxes are not attachable and do not count toward the 50.**
+campaign, **off-week boxes are not attachable and do not count toward the on-week 40.** They still count toward that POD's 40 inventory while resting.
 
 Two ways the count goes wrong:
 
@@ -127,8 +135,9 @@ off Smartlead's warmup start date.
 **The warmup age gate runs before the placement test, not after.** Testing an
 under-age fleet produces a number that means nothing.
 
-**The gate is not waivable from chat.** An under-age box needed to reach 50 is
-a signal to add a **pre-warmed or already-warmed generic**, not to start early.
+**The gate is not waivable from chat.** An under-age box needed to reach 40
+per POD is a signal to add a **pre-warmed or already-warmed exclusive
+client-signed generic** (D203), not to start early.
 
 ---
 
@@ -273,8 +282,10 @@ auto-START** a bounce pause: only a human STARTs a bounce-paused campaign
 
 ## 7. Mailbox setup ... `Smartlead:link_mailboxes`
 
-Attach **all on-week staffable client inboxes**, plus **non-sitting**
-generics to reach 50 with ~30% each ESP.
+Attach **all on-week staffable named client inboxes**, plus **non-sitting
+exclusive client-signed generics** only for that POD's shortfall-to-40
+(D203) with ~30% each ESP. Do not attach pool generics when the named
+half is already ≥40.
 
 Every mailbox needs a signature. Before linking:
 
@@ -376,9 +387,10 @@ Nothing goes ACTIVE until every line passes.
 
 **Infrastructure**
 
-1. **50 or more staffable senders**, ~30% Google and ~30% Microsoft, after
-   excluding unexpired HOLD-UNTIL tags, client off-week rest, generic sit,
-   and copy-canary boxes.
+1. **40 or more staffable senders on the on-week POD** (named first;
+   exclusive client-signed generics only for the shortfall — D203),
+   ~30% Google and ~30% Microsoft, after excluding unexpired HOLD-UNTIL
+   tags, client off-week rest, generic sit, and copy-canary boxes.
 2. **Zero resting mailboxes attached.** Read back. No `MESSAGE_PER_DAY=0`.
 3. **Every attached mailbox clears warmup** (21 days from InboxKit import;
    pre-warmed fleets waived).

@@ -16,14 +16,43 @@ import { isStaffableSender } from "./staffableSender.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
- * D197 / D198 / D199 — every ACTIVE on-week campaign keeps at least this
- * many *staffable* senders. Cleanup / rest / one-client may only peel
+ * D197 / D198 / D199 / D203 — every named-client POD keeps at least this
+ * many *staffable* senders at **client inventory** (40 POD-A + 40 POD-B).
+ * The on-week POD's 40 staff ACTIVE campaigns (fan-out); the off-week
+ * POD's 40 rest ready. Cleanup / rest / one-client may only peel
  * surplus above it (dedicated named-client generics are not surplus).
  * Raw Smartlead membership (disconnected / resting / canary leftovers)
  * must not inflate the peel counter — that is how D197 still dropped
  * TechEvo / Parlay / Insight to 8 / 3 / 19 after a min-40 restaff.
  */
 export const ON_WEEK_MIN_SENDERS = 40;
+
+/** D203 — same 40, named at the POD inventory layer (not per-campaign). */
+export const POD_INVENTORY_MIN_SENDERS = ON_WEEK_MIN_SENDERS;
+
+/**
+ * Exclusive client-signed generics this POD may still take from the
+ * free pool (D203). Named first. Zero when named already ≥40 —
+ * SalesGlider with ample salesglider* must not carry pool generics.
+ */
+export function podGenericTopUpCap(namedStaffableInPod: number): number {
+  const named = Number.isFinite(namedStaffableInPod)
+    ? Math.max(0, Math.floor(namedStaffableInPod))
+    : 0;
+  return Math.max(0, POD_INVENTORY_MIN_SENDERS - named);
+}
+
+/**
+ * Operational named-client floor for one POD (D203):
+ * max(named-in-pod structural rest, 40). Campaign attach is the
+ * on-week POD's 40, not "40 unique senders per campaign".
+ */
+export function namedClientPodInventoryFloor(namedStaffableInPod: number): number {
+  const named = Number.isFinite(namedStaffableInPod)
+    ? Math.max(0, namedStaffableInPod)
+    : 0;
+  return Math.max(named, POD_INVENTORY_MIN_SENDERS);
+}
 
 export type PeelStaffableState = {
   getRestingInbox?: (email: string) => unknown;
@@ -118,11 +147,12 @@ export function detachWouldBreakStaffableFloor(
 }
 
 /**
- * D58 / D82 — even-split half of that client's own inboxes.
+ * D58 / D82 — even-split half of that client's own *named* inboxes.
  * Odd totals round down. No named-client exception (Vasco is not special).
  * D196 — live campaign floor is the on-week pod, not this half, when
  * ESP-balanced A/B (D192) leaves one cohort smaller than half.
- * D197 — never below the standing on-week minimum of 40.
+ * D197 / D203 — never below the standing 40 per POD at inventory
+ * (named + exclusive client-signed generics fill the shortfall).
  */
 export function clientInboxStaffFloor(clientInboxCount: number): number {
   if (!Number.isFinite(clientInboxCount) || clientInboxCount <= 0) return 0;
@@ -204,9 +234,10 @@ function eligibleClientInboxesByKey(
 }
 
 /**
- * D58 / D82 / D196 — eligible totals plus the on-week pod per client.
- * Generics stay out (`isClientInbox`); they are never backfill for a
- * named-client floor (D193).
+ * D58 / D82 / D196 / D203 — eligible *named* totals plus the on-week
+ * pod per client. Generics stay out of this named count (`isClientInbox`);
+ * they layer on top of each POD only for the shortfall-to-40 (D203
+ * narrowing D193's "client-inbox only" read for the min-40 fill path).
  */
 export function countClientInboxFloors(
   accounts: SmartleadAccountWithCampaigns[],
@@ -268,13 +299,15 @@ export function countOnWeekClientInboxesByKey(
 }
 
 /**
- * Live staff floor for a named client campaign (D58/D82/D196/D197).
+ * Live staff floor for a named client campaign (D58/D82/D196/D197/D203).
  *
  * When `onWeekCounts` is provided (every production caller), the floor
- * is max(that client's on-week pod, 40). Understaffed means an on-week
- * seat that should be attached is missing, or the campaign is under the
- * standing 40. ESP-odd splits (D192) can leave B smaller than half;
- * that is not a short when the pod itself is ≥40.
+ * is max(that client's named on-week pod, 40). That 40 is the on-week
+ * POD's inventory cylinder (D203), not "40 unique senders on this
+ * campaign". Understaffed means an on-week seat that should be attached
+ * is missing, or that POD is under the standing 40. ESP-odd splits
+ * (D192) can leave B smaller than half; that is not a short when the
+ * pod itself is ≥40.
  *
  * Without `onWeekCounts`, falls back to half of `clientInboxCounts`
  * (unit tests / D58 Vasco "no exception" guard).
@@ -301,7 +334,7 @@ export function formatStaffFloorDetail(
   const half = clientInboxStaffFloor(eligibleCount);
   const label =
     floor === half
-      ? "half this client's inboxes"
+      ? "half this client's named inboxes (40/POD)"
       : floor === ON_WEEK_MIN_SENDERS && half < ON_WEEK_MIN_SENDERS
         ? "on-week minimum 40"
         : "on-week client pod";

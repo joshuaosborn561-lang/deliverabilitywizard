@@ -11,7 +11,10 @@ import {
   detachWouldBreakStaffableFloor,
   formatStaffFloorDetail,
   noteStaffableDetach,
+  namedClientPodInventoryFloor,
   ON_WEEK_MIN_SENDERS,
+  POD_INVENTORY_MIN_SENDERS,
+  podGenericTopUpCap,
   staffFloorForCampaign,
 } from "./clientStaffFloor.js";
 import { onWeekCohort } from "./restCohort.js";
@@ -327,7 +330,7 @@ describe("D196 on-week staff floor", () => {
     assert.equal(Math.max(0, floor - 47), 1);
   });
 
-  it("even split still reads as half this client's inboxes", () => {
+  it("even split still reads as half this client's named inboxes (40/POD)", () => {
     const accounts = Array.from({ length: 80 }, (_, i) => ({
       id: i + 1,
       from_email: `box-${String(i).padStart(3, "0")}@client.info`,
@@ -352,7 +355,7 @@ describe("D196 on-week staff floor", () => {
     assert.equal(floor, 40);
     assert.equal(
       formatStaffFloorDetail(40, floor, 80),
-      "staffable 40/40 (half this client's inboxes)",
+      "staffable 40/40 (half this client's named inboxes (40/POD))",
     );
   });
 
@@ -406,5 +409,19 @@ describe("D196 on-week staff floor", () => {
     );
     assert.equal(floors.eligible.get(clientCountKey(345263)), 94);
     assert.equal(floors.onWeek.get(clientCountKey(345263)), 46);
+  });
+});
+
+describe("D203 named-client 40/POD inventory", () => {
+  it("caps exclusive generic top-up at the shortfall-to-40 per POD", () => {
+    assert.equal(POD_INVENTORY_MIN_SENDERS, 40);
+    assert.equal(ON_WEEK_MIN_SENDERS, POD_INVENTORY_MIN_SENDERS);
+    assert.equal(podGenericTopUpCap(46), 0, "SalesGlider-ample named takes no pool generics");
+    assert.equal(podGenericTopUpCap(40), 0);
+    assert.equal(podGenericTopUpCap(24), 16);
+    assert.equal(podGenericTopUpCap(0), 40);
+    assert.equal(namedClientPodInventoryFloor(46), 46);
+    assert.equal(namedClientPodInventoryFloor(24), 40);
+    assert.equal(namedClientPodInventoryFloor(0), 40);
   });
 });

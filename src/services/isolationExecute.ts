@@ -604,7 +604,7 @@ export class IsolationExecuteService {
     });
     await this.announce(
       "generic_backfill",
-      `Generics may backfill *${action.detail.campaignName ?? campaignId}*. Floor stays half that client's inboxes.`,
+      `Approval recorded for *${action.detail.campaignName ?? campaignId}* (D193 — not rotating-pool attach permission). Named-client inventory floor is 40/POD via named + exclusive client-signed generics (D203).`,
     );
   }
 

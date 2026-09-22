@@ -9797,7 +9797,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|200)\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-3])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9932,7 +9932,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|200)\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-3])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10096,7 +10096,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|200)\*\*/,
+      /Canon as of \*\*D(199|20[0-3])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10268,8 +10268,8 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D200\*\*/,
-      stop("CANON is dated D200.", "CANON.md header was not bumped."),
+      /Canon as of \*\*D20[0-3]\*\*/,
+      stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
       canon,
@@ -10301,6 +10301,180 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       stop(
         "Pool-only exclusivity is in the ledger (D200).",
         "DECISIONS.md no longer has D200.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D203 named-client 40/POD inventory", () => {
+  it("D203: static named A/B; 40 per POD at inventory; exclusive generics only for shortfall", async () => {
+    const {
+      POD_INVENTORY_MIN_SENDERS,
+      ON_WEEK_MIN_SENDERS,
+      podGenericTopUpCap,
+      namedClientPodInventoryFloor,
+    } = await import("../lib/clientStaffFloor.js");
+    assert.equal(
+      POD_INVENTORY_MIN_SENDERS,
+      40,
+      stop(
+        "Each named-client POD owes 40 staffable seats at inventory (D203).",
+        `POD_INVENTORY_MIN_SENDERS is ${POD_INVENTORY_MIN_SENDERS}.`,
+      ),
+    );
+    assert.equal(
+      ON_WEEK_MIN_SENDERS,
+      POD_INVENTORY_MIN_SENDERS,
+      stop(
+        "The on-week campaign floor and the POD inventory cylinder are the same 40 (D203).",
+        "ON_WEEK_MIN_SENDERS drifted off POD_INVENTORY_MIN_SENDERS.",
+      ),
+    );
+    assert.equal(
+      podGenericTopUpCap(46),
+      0,
+      stop(
+        "SalesGlider with ample named inventory takes no pool generics (D203).",
+        "podGenericTopUpCap still disperses generics onto a ≥40 named POD.",
+      ),
+    );
+    assert.equal(
+      podGenericTopUpCap(24),
+      16,
+      stop(
+        "A 24-named POD may take 16 exclusive client-signed generics (D203).",
+        `podGenericTopUpCap(24) is ${podGenericTopUpCap(24)}.`,
+      ),
+    );
+    assert.equal(
+      namedClientPodInventoryFloor(24),
+      40,
+      stop(
+        "Operational floor is max(named-per-POD, 40) (D203).",
+        "namedClientPodInventoryFloor no longer lifts a short named half to 40.",
+      ),
+    );
+    assert.equal(
+      namedClientPodInventoryFloor(46),
+      46,
+      stop(
+        "A named POD already above 40 keeps its named size (D203).",
+        "namedClientPodInventoryFloor dropped a named-above-40 pod back to 40.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const rest = await readFile(
+      new URL("../lib/restCohort.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      rest,
+      /static/,
+      stop(
+        "The named A/B split is documented as static (D203).",
+        "restCohort.ts lost the static named-split wording.",
+      ),
+    );
+    assert.match(
+      rest,
+      /Never\s+retag|do not recompute this cut to move named seats/i,
+      stop(
+        "Named seats must not be retagged between POD-A and POD-B to staff on-week (D203).",
+        "restCohort.ts lost the never-retag named-seat rule.",
+      ),
+    );
+
+    const backfill = await readFile(
+      new URL("../lib/genericBackfill.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      backfill,
+      /D203 narrows D193/,
+      stop(
+        "D193's client-inbox-only read is narrowed for the min-40 fill path (D203).",
+        "genericBackfill.ts lost the D203/D193 narrowing.",
+      ),
+    );
+
+    const prompt = await readFile(
+      new URL("../ops/campaignSetupPrompt.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      prompt,
+      /40 per POD/,
+      stop(
+        "Campaign-setup floor language includes the 40/POD minimum (D203).",
+        "campaignSetupPrompt.ts still says only half-client without 40/POD.",
+      ),
+    );
+    assert.doesNotMatch(
+      prompt,
+      /Staffing floor is half that client's own inboxes/,
+      stop(
+        "Setup prompt must not say only half-client without 40/POD (D203).",
+        "campaignSetupPrompt.ts still uses the old half-only floor line.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D203\*\*/,
+      stop("CANON is dated D203.", "CANON.md header was not bumped to D203."),
+    );
+    assert.match(
+      canon,
+      /40 POD-A \+ 40 POD-B/,
+      stop(
+        "CANON names the 40-A + 40-B inventory target (D203).",
+        "CANON.md lost the 40/POD inventory wording.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Never retag or move named seats/,
+      stop(
+        "CANON forbids retagging named seats across A/B (D203).",
+        "CANON.md lost the static named-split rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /D203 narrows D193/,
+      stop(
+        "CANON cites D203 narrowing D193 for the min-40 fill path.",
+        "CANON.md lost the D193 narrowing.",
+      ),
+    );
+    assert.match(
+      canon,
+      /SalesGlider with ample salesglider\*/,
+      stop(
+        "CANON says ample-named SalesGlider must not carry pool generics (D203).",
+        "CANON.md lost the SalesGlider no-pool-generic rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D203 — Named-client PODs are a static named split/,
+      stop(
+        "The 40/POD inventory rule is in the ledger (D203).",
+        "DECISIONS.md no longer has D203.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /^\| D203 \|/m,
+      stop(
+        "The status index lists D203 (D127).",
+        "DECISIONS.md status index has no D203 row.",
       ),
     );
   });

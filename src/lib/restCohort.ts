@@ -7,6 +7,11 @@
  * D192 — the cut is ESP-balanced ~50/50 within Outlook and within Gmail
  * (and a leftover "other" bucket). Alphabetical-only half drifted live
  * POD tags off the ESP 50/50 Josh locked.
+ *
+ * D203 — this split is **named senders only** and **static**. Never
+ * retag or move named seats between POD-A and POD-B to staff the
+ * on-week campaign. Exclusive client-signed generics layer on top of
+ * each POD (own split so named cohorts do not flip — D198).
  */
 
 import { normalizeSenderEspFamily } from "./esp.js";
@@ -52,11 +57,13 @@ export function normalizeCohortInboxes(
 }
 
 /**
- * Even A/B split of one client's inboxes. D192: split independently
- * inside Outlook and inside Gmail so each pod stays ~50/50 ESP.
- * Within an ESP, sort by email so the cut is stable. First half
- * (ceil) is A; the rest is B. Email-only callers (no type) land in
- * the "other" bucket and keep the old alphabetical half.
+ * Even A/B split of one client's **named** inboxes. D192: split
+ * independently inside Outlook and inside Gmail so each pod stays
+ * ~50/50 ESP. Within an ESP, sort by email so the cut is stable.
+ * First half (ceil) is A; the rest is B. Email-only callers (no
+ * type) land in the "other" bucket and keep the old alphabetical
+ * half. D203: do not recompute this cut to move named seats across
+ * A/B just to staff the on-week campaign — the named split is static.
  */
 export function assignClientCohorts(
   inboxes: Array<string | ClientCohortInbox>,

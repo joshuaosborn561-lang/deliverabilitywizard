@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D200** (2026-09-21). One page of current truth. When a new
+Canon as of **D203** (2026-09-22). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -21,9 +21,9 @@ or the day is done. Silent findings are a bug (D163).
 
 | Loop | Cadence | Owns |
 |---|---|---|
-| Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43; ESP-balanced A/B within Outlook and within Gmail — D192; on-week restore refuses under-warmed — D154; Insight campaigns are not rest-unlinked — D189; ACTIVE detach will not drop *staffable* below 40 — D197/D198/D199/D200; dedicated named-client generics including exclusive + client-sig are not foreign Goliath — D198/D199; exclusive-attach / no-multi-link is pool generics only — D200) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99, D197, D198, D199, D200) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74; Insight 582890 is not SalesGlider 345263 — D192; D184 exclusive-blank staff is retired) → campaign first-check leftovers incl. signature auto-write (D92; Insight-in-copy writes Josh Osborn / Insight into the body, never `%signature%` — D178; Insight client mailbox sig is `Josh Osborn` / `Insight` — D31/D192) and **step-2 delay auto-write** (`step2_delay` → 2 days, D186) → **merge-tag fill QA** on first-check and when the lead list grew (D180; `merge_tag_blank` — pages Slack; never rewrites live copy or lead fields) → scan-backfill when a placement test is missing (D116) → canary-copy attach (heals emails-without-testId so the unwarmed reading can finish) → **isolation on-ramp** (score canary/live same-ESP → `markCopySuspect` → evaluate; live % never rotates) every pass so ugly inbox is remediating within one cycle (D158/D159) — a latest INCONCLUSIVE (or `evaluatedAt` with no covering COPY/INFRA/HEALTHY run) **re-queues on ACTIVE senders only** (D164/D165) and the branch loop **re-reads** existing suspects including PAUSED lives already on the list (D164; placement *new* queue stays ACTIVE-only) → stage watchdog + `canonCompliant` yes/no (D108) — an overdue stage **pages Slack once per episode** with a recovery note when it comes back (D149). Same-ESP under 80%, isolation queued, and COPY / INFRA / INCONCLUSIVE **page Slack once per campaign per incident** (`ops_alert`, D163). `/health` names canaries/campaigns still under 80% with no open isolation run or suspect, plus `isolation-branch` lastOk, plus overdue stages (`overdueStages` / per-stage `overdue`, D166). `pod-cover` ticks every pass — idle records lastOkAt with a skip reason; SmartDelivery grow still only when `inbox_missing_known_good` exists, throttled hourly (D89/D166). Old-client teardown (D107/D111) retired (D144). |
+| Canon sweep (health) | 15 min | ONE Smartlead inventory fetch shared by every stage (D84), published to the machine-wide account book — a read that shrinks 20%+ needs two consecutive reads to be believed, and a failed read serves the last accepted book (D132). Reconnect disconnected SMTP/IMAP (D94) → client A/B rest + generic send-rest (D43; ESP-balanced A/B within Outlook and within Gmail — D192; on-week restore refuses under-warmed — D154; Insight campaigns are not rest-unlinked — D189; ACTIVE detach will not drop *staffable* below 40 — D197/D198/D199/D200/D203; dedicated named-client generics including exclusive + client-sig are not foreign Goliath — D198/D199; exclusive-attach / no-multi-link is pool generics only — D200; named-client inventory is 40/POD via named + exclusive generic top-up — D203) → 21-day warmup gate pull (D105) → fan-out / top-up / one-client cleanup (D26, D75/D76, D84, D99, D197, D198, D199, D200, D203) → mailbox gap + volume + canary-warmup-off converge (D35, D83) → foreign-signature rewrite (D74; Insight 582890 is not SalesGlider 345263 — D192; D184 exclusive-blank staff is retired) → campaign first-check leftovers incl. signature auto-write (D92; Insight-in-copy writes Josh Osborn / Insight into the body, never `%signature%` — D178; Insight client mailbox sig is `Josh Osborn` / `Insight` — D31/D192) and **step-2 delay auto-write** (`step2_delay` → 2 days, D186) → **merge-tag fill QA** on first-check and when the lead list grew (D180; `merge_tag_blank` — pages Slack; never rewrites live copy or lead fields) → scan-backfill when a placement test is missing (D116) → canary-copy attach (heals emails-without-testId so the unwarmed reading can finish) → **isolation on-ramp** (score canary/live same-ESP → `markCopySuspect` → evaluate; live % never rotates) every pass so ugly inbox is remediating within one cycle (D158/D159) — a latest INCONCLUSIVE (or `evaluatedAt` with no covering COPY/INFRA/HEALTHY run) **re-queues on ACTIVE senders only** (D164/D165) and the branch loop **re-reads** existing suspects including PAUSED lives already on the list (D164; placement *new* queue stays ACTIVE-only) → stage watchdog + `canonCompliant` yes/no (D108) — an overdue stage **pages Slack once per episode** with a recovery note when it comes back (D149). Same-ESP under 80%, isolation queued, and COPY / INFRA / INCONCLUSIVE **page Slack once per campaign per incident** (`ops_alert`, D163). `/health` names canaries/campaigns still under 80% with no open isolation run or suspect, plus `isolation-branch` lastOk, plus overdue stages (`overdueStages` / per-stage `overdue`, D166). `pod-cover` ticks every pass — idle records lastOkAt with a skip reason; SmartDelivery grow still only when `inbox_missing_known_good` exists, throttled hourly (D89/D166). Old-client teardown (D107/D111) retired (D144). |
 | Bounce loop | 10 min | **Never pauses, never STARTs** (D40/D148 — Josh: "i dont want anything paused anymore... investigating remediating and readding"). A REAL burst — >10 new bounces inside the 10-minute window whose sampled bounced sends are under 24h old (D141); a tripped counter samples the bounced rows first (retrying while the analytics ledger lags), a ledger dump of stale bounces logs loudly and does nothing, unreadable rows defer to the next tick — classifies the sampled SMTP reasons (tenant-rate-limit / sender-blocked / invalid-recipient / content-block, D140), Slacks ONE receipt naming the burst, the verdict and the plan, opens a **resurrection incident** when the verdict blames the sender, and a **dominant content_block also queues isolation** (D158 — same copy-suspect flag as an ugly canary; never a pause); a re-trip inside the hour folds into the open incident silently. The D90 lifetime-rate rule stays retired. Smartlead's own High Bounce Rate Auto Protection is **UI-only** (D157): the public API validates `bounce_autopause_threshold` and then discards it (a "banana" write returns ok; no GET returns it), so no code here writes or reads the field — the D80/D124/D155 converge generations were no-ops and are deleted. It is unticked on the campaign SETUP page at build (the build skill's QA gate) and by hand for existing campaigns; a Smartlead-initiated pause is recognized by `campaign_activity_logs.paused_reason: "bounce protection"` on GET /campaigns. Never touches COMPLETED/STOPPED. Routing: a Microsoft tenant hitting its daily cap pages once per tenant per day (D140); a `550 5.1.8` / AS(42004) outbound-spam block — ANY sample, never dominant-gated (D145), never burst-gated, ACTIVE or PAUSED (D162) — opens the standard **burned-domain retire ask** for that sender's domain, receipts + buttons, one pending ask per domain (D146), **unless that domain is already retired** (executed `retire_domain` or history `status=retired`, any age — D179; the old 7-day window re-prompted `boldercyperpartnerhub.info` on 2026-09-09), **and writes that domain (and sender account id) onto the attach blocklist** so restaff cannot put it back (D176); a Smartlead bounce-protection pause must not hide it; a bad-list verdict re-queues nothing and points at the list. **The remediation itself releases the resend** (D147/D148): the incident scans its window (each lead's own NDR re-read; bad addresses stay dead; once per lead per campaign; 20 lead-reads per tick) and parks sender-fault leads until their gate opens — tenant_rate_limit: the next UTC day after the bounced send (cap reset); sender_blocked: the domain's retire ask resolved; content_block: the sequence edited after the incident. Suppression lists respected on the re-add; a gate shut 7 days expires its leads with a receipt; one receipt per flushed wave. Pre-D148 pause stamps still drain: a human START of one opens its job (D147), then the stamp clears — no new stamps are ever written. |
-| Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82/D196/D197/D198/D199/D200 — on-week client pod, never below 40 staffable; exclusive-attach is pool-only), **step-2 delay** (D186 — `seq_delay_details.delay_in_days` must be 2 on the second email; auto-fix via `sequencesForWrite`; canary / pod-control / word-hunt shells and 1-step instrumentation skipped), **merge-tag fill on ACTIVE campaigns that use custom `{{tags}}`** (D180 — multi-offset lead sample + cheap sent-body hole check; pages `merge_tag_blank`, never edits copy). Reads the shared account book, never its own fetch (D132). |
+| Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82/D196/D197/D198/D199/D200/D203 — on-week client pod, never below 40 staffable per POD at client inventory; exclusive-attach is pool-only), **step-2 delay** (D186 — `seq_delay_details.delay_in_days` must be 2 on the second email; auto-fix via `sequencesForWrite`; canary / pod-control / word-hunt shells and 1-step instrumentation skipped), **merge-tag fill on ACTIVE campaigns that use custom `{{tags}}`** (D180 — multi-offset lead sample + cheap sent-body hole check; pages `merge_tag_blank`, never edits copy). Reads the shared account book, never its own fetch (D132). |
 | Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; CANON-miss Slack is the 15-minute pager, D163). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). `/health` names the overdue set (D166). A finished stage checkpoints `lastOk` immediately; `state.save` is serialized so health and monitor cannot clobber a snapshot. A mid-chain kill (Railway SIGTERM) resumes leftover stale 6h stages on the **next 15-minute health tick**, skipping anything still fresh in the cycle — never at boot (D122/D167). The 6h cron still runs the full chain. |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). State-only D176 heal writes live retire/cover asks, retired / retire-pending history, and the known missing burned domain (`boldercyperpartnertop.info`) onto `attachBlocks` so restaff cannot reattach after a deploy. |
@@ -130,22 +130,30 @@ or the day is done. Silent findings are a bug (D163).
   Generic/POC client_id is cleared, not rewritten (D160). Dedicated
   seats keep that client's signature and are not rewritten back to
   Goliath while they sit on that client's campaigns.
-- **Floor = max(that client's on-week pod, 40)** (eligible inboxes in
-  this fortnight's A or B cohort — D58, D82, D196, D197, D198, D199, D200).
-  Peels consult the **staffable attached** count on that ACTIVE
-  campaign, never raw `campaign_ids` length as a surplus counter
-  (D199). Same-client `campaign_ids.length > 1` is not a peel
-  reason on named seats (D200). Same
-  eligibility as before (connected-capable, not held, not retired, not
-  attach-blocked, not canary, not generic — D99, D176, D193).
-  ESP-balanced A/B (D192) can leave B smaller than half (94
-  eligible → A48/B46); understaffed means an on-week seat that
-  should be attached is missing, or the campaign is under the
-  standing 40, not "smaller pod vs ceil half". Keep "half this
+- **Floor = max(that client's named on-week pod, 40 per POD)** at
+  **client inventory** (D58, D82, D196, D197, D198, D199, D200, D203).
+  Target is **40 POD-A + 40 POD-B** staffable seats per named
+  client — not 40 unique senders on a campaign, not on-week-only.
+  Operational floor is max(half-client-named-per-pod structural
+  rest, **40 per POD** via named + exclusive client-signed
+  generics). On-week POD's 40 staff ACTIVE campaigns (fan-out);
+  off-week POD's 40 rest ready. If bad senders are peeled, restore
+  that client back to 40-40. Peels consult the **staffable
+  attached** count on that ACTIVE campaign, never raw
+  `campaign_ids` length as a surplus counter (D199). Same-client
+  `campaign_ids.length > 1` is not a peel reason on named seats
+  (D200). Same eligibility as before (connected-capable, not held,
+  not retired, not attach-blocked, not canary, not generic — D99,
+  D176, D193). ESP-balanced A/B (D192) can leave B smaller than
+  half (94 eligible → A48/B46); understaffed means an on-week
+  seat that should be attached is missing, or that POD is under
+  the standing 40, not "smaller pod vs ceil half". Keep "half this
   client's inboxes" only when the numbers match; otherwise
   "on-week client pod" or "on-week minimum 40". No named-client
-  exceptions; Vasco is nobody special (D82). The old global 50
-  floor is dead.
+  exceptions; Vasco is nobody special (D82). PowerGRYD / POC
+  carve-outs stay as documented (D81/D82) — do not invent new POC
+  rules; named-client 40/POD is the normal-client rule. The old
+  global 50 floor is dead.
 - **Fan-out**: a client-owned inbox belongs on every ACTIVE campaign for its
   client even if it currently sits on zero campaigns (D84). Insight
   (582890) and SalesGlider (345263) are **different clients** (D192)
@@ -162,14 +170,17 @@ or the day is done. Silent findings are a bug (D163).
   block when known-good condemns a sender domain (`bounce_isolation`);
   a retire unlink writes `burned`; boot heals live asks plus known
   missing blocks so a deploy does not wait for another sample.
-- **Rest (pods)**: each client's inboxes split into a stable, even A/B
-  (D43) that is **ESP-balanced ~50/50 within Outlook and within Gmail**
-  per non-generic client (D192) — not an alphabetical-only half.
+- **Rest (pods)**: each client's **named** senders split into a
+  **static** even A/B (D43/D203) that is **ESP-balanced ~50/50
+  within Outlook and within Gmail** per non-generic client (D192)
+  — not an alphabetical-only half. Never retag or move named
+  seats between POD-A and POD-B to staff the on-week campaign
+  (D203). Generics are not part of that named cut.
   Off-week comes OFF **ACTIVE, PAUSED, and STOPPED** client
   campaign memberships — never left on at 0/day, and never left parked
   on a paused/stopped campaign that is not sending (D169) — **and
   never when an ACTIVE campaign would drop below 40 **staffable**
-  (D197/D198/D199/D200; surplus above 40 may still rest). **Exception
+  (D197/D198/D199/D200/D203; surplus above 40 may still rest). **Exception
   (D189):** client-rest does not unlink or bench mailboxes off Insight
   campaigns (the named Insight ids, now client 582890, or any campaign
   whose name starts with `Insight `). Engagers / other SalesGlider
@@ -195,9 +206,17 @@ or the day is done. Silent findings are a bug (D163).
   clock (D198). True canaries and Goliath / TJ /
   Vasco leftovers stay `client_id` null (project generic pool — D192).
 - **Generics** staff only a POC client (currently Goliath)
-  (D81/D82/D193) for *new rotating-pool attaches*. Named client
-  campaigns (BCP, TechEvo, SalesGlider, Parlay, Insight, …) stay
-  **client-inbox only** for those new attaches. **Dedicated generics
+  (D81/D82/D193) for *new rotating-pool attaches* **beyond** a
+  named client's per-POD shortfall-to-40. Named client campaigns
+  (BCP, TechEvo, SalesGlider, Parlay, Insight, …) stay
+  **client-inbox first**. **D203 narrows D193's "leave it short /
+  client-inbox only" read for the min-40 fill path:** exclusive
+  client-signed generics are authorized as thin per-POD top-up
+  when that POD's named half is under 40. Do **not** disperse the
+  free generic pool beyond the shortfall-to-40 per POD. Prefer
+  named first. SalesGlider with ample salesglider* named inventory
+  (each POD already ≥40 named) must not carry pool generics.
+  **Dedicated generics
   per named client are OK and preferred** (D198): assign specific
   generic mailboxes to one client, set that client's signature, and
   split them across POD A and POD B so each on-week still hits 40.
@@ -208,10 +227,12 @@ or the day is done. Silent findings are a bug (D163).
   retire-tap approvals are a historical record, not attach permission —
   one-client restore, fan-out, and top-up must not dump GENERIC-tagged
   or pool-brand (`getintroduced*` / `quickconnect*` / `appquickconnect*`)
-  senders onto those lanes to fill seats. If a client lane is
-  understaffed and no eligible client senders remain, leave it short /
-  Slack ops — do not borrow GENERIC or another client's mailboxes.
-  **Exception (D197/D198/D199/D200):** dedicated named-client generic
+  senders onto those lanes past the shortfall. If a client lane is
+  understaffed and no eligible *named* senders remain, fill that
+  POD up to 40 with exclusive client-signed generics (D203) — do
+  not borrow another named client's mailboxes. PowerGRYD / POC
+  carve-outs stay as documented (D81/D82).
+  **Exception (D197/D198/D199/D200/D203):** dedicated named-client generic
   seats (and exclusive generic + client-sig seats) — exclusive
   attach + client-sig / client tag / client_id —
   must not be peeled by one-client, top-up `pullNonGoliathGenerics`,

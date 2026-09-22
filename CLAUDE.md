@@ -61,3 +61,8 @@ person's branch.
 - Real-money spend stays behind `/approvals` (`REQUIRE_SPEND_APPROVAL`
   on; single-use approvals; $25 domain / 25 mailbox monthly caps). Do not
   spend, purge, or bypass warmup gates or holds from chat.
+- **Never rewrite mailbox signatures from chat (D202).** Empty /
+  one-line / extra-line writes are the machine. A two-line known
+  named-client signature is not restamped onto another named client
+  — peel the membership (D26). Pool / POC leftovers still restamp
+  (D74).

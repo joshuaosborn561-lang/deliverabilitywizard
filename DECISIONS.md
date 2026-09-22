@@ -39,7 +39,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D15 | Live |
 | D16 | Live — DNS Slack itself retired by D71 (logs only) |
 | D17 | Superseded by D58/D82 (floor half) — 30/day stays (D24) |
-| D18 | Live |
+| D18 | Live — chat signature rewrites forbidden by D202 |
 | D19 | Live |
 | D20 | Live |
 | D21 | Live — auto-merge OFF during the canon rebuild (D127) |
@@ -51,7 +51,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D28 | Superseded by D69/D93/D96 — no provider-split guesses |
 | D29 | Superseded by D91 |
 | D30 | Live |
-| D31 | Live — extended by D125 |
+| D31 | Live — extended by D125; named-client two-line restamp qualified by D202 |
 | D32 | Live |
 | D33–D34 | Burned numbers — no entry exists |
 | D35 | Live |
@@ -89,7 +89,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D70 | Burned number — no entry exists |
 | D71 | Live — placement-miss silence superseded by D163; owner pages stay |
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
-| D74 | Live — log-only clause superseded by D75 |
+| D74 | Live — log-only clause superseded by D75; named-client two-line restamp qualified by D202 |
 | D75 | Live |
 | D76 | Live — exclusive min-40 generic identity rewrite / restore qualified by D197; dedicated named-client seats belong to that client, not Goliath (D198) |
 | D77 | Live — Goliath-only unpause generalized by D82 |
@@ -140,7 +140,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D122 | Live |
 | D123 | Live |
 | D124 | Superseded by D157 — the force write never landed; the API discards the field |
-| D125 | Live |
+| D125 | Live — named-client two-line restamp qualified by D202 |
 | D126 | Live — 40-report ceiling superseded by D187 (hide canary copy + filter-before-cap stay) |
 | D127 | Live — the canon rebuild |
 | D128 | Live — pause-stamp writes retired with D148 (the loop never pauses); qa-unpause keeps reading the stamp while pre-D148 stamps drain |
@@ -209,9 +209,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — floor is max(on-week pod, 40) per D197 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
 | D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); exclusive-attach is pool-only (D200) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
-| D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200); leak restamp is peel-not-write (D202) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 | D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Live | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
+| D202 | Live | Do not restamp a two-line known-named-client signature onto another named client; peel membership; pool/POC leftovers still restamp; chat never writes signatures |
 
 ---
 
@@ -6359,6 +6360,49 @@ keeps a named TechEvo seat on two TechEvo camps, peels a pool
 generic extra link, and still peels a foreign-client tag;
 one-client / top-up consult it; `ON_WEEK_MIN_SENDERS === 40`;
 CANON names pool-only exclusivity.
+
+---
+
+## D202 — Do not restamp named-client signatures onto another named client
+
+**Decision (Josh 2026-09-22, standing after D200).**
+A mailbox whose signature is already a **two-line known named-client
+pair** (`First Last` / `{Brand}`) is **not** rewritten to the
+campaign being scanned when that campaign is a different named
+client. Peel the foreign membership (D26/D75). Keep the two-line.
+
+Still write:
+1. Empty signatures (D31).
+2. One-line or extra-line signatures (D125).
+3. Pool / POC leftovers (Peterson on a Goliath generic — D74).
+
+Chat / Cursor agents never `updateEmailAccount` signatures from
+an audit. The machine writes empty/broken pool leftovers; it does
+not restamp Parlay onto TechEvo or BCP onto Parlay while the seat
+is still attached.
+
+**Why.** 2026-09-22 ACTIVE-campaign reaudit: 12 exclusive named
+seats (culturefits / parlaytechnet / vascowarranty hosts) carried
+a correct two-line for *their* client while sitting on another
+named client's campaign. Campaign-check and gap-enforce used the
+**campaign** brand and would have restamped them, fighting D198
+(dedicated seats keep that client's signature). Josh: update the
+signature rules before rewriting anything.
+
+**Rejected.** Restamping campaign brand onto any `mailbox_sig`.
+Treating a named-client two-line as a D74 leftover. Chat one-shot
+fixes of the 12 seats.
+
+**Supersedes / amends.** Qualifies D74/D125: foreign two-line
+restamp is pool/POC leftover only. Qualifies D198: a dedicated
+named-client signature is not rewritten to a second named client
+while attached. Does not reverse D31 empty writes, D74 Peterson-on-
+Goliath, or D26/D75 membership peel.
+
+**Guards.** `skipNamedClientSignatureRestamp`; campaign-check /
+gap-enforce / campaign-audit skip the restamp; pool leftover
+Peterson still writes; empty still writes; CANON names peel-not-
+write; chat never rewrites signatures.
 
 ---
 

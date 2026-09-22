@@ -167,6 +167,52 @@ describe("MailboxSettingsService", () => {
     });
   });
 
+  it("D202: gap enforce does not restamp a named-client two-line onto another named client", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 22,
+          from_email: "harmony@parlaytechnet.com",
+          from_name: "Harmony Norris",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Harmony Norris\nParlay",
+          client_id: 77,
+          campaign_ids: [3929973],
+        },
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 77, name: "Parlay", logo: "Parlay" },
+        { id: 521881, name: "TechEvo", logo: "TechEvolution" },
+      ],
+      listCampaigns: async () => [
+        { id: 3929973, name: "TechEvo AirPods", status: "ACTIVE", client_id: 521881 },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run in gap mode");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.signatureSet, 0);
+    assert.equal(updates.length, 0);
+  });
+
   it("writes 30/day, 10m gap, and plain two-line signatures when drifted", async () => {
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const smartlead = {

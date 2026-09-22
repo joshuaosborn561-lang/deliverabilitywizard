@@ -18,7 +18,7 @@ import {
   type CampaignCheckRecord,
   type CampaignFinding,
 } from "../lib/campaignCheck.js";
-import { isGenericMailbox } from "../lib/clientInbox.js";
+import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
   accountIsPeelStaffable,
@@ -47,7 +47,9 @@ import {
 import {
   desiredMailboxSignature,
   extractSignatureLines,
+  isPoolSignatureLeftover,
   mailboxSignatureMismatch,
+  skipNamedClientSignatureRestamp,
 } from "../lib/mailboxSignature.js";
 import {
   hasLivingUnwarmedCopyCanary,
@@ -433,6 +435,8 @@ export class CampaignCheckService {
         campaignById,
         findings,
         otherClientBrands: allBrands,
+        brandByClientId,
+        clients,
       });
       if (sigApplied) {
         if (sigApplied.wroteTag) {
@@ -652,6 +656,8 @@ export class CampaignCheckService {
     campaignById: Map<number, SmartleadCampaign>;
     findings: CampaignFinding[];
     otherClientBrands: string[];
+    brandByClientId: Map<number, string>;
+    clients: SmartleadClientRecord[];
   }): Promise<{
     brand: string;
     wroteTag: boolean;
@@ -745,6 +751,64 @@ export class CampaignCheckService {
       } else {
         for (const account of input.accounts) {
           if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+          const email = accountEmail(account);
+          const generic = email
+            ? isGenericMailbox(account, email, this.config, this.state)
+            : false;
+          const memberships: MembershipRow[] = campaignIdsOf(account).map(
+            (id) => {
+              const other = input.campaignById.get(id);
+              return {
+                campaignId: id,
+                clientId:
+                  typeof other?.client_id === "number" ? other.client_id : null,
+                shell: other ? isAnyShellCampaign(other) : false,
+              };
+            },
+          );
+          const pocOwner = input.clients.find((client) =>
+            isPocClient(
+              clientDisplayName(client),
+              this.config.pocClientNamePatterns,
+            ),
+          );
+          const dedicatedClientId =
+            generic && email
+              ? resolveDedicatedGenericClientId(
+                  account,
+                  email,
+                  memberships,
+                  this.state,
+                  {
+                    genericOwnerId: pocOwner?.id ?? null,
+                    brandByClientId: input.brandByClientId,
+                  },
+                )
+              : typeof account.client_id === "number" &&
+                  account.client_id !== pocOwner?.id
+                ? account.client_id
+                : null;
+          const poolLeftover = isPoolSignatureLeftover({
+            dedicatedClientId,
+            poolGenericSeat: email
+              ? isPoolGenericSeat(account, email, this.config, this.state)
+              : false,
+            genericMailbox: generic,
+            scanBrandIsPoc: isPocClient(
+              input.brand,
+              this.config.pocClientNamePatterns,
+            ),
+          });
+          if (
+            skipNamedClientSignatureRestamp({
+              signature: account.signature,
+              clientBrand: input.brand,
+              otherClientBrands: input.otherClientBrands,
+              poolLeftover,
+            })
+          ) {
+            continue;
+          }
           const desired = desiredMailboxSignature({
             fromName: account.from_name,
             signature: account.signature,
@@ -991,20 +1055,6 @@ export class CampaignCheckService {
     for (const account of attached) {
       const email = accountEmail(account);
       if (!email) continue;
-      if (expected && !isInsightCampaign(campaign)) {
-        const mismatch = mailboxSignatureMismatch({
-          fromName: account.from_name,
-          signature: account.signature,
-          clientBrand: expected,
-          otherClientBrands: input.allBrands,
-        });
-        if (mismatch) {
-          findings.push({
-            kind: "mailbox_sig",
-            detail: `${email} ${mismatch}`,
-          });
-        }
-      }
       const generic = isGenericMailbox(
         account,
         email,
@@ -1030,7 +1080,47 @@ export class CampaignCheckService {
               brandByClientId: input.brandByClientId,
             },
           )
-        : null;
+        : typeof account.client_id === "number" &&
+            account.client_id !== pocOwner?.id
+          ? account.client_id
+          : null;
+      if (expected && !isInsightCampaign(campaign)) {
+        const poolLeftover = isPoolSignatureLeftover({
+          dedicatedClientId,
+          poolGenericSeat: isPoolGenericSeat(
+            account,
+            email,
+            this.config,
+            this.state,
+          ),
+          genericMailbox: generic,
+          scanBrandIsPoc: isPocClient(
+            expected,
+            this.config.pocClientNamePatterns,
+          ),
+        });
+        if (
+          !skipNamedClientSignatureRestamp({
+            signature: account.signature,
+            clientBrand: expected,
+            otherClientBrands: input.allBrands,
+            poolLeftover,
+          })
+        ) {
+          const mismatch = mailboxSignatureMismatch({
+            fromName: account.from_name,
+            signature: account.signature,
+            clientBrand: expected,
+            otherClientBrands: input.allBrands,
+          });
+          if (mismatch) {
+            findings.push({
+              kind: "mailbox_sig",
+              detail: `${email} ${mismatch}`,
+            });
+          }
+        }
+      }
       if (
         generic &&
         !mayTakeGenerics &&

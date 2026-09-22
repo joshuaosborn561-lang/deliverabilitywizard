@@ -112,6 +112,62 @@ describe("CampaignAuditService signature QA", () => {
     );
   });
 
+  it("D202: does not flag a named-client two-line sitting on another named client as mailbox_sig", async () => {
+    const state = new StateStore(
+      `/tmp/campaign-audit-sig-d202-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = mkAudit(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3929973,
+            name: "TechEvo AirPods",
+            status: "ACTIVE",
+            client_id: 521881,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 22,
+            from_email: "harmony@parlaytechnet.com",
+            from_name: "Harmony Norris",
+            signature: "Harmony Norris\nParlay",
+            client_id: 77,
+            campaign_ids: [3929973],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+          { id: 77, name: "Parlay", logo: "Parlay" },
+          { id: 521881, name: "TechEvo", logo: "TechEvolution" },
+        ],
+        getCampaignSequences: async () => [
+          {
+            id: 1,
+            seq_number: 1,
+            email_body: "<div>Hi</div><div>%signature%</div>",
+          },
+        ],
+      } as unknown as SmartleadClient,
+      {
+        listTests: async () => [],
+        enrichCampaignIds: async (rows: unknown[]) => rows,
+      } as unknown as SmartDeliveryClient,
+      state,
+    );
+
+    const result = await service.run(50);
+    assert.equal(
+      result.signatureIssues.some((issue) => issue.kind === "mailbox_sig"),
+      false,
+      "named-client two-line restamp is peel, not a signature hole",
+    );
+  });
+
   it("flags an empty mailbox signature on a live campaign (D31)", async () => {
     const state = new StateStore(
       `/tmp/campaign-audit-sig-empty-${process.pid}-${Date.now()}.json`,

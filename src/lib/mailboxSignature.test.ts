@@ -5,6 +5,7 @@ import {
   desiredMailboxSignature,
   extractSignatureLines,
   mailboxSignatureMismatch,
+  skipNamedClientSignatureRestamp,
 } from "./mailboxSignature.js";
 
 describe("mailboxSignature", () => {
@@ -104,6 +105,58 @@ describe("mailboxSignature", () => {
         otherClientBrands: brands,
       }),
       null,
+    );
+  });
+
+  it("D202: skips restamping a named-client two-line onto another named client", () => {
+    const brands = ["TechEvolution", "Parlay", "Goliath Cybersecurity"];
+    assert.equal(
+      skipNamedClientSignatureRestamp({
+        signature: "Harmony Norris\nParlay",
+        clientBrand: "TechEvolution",
+        otherClientBrands: brands,
+        poolLeftover: false,
+      }),
+      true,
+    );
+    assert.equal(
+      skipNamedClientSignatureRestamp({
+        signature: "Aarav Sanchez\nRoofs by Peterson",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: ["Roofs by Peterson", "Goliath Cybersecurity"],
+        poolLeftover: true,
+      }),
+      false,
+      "pool / POC leftovers still restamp (D74)",
+    );
+    assert.equal(
+      skipNamedClientSignatureRestamp({
+        signature: "",
+        clientBrand: "TechEvolution",
+        otherClientBrands: brands,
+        poolLeftover: false,
+      }),
+      false,
+      "empty signatures still write (D31)",
+    );
+    assert.equal(
+      skipNamedClientSignatureRestamp({
+        signature: "Harmony Norris",
+        clientBrand: "TechEvolution",
+        otherClientBrands: brands,
+        poolLeftover: false,
+      }),
+      false,
+      "one-line signatures still write (D125)",
+    );
+    assert.equal(
+      skipNamedClientSignatureRestamp({
+        signature: "Harmony Norris\nTechEvolution",
+        clientBrand: "TechEvolution",
+        otherClientBrands: brands,
+        poolLeftover: false,
+      }),
+      false,
     );
   });
 

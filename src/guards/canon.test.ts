@@ -9797,7 +9797,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|200)\*\*/,
+      /Canon as of \*\*D(19[789]|20[02])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9932,7 +9932,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|200)\*\*/,
+      /Canon as of \*\*D(19[89]|20[02])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10096,7 +10096,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|200)\*\*/,
+      /Canon as of \*\*D(199|20[02])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10268,8 +10268,8 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D200\*\*/,
-      stop("CANON is dated D200.", "CANON.md header was not bumped."),
+      /Canon as of \*\*D(200|202)\*\*/,
+      stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
       canon,
@@ -10305,3 +10305,112 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
   });
 });
+
+describe("owner intent — D202 named-client signatures are not restamped", () => {
+  it("D202: skip named-client two-line restamp; pool leftover still writes", async () => {
+    const { skipNamedClientSignatureRestamp, desiredMailboxSignature } =
+      await import("../lib/mailboxSignature.js");
+    assert.equal(
+      skipNamedClientSignatureRestamp({
+        signature: "Harmony Norris\nParlay",
+        clientBrand: "TechEvolution",
+        otherClientBrands: ["Parlay", "TechEvolution"],
+        poolLeftover: false,
+      }),
+      true,
+      stop(
+        "A Parlay two-line on a TechEvo scan is not restamped (D202).",
+        "skipNamedClientSignatureRestamp no longer skips named-client two-lines.",
+      ),
+    );
+    assert.equal(
+      desiredMailboxSignature({
+        fromName: "Aarav Sanchez",
+        signature: "Aarav Sanchez\nRoofs by Peterson",
+        clientBrand: "Goliath Cybersecurity",
+        otherClientBrands: ["Roofs by Peterson", "Goliath Cybersecurity"],
+      }),
+      "Aarav Sanchez\nGoliath Cybersecurity",
+      stop(
+        "A Peterson leftover on a Goliath mailbox is still rewritten (D74).",
+        "desiredMailboxSignature stopped rewriting pool leftovers.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      check,
+      /skipNamedClientSignatureRestamp/,
+      stop(
+        "Campaign-check skips named-client restamp (D202).",
+        "campaignCheck.ts writes campaign brand onto every mailbox_sig.",
+      ),
+    );
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      settings,
+      /skipNamedClientSignatureRestamp/,
+      stop(
+        "Gap/full converge skips named-client restamp (D202).",
+        "mailboxSettings.ts still restamps every foreign two-line.",
+      ),
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D202\*\*/,
+      stop("CANON is dated D202.", "CANON.md header was not bumped."),
+    );
+    assert.match(
+      canon,
+      /peel-not-write/,
+      stop(
+        "CANON names peel-not-write for named-client two-lines (D202).",
+        "CANON.md lost the D202 restamp rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /rewrite mailbox/,
+      stop(
+        "CANON forbids chat signature rewrites (D202).",
+        "CANON.md lost the chat-never-rewrite-signatures rule.",
+      ),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D202 — Do not restamp named-client signatures onto another named client/,
+      stop(
+        "Named-client restamp skip is in the ledger (D202).",
+        "DECISIONS.md no longer has D202.",
+      ),
+    );
+    const agents = await readFile(
+      new URL("../../AGENTS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      agents,
+      /Never rewrite mailbox signatures from chat \(D202\)/,
+      stop(
+        "Session contract forbids chat signature rewrites (D202).",
+        "AGENTS.md lost the D202 chat rule.",
+      ),
+    );
+  });
+});
+

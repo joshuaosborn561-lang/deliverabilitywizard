@@ -73,6 +73,42 @@ export function desiredMailboxSignature(opts: {
 }
 
 /**
+ * D202 — a two-line signature whose brand is a known named client must
+ * not be restamped onto another named client's campaign. Peel the
+ * foreign membership (D26). Empty / one-line / extra-line still write
+ * (D31/D125). Pool / POC leftovers still restamp (D74).
+ */
+export function isPoolSignatureLeftover(opts: {
+  dedicatedClientId?: number | null;
+  poolGenericSeat?: boolean;
+  genericMailbox?: boolean;
+  scanBrandIsPoc?: boolean;
+}): boolean {
+  if (typeof opts.dedicatedClientId === "number") return false;
+  return Boolean(
+    opts.poolGenericSeat || opts.genericMailbox || opts.scanBrandIsPoc,
+  );
+}
+
+export function skipNamedClientSignatureRestamp(opts: {
+  signature?: string | null;
+  clientBrand?: string | null;
+  otherClientBrands?: string[];
+  /** Undedicated rotating-pool or POC leftover — D74 still rewrites. */
+  poolLeftover?: boolean;
+}): boolean {
+  if (opts.poolLeftover) return false;
+  const lines = extractSignatureLines(opts.signature);
+  if (lines.length !== 2) return false;
+  const foreign = findForeignBrand(
+    lines[1]!,
+    opts.clientBrand ?? "",
+    opts.otherClientBrands ?? [],
+  );
+  return Boolean(foreign);
+}
+
+/**
  * D31 / D74 — why this mailbox is not the two-line Name / Brand rule.
  * HTML that already extracts to those two lines is a match.
  */

@@ -120,6 +120,71 @@ export function placementRowHasResult(row: {
   );
 }
 
+/** A campaign's first mark is not a test run. Rows stamped with it look old. */
+const OPS_PLACEMENT_STALE_DATE_MS = 48 * 60 * 60 * 1000;
+
+function numericTestId(id: string): number {
+  const value = Number(id);
+  return Number.isFinite(value) ? value : Number.NEGATIVE_INFINITY;
+}
+
+/** Highest SmartDelivery id. Numeric, so "1000" beats "999". */
+export function newestPlacementTestId(ids: Iterable<string>): string | undefined {
+  let best: string | undefined;
+  for (const id of ids) {
+    if (!id) continue;
+    if (!best || numericTestId(id) > numericTestId(best)) best = id;
+    else if (numericTestId(id) === numericTestId(best) && id > best) best = id;
+  }
+  return best;
+}
+
+/**
+ * Date the Placement tab should show: last activity, else the latest
+ * scheduled run, else when the test record was created.
+ */
+export function latestPlacementAt(
+  test: SpamTestSummary & { updated_at?: string },
+  now = Date.now(),
+  allowCreatedAt = true,
+): string | undefined {
+  const candidates: number[] = [];
+  const updated = Date.parse(String(test.updated_at ?? ""));
+  if (Number.isFinite(updated)) candidates.push(updated);
+  const start = Date.parse(String(test.schedule_start_time ?? ""));
+  const every = test.every_days;
+  const run = test.current_test_run_no;
+  if (
+    Number.isFinite(start) &&
+    typeof every === "number" &&
+    every > 0 &&
+    typeof run === "number" &&
+    run >= 1
+  ) {
+    candidates.push(start + (run - 1) * every * 24 * 60 * 60 * 1000);
+  }
+  const fresh = candidates.filter((stamp) => stamp <= now + 60_000);
+  if (fresh.length) return new Date(Math.max(...fresh)).toISOString();
+  return allowCreatedAt ? test.created_at : undefined;
+}
+
+function placementDateIsStale(row: PlacementResultRow, now = Date.now()): boolean {
+  if (!row.createdAt) return true;
+  const parsed = Date.parse(row.createdAt);
+  if (!Number.isFinite(parsed)) return true;
+  return now - parsed > OPS_PLACEMENT_STALE_DATE_MS;
+}
+
+function placementDetailsRecord(raw: Record<string, unknown>): Record<string, unknown> {
+  for (const key of ["data", "test", "spam_test"]) {
+    const nested = raw[key];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      return { ...raw, ...(nested as Record<string, unknown>) };
+    }
+  }
+  return raw;
+}
+
 function pct(value: number, total: number): number | undefined {
   return total > 0 ? (value / total) * 100 : undefined;
 }
@@ -408,49 +473,45 @@ export class PlacementResultsService {
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     let skipProviders = false;
-    for (const row of assembled) {
-      if (skipProviders || placementRowHasResult(row)) continue;
+    // Newest ids are already first. Alternate a missing score and a stale
+    // date so one 429 cannot spend the whole window on only one of them.
+    const needScore = assembled.filter((row) => !placementRowHasResult(row));
+    const needDate = assembled.filter(
+      (row) => placementRowHasResult(row) && placementDateIsStale(row),
+    );
+    const jobs: Array<{ kind: "score" | "date"; row: PlacementResultRow }> = [];
+    const jobCount = Math.max(needScore.length, needDate.length);
+    for (let index = 0; index < jobCount; index += 1) {
+      const score = needScore[index];
+      const date = needDate[index];
+      if (score) jobs.push({ kind: "score", row: score });
+      if (date) jobs.push({ kind: "date", row: date });
+    }
+    for (const job of jobs) {
+      if (skipProviders) break;
       try {
-        const report = await this.smartDelivery.getProviderwiseReport(row.id, {
-          retries: OPS_PLACEMENT_LIVE_RETRIES,
-        });
-        applyProviderwise(row, report);
-        if (
-          typeof row.googleInboxPercent === "number" ||
-          typeof row.microsoftInboxPercent === "number"
-        ) {
-          const reported = String(report.status ?? "").trim();
-          if (!reported || reported.toUpperCase() === "UNKNOWN") {
-            row.status = "COMPLETED";
-          } else {
-            row.status = reported;
-          }
-        } else if (isMissingSpamTestNoise(String(report.status ?? ""))) {
-          row.status = "NOT FOUND";
-        }
+        if (job.kind === "score") await this.scorePlacementRow(job.row);
+        else await this.refreshPlacementDate(job.row);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (isMissingSpamTestNoise(message)) {
-          row.status = "NOT FOUND";
+          job.row.status = "NOT FOUND";
           continue;
         }
         if (isRateLimitNoise(message)) {
           this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
           skipProviders = true;
           if (force) {
-            errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
+            errors.push(humanizeAlertError(`test ${job.row.id}: ${message}`));
           }
         } else {
-          errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
+          errors.push(humanizeAlertError(`test ${job.row.id}: ${message}`));
         }
       }
       if (gapMs) await sleep(gapMs);
     }
 
     const scored = assembled.filter((row) => placementRowHasResult(row)).length;
-    const previousScored = (previousSnapshot?.rows ?? []).filter((row) =>
-      placementRowHasResult(row),
-    ).length;
     const value: PlacementResults = {
       generatedAt: new Date().toISOString(),
       rows: assembled,
@@ -465,11 +526,7 @@ export class PlacementResultsService {
         errors: uniqueErrors(errors),
       };
     }
-    if (
-      value.complete ||
-      assembled.length > (previousSnapshot?.rows.length ?? 0) ||
-      scored > previousScored
-    ) {
+    if (shouldPersistPlacement(previousSnapshot, value)) {
       this.cache = { expiresAt: Date.now() + this.cacheMs, value };
       this.persist(value);
       return value;
@@ -484,11 +541,61 @@ export class PlacementResultsService {
     return value;
   }
 
+  private async scorePlacementRow(row: PlacementResultRow): Promise<void> {
+    const report = await this.smartDelivery.getProviderwiseReport(row.id, {
+      retries: OPS_PLACEMENT_LIVE_RETRIES,
+    });
+    applyProviderwise(row, report);
+    const stamped = latestPlacementAt(
+      report as SpamTestSummary & { updated_at?: string },
+      Date.now(),
+      false,
+    );
+    if (stamped && placementDateIsStale(row)) row.createdAt = stamped;
+    const run = Number(
+      (report as { current_test_run_no?: unknown; test_run_no?: unknown })
+        .current_test_run_no ??
+        (report as { test_run_no?: unknown }).test_run_no,
+    );
+    if (Number.isFinite(run)) row.runNumber = run;
+    if (
+      typeof row.googleInboxPercent === "number" ||
+      typeof row.microsoftInboxPercent === "number"
+    ) {
+      const reported = String(report.status ?? "").trim();
+      if (!reported || reported.toUpperCase() === "UNKNOWN") {
+        row.status = "COMPLETED";
+      } else {
+        row.status = reported;
+      }
+    } else if (isMissingSpamTestNoise(String(report.status ?? ""))) {
+      row.status = "NOT FOUND";
+    }
+  }
+
+  /** Last run time for a row whose saved date is the schedule's creation. */
+  private async refreshPlacementDate(row: PlacementResultRow): Promise<void> {
+    const readDetails = this.smartDelivery.getTestDetails?.bind(
+      this.smartDelivery,
+    );
+    if (!readDetails) return;
+    const details = placementDetailsRecord(await readDetails(row.id));
+    const at = latestPlacementAt(
+      details as SpamTestSummary & { updated_at?: string },
+    );
+    if (at) row.createdAt = at;
+    const run = Number(details.current_test_run_no ?? details.test_run_no);
+    if (Number.isFinite(run)) row.runNumber = run;
+  }
+
   /**
    * The catalog is newest-first and mostly canary-copy. A 429 after page 1
    * can list only a handful of live tests — and persisting that is how the
-   * board got stuck at four rows. Membership comes from testedCampaigns for
-   * every ACTIVE campaign, plus anything this pass did list.
+   * board got stuck at four rows. Membership is the newest test id stored
+   * for each ACTIVE campaign, plus anything this pass did list. Older ids
+   * on the same campaign are history; they used to fill the cap and the
+   * rate-limit budget, so the tab showed old tests and never finished
+   * scoring the current ones.
    */
   private assembleLiveRows(opts: {
     listedLive: SpamTestSummary[];
@@ -499,11 +606,30 @@ export class PlacementResultsService {
     campaignByTest: Map<string, { campaignId: number; campaignName: string }>;
   }): PlacementResultRow[] {
     const byId = new Map<string, PlacementResultRow>();
+    const idByCampaign = new Map<number, string>();
+    const testedAtByCampaign = new Map<number, string>();
+    for (const record of Object.values(this.state.get().testedCampaigns)) {
+      if (record.testedAt) testedAtByCampaign.set(record.campaignId, record.testedAt);
+    }
+    const realDate = (campaignId: number | undefined, createdAt?: string) => {
+      if (!createdAt) return undefined;
+      if (campaignId == null) return createdAt;
+      return createdAt === testedAtByCampaign.get(campaignId) ? undefined : createdAt;
+    };
     const remember = (row: PlacementResultRow) => {
       if (!row.id) return;
+      if (row.campaignId != null) {
+        const currentId = idByCampaign.get(row.campaignId);
+        if (currentId && currentId !== row.id) {
+          if (numericTestId(row.id) <= numericTestId(currentId)) return;
+          byId.delete(currentId);
+        }
+        idByCampaign.set(row.campaignId, row.id);
+      }
       const prior = byId.get(row.id);
+      const createdAt = realDate(row.campaignId, row.createdAt ?? prior?.createdAt);
       if (!prior) {
-        byId.set(row.id, row);
+        byId.set(row.id, { ...row, createdAt });
         return;
       }
       byId.set(row.id, {
@@ -516,7 +642,8 @@ export class PlacementResultsService {
         inboxPercent: row.inboxPercent ?? prior.inboxPercent,
         spamPercent: row.spamPercent ?? prior.spamPercent,
         tabPercent: row.tabPercent ?? prior.tabPercent,
-        createdAt: row.createdAt ?? prior.createdAt,
+        createdAt,
+        runNumber: row.runNumber ?? prior.runNumber,
         name: row.name || prior.name,
       });
     };
@@ -526,27 +653,25 @@ export class PlacementResultsService {
         if (!opts.liveById.has(record.campaignId)) continue;
         const liveName = opts.liveById.get(record.campaignId)?.name;
         if (titleHasCanaryCopyPhrase(record.campaignName, liveName)) continue;
-        for (const testId of record.testIds) {
-          const id = String(testId);
-          if (!id) continue;
-          const previous = opts.previousById.get(id);
-          remember({
-            id,
-            name: previous?.name ?? `Auto: ${record.campaignName}`,
-            campaignId: record.campaignId,
-            campaignName: record.campaignName || liveName,
-            status: previous?.status ?? "UNKNOWN",
-            createdAt: previous?.createdAt ?? record.testedAt,
-            runNumber: previous?.runNumber,
-            inboxPercent: previous?.inboxPercent,
-            tabPercent: previous?.tabPercent,
-            spamPercent: previous?.spamPercent,
-            googleInboxPercent: previous?.googleInboxPercent,
-            microsoftInboxPercent: previous?.microsoftInboxPercent,
-            totalSeeds: previous?.totalSeeds ?? 0,
-            providers: previous?.providers ? [...previous.providers] : [],
-          });
-        }
+        const id = newestPlacementTestId(record.testIds.map(String));
+        if (!id) continue;
+        const previous = opts.previousById.get(id);
+        remember({
+          id,
+          name: previous?.name ?? `Auto: ${record.campaignName}`,
+          campaignId: record.campaignId,
+          campaignName: record.campaignName || liveName,
+          status: previous?.status ?? "UNKNOWN",
+          createdAt: realDate(record.campaignId, previous?.createdAt),
+          runNumber: previous?.runNumber,
+          inboxPercent: previous?.inboxPercent,
+          tabPercent: previous?.tabPercent,
+          spamPercent: previous?.spamPercent,
+          googleInboxPercent: previous?.googleInboxPercent,
+          microsoftInboxPercent: previous?.microsoftInboxPercent,
+          totalSeeds: previous?.totalSeeds ?? 0,
+          providers: previous?.providers ? [...previous.providers] : [],
+        });
       }
     }
 
@@ -558,7 +683,11 @@ export class PlacementResultsService {
           continue;
         }
       }
-      remember({ ...row, providers: [...row.providers] });
+      remember({
+        ...row,
+        createdAt: realDate(row.campaignId, row.createdAt),
+        providers: [...row.providers],
+      });
     }
 
     for (const test of opts.listedLive) {
@@ -578,7 +707,7 @@ export class PlacementResultsService {
             : undefined) ||
           previous?.campaignName,
         status: String(test.status ?? previous?.status ?? "UNKNOWN"),
-        createdAt: test.created_at ?? previous?.createdAt,
+        createdAt: latestPlacementAt(test) ?? realDate(campaignId, previous?.createdAt),
         runNumber: test.current_test_run_no ?? previous?.runNumber,
         ...overallFromTest(test),
         providers: previous?.providers ? [...previous.providers] : [],
@@ -589,11 +718,9 @@ export class PlacementResultsService {
 
     return [...byId.values()]
       .sort((a, b) => {
-        const byDate = String(b.createdAt ?? "").localeCompare(
-          String(a.createdAt ?? ""),
-        );
-        if (byDate !== 0) return byDate;
-        return String(b.id).localeCompare(String(a.id));
+        const byIdOrder = numericTestId(b.id) - numericTestId(a.id);
+        if (byIdOrder !== 0) return byIdOrder;
+        return String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""));
       })
       .slice(0, 80);
   }
@@ -701,6 +828,56 @@ function isLivePlacementTest(
     return false;
   }
   return true;
+}
+
+function placementBoardSignature(rows: PlacementResultRow[]): string {
+  return rows
+    .map((row) =>
+      [
+        row.id,
+        row.campaignId ?? "",
+        row.createdAt ?? "",
+        row.runNumber ?? "",
+        row.status,
+        row.googleInboxPercent ?? "",
+        row.microsoftInboxPercent ?? "",
+      ].join(":"),
+    )
+    .join("|");
+}
+
+/**
+ * Keep a fuller board when a truncated catalog would shrink it. Still save
+ * when the current test id replaced an older one, or a last-run date moved,
+ * even if the scored count did not grow.
+ */
+function shouldPersistPlacement(
+  previous: PlacementResults | null,
+  next: PlacementResults,
+): boolean {
+  if (!next.rows.length) return false;
+  if (!previous?.rows.length) return true;
+  if (next.complete) return true;
+  const prevScored = previous.rows.filter((row) => placementRowHasResult(row)).length;
+  const nextScored = next.rows.filter((row) => placementRowHasResult(row)).length;
+  if (next.rows.length > previous.rows.length) return true;
+  if (nextScored > prevScored) return true;
+  if (next.rows.length < previous.rows.length && nextScored <= prevScored) {
+    const nextByCampaign = new Map<number, string>();
+    for (const row of next.rows) {
+      if (row.campaignId != null) nextByCampaign.set(row.campaignId, row.id);
+    }
+    const droppedCurrent = previous.rows.some((row) => {
+      if (row.campaignId == null) {
+        return !next.rows.some((item) => item.id === row.id);
+      }
+      const winner = nextByCampaign.get(row.campaignId);
+      if (!winner) return true;
+      return numericTestId(row.id) > numericTestId(winner);
+    });
+    if (droppedCurrent) return false;
+  }
+  return placementBoardSignature(next.rows) !== placementBoardSignature(previous.rows);
 }
 
 function applyProviderwise(

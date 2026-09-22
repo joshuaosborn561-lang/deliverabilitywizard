@@ -14,11 +14,19 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
+import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
   mailboxIsExclusiveInsightStaff,
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
-import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
+import {
+  desiredMailboxSignature,
+  isPoolSignatureLeftover,
+  skipNamedClientSignatureRestamp,
+} from "../lib/mailboxSignature.js";
+import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import { isPocClient } from "../lib/pocClient.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import {
@@ -174,6 +182,58 @@ export class MailboxSettingsService {
         clientBrand,
         otherClientBrands: otherBrands,
       });
+      const memberships = campaignIdsOf(account).map((id) => {
+        const campaign = campaignById.get(id);
+        return {
+          campaignId: id,
+          clientId:
+            typeof campaign?.client_id === "number" ? campaign.client_id : null,
+          shell: campaign ? isAnyShellCampaign(campaign) : false,
+        };
+      });
+      const pocOwner = clients.find((client) =>
+        isPocClient(clientDisplayName(client), this.config.pocClientNamePatterns),
+      );
+      const generic = isGenericMailbox(
+        account,
+        email,
+        this.config,
+        this.store ?? { getPoolMailbox: () => undefined },
+      );
+      const dedicatedClientId = generic
+        ? resolveDedicatedGenericClientId(
+            account,
+            email,
+            memberships,
+            this.store ?? { getPoolMailbox: () => undefined },
+            {
+              genericOwnerId: pocOwner?.id ?? null,
+              brandByClientId,
+            },
+          )
+        : typeof account.client_id === "number" &&
+            account.client_id !== pocOwner?.id
+          ? account.client_id
+          : null;
+      const skipRestamp = skipNamedClientSignatureRestamp({
+        signature: account.signature,
+        clientBrand,
+        otherClientBrands: otherBrands,
+        poolLeftover: isPoolSignatureLeftover({
+          dedicatedClientId,
+          poolGenericSeat: isPoolGenericSeat(
+            account,
+            email,
+            this.config,
+            this.store ?? { getPoolMailbox: () => undefined },
+          ),
+          genericMailbox: generic,
+          scanBrandIsPoc: isPocClient(
+            clientBrand,
+            this.config.pocClientNamePatterns,
+          ),
+        }),
+      });
       // D184 — exclusive Insight staff: do not converge back to
       // SalesGlider. Mailboxes on ACTIVE SG campaigns are never
       // blanked and keep the SalesGlider two-line target.
@@ -183,12 +243,14 @@ export class MailboxSettingsService {
       if (mode === "full") {
         needsSignature =
           !exclusiveInsight &&
+          !skipRestamp &&
           desiredSig != null &&
           (account.signature ?? "") !== desiredSig;
 
         needsWarmup = !canary && !warmupOn;
       } else if (
         !exclusiveInsight &&
+        !skipRestamp &&
         foreign &&
         desiredSig &&
         (account.signature ?? "") !== desiredSig

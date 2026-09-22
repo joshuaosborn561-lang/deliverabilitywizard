@@ -10,13 +10,20 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
   insightDualSignatureMismatch,
   isInsightCampaign,
   mailboxActiveSalesGliderCampaigns,
 } from "../lib/insightCampaigns.js";
-import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
+import {
+  isPoolSignatureLeftover,
+  mailboxSignatureMismatch,
+  skipNamedClientSignatureRestamp,
+} from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import { isPocClient } from "../lib/pocClient.js";
 import { sleep } from "../lib/http.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
@@ -345,6 +352,37 @@ export class CampaignAuditService {
             );
           }
         }
+        const generic = isGenericMailbox(
+          account,
+          email,
+          this.config,
+          this.state,
+        );
+        const memberships = campaignIdsOf(account).map((id) => {
+          const other = campaignById.get(id);
+          return {
+            campaignId: id,
+            clientId:
+              typeof other?.client_id === "number" ? other.client_id : null,
+            shell: other ? isAnyShellCampaign(other) : false,
+          };
+        });
+        const mailboxBrand =
+          typeof account.client_id === "number"
+            ? input.brandByClientId.get(account.client_id) ?? ""
+            : "";
+        const dedicatedClientId = generic
+          ? resolveDedicatedGenericClientId(
+              account,
+              email,
+              memberships,
+              this.state,
+              { brandByClientId: input.brandByClientId },
+            )
+          : mailboxBrand &&
+              !isPocClient(mailboxBrand, this.config.pocClientNamePatterns)
+            ? account.client_id
+            : null;
         const mismatch = insightCampaign
           ? insightDualSignatureMismatch({
               fromName: account.from_name,
@@ -360,6 +398,30 @@ export class CampaignAuditService {
               })
             : null;
         if (!mismatch) continue;
+        if (
+          !insightCampaign &&
+          skipNamedClientSignatureRestamp({
+            signature: account.signature,
+            clientBrand: expected,
+            otherClientBrands: input.allBrands,
+            poolLeftover: isPoolSignatureLeftover({
+              dedicatedClientId,
+              poolGenericSeat: isPoolGenericSeat(
+                account,
+                email,
+                this.config,
+                this.state,
+              ),
+              genericMailbox: generic,
+              scanBrandIsPoc: isPocClient(
+                expected,
+                this.config.pocClientNamePatterns,
+              ),
+            }),
+          })
+        ) {
+          continue;
+        }
         const detail = `${email} ${mismatch}`;
         issues.push({
           campaignId: campaign.id,

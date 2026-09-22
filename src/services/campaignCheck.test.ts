@@ -194,6 +194,59 @@ describe("CampaignCheckService", () => {
     assert.ok(state.getCampaignCheck(3826693)?.firstPassedAt);
   });
 
+  it("D202: does not restamp a named-client two-line onto another named client", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const mailboxSigs: string[] = [];
+    const parlay = { id: 77, name: "Parlay", logo: "Parlay" };
+    const techevo = { id: 521881, name: "TechEvo", logo: "TechEvolution" };
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 3929973,
+            name: "TechEvo AirPods",
+            status: "ACTIVE",
+            client_id: 521881,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 22,
+            from_email: "harmony@parlaytechnet.com",
+            from_name: "Harmony Norris",
+            signature: "Harmony Norris\nParlay",
+            client_id: 77,
+            campaign_ids: [3929973],
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [goliath, parlay, techevo],
+        getCampaignSequences: async () => [
+          {
+            seq_number: 1,
+            email_body: "<div>Hi</div><div>%signature%</div>",
+          },
+        ],
+        updateEmailAccount: async (_id: number, fields: { signature?: string }) => {
+          if (fields.signature) mailboxSigs.push(fields.signature);
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+
+    const result = await service.run({ mode: "first" });
+    assert.deepEqual(mailboxSigs, [], "named-client two-line is not restamped");
+    assert.equal(
+      result.findings[0]?.findings.some((finding) => finding.kind === "mailbox_sig"),
+      false,
+      "restamp skip is not a mailbox_sig leftover",
+    );
+  });
+
   it("D81: a clean campaign passes first check; hourly still reads sequences", async () => {
     const state = new StateStore(stateFile());
     await state.load();

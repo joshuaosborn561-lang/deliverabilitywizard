@@ -1,4 +1,5 @@
 import { isGenericMailbox } from "./clientInbox.js";
+import { isPowerGrydClientId, isPowerGrydDedicatedSeat } from "./powerGryd.js";
 import { assignClientCohorts, isOffWeek, type RestCohort } from "./restCohort.js";
 import { isIsolationEmail, type IsolationDenylist } from "./isolationDomain.js";
 import type { AppConfig } from "../config.js";
@@ -68,8 +69,19 @@ export function buildPods(input: {
       clientName: account.clientName,
     };
 
+    if (
+      isPowerGrydDedicatedSeat({ id: account.accountId }) ||
+      isPowerGrydClientId(account.clientId)
+    ) {
+      continue;
+    }
+
     const generic = isGenericMailbox(
-      { client_id: account.clientId, from_name: account.fromName },
+      {
+        id: account.accountId,
+        client_id: account.clientId,
+        from_name: account.fromName,
+      },
       email,
       input.config,
       input.state,

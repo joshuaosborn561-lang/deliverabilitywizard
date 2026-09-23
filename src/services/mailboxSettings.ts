@@ -19,6 +19,11 @@ import {
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
+import {
+  isPowerGrydDedicatedSeat,
+  POWERGRYD_BRAND,
+  powerGrydMailboxSignature,
+} from "../lib/powerGryd.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import {
@@ -160,20 +165,24 @@ export class MailboxSettingsService {
         campaignById,
         brandByClientId,
       );
-      const otherBrands = allBrands.filter((brand) => brand !== clientBrand);
+      const powerGrydSeat = isPowerGrydDedicatedSeat(account);
+      const lockedBrand = powerGrydSeat ? POWERGRYD_BRAND : clientBrand;
+      const otherBrands = allBrands.filter((brand) => brand !== lockedBrand);
       const hay = signatureHay({
         fromName: account.from_name,
         signature: account.signature,
       });
-      const foreign = clientBrand
-        ? findForeignBrand(hay, clientBrand, allBrands)
+      const foreign = lockedBrand
+        ? findForeignBrand(hay, lockedBrand, allBrands)
         : null;
-      desiredSig = desiredMailboxSignature({
-        fromName: account.from_name,
-        signature: account.signature,
-        clientBrand,
-        otherClientBrands: otherBrands,
-      });
+      desiredSig = powerGrydSeat
+        ? powerGrydMailboxSignature(account.from_name)
+        : desiredMailboxSignature({
+            fromName: account.from_name,
+            signature: account.signature,
+            clientBrand: lockedBrand,
+            otherClientBrands: otherBrands,
+          });
       // D184 — exclusive Insight staff: do not converge back to
       // SalesGlider. Mailboxes on ACTIVE SG campaigns are never
       // blanked and keep the SalesGlider two-line target.
@@ -314,6 +323,7 @@ export function sendingBrandForAccount(
   campaignById: Map<number, SmartleadCampaign>,
   brandByClientId: Map<number, string>,
 ): string {
+  if (isPowerGrydDedicatedSeat(account)) return POWERGRYD_BRAND;
   const campaignBrands = new Set<string>();
   for (const id of campaignIdsOf(account)) {
     const campaign = campaignById.get(id);

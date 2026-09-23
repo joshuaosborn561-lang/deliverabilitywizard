@@ -9,6 +9,7 @@ import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
 import type { SmartleadClientRecord } from "../clients/smartlead.js";
 import { clientDisplayName } from "../clients/smartlead.js";
 import { isGenericPoolDomain } from "./clientInbox.js";
+import { isPowerGrydDedicatedSeat } from "./powerGryd.js";
 
 type AccountHostFields = Pick<
   SmartleadAccountWithCampaigns,
@@ -76,7 +77,10 @@ function isRealClientId(
 export function resolveDomainOwner(
   domain: string,
   accounts: Array<
-    Pick<SmartleadAccountWithCampaigns, "from_email" | "email" | "username" | "client_id">
+    Pick<
+      SmartleadAccountWithCampaigns,
+      "id" | "from_email" | "email" | "username" | "client_id"
+    >
   >,
   clients: SmartleadClientRecord[],
   config: DomainOwnerConfig,
@@ -90,6 +94,9 @@ export function resolveDomainOwner(
   const onDomain = accounts.filter((account) => accountHost(account) === host);
   const unique = new Set<number>();
   for (const account of onDomain) {
+    // D204 — dedicated PowerGryd seats do not re-own a pool domain
+    // (and a Bolder leftover on the same host must not pull them).
+    if (isPowerGrydDedicatedSeat(account)) continue;
     if (isRealClientId(account.client_id, opts?.isMarkerClientId)) {
       unique.add(account.client_id);
     }
@@ -158,7 +165,10 @@ export function resolveDomainOwner(
 
 export function buildDomainOwnerCache(
   accounts: Array<
-    Pick<SmartleadAccountWithCampaigns, "from_email" | "email" | "username" | "client_id">
+    Pick<
+      SmartleadAccountWithCampaigns,
+      "id" | "from_email" | "email" | "username" | "client_id"
+    >
   >,
   clients: SmartleadClientRecord[],
   config: DomainOwnerConfig,

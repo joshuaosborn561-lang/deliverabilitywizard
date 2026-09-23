@@ -1972,4 +1972,51 @@ describe("ClientRestService", () => {
       "already-on named seat is not re-POSTed",
     );
   });
+
+  it("D204: PowerGryd dedicated seats are not A/B rested", async () => {
+    const now = new Date("2026-01-01T17:00:00Z");
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-powergryd-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 4005218, name: "PowerGRYD A", status: "ACTIVE", client_id: 592842 },
+          { id: 4005220, name: "PowerGRYD B", status: "ACTIVE", client_id: 592842 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 21592105,
+            from_email: "ada@trygetintroduced.info",
+            from_name: "Ada Pool",
+            client_id: 592842,
+            campaign_ids: [4005218, 4005220],
+            created_at: WARMED,
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [
+          { id: 592842, name: "Jesse Miller", logo: "PowerGRYD" },
+        ],
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+        addEmailAccountsToCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, now });
+    assert.deepEqual(removed, []);
+    assert.equal(result.benched.length, 0);
+    assert.match(result.skipped.join("\n"), /PowerGryd dedicated seat/);
+    assert.equal(state.getRestingInbox("ada@trygetintroduced.info"), undefined);
+  });
 });

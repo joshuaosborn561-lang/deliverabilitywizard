@@ -5,6 +5,7 @@ import type { SmartleadEmailAccount } from "../types/index.js";
 import { isBcpOwnedDomain } from "./bcp.js";
 import { emailDomainOf } from "./isolationDomain.js";
 import { hasPoolMarkerTag } from "./markerClients.js";
+import { isPowerGrydDedicatedSeat } from "./powerGryd.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
 
 const droppedPoolDomains =
@@ -57,13 +58,16 @@ export function isGenericPoolBrandDomain(domain: string | undefined): boolean {
  * (D43). Generics fill to 50 and rest on a 2-week send clock.
  */
 export function isClientInbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "id" | "client_id" | "from_name" | "tags">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
+  // D204 — dedicated PowerGryd seats are named POC inventory even on
+  // a leftover Bolder client_id or a stripped GENERIC tag.
+  if (isPowerGrydDedicatedSeat(account)) return true;
   if (isGenericMailbox(account, normalized, config, state)) return false;
   if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
     return true;
@@ -73,16 +77,18 @@ export function isClientInbox(
 
 /** A/B rest is client inboxes only (D43). Generics use the send clock. */
 export function isRestEligibleMailbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "id" | "client_id" | "from_name" | "tags">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
   state: Pick<StateStore, "getPoolMailbox">,
 ): boolean {
+  // D204 — PowerGryd has no pods. These 40 stay on every campaign.
+  if (isPowerGrydDedicatedSeat(account)) return false;
   return isClientInbox(account, email, config, state);
 }
 
 export function isGenericMailbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "id" | "client_id" | "from_name" | "tags">,
   email: string,
   config: Pick<
     AppConfig,
@@ -94,6 +100,9 @@ export function isGenericMailbox(
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
+  // D204 — named PowerGryd seats, not free-pool generics. Check id
+  // before pool-domain / GENERIC tag so a strip cannot steal them.
+  if (isPowerGrydDedicatedSeat(account)) return false;
   const domain = emailDomainOf(normalized);
   // D169 / D99 / D161 — client-named BCP domains are client inventory,
   // never a generic. A leftover GENERIC tag, marker client_id, or
@@ -127,7 +136,7 @@ export function isGenericMailbox(
  * pre-warmed fleet seats stay exclusive.
  */
 export function isPoolGenericSeat(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "id" | "client_id" | "from_name" | "tags">,
   email: string,
   config: Pick<
     AppConfig,
@@ -139,6 +148,9 @@ export function isPoolGenericSeat(
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
+  // D204 — exclusive-attach / one-campaign peel is pool-only. These
+  // 40 fan out across every PowerGryd campaign.
+  if (isPowerGrydDedicatedSeat(account)) return false;
   const domain = emailDomainOf(normalized);
   if (domain && isBcpOwnedDomain(domain)) return false;
   if (isGenericPoolDomain(domain)) return true;

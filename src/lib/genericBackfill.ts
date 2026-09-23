@@ -1,4 +1,5 @@
 import { isPocClient } from "./pocClient.js";
+import { isPowerGrydHay } from "./powerGryd.js";
 
 export interface GenericBackfillApproval {
   campaignId: number;
@@ -34,5 +35,9 @@ export function campaignMayTakeGenerics(
   _approvals?: Record<string, GenericBackfillApproval | undefined>,
 ): boolean {
   void _approvals;
-  return isPocClient(`${campaign.name ?? ""} ${clientName ?? ""}`, pocPatterns);
+  const hay = `${campaign.name ?? ""} ${clientName ?? ""}`;
+  // D204 — PowerGryd is a POC but its 40 dedicated seats are the
+  // staff. Do not dump rotating-pool generics onto those lanes.
+  if (isPowerGrydHay(hay)) return false;
+  return isPocClient(hay, pocPatterns);
 }

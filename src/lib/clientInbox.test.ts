@@ -212,6 +212,45 @@ describe("isClientInbox", () => {
     );
   });
 
+  it("D204: PowerGryd dedicated ids are named seats, not pool-generic", () => {
+    const seat = {
+      id: 21592105,
+      client_id: 592842,
+      from_name: "Ada Pool",
+      tags: [{ tag_name: "GENERIC" }],
+    };
+    const email = "ada@trygetintroduced.info";
+    assert.equal(
+      isGenericMailbox(seat, email, fleet, { getPoolMailbox: () => undefined }),
+      false,
+      "mailbox id wins over pool-domain / GENERIC tag",
+    );
+    assert.equal(
+      isPoolGenericSeat(seat, email, fleet, { getPoolMailbox: () => undefined }),
+      false,
+      "D200 one-campaign peel must not apply",
+    );
+    assert.equal(
+      isClientInbox(seat, email, fleet, { getPoolMailbox: () => undefined }),
+      true,
+    );
+    assert.equal(
+      isRestEligibleMailbox(seat, email, fleet, { getPoolMailbox: () => undefined }),
+      false,
+      "no A/B rest for these 40",
+    );
+    assert.equal(
+      isGenericMailbox(
+        { ...seat, client_id: 542838 },
+        email,
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      "leftover Bolder client_id cannot make the seat a pool generic",
+    );
+  });
+
   it("rejects mailboxes with no client_id", () => {
     assert.equal(
       isClientInbox(

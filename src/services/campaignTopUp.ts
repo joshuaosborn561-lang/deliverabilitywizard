@@ -28,6 +28,11 @@ import {
 } from "../lib/clientStaffFloor.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { pocClientId } from "../lib/pocClient.js";
+import {
+  isPowerGrydCampaignId,
+  isPowerGrydClientId,
+  isPowerGrydDedicatedSeat,
+} from "../lib/powerGryd.js";
 import { chunkArray, sleep } from "../lib/http.js";
 import {
   buildPoolSignature,
@@ -315,6 +320,12 @@ export class CampaignTopUpService {
       .filter((c) => {
         if (isExcluded(c, excluded)) {
           result.skipped.push(`${c.id} ${c.name ?? ""} (excluded)`.trim());
+          return false;
+        }
+        if (isPowerGrydClientId(c.client_id) || isPowerGrydCampaignId(c.id)) {
+          result.skipped.push(
+            `${c.id} ${c.name ?? ""} PowerGryd POC leave-alone (D204)`.trim(),
+          );
           return false;
         }
         return true;
@@ -748,6 +759,7 @@ export class CampaignTopUpService {
       const email = accountEmail(account)?.toLowerCase();
       if (!email || !account.id) continue;
       if (this.state.isCopyCanary(email)) continue;
+      if (isPowerGrydDedicatedSeat(account)) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
       const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
         const campaign = input.campaignById.get(id);

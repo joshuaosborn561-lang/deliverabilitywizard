@@ -8,6 +8,7 @@
 
 import type { IsolationActorRole } from "./isolationActors.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
+import { isPowerGrydLeaveAlone } from "./powerGryd.js";
 import type { StateStore } from "../state/store.js";
 
 export const DELIVERABILITY_SLACK_CHANNEL_ID = "C0BJQUTV7A8";
@@ -195,6 +196,15 @@ export function lockedStandingPrefReason(input: {
   const name = String(input.campaignName ?? "");
   if (/\bgoliath\b/i.test(name)) {
     return "Goliath Oct 15 campaign PAUSE hold is unchanged.";
+  }
+  if (
+    isPowerGrydLeaveAlone({
+      campaignId: input.campaignId,
+      clientId: input.clientId,
+      campaignName: input.campaignName,
+    })
+  ) {
+    return "PowerGryd POC leave-alone: no START/PAUSE/Retire by automation (D204).";
   }
   if (input.campaignId === INSIGHT_SEG_CAMPAIGN_ID) {
     return "Insight SEG pause standing pref is unchanged.";

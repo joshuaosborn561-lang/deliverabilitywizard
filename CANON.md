@@ -162,8 +162,8 @@ or the day is done. Silent findings are a bug (D163).
   **PowerGryd (client 592842) is a POC** (D204), same standing as
   Goliath. Its **40 dedicated mailbox ids** (issue #243) are
   **named seats**, not free-pool generics: fan-out across every
-  PowerGryd campaign; no one-campaign peel under D200; **no A/B
-  rest / no pods**; never re-point to another client (especially
+  PowerGryd campaign; no one-campaign peel under D200; **no A/B rest / no pods**;
+  never re-point to another client (especially
   Bolder 542838); never rewrite the signature away from
   `PowerGRYD`; D173 split-domain findings on pool hosts must not
   re-own those 40. Rotating-pool owner stays Goliath. No

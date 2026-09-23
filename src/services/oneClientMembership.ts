@@ -17,6 +17,11 @@ import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import { pocClientId } from "../lib/pocClient.js";
+import {
+  isPowerGrydDedicatedSeat,
+  POWERGRYD_CLIENT_ID,
+  powerGrydMailboxSignature,
+} from "../lib/powerGryd.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
@@ -95,6 +100,10 @@ interface AccountPlan {
  * Same-client named seats (techevolution* tagged to TechEvo) may
  * sit on every campaign of that client. Pool generics multi-linked
  * across campaigns — even the same client — still peel extras.
+ *
+ * D204 — PowerGryd's 40 dedicated mailbox ids are named seats:
+ * never D200-peel, never re-point off 592842, never rewrite the
+ * signature away from PowerGRYD.
  */
 export class OneClientMembershipService {
   constructor(
@@ -193,16 +202,21 @@ export class OneClientMembershipService {
       if (!memberships.length) continue;
       result.examined += 1;
 
-      const generic = isGenericMailbox(account, email, this.config, this.state);
-      const dedicatedClientId = generic
-        ? resolveDedicatedGenericClientId(
-            account,
-            email,
-            memberships,
-            this.state,
-            { genericOwnerId, brandByClientId },
-          )
-        : null;
+      const powerGrydSeat = isPowerGrydDedicatedSeat(account);
+      const generic = powerGrydSeat
+        ? false
+        : isGenericMailbox(account, email, this.config, this.state);
+      const dedicatedClientId = powerGrydSeat
+        ? POWERGRYD_CLIENT_ID
+        : generic
+          ? resolveDedicatedGenericClientId(
+              account,
+              email,
+              memberships,
+              this.state,
+              { genericOwnerId, brandByClientId },
+            )
+          : null;
       // D160 — a leftover Generic/POC client_id is a billable pool label
       // we are draining, not an owner. Memberships still resolve through
       // the POC owner (Goliath). A generic with no client_id stays bare.
@@ -213,28 +227,33 @@ export class OneClientMembershipService {
       // Goliath leftover. Only undedicated rotating-pool leftovers
       // rewrite identity back to the POC.
       const leftoverReal =
+        !powerGrydSeat &&
         generic &&
         dedicatedClientId == null &&
         !leftoverMarker &&
         typeof genericOwnerId === "number" &&
         typeof account.client_id === "number" &&
         account.client_id !== genericOwnerId;
-      const owner = ownerClientId(account.client_id, memberships, {
-        generic,
-        genericOwnerId,
-        dedicatedClientId,
-      });
+      const owner = powerGrydSeat
+        ? POWERGRYD_CLIENT_ID
+        : ownerClientId(account.client_id, memberships, {
+            generic,
+            genericOwnerId,
+            dedicatedClientId,
+          });
       if (owner == null) {
         result.skipped.push(`${email}: no single owner client`);
         continue;
       }
 
-      const poolGeneric = isPoolGenericSeat(
-        account,
-        email,
-        this.config,
-        this.state,
-      );
+      const poolGeneric = powerGrydSeat
+        ? false
+        : isPoolGenericSeat(
+            account,
+            email,
+            this.config,
+            this.state,
+          );
       const rawPull = peelCampaignIds(owner, memberships, { poolGeneric });
       const pull: number[] = [];
       let protectedByMin = false;
@@ -275,6 +294,7 @@ export class OneClientMembershipService {
       // must go back on live Goliath, not sit on the paused shell.
       // D198 — dedicated named-client seats never dump onto Goliath.
       const restore =
+        !powerGrydSeat &&
         generic &&
         dedicatedClientId == null &&
         !onOwner &&
@@ -294,7 +314,9 @@ export class OneClientMembershipService {
             })
           : [];
 
-      const clientBrand = brandByClientId.get(owner) ?? "";
+      const clientBrand = powerGrydSeat
+        ? "PowerGRYD"
+        : brandByClientId.get(owner) ?? "";
       const hay = signatureHay({
         fromName: account.from_name,
         signature: account.signature,
@@ -302,32 +324,38 @@ export class OneClientMembershipService {
       const foreign = clientBrand
         ? findForeignBrand(hay, clientBrand, allBrands)
         : null;
-      const desired = clientBrand
-        ? desiredMailboxSignature({
-            fromName: account.from_name,
-            signature: account.signature,
-            clientBrand,
-            otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
-          })
-        : null;
+      const desired = powerGrydSeat
+        ? powerGrydMailboxSignature(account.from_name)
+        : clientBrand
+          ? desiredMailboxSignature({
+              fromName: account.from_name,
+              signature: account.signature,
+              clientBrand,
+              otherClientBrands: allBrands.filter((brand) => brand !== clientBrand),
+            })
+          : null;
       // D184 — do not rewrite exclusive Insight mailboxes to SalesGlider.
       const exclusiveInsight = mailboxIsExclusiveInsightStaff(
         account,
         campaignById,
       );
-      const needsSignature =
-        !exclusiveInsight &&
-        dedicatedClientId == null &&
-        !protectedByMin &&
-        Boolean(desired) &&
-        (account.signature ?? "") !== desired &&
-        (Boolean(foreign) || needsGoliathIdentity);
+      const needsSignature = powerGrydSeat
+        ? Boolean(desired) && (account.signature ?? "") !== desired
+        : !exclusiveInsight &&
+          dedicatedClientId == null &&
+          !protectedByMin &&
+          Boolean(desired) &&
+          (account.signature ?? "") !== desired &&
+          (Boolean(foreign) || needsGoliathIdentity);
+      const needsPowerGrydHeal =
+        powerGrydSeat && account.client_id !== POWERGRYD_CLIENT_ID;
 
       if (
         !pull.length &&
         !restore.length &&
         !needsSignature &&
-        !leftoverMarker
+        !leftoverMarker &&
+        !needsPowerGrydHeal
       ) {
         continue;
       }
@@ -338,8 +366,9 @@ export class OneClientMembershipService {
         pull,
         restore,
         signature: needsSignature && desired ? desired : undefined,
-        clearMarkerClientId: leftoverMarker,
-        writeOwnerClientId: leftoverReal && !protectedByMin,
+        clearMarkerClientId: leftoverMarker && !powerGrydSeat,
+        writeOwnerClientId:
+          needsPowerGrydHeal || (leftoverReal && !protectedByMin),
       });
     }
 
@@ -419,7 +448,9 @@ export class OneClientMembershipService {
     }
 
     for (const plan of plans) {
-      if (!plan.signature && !plan.clearMarkerClientId) continue;
+      if (!plan.signature && !plan.clearMarkerClientId && !plan.writeOwnerClientId) {
+        continue;
+      }
       try {
         if (!dryRun) {
           if (plan.clearMarkerClientId) {
@@ -440,6 +471,15 @@ export class OneClientMembershipService {
         if (plan.signature) {
           result.signaturesSet += 1;
           console.log(`[one-client] ${plan.email} signature → client ${plan.owner}`);
+        }
+        if (
+          plan.writeOwnerClientId &&
+          !plan.clearMarkerClientId &&
+          plan.owner === POWERGRYD_CLIENT_ID
+        ) {
+          console.log(
+            `[one-client] ${plan.email} client_id → ${plan.owner} (D204 PowerGryd heal)`,
+          );
         }
         if (plan.clearMarkerClientId) {
           console.log(

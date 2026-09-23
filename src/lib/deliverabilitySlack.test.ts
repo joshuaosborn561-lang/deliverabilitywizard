@@ -368,6 +368,28 @@ describe("D194 deliverability Slack one-taps", () => {
     assert.equal(state.getCampaignStandingPref(3739758)?.pref, "keep_paused");
   });
 
+  it("refuses to change PowerGryd POC standing prefs (D204)", async () => {
+    assert.match(
+      lockedStandingPrefReason({ clientId: 592842, campaignId: 4005218 }) ?? "",
+      /PowerGryd/,
+    );
+    const state = freshState();
+    await state.load();
+    const result = await handleDeliverabilitySlackAction({
+      actionId: DLV_KEEP_PAUSED,
+      value: encodeDlvButtonValue({
+        campaignId: 4005218,
+        campaignName: "PowerGRYD MSP",
+        clientId: 592842,
+      }),
+      actor: { name: "Josh", role: "owner" },
+      state,
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.message, /PowerGryd/);
+    assert.equal(state.getCampaignStandingPref(4005218), undefined);
+  });
+
   it("refuses to change Goliath hold or Insight SEG standing prefs", async () => {
     assert.match(
       lockedStandingPrefReason({ clientId: 548611, campaignId: 1 }) ?? "",

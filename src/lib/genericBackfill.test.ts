@@ -18,6 +18,18 @@ describe("campaignMayTakeGenerics", () => {
     );
   });
 
+  it("D204: PowerGryd is a POC but does not take rotating-pool generics", () => {
+    assert.equal(
+      campaignMayTakeGenerics(
+        { id: 4005218, name: "PowerGRYD MSP" },
+        "PowerGRYD",
+        ["goliath", "powergryd"],
+        {},
+      ),
+      false,
+    );
+  });
+
   it("D193: a leftover D134 Slack approval does not open a named client campaign", () => {
     const approval = {
       "3847798": {

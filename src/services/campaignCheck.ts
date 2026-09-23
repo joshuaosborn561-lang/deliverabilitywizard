@@ -60,6 +60,11 @@ import {
 } from "../lib/oneClient.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import { isPocClient } from "../lib/pocClient.js";
+import {
+  isPowerGrydDedicatedSeat,
+  POWERGRYD_BRAND,
+  powerGrydMailboxSignature,
+} from "../lib/powerGryd.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   campaignHasStep2DelayRule,
@@ -745,12 +750,14 @@ export class CampaignCheckService {
       } else {
         for (const account of input.accounts) {
           if (!campaignIdsOf(account).includes(input.campaignId)) continue;
-          const desired = desiredMailboxSignature({
-            fromName: account.from_name,
-            signature: account.signature,
-            clientBrand: input.brand,
-            otherClientBrands: input.otherClientBrands,
-          });
+          const desired = isPowerGrydDedicatedSeat(account)
+            ? powerGrydMailboxSignature(account.from_name)
+            : desiredMailboxSignature({
+                fromName: account.from_name,
+                signature: account.signature,
+                clientBrand: input.brand,
+                otherClientBrands: input.otherClientBrands,
+              });
           if (!desired) continue;
           const actual = extractSignatureLines(account.signature).join("\n");
           const want = extractSignatureLines(desired).join("\n");
@@ -992,10 +999,13 @@ export class CampaignCheckService {
       const email = accountEmail(account);
       if (!email) continue;
       if (expected && !isInsightCampaign(campaign)) {
+        const sigBrand = isPowerGrydDedicatedSeat(account)
+          ? POWERGRYD_BRAND
+          : expected;
         const mismatch = mailboxSignatureMismatch({
           fromName: account.from_name,
           signature: account.signature,
-          clientBrand: expected,
+          clientBrand: sigBrand,
           otherClientBrands: input.allBrands,
         });
         if (mismatch) {

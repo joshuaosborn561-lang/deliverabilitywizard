@@ -9,6 +9,7 @@ import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign, SmartleadEmailAccount } from "../types/index.js";
 import { isClientInbox } from "./clientInbox.js";
+import { isPowerGrydClientId, isPowerGrydDedicatedSeat } from "./powerGryd.js";
 import { senderIsAttachBlocked } from "./attachBlock.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
 import { assignClientCohorts, onWeekCohort } from "./restCohort.js";
@@ -237,6 +238,12 @@ function eligibleClientInboxesByKey(
     const email = accountEmail(account);
     if (!email) continue;
     if (!isClientInbox(account, email, config, state)) continue;
+    // D204 — PowerGryd has no pods and no 40/POD top-up. Counting
+    // these 40 as named inventory would invent an A/B shortfall and
+    // dump rotating-pool generics onto the POC.
+    if (isPowerGrydDedicatedSeat(account) || isPowerGrydClientId(account.client_id)) {
+      continue;
+    }
     // D99 — held / retired / canary boxes cannot staff a campaign. They
     // are not "A+B sitting" (D58) and must not inflate the floor.
     // A hold is the HOLD-UNTIL tag (D128) — fan-out refuses those boxes,

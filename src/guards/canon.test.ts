@@ -10538,3 +10538,141 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     );
   });
 });
+
+describe("owner intent — D204 PowerGryd POC dedicated 40", () => {
+  it("keeps the 40 named seats off D200 peel / re-point / A/B rest", async () => {
+    const stop = (want: string, happened: string) =>
+      `${want} ${happened} Ask Josh before reversing D204.`;
+    const { POWERGRYD_MAILBOX_IDS, POWERGRYD_CLIENT_ID } = await import(
+      "../lib/powerGryd.js"
+    );
+    assert.equal(POWERGRYD_MAILBOX_IDS.length, 40);
+    assert.equal(POWERGRYD_CLIENT_ID, 592842);
+
+    const { isGenericMailbox, isPoolGenericSeat, isRestEligibleMailbox } =
+      await import("../lib/clientInbox.js");
+    const fleet = {
+      extraGenericMailboxes: [],
+      extraGenericDomains: [],
+      prewarmedDomains: [],
+    };
+    const state = { getPoolMailbox: () => undefined };
+    const seat = {
+      id: 21592105,
+      client_id: 592842,
+      from_name: "Ada Pool",
+      tags: [{ tag_name: "GENERIC" }],
+    };
+    assert.equal(
+      isPoolGenericSeat(seat, "ada@trygetintroduced.info", fleet, state),
+      false,
+      stop(
+        "PowerGryd dedicated ids are not exclusive-attach pool seats (D204).",
+        "isPoolGenericSeat still peels them.",
+      ),
+    );
+    assert.equal(
+      isGenericMailbox(seat, "ada@trygetintroduced.info", fleet, state),
+      false,
+      stop(
+        "PowerGryd dedicated ids are named seats, not free-pool generics (D204).",
+        "isGenericMailbox still treats them as pool.",
+      ),
+    );
+    assert.equal(
+      isRestEligibleMailbox(seat, "ada@trygetintroduced.info", fleet, state),
+      false,
+      stop(
+        "PowerGryd has no A/B rest (D204).",
+        "isRestEligibleMailbox still rests them.",
+      ),
+    );
+
+    const { pocClientId, isPocClient } = await import("../lib/pocClient.js");
+    assert.equal(
+      isPocClient("PowerGRYD MSP", ["goliath"]),
+      true,
+      stop(
+        "PowerGryd is a POC even when patterns stay goliath-only (D204).",
+        "isPocClient no longer matches PowerGryd.",
+      ),
+    );
+    assert.equal(
+      pocClientId(
+        [
+          { id: 592842, name: "Jesse Miller", logo: "PowerGRYD" },
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+        ["goliath", "powergryd"],
+      ),
+      548611,
+      stop(
+        "Rotating-pool owner stays Goliath (D204).",
+        "pocClientId now returns PowerGryd.",
+      ),
+    );
+
+    const { campaignMayTakeGenerics } = await import(
+      "../lib/genericBackfill.js"
+    );
+    assert.equal(
+      campaignMayTakeGenerics(
+        { id: 4005218, name: "PowerGRYD MSP" },
+        "PowerGRYD",
+        ["goliath", "powergryd"],
+      ),
+      false,
+      stop(
+        "PowerGryd does not take rotating-pool attaches (D204).",
+        "campaignMayTakeGenerics opened PowerGryd to the free pool.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /PowerGryd \(client 592842\) is a POC/,
+      stop(
+        "CANON names PowerGryd as a POC (D204).",
+        "CANON.md lost the PowerGryd POC rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /no A\/B rest \/ no pods/,
+      stop(
+        "CANON says PowerGryd has no pods (D204).",
+        "CANON.md lost the no-pods rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /never re-point to another client/,
+      stop(
+        "CANON forbids re-pointing the dedicated 40 (D204).",
+        "CANON.md lost the no-re-point rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D204 — PowerGryd \(client 592842\) is a POC/,
+      stop(
+        "The PowerGryd protect is in the ledger (D204).",
+        "DECISIONS.md no longer has D204.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /^\| D204 \|/m,
+      stop(
+        "The status index lists D204 (D127).",
+        "DECISIONS.md status index has no D204 row.",
+      ),
+    );
+  });
+});

@@ -288,7 +288,7 @@ function renderPlacement() {
   });
 }
 
-async function loadPlacement(force = false) {
+async function loadPlacement(force = false, pass = 0) {
   const banner = $("#placement-errors");
   banner.textContent = "";
   banner.className = "error";
@@ -307,6 +307,12 @@ async function loadPlacement(force = false) {
     banner.className = "error";
   }
   renderPlacement();
+  // The catalog walk is a couple of pages per request so a 429 does not wipe
+  // the offset. Keep going while live campaigns are still missing.
+  if (pass < 30 && data.complete === false && !data.stale) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    return loadPlacement(true, pass + 1);
+  }
 }
 
 function linkify(text) {

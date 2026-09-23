@@ -75,24 +75,24 @@ export interface PlacementResults {
   stale?: boolean;
   /** False when the catalog walk 429'd or found fewer live tests than we know exist. */
   complete?: boolean;
+  /**
+   * Next `spam-test/report` offset. Newest pages are pod-control tests, so a
+   * walk that stops early has to resume here instead of starting over.
+   */
+  listOffset?: number;
 }
 
 /** D187 — live-sender cap after canary copy is filtered out (D126). */
 export const OPS_PLACEMENT_REPORT_CAP = 80;
 const OPS_PLACEMENT_LIST_PAGE = 100;
-const OPS_PLACEMENT_LIST_MAX_PAGES = 8;
+/** One pass reads a couple of pages, then the next open continues at listOffset. */
+const OPS_PLACEMENT_LIST_PAGES_PER_PASS = 2;
 /** Fail fast on providerwise pulls — retries stampede a 429 window. */
 export const OPS_PLACEMENT_LIVE_RETRIES = 0;
-/** One retry on catalog pages so a mid-walk 429 can still fill the live cap. */
-export const OPS_PLACEMENT_LIST_RETRIES = 1;
+/** Catalog pages do not retry. A 429 keeps listOffset and the next open continues. */
+export const OPS_PLACEMENT_LIST_RETRIES = 0;
 /** After SmartDelivery 429s the board, do not poke it again for this long. */
 export const OPS_PLACEMENT_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
-/**
- * When more than this many known tests still have no score, skip the
- * newest-first catalog. That walk is mostly canary-copy and 429s before
- * the live tests are reached, which left the board at 4 scored rows.
- */
-export const OPS_PLACEMENT_CATALOG_SKIP_MISSING = 8;
 
 export interface FleetSummary {
   generatedAt: string;
@@ -305,9 +305,13 @@ export class PlacementResultsService {
       snapshotFresh &&
       this.snapshotLooksComplete(fallback)
     ) {
-      const value = this.quietView(fallback);
-      this.cache = { expiresAt: generatedAtMs + this.cacheMs, value };
-      return value;
+      const covered = await this.everyLiveCampaignHasRow(fallback);
+      if (this.inFlight) return this.inFlight;
+      if (covered) {
+        const value = this.quietView(fallback);
+        this.cache = { expiresAt: generatedAtMs + this.cacheMs, value };
+        return value;
+      }
     }
 
     this.inFlight = this.loadSafe(force).finally(() => {
@@ -327,7 +331,37 @@ export class PlacementResultsService {
       })),
       errors: [],
       complete: snapshot.complete,
+      listOffset: snapshot.listOffset,
     };
+  }
+
+  /**
+   * A saved "complete" board can still be missing campaigns that were never
+   * linked to a test id. Tab-open only skips SmartDelivery when every live
+   * campaign already has a row.
+   */
+  private async everyLiveCampaignHasRow(
+    value: PlacementResults,
+  ): Promise<boolean> {
+    try {
+      const campaigns = (await this.book.get()).campaigns;
+      const covered = new Set(
+        value.rows
+          .map((row) => row.campaignId)
+          .filter((id): id is number => id != null),
+      );
+      for (const campaign of campaigns) {
+        const id = Number(campaign.id);
+        if (!Number.isFinite(id)) continue;
+        if (!isLiveSendingCampaignStatus(campaign.status)) continue;
+        if (isAnyShellCampaign(campaign)) continue;
+        if (titleHasCanaryCopyPhrase(campaign.name)) continue;
+        if (!covered.has(id)) return false;
+      }
+      return true;
+    } catch {
+      return true;
+    }
   }
 
   /**
@@ -358,6 +392,7 @@ export class PlacementResultsService {
       errors: uniqueErrors(opts.errors),
       stale: opts.stale,
       complete: fallback.complete,
+      listOffset: fallback.listOffset,
     };
   }
 
@@ -367,6 +402,7 @@ export class PlacementResultsService {
       generatedAt: value.generatedAt,
       rows: value.rows,
       complete: value.complete,
+      listOffset: value.listOffset,
     });
     void this.state.save().catch((error) => {
       console.warn("[ops-placement] snapshot save failed", error);
@@ -458,17 +494,36 @@ export class PlacementResultsService {
       campaignsLoaded,
       campaignByTest,
     });
-    const missingKnown = known.filter((row) => !placementRowHasResult(row)).length;
+    const coveredKnown = new Set(
+      known
+        .map((row) => row.campaignId)
+        .filter((id): id is number => id != null),
+    );
+    const missingCampaign =
+      campaignsLoaded &&
+      [...liveById.keys()].some((id) => !coveredKnown.has(id));
     const isLive = (test: SpamTestSummary) =>
       isLivePlacementTest(test, {
         campaignByTest,
         liveById,
         campaignsLoaded,
       });
-    const listed =
-      missingKnown >= OPS_PLACEMENT_CATALOG_SKIP_MISSING
-        ? { tests: [] as SpamTestSummary[], truncated: false, exhausted: false }
-        : await this.listNewestTests(isLive, errors, force);
+    // A board that already has every live campaign does not walk the catalog.
+    // That walk is newest-first pod-control pages and 429s before Auto tests.
+    // When a campaign is missing, read two pages from the saved offset.
+    const listed = missingCampaign
+      ? await this.listNewestTests(
+          isLive,
+          errors,
+          force,
+          previousSnapshot?.listOffset ?? 0,
+        )
+      : {
+          tests: [] as SpamTestSummary[],
+          truncated: false,
+          exhausted: true,
+          nextOffset: 0,
+        };
 
     const listedLive = listed.tests.filter(isLive);
     const assembled = this.assembleLiveRows({
@@ -479,16 +534,19 @@ export class PlacementResultsService {
       campaignsLoaded,
       campaignByTest,
     });
-    const expected = this.expectedLiveTestCount(liveById, campaignsLoaded);
     const covered = new Set(
       assembled
         .map((row) => row.campaignId)
         .filter((id): id is number => id != null),
     );
-    const coversLive =
-      campaignsLoaded &&
-      expected > 0 &&
-      covered.size >= Math.min(OPS_PLACEMENT_REPORT_CAP, expected);
+    const uncovered = campaignsLoaded
+      ? [...liveById.keys()].filter((id) => !covered.has(id)).length
+      : 0;
+    const membershipSettled =
+      !campaignsLoaded ||
+      liveById.size === 0 ||
+      uncovered === 0 ||
+      listed.exhausted;
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     let skipProviders = false;
@@ -530,7 +588,12 @@ export class PlacementResultsService {
       generatedAt: new Date().toISOString(),
       rows: assembled,
       errors: uniqueErrors(force ? errors : []),
-      complete: coversLive && filled === assembled.length && assembled.length > 0,
+      listOffset: listed.nextOffset,
+      complete:
+        membershipSettled &&
+        !listed.truncated &&
+        filled === assembled.length &&
+        assembled.length > 0,
       stale: (listed.truncated || filled < assembled.length) && assembled.length > 0,
     };
     if (!assembled.length) {
@@ -708,7 +771,9 @@ export class PlacementResultsService {
       const id = testIdOf(test);
       if (!id) continue;
       const mapped = opts.campaignByTest.get(id);
-      const campaignId = resolveCampaignId(mapped?.campaignId, test);
+      const campaignId =
+        resolveCampaignId(mapped?.campaignId, test) ??
+        campaignIdFromAutoName(test.test_name, opts.liveById);
       const previous = opts.previousById.get(id) ?? byId.get(id);
       remember({
         id,
@@ -739,41 +804,31 @@ export class PlacementResultsService {
       .slice(0, 80);
   }
 
-  private expectedLiveTestCount(
-    liveById: Map<number, { name: string }>,
-    campaignsLoaded: boolean,
-  ): number {
-    if (!campaignsLoaded) return 0;
-    const tested = this.state.get().testedCampaigns;
-    let count = 0;
-    for (const id of liveById.keys()) {
-      if (tested[String(id)]?.testIds?.length) count += 1;
-    }
-    return count;
-  }
-
   /**
-   * Page SmartDelivery until the live-sender cap is filled. Full-catalog
-   * pagination used to 429 the employee refresh before a single provider
-   * report ran. A 429 after page 1 must not be treated as "the whole board"
-   * — newest pages are mostly canary-copy, so a truncated walk can look like
-   * only a handful of live tests.
+   * Read a couple of catalog pages from the saved offset. Newest pages are
+   * pod-control tests with no campaign id. Walking eight pages from offset 0
+   * on every open 429'd before those Auto tests were reached, and the next
+   * open started over. A short page ends the walk. A 429 keeps the offset.
    */
   private async listNewestTests(
     isLive: (test: SpamTestSummary) => boolean,
     errors: string[],
     force: boolean,
+    startOffset: number,
   ): Promise<{
     tests: SpamTestSummary[];
     truncated: boolean;
     exhausted: boolean;
+    nextOffset: number;
   }> {
     const all: SpamTestSummary[] = [];
-    let offset = 0;
-    let truncated = false;
-    let exhausted = false;
+    let offset = Math.max(0, Math.floor(startOffset));
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
-    for (let page = 0; page < OPS_PLACEMENT_LIST_MAX_PAGES; page += 1) {
+    const sorted = () =>
+      all.sort((a, b) =>
+        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
+      );
+    for (let page = 0; page < OPS_PLACEMENT_LIST_PAGES_PER_PASS; page += 1) {
       let raw: unknown;
       try {
         raw = await this.smartDelivery.listTests(
@@ -791,32 +846,70 @@ export class PlacementResultsService {
         if (force || !all.length) {
           errors.push(humanizeAlertError(`listTests: ${message}`));
         }
-        if (all.length) {
-          truncated = true;
-          break;
-        }
-        truncated = true;
-        break;
+        return {
+          tests: sorted(),
+          truncated: true,
+          exhausted: false,
+          nextOffset: offset,
+        };
       }
       const rows = normalizeTestList(raw);
       all.push(...rows);
-      const live = all.filter(isLive).length;
       if (rows.length < OPS_PLACEMENT_LIST_PAGE) {
-        exhausted = true;
-        break;
+        return {
+          tests: sorted(),
+          truncated: false,
+          exhausted: true,
+          nextOffset: 0,
+        };
       }
-      if (live >= OPS_PLACEMENT_REPORT_CAP) break;
       offset += rows.length;
-      if (gapMs) await sleep(gapMs);
+      const live = all.filter(isLive).length;
+      if (live >= OPS_PLACEMENT_REPORT_CAP) {
+        return {
+          tests: sorted(),
+          truncated: false,
+          exhausted: false,
+          nextOffset: offset,
+        };
+      }
+      if (gapMs && page + 1 < OPS_PLACEMENT_LIST_PAGES_PER_PASS) await sleep(gapMs);
     }
     return {
-      tests: all.sort((a, b) =>
-        String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),
-      ),
-      truncated,
-      exhausted,
+      tests: sorted(),
+      truncated: false,
+      exhausted: false,
+      nextOffset: offset,
     };
   }
+}
+
+/** `Auto: ${campaignName}` plus an optional ` (i/n)` batch suffix. */
+function autoPlacementCampaignName(
+  testName: string | undefined | null,
+): string | undefined {
+  const match = /^auto:\s*(.+)$/i.exec(String(testName ?? "").trim());
+  if (!match) return undefined;
+  const name = match[1].replace(/\s+\(\d+\/\d+\)\s*$/, "").trim();
+  return name || undefined;
+}
+
+/**
+ * The report list omits campaign_id. Recurring tests are named after the
+ * campaign, which is how an unlinked Auto test joins the board.
+ */
+function campaignIdFromAutoName(
+  testName: string | undefined | null,
+  liveById: Map<number, { name: string }>,
+): number | undefined {
+  const extracted = autoPlacementCampaignName(testName);
+  if (!extracted) return undefined;
+  const needle = extracted.toLowerCase();
+  const hits: number[] = [];
+  for (const [id, live] of liveById) {
+    if (String(live.name ?? "").trim().toLowerCase() === needle) hits.push(id);
+  }
+  return hits.length === 1 ? hits[0] : undefined;
 }
 
 function isLivePlacementTest(
@@ -830,7 +923,9 @@ function isLivePlacementTest(
   if (titleHasCanaryCopyPhrase(test.test_name)) return false;
   const id = testIdOf(test);
   const mapped = id ? opts.campaignByTest.get(id) : undefined;
-  const campaignId = resolveCampaignId(mapped?.campaignId, test);
+  const campaignId =
+    resolveCampaignId(mapped?.campaignId, test) ??
+    campaignIdFromAutoName(test.test_name, opts.liveById);
   if (campaignId == null) return false;
   if (opts.campaignsLoaded) {
     const live = opts.liveById.get(campaignId);
@@ -894,6 +989,7 @@ function shouldPersistPlacement(
     });
     if (droppedCurrent) return false;
   }
+  if ((previous.listOffset ?? 0) !== (next.listOffset ?? 0)) return true;
   return placementBoardSignature(next.rows) !== placementBoardSignature(previous.rows);
 }
 

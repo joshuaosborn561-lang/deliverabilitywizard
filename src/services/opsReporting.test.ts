@@ -127,10 +127,10 @@ describe("PlacementResultsService", () => {
 
     assert.equal(result.rows[0]?.id, "101");
     assert.equal(result.rows[0]?.campaignName, "Campaign Seven");
-    assert.equal(result.rows[0]?.inboxPercent, 70);
+    assert.equal(result.rows[0]?.inboxPercent, (8 / 9) * 100);
     assert.equal(result.rows[0]?.googleInboxPercent, 75);
     assert.equal(result.rows[0]?.microsoftInboxPercent, 100);
-    assert.equal(result.rows[0]?.spamPercent, 20);
+    assert.equal(result.rows[0]?.spamPercent, (1 / 9) * 100);
   });
 
   it("D126: hides canary copy tests and non-active campaigns", async () => {
@@ -342,6 +342,7 @@ describe("PlacementResultsService", () => {
     const smartlead = {
       listCampaigns: async () => [
         { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+        { id: 8, name: "Campaign Eight", status: "ACTIVE" },
       ],
     } as unknown as SmartleadClient;
     const service = new PlacementResultsService(
@@ -535,6 +536,11 @@ describe("PlacementResultsService", () => {
         throw new Error("should not pull providers after a truncated catalog");
       },
     } as unknown as SmartDeliveryClient;
+    campaigns.push({
+      id: 999,
+      name: "Campaign Missing",
+      status: "ACTIVE",
+    });
     const smartlead = {
       listCampaigns: async () => campaigns,
     } as unknown as SmartleadClient;
@@ -549,6 +555,7 @@ describe("PlacementResultsService", () => {
     assert.equal(result.rows.length, 12, "kept the full snapshot, not 4 live from page 1");
     assert.equal(result.stale, true);
     assert.equal(state.getPlacementResults()?.rows.length, 12);
+    assert.equal(state.getPlacementResults()?.listOffset, 100);
     assert.equal(providerCalls, 0);
     assert.ok(listCalls >= 2, "paged once then 429'd");
   });
@@ -650,7 +657,7 @@ describe("PlacementResultsService", () => {
     assert.equal(result.complete, true);
   });
 
-  it("retries a 4-row incomplete snapshot instead of treating it as the whole board", async () => {
+  it("does not walk the catalog when every live campaign already has a row", async () => {
     const state = await stateFixture();
     state.setPlacementResults({
       generatedAt: new Date().toISOString(),
@@ -732,7 +739,7 @@ describe("PlacementResultsService", () => {
       60_000,
     );
     const result = await service.get();
-    assert.equal(listCalls, 1, "a 4-row snapshot without complete does not skip the refresh");
+    assert.equal(listCalls, 0, "every live campaign already has a row");
     assert.equal(result.rows.length, 4);
     assert.equal(result.stale, true);
   });
@@ -752,6 +759,11 @@ describe("PlacementResultsService", () => {
       /Showing the last saved snapshot[\s\S]{0,250}\.\.\.errors/.test(app),
       false,
       "stale banner and errors[] used to be concatenated into one red line",
+    );
+    assert.match(
+      app,
+      /data\.complete === false && !data\.stale/,
+      "an unfinished catalog walk keeps loading on the Placement tab",
     );
   });
 
@@ -963,6 +975,164 @@ describe("PlacementResultsService", () => {
     assert.equal(result.rows[0]?.runNumber, 52);
     assert.equal(result.rows[0]?.createdAt, "2026-09-21T00:00:00.000Z");
     assert.equal(state.getPlacementResults()?.rows[0]?.createdAt, "2026-09-21T00:00:00.000Z");
+  });
+
+  it("resumes past pod-control pages and attaches an Auto test that has no campaign id", async () => {
+    const state = await stateFixture();
+    const offsets: number[] = [];
+    const smartDelivery = {
+      listTests: async (body: { offset?: number } = {}) => {
+        const offset = Number(body.offset ?? 0);
+        offsets.push(offset);
+        if (offset < 200) {
+          return Array.from({ length: 100 }, (_, i) => ({
+            spam_test_id: 1000 + offset + i,
+            test_name: `Pod control: ${offset + i}`,
+            status: "ACTIVE",
+            created_at: "2026-09-23T12:00:00.000Z",
+          }));
+        }
+        return [
+          {
+            spam_test_id: 41,
+            test_name: "Canary copy: #8 Campaign Eight",
+            status: "ACTIVE",
+            created_at: "2026-09-23T12:00:00.000Z",
+          },
+          {
+            spam_test_id: 40,
+            test_name: "Pod control: leftover",
+            status: "ACTIVE",
+            created_at: "2026-09-23T12:00:00.000Z",
+          },
+          {
+            spam_test_id: 42,
+            test_name: "Auto: Campaign Eight (1/2)",
+            status: "ACTIVE",
+            created_at: "2026-09-20T00:00:00.000Z",
+            inbox_count: 8,
+            spam_count: 1,
+            adjusted_total_email_count: 10,
+          },
+        ];
+      },
+      getProviderwiseReport: async () => ({
+        status: "ACTIVE",
+        result: [
+          {
+            provider_name: "G Suite",
+            inbox_count: 8,
+            spam_count: 1,
+            adjusted_total_email_count: 10,
+          },
+        ],
+      }),
+      getTestDetails: async () => ({
+        updated_at: "2026-09-22T06:37:03.220Z",
+        test_run_no: 3,
+        status: "ACTIVE",
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+        { id: 8, name: "Campaign Eight", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const first = await service.get(true);
+    assert.deepEqual(offsets, [0, 100]);
+    assert.equal(
+      first.rows.some((row) => row.campaignId === 8),
+      false,
+    );
+    assert.equal(state.getPlacementResults()?.listOffset, 200);
+
+    const second = await service.get(true);
+    assert.deepEqual(offsets, [0, 100, 200]);
+    const found = second.rows.find((row) => row.campaignId === 8);
+    assert.equal(found?.id, "42");
+    assert.equal(found?.campaignName, "Campaign Eight");
+    assert.equal(found?.name, "Auto: Campaign Eight (1/2)");
+    assert.equal(
+      second.rows.some((row) => row.name.includes("Pod control")),
+      false,
+    );
+    assert.equal(
+      second.rows.some((row) => row.name.includes("Canary copy")),
+      false,
+    );
+    assert.equal(state.getPlacementResults()?.listOffset, 0);
+  });
+
+  it("keeps the catalog offset when the next page is rate limited", async () => {
+    const state = await stateFixture();
+    const offsets: number[] = [];
+    const smartDelivery = {
+      listTests: async (body: { offset?: number } = {}) => {
+        const offset = Number(body.offset ?? 0);
+        offsets.push(offset);
+        if (offset > 0) throw new Error("Rate limit exceeded");
+        return Array.from({ length: 100 }, (_, i) => ({
+          spam_test_id: 3000 + i,
+          test_name: `Pod control: ${i}`,
+          status: "ACTIVE",
+          created_at: "2026-09-23T12:00:00.000Z",
+        }));
+      },
+      getProviderwiseReport: async () => ({
+        status: "COMPLETED",
+        result: [
+          {
+            provider_name: "G Suite",
+            inbox_count: 8,
+            spam_count: 1,
+            adjusted_total_email_count: 10,
+          },
+        ],
+      }),
+      getTestDetails: async () => ({
+        updated_at: "2026-09-22T06:37:03.220Z",
+        test_run_no: 2,
+        status: "ACTIVE",
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+        { id: 8, name: "Campaign Eight", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const firstService = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+      60_000,
+    );
+    await firstService.get(true);
+    assert.deepEqual(offsets, [0, 100]);
+    assert.equal(state.getPlacementResults()?.listOffset, 100);
+
+    const secondService = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+      60_000,
+    );
+    await secondService.get(true);
+    assert.equal(offsets.at(-1), 100);
+    assert.equal(
+      offsets.filter((offset) => offset === 0).length,
+      1,
+      "a 429 must not restart the walk at the pod-control pages",
+    );
   });
 });
 

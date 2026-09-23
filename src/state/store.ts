@@ -156,6 +156,8 @@ export interface PlacementResultsSnapshot {
   }>;
   /** False when a catalog walk was truncated or smaller than known live tests. */
   complete?: boolean;
+  /** Next catalog page. Kept so a 429 does not restart the walk at pod-control tests. */
+  listOffset?: number;
 }
 
 export interface PendingResumeRecord {

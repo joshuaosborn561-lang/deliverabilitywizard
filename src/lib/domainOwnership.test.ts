@@ -43,6 +43,58 @@ describe("D173 — ownership-aware sending-domain classification", () => {
     assert.equal(isClientSendingDomain("nowoutreachdesk.com", config, owner), true);
   });
 
+  it("D204: PowerGryd dedicated seats do not re-own a pool domain away from plan / Bolder", () => {
+    const config = cfg();
+    const powerGrydOnly = resolveDomainOwner(
+      "nowoutreachdesk.com",
+      [
+        {
+          id: 21592105,
+          from_email: "ada@nowoutreachdesk.com",
+          client_id: 592842,
+        },
+        {
+          id: 21592107,
+          from_email: "bea@nowoutreachdesk.com",
+          client_id: 592842,
+        },
+      ],
+      [
+        goliath,
+        { id: 592842, name: "Jesse Miller", logo: "PowerGRYD" },
+      ],
+      config,
+    );
+    assert.equal(powerGrydOnly.kind, "generic");
+    assert.equal(powerGrydOnly.clientId, null);
+    assert.deepEqual(powerGrydOnly.uniqueClientIds, []);
+
+    const split = resolveDomainOwner(
+      "nowoutreachdesk.com",
+      [
+        {
+          id: 21592105,
+          from_email: "ada@nowoutreachdesk.com",
+          client_id: 592842,
+        },
+        {
+          id: 99,
+          from_email: "bolder@nowoutreachdesk.com",
+          client_id: 542838,
+        },
+      ],
+      [
+        goliath,
+        { id: 592842, name: "Jesse Miller", logo: "PowerGRYD" },
+        { id: 542838, name: "Bolder", logo: "Bolder Cyber Partners" },
+      ],
+      config,
+    );
+    assert.equal(split.kind, "client");
+    assert.equal(split.clientId, 542838);
+    assert.ok(!split.uniqueClientIds.includes(592842));
+  });
+
   it("the same domain with no client mailboxes stays generic (plan fallback)", () => {
     const config = cfg();
     const owner = resolveDomainOwner(

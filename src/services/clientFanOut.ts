@@ -14,6 +14,10 @@ import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import {
+  isPowerGrydDedicatedSeat,
+  POWERGRYD_CLIENT_ID,
+} from "../lib/powerGryd.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
 import { isExcluded } from "./campaignTopUp.js";
@@ -402,6 +406,11 @@ export class ClientFanOutService {
 
     if (groupKey.startsWith("id:")) {
       const clientId = Number(groupKey.slice(3));
+      // D204 — leftover Bolder client_id must not hide these seats
+      // from the PowerGryd fan-out group.
+      if (isPowerGrydDedicatedSeat(account)) {
+        return clientId === POWERGRYD_CLIENT_ID;
+      }
       const resolved = resolveAccountClient(
         account,
         campaignClientById,

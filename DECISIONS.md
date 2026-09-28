@@ -91,12 +91,12 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
 | D74 | Live — log-only clause superseded by D75 |
 | D75 | Live |
-| D76 | Live — exclusive min-40 generic identity rewrite / restore qualified by D197; dedicated named-client seats belong to that client, not Goliath (D198) |
+| D76 | Live — exclusive min-40 generic identity rewrite / restore qualified by D197; dedicated named-client seats belong to that client, not Goliath (D198); PowerGryd 592842 is never genericOwnerId (D204) |
 | D77 | Live — Goliath-only unpause generalized by D82 |
 | D78 | Superseded by D80→D88 |
 | D79 | Retired-record (no per-sender bounce pull) — live |
 | D80 | Superseded by D88/D90; the off-write is gone — the API discards the field (D157) |
-| D81 | Live — amended by D82/D122 |
+| D81 | Live — amended by D82/D122; PowerGryd added to the POC set (D204) |
 | D82 | Live — floor size qualified by D196 (on-week pod, not always ceil half) |
 | D83 | Live |
 | D84 | Live — the autopause write-on-drift clause is retired by D157 (no write exists); attach-blocked inventory skipped by D176 |
@@ -187,7 +187,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
-| D173 | Live | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
+| D173 | Live — PowerGryd dedicated 40 excluded from the census (D204) | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
 | D174 | Live — never-retire superseded by D181; buy-retry + Porkbun lock stay | Protected-client never-retire/never-burn (seeded Goliath / 548611) is gone; failed post-pull buys still retry themselves; Porkbun checks stay serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back |
@@ -211,8 +211,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); exclusive-attach is pool-only (D200); 40 is per-POD client inventory (D203) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
 | D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 | D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only); 40/POD inventory by D203 | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
-| D200 | Live — 40/POD inventory by D203 | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
+| D200 | Live — 40/POD inventory by D203; PowerGryd dedicated 40 are named seats (D204) | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
+| D204 | Live | PowerGryd / client 592842 is a POC; its 40 dedicated mailbox ids are named seats (fan-out all camps, no D200 peel, no A/B rest, no re-point / sig rewrite / D173 re-own); rotating-pool owner stays Goliath; leave-alone no START/PAUSE/Retire |
 
 ---
 
@@ -6450,6 +6451,70 @@ split is documented static / never-retag; CANON names 40/POD
 inventory, the ~1/3 per-POD mix floor, and the D193 narrow
 for the min-40 fill path; floor prompts no longer say only
 "half that client's own inboxes" without the 40/POD minimum.
+
+---
+
+## D204 — PowerGryd (client 592842) is a POC; protect its 40 dedicated seats
+
+**Decision (Josh 2026-09-22 / confirmed live 2026-09-23, HARD,
+issue #243).** PowerGryd, Smartlead client **592842** (brand
+PowerGRYD, owner Jesse Miller), is a **POC client**, same
+standing as Goliath. Josh approved staffing it with generics.
+
+The **40 mailbox ids** listed in #243 are PowerGryd's **named,
+dedicated seats** (`client_id` 592842, signature PowerGRYD,
+~20 Google / ~20 Microsoft). Fan them out across every
+PowerGryd campaign. **No pods / no A/B rest.** Do **not**:
+
+1. Peel those seats down to one campaign (D200 exclusive-attach
+   is pool generics only — these 40 are named).
+2. Re-point them to another client (especially Bolder 542838).
+3. Rewrite the signature away from PowerGRYD.
+4. Strip GENERIC in a way that lets pool logic steal them —
+   treat them as named/dedicated even when the tag is gone.
+5. Let D173 split-domain / "mailboxes belong to client X"
+   findings on pool hosts re-own these 40 off 592842.
+
+Rotating-pool owner stays **Goliath**. PowerGryd does **not**
+take new free-pool attaches. Leave-alone: no START / PAUSE /
+Retire / teardown of live PowerGryd by automation. Josh cancels
+the client API when the POC ends. Allow-generics on this client
+means keep the dedicated 40; Not-now must not peel them.
+
+**Why.** After mid-cycle redeploy to `main@6c5b1e13` (2026-09-23
+~1:11–1:50pm CT) wizard one-client / client-rest (and related
+health passes) peeled PowerGRYD dedicated seats from ~40 down
+to ~20–30 across the 12 PowerGRYD campaigns. Earlier the same
+class of failure re-pointed 6 boxes to Bolder 542838, rewrote
+one signature to SalesGlider, stripped GENERIC, and logged
+D173 split `542838,592842` on ~30 pool domains. Ops had to
+link-restore all 40. The seats live on pool-plan hosts, so
+`isPoolGenericSeat` / `isGenericMailbox` treated them as D200
+exclusives and client-rest A/B-benched half of them.
+
+**Rejected.** Treating PowerGryd as a normal 40/POD named
+client (that would invent pods and dump more pool). Making
+PowerGryd `genericOwnerId` (that would rewrite leftover pool
+`client_id`s onto 592842). Leaving the 40 as pool generics
+with a Slack-only "Allow" card. STARTing / PAUSEing /
+retiring live PowerGryd from this PR.
+
+**Supersedes / amends.** Adds PowerGryd 592842 to the POC set
+alongside Goliath (D81/D82) without making it the rotating-pool
+owner (D76). Qualifies D200: these 40 are named seats even on
+pool-plan hosts. Qualifies D173: they do not count toward
+domain-owner census. Qualifies D198/D43: they do not ride
+client A/B or the generic send clock. Does not change BCP /
+Parlay / TechEvo min-40 POD A/B rules.
+
+**Guards.** canon D204: `POWERGRYD_MAILBOX_IDS.length === 40`;
+`isPoolGenericSeat` / `isGenericMailbox` false and
+`isRestEligibleMailbox` false for those ids; `pocClientId`
+stays Goliath when both POCs are in the book;
+`campaignMayTakeGenerics` is false for PowerGRYD; one-client
+does not peel same-client PowerGryd multi-link and heals
+Bolder `client_id` + signature; D173 skips those ids;
+CANON names the POC + named-seat + leave-alone rules.
 
 ---
 

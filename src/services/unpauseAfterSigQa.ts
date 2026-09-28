@@ -17,6 +17,7 @@ import {
   findForeignBrand,
 } from "../lib/clientBrand.js";
 import { isPocClient } from "../lib/pocClient.js";
+import { isPowerGrydLeaveAlone } from "../lib/powerGryd.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { signatureHay } from "../lib/signatureQa.js";
@@ -134,6 +135,19 @@ export class UnpauseAfterSigQaService {
       );
       if (!isPocClient(`${name} ${clientName}`, this.config.pocClientNamePatterns)) {
         result.blocked.push(`#${campaign.id} ${name}: not a POC campaign`);
+        continue;
+      }
+      if (
+        isPowerGrydLeaveAlone({
+          campaignId: campaign.id,
+          clientId: campaign.client_id,
+          campaignName: name,
+          clientName,
+        })
+      ) {
+        result.blocked.push(
+          `#${campaign.id} ${name}: PowerGryd POC leave-alone — Josh STARTs (D204)`,
+        );
         continue;
       }
       const expected = brandByClientId.get(campaign.client_id) ?? "";

@@ -554,4 +554,53 @@ describe("MailboxSettingsService", () => {
       signature: "Joshua Osborn\nSalesGlider",
     });
   });
+
+  it("D204: does not rewrite a PowerGryd dedicated seat to Bolder", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      {
+        listAllEmailAccounts: async () => [
+          {
+            id: 21592105,
+            from_email: "ada@trygetintroduced.info",
+            from_name: "Ada Pool",
+            message_per_day: 30,
+            minTimeToWaitInMins: 10,
+            signature: "Ada Pool\nBolder Cyber Partners",
+            client_id: 542838,
+            campaign_ids: [3763803],
+          },
+        ],
+        listClients: async () => [
+          { id: 542838, name: "Bolder", logo: "Bolder Cyber Partners" },
+          { id: 592842, name: "Jesse Miller", logo: "PowerGRYD" },
+        ],
+        listCampaigns: async () => [
+          {
+            id: 3763803,
+            name: "BCP Logistics",
+            status: "ACTIVE",
+            client_id: 542838,
+          },
+        ],
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+        configureWarmup: async () => {
+          throw new Error("warmup should not run");
+        },
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.signatureSet, 1);
+    assert.deepEqual(updates[0]?.fields, {
+      signature: "Ada Pool\nPowerGRYD",
+    });
+  });
 });

@@ -906,4 +906,77 @@ describe("OneClientMembershipService", () => {
     assert.equal(result.signaturesSet, 0);
     assert.deepEqual(updates, []);
   });
+
+  it("D204: PowerGryd dedicated seats fan out — no D200 peel, heal Bolder re-point", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const powerCamps = [
+      4005218, 4005220, 4005223, 4005225, 4005226, 4005228, 4005229, 4005231,
+      4005232, 4005233, 4005234, 4005235,
+    ];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        ...powerCamps.map((id) => ({
+          id,
+          name: `PowerGRYD ${id}`,
+          status: "ACTIVE",
+          client_id: 592842,
+        })),
+        {
+          id: 3763803,
+          name: "BCP Logistics",
+          status: "ACTIVE",
+          client_id: 542838,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 21592105,
+          from_email: "ada@trygetintroduced.info",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nBolder Cyber Partners",
+          client_id: 542838,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [...powerCamps, 3763803],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        ...padAccounts(3763803, 542838),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 592842, name: "Jesse Miller", logo: "PowerGRYD" },
+        { id: 542838, name: "Bolder", logo: "Bolder Cyber Partners" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(
+      removed,
+      [[3763803, [21592105]]],
+      "Bolder leftover peels; the 12 PowerGryd camps stay",
+    );
+    assert.equal(
+      result.pulled.some((row) => powerCamps.includes(row.campaignId)),
+      false,
+    );
+    assert.deepEqual(updates, [
+      {
+        id: 21592105,
+        fields: {
+          signature: "Ada Pool\nPowerGRYD",
+          client_id: 592842,
+        },
+      },
+    ]);
+  });
 });

@@ -101,8 +101,9 @@ const ConfigSchema = z.object({
   /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
   /**
-   * D81 — POC clients (Goliath today) may receive generics without a
-   * per-campaign Slack tap. Everyone else needs Josh's Slack approve.
+   * D81 / D204 — POC name patterns (Goliath today). PowerGryd 592842
+   * is also a POC via hardcoded id / hay (D204) even when this list
+   * stays "goliath". Rotating-pool owner remains Goliath.
    */
   pocClientNamePatterns: z
     .string()

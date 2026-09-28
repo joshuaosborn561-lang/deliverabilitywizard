@@ -14,6 +14,10 @@ import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { pocClientId } from "../lib/pocClient.js";
+import {
+  isPowerGrydClientId,
+  isPowerGrydDedicatedSeat,
+} from "../lib/powerGryd.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import {
@@ -278,6 +282,13 @@ export class ClientRestService {
         )
       ) {
         result.skipped.push(`${email}: attach blocked (D176)`);
+        continue;
+      }
+      if (
+        isPowerGrydDedicatedSeat(account) ||
+        isPowerGrydClientId(account.client_id)
+      ) {
+        result.skipped.push(`${email}: PowerGryd dedicated seat — no A/B rest (D204)`);
         continue;
       }
       const dedicatedClientId = isGenericMailbox(

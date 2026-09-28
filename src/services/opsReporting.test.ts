@@ -844,6 +844,8 @@ describe("PlacementResultsService", () => {
   });
 
   it("fills inbox, spam, seeds, date, and run when a row only had ESP scores", async () => {
+    // A placement date older than 48 hours stays incomplete.
+    const updatedAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const state = await stateFixture();
     state.setPlacementResults({
       generatedAt: "2026-09-21T00:00:00.000Z",
@@ -883,7 +885,7 @@ describe("PlacementResultsService", () => {
         ],
       }),
       getTestDetails: async () => ({
-        updated_at: "2026-09-22T06:37:03.220Z",
+        updated_at: updatedAt,
         test_run_no: 5,
         status: "ACTIVE",
       }),
@@ -907,7 +909,7 @@ describe("PlacementResultsService", () => {
     assert.equal(row?.inboxPercent, (156 / 158) * 100);
     assert.equal(row?.spamPercent, (2 / 158) * 100);
     assert.equal(row?.totalSeeds, 158);
-    assert.equal(row?.createdAt, "2026-09-22T06:37:03.220Z");
+    assert.equal(row?.createdAt, updatedAt);
     assert.equal(row?.runNumber, 5);
     assert.equal(result.complete, true);
   });

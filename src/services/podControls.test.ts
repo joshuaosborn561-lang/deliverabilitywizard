@@ -299,4 +299,101 @@ describe("pod controls", () => {
     );
     void third;
   });
+
+  it("D132: same-ESP tags score from the inventory book, not a second account fetch", async () => {
+    const state = new StateStore(
+      `/tmp/dw-pod-book-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const config = loadConfig({} as NodeJS.ProcessEnv);
+    const googleAuth = {
+      spf_result: { spf: "google.com: domain of a@client.com" },
+      dkim_result: { dkim: "mx.google.com; dkim=pass" },
+    };
+    const accounts = [
+      {
+        id: 1,
+        from_email: "a@client.com",
+        type: "GMAIL",
+        client_id: 9,
+        campaign_ids: [1],
+      },
+    ];
+    let listed: Array<{
+      id: string;
+      spam_test_id: string;
+      test_name: string;
+      status: string;
+      every_days?: number;
+    }> = [];
+    const service = new PodControlService(
+      config,
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Acme", status: "ACTIVE", client_id: 9 },
+          { id: 99, name: "Pod control shell", status: "PAUSED" },
+        ],
+        listClients: async () => [{ id: 9, name: "Acme" }],
+        listAllEmailAccounts: async () => {
+          throw new Error("HTTP 429 — must not refetch the account book");
+        },
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Quick check-in" },
+        ],
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateCampaignSequences: async () => undefined,
+        updateCampaignStatus: async () => undefined,
+      } as never,
+      {
+        listFolders: async () => [],
+        createFolder: async () => ({ id: 3 }),
+        listTests: async () => listed,
+        resolveProviderIds: async () => [2, 20, 21],
+        getTestDetails: async () => ({ provider_id: [2, 20, 21] }),
+        createAutomatedPlacement: async () => ({ id: "pod-book-1" }),
+        getSenderAccountReport: async () => [
+          {
+            email: "a@client.com",
+            details: [
+              { reply: { mail_folder: "Inbox", ...googleAuth } },
+              { reply: { mail_folder: "Inbox", ...googleAuth } },
+              { reply: { mail_folder: "Inbox", ...googleAuth } },
+            ],
+          },
+        ],
+      } as never,
+      { notifyPodControls: async () => undefined } as never,
+      state,
+      {
+        get: async () => ({
+          campaigns: [
+            { id: 1, name: "Acme", status: "ACTIVE", client_id: 9 },
+            { id: 99, name: "Pod control shell", status: "PAUSED" },
+          ],
+          accounts,
+          clients: [{ id: 9, name: "Acme" }],
+          fetchedAt: Date.now(),
+        }),
+      } as unknown as InventoryBook,
+    );
+
+    const first = await service.run({ dryRun: false });
+    assert.equal(first.testsCreated.length, 1);
+    listed = state.listPodControls().map((row) => ({
+      id: row.spamTestId,
+      spam_test_id: row.spamTestId,
+      test_name: "Pod control: Acme A",
+      status: "running",
+      every_days: 1,
+    }));
+
+    const second = await service.run({ dryRun: false });
+    assert.equal(second.errors.length, 0, second.errors.join("; "));
+    assert.ok(second.sendersRead >= 1, "sender report must be scored");
+    const tag = state.getMailboxControl("a@client.com");
+    assert.equal(tag?.placement, "PRIMARY");
+    assert.equal(tag?.scoredSameEsp, true);
+  });
 });

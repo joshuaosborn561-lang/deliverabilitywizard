@@ -409,8 +409,10 @@ or the day is done. Silent findings are a bug (D163).
   Read three things on the same domains: the campaign-copy test per ESP, the
   known-good control per ESP, and the unwarmed canary fleet sending that
   same copy (D93, D96).
-  - Known-good also failing an ESP → **infra**, not a word.
-  - Unwarmed canaries land the copy while live senders fail → infra.
+  - Known-good also failing an ESP → **infra**, not a word
+    (even when mailbox-control tags are INSUFFICIENT — D93).
+  - Unwarmed canaries land the copy while live senders fail → infra
+    (same, even with no standing tag — D96).
   - Campaign copy fails an ESP, known-good fine everywhere, unwarmed canaries
     also fail that copy → **word hunt** (deletion tests on the isolation
     rig). Variants ride a paused **DW Word Hunt Shell** with the isolation

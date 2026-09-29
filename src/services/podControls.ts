@@ -432,8 +432,12 @@ export class PodControlService {
   private async senderTypeMap(): Promise<Map<string, string | undefined>> {
     const map = new Map<string, string | undefined>();
     try {
-      const accounts = await this.smartlead.listAllEmailAccounts();
-      for (const account of accounts) {
+      // D132 — same-ESP scoring reads the shared account book. A second
+      // listAllEmailAccounts here 429'd, left every type blank, and every
+      // mailbox-control tag UNKNOWN, so isolation could only say
+      // INCONCLUSIVE (Peterson C1 AIRPODS #3798228, 2026-09-29).
+      const snapshot = await this.book.get();
+      for (const account of snapshot.accounts) {
         const email = accountEmail(account)?.toLowerCase();
         if (email) map.set(email, account.type);
       }

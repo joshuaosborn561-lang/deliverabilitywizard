@@ -13,6 +13,11 @@ import {
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
+import { chicagoWallClock } from "../lib/canonOpsHours.js";
+import {
+  campaignHoldReason,
+  holdPolicyFromConfig,
+} from "../lib/holdPolicy.js";
 import type { StateStore } from "../state/store.js";
 import { staffingSlackLines } from "../lib/staffingSlack.js";
 import {
@@ -303,6 +308,17 @@ export class CampaignHealthService {
 
       if (isExcluded({ id: pending.campaignId, name }, this.config.topUpExcludeCampaigns)) {
         this.state.clearPendingResume(pending.campaignId);
+        continue;
+      }
+      const holdReason = campaignHoldReason(
+        campaign ?? { id: pending.campaignId, name },
+        holdPolicyFromConfig(this.config),
+        chicagoWallClock(new Date(), this.config.canonOpsTimezone).ymd,
+      );
+      if (holdReason) {
+        console.log(
+          `[health] Pending-resume #${pending.campaignId} ${name}: standing hold — ${holdReason} (D205)`,
+        );
         continue;
       }
       // D128 — no snapshot means the pass could not compute this client's

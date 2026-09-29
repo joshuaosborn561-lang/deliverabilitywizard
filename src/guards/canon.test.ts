@@ -9797,7 +9797,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|20[0-3])\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-9])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9932,7 +9932,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|20[0-3])\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-9])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10096,7 +10096,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|20[0-3])\*\*/,
+      /Canon as of \*\*D(199|20[0-9])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10268,7 +10268,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D20[0-3]\*\*/,
+      /Canon as of \*\*D20[0-9]\*\*/,
       stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10461,8 +10461,8 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D203\*\*/,
-      stop("CANON is dated D203.", "CANON.md header was not bumped to D203."),
+      /Canon as of \*\*D20[3-9]\*\*/,
+      stop("CANON is dated D203 or later.", "CANON.md header lost the D203-era stamp."),
     );
     assert.match(
       canon,
@@ -10535,6 +10535,208 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
         "The status index lists D203 (D127).",
         "DECISIONS.md status index has no D203 row.",
       ),
+    );
+  });
+});
+
+describe("owner intent — D205 wizard-owned canon ops", () => {
+  it("D205: four /health stages, auto-allow min-40, hold PAUSE, quiet Slack", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
+    const {
+      DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS,
+      POWERGRYD_CLIENT_ID,
+    } = await import("../lib/autoAllowGenerics.js");
+    const {
+      DEFAULT_HOLD_CAMPAIGN_IDS,
+      GOLIATH_CLIENT_ID,
+      GOLIATH_HOLD_UNTIL_YMD_DEFAULT,
+    } = await import("../lib/holdPolicy.js");
+
+    for (const name of [
+      "hold-enforcement",
+      "min40-topup",
+      "powergryd-watch",
+      "generic-cleanup",
+    ]) {
+      assert.ok(
+        name in STAGE_OVERDUE_WINDOWS_MS,
+        stop(
+          `Stage "${name}" is a D205 canon-ops stage.`,
+          "stageWindows.ts lost a canon-ops window — the boot prune would drop it.",
+        ),
+      );
+    }
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    assert.match(
+      index,
+      /stage\("hold-enforcement"/,
+      stop("hold-enforcement is watchdogged (D205).", "index.ts lost stage(\"hold-enforcement\")."),
+    );
+    assert.match(
+      index,
+      /stage\("min40-topup"/,
+      stop("min40-topup is watchdogged (D205).", "index.ts lost stage(\"min40-topup\")."),
+    );
+    assert.match(
+      index,
+      /stage\("powergryd-watch"/,
+      stop("powergryd-watch is watchdogged (D205).", "index.ts lost stage(\"powergryd-watch\")."),
+    );
+    assert.match(
+      index,
+      /stage\("generic-cleanup"/,
+      stop("generic-cleanup is watchdogged (D205).", "index.ts lost stage(\"generic-cleanup\")."),
+    );
+    assert.match(
+      index,
+      /cronCanonOps/,
+      stop("Canon ops has its own cron (D205).", "index.ts no longer schedules cronCanonOps."),
+    );
+    assert.match(
+      index,
+      /America\/Chicago|canonOpsTimezone/,
+      stop("Canon ops cron is America/Chicago (D205).", "index.ts lost the Chicago timezone."),
+    );
+
+    assert.equal(defaults.enableCanonOps, true);
+    assert.equal(defaults.enableHoldEnforcement, true);
+    assert.equal(defaults.enableMin40TopUp, true);
+    assert.equal(defaults.enablePowerGrydWatch, true);
+    assert.equal(defaults.enableGenericCleanup, true);
+    assert.equal(defaults.slackBatchGenericBackfill, true);
+    assert.equal(defaults.slackFoldApprovalRecorded, true);
+    assert.equal(defaults.cronCanonOps, "*/30 * * * *");
+    assert.equal(defaults.canonOpsTimezone, "America/Chicago");
+    assert.ok(defaults.autoAllowGenericClientIds.includes(542838));
+    assert.ok(defaults.autoAllowGenericClientIds.includes(521881));
+    assert.ok(defaults.autoAllowGenericClientIds.includes(418274));
+    assert.ok(defaults.autoAllowGenericClientIds.includes(582890));
+    assert.ok(defaults.autoAllowGenericClientIds.includes(574020));
+    assert.equal(defaults.powerGrydClientId, POWERGRYD_CLIENT_ID);
+    assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3847837));
+    assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3969268));
+    assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3739316));
+    assert.equal(GOLIATH_CLIENT_ID, 548611);
+    assert.equal(GOLIATH_HOLD_UNTIL_YMD_DEFAULT, "2026-10-15");
+    assert.ok(DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS.includes(542838));
+
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      exec,
+      /slackFoldApprovalRecorded/,
+      stop(
+        "Approval recorded is folded into the original card (D205).",
+        "isolationExecute.ts no longer checks slackFoldApprovalRecorded.",
+      ),
+    );
+    const unpause = await readFile(
+      new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      unpause,
+      /campaignHoldReason/,
+      stop(
+        "qa-unpause refuses standing holds (D205).",
+        "unpauseAfterSigQa.ts no longer consults campaignHoldReason.",
+      ),
+    );
+    const health = await readFile(
+      new URL("../services/campaignHealth.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      health,
+      /campaignHoldReason/,
+      stop(
+        "Health pending-resume refuses standing holds (D205).",
+        "campaignHealth.ts no longer consults campaignHoldReason.",
+      ),
+    );
+
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      min40,
+      /Never retag named seats/,
+      stop(
+        "min-40 never retags named seats (D205/D203).",
+        "min40TopUp.ts lost the never-retag named seats rule.",
+      ),
+    );
+    const watch = await readFile(
+      new URL("../services/powerGrydWatch.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      watch,
+      /Never mutate memberships or status/,
+      stop(
+        "PowerGRYD watch is alert-only (D205).",
+        "powerGrydWatch.ts lost the hands-off contract.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D205\*\*/,
+      stop("CANON is dated D205.", "CANON.md header was not bumped to D205."),
+    );
+    assert.match(
+      canon,
+      /hold-enforcement/,
+      stop("CANON names hold-enforcement (D205).", "CANON.md lost the hold-enforcement stage."),
+    );
+    assert.match(
+      canon,
+      /min40-topup/,
+      stop("CANON names min40-topup (D205).", "CANON.md lost the min40-topup stage."),
+    );
+    assert.match(
+      canon,
+      /powergryd-watch/,
+      stop("CANON names powergryd-watch (D205).", "CANON.md lost the powergryd-watch stage."),
+    );
+    assert.match(
+      canon,
+      /generic-cleanup/,
+      stop("CANON names generic-cleanup (D205).", "CANON.md lost the generic-cleanup stage."),
+    );
+    assert.match(
+      canon,
+      /Approval recorded/,
+      stop(
+        "CANON forbids a separate Approval recorded message (D205).",
+        "CANON.md Slack contract lost the fold rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /batched card/,
+      stop("CANON batches generic_backfill asks (D205).", "CANON.md lost the batched-card rule."),
+    );
+
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D205 — The wizard owns Canon ops/,
+      stop("The ledger records D205.", "DECISIONS.md no longer has D205."),
+    );
+    assert.match(
+      decisions,
+      /^\| D205 \|/m,
+      stop("The status index lists D205 (D127).", "DECISIONS.md status index has no D205 row."),
     );
   });
 });

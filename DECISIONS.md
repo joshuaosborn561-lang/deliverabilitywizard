@@ -58,7 +58,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D36 | Superseded by D93/D96 |
 | D37–D38 | Burned numbers — no entry exists |
 | D39 | Superseded — held tests retired (D51/D59); day brief superseded by D71 |
-| D40 | Live |
+| D40 | Live — standing holds (D205) stay PAUSED and are not auto-STARTed |
 | D41 | Mostly superseded (D43 cohorts, D50 clock, D71 Slack) — burn checklist and DKIM/DMARC advisory live |
 | D42 | Superseded by D43 |
 | D43 | Live — qualified by D169 (off-week also leaves PAUSED/STOPPED); split is ESP-balanced within Outlook/Gmail (D192); ACTIVE detach will not drop a campaign below 40 (D197) |
@@ -163,7 +163,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D145 | Amended by D146 / D162 | 5.1.8 outbound-spam blocks classify sender_blocked and trigger on any sample (emission changed by D146; the scan must run without a burst / on PAUSED — D162) |
 | D146 | Live — 7-day re-ask window superseded by D179 | A blocked sender opens the standard burned-domain retire ask (receipts + buttons); pending ask is the live-ask dedupe |
 | D147 | Amended by D148 | Resend mechanics live (per-lead NDR gate, suppression respected, once per lead per campaign); the trigger moved from the human restart to the burst itself, with per-class remediation gates |
-| D148 | Live | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
+| D148 | Live — bounce loop never pauses; D205 hold enforcement is a separate PAUSED writer for the configured hold list only | Nothing pauses: a burst classifies, receipts, remediates and re-queues — gates: tenant next UTC day, sender_blocked on resolved retire ask, content on edited copy; 7-day expiry |
 | D149 | Live | Alerts and watches live on Railway, not in a chat session: an overdue watchdog stage pages Slack once per episode (+ recovery note), boot logs/pages its deploy identity, `ops_alert` joins the D71 allowlist; the 15-minute chat-session watch is retired |
 | D150 | Live — replacement naming amended by D161; one-ESP-per-domain buy amended by D175 | Retire is one fell swoop: pull + ESP-matched replacement buy + D134 backfill on the same Josh tap |
 | D151 | Live | Word hunt rides a paused DW Word Hunt Shell — SmartDelivery requires campaign_id + sequence_mapping_id + provider_ids |
@@ -213,6 +213,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only); 40/POD inventory by D203 | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Live — 40/POD inventory by D203 | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
+| D205 | Live | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
 
 ---
 
@@ -6450,6 +6451,94 @@ split is documented static / never-retag; CANON names 40/POD
 inventory, the ~1/3 per-POD mix floor, and the D193 narrow
 for the min-40 fill path; floor prompts no longer say only
 "half that client's own inboxes" without the 40/POD minimum.
+
+---
+
+## D205 — The wizard owns Canon ops; an outside agent only reads /health
+
+**Date.** 2026-09-29.
+
+**Decision.** Josh: the wizard itself does the Canon work an
+outside agent used to run every 30 minutes against Smartlead
+and the ops API. That agent now only hits `GET /health` and
+confirms each job ran. Four new `/health` stages on a weekday
+08:00–18:00 America/Chicago cron (`*/30`), idle-ticked outside
+the window so a weekend is not OVERDUE:
+
+1. **hold-enforcement** — a configurable campaign-id list
+   (Parlay SEGs 3847837 / 3847839 / 3847844–3847847 / 3847849 /
+   3847850, PE Thesis 3969268, Cold Call 3739316, Insight SEG
+   3921647) plus name patterns (Insight SEG, SG Staffing Owners
+   CANDIDATES) plus Goliath client 548611 0-ACTIVE through
+   2026-10-15 inclusive Chicago. If one is ACTIVE, PAUSE it and
+   Slack one `ops_alert` line. Never START. qa-unpause and
+   health pending-resume refuse held campaigns. This is the
+   only live-campaign PAUSED write besides shells. The bounce
+   loop still never pauses (D148). D40 still never auto-STARTs
+   a manual pause.
+
+2. **min40-topup** — every ACTIVE named-client campaign gets
+   the on-week POD to 40 with exclusive warmed
+   (`warmDays >= 21`) client-signed generics, ~33% ESP mix,
+   client exclusivity. Auto-allow clients (BCP 542838, TechEvo
+   521881, Parlay 418274, Insight 582890, EMCOR 574020) execute
+   the fill and do **not** get an Allow-generics card. Everyone
+   else gets one batched card. Never retag named seats across
+   PODs. A generic gets the client's `client_id` + signature
+   only while sending on that client's live campaign. This is
+   standing per-client allow, not flipping
+   `campaignMayTakeGenerics` (that would dump the rotating
+   pool — D193 still stands past the shortfall).
+
+3. **powergryd-watch** — PowerGRYD client 592842 is hands-off.
+   Detect dedicated-seat count drops and Slack once per change.
+   Never peel, restaff, START, PAUSE, or retire its seats.
+
+4. **generic-cleanup** — when a GENERIC-tagged mailbox is no
+   longer on any ACTIVE campaign of a client, clear that
+   client's `client_id` and signature. PowerGRYD and named
+   seats are never rewritten.
+
+**Slack noise (same decision).** Stop posting a separate
+"Approval recorded" confirmation for generic_backfill — fold
+it into the original card (reaction or silent stamp; D195
+already strips the buttons). Several generic_backfill cards
+in one burst become one batched message. Real alerts
+(spam / INFRA / placement / disconnected / Canon misses that
+need a human) stay as they are.
+
+**Why.** An outside triage bot started a full expensive run
+on every `#deliverability` / `#campaign-watchdog` message, and
+the 30-minute Canon QA lived outside the wizard. Josh wants
+`/health` to be the only outside check.
+
+**Rejected.** Flipping leftover D134 / `campaignMayTakeGenerics`
+as the auto-allow (dumps rotating pool). Retagging named seats
+across POD-A/POD-B. PowerGRYD peel/restaff. Boot-kicking the
+new stages (D122). A weekend-overdue watchdog from a
+weekday-only cron with no idle tick. Reversing D148 (bounce
+still never pauses) or D40 (manual pauses still never
+auto-START). Posting 10–13 Allow-generics cards in one burst.
+
+**Supersedes / amends.** Adds the hold-list PAUSED writer
+alongside D148 (does not reverse it). Qualifies D40:
+held campaigns are not auto-STARTed. Narrows the Slack
+`action_result` contract for generic_backfill confirmations
+only. Executes D203's min-40 fill for standing auto-allow
+clients without a human tap. Does not reverse D193 rotating-pool
+dump past the shortfall, D122 boot-quiet, or D81/D82 PowerGRYD
+/ POC carve-outs.
+
+**Guards.** canon D205: the four stage names are in
+`STAGE_OVERDUE_WINDOWS_MS` and `index.ts`; defaults
+`ENABLE_CANON_OPS` / per-stage flags / Slack batch+fold on;
+auto-allow ids include BCP / TechEvo / Parlay / Insight /
+EMCOR; hold list includes the Parlay SEGs + Goliath until
+2026-10-15; CANON dated D205 names the four stages, the
+hold PAUSED exception, auto-allow, PowerGRYD watch-only,
+batched cards, and folded Approval recorded; qa-unpause
+and health resume refuse holds; `approveGenericBackfill`
+does not `announce` when fold is on.
 
 ---
 

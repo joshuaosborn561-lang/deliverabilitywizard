@@ -66,6 +66,11 @@ import { ResultMonitor } from "./services/resultMonitor.js";
 import { DnsAuditService } from "./services/dnsAudit.js";
 import { CampaignAuditService } from "./services/campaignAudit.js";
 import { CampaignCheckService } from "./services/campaignCheck.js";
+import { HoldEnforcementService } from "./services/holdEnforcement.js";
+import { Min40TopUpService } from "./services/min40TopUp.js";
+import { PowerGrydWatchService } from "./services/powerGrydWatch.js";
+import { GenericCleanupService } from "./services/genericCleanup.js";
+import { canonOpsIdleReason } from "./lib/canonOpsHours.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
@@ -259,6 +264,7 @@ async function main(): Promise<void> {
   let topUpInFlight: Promise<unknown> | null = null;
   let healthInFlight: Promise<unknown> | null = null;
   let bounceAutostopInFlight: Promise<unknown> | null = null;
+  let canonOpsInFlight: Promise<unknown> | null = null;
   let opsCheckInFlight: Promise<{
     monitor: unknown;
     dns: unknown;
@@ -513,6 +519,20 @@ async function main(): Promise<void> {
     inventoryBook,
     slack,
   );
+  const holdEnforcement = new HoldEnforcementService(
+    config,
+    smartlead,
+    slack,
+    state,
+  );
+  const min40TopUp = new Min40TopUpService(config, smartlead, slack, state);
+  const powerGrydWatch = new PowerGrydWatchService(
+    config,
+    slack,
+    state,
+    smartlead,
+  );
+  const genericCleanup = new GenericCleanupService(config, smartlead, state);
   const clientDayBrief = new ClientDayBriefService(
     config,
     smartlead,
@@ -897,6 +917,63 @@ async function main(): Promise<void> {
     });
   };
 
+  const runCanonOps = async (
+    opts: { force?: boolean } = {},
+  ): Promise<unknown> => {
+    if (canonOpsInFlight) {
+      console.log("[canon-ops] Already running — skipping overlapping trigger");
+      return { skipped: true as const, reason: "already-running" };
+    }
+    canonOpsInFlight = (async () => {
+      const idle = opts.force
+        ? undefined
+        : !config.enableCanonOps
+          ? "disabled"
+          : canonOpsIdleReason({
+              timezone: config.canonOpsTimezone,
+              weekdayOnly: config.canonOpsWeekdayOnly,
+              hourStart: config.canonOpsHourStart,
+              hourEnd: config.canonOpsHourEnd,
+            });
+      let inventory: InventorySnapshot | undefined;
+      if (!idle) {
+        inventory = await inventoryBook.get();
+      }
+      const runOrIdle = (
+        enabled: boolean,
+        run: () => Promise<unknown>,
+      ): (() => Promise<unknown>) => {
+        if (!enabled) {
+          return async () => ({ skipped: true, reason: "disabled" });
+        }
+        if (idle) {
+          return async () => ({ skipped: true, reason: idle });
+        }
+        return run;
+      };
+      const hold = await stage("hold-enforcement", runOrIdle(
+        config.enableHoldEnforcement,
+        () => holdEnforcement.run({ inventory }),
+      ));
+      const min40 = await stage("min40-topup", runOrIdle(
+        config.enableMin40TopUp,
+        () => min40TopUp.run({ inventory }),
+      ));
+      const power = await stage("powergryd-watch", runOrIdle(
+        config.enablePowerGrydWatch,
+        () => powerGrydWatch.run({ inventory }),
+      ));
+      const cleanup = await stage("generic-cleanup", runOrIdle(
+        config.enableGenericCleanup,
+        () => genericCleanup.run({ inventory }),
+      ));
+      return { hold, min40, power, cleanup, idle: idle ?? null };
+    })().finally(() => {
+      canonOpsInFlight = null;
+    });
+    return canonOpsInFlight;
+  };
+
   const runBounceAutostop = async () => {
     assertRuntimeSecrets(config);
     if (!config.enableCampaignBounceAutostop) {
@@ -1087,6 +1164,9 @@ async function main(): Promise<void> {
       `Invalid CRON_DELIVERY_WATCH expression: ${config.cronDeliveryWatch}`,
     );
   }
+  if (!cron.validate(config.cronCanonOps)) {
+    throw new Error(`Invalid CRON_CANON_OPS expression: ${config.cronCanonOps}`);
+  }
   const sendVolumeSchedules = parseSchedules(config.cronSendVolume);
   for (const expression of sendVolumeSchedules) {
     if (!cron.validate(expression)) {
@@ -1165,6 +1245,19 @@ async function main(): Promise<void> {
     // (live 2026-08-26 D121: attach ended 06:35:31, boot health
     // skipped 06:36:01). The 15-minute cron is soon enough.
   }
+
+  // D205 — always schedule so disabled / after-hours ticks still
+  // refresh lastOkAt. No boot kick (D122).
+  cron.schedule(
+    config.cronCanonOps,
+    () => {
+      void runCanonOps().catch((error) => {
+        console.error("[canon-ops] Unhandled cron error", error);
+        feedBugRemediator("canon-ops-cron", error);
+      });
+    },
+    { timezone: config.canonOpsTimezone },
+  );
 
   if (config.enableCampaignBounceAutostop) {
     cron.schedule(config.cronBounceAutostop, () => {
@@ -2134,6 +2227,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       enablePodControls: config.enablePodControls,
       enableCampaignCheck: config.enableCampaignCheck,
       cronCampaignCheck: config.cronCampaignCheck,
+      enableCanonOps: config.enableCanonOps,
+      cronCanonOps: config.cronCanonOps,
+      canonOpsTimezone: config.canonOpsTimezone,
+      enableHoldEnforcement: config.enableHoldEnforcement,
+      enableMin40TopUp: config.enableMin40TopUp,
+      enablePowerGrydWatch: config.enablePowerGrydWatch,
+      enableGenericCleanup: config.enableGenericCleanup,
+      autoAllowGenericClientIds: config.autoAllowGenericClientIds,
+      slackBatchGenericBackfill: config.slackBatchGenericBackfill,
+      slackFoldApprovalRecorded: config.slackFoldApprovalRecorded,
       campaignCheckCount: Object.keys(s.campaignChecks ?? {}).length,
       enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
       cronBounceAutostop: config.cronBounceAutostop,
@@ -2186,6 +2289,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         cronHealth: config.cronHealth,
         cronCampaignCheck: config.cronCampaignCheck,
         enableCampaignCheck: config.enableCampaignCheck,
+        enableCanonOps: config.enableCanonOps,
+        cronCanonOps: config.cronCanonOps,
+        enableHoldEnforcement: config.enableHoldEnforcement,
+        enableMin40TopUp: config.enableMin40TopUp,
+        enablePowerGrydWatch: config.enablePowerGrydWatch,
+        enableGenericCleanup: config.enableGenericCleanup,
         enableCampaignHealth: config.enableCampaignHealth,
         enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
         cronBounceAutostop: config.cronBounceAutostop,
@@ -2282,6 +2391,42 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await campaignClientTag.run();
         res.json({ ok: true, mode: "client-tag", result });
+        return;
+      }
+      if (
+        mode === "canon-ops" ||
+        mode === "canonops" ||
+        mode === "hold-enforcement" ||
+        mode === "holds" ||
+        mode === "min40" ||
+        mode === "min40-topup" ||
+        mode === "powergryd-watch" ||
+        mode === "powergryd" ||
+        mode === "generic-cleanup"
+      ) {
+        assertRuntimeSecrets(config);
+        if (mode === "hold-enforcement" || mode === "holds") {
+          const result = await holdEnforcement.run();
+          res.json({ ok: true, mode: "hold-enforcement", result });
+          return;
+        }
+        if (mode === "min40" || mode === "min40-topup") {
+          const result = await min40TopUp.run();
+          res.json({ ok: true, mode: "min40-topup", result });
+          return;
+        }
+        if (mode === "powergryd-watch" || mode === "powergryd") {
+          const result = await powerGrydWatch.run();
+          res.json({ ok: true, mode: "powergryd-watch", result });
+          return;
+        }
+        if (mode === "generic-cleanup") {
+          const result = await genericCleanup.run();
+          res.json({ ok: true, mode: "generic-cleanup", result });
+          return;
+        }
+        const result = await runCanonOps({ force: true });
+        res.json({ ok: true, mode: "canon-ops", result });
         return;
       }
       if (mode === "qa-unpause" || mode === "unpause-after-sig-qa") {
@@ -2625,6 +2770,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
+    );
+    console.log(
+      `[boot] Canon ops (D205): ${config.enableCanonOps ? `ENABLED ${config.cronCanonOps} ${config.canonOpsTimezone} weekday ${String(config.canonOpsHourStart).padStart(2, "0")}:00–${String(config.canonOpsHourEnd).padStart(2, "0")}:00; hold=${config.enableHoldEnforcement} min40=${config.enableMin40TopUp} powergryd=${config.enablePowerGrydWatch} cleanup=${config.enableGenericCleanup}` : "disabled (stages idle-tick)"}`,
     );
     console.log(
       `[boot] Campaign bounce loop (D141/D148): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; burst >${config.bounceBurstCount} bounces/10m from sends <24h old → classify + re-queue, never pause; ledger dumps do nothing; Smartlead bounce protection is UI-only, no API off-switch exists (D157))` : "disabled"}`,

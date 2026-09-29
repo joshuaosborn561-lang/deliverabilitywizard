@@ -65,10 +65,50 @@ describe("UnpauseAfterSigQaService", () => {
       fakeState(),
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-16T15:00:00Z"),
+    });
     assert.deepEqual(statuses, [[1, "START"]]);
     assert.equal(result.started[0]?.campaignId, 1);
     assert.ok(result.blocked.some((row) => row.includes("shell")));
+  });
+
+  it("does not START a Goliath campaign while the 0-ACTIVE hold is live (D205)", async () => {
+    const statuses: Array<[number, string]> = [];
+    const service = new UnpauseAfterSigQaService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Goliath Displacement M", status: "PAUSED", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "aaravsanchez@getoutreachdesk.info",
+            from_name: "Aarav Sanchez",
+            signature: "Aarav Sanchez\nGoliath Cybersecurity",
+            client_id: 548611,
+            campaign_ids: [1],
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+        updateCampaignStatus: async (id: number, status: string) => {
+          statuses.push([id, status]);
+        },
+      } as unknown as SmartleadClient,
+      deliveryWith([passingTest(1)]),
+      fakeState(),
+    );
+
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-09-29T15:00:00Z"),
+    });
+    assert.deepEqual(statuses, []);
+    assert.ok(result.blocked.some((row) => row.includes("held")));
   });
 
   it("does not start a paused non-POC campaign even when signatures match (D82)", async () => {
@@ -134,7 +174,10 @@ describe("UnpauseAfterSigQaService", () => {
       fakeState(),
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-16T15:00:00Z"),
+    });
     assert.deepEqual(statuses, []);
     assert.ok(result.blocked[0]?.includes("sig mismatch"));
   });
@@ -168,7 +211,10 @@ describe("UnpauseAfterSigQaService", () => {
       fakeState([1]),
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-16T15:00:00Z"),
+    });
     assert.deepEqual(statuses, []);
     assert.ok(result.blocked.some((row) => row.includes("bounce loop paused")));
   });
@@ -211,7 +257,10 @@ describe("UnpauseAfterSigQaService", () => {
       fakeState(),
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-16T15:00:00Z"),
+    });
     assert.deepEqual(statuses, [], "70% inbox and no reading both stay down");
     assert.ok(
       result.blocked.some((row) => row.includes("below the 85% launch bar")),

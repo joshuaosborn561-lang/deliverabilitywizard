@@ -168,8 +168,10 @@ function samePending(
     );
   }
   if (next.kind === "generic_backfill") {
+    const existingIds = signatureCampaignIdsOf(existing);
+    const nextIds = signatureCampaignIdsOf(next);
     return (
-      Number(existing.detail.campaignId) === Number(next.detail.campaignId) &&
+      nextIds.some((id) => existingIds.includes(id)) &&
       (existing.status === "pending" ||
         existing.status === "approved" ||
         existing.status === "executed")

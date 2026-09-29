@@ -42,17 +42,22 @@ new messages in `#deliverability` (`C0BJQUTV7A8`) and `#campaign-watchdog`
 Then, on live Smartlead:
 
 - On-week pod only. Do not retag named seats between POD-A and POD-B (D203).
+  Every ACTIVE campaign owes ≥40 staffable senders from its own client
+  (D207). Same-client generics may sit on every ACTIVE campaign of that
+  client. Never detach seats from PAUSED/STOPPED.
 - Standing-ON campaigns that Smartlead paused for bounce protection, when
   the sampled NDRs are tenant rate-limit and not a bad list: restaff the
-  client's on-week seats to 40 and START. Leave a campaign paused when the
-  lifetime rate is already over the armed threshold and the threshold
-  write will not stick. `POST /campaigns/{id}/settings` with
-  `bounce_autopause_threshold` returns ok and then drops the field
+  client's on-week seats **and that client's generics** to 40 on the
+  paused campaign (keep the seats — D207) and START. Leave a campaign
+  paused when the lifetime rate is already over the armed threshold and
+  the threshold write will not stick. `POST /campaigns/{id}/settings`
+  with `bounce_autopause_threshold` returns ok and then drops the field
   (D157). Do not flap a campaign that will peel again on the next bounce.
-- Top up other live non-SEG campaigns of that client to 40 on-week
-  staffable seats. Peel off-week seats only when the on-week count stays
-  at or above 40. If the on-week pool is smaller than 40, attach the pool
-  and leave the campaign short. Do not invent seats and do not retag.
+- Top up other live non-SEG campaigns of that client to 40 staffable
+  seats each, sharing that client's generics. Peel off-week seats only
+  from ACTIVE and only when the campaign stays at or above 40. If the
+  client pool is smaller than 40, attach all of it and leave the
+  campaign short. Do not invent seats and do not retag.
 - Peel foreign-client seats, SMTP/IMAP failures, and domains with an open
   retire ask or on the attach blocklist (`getboldercyperpartner.info`,
   `keybold*`, `techevolutionusa.info`, `boldercyperpartnertop.info`, plus

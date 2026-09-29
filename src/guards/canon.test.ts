@@ -6369,7 +6369,7 @@ describe("owner intent — D168 word-hunt suggested edit keeps the offer", () =>
 });
 
 describe("owner intent — D169 A/B rest does not let PAUSED hoard the pod", () => {
-  it("D169: off-week detaches from PAUSED/STOPPED; on-week still every ACTIVE", async () => {
+  it("D169 is superseded by D207: PAUSED/STOPPED keep seats; BCP-named still not generic", async () => {
     const { readFile } = await import("node:fs/promises");
     const rest = await readFile(
       new URL("../services/clientRest.ts", import.meta.url),
@@ -6379,40 +6379,24 @@ describe("owner intent — D169 A/B rest does not let PAUSED hoard the pod", () 
       rest,
       /isRestDetachableCampaign/,
       stop(
-        "A/B rest names the detachable-membership helper (D169).",
+        "A/B rest names the detachable-membership helper (D169/D207).",
         "clientRest.ts lost isRestDetachableCampaign.",
       ),
     );
     assert.match(
       rest,
-      /REST_DETACH_STATUSES/,
+      /REST_DETACH_STATUSES = new Set\(\["ACTIVE"\]\)/,
       stop(
-        "Rest detach statuses are a named set (D169).",
-        "clientRest.ts no longer names REST_DETACH_STATUSES.",
+        "Rest detach statuses are ACTIVE only (D207).",
+        "clientRest.ts no longer names REST_DETACH_STATUSES as ACTIVE-only.",
       ),
     );
-    assert.match(
-      rest,
-      /"PAUSED"/,
-      stop(
-        "Off-week rest detaches from PAUSED campaigns (D169).",
-        "clientRest.ts no longer lists PAUSED as a rest-detach status.",
-      ),
-    );
-    assert.match(
-      rest,
-      /"STOPPED"/,
-      stop(
-        "Off-week rest detaches from STOPPED campaigns (D169).",
-        "clientRest.ts no longer lists STOPPED as a rest-detach status.",
-      ),
-    );
-    assert.match(
+    assert.doesNotMatch(
       rest,
       /leftoverPausedOrStopped/,
       stop(
-        "On-week restore clears leftover PAUSED/STOPPED attachments (D169).",
-        "clientRest.ts no longer hygiene-clears PAUSED/STOPPED on restore.",
+        "On-week restore must not hygiene-clear PAUSED/STOPPED (D207).",
+        "clientRest.ts still has leftoverPausedOrStopped.",
       ),
     );
     const inbox = await readFile(
@@ -6441,10 +6425,10 @@ describe("owner intent — D169 A/B rest does not let PAUSED hoard the pod", () 
     );
     assert.match(
       canon,
-      /ACTIVE, PAUSED, and STOPPED/,
+      /PAUSED and STOPPED keep/,
       stop(
-        "CANON says off-week leaves ACTIVE, PAUSED, and STOPPED (D169).",
-        "CANON.md lost the D169 rest-detach rule.",
+        "CANON says PAUSED/STOPPED keep their senders (D207).",
+        "CANON.md lost the D207 paused-keep-seats rule.",
       ),
     );
     const decisions = await readFile(
@@ -6455,8 +6439,16 @@ describe("owner intent — D169 A/B rest does not let PAUSED hoard the pod", () 
       decisions,
       /## D169 — A\/B rest detaches off-week from PAUSED and STOPPED/,
       stop(
-        "The paused-hoard rest rule is in the ledger (D169).",
+        "The paused-hoard rest rule stays in the ledger (D169).",
         "DECISIONS.md no longer has D169.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /\| D169 \| Superseded by D207/,
+      stop(
+        "The status index marks D169 superseded by D207.",
+        "DECISIONS.md status index still lists D169 as live.",
       ),
     );
   });
@@ -9707,7 +9699,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
       detachWouldBreakOnWeekMin({ status: "PAUSED" }, 40),
       false,
       stop(
-        "PAUSED hygiene is not the 40 floor (D169/D197).",
+        "PAUSED is not gated by the 40 floor — D207 never detaches it (D169/D197).",
         "detachWouldBreakOnWeekMin now blocks PAUSED detaches.",
       ),
     );
@@ -10119,7 +10111,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
 });
 
 describe("owner intent — D200 exclusive-attach is pool generics only", () => {
-  it("D200: named same-client seats stay; pool multi-link and foreign still peel", async () => {
+  it("D200 is superseded by D207: same-client generics stay; foreign still peels", async () => {
     const { peelCampaignIds } = await import("../lib/oneClient.js");
     assert.deepEqual(
       peelCampaignIds(
@@ -10132,7 +10124,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       ),
       [],
       stop(
-        "Named TechEvo seats may sit on every TechEvo campaign (D200).",
+        "Named TechEvo seats may sit on every TechEvo campaign (D207).",
         "peelCampaignIds still peels same-client named multi-link.",
       ),
     );
@@ -10145,10 +10137,10 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
         ],
         { poolGeneric: true },
       ),
-      [3847798],
+      [],
       stop(
-        "Pool generics stay exclusive even on the same client (D200).",
-        "peelCampaignIds no longer peels a pool generic extra link.",
+        "Same-client generics may multi-link (D207).",
+        "peelCampaignIds still peels a same-client generic extra link.",
       ),
     );
     assert.deepEqual(
@@ -10162,7 +10154,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       ),
       [10],
       stop(
-        "A foreign-client tag still peels on a named seat (D200).",
+        "A foreign-client tag still peels on a named seat (D207).",
         "peelCampaignIds dropped the foreign-client peel.",
       ),
     );
@@ -10182,7 +10174,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       ),
       false,
       stop(
-        "A leftover GENERIC tag does not make techevolution* exclusive-attach (D200).",
+        "A leftover GENERIC tag does not make techevolution* a pool generic (D200/D207).",
         "isPoolGenericSeat treats named TechEvo domains as pool generics.",
       ),
     );
@@ -10195,7 +10187,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       ),
       true,
       stop(
-        "Pool-brand hosts stay exclusive-attach (D200).",
+        "Pool-brand hosts stay pool generics (D200/D207).",
         "isPoolGenericSeat no longer recognises trygetintroduced* as pool.",
       ),
     );
@@ -10205,59 +10197,30 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
       ON_WEEK_MIN_SENDERS,
       40,
       stop(
-        "The standing on-week minimum is still 40 (D199/D200).",
+        "The standing campaign minimum is still 40 (D199/D207).",
         `ON_WEEK_MIN_SENDERS is ${ON_WEEK_MIN_SENDERS}.`,
       ),
     );
 
     const { readFile } = await import("node:fs/promises");
-    const files = {
-      oneClient: await readFile(
-        new URL("../services/oneClientMembership.ts", import.meta.url),
-        "utf8",
-      ),
-      topUp: await readFile(
-        new URL("../services/campaignTopUp.ts", import.meta.url),
-        "utf8",
-      ),
-    };
-    for (const [name, src] of Object.entries(files)) {
-      assert.match(
-        src,
-        /peelCampaignIds|isPoolGenericSeat/,
-        stop(
-          `${name} carves named seats out of exclusive-attach (D200).`,
-          `${name} still keys multi-link peels off campaign_ids.length alone.`,
-        ),
-      );
-    }
-
     const clientRest = await readFile(
       new URL("../services/clientRest.ts", import.meta.url),
       "utf8",
     );
-    assert.match(
+    assert.doesNotMatch(
       clientRest,
       /pickExclusiveOnWeekTarget/,
       stop(
-        "Client-rest on-week restore is exclusive for pool generics (D200).",
-        "clientRest.ts no longer picks one ACTIVE for pool/dedicated generics.",
+        "Client-rest must not pick one ACTIVE for pool generics (D207).",
+        "clientRest.ts still has pickExclusiveOnWeekTarget.",
       ),
     );
-    assert.match(
-      clientRest,
-      /isGenericMailbox/,
-      stop(
-        "Exclusive on-week restore keys off isGenericMailbox (D200).",
-        "clientRest.ts lost the generic exclusive-restore branch.",
-      ),
-    );
-    assert.match(
+    assert.doesNotMatch(
       clientRest,
       /exclusiveExtras/,
       stop(
-        "On-week restore peels same-client ACTIVE extras on pool generics (D200).",
-        "clientRest.ts no longer peels exclusive extras on restore.",
+        "On-week restore must not peel same-client extras (D207).",
+        "clientRest.ts still peels exclusiveExtras.",
       ),
     );
 
@@ -10273,34 +10236,26 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Exclusive-attach \/ no-multi-link is pool generics only/,
+      /Same-client generics MAY multi-link/,
       stop(
-        "CANON names pool-only exclusivity (D200).",
-        "CANON.md lost the D200 pool-only exclusive-attach rule.",
-      ),
-    );
-    assert.match(
-      canon,
-      /exactly one.*ACTIVE/,
-      stop(
-        "CANON says pool/dedicated generics restore onto exactly one ACTIVE (D200).",
-        "CANON.md lost the exclusive on-week restore rule.",
-      ),
-    );
-    assert.match(
-      canon,
-      /prefer already-on among targets/,
-      stop(
-        "CANON names already-on then thinnest exclusive restore (D200).",
-        "CANON.md lost the exclusive-restore pick order.",
+        "CANON names same-client generic multi-link (D207).",
+        "CANON.md lost the D207 same-client generic share rule.",
       ),
     );
     assert.match(
       decisions,
       /## D200 — Exclusive-attach \/ no-multi-link is pool generics only/,
       stop(
-        "Pool-only exclusivity is in the ledger (D200).",
+        "Pool-only exclusivity stays in the ledger (D200).",
         "DECISIONS.md no longer has D200.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /\| D200 \| Superseded by D207/,
+      stop(
+        "The status index marks D200 superseded by D207.",
+        "DECISIONS.md status index still lists D200 as live.",
       ),
     );
   });
@@ -10687,8 +10642,8 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D205\*\*/,
-      stop("CANON is dated D205.", "CANON.md header was not bumped to D205."),
+      /Canon as of \*\*D20[5-9]\*\*/,
+      stop("CANON is dated D205 or later.", "CANON.md header was not bumped to D205+."),
     );
     assert.match(
       canon,
@@ -10737,6 +10692,168 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
       decisions,
       /^\| D205 \|/m,
       stop("The status index lists D205 (D127).", "DECISIONS.md status index has no D205 row."),
+    );
+  });
+});
+
+describe("owner intent — D207 per-campaign 40 and same-client generic share", () => {
+  it("D207: per-campaign floor, same-client multi-link, paused keep seats", async () => {
+    const { peelCampaignIds } = await import("../lib/oneClient.js");
+    assert.deepEqual(
+      peelCampaignIds(
+        542838,
+        [
+          { campaignId: 1, clientId: 542838, shell: false },
+          { campaignId: 2, clientId: 542838, shell: false },
+        ],
+        { poolGeneric: true },
+      ),
+      [],
+      stop(
+        "A BCP generic may sit on every BCP campaign (D207).",
+        "peelCampaignIds still peels same-client generic extras.",
+      ),
+    );
+    assert.deepEqual(
+      peelCampaignIds(
+        542838,
+        [
+          { campaignId: 1, clientId: 542838, shell: false },
+          { campaignId: 9, clientId: 418274, shell: false },
+        ],
+        { poolGeneric: true },
+      ),
+      [9],
+      stop(
+        "Cross-client generic membership still peels (D207).",
+        "peelCampaignIds dropped the foreign-client peel.",
+      ),
+    );
+
+    const {
+      detachWouldBreakStaffableFloor,
+      hasHoldOrRetireTag,
+      ON_WEEK_MIN_SENDERS,
+    } = await import("../lib/clientStaffFloor.js");
+    assert.equal(ON_WEEK_MIN_SENDERS, 40);
+    const live = {
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [],
+    };
+    assert.equal(
+      detachWouldBreakStaffableFloor({ status: "ACTIVE" }, 40, live, "a@x.com"),
+      true,
+      stop(
+        "A staffable seat may not leave an ACTIVE campaign at 40 (D207).",
+        "detachWouldBreakStaffableFloor no longer protects ACTIVE at 40.",
+      ),
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        40,
+        live,
+        "a@x.com",
+        {},
+        { exempt: true },
+      ),
+      false,
+      stop(
+        "Cross-client / under-warmed exempt seats may still come off (D207).",
+        "exempt no longer skips the floor.",
+      ),
+    );
+    assert.equal(
+      hasHoldOrRetireTag({ tags: [{ tag_name: "RETIRE" }] }),
+      true,
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        40,
+        { ...live, tags: [{ tag_name: "RETIRE" }] },
+        "a@x.com",
+      ),
+      false,
+      stop(
+        "HOLD/RETIRE-tagged seats may come off below 40 (D207).",
+        "RETIRE is no longer a floor exception.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      min40,
+      /Never retag named seats/,
+      stop("min-40 never retags named seats (D205/D203).", "min40TopUp.ts lost the never-retag phrase."),
+    );
+    assert.match(
+      min40,
+      /isPowerGrydClientId/,
+      stop(
+        "min-40 restaffs PowerGRYD with its own seats (D207).",
+        "min40TopUp.ts no longer special-cases PowerGRYD.",
+      ),
+    );
+    assert.match(
+      min40,
+      /setMin40ShortfallAlerted/,
+      stop(
+        "min-40 pages one under-40 Slack per campaign per day (D207).",
+        "min40TopUp.ts lost the daily shortfall alert.",
+      ),
+    );
+
+    const watch = await readFile(
+      new URL("../services/powerGrydWatch.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      watch,
+      /Never mutate memberships or status/,
+      stop("PowerGRYD watch is alert-only (D205).", "powerGrydWatch.ts lost the hands-off phrase."),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D207\*\*/,
+      stop("CANON is dated D207.", "CANON.md header was not bumped to D207."),
+    );
+    assert.match(
+      canon,
+      /40 staffable senders per ACTIVE campaign/,
+      stop(
+        "CANON names the per-campaign 40 (D207).",
+        "CANON.md lost the per-campaign floor.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Same-client generics MAY multi-link/,
+      stop(
+        "CANON names same-client generic multi-link (D207).",
+        "CANON.md lost the generic share rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D207 — MIN 40 is per ACTIVE campaign/,
+      stop("The ledger records D207.", "DECISIONS.md no longer has D207."),
+    );
+    assert.match(
+      decisions,
+      /^\| D207 \|/m,
+      stop("The status index lists D207 (D127).", "DECISIONS.md status index has no D207 row."),
     );
   });
 });

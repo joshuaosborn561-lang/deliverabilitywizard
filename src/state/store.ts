@@ -293,6 +293,11 @@ export interface AppState {
   powerGrydSeatCount: number | null;
   /** D205 — last dedicated count we already Slacked a drop for. */
   powerGrydAlertedCount: number | null;
+  /**
+   * D207 — last Chicago ymd we posted a min-40 / PowerGRYD inventory
+   * shortfall `ops_alert` (key = `campaign:<id>` or `powergryd-inventory`).
+   */
+  min40ShortfallAlerted: Record<string, string>;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -499,6 +504,7 @@ const EMPTY_STATE: AppState = {
   deliverabilityDecisions: {},
   powerGrydSeatCount: null,
   powerGrydAlertedCount: null,
+  min40ShortfallAlerted: {},
 };
 
 export class StateStore {
@@ -578,6 +584,7 @@ export class StateStore {
           typeof parsed.powerGrydAlertedCount === "number"
             ? parsed.powerGrydAlertedCount
             : null,
+        min40ShortfallAlerted: parsed.min40ShortfallAlerted ?? {},
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1259,6 +1266,15 @@ export class StateStore {
 
   setPowerGrydAlertedCount(count: number): void {
     this.state.powerGrydAlertedCount = count;
+  }
+
+  /** D207 — one min-40 / PG inventory Slack per key per Chicago day. */
+  getMin40ShortfallAlerted(key: string): string | undefined {
+    return this.state.min40ShortfallAlerted[key];
+  }
+
+  setMin40ShortfallAlerted(key: string, ymd: string): void {
+    this.state.min40ShortfallAlerted[key] = ymd;
   }
 
   /** D140 — remember what the bounce reasons said, per campaign. */

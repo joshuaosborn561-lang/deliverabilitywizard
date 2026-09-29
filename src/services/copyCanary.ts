@@ -455,6 +455,7 @@ export class CopyCanaryService {
       if (!account) continue;
       for (const campaignId of campaignIdsOf(account)) {
         if (shellIds.has(campaignId)) continue;
+        // D207 — canary fleet never staffs; the floor does not protect it.
         try {
           if (!dryRun) {
             await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [

@@ -586,7 +586,7 @@ describe("OneClientMembershipService", () => {
     assert.equal(result.restored.length, 0);
   });
 
-  it("D200: same-client named TechEvo seat on two camps is not peeled", async () => {
+  it("D207: same-client named TechEvo seat on two camps is not peeled", async () => {
     const removed: Array<[number, number[]]> = [];
     const service = serviceWith({
       listCampaigns: async () => [
@@ -632,12 +632,12 @@ describe("OneClientMembershipService", () => {
     assert.deepEqual(
       removed,
       [],
-      "D200 — named techevolution* on two TechEvo camps must not peel as multi-link",
+      "D207 — named techevolution* on two TechEvo camps must not peel as multi-link",
     );
     assert.equal(result.pulled.length, 0);
   });
 
-  it("D200: pool generic on two TechEvo camps still peels the extra link", async () => {
+  it("D207: pool generic on two TechEvo camps stays (same-client multi-link)", async () => {
     const removed: Array<[number, number[]]> = [];
     const service = serviceWith({
       listCampaigns: async () => [
@@ -680,12 +680,12 @@ describe("OneClientMembershipService", () => {
     });
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(removed, [[3847798, [11]]]);
-    assert.equal(result.pulled[0]?.email, "ada@trygetintroduced.info");
+    assert.deepEqual(removed, []);
+    assert.equal(result.pulled.length, 0);
     assert.equal(result.restored.length, 0);
   });
 
-  it("D200: named TechEvo seat with a foreign-client tag still peels", async () => {
+  it("D207: named TechEvo seat with a foreign-client tag still peels", async () => {
     const removed: Array<[number, number[]]> = [];
     const service = serviceWith({
       listCampaigns: async () => [
@@ -826,9 +826,9 @@ describe("OneClientMembershipService", () => {
       id: 300 + i,
       from_email: `spare-${i}@trygetintroduced.info`,
       from_name: "Ada Pool",
-      signature: "Ada Pool\nGoliath Cybersecurity",
-      client_id: null,
-      tags: [{ tag_name: "GENERIC" }],
+      signature: "Ada Pool\nTechEvolution",
+      client_id: 521881,
+      tags: [{ tag_name: "GENERIC" }, { tag_name: "client:521881" }],
       is_smtp_success: true,
       is_imap_success: true,
       campaign_ids: [3847798],

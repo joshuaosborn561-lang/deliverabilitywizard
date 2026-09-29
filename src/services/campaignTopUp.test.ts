@@ -538,7 +538,7 @@ describe("CampaignTopUpService safety", () => {
     const result = await service.run();
     assert.deepEqual(removed, []);
     assert.equal(result.pulledGenerics.length, 0);
-    assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
+    assert.ok(result.skipped.some((row) => row.includes("per-campaign min 40")));
   });
 
   it("D198: does not pull a dedicated generic off Parlay even above 40", async () => {
@@ -742,7 +742,7 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(result.pulledGenerics.length, 0);
   });
 
-  it("D200: named TechEvo seat on two same-client camps is not released", async () => {
+  it("D207: named TechEvo seat on two same-client camps is not released", async () => {
     const pool: PoolMailboxRecord = {
       email: "corey@techevolution.com",
       domain: "techevolution.com",
@@ -829,7 +829,7 @@ describe("CampaignTopUpService safety", () => {
     assert.equal(result.pulledGenerics.length, 0);
   });
 
-  it("D200: pool generic on two TechEvo camps still releases the extra link", async () => {
+  it("D207: pool generic on two TechEvo camps is not released", async () => {
     const pool: PoolMailboxRecord = {
       email: "ada@trygetintroduced.info",
       domain: "trygetintroduced.info",
@@ -913,13 +913,12 @@ describe("CampaignTopUpService safety", () => {
     );
 
     const result = await service.run();
-    assert.ok(
-      removed.length >= 1,
-      "D200 — pool generic multi-link must still peel",
-    );
-    assert.ok(
-      result.released.length + result.pulledGenerics.length >= 1,
-      "pool generic extra TechEvo link is peelable",
+    assert.deepEqual(removed, []);
+    assert.equal(result.released.length, 0);
+    assert.equal(
+      result.pulledGenerics.length,
+      0,
+      "same-client generic multi-link stays (D207)",
     );
   });
 });

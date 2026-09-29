@@ -91,10 +91,11 @@ interface AccountPlan {
  * may still come off. Multi-client links on a dedicated seat still
  * peel the foreign camp (floor-gated).
  *
- * D200 — exclusive-attach / no-multi-link is pool generics only.
- * Same-client named seats (techevolution* tagged to TechEvo) may
- * sit on every campaign of that client. Pool generics multi-linked
- * across campaigns — even the same client — still peel extras.
+ * D207 — same-client generics may sit on every ACTIVE campaign of
+ * that client, exactly like named seats. Still peel a foreign-client
+ * membership (oneClient). Cross-client peels are exempt from the
+ * 40 floor — a wrong-client seat may come off even if it drops the
+ * victim campaign below 40 (min40 then restaffs).
  */
 export class OneClientMembershipService {
   constructor(
@@ -240,18 +241,23 @@ export class OneClientMembershipService {
       let protectedByMin = false;
       for (const campaignId of rawPull) {
         const remaining = membershipCounts.get(campaignId) ?? 0;
+        const campaign = campaignById.get(campaignId);
+        const crossClient =
+          typeof campaign?.client_id === "number" &&
+          campaign.client_id !== owner;
         if (
           detachWouldBreakStaffableFloor(
-            campaignById.get(campaignId),
+            campaign,
             remaining,
             account,
             email,
             this.state,
+            { exempt: crossClient },
           )
         ) {
           protectedByMin = true;
           result.skipped.push(
-            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
+            `${email}: #${campaignId} at per-campaign min ${ON_WEEK_MIN_SENDERS} (D207)`,
           );
           continue;
         }

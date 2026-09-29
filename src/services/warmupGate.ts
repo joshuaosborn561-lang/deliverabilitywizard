@@ -248,6 +248,7 @@ export class WarmupGateService {
             }
           }
 
+          // D207 — under-warmed (warmDays < 21) may come off below 40.
           await this.smartlead.removeEmailAccountsFromCampaign(campaign.id, [
             removal.accountId,
           ]);
@@ -302,6 +303,7 @@ export class WarmupGateService {
                 pausedAt: new Date().toISOString(),
                 reason: "warmup_gate_last_account",
               });
+              // D207 — under-warmed retry; last-account pause then pull.
               await this.smartlead.removeEmailAccountsFromCampaign(
                 campaign.id,
                 [removal.accountId],

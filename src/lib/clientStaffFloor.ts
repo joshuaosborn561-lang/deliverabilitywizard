@@ -16,18 +16,18 @@ import { isStaffableSender } from "./staffableSender.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
- * D197 / D198 / D199 / D203 — every named-client POD keeps at least this
- * many *staffable* senders at **client inventory** (40 POD-A + 40 POD-B).
- * The on-week POD's 40 staff ACTIVE campaigns (fan-out); the off-week
- * POD's 40 rest ready. Cleanup / rest / one-client may only peel
- * surplus above it (dedicated named-client generics are not surplus).
- * Raw Smartlead membership (disconnected / resting / canary leftovers)
- * must not inflate the peel counter — that is how D197 still dropped
- * TechEvo / Parlay / Insight to 8 / 3 / 19 after a min-40 restaff.
+ * D197 / D198 / D199 / D207 — every ACTIVE campaign keeps at least this
+ * many *staffable* senders from its own client (on-week named first,
+ * then that client's generics, shared across that client's ACTIVE
+ * campaigns). Cleanup / rest / one-client may only peel surplus above
+ * it on an ACTIVE campaign. Raw Smartlead membership (disconnected /
+ * resting / canary leftovers) must not inflate the peel counter.
+ * D203's 40-A + 40-B named inventory split still stands; the live
+ * send floor is per campaign (D207).
  */
 export const ON_WEEK_MIN_SENDERS = 40;
 
-/** D203 — same 40, named at the POD inventory layer (not per-campaign). */
+/** D203 — named-split inventory cylinder. Live send floor is per campaign (D207). */
 export const POD_INVENTORY_MIN_SENDERS = ON_WEEK_MIN_SENDERS;
 
 /**
@@ -44,8 +44,8 @@ export function podGenericTopUpCap(namedStaffableInPod: number): number {
 
 /**
  * Operational named-client floor for one POD (D203):
- * max(named-in-pod structural rest, 40). Campaign attach is the
- * on-week POD's 40, not "40 unique senders per campaign".
+ * max(named-in-pod structural rest, 40). Live attach (D207) is
+ * 40 staffable senders on each ACTIVE campaign.
  */
 export function namedClientPodInventoryFloor(namedStaffableInPod: number): number {
   const named = Number.isFinite(namedStaffableInPod)
@@ -145,9 +145,10 @@ export function noteStaffableDetach(
 
 /**
  * True when taking one more *staffable* seat off this campaign would
- * break the standing 40 (D197/D199). `remainingBeforeDetach` is the
- * staffable attached count, never raw membership.
- * ACTIVE only — PAUSED/STOPPED hygiene (D169) still uses last-account.
+ * break the standing 40 (D197/D199/D207). `remainingBeforeDetach` is
+ * the staffable attached count, never raw membership.
+ * ACTIVE only — PAUSED/STOPPED keep their senders (D207); last-account
+ * still guards any detach that is allowed.
  */
 export function detachWouldBreakOnWeekMin(
   campaign: { status?: string | null } | undefined,
@@ -157,21 +158,46 @@ export function detachWouldBreakOnWeekMin(
   return remainingBeforeDetach <= ON_WEEK_MIN_SENDERS;
 }
 
+export type StaffableFloorDetachOpts = {
+  /**
+   * D207 — these seats may still come off an ACTIVE campaign at/under 40:
+   * cross-client, HOLD/RETIRE-tagged, under-warmed (warmDays < 21).
+   * Disconnected / SMTP-fail is already handled by accountIsPeelStaffable.
+   */
+  exempt?: boolean;
+};
+
+/** HOLD-UNTIL (unexpired) or a RETIRE tag — may peel below 40 (D207). */
+export function hasHoldOrRetireTag(
+  account: Pick<SmartleadEmailAccount, "tags">,
+  now: Date = new Date(),
+): boolean {
+  const tags = (account.tags ?? [])
+    .map((t) => String(t.tag_name ?? t.name ?? "").trim())
+    .filter(Boolean);
+  if (activeHoldUntilDate(tags, now)) return true;
+  return tags.some((tag) => /\bRETIRE\b/i.test(tag));
+}
+
 /**
- * D199 — refuse only when the seat being removed is itself staffable
- * and the campaign is already at/under 40 staffable. Disconnected
- * leftovers may still come off; they do not staff the floor.
+ * D199 / D207 — refuse only when the seat being removed is itself
+ * staffable and the campaign is already at/under 40 staffable.
+ * Disconnected leftovers, cross-client seats, HOLD/RETIRE-tagged
+ * seats, and under-warmed seats may still come off.
  */
 export function detachWouldBreakStaffableFloor(
   campaign: { status?: string | null } | undefined,
   remainingStaffable: number,
   account: Pick<
     SmartleadEmailAccount,
-    "is_smtp_success" | "is_imap_success" | "warmup_details"
+    "is_smtp_success" | "is_imap_success" | "warmup_details" | "tags"
   >,
   email: string,
   state: PeelStaffableState = {},
+  opts: StaffableFloorDetachOpts = {},
 ): boolean {
+  if (opts.exempt) return false;
+  if (hasHoldOrRetireTag(account)) return false;
   if (!accountIsPeelStaffable(account, email, state)) return false;
   return detachWouldBreakOnWeekMin(campaign, remainingStaffable);
 }
@@ -329,15 +355,15 @@ export function countOnWeekClientInboxesByKey(
 }
 
 /**
- * Live staff floor for a named client campaign (D58/D82/D196/D197/D203).
+ * Live staff floor for a named client campaign (D58/D82/D196/D197/D207).
  *
  * When `onWeekCounts` is provided (every production caller), the floor
- * is max(that client's named on-week pod, 40). That 40 is the on-week
- * POD's inventory cylinder (D203), not "40 unique senders on this
- * campaign". Understaffed means an on-week seat that should be attached
- * is missing, or that POD is under the standing 40. ESP-odd splits
- * (D192) can leave B smaller than half; that is not a short when the
- * pod itself is ≥40.
+ * is max(that client's named on-week pod, 40). That 40 is **per ACTIVE
+ * campaign** (D207) — every live campaign owes ≥40 staffable senders
+ * from its own client. Understaffed means this campaign is missing an
+ * on-week named seat or a client generic that should be attached, or
+ * it is under the standing 40. ESP-odd splits (D192) can leave B
+ * smaller than half; that is not a short when the campaign itself is ≥40.
  *
  * Without `onWeekCounts`, falls back to half of `clientInboxCounts`
  * (unit tests / D58 Vasco "no exception" guard).

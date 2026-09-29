@@ -199,6 +199,9 @@ async function syncShellMembers(
     await input.smartlead.addEmailAccountsToCampaign(campaignId, batch);
     await sleep(200);
   }
+  // D207 — this campaign is a PAUSED pod-control shell. Isolation /
+  // canary leftovers never staff a live campaign; the per-campaign
+  // 40 floor is ACTIVE-only and does not apply here.
   for (const batch of chunkArray(remove, 25)) {
     await input.smartlead.removeEmailAccountsFromCampaign(campaignId, batch);
     await sleep(200);

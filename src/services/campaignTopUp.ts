@@ -20,7 +20,6 @@ import {
   allowsGenericStaff,
   countClientInboxFloors,
   countStaffableMemberships,
-  detachWouldBreakOnWeekMin,
   detachWouldBreakStaffableFloor,
   noteStaffableDetach,
   ON_WEEK_MIN_SENDERS,
@@ -327,9 +326,9 @@ export class CampaignTopUpService {
       // Neediest first, so a shallow pool helps the worst campaign.
       .sort((a, b) => a.senders - b.senders);
 
-    // D26 / D200: same-client multi-campaign membership is allowed on
-    // *named* seats. Pool generics stay exclusive — extra same-client
-    // links still release. Foreign-client links always release.
+    // D26 / D207: same-client multi-campaign membership is allowed on
+    // named seats **and** that client's generics. Foreign-client links
+    // always release (cross-client exception to the 40 floor).
     const activeIds = new Set(
       (campaigns as SmartleadCampaign[])
         .filter((c) => isManagedCampaign(c))
@@ -361,40 +360,12 @@ export class CampaignTopUpService {
       const keepCampaign = campaignById.get(keep);
 
       const remaining = new Set(on);
-      const donorAccount = accountByEmail.get(row.email.toLowerCase());
-      const namedSeat =
-        donorAccount != null &&
-        !isPoolGenericSeat(
-          donorAccount,
-          row.email,
-          this.config,
-          this.state,
-        );
       for (const id of on) {
         if (id === keep) continue;
-        // D200 — named seats may stay on every same-client campaign.
-        // Pool generics do not (exclusive-attach).
-        if (namedSeat && sameClient(campaignById.get(id), keepCampaign)) {
-          continue;
-        }
-        const donor = donorAccount;
-        if (
-          donor
-            ? detachWouldBreakStaffableFloor(
-                campaignById.get(id),
-                projected.get(id) ?? 0,
-                donor,
-                row.email,
-                this.state,
-              )
-            : detachWouldBreakOnWeekMin(
-                campaignById.get(id),
-                projected.get(id) ?? 0,
-              )
-        ) {
-          result.skipped.push(
-            `${row.email}: #${id} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
-          );
+        // D207 — named seats and same-client generics may stay on every
+        // campaign of that client. A foreign-client extra peels even
+        // when that campaign is at 40 (cross-client exception).
+        if (sameClient(campaignById.get(id), keepCampaign)) {
           continue;
         }
         try {
@@ -548,6 +519,7 @@ export class CampaignTopUpService {
               await sleep(250);
 
               for (const donorId of crossClientDonors) {
+                // D207 — cross-client move is exempt from the 40 floor.
                 await this.smartlead.removeEmailAccountsFromCampaign(donorId, [
                   pool.smartleadAccountId,
                 ]);
@@ -727,7 +699,8 @@ export class CampaignTopUpService {
    * (client_id / tag / exclusive + client-sig) stays; it is not foreign
    * Goliath. Multi-client / wrong-client dedicated seats still peel
    * (floor-gated). D200 — pool generics multi-linked across campaigns
-   * (even the same client) peel extras; named seats do not.
+   * extras no longer peel (D207); named seats do not. Foreign-client
+   * links still peel (floor-exempt).
    */
   private async pullNonGoliathGenerics(input: {
     dryRun: boolean;
@@ -786,9 +759,8 @@ export class CampaignTopUpService {
           remaining.push(campaignId);
           continue;
         }
-        // D200 — pool exclusive-attach extras peel even on a dedicated
-        // or Goliath campaign. Named seats never enter exclusivePeel
-        // for same-client links.
+        // D207 — peelCampaignIds is foreign-client only. Same-client
+        // generic multi-link is not an extra.
         const exclusiveExtra = exclusivePeel.has(campaignId);
         if (!exclusiveExtra && input.campaignAllowsGenerics(campaign)) {
           remaining.push(campaignId);
@@ -804,6 +776,9 @@ export class CampaignTopUpService {
           continue;
         }
         const current = membership.get(campaignId) ?? 0;
+        const crossClient =
+          typeof campaign.client_id === "number" &&
+          campaign.client_id !== owner;
         if (
           detachWouldBreakStaffableFloor(
             campaign,
@@ -811,11 +786,12 @@ export class CampaignTopUpService {
             account,
             email,
             this.state,
+            { exempt: crossClient },
           )
         ) {
           remaining.push(campaignId);
           input.result.skipped.push(
-            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
+            `${email}: #${campaignId} at per-campaign min ${ON_WEEK_MIN_SENDERS} (D207)`,
           );
           continue;
         }

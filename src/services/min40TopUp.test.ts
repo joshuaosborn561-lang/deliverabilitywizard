@@ -87,8 +87,11 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(updates[0]?.fields.client_id, 542838);
     assert.match(String(updates[0]?.fields.signature), /Bolder Cyber Partners/);
     assert.equal(result.assigned.length, 1);
-    assert.equal(slackCalls.length, 0);
     assert.equal(result.asked.length, 0);
+    assert.ok(
+      slackCalls.every((line) => /staffable \(short/.test(line)),
+      "auto-allow must not open an Allow-generics card; under-40 ops_alert is ok",
+    );
   });
 
   it("queues a Slack ask for a named client that is not auto-allow", async () => {
@@ -139,5 +142,207 @@ describe("Min40TopUpService (D205)", () => {
     );
     assert.doesNotMatch(src, /updateMailboxTags/);
     assert.match(src, /Never retag named seats/);
+  });
+
+  it("D207: shares a client generic across that client's ACTIVE campaigns", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 10 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [10],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-09-29T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 10, name: "BCP No Team", status: "ACTIVE", client_id: 542838 },
+          { id: 11, name: "BCP With Team", status: "ACTIVE", client_id: 542838 },
+        ],
+        accounts: [
+          ...named,
+          {
+            id: 800,
+            from_email: "shared@crosslaunchco.com",
+            client_id: 542838,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [10],
+          },
+        ],
+      },
+    });
+    assert.ok(
+      attached.some((row) => row[0] === 11 && row[1].includes(800)),
+      "already-assigned BCP generic must share onto the other BCP ACTIVE",
+    );
+    assert.equal(
+      attached.some((row) => row[0] === 10 && row[1].includes(800)),
+      false,
+      "already-on campaign is not re-POSTed",
+    );
+    assert.ok(result.assigned.some((row) => row.email === "shared@crosslaunchco.com"));
+  });
+
+  it("D207: never attaches a foreign-client seat and restaffs PowerGRYD", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const slackCalls: string[] = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const pgNamed = Array.from({ length: 8 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `pg${i}@powergryd.com`,
+      client_id: 592842,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [50],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async (text: string) => {
+          slackCalls.push(text);
+        },
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-09-29T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [
+          { id: 592842, name: "PowerGRYD", logo: "PowerGRYD" },
+          { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+        ],
+        campaigns: [
+          { id: 50, name: "PG Lane A", status: "ACTIVE", client_id: 592842 },
+          { id: 51, name: "PG Lane B", status: "ACTIVE", client_id: 592842 },
+        ],
+        accounts: [
+          ...pgNamed,
+          {
+            id: 801,
+            from_email: "pg-shared@crosslaunchco.com",
+            client_id: 592842,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [50],
+          },
+          {
+            id: 802,
+            from_email: "bcp-only@boldercyperpartner.com",
+            client_id: 542838,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.ok(
+      attached.some((row) => row[0] === 51 && row[1].includes(801)),
+      "PG generic shares onto the other PG ACTIVE",
+    );
+    assert.equal(
+      attached.some((row) => row[1].includes(802)),
+      false,
+      "BCP named seat must not land on PowerGRYD",
+    );
+    assert.ok(result.unfilled.length >= 1);
+    assert.ok(slackCalls.some((line) => /PowerGRYD has \d+ staffable seats/.test(line)));
+    assert.ok(slackCalls.some((line) => /PG Lane A/.test(line) || /50/.test(line)));
+  });
+
+  it("D207: does not staff a PAUSED campaign and alerts once per under-40 ACTIVE", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const slackCalls: string[] = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 8 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [10, 12],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async (text: string) => {
+          slackCalls.push(text);
+        },
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    await service.run({
+      dryRun: false,
+      now: new Date("2026-09-29T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 10, name: "BCP Live", status: "ACTIVE", client_id: 542838 },
+          { id: 12, name: "BCP Paused", status: "PAUSED", client_id: 542838 },
+        ],
+        accounts: named,
+      },
+    });
+    assert.equal(
+      attached.some((row) => row[0] === 12),
+      false,
+      "min40 must not attach onto PAUSED",
+    );
+    assert.ok(slackCalls.some((line) => /BCP Live/.test(line) && /40/.test(line)));
   });
 });

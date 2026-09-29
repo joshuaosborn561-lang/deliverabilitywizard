@@ -23,13 +23,14 @@ tool — it never staffs a campaign.
 
 ## 1. Fleet staffing
 
-**Floor is 40 staffable senders per POD at client inventory**
-(`max(half that client's named inboxes per POD, 40 per POD)` — D203),
+**Live send floor is 40 staffable senders per ACTIVE campaign**
+from that client (D207). Inventory is still **40 per POD**
+(`max(half that client's named inboxes per POD, 40 per POD)` — D203)
 with at least **~30% Google and ~30% Microsoft** on the campaign and,
 when the client has both ESPs, **neither Outlook nor Gmail under ~1/3
-of each POD's 40** (14 of 40; no monoculture). The on-week POD's 40
-fan out onto every ACTIVE campaign — do not treat 40 as unique senders
-on one campaign. Staffable means all of:
+of each POD's 40** (14 of 40; no monoculture). Same-client generics
+MAY sit on every ACTIVE campaign of that client, exactly like named
+seats. Do not detach seats from PAUSED/STOPPED. Staffable means all of:
 
 - connected SMTP **and** IMAP
 - not carrying an unexpired `HOLD-UNTIL-*` tag (see holds, below)
@@ -37,12 +38,13 @@ on one campaign. Staffable means all of:
 - not a copy-canary box (the canary fleet never staffs, D54/D55)
 - warmup age gate cleared
 
-Named client inboxes fill first. **Exclusive client-signed generics fill
-the remaining gap** up to 40 per POD when the named half is short (D203).
-Do not dump the free generic pool past that shortfall. SalesGlider with
-≥40 named per POD must not carry pool generics. A named client below
-40/POD inventory does not launch. Do not buy a third client-domain set
-to hit the floor.
+Named client inboxes fill first. **Client-signed generics fill
+the remaining gap** up to 40 on each ACTIVE campaign when the named
+half is short (D203/D207) and are shared across that client's ACTIVE
+campaigns. Do not dump the free generic pool past that shortfall.
+SalesGlider with ≥40 named per POD must not carry pool generics. A
+named client below 40/POD inventory does not launch. Do not buy a
+third client-domain set to hit the floor.
 
 Leave these campaigns alone (do not staff, rest, or top-up): Smartlead ids
 `3628940`, `3611325`, `3611268` (MSRS / HVAC / Roofers).
@@ -64,7 +66,8 @@ That client's **named** inboxes are split into a **static** even A/B
 (ESP-balanced within Outlook and within Gmail — D192/D203). Never retag
 named seats between POD-A and POD-B to staff the on-week campaign. 2 weeks
 on / 2 weeks off, New York ISO fortnights. Off-week POD is **removed from
-live campaigns** and rests ready at 40. Warmup stays on. Parking a box at
+ACTIVE campaigns only** (D207 — PAUSED/STOPPED keep their senders)
+and rests ready at 40. Warmup stays on. Parking a box at
 `MESSAGE_PER_DAY=0` is not rest — unlink it.
 
 The cycle is run by the health job, not this skill. When standing up a
@@ -284,10 +287,11 @@ auto-START** a bounce pause: only a human STARTs a bounce-paused campaign
 
 ## 7. Mailbox setup ... `Smartlead:link_mailboxes`
 
-Attach **all on-week staffable named client inboxes**, plus **non-sitting
-exclusive client-signed generics** only for that POD's shortfall-to-40
-(D203) with ~30% each ESP. Do not attach pool generics when the named
-half is already ≥40.
+Attach **all on-week staffable named client inboxes**, plus **that
+client's generics** shared across every ACTIVE campaign of that client,
+then free-pool generics only for the shortfall-to-40 (D203/D207) with
+~30% each ESP. Do not attach pool generics when the named half is
+already ≥40. Never attach another client's seats.
 
 Every mailbox needs a signature. Before linking:
 
@@ -389,8 +393,9 @@ Nothing goes ACTIVE until every line passes.
 
 **Infrastructure**
 
-1. **40 or more staffable senders on the on-week POD** (named first;
-   exclusive client-signed generics only for the shortfall — D203),
+1. **40 or more staffable senders on every ACTIVE campaign** (named first;
+   client-signed generics shared across that client's camps for the
+   shortfall — D203/D207),
    ~30% Google and ~30% Microsoft on the campaign, and when the client
    has both ESPs neither Outlook nor Gmail under ~1/3 of that POD's 40,
    after excluding unexpired HOLD-UNTIL tags, client off-week rest,

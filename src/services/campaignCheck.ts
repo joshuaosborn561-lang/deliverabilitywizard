@@ -843,7 +843,7 @@ export class CampaignCheckService {
         )
       ) {
         console.log(
-          `[campaign-check] D199 kept ${email} on Insight #${input.campaignId} ${input.name} (on-week min ${ON_WEEK_MIN_SENDERS})`,
+          `[campaign-check] D207 kept ${email} on Insight #${input.campaignId} ${input.name} (per-campaign min ${ON_WEEK_MIN_SENDERS})`,
         );
         continue;
       }

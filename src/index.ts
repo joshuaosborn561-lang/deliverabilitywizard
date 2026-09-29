@@ -939,31 +939,34 @@ async function main(): Promise<void> {
       if (!idle) {
         inventory = await inventoryBook.get();
       }
-      const tick = async (
-        name: string,
+      const runOrIdle = (
         enabled: boolean,
         run: () => Promise<unknown>,
-      ) => {
+      ): (() => Promise<unknown>) => {
         if (!enabled) {
-          return stage(name, async () => ({ skipped: true, reason: "disabled" }));
+          return async () => ({ skipped: true, reason: "disabled" });
         }
         if (idle) {
-          return stage(name, async () => ({ skipped: true, reason: idle }));
+          return async () => ({ skipped: true, reason: idle });
         }
-        return stage(name, run);
+        return run;
       };
-      const hold = await tick("hold-enforcement", config.enableHoldEnforcement, () =>
-        holdEnforcement.run({ inventory }),
-      );
-      const min40 = await tick("min40-topup", config.enableMin40TopUp, () =>
-        min40TopUp.run({ inventory }),
-      );
-      const power = await tick("powergryd-watch", config.enablePowerGrydWatch, () =>
-        powerGrydWatch.run({ inventory }),
-      );
-      const cleanup = await tick("generic-cleanup", config.enableGenericCleanup, () =>
-        genericCleanup.run({ inventory }),
-      );
+      const hold = await stage("hold-enforcement", runOrIdle(
+        config.enableHoldEnforcement,
+        () => holdEnforcement.run({ inventory }),
+      ));
+      const min40 = await stage("min40-topup", runOrIdle(
+        config.enableMin40TopUp,
+        () => min40TopUp.run({ inventory }),
+      ));
+      const power = await stage("powergryd-watch", runOrIdle(
+        config.enablePowerGrydWatch,
+        () => powerGrydWatch.run({ inventory }),
+      ));
+      const cleanup = await stage("generic-cleanup", runOrIdle(
+        config.enableGenericCleanup,
+        () => genericCleanup.run({ inventory }),
+      ));
       return { hold, min40, power, cleanup, idle: idle ?? null };
     })().finally(() => {
       canonOpsInFlight = null;

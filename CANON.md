@@ -510,11 +510,11 @@ generics keep their confirm pages and strip via the stamped channel + ts.
    (D85/D89/D136/D143).
 Plus `action_result` confirmations: a tapped button finished, a signature
 was auto-written (first time per campaign only, D92/D95), a reconnect
-happened or hard-failed (D94). **Do not post a separate "Approval
-recorded" message** for generic_backfill (D205) — fold it into the
-original card (reaction or silent stamp); D195 already strips the
-buttons. Several generic_backfill asks in one burst post as **one
-batched card**, not one per campaign. Plus `ops_alert` pages — the machine
+happened or hard-failed (D94). **Do not post a separate "Approval recorded"
+message** for generic_backfill (D205) — fold it into the original card
+(reaction or silent stamp); D195 already strips the buttons. Several
+generic_backfill asks in one burst post as **one batched card**, not one
+per campaign. Plus `ops_alert` pages — the machine
 reporting itself broken (D149): a watchdog stage newly overdue (once per
 episode, recovery noted) and a wrong deploy identity at boot; **and
 CANON / healthy-sending misses** (D163): `notifyPlacementResult`

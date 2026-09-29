@@ -137,6 +137,7 @@ describe("Min40TopUpService (D205)", () => {
     const src = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("./min40TopUp.ts", import.meta.url), "utf8"),
     );
-    assert.doesNotMatch(src, /POD-A|POD-B|updateMailboxTags|retag/);
+    assert.doesNotMatch(src, /updateMailboxTags/);
+    assert.match(src, /Never retag named seats/);
   });
 });

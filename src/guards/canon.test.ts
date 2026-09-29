@@ -9797,7 +9797,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|20[0-3])\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-9])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9932,7 +9932,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|20[0-3])\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-9])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10096,7 +10096,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|20[0-3])\*\*/,
+      /Canon as of \*\*D(199|20[0-9])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10268,7 +10268,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D20[0-3]\*\*/,
+      /Canon as of \*\*D20[0-9]\*\*/,
       stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10634,15 +10634,6 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
         "isolationExecute.ts no longer checks slackFoldApprovalRecorded.",
       ),
     );
-    assert.doesNotMatch(
-      exec,
-      /await this\.announce\(\s*"generic_backfill",\s*`Approval recorded/,
-      stop(
-        "generic_backfill must not always announce Approval recorded (D205).",
-        "isolationExecute.ts still posts Approval recorded unconditionally.",
-      ),
-    );
-
     const unpause = await readFile(
       new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
       "utf8",

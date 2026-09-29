@@ -329,10 +329,10 @@ export class Min40TopUpService {
         const domain = key.split("@")[1];
         const poolAccount = input.accountByEmail.get(key);
         if (selected.has(key)) return false;
-        if ((campaignIdsOf(poolAccount ?? { campaign_ids: [] }).includes(input.campaign.id))) {
+        if (!poolAccount) return false;
+        if (campaignIdsOf(poolAccount).includes(input.campaign.id)) {
           return false;
         }
-        if (!poolAccount) return false;
         if (owesWarmup(poolAccount, key, this.config, this.state)) return false;
         if (this.state.getRestingInbox(key) || this.state.isCopyCanary(key)) return false;
         if (

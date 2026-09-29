@@ -174,7 +174,10 @@ describe("UnpauseAfterSigQaService", () => {
       fakeState(),
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-16T15:00:00Z"),
+    });
     assert.deepEqual(statuses, []);
     assert.ok(result.blocked[0]?.includes("sig mismatch"));
   });
@@ -208,7 +211,10 @@ describe("UnpauseAfterSigQaService", () => {
       fakeState([1]),
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-16T15:00:00Z"),
+    });
     assert.deepEqual(statuses, []);
     assert.ok(result.blocked.some((row) => row.includes("bounce loop paused")));
   });
@@ -251,7 +257,10 @@ describe("UnpauseAfterSigQaService", () => {
       fakeState(),
     );
 
-    const result = await service.run({ dryRun: false });
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-16T15:00:00Z"),
+    });
     assert.deepEqual(statuses, [], "70% inbox and no reading both stay down");
     assert.ok(
       result.blocked.some((row) => row.includes("below the 85% launch bar")),

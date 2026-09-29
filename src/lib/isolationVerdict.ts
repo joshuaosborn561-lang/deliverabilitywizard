@@ -123,7 +123,6 @@ export function decideIsolationVerdict(
     }
     if (
       input.contentBlock &&
-      input.knownGoodFineAcrossEsps !== false &&
       (canary.lean === "COPY" || input.unwarmedCopyFineAcrossEsps === false)
     ) {
       return {

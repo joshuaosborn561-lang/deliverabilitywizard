@@ -221,4 +221,78 @@ describe("CampaignHealthService", () => {
     assert.equal(result.resumed.length, 0);
     assert.equal(pending.size, 0);
   });
+
+  it("does not resume a standing hold campaign (D205)", async () => {
+    const pending = new Map<number, { campaignId: number; reason: string; pausedAt: string }>([
+      [
+        3847837,
+        {
+          campaignId: 3847837,
+          reason: "warmup_gate_last_account",
+          pausedAt: new Date().toISOString(),
+        },
+      ],
+    ]);
+    const state = {
+      listPoolMailboxes: () => [],
+      findReassignablePoolMailbox: () => undefined,
+      getRestingInbox: () => undefined,
+      getPoolMailbox: () => undefined,
+      getDomainHistory: () => undefined,
+      clearGenericSendStartedAt: () => undefined,
+      isCopyCanary: () => false,
+      hasPendingResume: (id: number) => pending.has(id),
+      listPendingResumes: () => [...pending.values()],
+      clearPendingResume: (id: number) => {
+        pending.delete(id);
+      },
+      markPendingResume: () => undefined,
+      setLastHealthAt: () => undefined,
+      setLastStaffingShort: () => undefined,
+      save: async () => undefined,
+      upsertPoolMailbox: () => undefined,
+      hasRecentAlert: () => false,
+      markAlert: () => undefined,
+    } as unknown as StateStore;
+
+    const staffed = Array.from({ length: 50 }, (_, index) => ({
+      id: 200 + index,
+      from_email: `ok-${index}@pool.info`,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [3847837],
+    }));
+
+    let started = false;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3847837, name: "Parlay SEG A", status: "PAUSED", client_id: 418274 },
+      ],
+      listAllEmailAccounts: async () => staffed,
+      listClients: async () => [{ id: 418274, name: "Parlay" }],
+      updateCampaignStatus: async (_id: number, status: string) => {
+        if (status === "START") started = true;
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const config = loadConfig({
+      MIN_CAMPAIGN_SENDERS: "50",
+      ENABLE_CAMPAIGN_TOP_UP: "false",
+    });
+    const topUp = new CampaignTopUpService(config, smartlead, fakeSlack(), state);
+    const health = new CampaignHealthService(
+      config,
+      smartlead,
+      fakeSlack(),
+      state,
+      topUp,
+    );
+
+    const result = await health.run({ dryRun: false });
+    assert.equal(started, false);
+    assert.equal(result.resumed.length, 0);
+    assert.equal(pending.size, 1, "hold does not clear the protective-resume stamp");
+  });
 });

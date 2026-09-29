@@ -289,6 +289,10 @@ export interface AppState {
   campaignStandingPrefs: Record<string, CampaignStandingPref>;
   /** D194 — recorded Deliverability Slack button decisions. */
   deliverabilityDecisions: Record<string, DeliverabilityDecisionRecord>;
+  /** D205 — last seen PowerGRYD dedicated seat count (alert-only watch). */
+  powerGrydSeatCount: number | null;
+  /** D205 — last dedicated count we already Slacked a drop for. */
+  powerGrydAlertedCount: number | null;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -493,6 +497,8 @@ const EMPTY_STATE: AppState = {
   canaryFleetDown: null,
   campaignStandingPrefs: {},
   deliverabilityDecisions: {},
+  powerGrydSeatCount: null,
+  powerGrydAlertedCount: null,
 };
 
 export class StateStore {
@@ -564,6 +570,14 @@ export class StateStore {
         canaryFleetDown: parsed.canaryFleetDown ?? null,
         campaignStandingPrefs: parsed.campaignStandingPrefs ?? {},
         deliverabilityDecisions: parsed.deliverabilityDecisions ?? {},
+        powerGrydSeatCount:
+          typeof parsed.powerGrydSeatCount === "number"
+            ? parsed.powerGrydSeatCount
+            : null,
+        powerGrydAlertedCount:
+          typeof parsed.powerGrydAlertedCount === "number"
+            ? parsed.powerGrydAlertedCount
+            : null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1228,6 +1242,23 @@ export class StateStore {
 
   clearCanaryFleetDown(): void {
     this.state.canaryFleetDown = null;
+  }
+
+  /** D205 — PowerGRYD dedicated-seat watch (alert-only). */
+  getPowerGrydSeatCount(): number | null {
+    return this.state.powerGrydSeatCount;
+  }
+
+  setPowerGrydSeatCount(count: number): void {
+    this.state.powerGrydSeatCount = count;
+  }
+
+  getPowerGrydAlertedCount(): number | null {
+    return this.state.powerGrydAlertedCount;
+  }
+
+  setPowerGrydAlertedCount(count: number): void {
+    this.state.powerGrydAlertedCount = count;
   }
 
   /** D140 — remember what the bounce reasons said, per campaign. */

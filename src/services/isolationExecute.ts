@@ -593,18 +593,40 @@ export class IsolationExecuteService {
     action: IsolationActionRecord,
     actor: string,
   ): Promise<void> {
-    const campaignId = Number(action.detail.campaignId);
-    if (!Number.isFinite(campaignId) || campaignId <= 0) {
+    const ids = signatureCampaignIdsOf(action);
+    if (!ids.length) {
       throw new Error("Missing campaign");
     }
-    this.state.approveGenericBackfill({
-      campaignId,
-      approvedAt: new Date().toISOString(),
-      approvedBy: actor,
-    });
+    const approvedAt = new Date().toISOString();
+    for (const campaignId of ids) {
+      this.state.approveGenericBackfill({
+        campaignId,
+        approvedAt,
+        approvedBy: actor,
+      });
+    }
+    const names = Array.isArray(action.detail.campaignNames)
+      ? (action.detail.campaignNames as unknown[])
+          .map((n) => String(n))
+          .filter(Boolean)
+      : [String(action.detail.campaignName ?? ids[0])];
+    const label = names.length > 1
+      ? `${names.length} campaigns`
+      : `*${names[0]}*`;
+    if (this.config.slackFoldApprovalRecorded) {
+      const channel = String(action.detail.slackChannel ?? "");
+      const ts = String(action.detail.slackTs ?? "");
+      if (channel && ts) {
+        await this.slack.addReaction(channel, ts, "white_check_mark");
+      }
+      console.log(
+        `[isolation] generic_backfill recorded for ${ids.join(",")} (folded, D205)`,
+      );
+      return;
+    }
     await this.announce(
       "generic_backfill",
-      `Approval recorded for *${action.detail.campaignName ?? campaignId}* (D193 — not rotating-pool attach permission). Named-client inventory floor is 40/POD via named + exclusive client-signed generics (D203).`,
+      `Approval recorded for ${label} (D193 — not rotating-pool attach permission). Named-client inventory floor is 40/POD via named + exclusive client-signed generics (D203).`,
     );
   }
 

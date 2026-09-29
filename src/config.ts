@@ -1,4 +1,22 @@
 import { z } from "zod";
+import {
+  DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS,
+  POWERGRYD_CLIENT_ID,
+  parseClientIdList,
+} from "./lib/autoAllowGenerics.js";
+import {
+  CANON_OPS_HOUR_END_DEFAULT,
+  CANON_OPS_HOUR_START_DEFAULT,
+  CANON_OPS_TIMEZONE_DEFAULT,
+} from "./lib/canonOpsHours.js";
+import {
+  DEFAULT_HOLD_CAMPAIGN_IDS,
+  DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS,
+  DEFAULT_HOLD_CLIENT_ZERO_ACTIVE,
+  parseClientUntilList,
+  parseIdList,
+  parseNamePatterns,
+} from "./lib/holdPolicy.js";
 
 const boolFromEnv = (fallback: boolean) =>
   z
@@ -341,6 +359,43 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toUpperCase())
         .filter(Boolean),
     ),
+  /**
+   * D205 — wizard-owned canon-ops stages (hold / min-40 / PowerGRYD
+   * watch / generic cleanup). Cron is every 30 minutes; each stage
+   * idle-ticks outside weekday Chicago hours so /health stays green.
+   */
+  enableCanonOps: boolFromEnv(true),
+  cronCanonOps: z.string().default("*/30 * * * *"),
+  canonOpsTimezone: z.string().default(CANON_OPS_TIMEZONE_DEFAULT),
+  canonOpsWeekdayOnly: boolFromEnv(true),
+  canonOpsHourStart: z.coerce.number().int().min(0).max(23).default(CANON_OPS_HOUR_START_DEFAULT),
+  canonOpsHourEnd: z.coerce.number().int().min(1).max(24).default(CANON_OPS_HOUR_END_DEFAULT),
+  enableHoldEnforcement: boolFromEnv(true),
+  enableMin40TopUp: boolFromEnv(true),
+  enablePowerGrydWatch: boolFromEnv(true),
+  enableGenericCleanup: boolFromEnv(true),
+  holdCampaignIds: z
+    .string()
+    .default("")
+    .transform((s) => parseIdList(s, DEFAULT_HOLD_CAMPAIGN_IDS)),
+  holdCampaignNamePatterns: z
+    .string()
+    .default("")
+    .transform((s) => parseNamePatterns(s, DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS)),
+  holdClientZeroActive: z
+    .string()
+    .default("")
+    .transform((s) => parseClientUntilList(s, DEFAULT_HOLD_CLIENT_ZERO_ACTIVE)),
+  autoAllowGenericClientIds: z
+    .string()
+    .default("")
+    .transform((s) =>
+      parseClientIdList(s, DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS),
+    ),
+  powerGrydClientId: z.coerce.number().int().positive().default(POWERGRYD_CLIENT_ID),
+  powerGrydSeatTarget: z.coerce.number().int().positive().default(40),
+  slackBatchGenericBackfill: boolFromEnv(true),
+  slackFoldApprovalRecorded: boolFromEnv(true),
   cronScan: z.string().default("0 9 * * 1,4"),
   cronMonitor: z.string().default("0 */6 * * *"),
   /**
@@ -549,6 +604,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     warmupDailyRampup: env.WARMUP_DAILY_RAMPUP ?? "5",
     warmupReplyRatePercentage: env.WARMUP_REPLY_RATE_PERCENTAGE ?? "30",
     campaignStatuses: env.CAMPAIGN_STATUSES ?? "ACTIVE,PAUSED",
+    enableCanonOps: env.ENABLE_CANON_OPS,
+    cronCanonOps: env.CRON_CANON_OPS ?? "*/30 * * * *",
+    canonOpsTimezone: env.CANON_OPS_TIMEZONE ?? CANON_OPS_TIMEZONE_DEFAULT,
+    canonOpsWeekdayOnly: env.CANON_OPS_WEEKDAY_ONLY,
+    canonOpsHourStart: env.CANON_OPS_HOUR_START ?? String(CANON_OPS_HOUR_START_DEFAULT),
+    canonOpsHourEnd: env.CANON_OPS_HOUR_END ?? String(CANON_OPS_HOUR_END_DEFAULT),
+    enableHoldEnforcement: env.ENABLE_HOLD_ENFORCEMENT,
+    enableMin40TopUp: env.ENABLE_MIN40_TOP_UP,
+    enablePowerGrydWatch: env.ENABLE_POWERGRYD_WATCH,
+    enableGenericCleanup: env.ENABLE_GENERIC_CLEANUP,
+    holdCampaignIds: env.HOLD_CAMPAIGN_IDS ?? "",
+    holdCampaignNamePatterns: env.HOLD_CAMPAIGN_NAME_PATTERNS ?? "",
+    holdClientZeroActive: env.HOLD_CLIENT_ZERO_ACTIVE ?? "",
+    autoAllowGenericClientIds: env.AUTO_ALLOW_GENERIC_CLIENT_IDS ?? "",
+    powerGrydClientId: env.POWERGRYD_CLIENT_ID ?? String(POWERGRYD_CLIENT_ID),
+    powerGrydSeatTarget: env.POWERGRYD_SEAT_TARGET ?? "40",
+    slackBatchGenericBackfill: env.SLACK_BATCH_GENERIC_BACKFILL,
+    slackFoldApprovalRecorded: env.SLACK_FOLD_APPROVAL_RECORDED,
     cronScan: env.CRON_SCAN ?? "0 9 * * 1,4",
     cronMonitor: env.CRON_MONITOR ?? "0 */6 * * *",
     cronSendVolume: env.CRON_SEND_VOLUME ?? "0 12 * * *|30 16 * * *",

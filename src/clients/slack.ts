@@ -1218,6 +1218,59 @@ export class SlackClient {
     );
   }
 
+  /**
+   * D205 — one Allow-generics card for a burst of campaigns instead of
+   * one card per campaign. Same buttons as notifyIsolationAction.
+   */
+  async notifyGenericBackfillBatch(details: {
+    campaigns: Array<{ id: number; name: string }>;
+    actionId: string;
+  }): Promise<{ channel?: string; ts?: string } | undefined> {
+    const lines = details.campaigns
+      .slice(0, 20)
+      .map((c) => `• #${c.id} ${c.name}`);
+    const extra =
+      details.campaigns.length > 20
+        ? `\n• …and ${details.campaigns.length - 20} more`
+        : "";
+    return this.notifyIsolationAction({
+      title: `Allow generics on ${details.campaigns.length} campaigns`,
+      proof: `${lines.join("\n")}${extra}\n\nFloor stays the on-week client pod (D193/D196/D205). One tap covers the burst.`,
+      actionId: details.actionId,
+      kind: "generic_backfill",
+      who: "Josh",
+    });
+  }
+
+  /**
+   * D205 — fold "Approval recorded" into the original card. A missing
+   * token or stamp is silent; the card still lost its buttons via D195.
+   */
+  async addReaction(
+    channel: string,
+    ts: string,
+    name = "white_check_mark",
+  ): Promise<void> {
+    const token = this.postingBotToken();
+    if (!token || !channel || !ts) return;
+    try {
+      const response = await fetch("https://slack.com/api/reactions.add", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({ channel, timestamp: ts, name }),
+      });
+      const body = (await response.json()) as { ok?: boolean; error?: string };
+      if (!body.ok && body.error && body.error !== "already_reacted") {
+        console.warn(`[slack] reactions.add failed: ${body.error}`);
+      }
+    } catch (error) {
+      console.warn("[slack] reactions.add failed", error);
+    }
+  }
+
   async notifyLeadRunout(details: { text: string }): Promise<void> {
     await this.send(details.text);
   }

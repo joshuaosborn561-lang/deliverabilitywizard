@@ -933,4 +933,50 @@ describe("D137 — the isolation-domain buy arms the rig", () => {
     );
     assert.equal(state.getIsolationAction(action.id)?.status, "executed");
   });
+
+  it("D205: folds Approval recorded and stamps every campaign in a batch", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-exec-fold-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "generic_backfill",
+      title: "Allow generics on 2 campaigns",
+      proof: "proof",
+      detail: {
+        campaignId: 11,
+        campaignName: "A",
+        campaignIds: [11, 12],
+        campaignNames: ["A", "B"],
+        slackChannel: "C0BJQUTV7A8",
+        slackTs: "1.2",
+      },
+    });
+    state.upsertIsolationAction(action);
+    const sent: string[] = [];
+    const reactions: string[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      {
+        send: async (text: string) => {
+          sent.push(text);
+        },
+        addReaction: async (_channel: string, _ts: string, name: string) => {
+          reactions.push(name);
+        },
+      } as never,
+      state,
+      { run: async () => ({ domains: [], mailboxesOrdered: 0, awaitingNameservers: false }) } as never,
+    );
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Josh",
+      role: "owner",
+    });
+    assert.equal(outcome.ok, true);
+    assert.equal(state.getGenericBackfillApproval(11)?.approvedBy, "Josh");
+    assert.equal(state.getGenericBackfillApproval(12)?.approvedBy, "Josh");
+    assert.equal(sent.some((t) => /Approval recorded/.test(t)), false);
+    assert.deepEqual(reactions, ["white_check_mark"]);
+  });
 });

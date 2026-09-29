@@ -19,6 +19,11 @@ import {
 import { isPocClient } from "../lib/pocClient.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import { chicagoWallClock } from "../lib/canonOpsHours.js";
+import {
+  campaignHoldReason,
+  holdPolicyFromConfig,
+} from "../lib/holdPolicy.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import { sleep } from "../lib/http.js";
 import type { SmartleadCampaign, SpamTestSummary } from "../types/index.js";
@@ -80,7 +85,7 @@ export class UnpauseAfterSigQaService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot; now?: Date } = {},
   ): Promise<UnpauseAfterSigQaResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: UnpauseAfterSigQaResult = {
@@ -101,6 +106,11 @@ export class UnpauseAfterSigQaService {
       );
     }
     const allBrands = clientBrandList(clients);
+    const holdPolicy = holdPolicyFromConfig(this.config);
+    const todayYmd = chicagoWallClock(
+      opts.now ?? new Date(),
+      this.config.canonOpsTimezone,
+    ).ymd;
 
     // Candidates that clear every cheap gate; the SmartDelivery read below
     // is spent only when at least one campaign is otherwise startable.
@@ -113,6 +123,11 @@ export class UnpauseAfterSigQaService {
       const name = String(campaign.name ?? campaign.id);
       if (isAnyShellCampaign(campaign)) {
         result.blocked.push(`#${campaign.id} ${name}: shell stays paused`);
+        continue;
+      }
+      const holdReason = campaignHoldReason(campaign, holdPolicy, todayYmd);
+      if (holdReason) {
+        result.blocked.push(`#${campaign.id} ${name}: held — ${holdReason} (D205)`);
         continue;
       }
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) {

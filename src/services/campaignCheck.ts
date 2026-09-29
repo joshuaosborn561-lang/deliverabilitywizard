@@ -39,11 +39,13 @@ import {
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
-import { sleep } from "../lib/http.js";
+import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
 import {
-  buildIsolationAction,
-  requestIsolationAction,
-} from "../lib/isolationActions.js";
+  requestGenericBackfillAsks,
+  type GenericBackfillAskItem,
+} from "../lib/genericBackfillBatch.js";
+import { sleep } from "../lib/http.js";
+import { isPowerGrydClientId } from "./powerGrydWatch.js";
 import {
   desiredMailboxSignature,
   extractSignatureLines,
@@ -180,6 +182,7 @@ export class CampaignCheckService {
       blocked: [],
       findings: [],
     };
+    const genericAsks: GenericBackfillAskItem[] = [];
 
     // D132 — a check without a handed-down snapshot reads the shared book.
     const { campaigns, accounts, clients } =
@@ -548,7 +551,16 @@ export class CampaignCheckService {
       if (!findings.length) {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
       }
-      await this.maybeAskGenericBackfill(campaign, name, findings);
+      await this.maybeAskGenericBackfill(campaign, name, findings, genericAsks);
+    }
+
+    if (genericAsks.length && this.slack) {
+      await requestGenericBackfillAsks({
+        store: this.state,
+        slack: this.slack,
+        batch: this.config.slackBatchGenericBackfill,
+        items: genericAsks,
+      });
     }
 
     if (sigFixed.length && this.slack) {
@@ -612,18 +624,22 @@ export class CampaignCheckService {
     campaign: SmartleadCampaign,
     name: string,
     findings: CampaignFinding[],
+    asks: GenericBackfillAskItem[],
   ): Promise<void> {
     if (!this.slack) return;
     if (!findings.some((finding) => finding.kind === "generic_unapproved")) return;
-    await requestIsolationAction({
-      store: this.state,
-      slack: this.slack,
-      action: buildIsolationAction({
-        kind: "generic_backfill",
-        title: `Generics on ${name}`,
-        proof: `Pool generics are attached to #${campaign.id} ${name}. Floor stays the on-week client pod (D193/D196). Tap Allow generics if they should stay.`,
-        detail: { campaignId: campaign.id, campaignName: name },
-      }),
+    const clientId =
+      typeof campaign.client_id === "number" ? campaign.client_id : null;
+    if (clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)) {
+      return;
+    }
+    if (isPowerGrydClientId(clientId, this.config.powerGrydClientId)) {
+      return;
+    }
+    asks.push({
+      campaignId: campaign.id,
+      campaignName: name,
+      proof: `Pool generics are attached to #${campaign.id} ${name}. Floor stays the on-week client pod (D193/D196/D205). Tap Allow generics if they should stay.`,
     });
   }
 

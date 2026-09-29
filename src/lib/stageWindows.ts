@@ -21,6 +21,8 @@
 const HEALTH_MS = 45 * 60 * 1000;
 /** 6-hour cadence (monitor loop, full mailbox-settings converge) plus grace. */
 const SIX_HOURLY_MS = (6 * 60 + 45) * 60 * 1000;
+/** 30-minute canon-ops cadence plus grace for a missed weekday tick. */
+const CANON_OPS_MS = 90 * 60 * 1000;
 
 /** Fallback for a stage that runs but is missing from the registry below. */
 export const STAGE_FALLBACK_OVERDUE_MS = 45 * 60 * 1000;
@@ -153,4 +155,10 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   // D159 — score→suspect→evaluate rides the 15-minute health sweep.
   "isolation-branch": HEALTH_MS,
   "copy-isolation": SIX_HOURLY_MS,
+  // D205 — weekday Chicago 30-minute canon-ops. Idle ticks outside
+  // hours still refresh lastOkAt so a weekend is not OVERDUE.
+  "hold-enforcement": CANON_OPS_MS,
+  "min40-topup": CANON_OPS_MS,
+  "powergryd-watch": CANON_OPS_MS,
+  "generic-cleanup": CANON_OPS_MS,
 };

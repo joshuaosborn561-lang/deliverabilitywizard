@@ -1136,6 +1136,66 @@ describe("PlacementResultsService", () => {
       "a 429 must not restart the walk at the pod-control pages",
     );
   });
+
+  it("refreshes a complete snapshot to the latest run instead of the day the test was created", async () => {
+    const state = await stateFixture();
+    state.setPlacementResults({
+      generatedAt: new Date().toISOString(),
+      complete: true,
+      rows: [
+        {
+          id: "101",
+          name: "Auto: Campaign Seven",
+          campaignId: 7,
+          campaignName: "Campaign Seven",
+          status: "ACTIVE",
+          createdAt: "2026-08-01T00:00:00.000Z",
+          runNumber: 1,
+          inboxPercent: 70,
+          spamPercent: 20,
+          googleInboxPercent: 75,
+          microsoftInboxPercent: 100,
+          totalSeeds: 10,
+          providers: [],
+        },
+      ],
+    });
+    let detailsCalls = 0;
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("catalog is not required to refresh a known test's latest run");
+      },
+      getProviderwiseReport: async () => {
+        throw new Error("scores are already on the row");
+      },
+      getTestDetails: async () => {
+        detailsCalls += 1;
+        return {
+          created_at: "2026-08-01T00:00:00.000Z",
+          schedule_start_time: "2026-08-01T00:00:00.000Z",
+          every_days: 1,
+          test_run_no: 59,
+          status: "ACTIVE",
+        };
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign Seven", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      60_000,
+    );
+    const result = await service.get();
+    assert.equal(detailsCalls, 1);
+    assert.equal(result.rows[0]?.id, "101");
+    assert.equal(result.rows[0]?.createdAt, "2026-09-28T00:00:00.000Z");
+    assert.equal(result.rows[0]?.runNumber, 59);
+  });
 });
 
 describe("latestPlacementAt", () => {
@@ -1152,6 +1212,18 @@ describe("latestPlacementAt", () => {
         Date.parse("2026-09-22T00:00:00.000Z"),
       ),
       "2026-09-21T00:00:00.000Z",
+    );
+    assert.equal(
+      latestPlacementAt(
+        {
+          created_at: "2026-08-01T00:00:00.000Z",
+          schedule_start_time: "2026-08-01T00:00:00.000Z",
+          every_days: 1,
+          test_run_no: 59,
+        },
+        Date.parse("2026-09-29T12:00:00.000Z"),
+      ),
+      "2026-09-28T00:00:00.000Z",
     );
   });
 });

@@ -19,7 +19,11 @@ export function isOutlookMailboxType(
 export function mailboxMessagePerDayTarget(
   account: { type?: string | null; platform?: string | null } | null | undefined,
   config: Pick<AppConfig, "messagePerDay">,
+  opts?: { tenantZeroActive?: boolean } | null,
 ): number {
+  // D206 — Josh-named Outlook seats on a tenant-cap hold stay at 0
+  // until the UTC-day restore. Standing D183 15/30 is unchanged.
+  if (opts?.tenantZeroActive) return 0;
   const type = account?.type ?? account?.platform;
   return isOutlookMailboxType(type) ? OUTLOOK_MESSAGE_PER_DAY : config.messagePerDay;
 }

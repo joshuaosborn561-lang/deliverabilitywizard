@@ -387,6 +387,11 @@ export class Min40TopUpService {
             max_email_per_day: mailboxMessagePerDayTarget(
               { platform: pool.platform },
               this.config,
+              {
+                tenantZeroActive: this.state.isTenantZeroActive(
+                  pool.smartleadAccountId ?? 0,
+                ),
+              },
             ),
           });
           this.state.upsertPoolMailbox({

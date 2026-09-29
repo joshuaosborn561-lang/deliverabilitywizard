@@ -10687,8 +10687,8 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D205\*\*/,
-      stop("CANON is dated D205.", "CANON.md header was not bumped to D205."),
+      /Canon as of \*\*D20[5-9]\*\*/,
+      stop("CANON is dated D205+.", "CANON.md header lost D205+."),
     );
     assert.match(
       canon,
@@ -10737,6 +10737,128 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
       decisions,
       /^\| D205 \|/m,
       stop("The status index lists D205 (D127).", "DECISIONS.md status index has no D205 row."),
+    );
+  });
+});
+
+describe("owner intent — D206 tenant-zero hold until UTC-day restore", () => {
+  it("D206: Josh-named Outlook seats stay at 0 until 00:15 UTC, then D183 writes 15", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const hold = await readFile(
+      new URL("../lib/tenantZeroHold.ts", import.meta.url),
+      "utf8",
+    );
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const ceiling = await readFile(
+      new URL("../lib/sendCeiling.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      hold,
+      /export const GETINTRODUCEDNOW_TENANT_ZERO_IDS = \[[\s\S]*21648785[\s\S]*21648784[\s\S]*21648783[\s\S]*21648777[\s\S]*21648693/,
+      stop(
+        "The five getintroducednow.com Outlook seats are the D206 seed (Josh 2026-09-29).",
+        "tenantZeroHold.ts lost the named seat ids.",
+      ),
+    );
+    assert.match(
+      hold,
+      /TENANT_ZERO_RESTORE_GRACE_MINUTES = 15/,
+      stop(
+        "Restore is 15 minutes after UTC midnight ≈ 7:15pm CT (D206).",
+        "tenantZeroHold.ts lost the 00:15 UTC restore grace.",
+      ),
+    );
+    assert.match(
+      store,
+      /tenantZeroIdsActive/,
+      stop(
+        "State keeps tenantZeroIdsActive (D206).",
+        "store.ts lost the tenant-zero id list.",
+      ),
+    );
+    assert.match(
+      store,
+      /healTenantZeroHold/,
+      stop(
+        "A same-day tenant-limit alert re-seeds the hold (D206).",
+        "store.ts lost healTenantZeroHold.",
+      ),
+    );
+    assert.match(
+      ceiling,
+      /tenantZeroActive/,
+      stop(
+        "The send ceiling honors a tenant-zero hold at 0 (D206).",
+        "sendCeiling.ts no longer returns 0 for a held seat.",
+      ),
+    );
+    assert.match(
+      settings,
+      /healTenantZeroHold/,
+      stop(
+        "mailbox-settings heals the hold before converging volume (D206).",
+        "mailboxSettings.ts will write 15 over a same-day tenant-zero hold.",
+      ),
+    );
+    assert.match(
+      settings,
+      /isTenantZeroActive/,
+      stop(
+        "mailbox-settings writes 0 for held ids (D206).",
+        "mailboxSettings.ts no longer consults the tenant-zero hold.",
+      ),
+    );
+    assert.match(
+      bounce,
+      /activateTenantZeroHold/,
+      stop(
+        "A getintroducednow.com tenant page pins the seed ids (D206).",
+        "campaignBounceAutostop.ts no longer activates the tenant-zero hold.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D206\*\*/,
+      stop("CANON is dated D206.", "CANON.md header was not bumped to D206."),
+    );
+    assert.match(
+      canon,
+      /tenantZeroIdsActive/,
+      stop(
+        "CANON names the tenant-zero hold (D206).",
+        "CANON.md lost tenantZeroIdsActive.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D206 — Tenant-zero hold/,
+      stop("The ledger records D206.", "DECISIONS.md no longer has D206."),
+    );
+    assert.match(
+      decisions,
+      /^\| D206 \|/m,
+      stop("The status index lists D206 (D127).", "DECISIONS.md status index has no D206 row."),
     );
   });
 });

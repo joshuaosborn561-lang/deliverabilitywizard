@@ -39,4 +39,25 @@ describe("mailboxMessagePerDayTarget (D183)", () => {
       20,
     );
   });
+
+  it("D206: a tenant-zero hold returns 0 for Outlook and Gmail", () => {
+    assert.equal(
+      mailboxMessagePerDayTarget({ type: "OUTLOOK" }, config, {
+        tenantZeroActive: true,
+      }),
+      0,
+    );
+    assert.equal(
+      mailboxMessagePerDayTarget({ type: "GMAIL" }, config, {
+        tenantZeroActive: true,
+      }),
+      0,
+    );
+    assert.equal(
+      mailboxMessagePerDayTarget({ type: "OUTLOOK" }, config, {
+        tenantZeroActive: false,
+      }),
+      15,
+    );
+  });
 });

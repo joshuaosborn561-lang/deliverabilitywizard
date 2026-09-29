@@ -573,6 +573,11 @@ export class CampaignTopUpService {
                 max_email_per_day: mailboxMessagePerDayTarget(
                   { platform: pool.platform },
                   this.config,
+                  {
+                    tenantZeroActive: this.state.isTenantZeroActive(
+                      pool.smartleadAccountId ?? 0,
+                    ),
+                  },
                 ),
               });
               await sleep(200);

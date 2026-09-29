@@ -255,6 +255,11 @@ export class ClientFanOutService {
                     max_email_per_day: mailboxMessagePerDayTarget(
                       row.account,
                       this.config,
+                      {
+                        tenantZeroActive: this.state.isTenantZeroActive(
+                          row.accountId,
+                        ),
+                      },
                     ),
                   });
                   await sleep(120);
@@ -299,6 +304,11 @@ export class ClientFanOutService {
                       max_email_per_day: mailboxMessagePerDayTarget(
                         row.account,
                         this.config,
+                        {
+                          tenantZeroActive: this.state.isTenantZeroActive(
+                            row.accountId,
+                          ),
+                        },
                       ),
                     });
                     await sleep(120);

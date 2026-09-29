@@ -1098,7 +1098,10 @@ export class CampaignCheckService {
         });
       }
       const volume = readMessagePerDay(account);
-      const wantVolume = mailboxMessagePerDayTarget(account, this.config);
+      const wantVolume = mailboxMessagePerDayTarget(account, this.config, {
+        tenantZeroActive:
+          account.id != null && this.state.isTenantZeroActive(account.id),
+      });
       if (Number.isFinite(volume) && volume !== wantVolume) {
         findings.push({
           kind: "mailbox_volume",

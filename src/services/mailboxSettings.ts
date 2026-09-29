@@ -111,6 +111,7 @@ export class MailboxSettingsService {
     // Gmail/SMTP MESSAGE_PER_DAY (D24). Compare each account to its type target.
     const defaultTarget = this.config.messagePerDay;
     const targetGap = this.config.mailboxMinTimeGapMins;
+    this.store?.healTenantZeroHold(new Date());
     const { accounts, clients, campaigns } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
     result.scanned = accounts.length;
@@ -141,7 +142,9 @@ export class MailboxSettingsService {
       if (!email || !account.id) continue;
 
       // Only write when the value differs — needless writes trip the limiter.
-      const target = mailboxMessagePerDayTarget(account, this.config);
+      const target = mailboxMessagePerDayTarget(account, this.config, {
+        tenantZeroActive: this.store?.isTenantZeroActive(account.id),
+      });
       const current = readMessagePerDay(account);
       const needsLimit = !(Number.isFinite(current) && current === target);
 

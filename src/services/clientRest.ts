@@ -54,7 +54,7 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * auto-pause when D169 hygiene ran). On-week restore for named seats
  * **and** that client's generics targets every ACTIVE client campaign
  * (D59/D207). Same-client generic multi-link is required; exclusive
- * attach / leftoverPausedOrStopped peel are retired. Excluded / canary
+ * attach / paused-detach hygiene peel are retired. Excluded / canary
  * / pod-control shells stay untouched.
  *
  * D154 — on-week restore must not re-staff inboxes that still owe warmup.

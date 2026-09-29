@@ -147,8 +147,7 @@ or the day is done. Silent findings are a bug (D163).
   via named + client-signed generics). Off-week POD's 40 rest
   ready. If bad senders are peeled, restore each ACTIVE campaign
   back to 40. Each POD also keeps an **ESP mix floor** (D203):
-  when the client has both Outlook and Gmail, neither ESP may
-  sit under ~1/3 of that POD's seats (**14 of a 40-seat POD**).
+  when the client has both Outlook and Gmail, neither ESP may sit under ~1/3 of that POD's seats (**14 of a 40-seat POD**).
   A POD must not go monoculture. D192 ESP-balanced ~50/50
   across A/B *within* each ESP still stands — this is a per-POD
   mix floor on top. Peels consult the **staffable attached**
@@ -203,11 +202,9 @@ or the day is done. Silent findings are a bug (D163).
   their senders (D207, supersedes D169).** A bounce auto-pause
   must not strip the on-week half (Peterson #3798229 lost 37 of
   40 seats at the next client-rest tick). Last-account guard
-  stays. **Exception (D189):** client-rest does not unlink or
-  bench mailboxes off Insight campaigns (the named Insight ids,
+  stays. **Exception (D189):** client-rest does not unlink or bench mailboxes off Insight campaigns (the named Insight ids,
   now client 582890, or any campaign whose name starts with
-  `Insight `). Engagers / other SalesGlider ACTIVE rest is
-  unchanged. Warmup stays on; resting is not staffable.
+  `Insight `). Engagers / other SalesGlider ACTIVE rest is unchanged. Warmup stays on; resting is not staffable.
   On-week **named** seats **and that client's generics** staff
   **every ACTIVE** campaign for that client (D59/D207),
   including boxes whose only current memberships are
@@ -260,7 +257,8 @@ or the day is done. Silent findings are a bug (D163).
   not borrow another named client's mailboxes. PowerGRYD / POC
   carve-outs stay as documented (D81/D82).
   **Exception (D197/D198/D199/D203/D207):** dedicated named-client generic
-  seats (client-sig / client tag / client_id) must not be peeled
+  seats (and exclusive generic + client-sig seats) — client-sig /
+  client tag / client_id — must not be peeled
   by one-client, top-up `pullNonGoliathGenerics`, generic-rest,
   client-rest, or Insight shared-staff unlink as foreign Goliath,
   even above 40. `pod-cover` does not unlink live ACTIVE seats.

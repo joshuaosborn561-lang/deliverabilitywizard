@@ -172,7 +172,9 @@ export function hasHoldOrRetireTag(
   account: Pick<SmartleadEmailAccount, "tags">,
   now: Date = new Date(),
 ): boolean {
-  const tags = tagNames(account);
+  const tags = (account.tags ?? [])
+    .map((t) => String(t.tag_name ?? t.name ?? "").trim())
+    .filter(Boolean);
   if (activeHoldUntilDate(tags, now)) return true;
   return tags.some((tag) => /\bRETIRE\b/i.test(tag));
 }

@@ -87,8 +87,11 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(updates[0]?.fields.client_id, 542838);
     assert.match(String(updates[0]?.fields.signature), /Bolder Cyber Partners/);
     assert.equal(result.assigned.length, 1);
-    assert.equal(slackCalls.length, 0);
     assert.equal(result.asked.length, 0);
+    assert.ok(
+      slackCalls.every((line) => /staffable \(short/.test(line)),
+      "auto-allow must not open an Allow-generics card; under-40 ops_alert is ok",
+    );
   });
 
   it("queues a Slack ask for a named client that is not auto-allow", async () => {

@@ -39,6 +39,7 @@ import {
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
@@ -573,6 +574,12 @@ export class CampaignTopUpService {
                 max_email_per_day: mailboxMessagePerDayTarget(
                   { platform: pool.platform },
                   this.config,
+                  {
+                    tenantZeroActive: storeHoldsTenantZero(
+                      this.state,
+                      pool.smartleadAccountId,
+                    ),
+                  },
                 ),
               });
               await sleep(200);

@@ -37,6 +37,7 @@ import {
 } from "../lib/poolSignature.js";
 import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import { sleep } from "../lib/http.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
@@ -387,6 +388,12 @@ export class Min40TopUpService {
             max_email_per_day: mailboxMessagePerDayTarget(
               { platform: pool.platform },
               this.config,
+              {
+                tenantZeroActive: storeHoldsTenantZero(
+                  this.state,
+                  pool.smartleadAccountId,
+                ),
+              },
             ),
           });
           this.state.upsertPoolMailbox({

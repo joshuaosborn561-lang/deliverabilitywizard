@@ -316,6 +316,11 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
     );
     const job = state.getBounceResurrectionJob(8);
     assert.ok(job, "a sender-fault burst opens the resurrection incident (D148)");
+    assert.deepEqual(
+      state.listTenantZeroIdsActive(),
+      [],
+      "cleartechco.com has no seeded tenant-zero ids",
+    );
 
     // Same wave still burning ten minutes later: everything folds into the
     // open incident — no second receipt, no second classification pass.
@@ -342,6 +347,44 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
       Date.parse(foldedJob!.windowEnd) >= Date.parse(job!.windowEnd),
       "the incident window widened to cover the new bounces",
     );
+  });
+
+  it("D206: a getintroducednow.com tenant page pins the five Outlook seats at 0", async () => {
+    const statusWrites: string[] = [];
+    const sent: string[] = [];
+    const state = store();
+    state.setBounceSnapshot(8, {
+      bounced: 3,
+      sent: 40,
+      at: new Date(FIXED_T - 10 * 60 * 1000).toISOString(),
+    });
+    const sl = mkSl(statusWrites) as {
+      getLeadMessageHistory: () => Promise<unknown>;
+    };
+    sl.getLeadMessageHistory = async () => ({
+      history: [
+        { type: "SENT", from: "jinmorgan@getintroducednow.com" },
+        { type: "REPLY", email_body: NDR },
+      ],
+    });
+    const service = new CampaignBounceAutostopService(
+      loadConfig({ DRY_RUN: "false" }),
+      sl as never,
+      state,
+      { send: async (text: string) => void sent.push(text) } as never,
+      undefined,
+      () => FIXED_T,
+    );
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(statusWrites, [], "no pause (D148)");
+    assert.equal(result.bursts[0]?.verdict?.dominant, "tenant_rate_limit");
+    assert.ok(state.isTenantZeroActive(21648785, new Date(FIXED_T)));
+    assert.ok(state.isTenantZeroActive(21648777, new Date(FIXED_T)));
+    assert.equal(
+      state.getTenantZeroRestoreAfter(),
+      "2026-08-28T00:15:00.000Z",
+    );
+    assert.match(sent.join("\n"), /getintroducednow\.com hit its Microsoft daily sending cap/);
   });
 
   it("D145/D146: one 5.1.8 sample opens the burned-domain retire ask even under a tenant-cap wave", async () => {

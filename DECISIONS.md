@@ -214,6 +214,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D200 | Live — 40/POD inventory by D203 | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
 | D205 | Live | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
+| D206 | Live | Outlook seats on `tenantZeroIdsActive` stay at max_email_per_day 0 until ~00:15 UTC / 7:15pm CT after a Microsoft tenant-cap day; D183 15-converge resumes after restore; campaigns stay ACTIVE (D148); getintroducednow.com seed `#21648785` / `#21648784` / `#21648783` / `#21648777` / `#21648693` |
 
 ---
 
@@ -6539,6 +6540,49 @@ hold PAUSED exception, auto-allow, PowerGRYD watch-only,
 batched cards, and folded Approval recorded; qa-unpause
 and health resume refuse holds; `approveGenericBackfill`
 does not `announce` when fold is on.
+
+## D206 — Tenant-zero hold: Outlook stays at 0 until the UTC-day restore
+
+**Date.** 2026-09-29.
+
+**Decision.** Josh, after getintroducednow.com hit Microsoft
+`550 5.7.233` (tenant external recipient rate limit) and
+Restore put the five Outlook seats back to 15: those ids stay
+on `tenantZeroIdsActive` at `max_email_per_day` 0 until
+~00:15 UTC (7:15pm CT). Then D183 writes 15 again.
+
+Seeded seats (mpd zero only — not peeled, not paused, not
+Retired):
+
+- `#21648785` jinmorgan (Insight)
+- `#21648784` aaravrossi (Parlay)
+- `#21648783` hanajefferson (EMCOR)
+- `#21648777` lanreed (PowerGRYD — leave on the campaign)
+- `#21648693` minhjenkins (BCP)
+
+First-seen campaign `#4005234` PowerGRYD vCISO Tix SEG stays
+ACTIVE (`bounce_autopause` 100 is UI-only, D157). PowerGRYD
+#243 leave-alone still stands (D205 watch-only). No spend.
+
+**Why.** mailbox-settings gap-enforce rewrites every Outlook
+mailbox to 15 every 15 minutes (D183). The operational re-zero
+lasted one cycle — Restore re-armed the exhausted tenant.
+
+**Rejected.** Pausing `#4005234` (reverses D148). Peeling
+lanreed (reverses PowerGRYD leave-alone). Zeroing every
+Outlook sibling of a tenant page (that is how TechEvo got
+cut by a wrong-domain Slack). A standing Outlook-15 drop.
+
+**Supersedes / amends.** Qualifies D183: held ids target 0
+until restoreAfter, then 15. Does not reverse D148, D40,
+D157, D183's standing 15, or D205 PowerGRYD watch-only.
+
+**Guards.** canon D206: `tenantZeroIdsActive` / restoreAfter
+in state; `GETINTRODUCEDNOW_TENANT_ZERO_IDS` is the five
+named seats; mailboxSettings / fan-out / top-up / min-40 /
+campaign-check / placement-audit honor the hold; bounce loop
+activates the seed on a getintroducednow.com tenant page;
+CANON dated D206 names the 0-until-restore exception.
 
 ---
 

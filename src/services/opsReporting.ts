@@ -153,7 +153,7 @@ export function latestPlacementAt(
   if (Number.isFinite(updated)) candidates.push(updated);
   const start = Date.parse(String(test.schedule_start_time ?? ""));
   const every = test.every_days;
-  const run = test.current_test_run_no;
+  const run = test.current_test_run_no ?? test.test_run_no;
   if (
     Number.isFinite(start) &&
     typeof every === "number" &&
@@ -166,6 +166,27 @@ export function latestPlacementAt(
   const fresh = candidates.filter((stamp) => stamp <= now + 60_000);
   if (fresh.length) return new Date(Math.max(...fresh)).toISOString();
   return allowCreatedAt ? test.created_at : undefined;
+}
+
+/** Keep the later of two placement stamps. A list row's created_at must not cover the latest run. */
+function laterPlacementAt(
+  current: string | undefined,
+  next: string | undefined,
+): string | undefined {
+  const currentMs = Date.parse(current ?? "");
+  const nextMs = Date.parse(next ?? "");
+  if (!Number.isFinite(nextMs)) return current;
+  if (!Number.isFinite(currentMs)) return next;
+  return nextMs >= currentMs ? next : current;
+}
+
+function preferRunNumber(
+  current: number | undefined,
+  next: number | undefined,
+): number | undefined {
+  if (typeof next !== "number" || !Number.isFinite(next)) return current;
+  if (typeof current !== "number" || !Number.isFinite(current)) return next;
+  return Math.max(current, next);
 }
 
 function placementDateIsStale(row: PlacementResultRow, now = Date.now()): boolean {
@@ -371,6 +392,9 @@ export class PlacementResultsService {
   private snapshotLooksComplete(value: PlacementResults): boolean {
     if (!value.rows.length) return false;
     if (value.rows.some((row) => !placementRowHasResult(row))) return false;
+    if (value.rows.some((row) => row.createdAt && placementDateIsStale(row))) {
+      return false;
+    }
     if (value.complete === false) return false;
     if (value.complete === true) return true;
     return value.rows.length >= 40;
@@ -628,13 +652,16 @@ export class PlacementResultsService {
       Date.now(),
       false,
     );
-    if (stamped && placementDateIsStale(row)) row.createdAt = stamped;
+    if (stamped && placementDateIsStale(row)) {
+      const createdAt = laterPlacementAt(row.createdAt, stamped);
+      if (createdAt) row.createdAt = createdAt;
+    }
     const run = Number(
       (report as { current_test_run_no?: unknown; test_run_no?: unknown })
         .current_test_run_no ??
         (report as { test_run_no?: unknown }).test_run_no,
     );
-    if (Number.isFinite(run)) row.runNumber = run;
+    if (Number.isFinite(run)) row.runNumber = preferRunNumber(row.runNumber, run);
     if (
       typeof row.googleInboxPercent === "number" ||
       typeof row.microsoftInboxPercent === "number"
@@ -660,9 +687,10 @@ export class PlacementResultsService {
     const at = latestPlacementAt(
       details as SpamTestSummary & { updated_at?: string },
     );
-    if (at) row.createdAt = at;
+    const createdAt = laterPlacementAt(row.createdAt, at);
+    if (createdAt) row.createdAt = createdAt;
     const run = Number(details.current_test_run_no ?? details.test_run_no);
-    if (Number.isFinite(run)) row.runNumber = run;
+    if (Number.isFinite(run)) row.runNumber = preferRunNumber(row.runNumber, run);
   }
 
   /**
@@ -704,7 +732,10 @@ export class PlacementResultsService {
         idByCampaign.set(row.campaignId, row.id);
       }
       const prior = byId.get(row.id);
-      const createdAt = realDate(row.campaignId, row.createdAt ?? prior?.createdAt);
+      const createdAt = laterPlacementAt(
+        realDate(row.campaignId, prior?.createdAt),
+        realDate(row.campaignId, row.createdAt),
+      );
       if (!prior) {
         byId.set(row.id, { ...row, createdAt });
         return;
@@ -720,7 +751,7 @@ export class PlacementResultsService {
         spamPercent: row.spamPercent ?? prior.spamPercent,
         tabPercent: row.tabPercent ?? prior.tabPercent,
         createdAt,
-        runNumber: row.runNumber ?? prior.runNumber,
+        runNumber: preferRunNumber(prior.runNumber, row.runNumber),
         name: row.name || prior.name,
       });
     };
@@ -787,7 +818,10 @@ export class PlacementResultsService {
           previous?.campaignName,
         status: String(test.status ?? previous?.status ?? "UNKNOWN"),
         createdAt: latestPlacementAt(test) ?? realDate(campaignId, previous?.createdAt),
-        runNumber: test.current_test_run_no ?? previous?.runNumber,
+        runNumber: preferRunNumber(
+          previous?.runNumber,
+          test.current_test_run_no ?? test.test_run_no,
+        ),
         ...overallFromTest(test),
         providers: previous?.providers ? [...previous.providers] : [],
         googleInboxPercent: previous?.googleInboxPercent,

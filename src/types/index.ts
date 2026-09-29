@@ -83,6 +83,8 @@ export interface SpamTestSummary {
   status?: string;
   campaign_id?: string | number | null;
   current_test_run_no?: number;
+  /** Details payload names the run this way. The report list uses current_test_run_no. */
+  test_run_no?: number;
   schedule_start_time?: string;
   test_end_date?: string | null;
   created_at?: string;

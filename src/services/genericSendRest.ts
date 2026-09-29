@@ -202,7 +202,7 @@ export class GenericSendRestService {
           )
         ) {
           result.skipped.push(
-            `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
+            `${email}: #${campaignId} at per-campaign min ${ON_WEEK_MIN_SENDERS} (D207)`,
           );
           continue;
         }

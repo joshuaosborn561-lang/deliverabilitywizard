@@ -36,7 +36,9 @@ export function isPowerGrydClientId(
 
 /**
  * Dedicated PowerGRYD seats: mailbox client_id or dedicated-generic
- * marks pointing at 592842. Alert-only — never peel / restaff / START.
+ * marks pointing at 592842. Never mutate memberships or status.
+ * This watch is still alert-only for count drops and never
+ * START/PAUSE. Restaff to 40 is min40-topup (D207).
  */
 export function countPowerGrydDedicatedSeats(input: {
   accounts: SmartleadAccountWithCampaigns[];
@@ -87,8 +89,9 @@ export function countPowerGrydDedicatedSeats(input: {
 }
 
 /**
- * D205 — PowerGRYD (592842) is hands-off. Watch dedicated seat count
- * and Slack once per drop. Never mutate memberships or status.
+ * D205 / D207 — PowerGRYD (592842) watch is alert-only for dedicated
+ * seat-count drops. Never mutate memberships or status. Never START
+ * or PAUSE. Restaff is min40-topup.
  */
 export class PowerGrydWatchService {
   constructor(

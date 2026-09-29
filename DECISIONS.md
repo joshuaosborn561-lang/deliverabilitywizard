@@ -46,7 +46,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D22–D23 | Burned numbers — no entry exists |
 | D24 | Live — Outlook / Microsoft cap qualified by D183 |
 | D25 | Live — floor definition superseded by D58/D82 |
-| D26 | Live — qualified by D43 (resters skip fan-out); ACTIVE foreign pull will not drop a campaign below 40 (D197); exclusive-attach / no-multi-link is pool generics only (D200) |
+| D26 | Live — qualified by D43 (resters skip fan-out); ACTIVE foreign pull will not drop a campaign below 40 (D197); same-client generics may multi-link like named seats (D207) |
 | D27 | Live — qualified by D58/D81/D82 (POC or approval) |
 | D28 | Superseded by D69/D93/D96 — no provider-split guesses |
 | D29 | Superseded by D91 |
@@ -61,7 +61,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D40 | Live — standing holds (D205) stay PAUSED and are not auto-STARTed |
 | D41 | Mostly superseded (D43 cohorts, D50 clock, D71 Slack) — burn checklist and DKIM/DMARC advisory live |
 | D42 | Superseded by D43 |
-| D43 | Live — qualified by D169 (off-week also leaves PAUSED/STOPPED); split is ESP-balanced within Outlook/Gmail (D192); ACTIVE detach will not drop a campaign below 40 (D197) |
+| D43 | Live — D169 paused/stopped detach superseded by D207 (PAUSED/STOPPED keep seats); split is ESP-balanced within Outlook/Gmail (D192); ACTIVE detach will not drop a campaign below 40 (D197) |
 | D44 | Historical one-shot (ran 2026-08-21) |
 | D45 | Live |
 | D46 | Live — enforced by D106 |
@@ -77,7 +77,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D56 | Live |
 | D57 | Burned number — no entry exists |
 | D58 | Superseded by D82 (POC pattern) — half-client floor size qualified by D196 (on-week pod) |
-| D59 | Historical one-shot (ran 2026-08-24) — on-week every ACTIVE extended by D169 |
+| D59 | Historical one-shot (ran 2026-08-24) — on-week every ACTIVE; D169 paused hygiene superseded by D207 |
 | D60 | Live |
 | D61 | Historical one-shot (ran 2026-08-24; destructive) |
 | D62 | Burned number — no entry exists |
@@ -183,7 +183,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D166 | Live | pod-cover ticks every health pass so lastOkAt cannot freeze; /health names overdue stages |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
 | D168 | Live — pending-ask refresh + classifier harden added by D170 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
-| D169 | Live — qualified by D189 (Insight campaigns stay attached); A/B cut is ESP-balanced (D192) | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
+| D169 | Superseded by D207 — PAUSED/STOPPED keep their senders; leftoverPausedOrStopped hygiene is retired | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
@@ -204,16 +204,17 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D189 | Live — Insight campaigns are now client 582890 (D192); named ids stay rest-sticky | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
-| D193 | Live — peel of exclusive min-40 generic seats qualified by D197; dedicated named-client seats are not foreign Goliath (D198); "leave it short / client-inbox only" for the min-40 fill path narrowed by D203 | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
+| D193 | Live — peel of exclusive min-40 generic seats qualified by D197; dedicated named-client seats are not foreign Goliath (D198); "leave it short / client-inbox only" for the min-40 fill path narrowed by D203; same-client generic share by D207 | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
-| D196 | Live — floor is max(named on-week pod, 40 per POD inventory) per D197/D203 | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
-| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); exclusive-attach is pool-only (D200); 40 is per-POD client inventory (D203) | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
-| D198 | Live — exclusive + client-sig also dedicated (D199); exclusive-attach is pool-only (D200); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
-| D199 | Live — exclusive-attach / no-multi-link qualified by D200 (pool generics only); 40/POD inventory by D203 | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
-| D200 | Live — 40/POD inventory by D203 | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
-| D203 | Live | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
-| D205 | Live | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
+| D196 | Live — inventory floor is max(named on-week pod, 40 per POD) per D197/D203; live send floor is 40 per ACTIVE campaign (D207) | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
+| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); 40 is per ACTIVE campaign (D207); 40/POD inventory still D203 | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D198 | Live — exclusive + client-sig also dedicated (D199); same-client generics may multi-link (D207); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D199 | Live — same-client generic multi-link by D207; 40/POD inventory by D203; live floor per ACTIVE campaign (D207) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
+| D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
+| D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
+| D205 | Live — min40 now shares same-client generics and restaffs PowerGRYD (D207); watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
+| D207 | Live | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
 
 ---
 
@@ -6539,6 +6540,95 @@ hold PAUSED exception, auto-allow, PowerGRYD watch-only,
 batched cards, and folded Approval recorded; qa-unpause
 and health resume refuse holds; `approveGenericBackfill`
 does not `announce` when fold is on.
+
+---
+
+## D207 — MIN 40 is per ACTIVE campaign; same-client generics multi-link; paused keep seats
+
+**Date.** 2026-09-29.
+
+**Decision.** Josh (owner): every ACTIVE campaign must have ≥40
+staffable senders from its own client (on-week POD named first,
+then that client's generics). A client's generics (`client_id` =
+that client, client signature) MAY be multi-linked across ALL of
+that same client's ACTIVE campaigns, exactly like named seats.
+Generics must still NEVER be linked to a different client's
+campaign. Do NOT detach seats from PAUSED/STOPPED campaigns in
+client-rest or anywhere else. Last-account guard stays.
+min40-topup tops each ACTIVE campaign under 40 by linking that
+client's already-linked/assigned generics and on-week named
+seats first, then assigning free-pool generics (warm ≥21 days,
+connected, not HOLD-UNTIL/RETIRE tagged, ESP mix ~1/3 min) to
+the client and sharing them across the client's campaigns.
+Every `removeEmailAccountsFromCampaign` on an ACTIVE campaign
+consults `detachWouldBreakStaffableFloor`. Exceptions that may
+still come off below 40: disconnected / SMTP-fail, cross-client,
+HOLD/RETIRE-tagged, warmDays < 21. PowerGRYD (client 592842)
+ACTIVE campaigns are restaffed to 40 with PowerGRYD's own seats,
+shared across PG campaigns — still never START/PAUSE PG. If PG
+has fewer than 40 staffable seats total, link all it has and
+raise one Slack alert naming the shortfall (free-pool only via
+the normal assign path: client 592842 + PG signature).
+generic-cleanup is unchanged (clear `client_id` / signature only
+when the generic is on NONE of that client's ACTIVE campaigns).
+When any ACTIVE campaign is under 40 after a min40-topup pass,
+post one `ops_alert` Slack line per campaign per day naming
+campaign, count, and shortfall.
+
+**Number.** Josh asked for D206. Open draft PR #250 already
+claimed D206 for a getintroducednow.com tenant-zero hold.
+D127 uniqueness across `main` AND open PRs — this call is
+**D207**.
+
+**Why.** Live 2026-09-29: 64 of 90 ACTIVE Smartlead campaigns
+sat under 40 senders (BCP ~21, EMCOR ~28, Parlay 29, PowerGRYD
+16). Two code causes: (1) D169 leftoverPausedOrStopped hygiene
+detached on-week seats from PAUSED/STOPPED — Peterson #3798229
+was bounce auto-paused at 10:52 CT and lost 37 of 40 seats at
+the 11:09 client-rest tick, so any restart started understaffed.
+(2) D200 pool-only exclusivity plus `exclusiveExtras` peel so a
+generic sat on only ONE campaign, while named seats were shared.
+Clients with <40 staffable named seats ended up with every
+campaign short, and any manual restaff that added generics got
+peeled back as extras. D203's 40 was also counted per-POD
+inventory rather than per campaign.
+
+**Rejected.** Keeping D200 exclusive-attach for pool generics
+on the same client. Keeping D169 paused detach as "hygiene".
+Pulling free-pool generics onto PowerGRYD without assigning
+client 592842 + PG signature. START/PAUSE of PowerGRYD
+campaigns. Treating 40 as a per-POD inventory cylinder only.
+Detaching staffable seats from an ACTIVE campaign that would
+drop it below 40 (except the named exceptions). Clearing a
+generic's client_id while it still sits on any of that client's
+ACTIVE campaigns.
+
+**Supersedes / amends.** Supersedes D200 generic exclusivity
+(`pickExclusiveOnWeekTarget`, `exclusiveExtras`,
+`peelCampaignIds` same-client extras). Supersedes D169
+paused-detach hygiene (`leftoverPausedOrStopped`;
+`REST_DETACH_STATUSES` is ACTIVE only). Qualifies D197/D199:
+the 40 floor is per ACTIVE campaign. Qualifies D203: 40-A +
+40-B inventory, static named split, ~1/3 ESP mix, and
+never-retag stay; the live send floor is per campaign.
+Qualifies D205: min40-topup shares same-client generics and
+restaffs PowerGRYD; powergryd-watch stays alert-only and
+never START/PAUSE. Does not reverse D26 one-client (cross-client
+peel stays), D43 A/B rest of ACTIVE, D105 warmup pulls, D189
+Insight rest-sticky, or D193 rotating-pool dump past the
+shortfall.
+
+**Guards.** canon D207: `peelCampaignIds` returns foreign only
+even with `poolGeneric: true`; `REST_DETACH_STATUSES` is
+ACTIVE only and `leftoverPausedOrStopped` /
+`pickExclusiveOnWeekTarget` / `exclusiveExtras` are gone;
+`detachWouldBreakStaffableFloor` exempts disconnected /
+cross-client / HOLD-RETIRE / under-warmed; min40 shares a
+client generic across that client's ACTIVE camps and never
+cross-clients; CANON dated D207 names per-campaign 40,
+same-client generic multi-link, paused keep seats, and the
+PowerGRYD restaff; D169 and D200 ledger entries stay
+(append-only) with status-index superseded-by-D207.
 
 ---
 

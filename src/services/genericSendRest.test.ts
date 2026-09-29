@@ -149,7 +149,7 @@ describe("GenericSendRestService", () => {
     });
     assert.deepEqual(removed, []);
     assert.equal(result.benched.length, 0);
-    assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
+    assert.ok(result.skipped.some((row) => row.includes("per-campaign min 40")));
   });
 
   it("D198: does not bench a dedicated named-client generic on the send clock", async () => {

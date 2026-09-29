@@ -9,10 +9,7 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import {
-  clientAutoAllowsGenerics,
-  POWERGRYD_CLIENT_ID,
-} from "../lib/autoAllowGenerics.js";
+import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
@@ -20,8 +17,10 @@ import {
   ON_WEEK_MIN_SENDERS,
   POD_ESP_MIX_MIN_FRACTION,
   accountIsPeelStaffable,
+  hasHoldOrRetireTag,
 } from "../lib/clientStaffFloor.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
+import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
   campaignHoldReason,
   holdPolicyFromConfig,
@@ -30,7 +29,7 @@ import { requestGenericBackfillAsks } from "../lib/genericBackfillBatch.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
-import { isPocClient, pocClientId } from "../lib/pocClient.js";
+import { isPocClient } from "../lib/pocClient.js";
 import {
   buildPoolSignature,
   poolEspFromSmartleadType,
@@ -43,7 +42,7 @@ import {
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import type { StateStore } from "../state/store.js";
-import { owesWarmup } from "./warmupGate.js";
+import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
 import { espFillOrder, isExcluded } from "./campaignTopUp.js";
 import {
   dropMembership,
@@ -70,6 +69,7 @@ export interface Min40TopUpResult {
   asked: Array<{ campaignId: number; name: string; shortBy: number }>;
   unfilled: Array<{ campaignId: number; name: string; shortBy: number }>;
   errors: string[];
+  alerts: string[];
 }
 
 function campaignIsActive(campaign: { status?: string | null } | undefined): boolean {
@@ -78,10 +78,13 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
 }
 
 /**
- * D205 — named-client ACTIVE campaigns get the on-week POD to 40
- * without waiting for a human tap when the client is auto-allow.
- * Exclusive client-signed generics only. Never retag named seats.
- * PowerGRYD and standing holds are skipped.
+ * D207 — every ACTIVE named-client campaign (including PowerGRYD) is
+ * topped to 40 staffable senders from its own client. Already-linked
+ * on-week named seats and that client's generics are shared first;
+ * free-pool generics get the client's id + signature and then sit on
+ * every ACTIVE campaign of that same client. Never retag named seats.
+ * Never START/PAUSE. PowerGRYD uses its own seats; free-pool only via
+ * the normal assign path (client 592842 + PG signature).
  */
 export class Min40TopUpService {
   constructor(
@@ -101,6 +104,7 @@ export class Min40TopUpService {
       asked: [],
       unfilled: [],
       errors: [],
+      alerts: [],
     };
     if (!this.config.enableMin40TopUp) {
       return { ...result, skipped: true, reason: "disabled" };
@@ -139,8 +143,20 @@ export class Min40TopUpService {
       clients,
       onWeek,
     );
+    const activeByClient = new Map<number, SmartleadCampaign[]>();
+    for (const campaign of campaigns as SmartleadCampaign[]) {
+      if (!campaignIsActive(campaign)) continue;
+      if (isAnyShellCampaign(campaign)) continue;
+      if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
+      if (typeof campaign.client_id !== "number") continue;
+      const list = activeByClient.get(campaign.client_id) ?? [];
+      list.push(campaign);
+      activeByClient.set(campaign.client_id, list);
+    }
 
     const askItems: Array<{ campaignId: number; campaignName: string; shortBy: number }> =
+      [];
+    const powerGrydShort: Array<{ campaignId: number; name: string; count: number; shortBy: number }> =
       [];
 
     for (const campaign of campaigns as SmartleadCampaign[]) {
@@ -150,11 +166,14 @@ export class Min40TopUpService {
       if (campaignHoldReason(campaign, policy, todayYmd)) continue;
       const clientId = typeof campaign.client_id === "number" ? campaign.client_id : null;
       if (clientId == null) continue;
-      if (isPowerGrydClientId(clientId, this.config.powerGrydClientId)) continue;
+      const powerGryd = isPowerGrydClientId(clientId, this.config.powerGrydClientId);
       const clientName = clientDisplayName(
         clientsById.get(clientId) ?? { id: clientId },
       );
-      if (isPocClient(`${campaign.name ?? ""} ${clientName}`, this.config.pocClientNamePatterns)) {
+      if (
+        !powerGryd &&
+        isPocClient(`${campaign.name ?? ""} ${clientName}`, this.config.pocClientNamePatterns)
+      ) {
         continue;
       }
 
@@ -163,14 +182,14 @@ export class Min40TopUpService {
         clientId,
         accounts as SmartleadAccountWithCampaigns[],
         namedOnWeek.get(clientId) ?? new Set(),
+        campaignById,
       );
       const shortBy = Math.max(0, ON_WEEK_MIN_SENDERS - staffable);
       if (shortBy <= 0) continue;
 
-      const auto = clientAutoAllowsGenerics(
-        clientId,
-        this.config.autoAllowGenericClientIds,
-      );
+      const auto =
+        powerGryd ||
+        clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds);
       if (!auto) {
         askItems.push({
           campaignId: campaign.id,
@@ -196,14 +215,25 @@ export class Min40TopUpService {
         accountById,
         accountByEmail,
         brandByClientId,
+        namedOnWeek: namedOnWeek.get(clientId) ?? new Set(),
+        clientActive: activeByClient.get(clientId) ?? [],
         result,
       });
-      if (placed < shortBy) {
+      const stillShort = Math.max(0, shortBy - placed);
+      if (stillShort > 0) {
         result.unfilled.push({
           campaignId: campaign.id,
           name: String(campaign.name ?? campaign.id),
-          shortBy: shortBy - placed,
+          shortBy: stillShort,
         });
+        if (powerGryd) {
+          powerGrydShort.push({
+            campaignId: campaign.id,
+            name: String(campaign.name ?? campaign.id),
+            count: staffable + placed,
+            shortBy: stillShort,
+          });
+        }
       }
     }
 
@@ -215,14 +245,24 @@ export class Min40TopUpService {
         items: askItems.map((row) => ({
           campaignId: row.campaignId,
           campaignName: row.campaignName,
-          proof: `#${row.campaignId} ${row.campaignName} is ${row.shortBy} under the on-week 40. Tap Allow generics for exclusive client-signed fill (D205).`,
+          proof: `#${row.campaignId} ${row.campaignName} is ${row.shortBy} under the per-campaign 40. Tap Allow generics for client-signed fill (D207).`,
         })),
       });
     }
 
+    await this.alertUnfilled(result, todayYmd, dryRun);
+    await this.alertPowerGrydInventory(
+      accounts as SmartleadAccountWithCampaigns[],
+      namedOnWeek.get(this.config.powerGrydClientId) ?? new Set(),
+      powerGrydShort,
+      todayYmd,
+      dryRun,
+      result,
+    );
+
     if (!dryRun) await this.state.save();
     console.log(
-      `[min40-topup] assigned=${result.assigned.length} asked=${result.asked.length} unfilled=${result.unfilled.length} errors=${result.errors.length}`,
+      `[min40-topup] assigned=${result.assigned.length} asked=${result.asked.length} unfilled=${result.unfilled.length} alerts=${result.alerts.length} errors=${result.errors.length}`,
     );
     return result;
   }
@@ -268,6 +308,7 @@ export class Min40TopUpService {
     clientId: number,
     accounts: SmartleadAccountWithCampaigns[],
     namedOnWeek: Set<string>,
+    campaignById: Map<number, SmartleadCampaign>,
   ): number {
     let n = 0;
     for (const account of accounts) {
@@ -284,13 +325,97 @@ export class Min40TopUpService {
       }
       const generic = isGenericMailbox(account, email, this.config, this.state);
       if (generic) {
-        n += 1;
+        if (this.belongsToClient(account, email, clientId, campaignById)) n += 1;
         continue;
       }
       if (namedOnWeek.has(email.toLowerCase())) n += 1;
     }
-    void clientId;
     return n;
+  }
+
+  private seatIsUsable(
+    account: SmartleadAccountWithCampaigns,
+    email: string,
+    campaign: SmartleadCampaign,
+    campaignById: Map<number, SmartleadCampaign>,
+  ): boolean {
+    const key = email.toLowerCase();
+    const domain = key.split("@")[1];
+    if (owesWarmup(account, key, this.config, this.state)) return false;
+    if (this.state.getRestingInbox(key) || this.state.isCopyCanary(key)) return false;
+    if (activeHoldUntilDate(tagNames(account))) return false;
+    if (hasHoldOrRetireTag(account)) return false;
+    if (isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))) {
+      return false;
+    }
+    if (
+      senderIsAttachBlocked(
+        { email: key, accountId: account.id, domain },
+        this.state,
+      )
+    ) {
+      return false;
+    }
+    if (!canAttachMailboxToCampaign(account, campaign, campaignById)) {
+      return false;
+    }
+    return true;
+  }
+
+  private belongsToClient(
+    account: SmartleadAccountWithCampaigns,
+    email: string,
+    clientId: number,
+    campaignById: Map<number, SmartleadCampaign>,
+  ): boolean {
+    if (account.client_id === clientId) return true;
+    const pool = this.state.getPoolMailbox(email.toLowerCase());
+    if (pool?.assignedClientId === clientId) return true;
+    const dedicated = resolveDedicatedGenericClientId(
+      account,
+      email,
+      campaignIdsOf(account).map((id) => {
+        const campaign = campaignById.get(id);
+        return {
+          clientId: typeof campaign?.client_id === "number" ? campaign.client_id : null,
+          shell: campaign ? isAnyShellCampaign(campaign) : false,
+        };
+      }),
+      this.state,
+      { brandByClientId: undefined },
+    );
+    return dedicated === clientId;
+  }
+
+  private async attachSeat(input: {
+    account: SmartleadAccountWithCampaigns;
+    email: string;
+    campaign: SmartleadCampaign;
+    clientId: number;
+    dryRun: boolean;
+    result: Min40TopUpResult;
+  }): Promise<boolean> {
+    if (typeof input.account.id !== "number") return false;
+    try {
+      if (!input.dryRun) {
+        await this.smartlead.addEmailAccountsToCampaign(input.campaign.id, [
+          input.account.id,
+        ]);
+        recordMembership(input.account, input.campaign.id);
+        await sleep(WRITE_GAP_MS);
+      }
+      input.result.assigned.push({
+        campaignId: input.campaign.id,
+        campaignName: String(input.campaign.name ?? input.campaign.id),
+        email: input.email,
+        clientId: input.clientId,
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      input.result.errors.push(`${input.email} → #${input.campaign.id}: ${message}`);
+      return false;
+    }
   }
 
   private async fillCampaign(input: {
@@ -304,21 +429,81 @@ export class Min40TopUpService {
     accountById: Map<number, SmartleadAccountWithCampaigns>;
     accountByEmail: Map<string, SmartleadAccountWithCampaigns>;
     brandByClientId: Map<number, string>;
+    namedOnWeek: Set<string>;
+    clientActive: SmartleadCampaign[];
     result: Min40TopUpResult;
   }): Promise<number> {
     const brand =
       input.brandByClientId.get(input.clientId) ||
       input.clientName.replace(/\s*\(.*?\)\s*$/, "").trim() ||
       input.clientName;
+    const selected = new Set<string>();
+    let placed = 0;
+
+    const existing = input.accounts.filter((account) => {
+      const email = accountEmail(account);
+      if (!email || selected.has(email.toLowerCase())) return false;
+      if (campaignIdsOf(account).includes(input.campaign.id)) return false;
+      if (
+        !accountIsPeelStaffable(account, email, {
+          getRestingInbox: (key) => this.state.getRestingInbox(key),
+          isCopyCanary: (key) => this.state.isCopyCanary(key),
+        })
+      ) {
+        return false;
+      }
+      if (!this.seatIsUsable(account, email, input.campaign, input.campaignById)) {
+        return false;
+      }
+      const generic = isGenericMailbox(account, email, this.config, this.state);
+      if (generic) {
+        return this.belongsToClient(account, email, input.clientId, input.campaignById);
+      }
+      return input.namedOnWeek.has(email.toLowerCase());
+    });
+    existing.sort((a, b) => {
+      const aGeneric = isGenericMailbox(
+        a,
+        accountEmail(a) ?? "",
+        this.config,
+        this.state,
+      );
+      const bGeneric = isGenericMailbox(
+        b,
+        accountEmail(b) ?? "",
+        this.config,
+        this.state,
+      );
+      if (aGeneric !== bGeneric) return aGeneric ? 1 : -1;
+      return (accountEmail(a) ?? "").localeCompare(accountEmail(b) ?? "");
+    });
+
+    for (const account of existing) {
+      if (placed >= input.shortBy) break;
+      const email = accountEmail(account);
+      if (!email) continue;
+      const ok = await this.attachSeat({
+        account,
+        email,
+        campaign: input.campaign,
+        clientId: input.clientId,
+        dryRun: input.dryRun,
+        result: input.result,
+      });
+      if (ok) {
+        selected.add(email.toLowerCase());
+        placed += 1;
+      }
+    }
+
     const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
     for (const account of input.accounts) {
       if (!campaignIdsOf(account).includes(input.campaign.id)) continue;
       const platform = poolEspFromSmartleadType(account.type);
       if (platform) espCounts[platform] += 1;
     }
-    const selected = new Set<string>();
-    let placed = 0;
-    for (let attempt = 0; placed < input.shortBy && attempt < input.shortBy * 2; attempt += 1) {
+
+    while (placed < input.shortBy) {
       const platformOrder = espFillOrder(
         espCounts,
         ON_WEEK_MIN_SENDERS,
@@ -333,22 +518,7 @@ export class Min40TopUpService {
         if (campaignIdsOf(poolAccount).includes(input.campaign.id)) {
           return false;
         }
-        if (owesWarmup(poolAccount, key, this.config, this.state)) return false;
-        if (this.state.getRestingInbox(key) || this.state.isCopyCanary(key)) return false;
-        if (
-          isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))
-        ) {
-          return false;
-        }
-        if (
-          senderIsAttachBlocked(
-            { email: key, accountId: poolAccount.id, domain },
-            this.state,
-          )
-        ) {
-          return false;
-        }
-        if (!canAttachMailboxToCampaign(poolAccount, input.campaign, input.campaignById)) {
+        if (!this.seatIsUsable(poolAccount, key, input.campaign, input.campaignById)) {
           return false;
         }
         if (!isPoolGenericSeat(poolAccount, key, this.config, this.state)) {
@@ -362,6 +532,7 @@ export class Min40TopUpService {
             return false;
           }
         }
+        void domain;
         return true;
       });
       if (!pool?.smartleadAccountId) break;
@@ -396,6 +567,26 @@ export class Min40TopUpService {
             assignedClientName: input.clientName,
             assignedAt: new Date().toISOString(),
           });
+          for (const sibling of input.clientActive) {
+            if (sibling.id === input.campaign.id) continue;
+            if (campaignIdsOf(original).includes(sibling.id)) continue;
+            if (!this.seatIsUsable(original, pool.email, sibling, input.campaignById)) {
+              continue;
+            }
+            try {
+              await this.smartlead.addEmailAccountsToCampaign(sibling.id, [
+                pool.smartleadAccountId,
+              ]);
+              recordMembership(original, sibling.id);
+              await sleep(WRITE_GAP_MS);
+            } catch (shareError) {
+              const message =
+                shareError instanceof Error ? shareError.message : String(shareError);
+              input.result.errors.push(
+                `${pool.email} share → #${sibling.id}: ${message}`,
+              );
+            }
+          }
         }
         selected.add(pool.email.toLowerCase());
         if (pool.platform === "GOOGLE" || pool.platform === "MICROSOFT") {
@@ -413,6 +604,7 @@ export class Min40TopUpService {
         input.result.errors.push(`${pool.email} → #${input.campaign.id}: ${message}`);
         if (!input.dryRun) {
           try {
+            // Failed-assign rollback — this seat never successfully staffed.
             await this.smartlead.removeEmailAccountsFromCampaign(input.campaign.id, [
               pool.smartleadAccountId,
             ]);
@@ -424,7 +616,71 @@ export class Min40TopUpService {
         break;
       }
     }
-    void pocClientId;
     return placed;
+  }
+
+  private async alertUnfilled(
+    result: Min40TopUpResult,
+    todayYmd: string,
+    dryRun: boolean,
+  ): Promise<void> {
+    if (!this.slack) return;
+    for (const row of result.unfilled) {
+      const key = `campaign:${row.campaignId}`;
+      if (this.state.getMin40ShortfallAlerted(key) === todayYmd) continue;
+      const count = ON_WEEK_MIN_SENDERS - row.shortBy;
+      const line = `ACTIVE #${row.campaignId} ${row.name} is at ${count}/40 staffable (short ${row.shortBy}). Pool/client inventory did not fill the per-campaign floor (D207).`;
+      console.warn(`[min40-topup] ${line}`);
+      result.alerts.push(line);
+      if (!dryRun) {
+        await this.slack.send(line, undefined, "ops_alert");
+        this.state.setMin40ShortfallAlerted(key, todayYmd);
+      }
+    }
+  }
+
+  private async alertPowerGrydInventory(
+    accounts: SmartleadAccountWithCampaigns[],
+    namedOnWeek: Set<string>,
+    shortCampaigns: Array<{ campaignId: number; name: string; count: number; shortBy: number }>,
+    todayYmd: string,
+    dryRun: boolean,
+    result: Min40TopUpResult,
+  ): Promise<void> {
+    if (!shortCampaigns.length || !this.slack) return;
+    const clientId = this.config.powerGrydClientId;
+    const emails = new Set<string>();
+    for (const account of accounts) {
+      const email = accountEmail(account);
+      if (!email) continue;
+      if (
+        !accountIsPeelStaffable(account, email, {
+          getRestingInbox: (key) => this.state.getRestingInbox(key),
+          isCopyCanary: (key) => this.state.isCopyCanary(key),
+        })
+      ) {
+        continue;
+      }
+      const generic = isGenericMailbox(account, email, this.config, this.state);
+      if (generic) {
+        if (account.client_id === clientId) emails.add(email.toLowerCase());
+        continue;
+      }
+      if (account.client_id === clientId || namedOnWeek.has(email.toLowerCase())) {
+        emails.add(email.toLowerCase());
+      }
+    }
+    const total = emails.size;
+    if (total >= ON_WEEK_MIN_SENDERS) return;
+    const key = "powergryd-inventory";
+    if (this.state.getMin40ShortfallAlerted(key) === todayYmd) return;
+    const names = shortCampaigns.map((row) => `#${row.campaignId} ${row.name}`).join(", ");
+    const line = `PowerGRYD has ${total} staffable seats (short ${ON_WEEK_MIN_SENDERS - total} of 40). Linked all of them across ${shortCampaigns.length} ACTIVE campaign(s) (${names}). Did not START or PAUSE anyone (D207).`;
+    console.warn(`[min40-topup] ${line}`);
+    result.alerts.push(line);
+    if (!dryRun) {
+      await this.slack.send(line, undefined, "ops_alert");
+      this.state.setMin40ShortfallAlerted(key, todayYmd);
+    }
   }
 }

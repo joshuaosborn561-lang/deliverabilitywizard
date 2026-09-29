@@ -104,6 +104,36 @@ describe("countStaffableMemberships / D199 peel floor", () => {
     );
   });
 
+  it("D207: HOLD/RETIRE and exempt seats may come off an ACTIVE campaign at 40", () => {
+    const retired = {
+      ...live,
+      tags: [{ tag_name: "RETIRE" }],
+    };
+    const held = {
+      ...live,
+      tags: [{ tag_name: "HOLD-UNTIL-2099-01-01" }],
+    };
+    assert.equal(
+      detachWouldBreakStaffableFloor({ status: "ACTIVE" }, 40, retired, live.from_email),
+      false,
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor({ status: "ACTIVE" }, 40, held, live.from_email),
+      false,
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        40,
+        live,
+        live.from_email,
+        {},
+        { exempt: true },
+      ),
+      false,
+    );
+  });
+
   it("does not unlock a live seat after peeling a disconnected leftover", () => {
     const counts = new Map([[10, 40]]);
     noteStaffableDetach(counts, 10, dead, dead.from_email, {});

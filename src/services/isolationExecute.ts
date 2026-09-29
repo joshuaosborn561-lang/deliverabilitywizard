@@ -241,6 +241,7 @@ export class IsolationExecuteService {
       const ids = campaignIdsOf(account).filter((id) => active.has(id));
       if (!ids.length) continue;
       for (const campaignId of ids) {
+        // D207 — RETIRE / burned-domain pull is exempt from the 40 floor.
         await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
           account.id,
         ]);

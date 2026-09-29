@@ -120,11 +120,11 @@ export function isGenericMailbox(
 }
 
 /**
- * D200 — exclusive-attach / no-multi-link applies to these seats only.
- * Named client domains (techevolution*, salesglider*, boldercyper*, …)
- * are not exclusive even when they carry a leftover GENERIC tag or a
- * client_id. Pool-plan / pool-brand / EXTRA_GENERIC / pool-state /
- * pre-warmed fleet seats stay exclusive.
+ * D207 — classifier for pool / generic-brand seats vs named client
+ * domains. Named client domains (techevolution*, salesglider*,
+ * boldercyper*, …) are never pool seats even with a leftover GENERIC
+ * tag. Same-client multi-link is allowed on pool generics too; this
+ * helper is identity, not exclusive-attach.
  */
 export function isPoolGenericSeat(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,

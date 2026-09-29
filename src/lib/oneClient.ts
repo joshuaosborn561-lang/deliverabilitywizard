@@ -1,7 +1,7 @@
 /**
- * D26 / D75 / D200 — one inbox, one client. Many campaigns for that
- * client are fine on *named* seats. Pool generics stay exclusive
- * (one live campaign). Another client's campaign is never fine.
+ * D26 / D75 / D207 — one inbox, one client. Many campaigns for that
+ * same client are fine on named seats **and** that client's generics.
+ * Another client's campaign is never fine.
  */
 
 export interface MembershipRow {
@@ -68,32 +68,20 @@ export function foreignCampaignIds(
 }
 
 /**
- * D200 — campaigns to unlink.
+ * D207 — campaigns to unlink.
  *
- * Named (non-pool) seats: foreign-client memberships only. Same-client
- * multi-link (techevolution* on two TechEvo camps) is allowed.
+ * Named seats and same-client generics: foreign-client memberships
+ * only. A TechEvo generic (or techevolution* named seat) may sit on
+ * every TechEvo ACTIVE campaign.
  *
- * Pool generics: foreign-client memberships **plus** extra same-client
- * live links. Exclusive-attach / no-multi-link is pool-only. Keep the
- * last keepable live membership; peel the extras (floor-gated by the
- * caller). Shells never count.
+ * `poolGeneric` is kept for call-site compatibility; it no longer
+ * peels same-client extras (D200 exclusive-attach is retired).
+ * Shells never count.
  */
 export function peelCampaignIds(
   ownerId: number | null,
   memberships: MembershipRow[],
-  opts?: { poolGeneric?: boolean },
+  _opts?: { poolGeneric?: boolean },
 ): number[] {
-  const foreign = foreignCampaignIds(ownerId, memberships);
-  if (!opts?.poolGeneric) return foreign;
-  const keepable = memberships.filter(
-    (row) =>
-      !row.shell &&
-      !foreign.includes(row.campaignId) &&
-      (typeof row.clientId !== "number" ||
-        ownerId == null ||
-        row.clientId === ownerId),
-  );
-  if (keepable.length <= 1) return foreign;
-  const extras = keepable.slice(0, -1).map((row) => row.campaignId);
-  return [...foreign, ...extras];
+  return foreignCampaignIds(ownerId, memberships);
 }

@@ -49,17 +49,13 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * in this loop. D198 — generics dedicated to a named client rest here
  * with that client's pods (own A/B split).
  *
- * D169 — off-week detach is ACTIVE + PAUSED + STOPPED. A PAUSED/STOPPED
- * membership still holds the box in the A/B pod; filtering bench to
- * ACTIVE only left BCP With Team (PAUSED) and STOPPED client-named
- * campaigns hoarding the off-week half, so ACTIVE stayed thin. On-week
- * restore for *named* seats still targets every ACTIVE client campaign
- * (D59) and also clears leftover PAUSED/STOPPED attachments so they
- * cannot trap the on-week half. D200 — pool / dedicated generics
- * (`isGenericMailbox`) restore onto at most one ACTIVE (prefer
- * already-on among targets; else thinnest by staffable membership,
- * tie → lowest id) and peel same-client ACTIVE extras above the
- * on-week floor. Excluded / canary / pod-control shells stay untouched.
+ * D207 — off-week detach is ACTIVE only. PAUSED/STOPPED campaigns keep
+ * their senders (Peterson #3798229 lost 37 of 40 seats after bounce
+ * auto-pause when D169 hygiene ran). On-week restore for named seats
+ * **and** that client's generics targets every ACTIVE client campaign
+ * (D59/D207). Same-client generic multi-link is required; exclusive
+ * attach / leftoverPausedOrStopped peel are retired. Excluded / canary
+ * / pod-control shells stay untouched.
  *
  * D154 — on-week restore must not re-staff inboxes that still owe warmup.
  * Health runs client-rest *before* the warmup gate every pass; without this
@@ -73,20 +69,20 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * those seats (`insightRequiresExisting`) and the lanes collapsed to
  * ~1. Engagers / other SalesGlider ACTIVE rest is unchanged.
  *
- * D197 / D199 — off-week detach will not take an ACTIVE campaign
+ * D197 / D199 / D207 — off-week detach will not take an ACTIVE campaign
  * below 40 *staffable* senders. Raw membership leftovers do not
- * count as surplus. Exclusive + client-sig generics are dedicated
- * (D199) and rest with this client's pods. Surplus above 40
- * (and PAUSED/STOPPED hygiene) still rests.
+ * count as surplus. Dedicated named-client generics rest with this
+ * client's pods and fan out like named seats. Surplus above 40 on
+ * ACTIVE may still rest. PAUSED/STOPPED are never detached.
  */
 
-/** Live-client statuses rest may detach from (D169). COMPLETED/DRAFT stay. */
-export const REST_DETACH_STATUSES = new Set(["ACTIVE", "PAUSED", "STOPPED"]);
+/** Live-client statuses rest may detach from (D207). PAUSED/STOPPED keep seats. */
+export const REST_DETACH_STATUSES = new Set(["ACTIVE"]);
 
 /**
- * True when A/B rest may remove this membership. PAUSED and STOPPED are
- * included — they are not sending, but they still occupy the pod (D169).
- * Shells and TOP_UP_EXCLUDE_CAMPAIGNS stay out via `isExcluded`.
+ * True when A/B rest may remove this membership. ACTIVE only (D207) —
+ * a bounce auto-pause must not strip the on-week half. Shells and
+ * TOP_UP_EXCLUDE_CAMPAIGNS stay out via `isExcluded`.
  */
 export function isRestDetachableCampaign(
   campaign:
@@ -138,33 +134,6 @@ export function isExcludedOnlyMembership(
     known.length > 0 &&
     known.every((campaign) => isExcluded(campaign, excluded))
   );
-}
-
-/**
- * D200 — exclusive on-week restore for pool / dedicated generics.
- * Prefer an already-on target so a sitting exclusive seat does not hop.
- * Otherwise pick the thinnest ACTIVE by staffable membership; tie →
- * lowest campaign id.
- */
-export function pickExclusiveOnWeekTarget(
-  targets: number[],
-  alreadyOnActive: number[],
-  staffableByCampaign: Map<number, number>,
-): number | null {
-  if (!targets.length) return null;
-  const alreadyOn = new Set(alreadyOnActive);
-  const alreadyOnTargets = targets.filter((id) => alreadyOn.has(id));
-  const pool = alreadyOnTargets.length > 0 ? alreadyOnTargets : targets;
-  let chosen = pool[0]!;
-  let chosenStaffable = staffableByCampaign.get(chosen) ?? 0;
-  for (const id of pool.slice(1)) {
-    const staffable = staffableByCampaign.get(id) ?? 0;
-    if (staffable < chosenStaffable || (staffable === chosenStaffable && id < chosen)) {
-      chosen = id;
-      chosenStaffable = staffable;
-    }
-  }
-  return chosen;
 }
 
 export function clientRestGroupKey(
@@ -395,8 +364,7 @@ export class ClientRestService {
         if (!dryRun) this.state.clearRestingInbox(email);
       }
 
-      // D169 — detachable = ACTIVE + PAUSED + STOPPED. The old ACTIVE-only
-      // filter left off-week boxes parked on PAUSED/STOPPED forever.
+      // D207 — detachable = ACTIVE only. PAUSED/STOPPED keep their senders.
       const detachable = campaignIdsOf(account).filter((id) =>
         isRestDetachableCampaign(
           campaignById.get(id),
@@ -423,8 +391,7 @@ export class ClientRestService {
       else onWeek.push(work);
     }
 
-    // Off-week first so last-account on PAUSED still sees on-week members.
-    // On-week hygiene then clears the paused/stopped hoard (D169).
+    // Off-week first so last-account on ACTIVE still sees on-week members.
     for (const row of offWeek) {
       if (!row.detachable.length) {
         if (row.existing) continue;
@@ -483,32 +450,16 @@ export class ClientRestService {
       const parsedId = row.groupKey.startsWith("id:")
         ? Number(row.groupKey.slice(3))
         : clientId;
-      // D59 — named on-week seats sit on every ACTIVE campaign for that
-      // client. D200 — pool / dedicated generics restore onto at most
-      // one ACTIVE (prefer already-on; else thinnest, tie → lowest id).
+      // D59 / D207 — on-week named seats **and** that client's generics
+      // sit on every ACTIVE campaign for that client.
       const targets = this.onWeekTargets(
         Number.isFinite(parsedId) ? parsedId : null,
         row.groupKey,
         campaigns as SmartleadCampaign[],
         activeByClient,
       );
-      const generic = isGenericMailbox(
-        row.account,
-        row.email,
-        this.config,
-        this.state,
-      );
-      const exclusiveTarget = generic
-        ? pickExclusiveOnWeekTarget(targets, row.alreadyOnActive, membership)
-        : null;
-      const attachTargets = generic
-        ? exclusiveTarget != null &&
-          !row.alreadyOnActive.includes(exclusiveTarget)
-          ? [exclusiveTarget]
-          : []
-        : targets;
       const added: number[] = [];
-      for (const campaignId of attachTargets) {
+      for (const campaignId of targets) {
         if (row.alreadyOnActive.includes(campaignId)) continue;
         const target = campaignById.get(campaignId);
         if (
@@ -537,35 +488,8 @@ export class ClientRestService {
           result.errors.push(`${row.email} restore #${campaignId}: ${message}`);
         }
       }
-      // D169 hygiene — on-week belongs on ACTIVE. Leftover PAUSED/STOPPED
-      // attachments are what starved the live pool (BCP With Team).
-      const leftoverPausedOrStopped = row.detachable.filter((id) => {
-        const campaign = campaignById.get(id);
-        return String(campaign?.status ?? "").toUpperCase() !== "ACTIVE";
-      });
-      // D200 — peel same-client ACTIVE extras on pool / dedicated
-      // generics so exclusive attach is not re-broken this pass.
-      const exclusiveExtras = generic
-        ? row.alreadyOnActive.filter((id) => {
-            if (id === exclusiveTarget) return false;
-            if (!targets.includes(id)) return false;
-            return isRestDetachableCampaign(
-              campaignById.get(id),
-              this.config.topUpExcludeCampaigns,
-            );
-          })
-        : [];
-      const cleared = await this.detachFromCampaigns(
-        row.account,
-        row.email,
-        [...exclusiveExtras, ...leftoverPausedOrStopped],
-        membership,
-        dryRun,
-        result,
-        campaignById,
-      );
       if (!dryRun) this.state.clearRestingInbox(row.email);
-      if (added.length || row.existing || cleared.length) {
+      if (added.length || row.existing) {
         result.restored.push({ email: row.email, campaignIds: added });
       }
     }
@@ -609,7 +533,7 @@ export class ClientRestService {
     return [...new Set([...fromClient, ...fromBcp].map((campaign) => campaign.id))];
   }
 
-  /** Last-account-on-campaign guard applies to every detach (D43 / D169). */
+  /** Last-account-on-campaign guard applies to every detach (D43 / D207). */
   private async detachFromCampaigns(
     account: SmartleadAccountWithCampaigns,
     email: string,
@@ -632,7 +556,7 @@ export class ClientRestService {
         )
       ) {
         result.skipped.push(
-          `${email}: #${campaignId} at on-week min ${ON_WEEK_MIN_SENDERS} (D199)`,
+          `${email}: #${campaignId} at per-campaign min ${ON_WEEK_MIN_SENDERS} (D207)`,
         );
         continue;
       }

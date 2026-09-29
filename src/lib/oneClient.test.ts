@@ -76,7 +76,7 @@ describe("one client per inbox (D75)", () => {
   });
 });
 
-describe("D200 exclusive-attach is pool generics only", () => {
+describe("D207 same-client generics multi-link; cross-client still peels", () => {
   const techevoA = { campaignId: 3847798, clientId: 521881, shell: false };
   const techevoB = { campaignId: 3847801, clientId: 521881, shell: false };
   const parlay = { campaignId: 10, clientId: 77, shell: false };
@@ -92,13 +92,13 @@ describe("D200 exclusive-attach is pool generics only", () => {
     );
   });
 
-  it("peels a pool generic multi-linked across two same-client camps", () => {
+  it("does not peel a same-client generic multi-linked across two camps", () => {
     assert.deepEqual(
       peelCampaignIds(521881, [techevoA, techevoB, shell], {
         poolGeneric: true,
       }),
-      [3847798],
-      "pool generic keeps the last TechEvo camp and peels the extra",
+      [],
+      "TechEvo generic on two TechEvo camps stays (D207)",
     );
   });
 
@@ -110,12 +110,12 @@ describe("D200 exclusive-attach is pool generics only", () => {
     );
   });
 
-  it("peels foreign plus extra same-client links on a pool generic", () => {
+  it("peels only the foreign link on a generic that also sits on two same-client camps", () => {
     assert.deepEqual(
       peelCampaignIds(521881, [techevoA, techevoB, parlay], {
         poolGeneric: true,
       }),
-      [10, 3847798],
+      [10],
     );
   });
 });

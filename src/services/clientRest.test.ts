@@ -9,7 +9,6 @@ import {
   ClientRestService,
   isExcludedOnlyMembership,
   isRestDetachableCampaign,
-  pickExclusiveOnWeekTarget,
 } from "./clientRest.js";
 
 /** Old enough that owesWarmup is false under the 21-day clock. */
@@ -60,7 +59,7 @@ describe("isExcludedOnlyMembership", () => {
 });
 
 describe("isRestDetachableCampaign", () => {
-  it("D169: PAUSED and STOPPED are detachable — ACTIVE-only bench was the bug", () => {
+  it("D207: only ACTIVE is detachable — PAUSED/STOPPED keep seats", () => {
     assert.equal(
       isRestDetachableCampaign(
         { id: 1, name: "BCP No Team", status: "ACTIVE" },
@@ -73,16 +72,16 @@ describe("isRestDetachableCampaign", () => {
         { id: 2, name: "BCP With Team", status: "PAUSED" },
         [],
       ),
-      true,
-      "PAUSED still holds A/B inventory; off-week must come off it",
+      false,
+      "PAUSED keeps senders (D207) — bounce auto-pause must not strip the pod",
     );
     assert.equal(
       isRestDetachableCampaign(
         { id: 3, name: "Stopped client-named", status: "STOPPED" },
         [],
       ),
-      true,
-      "STOPPED still freezes inventory; off-week must come off it",
+      false,
+      "STOPPED keeps senders (D207)",
     );
     assert.equal(
       isRestDetachableCampaign(
@@ -203,50 +202,10 @@ describe("isExcludedOnlyMembership", () => {
   });
 });
 
-describe("pickExclusiveOnWeekTarget", () => {
-  it("D200: prefers an already-on target over a thinner unused camp", () => {
-    assert.equal(
-      pickExclusiveOnWeekTarget(
-        [10, 20, 30],
-        [20],
-        new Map([
-          [10, 41],
-          [20, 50],
-          [30, 42],
-        ]),
-      ),
-      20,
-    );
-  });
-
-  it("D200: idle generic picks the thinnest staffable camp; tie → lowest id", () => {
-    assert.equal(
-      pickExclusiveOnWeekTarget(
-        [30, 10, 20],
-        [],
-        new Map([
-          [10, 45],
-          [20, 42],
-          [30, 42],
-        ]),
-      ),
-      20,
-    );
-  });
-
-  it("D200: already-on extras pick the thinnest sitting camp, then lowest id", () => {
-    assert.equal(
-      pickExclusiveOnWeekTarget(
-        [10, 20, 30],
-        [10, 30],
-        new Map([
-          [10, 48],
-          [20, 41],
-          [30, 48],
-        ]),
-      ),
-      10,
-    );
+describe("D207 rest detach is ACTIVE only", () => {
+  it("REST_DETACH_STATUSES is ACTIVE only", async () => {
+    const { REST_DETACH_STATUSES } = await import("./clientRest.js");
+    assert.deepEqual([...REST_DETACH_STATUSES], ["ACTIVE"]);
   });
 });
 
@@ -746,7 +705,7 @@ describe("ClientRestService", () => {
     );
   });
 
-  it("D169: benches off-week off PAUSED and STOPPED, not only ACTIVE", async () => {
+  it("D207: benches off-week off ACTIVE only; PAUSED/STOPPED keep seats", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // B off
     const emails = [
       "a@client.info",
@@ -802,16 +761,18 @@ describe("ClientRestService", () => {
       const row = result.benched.find((entry) => entry.email === email);
       assert.ok(row, `expected ${email} benched`);
       assert.ok(row.campaignIds.includes(1), `${email} off ACTIVE`);
-      assert.ok(row.campaignIds.includes(2), `${email} off PAUSED`);
-      assert.ok(row.campaignIds.includes(3), `${email} off STOPPED`);
+      assert.equal(row.campaignIds.includes(2), false, `${email} stays on PAUSED`);
+      assert.equal(row.campaignIds.includes(3), false, `${email} stays on STOPPED`);
     }
-    assert.ok(
+    assert.equal(
       removed.some((row) => row[0] === 2),
-      "must call remove on the PAUSED campaign",
+      false,
+      "must not detach from PAUSED",
     );
-    assert.ok(
+    assert.equal(
       removed.some((row) => row[0] === 3),
-      "must call remove on the STOPPED campaign",
+      false,
+      "must not detach from STOPPED",
     );
   });
 
@@ -879,7 +840,7 @@ describe("ClientRestService", () => {
     );
   });
 
-  it("D169: on-week only on PAUSED still staffs every ACTIVE and clears PAUSED", async () => {
+  it("D207: on-week only on PAUSED still staffs every ACTIVE and keeps PAUSED", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "a@client.info";
     assert.equal(assignClientCohorts([onEmail, "z@client.info"]).get(onEmail), "A");
@@ -949,9 +910,10 @@ describe("ClientRestService", () => {
     );
     assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
     assert.ok(adds.some((row) => row[0] === 2 && row[1].includes(20)));
-    assert.ok(
+    assert.equal(
       removed.some((row) => row[0] === 3 && row[1].includes(20)),
-      "on-week hygiene clears the PAUSED hoard",
+      false,
+      "PAUSED keeps its senders (D207) — bounce auto-pause must not strip the pod",
     );
   });
 
@@ -1069,7 +1031,7 @@ describe("ClientRestService", () => {
     assert.ok(adds.some((row) => row[0] === 1 && row[1].includes(20)));
   });
 
-  it("D169: last-account guard still holds on a PAUSED campaign", async () => {
+  it("D207: last-account guard stays; PAUSED is never detached", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // B off
     const offEmail = "z@client.info";
     assert.equal(isOffWeek("B", now), true);
@@ -1122,11 +1084,12 @@ describe("ClientRestService", () => {
     assert.equal(
       removed.some((row) => row[0] === 2),
       false,
-      "must not empty the last account on a PAUSED campaign",
+      "must not detach the last account on a PAUSED campaign",
     );
-    assert.ok(
-      result.skipped.some((row) => row.includes("last account on #2")),
-      "skip reason must name the last-account guard",
+    assert.equal(
+      result.benched.some((row) => row.email === offEmail && row.campaignIds.includes(2)),
+      false,
+      "PAUSED membership is not a rest detach (D207)",
     );
   });
 
@@ -1476,7 +1439,7 @@ describe("ClientRestService", () => {
         `${email} must stay — peeling would drop Parlay below 40`,
       );
     }
-    assert.ok(result.skipped.some((row) => row.includes("on-week min 40")));
+    assert.ok(result.skipped.some((row) => row.includes("per-campaign min 40")));
   });
 
   it("D198: dedicated named-client generics rest with that client's A/B pods", async () => {
@@ -1622,7 +1585,7 @@ describe("ClientRestService", () => {
     }
   });
 
-  it("D200: dedicated generic on-week restore attaches exactly one ACTIVE (already-on)", async () => {
+  it("D207: dedicated generic on-week restore fans out to every missing ACTIVE", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "ada@trygetintroduced.info";
     assert.equal(
@@ -1700,19 +1663,20 @@ describe("ClientRestService", () => {
       state,
     );
     await service.run({ dryRun: false, now });
-    assert.equal(
-      adds.filter((row) => row[1].includes(20)).length,
-      0,
-      "already-on exclusive generic must not fan onto the other TechEvo camps",
+    const adaAdds = adds.filter((row) => row[1].includes(20)).map((row) => row[0]);
+    assert.ok(
+      adaAdds.includes(3847798),
+      "already-on generic must fan onto the other TechEvo camps (D207)",
     );
+    assert.ok(adaAdds.includes(3847804));
     assert.equal(
       removed.some((row) => row[1].includes(20) && row[0] === 3847801),
       false,
-      "must keep the already-on exclusive camp",
+      "must keep the already-on camp",
     );
   });
 
-  it("D200: idle dedicated generic attaches only the thinnest ACTIVE (tie → lowest id)", async () => {
+  it("D207: idle dedicated generic attaches every ACTIVE", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "ada@trygetintroduced.info";
     const adds: Array<[number, number[]]> = [];
@@ -1789,15 +1753,13 @@ describe("ClientRestService", () => {
     );
     const result = await service.run({ dryRun: false, now });
     const adaAdds = adds.filter((row) => row[1].includes(20)).map((row) => row[0]);
-    assert.deepEqual(
-      adaAdds,
-      [3847801],
-      "idle exclusive generic must attach the thinnest camp; 3847801 beats 3847804 on id",
-    );
+    assert.ok(adaAdds.includes(3847798), "idle generic fans to every TechEvo ACTIVE");
+    assert.ok(adaAdds.includes(3847801));
+    assert.ok(adaAdds.includes(3847804));
     assert.ok(result.restored.some((row) => row.email === onEmail));
   });
 
-  it("D200: dedicated generic already on two ACTIVE camps peels the extra above the floor", async () => {
+  it("D207: dedicated generic already on two ACTIVE camps keeps both and the PAUSED", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "ada@trygetintroduced.info";
     const adds: Array<[number, number[]]> = [];
@@ -1887,25 +1849,26 @@ describe("ClientRestService", () => {
     assert.equal(
       adds.filter((row) => row[1].includes(20)).length,
       0,
-      "already-on exclusive generic must not add a third camp",
+      "already-on generic is not re-POSTed",
     );
     const adaRemoved = removed
       .filter((row) => row[1].includes(20))
       .map((row) => row[0])
       .sort((a, b) => a - b);
-    assert.ok(
+    assert.equal(
       adaRemoved.includes(3847801),
-      "must peel the extra same-client ACTIVE (thicker / higher id)",
+      false,
+      "must keep the extra same-client ACTIVE (D207 multi-link)",
     );
-    assert.ok(adaRemoved.includes(3), "D169 hygiene still clears PAUSED");
+    assert.equal(adaRemoved.includes(3), false, "PAUSED keeps its senders (D207)");
     assert.equal(
       adaRemoved.includes(3847798),
       false,
-      "must keep the chosen exclusive ACTIVE",
+      "must keep the first ACTIVE",
     );
   });
 
-  it("D200: named client seats still restore onto every ACTIVE (D59/D169)", async () => {
+  it("D207: named client seats still restore onto every ACTIVE (D59)", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "corey@techevolution.com";
     assert.equal(

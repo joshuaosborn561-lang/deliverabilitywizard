@@ -33,6 +33,10 @@ import { BounceResurrectionService } from "./bounceResurrection.js";
 import type { BounceVerdictRecord } from "../state/store.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import {
+  nextTenantZeroRestoreAt,
+  tenantZeroIdsForDomain,
+} from "../lib/tenantZeroHold.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 350;
 const ANALYTICS_START = "2020-01-01";
@@ -559,8 +563,19 @@ export class CampaignBounceAutostopService {
       this.slack &&
       this.state
     ) {
-      const day = new Date().toISOString().slice(0, 10);
+      const now = new Date(this.clock());
+      const day = now.toISOString().slice(0, 10);
       for (const domain of senderDomains) {
+        const seed = tenantZeroIdsForDomain(domain);
+        if (seed.length) {
+          this.state.activateTenantZeroHold(
+            seed,
+            nextTenantZeroRestoreAt(now),
+          );
+          console.log(
+            `[bounce-autostop] tenant-zero hold ${seed.join(",")} on ${domain} until ${this.state.getTenantZeroRestoreAfter()} (D208)`,
+          );
+        }
         const key = `tenant-limit:${domain}:${day}`;
         if (this.state.hasAlert(key)) continue;
         this.state.markAlert(key);

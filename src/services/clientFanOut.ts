@@ -25,6 +25,7 @@ import {
 } from "./inventory.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -255,6 +256,12 @@ export class ClientFanOutService {
                     max_email_per_day: mailboxMessagePerDayTarget(
                       row.account,
                       this.config,
+                      {
+                        tenantZeroActive: storeHoldsTenantZero(
+                          this.state,
+                          row.accountId,
+                        ),
+                      },
                     ),
                   });
                   await sleep(120);
@@ -299,6 +306,12 @@ export class ClientFanOutService {
                       max_email_per_day: mailboxMessagePerDayTarget(
                         row.account,
                         this.config,
+                        {
+                          tenantZeroActive: storeHoldsTenantZero(
+                            this.state,
+                            row.accountId,
+                          ),
+                        },
                       ),
                     });
                     await sleep(120);

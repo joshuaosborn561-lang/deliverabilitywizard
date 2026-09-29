@@ -37,6 +37,12 @@ import type {
   CampaignStandingPref,
   DeliverabilityDecisionRecord,
 } from "../lib/deliverabilitySlack.js";
+import {
+  nextTenantZeroRestoreAt,
+  tenantLimitAlertKey,
+  TENANT_ZERO_BY_DOMAIN,
+  utcDayYmd,
+} from "../lib/tenantZeroHold.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -298,6 +304,13 @@ export interface AppState {
    * shortfall `ops_alert` (key = `campaign:<id>` or `powergryd-inventory`).
    */
   min40ShortfallAlerted: Record<string, string>;
+  /**
+   * D208 — Smartlead account ids held at max_email_per_day 0 after a
+   * Microsoft tenant daily cap. Restore writes 15 after
+   * `tenantZeroRestoreAfter` (~00:15 UTC / 7:15pm CT).
+   */
+  tenantZeroIdsActive: number[];
+  tenantZeroRestoreAfter: string | null;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -505,6 +518,8 @@ const EMPTY_STATE: AppState = {
   powerGrydSeatCount: null,
   powerGrydAlertedCount: null,
   min40ShortfallAlerted: {},
+  tenantZeroIdsActive: [],
+  tenantZeroRestoreAfter: null,
 };
 
 export class StateStore {
@@ -585,6 +600,15 @@ export class StateStore {
             ? parsed.powerGrydAlertedCount
             : null,
         min40ShortfallAlerted: parsed.min40ShortfallAlerted ?? {},
+        tenantZeroIdsActive: Array.isArray(parsed.tenantZeroIdsActive)
+          ? parsed.tenantZeroIdsActive
+              .map((id) => Number(id))
+              .filter((id) => Number.isFinite(id))
+          : [],
+        tenantZeroRestoreAfter:
+          typeof parsed.tenantZeroRestoreAfter === "string"
+            ? parsed.tenantZeroRestoreAfter
+            : null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1275,6 +1299,75 @@ export class StateStore {
 
   setMin40ShortfallAlerted(key: string, ymd: string): void {
     this.state.min40ShortfallAlerted[key] = ymd;
+  }
+
+  /** D208 — Outlook ids held at 0 until the UTC-day restore. */
+  listTenantZeroIdsActive(): number[] {
+    return [...this.state.tenantZeroIdsActive];
+  }
+
+  getTenantZeroRestoreAfter(): string | null {
+    return this.state.tenantZeroRestoreAfter;
+  }
+
+  isTenantZeroActive(accountId: number, now = new Date()): boolean {
+    const id = Number(accountId);
+    if (!Number.isFinite(id) || !this.state.tenantZeroIdsActive.includes(id)) {
+      return false;
+    }
+    const restoreIso = this.state.tenantZeroRestoreAfter;
+    const restoreAt = restoreIso
+      ? Date.parse(restoreIso)
+      : nextTenantZeroRestoreAt(now).getTime();
+    return Number.isFinite(restoreAt) && now.getTime() < restoreAt;
+  }
+
+  activateTenantZeroHold(
+    ids: readonly number[],
+    restoreAfter: Date | string,
+  ): void {
+    const merged = new Set(this.state.tenantZeroIdsActive);
+    for (const raw of ids) {
+      const id = Number(raw);
+      if (Number.isFinite(id)) merged.add(id);
+    }
+    this.state.tenantZeroIdsActive = [...merged].sort((a, b) => a - b);
+    const next =
+      typeof restoreAfter === "string"
+        ? restoreAfter
+        : restoreAfter.toISOString();
+    const existing = this.state.tenantZeroRestoreAfter;
+    const existingAt = existing ? Date.parse(existing) : NaN;
+    const nextAt = Date.parse(next);
+    if (!Number.isFinite(existingAt) || existingAt <= Date.now()) {
+      this.state.tenantZeroRestoreAfter = next;
+    } else if (Number.isFinite(nextAt) && nextAt < existingAt) {
+      this.state.tenantZeroRestoreAfter = next;
+    }
+  }
+
+  clearTenantZeroHold(): void {
+    this.state.tenantZeroIdsActive = [];
+    this.state.tenantZeroRestoreAfter = null;
+  }
+
+  /**
+   * Re-seed Josh-named ids when today's tenant-limit alert is already
+   * marked, and drop the hold once restoreAfter has passed so D183
+   * writes 15 again.
+   */
+  healTenantZeroHold(now = new Date()): void {
+    const day = utcDayYmd(now);
+    for (const [domain, ids] of Object.entries(TENANT_ZERO_BY_DOMAIN)) {
+      if (this.hasAlert(tenantLimitAlertKey(domain, day))) {
+        this.activateTenantZeroHold(ids, nextTenantZeroRestoreAt(now));
+      }
+    }
+    const restoreIso = this.state.tenantZeroRestoreAfter;
+    const restoreAt = restoreIso ? Date.parse(restoreIso) : NaN;
+    if (Number.isFinite(restoreAt) && now.getTime() >= restoreAt) {
+      this.clearTenantZeroHold();
+    }
   }
 
   /** D140 — remember what the bounce reasons said, per campaign. */

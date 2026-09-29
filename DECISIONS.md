@@ -215,6 +215,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
 | D205 | Live — min40 now shares same-client generics and restaffs PowerGRYD (D207); watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
 | D207 | Live | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
+| D208 | Live | Outlook seats on `tenantZeroIdsActive` stay at max_email_per_day 0 until ~00:15 UTC / 7:15pm CT after a Microsoft tenant-cap day; D183 15-converge resumes after restore; campaigns stay ACTIVE (D148); seeds getintroducednow.com + salesgliderget.info / salesgliderlab.info / nowgetintroduced.com Josh-named seats |
 
 ---
 
@@ -6629,6 +6630,56 @@ cross-clients; CANON dated D207 names per-campaign 40,
 same-client generic multi-link, paused keep seats, and the
 PowerGRYD restaff; D169 and D200 ledger entries stay
 (append-only) with status-index superseded-by-D207.
+
+---
+
+## D208 — Tenant-zero hold: Outlook stays at 0 until the UTC-day restore
+
+**Date.** 2026-09-29.
+
+**Decision.** Josh, after Microsoft `550 5.7.233` tenant-cap
+bursts (getintroducednow.com earlier today; then
+salesgliderget.info / salesgliderlab.info / nowgetintroduced.com
+on SG Specialty Owners Commercial 0922): Josh-named Outlook
+seats for that tenant stay on `tenantZeroIdsActive` at
+`max_email_per_day` 0 until ~00:15 UTC (7:15pm CT). Then D183
+writes 15 again. Campaigns stay ACTIVE (D148). No peel, no
+pause, no Retire.
+
+Seeded seats (mpd zero only):
+
+- getintroducednow.com: `#21648785` jinmorgan, `#21648784`
+  aaravrossi, `#21648783` hanajefferson, `#21648777` lanreed
+  (PowerGRYD — leave on the campaign), `#21648693` minhjenkins
+- salesgliderget.info: `#16427892` joshuaosborn
+- salesgliderlab.info: `#16427893` joshua, `#16427897` joborn,
+  `#16427941` joshuaosborn
+- nowgetintroduced.com: `#21648788` kofichen
+
+**Number.** Josh asked for D206. Open draft PR #250 already
+claimed D206 for the getintroducednow.com-only hold. D127
+uniqueness across `main` AND open PRs — this call is **D208**.
+
+**Why.** mailbox-settings gap-enforce rewrites every Outlook
+mailbox to 15 every 15 minutes (D183). The operational re-zero
+on the 2026-09-29 ACK lasted one cycle — Restore re-armed the
+exhausted tenant (`mailbox_volume` 215 on `/health`).
+
+**Rejected.** Pausing `#4006388` / `#4006389` (reverses D148).
+Peeling held seats. Zeroing every Outlook sibling of a tenant
+page (that is how TechEvo got cut by a wrong-domain Slack). A
+standing Outlook-15 drop. Reusing D206 while #250 is open.
+
+**Supersedes / amends.** Qualifies D183: held ids target 0
+until restoreAfter, then 15. Does not reverse D148, D40,
+D157, D183's standing 15, or D205/D207 PowerGRYD watch-only.
+
+**Guards.** canon D208: `tenantZeroIdsActive` / restoreAfter
+in state; seeded ids are the named seats above; mailboxSettings
+/ fan-out / top-up / min-40 / campaign-check / placement-audit
+honor the hold; bounce loop activates the seed on a matching
+tenant page; CANON dated D208 names the 0-until-restore
+exception.
 
 ---
 

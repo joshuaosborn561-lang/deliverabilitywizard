@@ -10823,7 +10823,7 @@ describe("owner intent — D206 tenant-zero hold until UTC-day restore", () => {
     );
     assert.match(
       settings,
-      /isTenantZeroActive/,
+      /storeHoldsTenantZero/,
       stop(
         "mailbox-settings writes 0 for held ids (D206).",
         "mailboxSettings.ts no longer consults the tenant-zero hold.",

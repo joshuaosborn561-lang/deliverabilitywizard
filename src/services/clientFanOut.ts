@@ -25,6 +25,7 @@ import {
 } from "./inventory.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import type { StateStore } from "../state/store.js";
 
 /**
@@ -256,7 +257,8 @@ export class ClientFanOutService {
                       row.account,
                       this.config,
                       {
-                        tenantZeroActive: this.state.isTenantZeroActive(
+                        tenantZeroActive: storeHoldsTenantZero(
+                          this.state,
                           row.accountId,
                         ),
                       },
@@ -305,7 +307,8 @@ export class ClientFanOutService {
                         row.account,
                         this.config,
                         {
-                          tenantZeroActive: this.state.isTenantZeroActive(
+                          tenantZeroActive: storeHoldsTenantZero(
+                            this.state,
                             row.accountId,
                           ),
                         },

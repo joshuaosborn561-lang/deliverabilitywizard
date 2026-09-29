@@ -37,6 +37,7 @@ import {
 } from "../lib/poolSignature.js";
 import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import { sleep } from "../lib/http.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
@@ -388,8 +389,9 @@ export class Min40TopUpService {
               { platform: pool.platform },
               this.config,
               {
-                tenantZeroActive: this.state.isTenantZeroActive(
-                  pool.smartleadAccountId ?? 0,
+                tenantZeroActive: storeHoldsTenantZero(
+                  this.state,
+                  pool.smartleadAccountId,
                 ),
               },
             ),

@@ -56,3 +56,17 @@ export function nextTenantZeroRestoreAt(now: Date): Date {
 export function utcDayYmd(now: Date): string {
   return now.toISOString().slice(0, 10);
 }
+
+/** Safe on partial test stores that omit the D206 methods. */
+export function storeHoldsTenantZero(
+  store:
+    | { isTenantZeroActive?(id: number, now?: Date): boolean }
+    | null
+    | undefined,
+  accountId: number | null | undefined,
+  now?: Date,
+): boolean {
+  const id = Number(accountId);
+  if (!Number.isFinite(id) || id <= 0) return false;
+  return store?.isTenantZeroActive?.(id, now) === true;
+}

@@ -92,6 +92,7 @@ import {
   readMinTimeGapMins,
 } from "../lib/mailboxSendSettings.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import {
   daysSince,
   isPrewarmedGeneric,
@@ -1099,8 +1100,7 @@ export class CampaignCheckService {
       }
       const volume = readMessagePerDay(account);
       const wantVolume = mailboxMessagePerDayTarget(account, this.config, {
-        tenantZeroActive:
-          account.id != null && this.state.isTenantZeroActive(account.id),
+        tenantZeroActive: storeHoldsTenantZero(this.state, account.id),
       });
       if (Number.isFinite(volume) && volume !== wantVolume) {
         findings.push({

@@ -31,6 +31,7 @@ import {
   OUTLOOK_MESSAGE_PER_DAY,
   mailboxMessagePerDayTarget,
 } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
@@ -143,7 +144,7 @@ export class MailboxSettingsService {
 
       // Only write when the value differs — needless writes trip the limiter.
       const target = mailboxMessagePerDayTarget(account, this.config, {
-        tenantZeroActive: this.store?.isTenantZeroActive(account.id),
+        tenantZeroActive: storeHoldsTenantZero(this.store, account.id),
       });
       const current = readMessagePerDay(account);
       const needsLimit = !(Number.isFinite(current) && current === target);

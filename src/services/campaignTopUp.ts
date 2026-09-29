@@ -39,6 +39,7 @@ import {
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { storeHoldsTenantZero } from "../lib/tenantZeroHold.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
@@ -574,8 +575,9 @@ export class CampaignTopUpService {
                   { platform: pool.platform },
                   this.config,
                   {
-                    tenantZeroActive: this.state.isTenantZeroActive(
-                      pool.smartleadAccountId ?? 0,
+                    tenantZeroActive: storeHoldsTenantZero(
+                      this.state,
+                      pool.smartleadAccountId,
                     ),
                   },
                 ),

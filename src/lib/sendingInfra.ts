@@ -2,6 +2,7 @@
  * D53 — what our mailboxes actually send from, read from SmartDelivery
  * placement reports we already pull (IP analytics, rDNS, IP blacklist).
  */
+import { isSurblListing } from "./blacklistIgnore.js";
 
 export interface SendingIpRow {
   ip: string;
@@ -68,9 +69,12 @@ export function parseSendingInfra(input: {
     if (!ip) continue;
     const listed = isListed(obj);
     if (!listed) continue;
+    const name = str(obj.blacklist_type_value ?? obj.list ?? obj.name);
+    const details = str(obj.details);
+    // D210 — SURBL never counts as a hit. Keep the row for the census; do not mark listed.
+    if (isSurblListing(name, details)) continue;
     const row = take(byIp, ip);
     row.listed = true;
-    const name = str(obj.blacklist_type_value ?? obj.list ?? obj.name);
     if (name && !row.listNames.includes(name)) row.listNames.push(name);
     row.domain = row.domain ?? pickDomain(obj);
     row.fromEmail = row.fromEmail ?? pickEmail(obj);

@@ -216,6 +216,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D205 | Live — min40 now shares same-client generics and restaffs PowerGRYD (D207); watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
 | D207 | Live — rest-record peel loophole closed by D209 | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
+| D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
 
 ---
 
@@ -6696,6 +6697,46 @@ a same-client multi-linked generic survives client-rest /
 generic-rest / one-client / top-up / generic-cleanup; a
 cross-client generic still peels; CANON dated D209 names the
 rest-record rule and CultureFits/Vasco as normal pool seats.
+
+---
+
+## D210 — SURBL listings never count as a blacklist hit
+
+**Date.** 2026-09-30.
+
+**Decision.** Josh (owner): a SURBL listing — the SURBL product
+name or any `*.surbl.org` zone, including `multi.surbl.org`
+returning `127.0.0.64` — must never count as a blacklist hit
+in this wizard. It may be logged as info-only. It must not
+open `blacklisted_domain_teardown`, a Retire/Buy ask, or a
+Slack blacklist alert. Every other list stays as it is
+(Spamhaus / named IP lists still count; URIBL stays
+teardown-ignored as before).
+
+**Why.** Many of our sending domains land on SURBL and it
+barely affects delivery. Mid-August remediations still opened
+pending `blacklisted_domain_teardown` approvals for domains
+that were often SURBL-noise (SmartDelivery's unnamed
+domain-blacklist boolean). The D41 burn checklist already
+refused teardown on blacklist-alone, and `blacklistIgnore`
+already dropped SURBL from the delete path, but isolation
+infra hit-counts and the sending-IP census still treated
+SURBL as listed. That is the hole.
+
+**Rejected.** Counting SURBL as a hit and then filtering it
+only at teardown. Dropping URIBL from hit counts (Josh named
+SURBL only). Deleting or approving the leftover August
+approvals from this change.
+
+**Supersedes / amends.** Tightens D41: a named SURBL listing
+is not a "named non-SURBL" hit and is not a hit at all.
+Does not revive remediations.ts (D130). Does not change
+kill-only (D51) or "blacklist alone burns nothing".
+
+**Guards.** `isSurblListing` / `isCountableBlacklistHit`;
+resultMonitor, isolation-branch infra counts, and sending-infra
+census drop SURBL; SURBL-only produces no teardown, retire, or
+alert; CANON dated D210 names the rule.
 
 ---
 

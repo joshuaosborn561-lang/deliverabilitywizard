@@ -36,13 +36,21 @@ function fakeSmartDelivery(opts: {
   } as unknown as SmartDeliveryClient;
 }
 
-function fakeSlack(pages: string[] = []): SlackClient {
+function fakeSlack(
+  pages: string[] = [],
+  blacklistPages: string[] = [],
+): SlackClient {
   return {
     send: async () => undefined,
     notifyPlacementResult: async (details: { testName?: string }) => {
       pages.push(details.testName ?? "placement");
     },
     notifyBlacklist: async () => undefined,
+    notifyBlacklistDiagnosis: async (details: {
+      diagnoses: Array<{ domain: string }>;
+    }) => {
+      blacklistPages.push(...details.diagnoses.map((d) => d.domain));
+    },
     notifyLowDeliverability: async () => undefined,
   } as unknown as SlackClient;
 }
@@ -337,5 +345,59 @@ describe("ResultMonitor queues isolation from ugly same-ESP (D158)", () => {
     const result = await monitor.run();
     assert.equal(result.errors.length, 0);
     assert.equal(result.testsChecked, 1);
+  });
+
+  it("does not alert, retire, or teardown on a SURBL-only listing (D210)", async () => {
+    const state = new StateStore(
+      `/tmp/dw-monitor-surbl-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.markCampaignTested({
+      campaignId: AIRPODS.id,
+      campaignName: AIRPODS.name,
+      testedAt: new Date().toISOString(),
+      testIds: ["surbl-only"],
+      mailboxCount: 1,
+      testsCreated: 1,
+    });
+    const blacklistPages: string[] = [];
+    const smartDelivery = {
+      listTests: async () => [{ id: "surbl-only", test_name: "live" }],
+      getProviderwiseReport: async () => ({
+        result: [{ provider_name: "Gmail", inbox_rate: 100 }],
+      }),
+      getSenderAccountReport: async () => [],
+      getDomainBlacklist: async () => [
+        {
+          from_email: "a@salesgliderhub.com",
+          domain_blacklisted: true,
+          seed_accounts: [
+            { email: "seed@gmail.com", esp: "Gmail", domain_blacklisted: true },
+          ],
+        },
+      ],
+      getIpBlacklist: async () => [
+        {
+          reply: { from_email: "a@salesgliderhub.com" },
+          blacklist_type_value: "multi.surbl.org",
+          total_blacklist: 1,
+          ip: "1.2.3.4",
+          details: "127.0.0.64",
+        },
+      ],
+      getMailboxSummary: async () => [],
+    } as unknown as SmartDeliveryClient;
+
+    const monitor = new ResultMonitor(
+      config,
+      smartDelivery,
+      { listCampaigns: async () => [AIRPODS] } as unknown as SmartleadClient,
+      fakeSlack([], blacklistPages),
+      state,
+    );
+    const result = await monitor.run();
+    assert.equal(result.blacklistAlerts, 0);
+    assert.deepEqual(blacklistPages, []);
+    assert.equal(result.errors.length, 0);
   });
 });

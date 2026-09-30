@@ -165,13 +165,14 @@ export class ResultMonitor {
       ...parseDomainBlacklistHits(domainRaw),
       ...parseIpBlacklistHits(ipRaw),
     ];
-    // SURBL / unnamed domain-blacklist noise — do not page Slack for teardown.
+    // SURBL never counts as a hit (D210). URIBL / unnamed domain-blacklist
+    // stay teardown-ignored — do not page Slack or open retire/teardown.
     const actionableHits = filterTeardownBlacklistHits(hits);
 
     if (!actionableHits.length) {
       if (hits.length) {
         console.log(
-          `[monitor] Ignoring ${hits.length} SURBL/unnamed domain-blacklist hit(s) on test ${testId}`,
+          `[monitor] SURBL/unnamed domain-blacklist listing(s) on test ${testId} — info only, not a hit (D210): ${hits.length}`,
         );
       }
       return 0;

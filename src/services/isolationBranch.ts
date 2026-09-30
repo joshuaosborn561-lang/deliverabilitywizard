@@ -13,6 +13,7 @@ import {
   testIdOf,
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
+import { filterCountableBlacklistHits } from "../lib/blacklistIgnore.js";
 import { recordInfraIsolationUnlink } from "../lib/attachBlock.js";
 import { decideIsolationVerdict } from "../lib/isolationVerdict.js";
 import {
@@ -627,10 +628,22 @@ export class IsolationBranchService {
       this.smartDelivery.getRdnsDetails(testId).catch(() => null),
       this.smartDelivery.getIpAnalytics(testId).catch(() => null),
     ]);
+    const ipRaw = parseIpBlacklistHits(ip ?? []);
+    const domainRaw = parseDomainBlacklistHits(domain);
+    const ipHits = filterCountableBlacklistHits(ipRaw);
+    const domainHits = filterCountableBlacklistHits(domainRaw);
+    if (
+      ipRaw.length + domainRaw.length > 0 &&
+      ipHits.length + domainHits.length === 0
+    ) {
+      console.log(
+        `[isolation] SURBL-only listing(s) on control ${testId} — info only, not a hit (D210)`,
+      );
+    }
     return {
       testId,
-      ipHits: parseIpBlacklistHits(ip ?? []).length,
-      domainHits: parseDomainBlacklistHits(domain).length,
+      ipHits: ipHits.length,
+      domainHits: domainHits.length,
       dkim,
       spf,
       rdns,

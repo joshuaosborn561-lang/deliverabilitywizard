@@ -1,13 +1,23 @@
 /**
- * D211 — the 15-minute health chain is resumable.
+ * D211 / D214 — the 15-minute health chain is resumable.
  *
  * `runHealth` used to restart from inventory on every tick. A Railway
- * SIGTERM mid-pass (deploy recycle) left mailbox-gap / isolation-branch
- * at their morning stamp with consecutiveFailures=0 until a lucky
- * sitting finished end-to-end. Resume skips stages still fresh inside
- * the 15-minute cycle and continues the leftover tail. The 15m cron
- * still runs the full chain when nothing is leftover. Never at boot
- * (D122). `/run?mode=mailbox-gap` is the gap-only manual path.
+ * SIGTERM mid-pass (deploy recycle) left mailbox-gap / pod-cover at
+ * their morning stamp with consecutiveFailures=0 until a lucky sitting
+ * finished end-to-end.
+ *
+ * D211 resumed only when an early stage was still inside the 15-minute
+ * cycle. A deploy resets the cron, so the next tick is ~15 minutes
+ * later — the early lastOks have aged out, resume is false, and the
+ * pass starts from inventory again (prod 2026-09-30: campaign-health
+ * 15:11Z, pod-cover still 13:13Z).
+ *
+ * D214 resumes on **chain inversion**: a later HEALTH_LOOP stage has
+ * an older lastOk than an earlier one. Skip everything before the
+ * leftover and continue. The 15m cron still runs the full chain when
+ * the board is monotonic (a finished sitting). Never at boot (D122).
+ * `/run?mode=mailbox-gap` and `/run?mode=pod-cover` are single-stage
+ * manual paths.
  */
 
 import { isMonitorStageFresh } from "./monitorResume.js";
@@ -50,7 +60,41 @@ export const HEALTH_TAIL_STAGES = [
 
 export type HealthTailStage = (typeof HEALTH_TAIL_STAGES)[number];
 
-const TAIL = new Set<string>(HEALTH_TAIL_STAGES);
+export function stageLastOkMs(
+  row: { lastOkAt?: string | null } | undefined,
+): number {
+  const at = Date.parse(row?.lastOkAt ?? "");
+  return Number.isFinite(at) ? at : Number.NEGATIVE_INFINITY;
+}
+
+/**
+ * First health-loop stage after the newest lastOk that is older than
+ * that newest stamp. The newest stamp is where the sitting died; the
+ * next older stage is the leftover. Skip the prefix, continue there.
+ *
+ * A first-inversion walk (client-rest 14:49 < inventory 15:00) is the
+ * wrong leftover: skip-if-fresh refreshes inventory while rest stays
+ * on the previous sitting. The starve is always *after* the newest ok.
+ */
+export function firstInterruptedHealthStage(
+  stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
+): HealthLoopStage | null {
+  let newest = Number.NEGATIVE_INFINITY;
+  let newestName: HealthLoopStage | null = null;
+  for (const name of HEALTH_LOOP_STAGES) {
+    const ok = stageLastOkMs(stageHealth[name]);
+    if (ok >= newest) {
+      newest = ok;
+      newestName = name;
+    }
+  }
+  if (!newestName || newest === Number.NEGATIVE_INFINITY) return null;
+  const start = HEALTH_LOOP_STAGES.indexOf(newestName) + 1;
+  for (const name of HEALTH_LOOP_STAGES.slice(start)) {
+    if (stageLastOkMs(stageHealth[name]) < newest) return name;
+  }
+  return null;
+}
 
 export function staleHealthStages(
   stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
@@ -72,20 +116,39 @@ export function staleHealthTail(
   );
 }
 
+export function shouldSkipHealthStage(
+  name: string,
+  lastOkAt: string | null | undefined,
+  opts: {
+    skipIfFreshMs?: number;
+    skipIfBeforeStage?: HealthLoopStage | null;
+    now?: number;
+  },
+): boolean {
+  const leftover = opts.skipIfBeforeStage;
+  if (leftover) {
+    const i = (HEALTH_LOOP_STAGES as readonly string[]).indexOf(name);
+    const cut = HEALTH_LOOP_STAGES.indexOf(leftover);
+    if (i >= 0 && cut >= 0 && i < cut) return true;
+  }
+  if (opts.skipIfFreshMs != null) {
+    return isMonitorStageFresh(lastOkAt, opts.now ?? Date.now(), opts.skipIfFreshMs);
+  }
+  return false;
+}
+
 /**
- * Resume when at least one early stage is still fresh (the sitting
- * started) and at least one tail stage is leftover (SIGTERM / overdue).
- * An all-stale board is a normal 15-minute tick — run the full chain.
+ * Resume when a later health-loop stage is older than an earlier one
+ * (D214). The 15-minute early-fresh gate (D211) is not required — a
+ * deploy recycle waits ~15m before the next cron, which aged that
+ * signal out and starved pod-cover.
+ *
+ * An all-stale monotonic board is a normal 15-minute tick — full chain.
  */
 export function healthNeedsResume(
   stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
-  now = Date.now(),
-  freshMs = HEALTH_CYCLE_MS,
+  _now = Date.now(),
+  _freshMs = HEALTH_CYCLE_MS,
 ): boolean {
-  if (staleHealthTail(stageHealth, now, freshMs).length === 0) return false;
-  return HEALTH_LOOP_STAGES.some(
-    (name) =>
-      !TAIL.has(name) &&
-      isMonitorStageFresh(stageHealth[name]?.lastOkAt, now, freshMs),
-  );
+  return firstInterruptedHealthStage(stageHealth) != null;
 }

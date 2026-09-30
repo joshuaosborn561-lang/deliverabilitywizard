@@ -126,7 +126,10 @@ import {
 } from "./lib/monitorResume.js";
 import {
   HEALTH_CYCLE_MS,
+  firstInterruptedHealthStage,
   healthNeedsResume,
+  shouldSkipHealthStage,
+  type HealthLoopStage,
 } from "./lib/healthResume.js";
 import { alertCanonMisses, alertStageAnomalies } from "./services/opsAlerts.js";
 import {
@@ -641,17 +644,25 @@ async function main(): Promise<void> {
   const stage = async <T>(
     name: string,
     fn: () => Promise<T>,
-    opts: { skipIfFreshMs?: number } = {},
+    opts: {
+      skipIfFreshMs?: number;
+      skipIfBeforeStage?: HealthLoopStage | null;
+    } = {},
   ): Promise<T | null> => {
     const startedAt = Date.now();
-    if (opts.skipIfFreshMs != null) {
-      const lastOk = state.listStageHealth()[name]?.lastOkAt ?? null;
-      if (isMonitorStageFresh(lastOk, startedAt, opts.skipIfFreshMs)) {
-        console.log(
-          `[watchdog] stage ${name} skipped — last ok ${lastOk} still inside the cycle`,
-        );
-        return null;
-      }
+    const lastOk = state.listStageHealth()[name]?.lastOkAt ?? null;
+    if (
+      shouldSkipHealthStage(name, lastOk, {
+        skipIfFreshMs: opts.skipIfFreshMs,
+        skipIfBeforeStage: opts.skipIfBeforeStage,
+        now: startedAt,
+      })
+    ) {
+      const why = opts.skipIfBeforeStage
+        ? `leftover starts at ${opts.skipIfBeforeStage}`
+        : `last ok ${lastOk} still inside the cycle`;
+      console.log(`[watchdog] stage ${name} skipped — ${why}`);
+      return null;
     }
     try {
       const out = await fn();
@@ -699,17 +710,20 @@ async function main(): Promise<void> {
   const runRestGates = async (
     inventory?: InventorySnapshot,
     skipIfFreshMs?: number,
+    skipIfBeforeStage?: HealthLoopStage | null,
   ) => {
     // D129 — the D44/D59/D61 one-shots ran in Aug 2026 and are deleted;
     // rest gates are just the living D43 loops now.
     const restResult = config.enableClientRest
       ? await stage("client-rest", () => clientRest.run({ inventory }), {
           skipIfFreshMs,
+          skipIfBeforeStage,
         })
       : null;
     const genericRest = config.enableGenericSendRest
       ? await stage("generic-rest", () => genericSendRest.run({ inventory }), {
           skipIfFreshMs,
+          skipIfBeforeStage,
         })
       : null;
     return { clientRest: restResult, genericRest };
@@ -733,6 +747,36 @@ async function main(): Promise<void> {
   /** How often the health cron may run a full mailbox-settings converge. */
   const MAILBOX_SETTINGS_EVERY_MS = 6 * 60 * 60 * 1000;
 
+  /** D166 watchdog tick — idle is a lastOk, grow still D89-gated. */
+  const runPodCoverTick = async () => {
+    if (!config.enablePodControls) {
+      console.log("[pod-cover] idle — ENABLE_POD_CONTROLS is off");
+      return { skipped: true as const, reason: "disabled" };
+    }
+    const missingKnownGood = state
+      .listCampaignChecks()
+      .some((record) =>
+        (record.findings ?? []).some((f) =>
+          f.startsWith("inbox_missing_known_good"),
+        ),
+      );
+    const lastPodAt = state.getIsolation().lastPodControlAt;
+    const podAgeMs = lastPodAt
+      ? Date.now() - Date.parse(lastPodAt)
+      : Number.POSITIVE_INFINITY;
+    if (!missingKnownGood) {
+      console.log("[pod-cover] idle — no inbox_missing_known_good findings");
+      return { skipped: true as const, reason: "covered" };
+    }
+    if (podAgeMs < 55 * 60 * 1000) {
+      console.log(
+        `[pod-cover] idle — hourly throttle (last pod-control ${lastPodAt})`,
+      );
+      return { skipped: true as const, reason: "throttled" };
+    }
+    return podControls.run();
+  };
+
   /**
    * Fast staffing loop (D43/D44): hold rebuild → client rest → generic
    * send clock → top-up/fan-out → reconnect. Mailbox-settings converge is
@@ -747,14 +791,17 @@ async function main(): Promise<void> {
     healthInFlight = (async () => {
       const passStart = Date.now();
 
-      // D211 — leftover 15m tail (mailbox-gap / isolation-branch / …)
-      // resumes after a mid-chain kill. skip-if-fresh on this sitting
-      // only; a fully stale board is a normal 15-minute tick.
+      // D211/D214 — leftover health-loop stages resume after a mid-chain
+      // kill. Resume is chain inversion (a later lastOk older than an
+      // earlier one), not "an early stage still inside 15m". Skip the
+      // prefix and continue. A monotonic board is a normal 15m tick.
+      const leftover = firstInterruptedHealthStage(state.listStageHealth());
       const resume = healthNeedsResume(state.listStageHealth());
       const skipIfFreshMs = resume ? HEALTH_CYCLE_MS : undefined;
+      const skipIfBeforeStage = leftover;
       if (resume) {
         console.log(
-          "[health] D211 resume — leftover late stage(s); skipping anything still fresh in the 15m cycle",
+          `[health] D214 resume — leftover starts at ${leftover}; skipping the prefix (and anything still fresh in the 15m cycle)`,
         );
       }
 
@@ -770,8 +817,10 @@ async function main(): Promise<void> {
       const inventoryLastOk =
         state.listStageHealth().inventory?.lastOkAt ?? null;
       if (
-        skipIfFreshMs != null &&
-        isMonitorStageFresh(inventoryLastOk, Date.now(), skipIfFreshMs)
+        shouldSkipHealthStage("inventory", inventoryLastOk, {
+          skipIfFreshMs,
+          skipIfBeforeStage,
+        })
       ) {
         console.log(
           `[watchdog] stage inventory skipped — last ok ${inventoryLastOk} still inside the cycle`,
@@ -795,18 +844,20 @@ async function main(): Promise<void> {
         return { skipped: true as const, reason: "inventory-failed" };
       }
 
-      const rest = await runRestGates(inventory, skipIfFreshMs);
+      const rest = await runRestGates(inventory, skipIfFreshMs, skipIfBeforeStage);
 
       await stage("client-tag", () => campaignClientTag.run({ inventory }), {
         skipIfFreshMs,
+        skipIfBeforeStage,
       });
       const oneClientResult = await stage(
         "one-client",
         () => oneClientMembership.run({ inventory }),
-        { skipIfFreshMs },
+        { skipIfFreshMs, skipIfBeforeStage },
       );
       await stage("qa-unpause", () => unpauseAfterSigQa.run({ inventory }), {
         skipIfFreshMs,
+        skipIfBeforeStage,
       });
 
       let campaignCheckResult: unknown = null;
@@ -814,20 +865,21 @@ async function main(): Promise<void> {
         campaignCheckResult = await stage(
           "campaign-check-first",
           () => campaignCheck.run({ mode: "first", inventory }),
-          { skipIfFreshMs },
+          { skipIfFreshMs, skipIfBeforeStage },
         );
       }
 
       if (config.enableWarmupGate) {
         await stage("warmup-gate", () => runWarmupGate(inventory), {
           skipIfFreshMs,
+          skipIfBeforeStage,
         });
       }
 
       const healthResult = await stage(
         "campaign-health",
         () => campaignHealth.run({ inventory }),
-        { skipIfFreshMs },
+        { skipIfFreshMs, skipIfBeforeStage },
       );
 
       // D84 / D116 — placement coverage is fixed on the pass that finds
@@ -854,41 +906,16 @@ async function main(): Promise<void> {
       // seats from ACTIVE live campaigns (D197 already said so; the
       // Sep 21 restaff peel was client-rest / one-client counting raw
       // membership, not this stage).
-      await stage("pod-cover", async () => {
-        if (!config.enablePodControls) {
-          console.log("[pod-cover] idle — ENABLE_POD_CONTROLS is off");
-          return { skipped: true as const, reason: "disabled" };
-        }
-        const missingKnownGood = state
-          .listCampaignChecks()
-          .some((record) =>
-            (record.findings ?? []).some((f) =>
-              f.startsWith("inbox_missing_known_good"),
-            ),
-          );
-        const lastPodAt = state.getIsolation().lastPodControlAt;
-        const podAgeMs = lastPodAt
-          ? Date.now() - Date.parse(lastPodAt)
-          : Number.POSITIVE_INFINITY;
-        if (!missingKnownGood) {
-          console.log(
-            "[pod-cover] idle — no inbox_missing_known_good findings",
-          );
-          return { skipped: true as const, reason: "covered" };
-        }
-        if (podAgeMs < 55 * 60 * 1000) {
-          console.log(
-            `[pod-cover] idle — hourly throttle (last pod-control ${lastPodAt})`,
-          );
-          return { skipped: true as const, reason: "throttled" };
-        }
-        return podControls.run();
-      }, { skipIfFreshMs });
+      await stage("pod-cover", () => runPodCoverTick(), {
+        skipIfFreshMs,
+        skipIfBeforeStage,
+      });
 
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
         reconnectResult = await stage("reconnect", () => runReconnect(), {
           skipIfFreshMs,
+          skipIfBeforeStage,
         });
       }
 
@@ -901,7 +928,7 @@ async function main(): Promise<void> {
         mailboxGapResult = await stage(
           "mailbox-gap",
           () => mailboxSettings.runGapEnforce({ inventory }),
-          { skipIfFreshMs },
+          { skipIfFreshMs, skipIfBeforeStage },
         );
 
         const lastSettingsAt = state.get().lastMailboxSettingsAt;
@@ -928,7 +955,7 @@ async function main(): Promise<void> {
       let isolationBranchResult: unknown = null;
       if (config.enableIsolationBranch) {
         isolationBranchResult = await stage("isolation-branch", () =>
-          isolationBranch.run(), { skipIfFreshMs });
+          isolationBranch.run(), { skipIfFreshMs, skipIfBeforeStage });
       }
 
       // D173/D174 — refresh mailbox ownership and retry a replacement
@@ -941,6 +968,7 @@ async function main(): Promise<void> {
       );
       await stage("isolation-buy-resume", () => isolationBuy.resume(), {
         skipIfFreshMs,
+        skipIfBeforeStage,
       });
 
       logCanonScoreboard();
@@ -2650,6 +2678,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       if (mode === "warmup-gate" || mode === "warmup") {
         const result = await runWarmupGate();
         res.json({ ok: true, mode: "warmup-gate", result });
+        return;
+      }
+      if (mode === "pod-cover") {
+        // D214 — pod-cover-only. Not the full health pass. stage() so lastOkAt updates.
+        assertRuntimeSecrets(config);
+        const result = await stage("pod-cover", () => runPodCoverTick());
+        res.json({ ok: true, mode: "pod-cover", result });
         return;
       }
       if (mode === "mailbox-gap" || mode === "gap") {

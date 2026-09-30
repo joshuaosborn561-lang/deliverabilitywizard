@@ -4,7 +4,9 @@ import {
   HEALTH_CYCLE_MS,
   HEALTH_LOOP_STAGES,
   HEALTH_TAIL_STAGES,
+  firstInterruptedHealthStage,
   healthNeedsResume,
+  shouldSkipHealthStage,
   staleHealthStages,
   staleHealthTail,
 } from "./healthResume.js";
@@ -69,6 +71,55 @@ describe("D211 health resume", () => {
 
   it("cycle window is 15 minutes, not the 45m overdue grace", () => {
     assert.equal(HEALTH_CYCLE_MS, 15 * 60 * 1000);
+  });
+
+  it("D214: resumes after the 15m window when a later stage is older than an earlier one", () => {
+    // Prod 2026-09-30 15:35 — D213 deploy reset the cron. campaign-health
+    // 15:11 is no longer fresh; pod-cover is still 13:13. D211 resume
+    // was false. Chain inversion is still true.
+    const now = Date.parse("2026-09-30T15:35:00.000Z");
+    const stageHealth = {
+      inventory: { lastOkAt: "2026-09-30T15:00:26.000Z" },
+      "client-rest": { lastOkAt: "2026-09-30T14:49:39.000Z" },
+      "generic-rest": { lastOkAt: "2026-09-30T14:49:43.000Z" },
+      "client-tag": { lastOkAt: "2026-09-30T14:49:46.000Z" },
+      "one-client": { lastOkAt: "2026-09-30T14:51:34.000Z" },
+      "qa-unpause": { lastOkAt: "2026-09-30T14:51:35.000Z" },
+      "campaign-check-first": { lastOkAt: "2026-09-30T15:04:43.000Z" },
+      "warmup-gate": { lastOkAt: "2026-09-30T15:04:50.000Z" },
+      "campaign-health": { lastOkAt: "2026-09-30T15:11:28.000Z" },
+      "pod-cover": { lastOkAt: "2026-09-30T13:13:51.000Z" },
+      reconnect: { lastOkAt: "2026-09-30T13:19:43.000Z" },
+      "mailbox-gap": { lastOkAt: "2026-09-30T14:42:05.000Z" },
+      "isolation-branch": { lastOkAt: "2026-09-30T12:16:56.000Z" },
+      "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
+    };
+    assert.equal(firstInterruptedHealthStage(stageHealth), "pod-cover");
+    assert.equal(healthNeedsResume(stageHealth, now), true);
+    assert.equal(
+      shouldSkipHealthStage("inventory", stageHealth.inventory.lastOkAt, {
+        skipIfBeforeStage: "pod-cover",
+      }),
+      true,
+    );
+    assert.equal(
+      shouldSkipHealthStage("campaign-health", stageHealth["campaign-health"].lastOkAt, {
+        skipIfBeforeStage: "pod-cover",
+        skipIfFreshMs: HEALTH_CYCLE_MS,
+        now,
+      }),
+      true,
+      "prefix before leftover is skipped even when the 15m window has closed",
+    );
+    assert.equal(
+      shouldSkipHealthStage("pod-cover", stageHealth["pod-cover"].lastOkAt, {
+        skipIfBeforeStage: "pod-cover",
+        skipIfFreshMs: HEALTH_CYCLE_MS,
+        now,
+      }),
+      false,
+      "the leftover itself must run",
+    );
   });
 
   it("every health-loop stage has a D131 overdue window", async () => {

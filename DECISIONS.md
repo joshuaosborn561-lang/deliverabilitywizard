@@ -220,6 +220,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D211 | Live | 15-minute health chain resumes leftover late stages after a mid-chain SIGTERM (skip-if-fresh, not at boot); `/run?mode=mailbox-gap` is gap-only |
 | D212 | Live | mailbox-gap / health daily-limit writers skip D148 bounce-hold seats (Smartlead account id) until ~00:15 UTC / 7:15pm CT; no mpd writes from this path |
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
+| D214 | Live | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
 
 ---
 
@@ -6874,6 +6875,49 @@ decision card. Qualifies D212: this list is not pruned at
 as `tenant_outbound_block`; `accountOnBounceHold` / tenant
 hold skip daily-limit writers after 7:15pm; seed ids persist;
 Watchdog page is once per tenant; CANON dated D213.
+
+---
+
+## D214 — Health resume is chain inversion, not a 15-minute freshness gate
+
+**Date.** 2026-09-30.
+
+**Decision.** Josh (owner): `/health` shows `pod-cover`
+lastOkAt stuck at 13:13:51Z, consecutiveFailures=0,
+lastError=null — the same morning-restart starve as
+mailbox-gap. D211 added resume but did not pick pod-cover
+up. Resume any stage a restart interrupted. Trigger one
+pod-cover run.
+
+D211 required an *early* stage to still be inside the
+15-minute cycle. A deploy resets the cron, so the next
+health tick is ~15 minutes after boot; by then those early
+lastOks have aged out, `healthNeedsResume` is false, and
+the pass starts from inventory again (live 2026-09-30:
+campaign-health 15:11Z, pod-cover 13:13Z). Resume is
+**chain inversion**: the leftover is the first stage after
+the newest health-loop lastOk that is older than that
+newest stamp. Skip the prefix. `/run?mode=pod-cover` is
+the single-stage tick (stage() so lastOk updates). Not at
+boot (D122).
+
+**Why.** The 15-minute freshness gate cannot survive a
+Railway recycle. The inversion (later lastOk older than
+the newest earlier one) is still true hours later.
+
+**Rejected.** Widening the freshness window. Boot-kicking
+pod-cover (D122). Requiring the leftover to be a tail
+stage only (an interrupt after warmup-gate must resume
+there).
+
+**Supersedes / amends.** Amends D211: resume no longer
+needs a fresh early stage. D166 still ticks pod-cover
+every health pass. Does not change D122.
+
+**Guards.** `firstInterruptedHealthStage` on the 15:35
+production board is `pod-cover`; prefix skip runs the
+leftover after the 15m window; `/run?mode=pod-cover`;
+CANON dated D214.
 
 ---
 

@@ -18,6 +18,7 @@ import {
   DLV_RETIRE_DENY,
   DELIVERABILITY_SLACK_CHANNEL_ID,
   INSIGHT_SEG_CAMPAIGN_ID,
+  WATCHDOG_SLACK_CHANNEL_ID,
   WATCHDOG_SLACK_CHANNEL_NAME,
   buildDeliverabilityDecisionCard,
   canTapDlvAction,
@@ -108,6 +109,7 @@ describe("D194 deliverability Slack one-taps", () => {
     assert.equal(deliverabilityChannelId({}), DELIVERABILITY_SLACK_CHANNEL_ID);
     assert.equal(DELIVERABILITY_SLACK_CHANNEL_ID, "C0BJQUTV7A8");
     assert.notEqual(DELIVERABILITY_SLACK_CHANNEL_ID, WATCHDOG_SLACK_CHANNEL_NAME);
+    assert.equal(WATCHDOG_SLACK_CHANNEL_ID, "C0BT978GSAC");
     assert.equal(
       deliverabilityChannelId({ deliverabilitySlackChannelId: "C0BJQUTV7A8" }),
       "C0BJQUTV7A8",

@@ -2920,16 +2920,26 @@ describe("owner intent — D143 the gate must win or escalate", () => {
 });
 
 describe("owner intent — D145/D146 a sender block is a burned domain", () => {
-  it("D145/D146: 5.1.8 classifies sender_blocked and opens the retire ask, never waiting for dominance", async () => {
-    const { classifyBounceText } = await import("../lib/bounceReason.js");
+  it("D145/D146: 5.1.8 is a sender-side block and opens the retire ask, never waiting for dominance", async () => {
+    const { classifyBounceText, isSenderBlockClass } = await import(
+      "../lib/bounceReason.js"
+    );
     assert.equal(
       classifyBounceText(
         "550 5.1.8 Access denied, bad outbound sender AS(42004)",
       ),
-      "sender_blocked",
+      "tenant_outbound_block",
       stop(
-        "A 5.1.8 outbound-spam block is the SENDER flagged, not a bad recipient (D145).",
+        "A 5.1.8 outbound-spam block is the SENDER flagged, not a bad recipient (D145/D213).",
         "classifyBounceText files 5.1.8 as something else again — on 8/27 that hid a live Microsoft block behind 'invalid_recipient'.",
+      ),
+    );
+    assert.equal(
+      isSenderBlockClass("tenant_outbound_block"),
+      true,
+      stop(
+        "tenant_outbound_block still opens the D145/D146 retire ask.",
+        "isSenderBlockClass no longer treats 5.1.8 as a sender block.",
       ),
     );
 
@@ -2940,7 +2950,7 @@ describe("owner intent — D145/D146 a sender block is a burned domain", () => {
     const autostop = await read("../services/campaignBounceAutostop.ts");
     assert.match(
       autostop,
-      /sample\.bounceClass === "sender_blocked"/,
+      /isSenderBlockClass\(sample\.bounceClass\)/,
       stop(
         "The sender-block trigger reads the SAMPLES, never the dominant class (D145) — a minority 5.1.8 under a tenant-cap wave still acts.",
         "campaignBounceAutostop.ts gates the sender-block response on the dominant verdict again.",
@@ -3025,7 +3035,7 @@ describe("owner intent — D147 a remediated bounce is a resend", () => {
     );
     assert.deepEqual(
       [...RESURRECTABLE_CLASSES].sort(),
-      ["content_block", "sender_blocked", "tenant_rate_limit"],
+      ["content_block", "sender_blocked", "tenant_outbound_block", "tenant_rate_limit"],
       stop(
         "Only sender-fault bounces come back — a bad address stays dead (D147, Josh: 'inbox rate level or a copy problem we solve').",
         "RESURRECTABLE_CLASSES changed; resending invalid recipients is a fresh hard bounce on purpose.",
@@ -11336,11 +11346,6 @@ describe("owner intent — D212 bounce-hold seats skip daily-limit writes", () =
     );
     assert.match(
       canon,
-      /Canon as of \*\*D212\*\*/,
-      stop("CANON is dated D212.", "CANON.md header was not bumped to D212."),
-    );
-    assert.match(
-      canon,
       /bounce-hold list/,
       stop(
         "CANON names the bounce-hold skip (D212).",
@@ -11356,6 +11361,135 @@ describe("owner intent — D212 bounce-hold seats skip daily-limit writes", () =
       decisions,
       /^\| D212 \|/m,
       stop("The status index lists D212 (D127).", "DECISIONS.md status index has no D212 row."),
+    );
+  });
+});
+
+describe("owner intent — D213 permanent tenant outbound-block hold", () => {
+  it("D213: 5.1.8 is tenant_outbound_block; hold survives 7:15; Watchdog once", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { classifyBounceText } = await import("../lib/bounceReason.js");
+    const {
+      TENANT_OUTBOUND_BLOCK_SEEDS,
+      TENANT_OUTBOUND_BLOCK_MPD,
+    } = await import("../lib/tenantOutboundBlock.js");
+
+    assert.equal(
+      classifyBounceText(
+        "550 5.1.8 Access denied, bad outbound sender AS(42004)",
+      ),
+      "tenant_outbound_block",
+      stop(
+        "5.1.8 / AS(42004) is tenant_outbound_block (D213).",
+        "classifyBounceText no longer files 5.1.8 as tenant_outbound_block.",
+      ),
+    );
+    assert.equal(TENANT_OUTBOUND_BLOCK_MPD, 0);
+    assert.deepEqual(TENANT_OUTBOUND_BLOCK_SEEDS[0]?.accountIds, [
+      21831478, 21831477, 21831461, 21831401, 21831312,
+    ]);
+
+    const hold = await readFile(
+      new URL("../lib/tenantOutboundBlock.ts", import.meta.url),
+      "utf8",
+    );
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      hold,
+      /no automatic restore/,
+      stop(
+        "The tenant hold has no automatic restore (D213).",
+        "tenantOutboundBlock.ts lost the no-restore rule.",
+      ),
+    );
+    assert.match(
+      settings,
+      /TENANT_OUTBOUND_BLOCK_MPD/,
+      stop(
+        "mailbox-settings may write 0 only for the tenant outbound hold (D213).",
+        "mailboxSettings.ts no longer uses TENANT_OUTBOUND_BLOCK_MPD.",
+      ),
+    );
+    assert.match(
+      bounce,
+      /armTenantOutboundBlock/,
+      stop(
+        "The bounce loop arms the permanent tenant hold (D213).",
+        "campaignBounceAutostop.ts no longer arms tenant_outbound_block.",
+      ),
+    );
+    assert.doesNotMatch(
+      bounce,
+      /max_email_per_day/,
+      stop(
+        "The bounce loop must not write daily limits (D213).",
+        "campaignBounceAutostop.ts writes max_email_per_day.",
+      ),
+    );
+    assert.match(
+      slack,
+      /WATCHDOG_SLACK_CHANNEL_ID/,
+      stop(
+        "The Watchdog page uses the channel id, not a hardcoded #campaign-watchdog string (D194/D213).",
+        "slack.ts no longer posts the D213 page via WATCHDOG_SLACK_CHANNEL_ID.",
+      ),
+    );
+    assert.doesNotMatch(
+      slack,
+      /#campaign-watchdog["']/,
+      stop(
+        "slack.ts must not hardcode #campaign-watchdog (D194).",
+        "slack.ts posts to the Watchdog channel by name.",
+      ),
+    );
+    assert.match(
+      index,
+      /healTenantOutboundBlockSeeds/,
+      stop(
+        "Boot seeds the five tenant-hold ids (D213).",
+        "index.ts no longer heals the tenant outbound-block seed.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D213\*\*/,
+      stop("CANON is dated D213.", "CANON.md header was not bumped to D213."),
+    );
+    assert.match(
+      canon,
+      /no automatic restore/,
+      stop(
+        "CANON names the permanent tenant outbound-block hold (D213).",
+        "CANON.md lost the D213 no-restore sentence.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D213 — 5\.1\.8 \/ AS\(42004\) is a permanent tenant outbound block/,
+      stop("The ledger records D213.", "DECISIONS.md no longer has D213."),
+    );
+    assert.match(
+      decisions,
+      /^\| D213 \|/m,
+      stop("The status index lists D213 (D127).", "DECISIONS.md status index has no D213 row."),
     );
   });
 });

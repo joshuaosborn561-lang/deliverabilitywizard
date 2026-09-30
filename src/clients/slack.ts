@@ -18,6 +18,7 @@ import {
 } from "../lib/slackSwapEdit.js";
 import {
   DELIVERABILITY_SLACK_CHANNEL_ID,
+  WATCHDOG_SLACK_CHANNEL_ID,
   WATCHDOG_SLACK_CHANNEL_NAME,
   buildDeliverabilityDecisionCard,
   deliverabilityBotToken,
@@ -138,6 +139,27 @@ export class SlackClient {
       text: card.text,
       blocks: card.blocks,
       metadata: card.metadata,
+    });
+  }
+
+  /**
+   * D213 — one-shot tenant outbound-block page. Not a decision card.
+   * Posts to the Watchdog channel id, never as a #deliverability one-tap.
+   */
+  async notifyWatchdogTenantBlock(
+    text: string,
+  ): Promise<{ channel?: string; ts?: string } | undefined> {
+    const token = readSlackBotToken(this.creds);
+    if (!token) {
+      console.log(
+        `[slack-quiet] dropped tenant_outbound_block watchdog page: ${text.replace(/\n/g, " ").slice(0, 200)}`,
+      );
+      return undefined;
+    }
+    return this.postChatMessage({
+      token,
+      channel: WATCHDOG_SLACK_CHANNEL_ID,
+      text,
     });
   }
 

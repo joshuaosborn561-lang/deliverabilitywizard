@@ -12,10 +12,16 @@
 
 export type BounceClass =
   | "tenant_rate_limit"
+  | "tenant_outbound_block"
   | "sender_blocked"
   | "invalid_recipient"
   | "content_block"
   | "other";
+
+/** D145/D213 — 5.1.8 / AS(42004) plus other sender-restriction NDRs. */
+export function isSenderBlockClass(cls: BounceClass | string | null | undefined): boolean {
+  return cls === "tenant_outbound_block" || cls === "sender_blocked";
+}
 
 /** D140/D147 — the NDR reply in a lead's message history, if any. */
 export function ndrBodyFromHistory(history: unknown): string | null {
@@ -45,18 +51,19 @@ export function classifyBounceText(text: string): BounceClass {
   ) {
     return "tenant_rate_limit";
   }
-  // D145 — Microsoft's outbound spam filter restricting the SENDER
-  // (550 5.1.8 "Access denied, bad outbound sender AS(42004)"). Must run
-  // before invalid_recipient: the generic 5.1.x pattern below used to
-  // swallow it, and on 2026-08-27 a live sender block on the SG Engagers
-  // fleet was filed as a bad email address. A sender block does not
-  // reset at midnight the way the tenant cap does.
+  // D213 — 550 5.1.8 / AS(42004) is a permanent Microsoft tenant outbound
+  // block, not the 5.7.233 / 5.7.705 daily cap. Must run before
+  // invalid_recipient (D145) and stay distinct from tenant_rate_limit.
   if (
     /5\.1\.8\b/.test(hay) ||
     /as\s*\(\s*42004\s*\)/.test(hay) ||
-    /bad outbound sender/.test(hay) ||
-    /blocked from sending|restricted from sending|restricted entit/.test(hay)
+    /bad outbound sender/.test(hay)
   ) {
+    return "tenant_outbound_block";
+  }
+  // Other sender-restriction wording (Defender restricted entity, etc.)
+  // stays sender_blocked for the D145/D146 retire-ask path.
+  if (/blocked from sending|restricted from sending|restricted entit/.test(hay)) {
     return "sender_blocked";
   }
   if (

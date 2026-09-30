@@ -43,6 +43,7 @@ import type { StateStore } from "../state/store.js";
 /** Classes whose bounces are the sender's fault, not the address's. */
 export const RESURRECTABLE_CLASSES: ReadonlySet<BounceClass> = new Set([
   "tenant_rate_limit",
+  "tenant_outbound_block",
   "sender_blocked",
   "content_block",
 ]);
@@ -412,7 +413,11 @@ export class BounceResurrectionService {
           sentAt: sentIso,
         });
         job.offset += 1;
-        if (bounceClass === "sender_blocked" && ndr) {
+        if (
+          (bounceClass === "sender_blocked" ||
+            bounceClass === "tenant_outbound_block") &&
+          ndr
+        ) {
           await this.openSenderBlockAsk(job.campaignId, email, domain, ndr);
         }
         console.log(
@@ -570,7 +575,12 @@ export class BounceResurrectionService {
     if (entry.cls === "tenant_rate_limit") {
       return tenantGateOpen(entry.sentAt, nowMs);
     }
-    if (entry.cls === "sender_blocked") {
+    if (entry.cls === "tenant_outbound_block") {
+      // D213 — no automatic restore while the tenant hold is live.
+      if (!entry.domain) return false;
+      if (this.state.isTenantOutboundBlockDomain(entry.domain)) return false;
+    }
+    if (entry.cls === "sender_blocked" || entry.cls === "tenant_outbound_block") {
       // Resolved = Josh retired the domain (boxes pulled) or cancelled the
       // ask because he unblocked the sender in Defender. An unknown domain
       // can never be verified — it waits out the expiry.

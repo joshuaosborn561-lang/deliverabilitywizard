@@ -103,6 +103,33 @@ describe("D176 attach blocklist", () => {
   });
 });
 
+describe("D213 tenant outbound-block state", () => {
+  it("persists the seed ids and is not cleared by pruneBounceHold", async () => {
+    const filePath = `/tmp/dw-tob-store-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    state.ensureTenantOutboundBlock({
+      tenant: "arborbrooksagesunsetxcom.onmicrosoft.com",
+      domains: ["appquickconnectsales.com"],
+      accountIds: [21831478, 21831477, 21831461, 21831401, 21831312],
+    });
+    state.ensureBounceHold([21831478]);
+    await state.save();
+
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    assert.equal(reloaded.isTenantOutboundBlockAccount(21831478), true);
+    assert.equal(
+      reloaded.isTenantOutboundBlockDomain("appquickconnectsales.com"),
+      true,
+    );
+    reloaded.pruneBounceHold(new Date("2026-10-01T00:20:00.000Z"));
+    assert.equal(reloaded.isTenantOutboundBlockAccount(21831312), true);
+    assert.equal(reloaded.clearTenantOutboundBlock("arborbrooksagesunsetxcom.onmicrosoft.com"), true);
+    assert.equal(reloaded.isTenantOutboundBlockAccount(21831478), false);
+  });
+});
+
 describe("D167 serialized save", () => {
   it("does not let an earlier snapshot clobber a later stage lastOk", async () => {
     const filePath = `/tmp/dw-state-save-${process.pid}-${Date.now()}.json`;

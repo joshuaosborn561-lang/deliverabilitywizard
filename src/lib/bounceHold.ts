@@ -13,6 +13,7 @@
  */
 
 import { isOutlookMailboxType } from "./sendCeiling.js";
+import { accountOnTenantOutboundHold } from "./tenantOutboundBlock.js";
 
 /** 15 minutes after UTC midnight ≈ 7:15pm America/Chicago. */
 export const BOUNCE_HOLD_RESTORE_GRACE_MINUTES = 15;
@@ -76,6 +77,8 @@ export function hasTodayTenantCapSignal(
 export interface BounceHoldReader {
   isBounceHoldWindowActive?(now?: Date): boolean;
   isBounceHoldAccount?(accountId: number, now?: Date): boolean;
+  isTenantOutboundBlockAccount?(accountId: number): boolean;
+  isTenantOutboundBlockDomain?(domain: string): boolean;
 }
 
 export function accountOnBounceHold(
@@ -83,12 +86,24 @@ export function accountOnBounceHold(
     id?: number | null;
     type?: string | null;
     platform?: string | null;
+    from_email?: string | null;
+    email?: string | null;
     message_per_day?: number | string;
     max_email_per_day?: number;
   },
   store?: BounceHoldReader | null,
   now = new Date(),
 ): boolean {
+  if (
+    accountOnTenantOutboundHold(account, {
+      isTenantOutboundBlockAccount: (id) =>
+        store?.isTenantOutboundBlockAccount?.(id) === true,
+      isTenantOutboundBlockDomain: (domain) =>
+        store?.isTenantOutboundBlockDomain?.(domain) === true,
+    })
+  ) {
+    return true;
+  }
   const id = Number(account.id);
   if (!Number.isFinite(id) || id <= 0) return false;
   if (store?.isBounceHoldAccount?.(id, now) === true) return true;

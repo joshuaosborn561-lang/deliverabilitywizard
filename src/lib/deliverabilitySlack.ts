@@ -13,8 +13,10 @@ import type { StateStore } from "../state/store.js";
 export const DELIVERABILITY_SLACK_CHANNEL_ID = "C0BJQUTV7A8";
 export const DELIVERABILITY_SLACK_CHANNEL_NAME = "#deliverability";
 
-/** Slack channel the Watchdog identity owns — this bot must never post there. */
+/** Slack channel the Watchdog identity owns — decision cards must never post there. */
 export const WATCHDOG_SLACK_CHANNEL_NAME = "#campaign-watchdog";
+/** D213 — one-shot tenant outbound-block page. Never a decision-card destination. */
+export const WATCHDOG_SLACK_CHANNEL_ID = "C0BT978GSAC";
 
 export const DLV_APPLY_COPY = "dlv_apply_copy";
 export const DLV_DENY_COPY = "dlv_deny_copy";

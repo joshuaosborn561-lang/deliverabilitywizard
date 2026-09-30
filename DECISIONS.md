@@ -219,6 +219,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
 | D211 | Live | 15-minute health chain resumes leftover late stages after a mid-chain SIGTERM (skip-if-fresh, not at boot); `/run?mode=mailbox-gap` is gap-only |
 | D212 | Live | mailbox-gap / health daily-limit writers skip D148 bounce-hold seats (Smartlead account id) until ~00:15 UTC / 7:15pm CT; no mpd writes from this path |
+| D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
 
 ---
 
@@ -6822,6 +6823,57 @@ Does not land the unmerged D191/D206/D208 seed lists.
 mailbox-settings skip `max_email_per_day` for held seats;
 runHealth still calls `runGapEnforce`; bounce loop
 `ensureBounceHold` writes no mpd; CANON dated D212.
+
+---
+
+## D213 — 5.1.8 / AS(42004) is a permanent tenant outbound block
+
+**Date.** 2026-09-30.
+
+**Decision.** Josh (owner): tenant
+`arborbrooksagesunsetxcom.onmicrosoft.com` returns
+`550 5.1.8 Access denied, bad outbound sender AS(42004)` on
+every send from `appquickconnectsales.com` (angelatran
+21831478, tonykim 21831477, brianperez 21831461,
+michelletorres 21831401, derekchen 21831312). This is
+Microsoft blocking the whole tenant from sending outbound. It
+is not the 5.7.705 / 5.7.233 tenant cap, and it will not
+clear overnight. All five seats are already at mpd 0.
+
+The bounce classifier treats 5.1.8 / AS(42004) / "bad
+outbound sender" as **`tenant_outbound_block`**, separate
+from `tenant_rate_limit`. Other sender-restriction wording
+stays `sender_blocked`. Hold every seat on that tenant at 0
+with **no automatic restore**: the 7:15pm D183 restore,
+mailbox-gap, fan-out, top-up, and min40 skip them until a
+human clears the hold (`clearTenantOutboundBlock`). Surface
+the block **once** to `#campaign-watchdog` (`C0BT978GSAC`) as
+a tenant needing delist or replacement. Seed the hold with
+those five Smartlead account ids plus sending domain
+`appquickconnectsales.com`. Do not write daily limits except
+keeping these seats at 0.
+
+**Why.** D212's overnight bounce-hold is the wrong tool. A
+tenant outbound-spam block sits in Defender until a human
+delists or replaces the seats. Writing 15 at 7:15pm would
+re-arm a tenant Microsoft already refused.
+
+**Rejected.** Folding this into `tenant_rate_limit` / the
+D212 7:15 restore. Boot-writing daily limits (D122). Posting
+a #deliverability decision card for a tenant-level delist
+(D194 one-taps stay off Watchdog).
+
+**Supersedes / amends.** Amends D145: 5.1.8 classifies
+`tenant_outbound_block` (still never `invalid_recipient`;
+the D146/D162 retire ask still opens). Amends D194: this
+app may post **once** to Watchdog for this hold — never a
+decision card. Qualifies D212: this list is not pruned at
+00:15 UTC. Does not change D148 (campaigns stay ACTIVE).
+
+**Guards.** classifyBounceText files the live AS(42004) NDR
+as `tenant_outbound_block`; `accountOnBounceHold` / tenant
+hold skip daily-limit writers after 7:15pm; seed ids persist;
+Watchdog page is once per tenant; CANON dated D213.
 
 ---
 

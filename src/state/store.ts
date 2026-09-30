@@ -42,6 +42,8 @@ import {
   hasTodayTenantCapSignal,
   nextBounceHoldRestoreAt,
 } from "../lib/bounceHold.js";
+import type { TenantOutboundBlockRecord } from "../lib/tenantOutboundBlock.js";
+import { normalizeTenantOutboundHost } from "../lib/tenantOutboundBlock.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -310,6 +312,11 @@ export interface AppState {
   bounceHoldAccountIds: number[];
   /** D212 — ISO when the 7:15pm CT restore may write D183 15 again. */
   bounceHoldRestoreAfter: string | null;
+  /**
+   * D213 — permanent Microsoft tenant outbound-block holds (5.1.8 /
+   * AS(42004)). No restoreAfter. A human clears the record.
+   */
+  tenantOutboundBlocks: Record<string, TenantOutboundBlockRecord>;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -463,6 +470,40 @@ export interface RestingInboxRecord {
   lastSameEspInbox: number | null;
 }
 
+function parseTenantOutboundBlocks(
+  raw: unknown,
+): Record<string, TenantOutboundBlockRecord> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, TenantOutboundBlockRecord> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    const tenant = normalizeTenantOutboundHost(
+      typeof row.tenant === "string" ? row.tenant : key,
+    );
+    if (!tenant) continue;
+    const domains = Array.isArray(row.domains)
+      ? row.domains
+          .filter((d): d is string => typeof d === "string")
+          .map(normalizeTenantOutboundHost)
+          .filter(Boolean)
+      : [];
+    const accountIds = Array.isArray(row.accountIds)
+      ? row.accountIds.filter(
+          (id): id is number => Number.isFinite(id) && Number(id) > 0,
+        )
+      : [];
+    out[tenant] = {
+      tenant,
+      domains: [...new Set(domains)],
+      accountIds: [...new Set(accountIds)],
+      alertedAt: typeof row.alertedAt === "string" ? row.alertedAt : null,
+      seededAt: typeof row.seededAt === "string" ? row.seededAt : "",
+    };
+  }
+  return out;
+}
+
 const EMPTY_POOL_PROVISION: PoolProvisionState = {
   phase: "idle",
 };
@@ -519,6 +560,7 @@ const EMPTY_STATE: AppState = {
   min40ShortfallAlerted: {},
   bounceHoldAccountIds: [],
   bounceHoldRestoreAfter: null,
+  tenantOutboundBlocks: {},
 };
 
 export class StateStore {
@@ -608,6 +650,9 @@ export class StateStore {
           typeof parsed.bounceHoldRestoreAfter === "string"
             ? parsed.bounceHoldRestoreAfter
             : null,
+        tenantOutboundBlocks: parseTenantOutboundBlocks(
+          parsed.tenantOutboundBlocks,
+        ),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1369,6 +1414,122 @@ export class StateStore {
   pruneBounceHold(now = new Date()): void {
     if (this.isBounceHoldWindowActive(now)) return;
     this.state.bounceHoldAccountIds = [];
+  }
+
+  /** D213 — permanent tenant outbound-block hold. Never cleared by pruneBounceHold. */
+  isTenantOutboundBlockAccount(accountId: number): boolean {
+    const id = Number(accountId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    return Object.values(this.state.tenantOutboundBlocks).some((row) =>
+      row.accountIds.includes(id),
+    );
+  }
+
+  isTenantOutboundBlockDomain(domain: string): boolean {
+    const host = normalizeTenantOutboundHost(domain);
+    if (!host) return false;
+    return Object.values(this.state.tenantOutboundBlocks).some(
+      (row) => row.tenant === host || row.domains.includes(host),
+    );
+  }
+
+  listTenantOutboundBlocks(): TenantOutboundBlockRecord[] {
+    return Object.values(this.state.tenantOutboundBlocks).map((row) => ({
+      ...row,
+      domains: [...row.domains],
+      accountIds: [...row.accountIds],
+    }));
+  }
+
+  listTenantOutboundBlockAccountIds(): number[] {
+    return [
+      ...new Set(
+        Object.values(this.state.tenantOutboundBlocks).flatMap(
+          (row) => row.accountIds,
+        ),
+      ),
+    ];
+  }
+
+  ensureTenantOutboundBlock(input: {
+    tenant?: string;
+    domains?: Iterable<string>;
+    accountIds?: Iterable<number>;
+    now?: Date;
+  }): TenantOutboundBlockRecord | undefined {
+    const domains = [
+      ...new Set(
+        [...(input.domains ?? [])]
+          .map(normalizeTenantOutboundHost)
+          .filter(Boolean),
+      ),
+    ];
+    const accountIds = [
+      ...new Set(
+        [...(input.accountIds ?? [])].filter(
+          (id) => Number.isFinite(id) && id > 0,
+        ),
+      ),
+    ];
+    const tenantHint = input.tenant
+      ? normalizeTenantOutboundHost(input.tenant)
+      : "";
+    let record =
+      (tenantHint ? this.state.tenantOutboundBlocks[tenantHint] : undefined) ??
+      Object.values(this.state.tenantOutboundBlocks).find(
+        (row) =>
+          (tenantHint && row.tenant === tenantHint) ||
+          row.domains.some((domain) => domains.includes(domain)),
+      );
+    const key = tenantHint || record?.tenant || domains[0];
+    if (!key) return undefined;
+    if (!record) {
+      record = {
+        tenant: key,
+        domains: [],
+        accountIds: [],
+        alertedAt: null,
+        seededAt: (input.now ?? new Date()).toISOString(),
+      };
+      this.state.tenantOutboundBlocks[key] = record;
+    } else if (tenantHint && record.tenant !== tenantHint) {
+      delete this.state.tenantOutboundBlocks[record.tenant];
+      record.tenant = tenantHint;
+      this.state.tenantOutboundBlocks[tenantHint] = record;
+    }
+    for (const domain of domains) {
+      if (!record.domains.includes(domain)) record.domains.push(domain);
+    }
+    for (const id of accountIds) {
+      if (!record.accountIds.includes(id)) record.accountIds.push(id);
+    }
+    return record;
+  }
+
+  markTenantOutboundBlockAlerted(tenant: string, now = new Date()): void {
+    const host = normalizeTenantOutboundHost(tenant);
+    const record =
+      this.state.tenantOutboundBlocks[host] ??
+      Object.values(this.state.tenantOutboundBlocks).find(
+        (row) => row.tenant === host || row.domains.includes(host),
+      );
+    if (record) record.alertedAt = now.toISOString();
+  }
+
+  clearTenantOutboundBlock(tenantOrDomain: string): boolean {
+    const host = normalizeTenantOutboundHost(tenantOrDomain);
+    if (!host) return false;
+    if (this.state.tenantOutboundBlocks[host]) {
+      delete this.state.tenantOutboundBlocks[host];
+      return true;
+    }
+    for (const [key, row] of Object.entries(this.state.tenantOutboundBlocks)) {
+      if (row.tenant === host || row.domains.includes(host)) {
+        delete this.state.tenantOutboundBlocks[key];
+        return true;
+      }
+    }
+    return false;
   }
 
   /** D136 — the monitor's domain→client audit replaces the full list each pass. */

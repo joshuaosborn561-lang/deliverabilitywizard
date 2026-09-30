@@ -17,19 +17,20 @@ describe("bounce reason classification (D140)", () => {
     assert.match(bounceReasonSnippet(body), /5\.7\.233/);
   });
 
-  it("D145: reads the real 5.1.8 outbound-spam block as sender_blocked, never invalid_recipient", () => {
+  it("D213: reads the real 5.1.8 outbound-spam block as tenant_outbound_block, never tenant_rate_limit", () => {
     const body =
       "Remote server returned '550 5.1.8 Access denied, bad outbound sender AS(42004) [CH0PR03MB1234.namprd03.prod.outlook.com]'";
-    assert.equal(classifyBounceText(body), "sender_blocked");
+    assert.equal(classifyBounceText(body), "tenant_outbound_block");
+    assert.notEqual(classifyBounceText(body), "tenant_rate_limit");
+    assert.notEqual(classifyBounceText(body), "invalid_recipient");
     assert.match(bounceReasonSnippet(body), /5\.1\.8/);
-    // the plain-wording variant Microsoft also uses
     assert.equal(
       classifyBounceText("your account has been blocked from sending mail"),
       "sender_blocked",
     );
     assert.equal(
       classifyBounceText("Access denied AS(42004) — sender originated"),
-      "sender_blocked",
+      "tenant_outbound_block",
     );
   });
 

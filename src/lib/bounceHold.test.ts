@@ -139,5 +139,20 @@ describe("D212 bounce-hold skip", () => {
       ),
       false,
     );
+    assert.equal(
+      hasTodayTenantCapSignal(
+        {
+          bounceVerdicts: [
+            {
+              dominant: "tenant_outbound_block",
+              at: "2026-09-30T14:31:00.000Z",
+            },
+          ],
+        },
+        midAfternoon,
+      ),
+      false,
+      "5.1.8 is not a tenant-cap signal (D213)",
+    );
   });
 });

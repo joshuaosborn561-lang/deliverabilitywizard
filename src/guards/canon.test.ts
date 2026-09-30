@@ -11470,8 +11470,8 @@ describe("owner intent — D213 permanent tenant outbound-block hold", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D213\*\*/,
-      stop("CANON is dated D213.", "CANON.md header was not bumped to D213."),
+      /Canon as of \*\*D(213|21[4-9])\*\*/,
+      stop("CANON is dated D213.", "CANON.md header lost D213+."),
     );
     assert.match(
       canon,
@@ -11490,6 +11490,95 @@ describe("owner intent — D213 permanent tenant outbound-block hold", () => {
       decisions,
       /^\| D213 \|/m,
       stop("The status index lists D213 (D127).", "DECISIONS.md status index has no D213 row."),
+    );
+  });
+});
+
+describe("owner intent — D214 health resume is chain inversion", () => {
+  it("D214: leftover is the stage after the newest lastOk; /run pod-cover is a tick", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const resume = await readFile(
+      new URL("../lib/healthResume.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      resume,
+      /firstInterruptedHealthStage/,
+      stop(
+        "Resume keys on firstInterruptedHealthStage (D214).",
+        "healthResume.ts lost firstInterruptedHealthStage.",
+      ),
+    );
+    assert.match(
+      resume,
+      /chain inversion/,
+      stop(
+        "Resume is chain inversion, not a 15m early-fresh gate (D214).",
+        "healthResume.ts no longer says chain inversion.",
+      ),
+    );
+    assert.match(
+      index,
+      /skipIfBeforeStage/,
+      stop(
+        "runHealth skips the prefix before the leftover (D214).",
+        "index.ts lost skipIfBeforeStage.",
+      ),
+    );
+    assert.match(
+      index,
+      /mode === "pod-cover"/,
+      stop(
+        "/run?mode=pod-cover is the pod-cover-only tick (D214).",
+        "index.ts lost the pod-cover /run mode.",
+      ),
+    );
+    const podRun = index.slice(index.indexOf('mode === "pod-cover"'));
+    assert.match(
+      podRun.slice(0, 500),
+      /runPodCoverTick/,
+      stop(
+        "/run pod-cover calls the same tick as the health pass (D214).",
+        "pod-cover /run no longer calls runPodCoverTick.",
+      ),
+    );
+    assert.doesNotMatch(
+      podRun.slice(0, 400),
+      /runHealth\(/,
+      stop(
+        "/run pod-cover is not the full health pass (D214).",
+        "pod-cover /run started runHealth.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D214\*\*/,
+      stop("CANON is dated D214.", "CANON.md header was not bumped to D214."),
+    );
+    assert.match(
+      canon,
+      /chain inversion/,
+      stop(
+        "CANON names chain-inversion resume (D214).",
+        "CANON.md lost the D214 inversion sentence.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D214 — Health resume is chain inversion, not a 15-minute freshness gate/,
+      stop("The ledger records D214.", "DECISIONS.md no longer has D214."),
+    );
+    assert.match(
+      decisions,
+      /^\| D214 \|/m,
+      stop("The status index lists D214 (D127).", "DECISIONS.md status index has no D214 row."),
     );
   });
 });

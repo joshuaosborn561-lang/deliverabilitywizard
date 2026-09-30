@@ -49,7 +49,7 @@ real-money spend stops at `/approvals`.
 |--------|------|---------|
 | `GET` | `/health` | Public liveness: `canonCompliant`, open `canonFindings` by kind, per-stage `stageHealth` |
 | `GET` | `/status` | Full state + effective config (requires `X-Run-Token`) |
-| `POST` | `/run` | Manual trigger: `?mode=scan\|monitor\|pool\|reconnect\|warmup-gate\|health\|mailbox-gap\|all` |
+| `POST` | `/run` | Manual trigger: `?mode=scan\|monitor\|pool\|reconnect\|warmup-gate\|health\|mailbox-gap\|pod-cover\|all` |
 | `GET` | `/approvals` | Token-authenticated read-only approval listing |
 | `GET` | `/ops` | Employee console (owner/operator roles, audit log) |
 

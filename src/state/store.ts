@@ -911,11 +911,14 @@ export class StateStore {
    * as long as releasing one leaves the donor above its floor, which only the
    * caller can judge. Warming mailboxes are never returned — a mailbox that
    * has not served its warmup is not supply at any floor. Resting generics
-   * (D43 send-clock sit) are not supply either.
+   * (D43 send-clock sit) are not default supply. min40's short-fill may
+   * opt in (`includeResting`) so a leftover rest record cannot starve an
+   * ACTIVE campaign under 40 (D209).
    */
   findReassignablePoolMailbox(
     platforms: Array<"GOOGLE" | "MICROSOFT">,
     canTake: (email: string) => boolean,
+    opts: { includeResting?: boolean } = {},
   ): PoolMailboxRecord | undefined {
     for (const platform of platforms) {
       const match = Object.values(this.state.poolMailboxes).find(
@@ -924,7 +927,7 @@ export class StateStore {
           (m.status === "available" || m.status === "assigned") &&
           !m.copyCanary &&
           !this.isCopyCanary(m.email) &&
-          !this.getRestingInbox(m.email) &&
+          (opts.includeResting || !this.getRestingInbox(m.email)) &&
           canTake(m.email),
       );
       if (match) return match;

@@ -576,12 +576,11 @@ export class BounceResurrectionService {
       return tenantGateOpen(entry.sentAt, nowMs);
     }
     if (entry.cls === "tenant_outbound_block") {
-      // D213 — no automatic restore. The gate opens only after a human
-      // clears the tenant outbound-block hold.
+      // D213 — no automatic restore while the tenant hold is live.
       if (!entry.domain) return false;
-      return !this.state.isTenantOutboundBlockDomain(entry.domain);
+      if (this.state.isTenantOutboundBlockDomain(entry.domain)) return false;
     }
-    if (entry.cls === "sender_blocked") {
+    if (entry.cls === "sender_blocked" || entry.cls === "tenant_outbound_block") {
       // Resolved = Josh retired the domain (boxes pulled) or cancelled the
       // ask because he unblocked the sender in Defender. An unknown domain
       // can never be verified — it waits out the expiry.

@@ -921,4 +921,129 @@ describe("CampaignTopUpService safety", () => {
       "same-client generic multi-link stays (D207)",
     );
   });
+
+  it("D209: CultureFits generic on two BCP camps is not pulled; Parlay link is", async () => {
+    const keep: PoolMailboxRecord = {
+      email: "ada@useculturefits.info",
+      domain: "useculturefits.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 11,
+      firstName: "Ada",
+      lastName: "Pool",
+      status: "assigned",
+      assignedClientId: 542838,
+    };
+    const cross: PoolMailboxRecord = {
+      email: "zoe@tryvascowarranty.info",
+      domain: "tryvascowarranty.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 12,
+      firstName: "Zoe",
+      lastName: "Pool",
+      status: "assigned",
+      assignedClientId: 542838,
+    };
+    const { state } = fakeState(keep);
+    state.upsertPoolMailbox(cross);
+    const removed: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3763799, name: "BCP HC With Team", status: "ACTIVE", client_id: 542838 },
+        { id: 3763800, name: "BCP HC No Team", status: "ACTIVE", client_id: 542838 },
+        { id: 3847840, name: "Parlay EOS Ops", status: "ACTIVE", client_id: 418274 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: keep.email,
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nBolder Cyber Partners",
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          client_id: 542838,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3763799, 3763800],
+        },
+        {
+          id: 12,
+          from_email: cross.email,
+          from_name: "Zoe Pool",
+          signature: "Zoe Pool\nBolder Cyber Partners",
+          created_at: "2026-06-01T00:00:00Z",
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          client_id: 542838,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3763799, 3847840],
+        },
+        ...Array.from({ length: 40 }, (_, index) => ({
+          id: 100 + index,
+          from_email: `bcp-a-${index}@boldercyperpartner.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 542838,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3763799],
+        })),
+        ...Array.from({ length: 40 }, (_, index) => ({
+          id: 200 + index,
+          from_email: `bcp-b-${index}@boldercyperpartner.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 542838,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3763800],
+        })),
+        ...Array.from({ length: 40 }, (_, index) => ({
+          id: 300 + index,
+          from_email: `parlay-${index}@parlay.com`,
+          created_at: "2026-06-01T00:00:00Z",
+          client_id: 418274,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [3847840],
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+        { id: 418274, name: "Parlay", logo: "Parlay" },
+      ],
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      smartlead,
+      fakeSlack(),
+      state,
+    );
+
+    const result = await service.run();
+    assert.equal(
+      removed.some((row) => row[1].includes(11)),
+      false,
+      "CultureFits same-client multi-link stays (D209)",
+    );
+    assert.ok(
+      removed.some((row) => row[0] === 3847840 && row[1].includes(12)),
+      "cross-client Vasco seat still peels off Parlay",
+    );
+    assert.equal(
+      result.pulledGenerics.some((row) => row.email === keep.email),
+      false,
+    );
+  });
 });

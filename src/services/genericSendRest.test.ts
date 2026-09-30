@@ -221,4 +221,78 @@ describe("GenericSendRestService", () => {
       result.skipped.some((row) => row.includes("dedicated client generic")),
     );
   });
+
+  it("D209: dedicated CultureFits generic on two same-client camps is not benched", async () => {
+    const state = new StateStore(
+      `/tmp/generic-rest-d209-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "ada@useculturefits.info",
+      domain: "useculturefits.info",
+      firstName: "Ada",
+      lastName: "Pool",
+      platform: "GOOGLE",
+      status: "assigned",
+      smartleadAccountId: 7,
+      assignedClientId: 542838,
+    });
+    state.markGenericSendStartedAt(
+      "ada@useculturefits.info",
+      "2026-01-01T00:00:00Z",
+    );
+
+    const removed: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3763799, name: "BCP HC With Team", status: "ACTIVE", client_id: 542838 },
+        { id: 3763800, name: "BCP HC No Team", status: "ACTIVE", client_id: 542838 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 7,
+          from_email: "ada@useculturefits.info",
+          client_id: 542838,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3763799, 3763800],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        ...Array.from({ length: 39 }, (_, i) => ({
+          id: 100 + i,
+          from_email: `pad-${i}@boldercyperpartner.com`,
+          client_id: 542838,
+          campaign_ids: [3763799, 3763800],
+          is_smtp_success: true,
+          is_imap_success: true,
+        })),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new GenericSendRestService(
+      loadConfig({ ENABLE_GENERIC_SEND_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-01-16T00:00:00Z"),
+    });
+    assert.deepEqual(removed, []);
+    assert.equal(result.benched.length, 0);
+    assert.ok(
+      result.skipped.some((row) => row.includes("dedicated client generic")),
+    );
+  });
 });

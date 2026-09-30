@@ -88,6 +88,13 @@ export function clientDomainTokens(client: {
  * the same for TJ / Vasco). These are project generic-pool leftovers,
  * not Smartlead clients. Advisory/skip, never a write, when the box
  * is already null.
+ *
+ * D209 — CultureFits and Vasco seats that already staff a named
+ * client's ACTIVE campaigns are normal GENERIC pool seats (client
+ * tag + share across that client's campaigns). This list is
+ * attach-skip for *unused* null boxes only. It is never a peel
+ * reason and must not be imported by client-rest / one-client /
+ * generic-rest / top-up.
  */
 export const NULL_GENERIC_LEFTOVER_TOKENS = [
   "goliath",

@@ -71,4 +71,42 @@ describe("GenericCleanupService (D205)", () => {
     assert.equal(result.cleared.length, 1);
     assert.equal(result.cleared[0]?.email, "gone@pool.info");
   });
+
+  it("D209: CultureFits generic still on two ACTIVE camps of that client is not cleared", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const service = new GenericCleanupService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+      } as unknown as SmartleadClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 3763799, name: "BCP HC With Team", status: "ACTIVE", client_id: 542838 },
+          { id: 3763800, name: "BCP HC No Team", status: "ACTIVE", client_id: 542838 },
+        ],
+        accounts: [
+          {
+            id: 11,
+            from_email: "ada@useculturefits.info",
+            client_id: 542838,
+            signature: "Ada Pool\nBolder Cyber Partners",
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [3763799, 3763800],
+          },
+        ],
+      },
+    });
+    assert.deepEqual(writes, []);
+    assert.equal(result.cleared.length, 0);
+  });
 });

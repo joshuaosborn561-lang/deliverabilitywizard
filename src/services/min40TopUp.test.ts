@@ -399,4 +399,170 @@ describe("Min40TopUpService (D205)", () => {
     assert.deepEqual(attached, []);
     assert.equal(result.assigned.length, 0);
   });
+
+  it("D209: restaffs a short ACTIVE campaign from same-client generics that still carry a rest record", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const attachedAlready = Array.from({ length: 31 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `on-${i}@useculturefits.info`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      created_at: "2026-01-01T00:00:00Z",
+      tags: [{ tag_name: "GENERIC" }],
+      campaign_ids: [10],
+    }));
+    const benched = Array.from({ length: 9 }, (_, i) => {
+      const email = `ada-${i}@useculturefits.info`;
+      state.markRestingInbox({
+        accountId: 400 + i,
+        email,
+        clientId: "id:542838",
+        cohort: "B",
+        kind: "client",
+        restingSince: "2026-09-29T00:50:00Z",
+        removedFromCampaigns: [10],
+        lastSameEspInbox: null,
+      });
+      return {
+        id: 400 + i,
+        from_email: email,
+        client_id: 542838,
+        type: "GMAIL",
+        is_smtp_success: true,
+        is_imap_success: true,
+        created_at: "2026-01-01T00:00:00Z",
+        tags: [{ tag_name: "GENERIC" }],
+        campaign_ids: [] as number[],
+      };
+    });
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-09-30T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 10, name: "BCP Live", status: "ACTIVE", client_id: 542838 },
+        ],
+        accounts: [...attachedAlready, ...benched],
+      },
+    });
+    const benchedIds = benched.map((row) => row.id);
+    assert.equal(result.assigned.length, 9);
+    assert.equal(
+      attached.filter((row) => row[0] === 10 && row[1].some((id) => benchedIds.includes(id)))
+        .length,
+      9,
+      "min40 must put the incorrectly-benched same-client generics back",
+    );
+    for (const row of benched) {
+      assert.equal(
+        state.getRestingInbox(row.from_email),
+        undefined,
+        `${row.from_email} rest record must clear on attach`,
+      );
+    }
+  });
+
+  it("D209: pool short-fill can take a resting free-pool generic and clear the record", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    state.markRestingInbox({
+      accountId: 900,
+      email: "spare@crosslaunchco.com",
+      clientId: "unknown",
+      cohort: "A",
+      kind: "generic",
+      restingSince: "2026-09-29T03:00:00Z",
+      removedFromCampaigns: [10],
+      lastSameEspInbox: null,
+    });
+    const named = Array.from({ length: 39 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      created_at: "2026-01-01T00:00:00Z",
+      campaign_ids: [10],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-09-30T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 10, name: "BCP Live", status: "ACTIVE", client_id: 542838 },
+        ],
+        accounts: [
+          ...named,
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.ok(
+      attached.some((row) => row[0] === 10 && row[1].includes(900)),
+      "min40 must reuse a resting free-pool generic to hit 40",
+    );
+    assert.equal(result.assigned.length, 1);
+    assert.equal(state.getRestingInbox("spare@crosslaunchco.com"), undefined);
+  });
 });

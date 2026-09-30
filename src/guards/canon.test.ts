@@ -11559,8 +11559,8 @@ describe("owner intent — D214 health resume is chain inversion", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D214\*\*/,
-      stop("CANON is dated D214.", "CANON.md header was not bumped to D214."),
+      /Canon as of \*\*D(214|21[5-9])\*\*/,
+      stop("CANON is dated D214.", "CANON.md header lost D214+."),
     );
     assert.match(
       canon,
@@ -11579,6 +11579,70 @@ describe("owner intent — D214 health resume is chain inversion", () => {
       decisions,
       /^\| D214 \|/m,
       stop("The status index lists D214 (D127).", "DECISIONS.md status index has no D214 row."),
+    );
+  });
+});
+
+describe("owner intent — D215 health-resume newest ignores inventory", () => {
+  it("D215: leftover newest skips inventory so a book-refresh cannot hide pod-cover", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const resume = await readFile(
+      new URL("../lib/healthResume.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      resume,
+      /if \(name === "inventory"\) continue/,
+      stop(
+        "Newest lastOk ignores inventory (D215).",
+        "firstInterruptedHealthStage no longer skips inventory when picking newest.",
+      ),
+    );
+    assert.match(
+      resume,
+      /D215/,
+      stop(
+        "healthResume names D215.",
+        "healthResume.ts lost the D215 comment.",
+      ),
+    );
+    assert.match(
+      index,
+      /D215 resume/,
+      stop(
+        "runHealth logs D215 resume (D215).",
+        "index.ts no longer logs D215 resume.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D215\*\*/,
+      stop("CANON is dated D215.", "CANON.md header was not bumped to D215."),
+    );
+    assert.match(
+      canon,
+      /Inventory lastOk is not the sitting frontier/,
+      stop(
+        "CANON names the inventory-frontier rule (D215).",
+        "CANON.md lost the D215 inventory sentence.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D215 — Health-resume newest stamp ignores inventory/,
+      stop("The ledger records D215.", "DECISIONS.md no longer has D215."),
+    );
+    assert.match(
+      decisions,
+      /^\| D215 \|/m,
+      stop("The status index lists D215 (D127).", "DECISIONS.md status index has no D215 row."),
     );
   });
 });

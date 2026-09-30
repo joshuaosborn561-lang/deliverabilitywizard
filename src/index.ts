@@ -791,17 +791,19 @@ async function main(): Promise<void> {
     healthInFlight = (async () => {
       const passStart = Date.now();
 
-      // D211/D214 — leftover health-loop stages resume after a mid-chain
-      // kill. Resume is chain inversion (a later lastOk older than an
-      // earlier one), not "an early stage still inside 15m". Skip the
-      // prefix and continue. A monotonic board is a normal 15m tick.
+      // D211/D214/D215 — leftover health-loop stages resume after a
+      // mid-chain kill. Resume is chain inversion (a later lastOk older
+      // than the newest non-inventory stamp), not "an early stage still
+      // inside 15m". Inventory lastOk is a shared-book refresh, not the
+      // sitting frontier (D215). Skip the prefix and continue. A
+      // monotonic board is a normal 15m tick.
       const leftover = firstInterruptedHealthStage(state.listStageHealth());
       const resume = healthNeedsResume(state.listStageHealth());
       const skipIfFreshMs = resume ? HEALTH_CYCLE_MS : undefined;
       const skipIfBeforeStage = leftover;
       if (resume) {
         console.log(
-          `[health] D214 resume — leftover starts at ${leftover}; skipping the prefix (and anything still fresh in the 15m cycle)`,
+          `[health] D215 resume — leftover starts at ${leftover}; skipping the prefix (and anything still fresh in the 15m cycle)`,
         );
       }
 

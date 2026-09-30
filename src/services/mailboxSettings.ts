@@ -33,6 +33,11 @@ import {
   mailboxMessagePerDayTarget,
 } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
+import {
+  TENANT_OUTBOUND_BLOCK_MPD,
+  accountOnTenantOutboundHold,
+  maybeNotifyTenantOutboundBlock,
+} from "../lib/tenantOutboundBlock.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
@@ -149,14 +154,26 @@ export class MailboxSettingsService {
       // Only write when the value differs — needless writes trip the limiter.
       const target = mailboxMessagePerDayTarget(account, this.config);
       const current = readMessagePerDay(account);
+      const tenantHeld = accountOnTenantOutboundHold(account, this.store);
+      if (tenantHeld) {
+        this.store?.ensureTenantOutboundBlock({
+          domains: [email.split("@")[1] ?? ""].filter(Boolean),
+          accountIds: [account.id],
+        });
+      }
       // D212 — bounce-hold Outlook zeros stay 0 until the 7:15pm CT restore.
-      if (isOutlookMailboxType(account.type) && current === 0) {
+      // D213 tenant outbound-block zeros are a different list — do not arm
+      // the overnight restore from them.
+      if (isOutlookMailboxType(account.type) && current === 0 && !tenantHeld) {
         this.store?.observeBounceHoldZero(account.id);
       }
-      const held = accountOnBounceHold(account, this.store);
+      const held = tenantHeld || accountOnBounceHold(account, this.store);
       if (held) result.bounceHoldSkipped += 1;
+      const writeTarget = tenantHeld ? TENANT_OUTBOUND_BLOCK_MPD : target;
       const needsLimit =
-        !held && !(Number.isFinite(current) && current === target);
+        tenantHeld
+          ? !(Number.isFinite(current) && current === TENANT_OUTBOUND_BLOCK_MPD)
+          : !held && !(Number.isFinite(current) && current === target);
 
       const needsGap = needsMinTimeGap(account, targetGap);
 
@@ -227,7 +244,7 @@ export class MailboxSettingsService {
             time_to_wait_in_mins?: number;
             signature?: string;
           } = {};
-          if (needsLimit) fields.max_email_per_day = target;
+          if (needsLimit) fields.max_email_per_day = writeTarget;
           if (needsGap) fields.time_to_wait_in_mins = targetGap;
           if (needsSignature && desiredSig) fields.signature = desiredSig;
           await this.smartlead.updateEmailAccount(account.id, fields);
@@ -271,6 +288,17 @@ export class MailboxSettingsService {
           break;
         }
         await sleep(2000 * consecutiveFailures);
+      }
+    }
+
+    if (!dryRun && this.store && typeof this.slack.notifyWatchdogTenantBlock === "function") {
+      try {
+        await maybeNotifyTenantOutboundBlock({
+          store: this.store,
+          slack: this.slack,
+        });
+      } catch (error) {
+        console.warn("[mailbox-settings] D213 watchdog page failed", error);
       }
     }
 

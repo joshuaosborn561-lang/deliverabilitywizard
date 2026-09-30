@@ -396,6 +396,101 @@ describe("MailboxSettingsService", () => {
     assert.ok(state.isBounceHoldWindowActive());
   });
 
+  it("D213: tenant outbound-block seats stay at 0 after 7:15; drifted seats are written to 0", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-tob-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.ensureTenantOutboundBlock({
+      tenant: "arborbrooksagesunsetxcom.onmicrosoft.com",
+      domains: ["appquickconnectsales.com"],
+      accountIds: [21831478, 21831477],
+    });
+    state.pruneBounceHold(new Date("2026-10-01T00:20:00.000Z"));
+
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 21831478,
+          type: "OUTLOOK",
+          from_email: "angelatran@appquickconnectsales.com",
+          from_name: "Angela Tran",
+          message_per_day: 0,
+          minTimeToWaitInMins: 10,
+          signature: "Angela Tran\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 21831477,
+          type: "OUTLOOK",
+          from_email: "tonykim@appquickconnectsales.com",
+          from_name: "Tony Kim",
+          message_per_day: 15,
+          minTimeToWaitInMins: 10,
+          signature: "Tony Kim\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 22,
+          type: "OUTLOOK",
+          from_email: "bert@ms.info",
+          from_name: "Bert Outlook",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Bert Outlook\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run when only volume drifted");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      {
+        send: async () => undefined,
+        notifyWatchdogTenantBlock: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 2);
+    assert.ok(result.bounceHoldSkipped >= 2);
+    assert.deepEqual(
+      updates.filter((row) => row.id === 21831478),
+      [],
+      "already-at-0 seed seat is not rewritten",
+    );
+    assert.deepEqual(
+      updates.find((row) => row.id === 21831477)?.fields,
+      { max_email_per_day: 0 },
+    );
+    assert.deepEqual(
+      updates.find((row) => row.id === 22)?.fields,
+      { max_email_per_day: 15 },
+    );
+    assert.ok(state.isTenantOutboundBlockAccount(21831478));
+    assert.equal(state.isBounceHoldAccount(21831478, new Date("2026-10-01T00:20:00.000Z")), false);
+  });
+
   it("D183: Gmail and SMTP stay at 30; a drifted SMTP is written to 30 not 15", async () => {
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const smartlead = {

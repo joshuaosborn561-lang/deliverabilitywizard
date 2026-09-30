@@ -137,6 +137,10 @@ import {
 import { PodTagService } from "./services/podTags.js";
 import { DomainClientAuditService } from "./services/domainClientAudit.js";
 import { healAttachBlocks } from "./lib/attachBlockHeal.js";
+import {
+  healTenantOutboundBlockSeeds,
+  maybeNotifyTenantOutboundBlock,
+} from "./lib/tenantOutboundBlock.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -225,6 +229,23 @@ async function main(): Promise<void> {
     deliverabilityBotToken: config.deliverabilitySlackBotToken,
     deliverabilityChannelId: config.deliverabilitySlackChannelId,
   });
+  // D213 — state-only seed of the known 5.1.8 tenant hold, then one
+  // Watchdog page if it has not been posted. No Smartlead writes (D122).
+  {
+    const healed = healTenantOutboundBlockSeeds(state);
+    if (healed.wrote) {
+      console.log(
+        `[boot] D213 tenant outbound-block seed: ${healed.accountIds.join(", ")}`,
+      );
+      await state.save();
+    }
+    try {
+      const posted = await maybeNotifyTenantOutboundBlock({ store: state, slack });
+      if (posted) await state.save();
+    } catch (error) {
+      console.warn("[boot] D213 watchdog page failed", error);
+    }
+  }
   const scanner = new CampaignScanner(config, smartlead, smartDelivery, slack, state);
   const monitor = new ResultMonitor(config, smartDelivery, smartlead, slack, state);
   const spendGateway = new SpendGateway(state, slack, config.requireSpendApproval);

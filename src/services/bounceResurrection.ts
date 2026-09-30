@@ -43,6 +43,7 @@ import type { StateStore } from "../state/store.js";
 /** Classes whose bounces are the sender's fault, not the address's. */
 export const RESURRECTABLE_CLASSES: ReadonlySet<BounceClass> = new Set([
   "tenant_rate_limit",
+  "tenant_outbound_block",
   "sender_blocked",
   "content_block",
 ]);
@@ -412,7 +413,11 @@ export class BounceResurrectionService {
           sentAt: sentIso,
         });
         job.offset += 1;
-        if (bounceClass === "sender_blocked" && ndr) {
+        if (
+          (bounceClass === "sender_blocked" ||
+            bounceClass === "tenant_outbound_block") &&
+          ndr
+        ) {
           await this.openSenderBlockAsk(job.campaignId, email, domain, ndr);
         }
         console.log(
@@ -569,6 +574,12 @@ export class BounceResurrectionService {
   ): boolean {
     if (entry.cls === "tenant_rate_limit") {
       return tenantGateOpen(entry.sentAt, nowMs);
+    }
+    if (entry.cls === "tenant_outbound_block") {
+      // D213 — no automatic restore. The gate opens only after a human
+      // clears the tenant outbound-block hold.
+      if (!entry.domain) return false;
+      return !this.state.isTenantOutboundBlockDomain(entry.domain);
     }
     if (entry.cls === "sender_blocked") {
       // Resolved = Josh retired the domain (boxes pulled) or cancelled the

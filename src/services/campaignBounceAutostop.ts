@@ -4,6 +4,7 @@ import type { SlackClient } from "../clients/slack.js";
 import {
   bounceReasonSnippet,
   classifyBounceText,
+  isSenderBlockClass,
   leadCategoryOf,
   ndrBodyFromHistory,
   preferNdrRows,
@@ -12,6 +13,7 @@ import {
   summarizeBounceSamples,
   type BounceSample,
 } from "../lib/bounceReason.js";
+import { maybeNotifyTenantOutboundBlock } from "../lib/tenantOutboundBlock.js";
 import { statsFromAnalytics, ymdUtc } from "../lib/campaignDayStats.js";
 import {
   freshBounceSamples,
@@ -155,7 +157,10 @@ export class CampaignBounceAutostopService {
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
     private readonly state?: StateStore,
-    private readonly slack?: Pick<SlackClient, "send" | "notifyIsolationAction">,
+    private readonly slack?: Pick<
+      SlackClient,
+      "send" | "notifyIsolationAction" | "notifyWatchdogTenantBlock"
+    >,
     resurrection?: BounceResurrectionService,
     private readonly clock: () => number = Date.now,
     private readonly book?: InventoryBook,
@@ -559,6 +564,7 @@ export class CampaignBounceAutostopService {
       const ids = await this.bounceHoldIdsForDomains(senderDomains);
       this.state.ensureBounceHold(ids);
     }
+    await this.armTenantOutboundBlock(samples, dryRun);
     if (
       dominant === "tenant_rate_limit" &&
       !dryRun &&
@@ -613,6 +619,7 @@ export class CampaignBounceAutostopService {
       samples,
       dryRun,
     );
+    await this.armTenantOutboundBlock(samples, dryRun);
     this.state?.setBounceSnapshot(campaign.id, {
       bounced: previous?.bounced ?? rows.length,
       sent: previous?.sent ?? 0,
@@ -736,7 +743,7 @@ export class CampaignBounceAutostopService {
     const slack = this.slack;
     const blockedByDomain = new Map<string, Set<string>>();
     for (const sample of samples) {
-      if (sample.bounceClass !== "sender_blocked" || !sample.senderEmail) {
+      if (!isSenderBlockClass(sample.bounceClass) || !sample.senderEmail) {
         continue;
       }
       const sender = sample.senderEmail.toLowerCase();
@@ -761,7 +768,7 @@ export class CampaignBounceAutostopService {
       const snippet =
         samples.find(
           (sample) =>
-            sample.bounceClass === "sender_blocked" &&
+            isSenderBlockClass(sample.bounceClass) &&
             sample.senderEmail?.toLowerCase().split("@")[1] === domain,
         )?.snippet ?? "550 5.1.8 bad outbound sender";
       let owner = store.getDomainOwner(domain);
@@ -818,6 +825,61 @@ export class CampaignBounceAutostopService {
     }
   }
 
+  /**
+   * D213 — 5.1.8 / AS(42004) holds every seat on that sending domain at 0
+   * with no restoreAfter. Ids only — no daily-limit write.
+   */
+  private async armTenantOutboundBlock(
+    samples: BounceSample[],
+    dryRun: boolean,
+  ): Promise<void> {
+    if (!this.state) return;
+    const blocked = samples.filter(
+      (sample) =>
+        sample.bounceClass === "tenant_outbound_block" && sample.senderEmail,
+    );
+    if (!blocked.length) return;
+    const domains = sampleSenderDomains(blocked);
+    const ids = [
+      ...(await this.accountIdsForSenders(
+        new Set(blocked.map((sample) => sample.senderEmail!.toLowerCase())),
+      )),
+      ...(await this.tenantOutboundHoldIdsForDomains(domains)),
+    ];
+    this.state.ensureTenantOutboundBlock({ domains, accountIds: ids });
+    if (dryRun || !this.slack) return;
+    if (typeof this.slack.notifyWatchdogTenantBlock !== "function") return;
+    try {
+      await maybeNotifyTenantOutboundBlock({
+        store: this.state,
+        slack: this.slack,
+      });
+    } catch (error) {
+      console.warn("[bounce-autostop] D213 watchdog page failed", error);
+    }
+  }
+
+  /** D213 — every seat on the blocked sending domain, not Outlook-only. */
+  private async tenantOutboundHoldIdsForDomains(
+    domains: string[],
+  ): Promise<number[]> {
+    if (!this.book || !domains.length) return [];
+    const hosts = new Set(domains.map((d) => d.toLowerCase()));
+    try {
+      const snap = await this.book.get();
+      const ids: number[] = [];
+      for (const account of snap.accounts) {
+        const email = accountEmail(account)?.toLowerCase();
+        const host = email?.split("@")[1];
+        if (!host || !hosts.has(host)) continue;
+        if (typeof account.id === "number") ids.push(account.id);
+      }
+      return ids;
+    } catch {
+      return [];
+    }
+  }
+
   /** D212 — Outlook seats on the tenant-cap domains, by Smartlead account id. */
   private async bounceHoldIdsForDomains(domains: string[]): Promise<number[]> {
     if (!this.book || !domains.length) return [];
@@ -861,6 +923,8 @@ export function burstReceiptText(finding: BounceBurstFinding): string {
   const plans: Record<string, string> = {
     tenant_rate_limit:
       "The tenant's Microsoft daily allowance is exhausted. The capped leads re-queue automatically once it resets at midnight UTC; real bad addresses stay dead.",
+    tenant_outbound_block:
+      "Microsoft blocked the whole tenant from sending outbound (550 5.1.8 / AS(42004)). Seats on that tenant stay at 0 with no automatic restore until a human delists or replaces them. The Watchdog page is the ask.",
     sender_blocked:
       "Microsoft flagged the sender for outbound spam — the domain's retire ask is open in this channel. Its leads re-queue once you resolve it (Retire, or unblock in Defender and Cancel).",
     content_block:

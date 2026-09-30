@@ -18,6 +18,13 @@
  * the board is monotonic (a finished sitting). Never at boot (D122).
  * `/run?mode=mailbox-gap` and `/run?mode=pod-cover` are single-stage
  * manual paths.
+ *
+ * D215 — inventory lastOk is not the sitting frontier. skip-if-fresh
+ * and a SIGTERM right after the shared-book fetch stamp inventory
+ * newest while campaign-health is still the deepest ok. Treating that
+ * as the frontier resumes at client-rest and re-runs the Smartlead
+ * prefix (prod 2026-09-30 15:45Z). Newest is taken from the rest of
+ * the loop; leftover is the first subsequent older stage.
  */
 
 import { isMonitorStageFresh } from "./monitorResume.js";
@@ -75,6 +82,11 @@ export function stageLastOkMs(
  * A first-inversion walk (client-rest 14:49 < inventory 15:00) is the
  * wrong leftover: skip-if-fresh refreshes inventory while rest stays
  * on the previous sitting. The starve is always *after* the newest ok.
+ *
+ * D215 — inventory is excluded from that newest stamp. A killed-early
+ * sitting or skip-if-fresh refresh makes inventory newest and would
+ * resume at client-rest, hiding a deeper campaign-health → pod-cover
+ * interrupt.
  */
 export function firstInterruptedHealthStage(
   stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
@@ -82,6 +94,9 @@ export function firstInterruptedHealthStage(
   let newest = Number.NEGATIVE_INFINITY;
   let newestName: HealthLoopStage | null = null;
   for (const name of HEALTH_LOOP_STAGES) {
+    // D215 — inventory lastOk is a shared-book / skip-if-fresh stamp,
+    // not "how far the sitting got".
+    if (name === "inventory") continue;
     const ok = stageLastOkMs(stageHealth[name]);
     if (ok >= newest) {
       newest = ok;
@@ -139,9 +154,10 @@ export function shouldSkipHealthStage(
 
 /**
  * Resume when a later health-loop stage is older than an earlier one
- * (D214). The 15-minute early-fresh gate (D211) is not required — a
+ * (D214/D215). The 15-minute early-fresh gate (D211) is not required — a
  * deploy recycle waits ~15m before the next cron, which aged that
- * signal out and starved pod-cover.
+ * signal out and starved pod-cover. Newest lastOk ignores inventory
+ * (D215).
  *
  * An all-stale monotonic board is a normal 15-minute tick — full chain.
  */

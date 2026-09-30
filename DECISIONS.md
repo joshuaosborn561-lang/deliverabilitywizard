@@ -220,7 +220,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D211 | Live | 15-minute health chain resumes leftover late stages after a mid-chain SIGTERM (skip-if-fresh, not at boot); `/run?mode=mailbox-gap` is gap-only |
 | D212 | Live | mailbox-gap / health daily-limit writers skip D148 bounce-hold seats (Smartlead account id) until ~00:15 UTC / 7:15pm CT; no mpd writes from this path |
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
-| D214 | Live | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
+| D214 | Live — leftover newest ignores inventory (D215) | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
+| D215 | Live | Health-resume newest stamp ignores inventory (shared-book / skip-if-fresh refresh); leftover is after the deepest non-inventory lastOk so an inventory-only kill cannot hide pod-cover |
 
 ---
 
@@ -6918,6 +6919,43 @@ every health pass. Does not change D122.
 production board is `pod-cover`; prefix skip runs the
 leftover after the 15m window; `/run?mode=pod-cover`;
 CANON dated D214.
+
+---
+
+## D215 — Health-resume newest stamp ignores inventory
+
+**Date.** 2026-09-30.
+
+**Decision.** Josh (owner): resume any stage a restart
+interrupted. D214's leftover is the first stage after the
+newest health-loop lastOk. A deploy that dies right after
+the shared-book fetch (or skip-if-fresh refreshing
+inventory) makes inventory newest, so leftover becomes
+`client-rest` and the pass re-runs the Smartlead prefix
+instead of the starved tail (live 2026-09-30 15:45Z:
+inventory 15:32, campaign-health 15:11, leftover
+client-rest, pod-cover still 13:13). Inventory lastOk is
+not the sitting frontier. Newest is taken from the rest
+of the loop; leftover is the first subsequent older
+stage. An interrupt after warmup-gate still resumes
+there. Not at boot (D122).
+
+**Why.** The starve is after the deepest completed stage,
+not after a book-refresh stamp.
+
+**Rejected.** Treating first-inversion from inventory as
+the leftover (D214 already rejected that). Boot-kicking
+the tail (D122). Always jumping to the tail (a mid-prefix
+kill must resume mid-prefix).
+
+**Supersedes / amends.** Amends D214: newest lastOk
+ignores inventory. Does not change D211's skip-if-fresh
+window or D122.
+
+**Guards.** `firstInterruptedHealthStage` skips inventory
+when picking newest; the 15:45 production board leftovers
+at pod-cover, not client-rest; warmup-gate interrupt
+still resumes at campaign-health; CANON dated D215.
 
 ---
 

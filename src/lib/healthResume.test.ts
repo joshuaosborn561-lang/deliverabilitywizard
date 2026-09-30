@@ -122,6 +122,62 @@ describe("D211 health resume", () => {
     );
   });
 
+  it("D215: a newer inventory stamp does not hide a deeper interrupt", () => {
+    // Prod 2026-09-30 15:45 — D214 deploy killed a sitting after
+    // inventory (15:32). campaign-health 15:11 is still the deepest
+    // ok; leftover must be pod-cover, not client-rest.
+    const now = Date.parse("2026-09-30T15:45:00.000Z");
+    const stageHealth = {
+      inventory: { lastOkAt: "2026-09-30T15:32:02.000Z" },
+      "client-rest": { lastOkAt: "2026-09-30T14:49:39.000Z" },
+      "generic-rest": { lastOkAt: "2026-09-30T14:49:43.000Z" },
+      "client-tag": { lastOkAt: "2026-09-30T14:49:46.000Z" },
+      "one-client": { lastOkAt: "2026-09-30T14:51:34.000Z" },
+      "qa-unpause": { lastOkAt: "2026-09-30T14:51:35.000Z" },
+      "campaign-check-first": { lastOkAt: "2026-09-30T15:04:43.000Z" },
+      "warmup-gate": { lastOkAt: "2026-09-30T15:04:50.000Z" },
+      "campaign-health": { lastOkAt: "2026-09-30T15:11:28.000Z" },
+      "pod-cover": { lastOkAt: "2026-09-30T13:13:51.000Z" },
+      reconnect: { lastOkAt: "2026-09-30T13:19:43.000Z" },
+      "mailbox-gap": { lastOkAt: "2026-09-30T14:42:05.000Z" },
+      "isolation-branch": { lastOkAt: "2026-09-30T12:16:56.000Z" },
+      "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
+    };
+    assert.equal(firstInterruptedHealthStage(stageHealth), "pod-cover");
+    assert.equal(healthNeedsResume(stageHealth, now), true);
+    assert.equal(
+      shouldSkipHealthStage("client-rest", stageHealth["client-rest"].lastOkAt, {
+        skipIfBeforeStage: "pod-cover",
+      }),
+      true,
+      "prefix after a newer inventory stamp is still skipped",
+    );
+  });
+
+  it("D215: an interrupt after warmup-gate still resumes there", () => {
+    const stageHealth = {
+      inventory: { lastOkAt: "2026-09-30T15:50:00.000Z" },
+      "client-rest": { lastOkAt: "2026-09-30T15:40:00.000Z" },
+      "generic-rest": { lastOkAt: "2026-09-30T15:40:01.000Z" },
+      "client-tag": { lastOkAt: "2026-09-30T15:40:02.000Z" },
+      "one-client": { lastOkAt: "2026-09-30T15:40:03.000Z" },
+      "qa-unpause": { lastOkAt: "2026-09-30T15:40:04.000Z" },
+      "campaign-check-first": { lastOkAt: "2026-09-30T15:40:05.000Z" },
+      "warmup-gate": { lastOkAt: "2026-09-30T15:40:06.000Z" },
+      "campaign-health": { lastOkAt: "2026-09-30T15:10:00.000Z" },
+      "pod-cover": { lastOkAt: "2026-09-30T13:13:51.000Z" },
+      reconnect: { lastOkAt: "2026-09-30T13:19:43.000Z" },
+      "mailbox-gap": { lastOkAt: "2026-09-30T14:42:05.000Z" },
+      "isolation-branch": { lastOkAt: "2026-09-30T12:16:56.000Z" },
+      "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
+    };
+    assert.equal(
+      firstInterruptedHealthStage(stageHealth),
+      "campaign-health",
+      "a mid-prefix kill still resumes at the next stage, not the tail",
+    );
+  });
+
   it("every health-loop stage has a D131 overdue window", async () => {
     const { STAGE_OVERDUE_WINDOWS_MS } = await import("./stageWindows.js");
     for (const name of HEALTH_LOOP_STAGES) {

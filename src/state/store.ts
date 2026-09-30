@@ -37,6 +37,11 @@ import type {
   CampaignStandingPref,
   DeliverabilityDecisionRecord,
 } from "../lib/deliverabilitySlack.js";
+import {
+  bounceHoldWindowActive,
+  hasTodayTenantCapSignal,
+  nextBounceHoldRestoreAt,
+} from "../lib/bounceHold.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -298,6 +303,13 @@ export interface AppState {
    * shortfall `ops_alert` (key = `campaign:<id>` or `powergryd-inventory`).
    */
   min40ShortfallAlerted: Record<string, string>;
+  /**
+   * D212 — Smartlead account ids on the D148 bounce-hold list (tenant-cap
+   * Outlook zeroed until ~00:15 UTC). Daily-limit writers skip these.
+   */
+  bounceHoldAccountIds: number[];
+  /** D212 — ISO when the 7:15pm CT restore may write D183 15 again. */
+  bounceHoldRestoreAfter: string | null;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -505,6 +517,8 @@ const EMPTY_STATE: AppState = {
   powerGrydSeatCount: null,
   powerGrydAlertedCount: null,
   min40ShortfallAlerted: {},
+  bounceHoldAccountIds: [],
+  bounceHoldRestoreAfter: null,
 };
 
 export class StateStore {
@@ -585,6 +599,15 @@ export class StateStore {
             ? parsed.powerGrydAlertedCount
             : null,
         min40ShortfallAlerted: parsed.min40ShortfallAlerted ?? {},
+        bounceHoldAccountIds: Array.isArray(parsed.bounceHoldAccountIds)
+          ? parsed.bounceHoldAccountIds.filter(
+              (id): id is number => Number.isFinite(id) && id > 0,
+            )
+          : [],
+        bounceHoldRestoreAfter:
+          typeof parsed.bounceHoldRestoreAfter === "string"
+            ? parsed.bounceHoldRestoreAfter
+            : null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1288,6 +1311,64 @@ export class StateStore {
 
   listBounceVerdicts(): BounceVerdictRecord[] {
     return Object.values(this.state.bounceVerdicts);
+  }
+
+  /** D212 — bounce-hold list is Smartlead account ids until restoreAfter. */
+  isBounceHoldWindowActive(now = new Date()): boolean {
+    return bounceHoldWindowActive(this.state.bounceHoldRestoreAfter, now);
+  }
+
+  isBounceHoldAccount(accountId: number, now = new Date()): boolean {
+    const id = Number(accountId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    if (!this.isBounceHoldWindowActive(now)) return false;
+    return this.state.bounceHoldAccountIds.includes(id);
+  }
+
+  listBounceHoldAccountIds(): number[] {
+    return [...this.state.bounceHoldAccountIds];
+  }
+
+  getBounceHoldRestoreAfter(): string | null {
+    return this.state.bounceHoldRestoreAfter;
+  }
+
+  private shouldArmBounceHold(now: Date): boolean {
+    if (this.isBounceHoldWindowActive(now)) return true;
+    if (!this.state.bounceHoldRestoreAfter) return true;
+    return hasTodayTenantCapSignal(
+      {
+        alertedKeys: this.state.alertedKeys,
+        bounceVerdicts: this.listBounceVerdicts(),
+      },
+      now,
+    );
+  }
+
+  private addBounceHoldId(accountId: number): void {
+    const id = Number(accountId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (!this.state.bounceHoldAccountIds.includes(id)) {
+      this.state.bounceHoldAccountIds.push(id);
+    }
+  }
+
+  observeBounceHoldZero(accountId: number, now = new Date()): void {
+    if (!this.shouldArmBounceHold(now)) return;
+    this.addBounceHoldId(accountId);
+    if (!this.isBounceHoldWindowActive(now)) {
+      this.state.bounceHoldRestoreAfter = nextBounceHoldRestoreAt(now).toISOString();
+    }
+  }
+
+  ensureBounceHold(accountIds: Iterable<number>, now = new Date()): void {
+    for (const id of accountIds) this.addBounceHoldId(id);
+    this.state.bounceHoldRestoreAfter = nextBounceHoldRestoreAt(now).toISOString();
+  }
+
+  pruneBounceHold(now = new Date()): void {
+    if (this.isBounceHoldWindowActive(now)) return;
+    this.state.bounceHoldAccountIds = [];
   }
 
   /** D136 — the monitor's domain→client audit replaces the full list each pass. */

@@ -36,6 +36,7 @@ import {
 } from "../lib/poolSignature.js";
 import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { sleep } from "../lib/http.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
@@ -555,10 +556,17 @@ export class Min40TopUpService {
             from_name: `${firstName} ${lastName}`,
             client_id: input.clientId,
             time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
-            max_email_per_day: mailboxMessagePerDayTarget(
-              { platform: pool.platform },
-              this.config,
-            ),
+            ...(accountOnBounceHold(
+              { id: pool.smartleadAccountId, platform: pool.platform },
+              this.state,
+            )
+              ? {}
+              : {
+                  max_email_per_day: mailboxMessagePerDayTarget(
+                    { platform: pool.platform },
+                    this.config,
+                  ),
+                }),
           });
           this.state.upsertPoolMailbox({
             ...pool,

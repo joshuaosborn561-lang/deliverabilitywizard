@@ -29,8 +29,10 @@ import {
 } from "../lib/mailboxSendSettings.js";
 import {
   OUTLOOK_MESSAGE_PER_DAY,
+  isOutlookMailboxType,
   mailboxMessagePerDayTarget,
 } from "../lib/sendCeiling.js";
+import { accountOnBounceHold } from "../lib/bounceHold.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
@@ -55,6 +57,8 @@ export interface MailboxSettingsResult {
   mode: MailboxSettingsMode;
   scanned: number;
   sendLimitSet: number;
+  /** D212 — bounce-hold seats whose daily cap was left alone. */
+  bounceHoldSkipped: number;
   minGapSet: number;
   signatureSet: number;
   warmupEnabled: number;
@@ -95,6 +99,7 @@ export class MailboxSettingsService {
       mode,
       scanned: 0,
       sendLimitSet: 0,
+      bounceHoldSkipped: 0,
       minGapSet: 0,
       signatureSet: 0,
       warmupEnabled: 0,
@@ -135,6 +140,7 @@ export class MailboxSettingsService {
     );
 
     let consecutiveFailures = 0;
+    this.store?.pruneBounceHold();
 
     for (const account of accounts) {
       const email = accountEmail(account);
@@ -143,7 +149,14 @@ export class MailboxSettingsService {
       // Only write when the value differs — needless writes trip the limiter.
       const target = mailboxMessagePerDayTarget(account, this.config);
       const current = readMessagePerDay(account);
-      const needsLimit = !(Number.isFinite(current) && current === target);
+      // D212 — bounce-hold Outlook zeros stay 0 until the 7:15pm CT restore.
+      if (isOutlookMailboxType(account.type) && current === 0) {
+        this.store?.observeBounceHoldZero(account.id);
+      }
+      const held = accountOnBounceHold(account, this.store);
+      if (held) result.bounceHoldSkipped += 1;
+      const needsLimit =
+        !held && !(Number.isFinite(current) && current === target);
 
       const needsGap = needsMinTimeGap(account, targetGap);
 
@@ -262,7 +275,7 @@ export class MailboxSettingsService {
     }
 
     console.log(
-      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→Outlook ${OUTLOOK_MESSAGE_PER_DAY} / others ${defaultTarget}, ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) on, ${result.warmupDisabled} canary warmup(s) off, ${result.errors.length} error(s)`,
+      `[mailbox-settings] Done (${mode}) — ${result.sendLimitSet} send limit(s)→Outlook ${OUTLOOK_MESSAGE_PER_DAY} / others ${defaultTarget}, ${result.bounceHoldSkipped} bounce-hold skip(s), ${result.minGapSet} min gap(s)→${targetGap}, ${result.signatureSet} signature(s), ${result.warmupEnabled} warmup(s) on, ${result.warmupDisabled} canary warmup(s) off, ${result.errors.length} error(s)`,
     );
     for (const e of result.errors.slice(0, 10)) {
       console.log(`[mailbox-settings]   error: ${e}`);

@@ -218,6 +218,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
 | D211 | Live | 15-minute health chain resumes leftover late stages after a mid-chain SIGTERM (skip-if-fresh, not at boot); `/run?mode=mailbox-gap` is gap-only |
+| D212 | Live | mailbox-gap / health daily-limit writers skip D148 bounce-hold seats (Smartlead account id) until ~00:15 UTC / 7:15pm CT; no mpd writes from this path |
 
 ---
 
@@ -6778,6 +6779,49 @@ runs every health pass).
 **Guards.** `healthResume` leftover-tail; `runHealth`
 skip-if-fresh on resume; `/run mailbox-gap` calls
 `runGapEnforce` not `run({mode:full})`; CANON dated D211.
+
+---
+
+## D212 — mailbox-gap skips D148 bounce-hold daily limits
+
+**Date.** 2026-09-30.
+
+**Decision.** Josh (owner): the 141 daily-limit writes from
+`/run?mode=mailbox-gap` put D148 bounce-hold Outlook seats
+back to mpd 15. Those are tenant-cap (550 5.7.233) hold seats
+triage zeroed at 9:31am CT for Specialty #4006388/#4006389.
+Josh re-zeroed them by hand. mailbox-gap and the health-pass
+daily-limit writer must skip any seat on the D148 bounce-hold
+list, the same way the 7:15pm restore is supposed to. The
+scheduled `*/15` health pass uses the same `runGapEnforce`
+path. Do not write daily limits from this change.
+
+The hold check keys on **Smartlead account id**. A seat is
+held while `bounceHoldRestoreAfter` is still in the future
+and either its id is on `bounceHoldAccountIds` or it is
+Outlook already at 0 (the re-zero, before the id is
+persisted). Restore is ~00:15 UTC / 7:15pm CT; after that
+D183 may write 15 again. The bounce loop arms the list on a
+`tenant_rate_limit` verdict (ids only — no mpd write).
+
+**Why.** D183 Outlook-at-15 converge cannot tell a hold-at-0
+from a drifted mailbox. The 15-minute gap pass undid the
+tenant-cap zero and re-armed the exhausted Microsoft tenant.
+
+**Rejected.** Writing 0 from mailbox-gap or the bounce loop
+(Josh: do not write daily limits). Boot-kicking a restore
+(D122). Treating every Outlook at 0 forever as a hold
+(the 7:15pm restore must be allowed to write 15).
+
+**Supersedes / amends.** Qualifies D183: bounce-hold zeros
+are not a `mailbox_volume` miss and are not written to 15
+until restore. Does not change D148 (campaigns stay ACTIVE).
+Does not land the unmerged D191/D206/D208 seed lists.
+
+**Guards.** `accountOnBounceHold` keyed on account id;
+mailbox-settings skip `max_email_per_day` for held seats;
+runHealth still calls `runGapEnforce`; bounce loop
+`ensureBounceHold` writes no mpd; CANON dated D212.
 
 ---
 

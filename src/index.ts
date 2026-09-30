@@ -124,6 +124,10 @@ import {
   monitorNeedsResume,
   staleMonitorStages,
 } from "./lib/monitorResume.js";
+import {
+  HEALTH_CYCLE_MS,
+  healthNeedsResume,
+} from "./lib/healthResume.js";
 import { alertCanonMisses, alertStageAnomalies } from "./services/opsAlerts.js";
 import {
   deployIdentityLine,
@@ -671,14 +675,21 @@ async function main(): Promise<void> {
     }
   };
 
-  const runRestGates = async (inventory?: InventorySnapshot) => {
+  const runRestGates = async (
+    inventory?: InventorySnapshot,
+    skipIfFreshMs?: number,
+  ) => {
     // D129 — the D44/D59/D61 one-shots ran in Aug 2026 and are deleted;
     // rest gates are just the living D43 loops now.
     const restResult = config.enableClientRest
-      ? await stage("client-rest", () => clientRest.run({ inventory }))
+      ? await stage("client-rest", () => clientRest.run({ inventory }), {
+          skipIfFreshMs,
+        })
       : null;
     const genericRest = config.enableGenericSendRest
-      ? await stage("generic-rest", () => genericSendRest.run({ inventory }))
+      ? await stage("generic-rest", () => genericSendRest.run({ inventory }), {
+          skipIfFreshMs,
+        })
       : null;
     return { clientRest: restResult, genericRest };
   };
@@ -715,40 +726,87 @@ async function main(): Promise<void> {
     healthInFlight = (async () => {
       const passStart = Date.now();
 
+      // D211 — leftover 15m tail (mailbox-gap / isolation-branch / …)
+      // resumes after a mid-chain kill. skip-if-fresh on this sitting
+      // only; a fully stale board is a normal 15-minute tick.
+      const resume = healthNeedsResume(state.listStageHealth());
+      const skipIfFreshMs = resume ? HEALTH_CYCLE_MS : undefined;
+      if (resume) {
+        console.log(
+          "[health] D211 resume — leftover late stage(s); skipping anything still fresh in the 15m cycle",
+        );
+      }
+
       // D84 — one Smartlead inventory per pass. Every stage below shares it;
       // mutating stages keep it truthful in place (recordMembership). Before
       // this, ~8 stages each refetched the full account book and the pass
       // starved itself into 429s.
       // D132 — the per-pass fetch goes through the shared book's partial-read
       // gate, so a shrunken read serves the last accepted book instead.
-      const inventory = await stage("inventory", () => inventoryBook.fetchFresh());
+      // D84 guard requires this exact stage() call. Resume reuses the
+      // shared book when inventory lastOk is still inside the 15m cycle.
+      let inventory: InventorySnapshot | null = null;
+      const inventoryLastOk =
+        state.listStageHealth().inventory?.lastOkAt ?? null;
+      if (
+        skipIfFreshMs != null &&
+        isMonitorStageFresh(inventoryLastOk, Date.now(), skipIfFreshMs)
+      ) {
+        console.log(
+          `[watchdog] stage inventory skipped — last ok ${inventoryLastOk} still inside the cycle`,
+        );
+        try {
+          inventory = await inventoryBook.get();
+          console.log(
+            "[health] D211 resume — reusing shared account book (inventory still fresh)",
+          );
+        } catch (error) {
+          console.warn("[health] inventory reuse failed — skipping this pass", error);
+          await state.save();
+          return { skipped: true as const, reason: "inventory-failed" };
+        }
+      } else {
+        inventory = await stage("inventory", () => inventoryBook.fetchFresh());
+      }
       if (!inventory) {
         console.warn("[health] inventory fetch failed — skipping this pass");
         await state.save();
         return { skipped: true as const, reason: "inventory-failed" };
       }
 
-      const rest = await runRestGates(inventory);
+      const rest = await runRestGates(inventory, skipIfFreshMs);
 
-      await stage("client-tag", () => campaignClientTag.run({ inventory }));
-      const oneClientResult = await stage("one-client", () =>
-        oneClientMembership.run({ inventory }),
+      await stage("client-tag", () => campaignClientTag.run({ inventory }), {
+        skipIfFreshMs,
+      });
+      const oneClientResult = await stage(
+        "one-client",
+        () => oneClientMembership.run({ inventory }),
+        { skipIfFreshMs },
       );
-      await stage("qa-unpause", () => unpauseAfterSigQa.run({ inventory }));
+      await stage("qa-unpause", () => unpauseAfterSigQa.run({ inventory }), {
+        skipIfFreshMs,
+      });
 
       let campaignCheckResult: unknown = null;
       if (config.enableCampaignCheck) {
-        campaignCheckResult = await stage("campaign-check-first", () =>
-          campaignCheck.run({ mode: "first", inventory }),
+        campaignCheckResult = await stage(
+          "campaign-check-first",
+          () => campaignCheck.run({ mode: "first", inventory }),
+          { skipIfFreshMs },
         );
       }
 
       if (config.enableWarmupGate) {
-        await stage("warmup-gate", () => runWarmupGate(inventory));
+        await stage("warmup-gate", () => runWarmupGate(inventory), {
+          skipIfFreshMs,
+        });
       }
 
-      const healthResult = await stage("campaign-health", () =>
-        campaignHealth.run({ inventory }),
+      const healthResult = await stage(
+        "campaign-health",
+        () => campaignHealth.run({ inventory }),
+        { skipIfFreshMs },
       );
 
       // D84 / D116 — placement coverage is fixed on the pass that finds
@@ -804,11 +862,13 @@ async function main(): Promise<void> {
           return { skipped: true as const, reason: "throttled" };
         }
         return podControls.run();
-      });
+      }, { skipIfFreshMs });
 
       let reconnectResult: unknown = null;
       if (config.enableAccountReconnect) {
-        reconnectResult = await stage("reconnect", () => runReconnect());
+        reconnectResult = await stage("reconnect", () => runReconnect(), {
+          skipIfFreshMs,
+        });
       }
 
       // D30/D35/D83: gap + daily volume + canary warmup-off every health pass.
@@ -817,8 +877,10 @@ async function main(): Promise<void> {
       let mailboxGapResult: unknown = null;
       let mailboxSettingsResult: unknown = null;
       if (config.enforceMailboxSettings) {
-        mailboxGapResult = await stage("mailbox-gap", () =>
-          mailboxSettings.runGapEnforce({ inventory }),
+        mailboxGapResult = await stage(
+          "mailbox-gap",
+          () => mailboxSettings.runGapEnforce({ inventory }),
+          { skipIfFreshMs },
         );
 
         const lastSettingsAt = state.get().lastMailboxSettingsAt;
@@ -845,8 +907,7 @@ async function main(): Promise<void> {
       let isolationBranchResult: unknown = null;
       if (config.enableIsolationBranch) {
         isolationBranchResult = await stage("isolation-branch", () =>
-          isolationBranch.run(),
-        );
+          isolationBranch.run(), { skipIfFreshMs });
       }
 
       // D173/D174 — refresh mailbox ownership and retry a replacement
@@ -857,7 +918,9 @@ async function main(): Promise<void> {
         inventory.clients,
         config,
       );
-      await stage("isolation-buy-resume", () => isolationBuy.resume());
+      await stage("isolation-buy-resume", () => isolationBuy.resume(), {
+        skipIfFreshMs,
+      });
 
       logCanonScoreboard();
       const passMs = Date.now() - passStart;
@@ -2566,6 +2629,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       if (mode === "warmup-gate" || mode === "warmup") {
         const result = await runWarmupGate();
         res.json({ ok: true, mode: "warmup-gate", result });
+        return;
+      }
+      if (mode === "mailbox-gap" || mode === "gap") {
+        // D211 — gap-only. Not the full health pass, not the 6h
+        // mailbox-settings converge. stage() so lastOkAt updates.
+        assertRuntimeSecrets(config);
+        const result = await stage("mailbox-gap", () =>
+          mailboxSettings.runGapEnforce(),
+        );
+        res.json({ ok: true, mode: "mailbox-gap", result });
         return;
       }
       if (

@@ -217,6 +217,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D207 | Live — rest-record peel loophole closed by D209 | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
+| D211 | Live | 15-minute health chain resumes leftover late stages after a mid-chain SIGTERM (skip-if-fresh, not at boot); `/run?mode=mailbox-gap` is gap-only |
 
 ---
 
@@ -6737,6 +6738,46 @@ kill-only (D51) or "blacklist alone burns nothing".
 resultMonitor, isolation-branch infra counts, and sending-infra
 census drop SURBL; SURBL-only produces no teardown, retire, or
 alert; CANON dated D210 names the rule.
+
+---
+
+## D211 — Health-chain leftovers resume; /run mailbox-gap is gap-only
+
+**Date.** 2026-09-30.
+
+**Decision.** Josh (owner): "run it now" — mailbox-gap had
+lastOk 12:12Z with consecutiveFailures=0 and lastError=null
+while health-pass lastOk sat at 12:17Z. The 15-minute health
+chain is resumable the same way D167 made the 6h monitor
+chain resumable. A Railway SIGTERM mid-pass (deploy recycle)
+must not starve mailbox-gap / isolation-branch / other late
+stages until a lucky full sitting. The next health tick
+skips stages still fresh in the 15-minute cycle and continues
+the leftover tail. Never at boot (D122). `/run?mode=mailbox-gap`
+(alias `gap`) runs `runGapEnforce` only — not the full health
+pass, not the 6h mailbox-settings converge.
+
+**Why.** mailbox-gap is not its own cron. It is a late stage
+inside `runHealth()`. This morning's deploys killed in-flight
+passes after campaign-health; health always restarted from
+inventory; lastOk stayed 12:12 with failures=0. Scheduler
+registration was not lost (`cronHealth` `*/15`,
+`enableCampaignHealth` true). `healthInFlight` is RAM-only
+and clears on restart — there was no held lock.
+
+**Rejected.** Triggering `/run?mode=health` (more Smartlead
+than gap). Triggering `/run?mode=mailbox-settings` (full
+converge). Boot-kicking mailbox-gap (D122). Persisting
+`healthInFlight` (a leftover lock would wedge worse).
+
+**Supersedes / amends.** Extends D167's mid-chain resume to
+the 15-minute health chain. Does not change D122 (only
+canary attach at boot). Does not change D35 (gap still
+runs every health pass).
+
+**Guards.** `healthResume` leftover-tail; `runHealth`
+skip-if-fresh on resume; `/run mailbox-gap` calls
+`runGapEnforce` not `run({mode:full})`; CANON dated D211.
 
 ---
 

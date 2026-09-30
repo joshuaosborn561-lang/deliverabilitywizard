@@ -11106,8 +11106,8 @@ describe("owner intent — D210 SURBL never counts as a blacklist hit", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D210\*\*/,
-      stop("CANON is dated D210.", "CANON.md header was not bumped to D210."),
+      /Canon as of \*\*D(210|21[1-9])\*\*/,
+      stop("CANON is dated D210.", "CANON.md header lost D210+."),
     );
     assert.match(
       canon,
@@ -11126,6 +11126,124 @@ describe("owner intent — D210 SURBL never counts as a blacklist hit", () => {
       decisions,
       /^\| D210 \|/m,
       stop("The status index lists D210 (D127).", "DECISIONS.md status index has no D210 row."),
+    );
+  });
+});
+
+describe("owner intent — D211 health-chain leftovers resume; mailbox-gap /run is gap-only", () => {
+  it("D211: leftover late stages resume skip-if-fresh; /run mailbox-gap is runGapEnforce", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const resume = await readFile(
+      new URL("../lib/healthResume.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      resume,
+      /HEALTH_TAIL_STAGES/,
+      stop(
+        "The leftover tail is the skip-if-fresh list (D211).",
+        "healthResume.ts lost HEALTH_TAIL_STAGES.",
+      ),
+    );
+    assert.match(
+      resume,
+      /healthNeedsResume/,
+      stop(
+        "Resume is leftover tail + fresh early stages (D211).",
+        "healthResume.ts lost healthNeedsResume.",
+      ),
+    );
+    assert.match(
+      index,
+      /healthNeedsResume/,
+      stop(
+        "runHealth consults leftover tail before starting (D211).",
+        "index.ts no longer calls healthNeedsResume.",
+      ),
+    );
+    assert.match(
+      index,
+      /skipIfFreshMs/,
+      stop(
+        "A resume pass skips stages still fresh in the 15m cycle (D211).",
+        "runHealth lost skip-if-fresh — leftovers would rerun the whole sitting or never resume.",
+      ),
+    );
+    assert.match(
+      index,
+      /mode === "mailbox-gap"/,
+      stop(
+        "/run?mode=mailbox-gap is the gap-only manual path (D211).",
+        "index.ts lost the mailbox-gap /run mode.",
+      ),
+    );
+    const gapRun = index.slice(index.indexOf('mode === "mailbox-gap"'));
+    assert.match(
+      gapRun,
+      /runGapEnforce/,
+      stop(
+        "/run mailbox-gap calls runGapEnforce, not the full converge (D211).",
+        "mailbox-gap /run no longer calls runGapEnforce.",
+      ),
+    );
+    assert.doesNotMatch(
+      gapRun.slice(0, 400),
+      /mode:\s*"full"|runHealth\(/,
+      stop(
+        "/run mailbox-gap is gap-only (D211).",
+        "mailbox-gap /run started the full health pass or mailbox-settings-full.",
+      ),
+    );
+
+    const listenAt = index.indexOf("app.listen(");
+    assert.ok(listenAt > 0, "index.ts should have app.listen");
+    const afterListen = index.slice(listenAt);
+    assert.doesNotMatch(
+      afterListen,
+      /runHealth\(|runGapEnforce\(/,
+      stop(
+        "Health / mailbox-gap resume is not a boot-kick (D122/D211).",
+        "listen() started runHealth or runGapEnforce — that races canary attach (D122).",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D211\*\*/,
+      stop("CANON is dated D211.", "CANON.md header was not bumped to D211."),
+    );
+    assert.match(
+      canon,
+      /mailbox-gap[\s\S]{0,200}gap-only|gap-only[\s\S]{0,200}mailbox-gap/,
+      stop(
+        "CANON names the gap-only /run path (D211).",
+        "CANON.md lost the D211 mailbox-gap /run sentence.",
+      ),
+    );
+    assert.match(
+      canon,
+      /leftover late stages/,
+      stop(
+        "CANON names the health-chain leftover resume (D211).",
+        "CANON.md lost the D211 leftover-late-stages sentence.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D211 — Health-chain leftovers resume; \/run mailbox-gap is gap-only/,
+      stop("The ledger records D211.", "DECISIONS.md no longer has D211."),
+    );
+    assert.match(
+      decisions,
+      /^\| D211 \|/m,
+      stop("The status index lists D211 (D127).", "DECISIONS.md status index has no D211 row."),
     );
   });
 });

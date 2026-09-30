@@ -345,4 +345,58 @@ describe("Min40TopUpService (D205)", () => {
     );
     assert.ok(slackCalls.some((line) => /BCP Live/.test(line) && /40/.test(line)));
   });
+
+  it("D209: does not unlink a CultureFits generic already shared across two ACTIVE camps at 40", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const shared = Array.from({ length: 40 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `seat-${i}@useculturefits.info`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "GENERIC" }],
+      campaign_ids: [10, 11],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-09-29T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 10, name: "BCP A", status: "ACTIVE", client_id: 542838 },
+          { id: 11, name: "BCP B", status: "ACTIVE", client_id: 542838 },
+        ],
+        accounts: shared,
+      },
+    });
+    assert.deepEqual(removed, [], "min40 must not peel same-client multi-link");
+    assert.deepEqual(attached, []);
+    assert.equal(result.assigned.length, 0);
+  });
 });

@@ -208,13 +208,14 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — inventory floor is max(named on-week pod, 40 per POD) per D197/D203; live send floor is 40 per ACTIVE campaign (D207) | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
-| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); 40 is per ACTIVE campaign (D207); 40/POD inventory still D203 | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
-| D198 | Live — exclusive + client-sig also dedicated (D199); same-client generics may multi-link (D207); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
-| D199 | Live — same-client generic multi-link by D207; 40/POD inventory by D203; live floor per ACTIVE campaign (D207) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
+| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); 40 is per ACTIVE campaign (D207); rest-record loophole closed by D209; 40/POD inventory still D203 | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D198 | Live — exclusive + client-sig also dedicated (D199); same-client generics may multi-link (D207/D209); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
 | D205 | Live — min40 now shares same-client generics and restaffs PowerGRYD (D207); watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
-| D207 | Live | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
+| D207 | Live — rest-record peel loophole closed by D209 | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
+| D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 
 ---
 
@@ -6629,6 +6630,72 @@ cross-clients; CANON dated D207 names per-campaign 40,
 same-client generic multi-link, paused keep seats, and the
 PowerGRYD restaff; D169 and D200 ledger entries stay
 (append-only) with status-index superseded-by-D207.
+
+---
+
+## D209 — Same-client multi-link is never a peel reason; rest records do not bypass the 40 floor
+
+**Date.** 2026-09-30.
+
+**Decision.** Josh (owner): no inventory-cycle stage may unlink a
+seat from an ACTIVE campaign only because it is also linked to
+another campaign of the **same** client. Same-client generics
+(client_id + GENERIC tag, including CultureFits and Vasco pool
+seats) stay multi-linked across that client's ACTIVE campaigns
+exactly like named seats (D207). Cross-client memberships still
+peel. A rest *record* on a seat that is still attached does
+**not** shrink the staffable count or exempt
+`detachWouldBreakStaffableFloor`. Client-rest may only
+`markRestingInbox` after a successful detach (or when the seat
+is already idle with nothing detachable). Surplus above 40 may
+still rest / trim. Legitimate peels stay: disconnected /
+SMTP-IMAP fail, burned / HOLD-RETIRE, warmDays < 21 except
+`WARMUP-GATE-EXEMPT`, wrong-client / wrong signature, and
+trimming generics while the campaign stays at ≥40.
+
+**Number.** Josh asked for D208. Open draft PR #253 already
+claimed D208 for a Josh-named Outlook tenant-zero hold.
+D127 uniqueness across `main` AND open PRs — this call is
+**D209**.
+
+**Why.** Live 2026-09-29 on main `3011d356` (D205 + D207): an
+external watcher saw 273 seats drop 00:46–00:54Z and ~56 more
+03:00–03:08Z, both windows lining up with `inventory` lastOkAt
+then `client-rest` still running (00:46:35Z / 03:00:13Z). Every
+removed seat was `multiLinked=true` inside one client; BCP
+542838 campaigns went 40→21–29. D207 retired
+`peelCampaignIds` same-client extras and added the 40 floor,
+but **client-rest** still (1) put dedicated same-client
+generics on the A/B off-week detach path and (2) wrote a rest
+record when the floor blocked the detach. The next pass
+treated those still-attached seats as non-staffable
+(`accountIsPeelStaffable` → `resting: true`), so the floor did
+not apply and they were peeled from every campaign they
+shared. CultureFits / Vasco leftovers were easy to misread as
+D192 dirt; they are normal GENERIC pool seats once they staff
+a named client.
+
+**Rejected.** Keeping the rest-record-as-non-staffable peel
+exemption. Treating CultureFits / Vasco as leftover Goliath
+dirt to peel. Reviving D200 exclusive-attach / one-campaign-
+per-generic. Peeling below 40 to "finish" an off-week bench.
+
+**Supersedes / amends.** Qualifies D197/D199/D207: the 40
+staffable floor counts a still-attached seat even when a rest
+record exists; client-rest must not mark resting without a
+detach. Does not reverse D43 A/B rest of surplus above 40,
+D26 cross-client peel, D105 warmup pulls, D192 null-generic
+*attach-skip* for unused leftover domains, or D207 same-client
+share / paused-keep-seats.
+
+**Guards.** canon D209: `accountIsPeelStaffable` ignores
+`getRestingInbox`; client-rest only `markRestingInbox`s after
+`removed.length` (or idle / nothing detachable); leftover
+CultureFits / Vasco tokens are not imported by unlink stages;
+a same-client multi-linked generic survives client-rest /
+generic-rest / one-client / top-up / generic-cleanup; a
+cross-client generic still peels; CANON dated D209 names the
+rest-record rule and CultureFits/Vasco as normal pool seats.
 
 ---
 

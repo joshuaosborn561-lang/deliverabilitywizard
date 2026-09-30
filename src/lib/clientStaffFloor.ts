@@ -16,14 +16,16 @@ import { isStaffableSender } from "./staffableSender.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
- * D197 / D198 / D199 / D207 — every ACTIVE campaign keeps at least this
- * many *staffable* senders from its own client (on-week named first,
- * then that client's generics, shared across that client's ACTIVE
- * campaigns). Cleanup / rest / one-client may only peel surplus above
- * it on an ACTIVE campaign. Raw Smartlead membership (disconnected /
- * resting / canary leftovers) must not inflate the peel counter.
- * D203's 40-A + 40-B named inventory split still stands; the live
- * send floor is per campaign (D207).
+ * D197 / D198 / D199 / D207 / D209 — every ACTIVE campaign keeps at
+ * least this many *staffable* senders from its own client (on-week
+ * named first, then that client's generics, shared across that
+ * client's ACTIVE campaigns). Cleanup / rest / one-client may only
+ * peel surplus above it on an ACTIVE campaign. Raw Smartlead
+ * membership (disconnected / canary leftovers) must not inflate the
+ * peel counter. A rest *record* on a still-attached seat is not a
+ * leftover and does not shrink the floor (D209). D203's 40-A + 40-B
+ * named inventory split still stands; the live send floor is per
+ * campaign (D207).
  */
 export const ON_WEEK_MIN_SENDERS = 40;
 
@@ -90,8 +92,16 @@ export type PeelStaffableState = {
 };
 
 /**
- * Same eligibility the campaign floor / `/health` uses (D25 / D199).
- * Disconnected, resting, canary, and warmup-blocked seats do not staff.
+ * Same eligibility the campaign floor / `/health` uses (D25 / D199 / D209).
+ * Disconnected, canary, and warmup-blocked seats do not staff.
+ *
+ * D209 — a rest *record* does not make an attached seat peel-exempt.
+ * Client-rest used to `markRestingInbox` when the 40 floor blocked the
+ * detach; the next pass then treated those still-attached seats as
+ * non-staffable (`resting: true`) and peeled them below 40 (2026-09-29
+ * BCP / Parlay / EMCOR). Only a successful detach benches a seat.
+ * `getRestingInbox` stays on the state type for callers; peel-floor
+ * counting ignores it.
  */
 export function accountIsPeelStaffable(
   account: Pick<
@@ -103,7 +113,6 @@ export function accountIsPeelStaffable(
 ): boolean {
   const key = email.trim().toLowerCase();
   return isStaffableSender(account, {
-    resting: Boolean(state.getRestingInbox?.(key)),
     copyCanary: Boolean(state.isCopyCanary?.(key)),
   });
 }

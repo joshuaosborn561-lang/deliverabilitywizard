@@ -75,8 +75,10 @@ export function foreignCampaignIds(
  * every TechEvo ACTIVE campaign.
  *
  * `poolGeneric` is kept for call-site compatibility; it no longer
- * peels same-client extras (D200 exclusive-attach is retired).
- * Shells never count.
+ * peels same-client extras (D200 exclusive-attach is retired;
+ * D209 restates: same-client multi-link is never a peel reason).
+ * Shells never count. CultureFits / Vasco GENERIC seats that
+ * already staff a named client are that client's seats, not dirt.
  */
 export function peelCampaignIds(
   ownerId: number | null,

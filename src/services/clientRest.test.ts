@@ -1935,4 +1935,91 @@ describe("ClientRestService", () => {
       "already-on named seat is not re-POSTed",
     );
   });
+
+  it("D209: off-week same-client CultureFits generic at 40 is not benched or marked resting", async () => {
+    const now = new Date("2026-01-15T17:00:00Z"); // B on
+    const emails = Array.from(
+      { length: 40 },
+      (_, i) => `seat-${String(i).padStart(2, "0")}@useculturefits.info`,
+    );
+    const offEmails = emails.filter(
+      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
+    );
+    assert.ok(offEmails.length >= 1, "need off-week CultureFits seats");
+
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-d209-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3763799, name: "BCP HC With Team", status: "ACTIVE", client_id: 542838 },
+        { id: 3763800, name: "BCP HC No Team", status: "ACTIVE", client_id: 542838 },
+      ],
+      listAllEmailAccounts: async () =>
+        emails.map((from_email, index) => ({
+          id: 10 + index,
+          from_email,
+          client_id: 542838,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3763799, 3763800],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+        })),
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const first = await service.run({ dryRun: false, now });
+    assert.deepEqual(removed, [], "first pass must not peel below 40");
+    for (const email of offEmails) {
+      assert.equal(
+        first.benched.some((row) => row.email === email),
+        false,
+        `${email} must stay on both BCP camps`,
+      );
+      assert.equal(
+        state.getRestingInbox(email),
+        undefined,
+        `${email} must not be marked resting when detach was floor-blocked (D209)`,
+      );
+    }
+
+    for (const email of offEmails) {
+      state.markRestingInbox({
+        accountId: 10,
+        email,
+        clientId: "id:542838",
+        cohort: "A",
+        kind: "client",
+        restingSince: "2026-01-01T00:00:00.000Z",
+        removedFromCampaigns: [],
+        lastSameEspInbox: null,
+      });
+    }
+    const second = await service.run({ dryRun: false, now });
+    assert.deepEqual(
+      removed,
+      [],
+      "second pass must not treat a leftover rest record as peel-exempt",
+    );
+    assert.equal(second.benched.length, 0);
+  });
 });

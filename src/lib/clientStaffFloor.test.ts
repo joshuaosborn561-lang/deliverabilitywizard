@@ -149,6 +149,39 @@ describe("countStaffableMemberships / D199 peel floor", () => {
       true,
     );
   });
+
+  it("D209: a rest record on a still-attached seat does not exempt the peel floor", () => {
+    const restingState = {
+      getRestingInbox: (email: string) =>
+        email === live.from_email ? { kind: "client" } : undefined,
+    };
+    const counts = countStaffableMemberships(
+      [
+        { ...live, campaign_ids: [10, 11] },
+        ...Array.from({ length: 39 }, (_, i) => ({
+          id: 100 + i,
+          from_email: `pad-${i}@parlay.test`,
+          is_smtp_success: true,
+          is_imap_success: true,
+          campaign_ids: [10, 11],
+        })),
+      ],
+      restingState,
+    );
+    assert.equal(counts.get(10), 40, "resting-but-attached still counts");
+    assert.equal(counts.get(11), 40);
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        counts.get(10) ?? 0,
+        live,
+        live.from_email,
+        restingState,
+      ),
+      true,
+      "client-rest must not peel a same-client multi-link just because a rest record exists",
+    );
+  });
 });
 
 describe("allowsGenericStaff", () => {

@@ -727,6 +727,64 @@ describe("OneClientMembershipService", () => {
     assert.equal(result.pulled[0]?.email, "corey@techevolution.com");
   });
 
+  it("D209: CultureFits generic on two BCP camps stays; Parlay link still peels", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        { id: 3763799, name: "BCP HC With Team", status: "ACTIVE", client_id: 542838 },
+        { id: 3763800, name: "BCP HC No Team", status: "ACTIVE", client_id: 542838 },
+        { id: 3847840, name: "Parlay EOS Ops", status: "ACTIVE", client_id: 418274 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 11,
+          from_email: "ada@useculturefits.info",
+          from_name: "Ada Pool",
+          signature: "Ada Pool\nBolder Cyber Partners",
+          client_id: 542838,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3763799, 3763800],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        {
+          id: 12,
+          from_email: "zoe@tryvascowarranty.info",
+          from_name: "Zoe Pool",
+          signature: "Zoe Pool\nBolder Cyber Partners",
+          client_id: 542838,
+          tags: [{ tag_name: "GENERIC" }],
+          campaign_ids: [3763799, 3847840],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+        ...padAccounts(3763799, 542838),
+        ...padAccounts(3763800, 542838, 40, 900),
+        ...padAccounts(3847840, 418274, 40, 1300),
+      ],
+      listClients: async () => [
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+        { id: 418274, name: "Parlay", logo: "Parlay" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.equal(
+      removed.some((row) => row[1].includes(11)),
+      false,
+      "CultureFits same-client multi-link stays (D209)",
+    );
+    assert.deepEqual(removed, [[3847840, [12]]]);
+    assert.equal(result.pulled[0]?.email, "zoe@tryvascowarranty.info");
+  });
+
   it("D76: surplus undedicated rotating generics above 40 may still be pulled", async () => {
     const removed: Array<[number, number[]]> = [];
     const service = serviceWith({

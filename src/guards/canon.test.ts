@@ -10826,8 +10826,8 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D207\*\*/,
-      stop("CANON is dated D207.", "CANON.md header was not bumped to D207."),
+      /Canon as of \*\*D20[7-9]\*\*/,
+      stop("CANON is dated D207+.", "CANON.md header lost the D207-era date."),
     );
     assert.match(
       canon,
@@ -10854,6 +10854,156 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
       decisions,
       /^\| D207 \|/m,
       stop("The status index lists D207 (D127).", "DECISIONS.md status index has no D207 row."),
+    );
+  });
+});
+
+describe("owner intent — D209 rest records do not peel same-client generics", () => {
+  it("D209: rest-record is not peel-exempt; same-client share stays; CultureFits are not dirt", async () => {
+    const { accountIsPeelStaffable, detachWouldBreakStaffableFloor } =
+      await import("../lib/clientStaffFloor.js");
+    const live = {
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [],
+    };
+    const restingState = {
+      getRestingInbox: () => ({ kind: "client" }),
+    };
+    assert.equal(
+      accountIsPeelStaffable(live, "ada@useculturefits.info", restingState),
+      true,
+      stop(
+        "A still-attached seat with a rest record still staffs (D209).",
+        "accountIsPeelStaffable treats rest records as non-staffable again.",
+      ),
+    );
+    assert.equal(
+      detachWouldBreakStaffableFloor(
+        { status: "ACTIVE" },
+        40,
+        live,
+        "ada@useculturefits.info",
+        restingState,
+      ),
+      true,
+      stop(
+        "The 40 floor still protects a resting-but-attached seat (D209).",
+        "detachWouldBreakStaffableFloor exempts rest records again.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const staffFloor = await readFile(
+      new URL("../lib/clientStaffFloor.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      staffFloor,
+      /rest \*?record\*? does not make an attached seat peel-exempt/,
+      stop(
+        "Peel-floor counting documents the D209 rest-record rule.",
+        "clientStaffFloor.ts lost the D209 rest-record comment.",
+      ),
+    );
+    assert.doesNotMatch(
+      staffFloor,
+      /resting: Boolean\(state\.getRestingInbox/,
+      stop(
+        "accountIsPeelStaffable must not pass rest records into isStaffableSender (D209).",
+        "clientStaffFloor.ts still treats getRestingInbox as non-staffable.",
+      ),
+    );
+
+    const clientRest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      clientRest,
+      /only write a rest record after a successful detach/,
+      stop(
+        "Client-rest only marks resting after a detach (D209).",
+        "clientRest.ts lost the D209 mark-resting guard.",
+      ),
+    );
+    assert.doesNotMatch(
+      clientRest,
+      /if \(removed\.length \|\| !row\.existing\)/,
+      stop(
+        "Client-rest must not mark floor-blocked seats resting (D209).",
+        "clientRest.ts still marks resting when !row.existing after a blocked detach.",
+      ),
+    );
+
+    for (const name of [
+      "clientRest.ts",
+      "genericSendRest.ts",
+      "oneClientMembership.ts",
+      "campaignTopUp.ts",
+      "min40TopUp.ts",
+    ] as const) {
+      const src = await readFile(
+        new URL(`../services/${name}`, import.meta.url),
+        "utf8",
+      );
+      assert.doesNotMatch(
+        src,
+        /leftoverNullGenericTokenInDomain/,
+        stop(
+          `${name} must not peel CultureFits/Vasco as leftover dirt (D209).`,
+          `${name} imported leftoverNullGenericTokenInDomain.`,
+        ),
+      );
+    }
+
+    const { leftoverNullGenericTokenInDomain } = await import(
+      "../lib/markerClients.js"
+    );
+    assert.equal(
+      leftoverNullGenericTokenInDomain("useculturefits.info"),
+      "culturefits",
+      stop(
+        "D192 attach-skip tokens stay for unused null boxes (D209).",
+        "leftoverNullGenericTokenInDomain no longer recognises culturefits.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D209\*\*/,
+      stop("CANON is dated D209.", "CANON.md header was not bumped to D209."),
+    );
+    assert.match(
+      canon,
+      /rest[\s*]+record[\s*]+on a seat that is still attached/,
+      stop(
+        "CANON names the rest-record peel rule (D209).",
+        "CANON.md lost the D209 rest-record rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /CultureFits and Vasco GENERIC seats/,
+      stop(
+        "CANON names CultureFits/Vasco as normal pool seats (D209).",
+        "CANON.md lost the CultureFits/Vasco pool-seat rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D209 — Same-client multi-link is never a peel reason/,
+      stop("The ledger records D209.", "DECISIONS.md no longer has D209."),
+    );
+    assert.match(
+      decisions,
+      /^\| D209 \|/m,
+      stop("The status index lists D209 (D127).", "DECISIONS.md status index has no D209 row."),
     );
   });
 });

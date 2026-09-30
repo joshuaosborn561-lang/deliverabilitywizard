@@ -69,11 +69,14 @@ import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
  * those seats (`insightRequiresExisting`) and the lanes collapsed to
  * ~1. Engagers / other SalesGlider ACTIVE rest is unchanged.
  *
- * D197 / D199 / D207 — off-week detach will not take an ACTIVE campaign
- * below 40 *staffable* senders. Raw membership leftovers do not
- * count as surplus. Dedicated named-client generics rest with this
- * client's pods and fan out like named seats. Surplus above 40 on
- * ACTIVE may still rest. PAUSED/STOPPED are never detached.
+ * D197 / D199 / D207 / D209 — off-week detach will not take an ACTIVE
+ * campaign below 40 *staffable* senders. Raw membership leftovers do
+ * not count as surplus. A rest record on a still-attached seat does
+ * not shrink the floor or exempt the peel (D209). Dedicated
+ * named-client generics rest with this client's pods and fan out
+ * like named seats. Same-client multi-link is not a peel reason —
+ * off-week rest may only trim surplus above 40. PAUSED/STOPPED are
+ * never detached.
  */
 
 /** Live-client statuses rest may detach from (D207). PAUSED/STOPPED keep seats. */
@@ -412,7 +415,12 @@ export class ClientRestService {
         result,
         campaignById,
       );
-      if (removed.length || !row.existing) {
+      // D209 — only write a rest record after a successful detach, or
+      // when the seat is already idle (nothing detachable). Marking a
+      // floor-blocked still-attached seat as resting made the next
+      // pass treat it as non-staffable and peel it below 40
+      // (2026-09-29 BCP/Parlay/EMCOR same-client generics).
+      if (removed.length) {
         const record = {
           accountId: row.account.id,
           email: row.email,
@@ -424,15 +432,24 @@ export class ClientRestService {
             ...new Set([
               ...(row.existing?.removedFromCampaigns ?? []),
               ...removed,
-              ...row.detachable,
             ]),
           ],
           lastSameEspInbox: row.existing?.lastSameEspInbox ?? null,
         };
         if (!dryRun) this.state.markRestingInbox(record);
-        if (removed.length) {
-          result.benched.push({ email: row.email, campaignIds: removed });
-        }
+        result.benched.push({ email: row.email, campaignIds: removed });
+      } else if (!row.existing && !row.detachable.length) {
+        const record = {
+          accountId: row.account.id,
+          email: row.email,
+          clientId: row.groupKey,
+          cohort: row.cohort,
+          kind: "client" as const,
+          restingSince: now.toISOString(),
+          removedFromCampaigns: [],
+          lastSameEspInbox: null,
+        };
+        if (!dryRun) this.state.markRestingInbox(record);
       }
     }
 

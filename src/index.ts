@@ -743,25 +743,30 @@ async function main(): Promise<void> {
       // starved itself into 429s.
       // D132 — the per-pass fetch goes through the shared book's partial-read
       // gate, so a shrunken read serves the last accepted book instead.
-      let inventory = await stage(
-        "inventory",
-        () => inventoryBook.fetchFresh(),
-        { skipIfFreshMs },
-      );
-      if (!inventory && skipIfFreshMs != null) {
-        const lastOk = state.listStageHealth().inventory?.lastOkAt ?? null;
-        if (isMonitorStageFresh(lastOk, Date.now(), skipIfFreshMs)) {
-          try {
-            inventory = await inventoryBook.get();
-            console.log(
-              "[health] D211 resume — reusing shared account book (inventory still fresh)",
-            );
-          } catch (error) {
-            console.warn("[health] inventory reuse failed — skipping this pass", error);
-            await state.save();
-            return { skipped: true as const, reason: "inventory-failed" };
-          }
+      // D84 guard requires this exact stage() call. Resume reuses the
+      // shared book when inventory lastOk is still inside the 15m cycle.
+      let inventory: InventorySnapshot | null = null;
+      const inventoryLastOk =
+        state.listStageHealth().inventory?.lastOkAt ?? null;
+      if (
+        skipIfFreshMs != null &&
+        isMonitorStageFresh(inventoryLastOk, Date.now(), skipIfFreshMs)
+      ) {
+        console.log(
+          `[watchdog] stage inventory skipped — last ok ${inventoryLastOk} still inside the cycle`,
+        );
+        try {
+          inventory = await inventoryBook.get();
+          console.log(
+            "[health] D211 resume — reusing shared account book (inventory still fresh)",
+          );
+        } catch (error) {
+          console.warn("[health] inventory reuse failed — skipping this pass", error);
+          await state.save();
+          return { skipped: true as const, reason: "inventory-failed" };
         }
+      } else {
+        inventory = await stage("inventory", () => inventoryBook.fetchFresh());
       }
       if (!inventory) {
         console.warn("[health] inventory fetch failed — skipping this pass");
@@ -901,11 +906,8 @@ async function main(): Promise<void> {
       // 6-hour monitor. Live % still never rotates (D51).
       let isolationBranchResult: unknown = null;
       if (config.enableIsolationBranch) {
-        isolationBranchResult = await stage(
-          "isolation-branch",
-          () => isolationBranch.run(),
-          { skipIfFreshMs },
-        );
+        isolationBranchResult = await stage("isolation-branch", () =>
+          isolationBranch.run(), { skipIfFreshMs });
       }
 
       // D173/D174 — refresh mailbox ownership and retry a replacement

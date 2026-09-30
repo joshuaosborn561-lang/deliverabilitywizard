@@ -10996,6 +10996,43 @@ describe("owner intent — D209 rest records do not peel same-client generics", 
       ),
     );
     assert.match(
+      canon,
+      /min40 may reattach a detached rest-record seat/,
+      stop(
+        "CANON names min40 rest-record restaff (D209).",
+        "CANON.md lost the D209 min40 restaff rule.",
+      ),
+    );
+
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      min40,
+      /leftover rest record must not hide/,
+      stop(
+        "min40 documents that rest records do not hide short-fill supply (D209).",
+        "min40TopUp.ts lost the D209 rest-record restaff comment.",
+      ),
+    );
+    assert.match(
+      min40,
+      /includeResting: true/,
+      stop(
+        "min40 pool fill opts into resting supply (D209).",
+        "min40TopUp.ts no longer passes includeResting to the pool picker.",
+      ),
+    );
+    assert.doesNotMatch(
+      min40,
+      /if \(this\.state\.getRestingInbox\(key\) \|\| this\.state\.isCopyCanary\(key\)\) return false;/,
+      stop(
+        "min40 seatIsUsable must not reject rest-record seats (D209).",
+        "min40TopUp.ts still skips getRestingInbox in seatIsUsable.",
+      ),
+    );
+    assert.match(
       decisions,
       /## D209 — Same-client multi-link is never a peel reason/,
       stop("The ledger records D209.", "DECISIONS.md no longer has D209."),

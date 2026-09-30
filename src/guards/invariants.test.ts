@@ -88,6 +88,13 @@ describe("invariants", () => {
       undefined,
       "a resting generic must not be top-up supply",
     );
+    assert.equal(
+      s.findReassignablePoolMailbox(["GOOGLE"], () => true, {
+        includeResting: true,
+      })?.email,
+      "resting@pool.info",
+      "min40 short-fill may opt into resting pool supply (D209)",
+    );
   });
 
   it("an ESP mismatch never yields a mailbox", () => {

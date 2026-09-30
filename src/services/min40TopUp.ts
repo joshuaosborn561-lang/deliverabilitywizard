@@ -342,7 +342,10 @@ export class Min40TopUpService {
     const key = email.toLowerCase();
     const domain = key.split("@")[1];
     if (owesWarmup(account, key, this.config, this.state)) return false;
-    if (this.state.getRestingInbox(key) || this.state.isCopyCanary(key)) return false;
+    // D209 — a leftover rest record must not hide same-client / pool
+    // supply from a short-of-40 fill. The 40 floor beats the bench;
+    // attachSeat clears the record after a successful attach.
+    if (this.state.isCopyCanary(key)) return false;
     if (activeHoldUntilDate(tagNames(account))) return false;
     if (hasHoldOrRetireTag(account)) return false;
     if (isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))) {
@@ -402,6 +405,7 @@ export class Min40TopUpService {
           input.account.id,
         ]);
         recordMembership(input.account, input.campaign.id);
+        this.state.clearRestingInbox(input.email);
         await sleep(WRITE_GAP_MS);
       }
       input.result.assigned.push({
@@ -534,7 +538,7 @@ export class Min40TopUpService {
         }
         void domain;
         return true;
-      });
+      }, { includeResting: true });
       if (!pool?.smartleadAccountId) break;
       const original = input.accountByEmail.get(pool.email.toLowerCase());
       if (!original) break;
@@ -546,6 +550,7 @@ export class Min40TopUpService {
             pool.smartleadAccountId,
           ]);
           recordMembership(original, input.campaign.id);
+          this.state.clearRestingInbox(pool.email);
           await sleep(WRITE_GAP_MS);
           const insightTarget = isInsightCampaignId(input.campaign.id);
           await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {

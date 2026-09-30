@@ -92,6 +92,7 @@ import {
   readMinTimeGapMins,
 } from "../lib/mailboxSendSettings.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { accountOnBounceHold } from "../lib/bounceHold.js";
 import {
   daysSince,
   isPrewarmedGeneric,
@@ -1099,7 +1100,11 @@ export class CampaignCheckService {
       }
       const volume = readMessagePerDay(account);
       const wantVolume = mailboxMessagePerDayTarget(account, this.config);
-      if (Number.isFinite(volume) && volume !== wantVolume) {
+      if (
+        Number.isFinite(volume) &&
+        volume !== wantVolume &&
+        !accountOnBounceHold(account, this.state)
+      ) {
         findings.push({
           kind: "mailbox_volume",
           detail: `${email} ${volume}/day (want ${wantVolume})`,

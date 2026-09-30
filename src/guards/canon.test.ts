@@ -11216,8 +11216,8 @@ describe("owner intent — D211 health-chain leftovers resume; mailbox-gap /run 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D211\*\*/,
-      stop("CANON is dated D211.", "CANON.md header was not bumped to D211."),
+      /Canon as of \*\*D(211|21[2-9])\*\*/,
+      stop("CANON is dated D211.", "CANON.md header lost D211+."),
     );
     assert.match(
       canon,
@@ -11244,6 +11244,118 @@ describe("owner intent — D211 health-chain leftovers resume; mailbox-gap /run 
       decisions,
       /^\| D211 \|/m,
       stop("The status index lists D211 (D127).", "DECISIONS.md status index has no D211 row."),
+    );
+  });
+});
+
+describe("owner intent — D212 bounce-hold seats skip daily-limit writes", () => {
+  it("D212: mailbox-gap / health skip bounce-hold account ids; no mpd write", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const hold = await readFile(
+      new URL("../lib/bounceHold.ts", import.meta.url),
+      "utf8",
+    );
+    const settings = await readFile(
+      new URL("../services/mailboxSettings.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      hold,
+      /accountOnBounceHold/,
+      stop(
+        "The hold check is accountOnBounceHold (D212).",
+        "bounceHold.ts lost accountOnBounceHold.",
+      ),
+    );
+    assert.match(
+      hold,
+      /Smartlead account id/,
+      stop(
+        "The hold list keys on Smartlead account id (D212).",
+        "bounceHold.ts no longer says the list is account ids.",
+      ),
+    );
+    assert.match(
+      settings,
+      /accountOnBounceHold/,
+      stop(
+        "mailbox-gap / full settings skip bounce-hold daily limits (D212).",
+        "mailboxSettings.ts no longer consults accountOnBounceHold.",
+      ),
+    );
+    assert.match(
+      settings,
+      /observeBounceHoldZero/,
+      stop(
+        "Outlook already at 0 is recorded on the bounce-hold list (D212).",
+        "mailboxSettings.ts no longer observes bounce-hold zeros.",
+      ),
+    );
+    assert.doesNotMatch(
+      settings,
+      /max_email_per_day:\s*0/,
+      stop(
+        "mailbox-settings must not write mpd 0 (D212).",
+        "mailboxSettings.ts writes max_email_per_day 0.",
+      ),
+    );
+    assert.match(
+      bounce,
+      /ensureBounceHold/,
+      stop(
+        "The bounce loop arms the hold list on tenant_rate_limit (D212).",
+        "campaignBounceAutostop.ts no longer calls ensureBounceHold.",
+      ),
+    );
+    assert.doesNotMatch(
+      bounce,
+      /max_email_per_day/,
+      stop(
+        "The bounce loop must not write daily limits (D212).",
+        "campaignBounceAutostop.ts writes max_email_per_day.",
+      ),
+    );
+    assert.match(
+      index,
+      /runGapEnforce/,
+      stop(
+        "The scheduled health pass is the same gap writer (D212).",
+        "index.ts no longer calls runGapEnforce.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D212\*\*/,
+      stop("CANON is dated D212.", "CANON.md header was not bumped to D212."),
+    );
+    assert.match(
+      canon,
+      /bounce-hold list/,
+      stop(
+        "CANON names the bounce-hold skip (D212).",
+        "CANON.md lost the D212 bounce-hold sentence.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D212 — mailbox-gap skips D148 bounce-hold daily limits/,
+      stop("The ledger records D212.", "DECISIONS.md no longer has D212."),
+    );
+    assert.match(
+      decisions,
+      /^\| D212 \|/m,
+      stop("The status index lists D212 (D127).", "DECISIONS.md status index has no D212 row."),
     );
   });
 });

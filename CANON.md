@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D211** (2026-09-30). One page of current truth. When a new
+Canon as of **D212** (2026-09-30). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -55,7 +55,12 @@ or the day is done. Silent findings are a bug (D163).
   (`account.type` microsoft family, typically `OUTLOOK`) **15**;
   Gmail/SMTP and every other type **30** (`MESSAGE_PER_DAY`). Do not
   drop the global constant to 15. Outlook-at-15 is compliant, not a
-  `mailbox_volume` finding. Write as `max_email_per_day`; read as
+  `mailbox_volume` finding. A seat on the **D148 bounce-hold list**
+  (Smartlead account id; Outlook already at 0 during the hold window)
+  is skipped by mailbox-gap, the scheduled health pass, fan-out,
+  top-up, and min40 — never written back to 15 — until **~00:15 UTC /
+  7:15pm CT** (D212). The restore is when D183 may write 15 again.
+  Write as `max_email_per_day`; read as
   `message_per_day` (D24). 10-minute minimum gap (D30/D35) — held at
   BOTH levels: the mailbox field every health pass, and campaign
   `min_time_btwn_emails` written back to the floor by the checker on

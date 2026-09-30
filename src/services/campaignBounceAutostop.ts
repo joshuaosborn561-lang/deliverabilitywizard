@@ -27,6 +27,7 @@ import {
   requestRetireOrCover,
 } from "../lib/retireAsk.js";
 import { accountEmail } from "../clients/smartlead.js";
+import { isOutlookMailboxType } from "../lib/sendCeiling.js";
 import type { InventoryBook } from "./inventory.js";
 import { sleep } from "../lib/http.js";
 import { BounceResurrectionService } from "./bounceResurrection.js";
@@ -553,6 +554,11 @@ export class CampaignBounceAutostopService {
     console.log(
       `[bounce-autostop] verdict #${campaignId}: ${summary}${senderDomains.length ? ` senders=${senderDomains.join(",")}` : ""}${samples[0] ? ` e.g. "${samples[0].snippet.slice(0, 120)}"` : ""}`,
     );
+    if (dominant === "tenant_rate_limit" && this.state) {
+      // D212 — arm the bounce-hold list (account ids). Do not write mpd.
+      const ids = await this.bounceHoldIdsForDomains(senderDomains);
+      this.state.ensureBounceHold(ids);
+    }
     if (
       dominant === "tenant_rate_limit" &&
       !dryRun &&
@@ -804,6 +810,26 @@ export class CampaignBounceAutostopService {
       for (const account of snap.accounts) {
         const email = accountEmail(account)?.toLowerCase();
         if (!email || !senders.has(email)) continue;
+        if (typeof account.id === "number") ids.push(account.id);
+      }
+      return ids;
+    } catch {
+      return [];
+    }
+  }
+
+  /** D212 — Outlook seats on the tenant-cap domains, by Smartlead account id. */
+  private async bounceHoldIdsForDomains(domains: string[]): Promise<number[]> {
+    if (!this.book || !domains.length) return [];
+    const hosts = new Set(domains.map((d) => d.toLowerCase()));
+    try {
+      const snap = await this.book.get();
+      const ids: number[] = [];
+      for (const account of snap.accounts) {
+        if (!isOutlookMailboxType(account.type)) continue;
+        const email = accountEmail(account)?.toLowerCase();
+        const host = email?.split("@")[1];
+        if (!host || !hosts.has(host)) continue;
         if (typeof account.id === "number") ids.push(account.id);
       }
       return ids;

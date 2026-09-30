@@ -333,6 +333,69 @@ describe("MailboxSettingsService", () => {
     assert.deepEqual(updates, [{ id: 22, fields: { max_email_per_day: 15 } }]);
   });
 
+  it("D212: bounce-hold Outlook at 0 is not written back to 15", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-hold-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 141,
+          type: "OUTLOOK",
+          from_email: "ada@crosslaunchcoget.info",
+          from_name: "Ada Hold",
+          message_per_day: 0,
+          minTimeToWaitInMins: 10,
+          signature: "Ada Hold\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+        {
+          id: 22,
+          type: "OUTLOOK",
+          from_email: "bert@ms.info",
+          from_name: "Bert Outlook",
+          message_per_day: 30,
+          minTimeToWaitInMins: 10,
+          signature: "Bert Outlook\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run when only volume drifted");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 1);
+    assert.equal(result.bounceHoldSkipped, 1);
+    assert.deepEqual(updates, [{ id: 22, fields: { max_email_per_day: 15 } }]);
+    assert.equal(updates.some((row) => row.fields.max_email_per_day === 0), false);
+    assert.ok(state.isBounceHoldAccount(141));
+    assert.ok(state.isBounceHoldWindowActive());
+  });
+
   it("D183: Gmail and SMTP stay at 30; a drifted SMTP is written to 30 not 15", async () => {
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const smartlead = {

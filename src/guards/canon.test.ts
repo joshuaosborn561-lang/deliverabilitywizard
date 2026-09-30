@@ -9789,7 +9789,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|20[0-9])\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9924,7 +9924,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|20[0-9])\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10088,7 +10088,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|20[0-9])\*\*/,
+      /Canon as of \*\*D(199|20[0-9]|21[0-9])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10231,7 +10231,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D20[0-9]\*\*/,
+      /Canon as of \*\*D(20[0-9]|21[0-9])\*\*/,
       stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10416,7 +10416,7 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D20[3-9]\*\*/,
+      /Canon as of \*\*D(20[3-9]|21[0-9])\*\*/,
       stop("CANON is dated D203 or later.", "CANON.md header lost the D203-era stamp."),
     );
     assert.match(
@@ -10642,7 +10642,7 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D20[5-9]\*\*/,
+      /Canon as of \*\*D(20[5-9]|21[0-9])\*\*/,
       stop("CANON is dated D205 or later.", "CANON.md header was not bumped to D205+."),
     );
     assert.match(
@@ -10826,7 +10826,7 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D20[7-9]\*\*/,
+      /Canon as of \*\*D(20[7-9]|21[0-9])\*\*/,
       stop("CANON is dated D207+.", "CANON.md header lost the D207-era date."),
     );
     assert.match(
@@ -10976,11 +10976,6 @@ describe("owner intent — D209 rest records do not peel same-client generics", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D209\*\*/,
-      stop("CANON is dated D209.", "CANON.md header was not bumped to D209."),
-    );
-    assert.match(
-      canon,
       /rest[\s*]+record[\s*]+on a seat that is still attached/,
       stop(
         "CANON names the rest-record peel rule (D209).",
@@ -11004,6 +10999,133 @@ describe("owner intent — D209 rest records do not peel same-client generics", 
       decisions,
       /^\| D209 \|/m,
       stop("The status index lists D209 (D127).", "DECISIONS.md status index has no D209 row."),
+    );
+  });
+});
+
+describe("owner intent — D210 SURBL never counts as a blacklist hit", () => {
+  it("D210: SURBL is info-only; no teardown, retire, or alert", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      isSurblListing,
+      isCountableBlacklistHit,
+    } = await import("../lib/blacklistIgnore.js");
+    const {
+      filterTeardownBlacklistHits,
+      domainsSafeToReplace,
+      diagnoseBlacklists,
+    } = await import("../lib/blacklistDiagnosis.js");
+
+    assert.equal(
+      isSurblListing("multi.surbl.org"),
+      true,
+      stop(
+        "Any *.surbl.org zone is SURBL (D210).",
+        "isSurblListing no longer matches multi.surbl.org.",
+      ),
+    );
+    assert.equal(
+      isCountableBlacklistHit({
+        source: "ip-blacklist",
+        listName: "multi.surbl.org",
+        details: "127.0.0.64",
+      }),
+      false,
+      stop(
+        "SURBL never counts as a blacklist hit (D210).",
+        "A multi.surbl.org listing is countable again.",
+      ),
+    );
+
+    const surblOnly = [
+      {
+        domain: "salesgliderhub.com",
+        source: "ip-blacklist" as const,
+        listName: "multi.surbl.org",
+        details: "127.0.0.64",
+      },
+    ];
+    assert.deepEqual(
+      filterTeardownBlacklistHits(surblOnly),
+      [],
+      stop(
+        "SURBL-only must not open teardown (D210).",
+        "filterTeardownBlacklistHits kept a SURBL hit.",
+      ),
+    );
+    assert.deepEqual(
+      domainsSafeToReplace(diagnoseBlacklists(surblOnly)),
+      [],
+      stop(
+        "SURBL-only must not retire/replace (D210).",
+        "domainsSafeToReplace returned a SURBL-only domain.",
+      ),
+    );
+
+    const monitor = await readFile(
+      new URL("../services/resultMonitor.ts", import.meta.url),
+      "utf8",
+    );
+    const isolation = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    const infra = await readFile(
+      new URL("../lib/sendingInfra.ts", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      monitor,
+      /filterTeardownBlacklistHits/,
+      stop(
+        "Blacklist monitor must drop SURBL before alerting (D210).",
+        "resultMonitor.ts no longer filters teardown hits.",
+      ),
+    );
+    assert.match(
+      isolation,
+      /filterCountableBlacklistHits/,
+      stop(
+        "Isolation infra counts must drop SURBL (D210).",
+        "isolationBranch.ts no longer filters countable hits.",
+      ),
+    );
+    assert.match(
+      infra,
+      /isSurblListing/,
+      stop(
+        "Sending-infra census must not mark SURBL as listed (D210).",
+        "sendingInfra.ts no longer skips SURBL listings.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D210\*\*/,
+      stop("CANON is dated D210.", "CANON.md header was not bumped to D210."),
+    );
+    assert.match(
+      canon,
+      /SURBL[\s\S]{0,80}never counts as a/,
+      stop(
+        "CANON names the SURBL-never-a-hit rule (D210).",
+        "CANON.md lost the D210 SURBL rule.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D210 — SURBL listings never count as a blacklist hit/,
+      stop("The ledger records D210.", "DECISIONS.md no longer has D210."),
+    );
+    assert.match(
+      decisions,
+      /^\| D210 \|/m,
+      stop("The status index lists D210 (D127).", "DECISIONS.md status index has no D210 row."),
     );
   });
 });

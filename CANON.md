@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D209** (2026-09-30). One page of current truth. When a new
+Canon as of **D210** (2026-09-30). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -469,7 +469,9 @@ or the day is done. Silent findings are a bug (D163).
 - Domains are judged on the known-good email only. Two consecutive
   domain-level fails → ask Josh to retire (Slack button). Fleet domains die
   fleet-wide only on 3+ inbox fails (D49). A blacklist hit alone burns
-  nothing (D41).   A Microsoft outbound-spam block on a sender (`550
+  nothing (D41). **SURBL (any `*.surbl.org` zone) never counts as a
+  blacklist hit** — info-only log, no teardown, no retire, no alert
+  (D210).   A Microsoft outbound-spam block on a sender (`550
   5.1.8` / AS(42004)) opens the same retire ask directly — the provider itself
   calling the sender bad outranks a placement reading (D146/D162) — **and
   stamps the attach blocklist** so restaff cannot put those senders back
@@ -589,7 +591,9 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
 ## Advisory watchers
 
 - **DNS**: audited against public resolvers every monitor pass; never writes
-  DNS; findings stay in logs (D71).
+  DNS; findings stay in logs (D71). Blacklist monitoring reads SmartDelivery
+  domain/IP reports (and sending-infra census the same way): SURBL listings
+  are not hits (D210).
 - **Domain→client**: the audit first makes the CONFIDENT fixes itself —
   a generic-fleet / pool box missing a GENERIC/POC tag gets the GENERIC
   tag (never a client_id), leftover Generic/POC client_ids are cleared,

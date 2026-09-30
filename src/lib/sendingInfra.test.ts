@@ -53,4 +53,30 @@ describe("sending infra census", () => {
     assert.equal(summary.verdict, "bad");
     assert.match(formatInfraMessage(summary), /bigger than an add-on/);
   });
+
+  it("does not count a SURBL-only listing as a blacklist hit (D210)", () => {
+    const rows = parseSendingInfra({
+      analytics: [
+        {
+          ip: "8.8.8.8",
+          from_email: "a@salesgliderhub.com",
+          country: "United States",
+          org: "Google LLC",
+        },
+      ],
+      blacklist: [
+        {
+          ip: "8.8.8.8",
+          total_blacklist: 1,
+          blacklist_type_value: "multi.surbl.org",
+          details: "127.0.0.64",
+          from_email: "a@salesgliderhub.com",
+        },
+      ],
+    });
+    assert.equal(rows[0]?.listed, false);
+    assert.deepEqual(rows[0]?.listNames, []);
+    assert.equal(summarizeSendingInfra(rows).verdict, "good");
+    assert.equal(summarizeSendingInfra(rows).listed, 0);
+  });
 });

@@ -39,7 +39,14 @@ export function isCopyNoticeCampaign(
   pinnedPodControlId?: number,
 ): boolean {
   if (isAnyShellCampaign(campaign, pinnedPodControlId)) return false;
-  if (isWordHuntShellCampaign(campaign)) return false;
+  if (
+    isWordHuntShellCampaign({
+      id: campaign.id ?? undefined,
+      name: campaign.name,
+    })
+  ) {
+    return false;
+  }
   const status = String(campaign.status ?? "").toUpperCase();
   if (status === "COMPLETED" || status === "STOPPED") return false;
   return typeof campaign.id === "number";

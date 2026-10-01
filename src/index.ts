@@ -1335,11 +1335,12 @@ async function main(): Promise<void> {
   cron.schedule(
     config.cronCopyNotice,
     () => {
-      void stage("copy-notice", () =>
-        config.enableCopyNotice
-          ? copyNoticeBrief.run()
-          : Promise.resolve({ skipped: true, reason: "disabled" }),
-      ).catch((error) => {
+      void stage("copy-notice", async () => {
+        if (!config.enableCopyNotice) {
+          return { skipped: true, reason: "disabled" };
+        }
+        return copyNoticeBrief.run();
+      }).catch((error) => {
         console.error("[copy-notice] Unhandled cron error", error);
       });
     },

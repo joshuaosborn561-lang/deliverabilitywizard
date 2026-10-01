@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D215** (2026-09-30). One page of current truth. When a new
+Canon as of **D216** (2026-10-01). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -27,6 +27,7 @@ or the day is done. Silent findings are a bug (D163).
 | Canon ops | 30 min, weekday 08:00–18:00 America/Chicago | Four `/health` stages, idle-ticked outside the window so a weekend is not OVERDUE (D205): **hold-enforcement** keeps a configured campaign list + Goliath (548611) 0-ACTIVE until 2026-10-15 PAUSED — the only live-campaign PAUSED write besides shells; bounce loop still never pauses (D148). **min40-topup** fills each ACTIVE named-client campaign to 40 staffable senders from that client — on-week named first, then that client's already-assigned generics shared across all of that client's ACTIVE campaigns, then free-pool generics assigned (`client_id` + signature) and shared the same way (D207). Auto-allow clients (BCP 542838, TechEvo, Parlay 418274, Insight, EMCOR 574020) plus PowerGRYD 592842 execute with no Slack card; everyone else gets one batched Allow-generics ask. Never retags named seats. Never START/PAUSE. An ACTIVE campaign still under 40 after the pass pages one `ops_alert` per campaign per day. PowerGRYD uses its own seats (client 592842 + PG signature via the assign path); if unique staffable inventory is under 40, link all and Slack one inventory shortfall. **powergryd-watch** is still alert-only for dedicated-seat drops and never START / PAUSE (restaff is min40). **generic-cleanup** clears `client_id` + signature from a GENERIC-tagged mailbox that is no longer on that client's ACTIVE campaign. |
 | Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; CANON-miss Slack is the 15-minute pager, D163). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). `/health` names the overdue set (D166). A finished stage checkpoints `lastOk` immediately; `state.save` is serialized so health and monitor cannot clobber a snapshot. A mid-chain kill (Railway SIGTERM) resumes leftover stale 6h stages on the **next 15-minute health tick**, skipping anything still fresh in the cycle — never at boot (D122/D167). The 15-minute health chain does the same for leftover late stages (`mailbox-gap`, isolation-branch, pod-cover, reconnect, isolation-buy-resume) so a deploy recycle cannot starve the tail until a lucky full sitting (D211). Resume is **chain inversion** — a later stage older than the newest earlier lastOk — not "an early stage still inside 15 minutes" (D214). Inventory lastOk is not the sitting frontier (skip-if-fresh / a SIGTERM right after the shared-book fetch); newest is taken from the rest of the loop so a newer inventory stamp cannot resume at client-rest and hide a campaign-health → pod-cover interrupt (D215; prod 2026-09-30 15:45Z leftover was client-rest). A deploy resets the cron, so the next tick is ~15m later and the D211 freshness gate was already false (prod 2026-09-30: campaign-health 15:11Z, pod-cover 13:13Z). Skip the prefix and continue from the leftover. The 6h cron still runs the full chain; the 15m cron still runs the full health chain when nothing is leftover. `/run?mode=mailbox-gap` is gap-only (not the full health pass, not the 6h mailbox-settings converge). `/run?mode=pod-cover` is the pod-cover-only tick (D214). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
+| Copy notice | 07:00 America/New_York | New non-shell campaigns and new sequence variants since the last 7am tick Slack Cayden (`copy_notice`, D216). First tick seeds the fingerprint book and stays silent so the whole board does not dump. Canary / word-hunt / pod-control shells, COMPLETED, and STOPPED stay off the list. A body or subject edit of an existing variant id is not a new variant. Never writes live copy. No boot kick (D122). `/run?mode=copy-notice`. Stage window ~26h so a missed tick pages before a second silent day. |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). State-only D176 heal writes live retire/cover asks, retired / retire-pending history, and the known missing burned domain (`boldercyperpartnertop.info`) onto `attachBlocks` so restaff cannot reattach after a deploy. |
 
 ## Mailboxes
@@ -497,7 +498,8 @@ or the day is done. Silent findings are a bug (D163).
 ## Slack contract
 
 Three owner pages plus receipts, plus `ops_alert` when the machine or
-healthy sending is broken (D71, D149, D163, D47 plain English):
+healthy sending is broken, plus Cayden's next-morning copy notice
+(D71, D149, D163, D216, D47 plain English):
 1. **Burned domain** — receipts + cancel/replace buttons; **Cayden** (or Josh)
    taps Retire or Buy replacements (D190). The retire tap
    pulls, buys the ESP-matched replacement (client-named when the burned
@@ -544,6 +546,10 @@ generics keep their confirm pages and strip via the stamped channel + ts.
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed
    inboxes an outside writer keeps re-adding after gate pulls
    (D85/D89/D136/D143).
+4. **Copy notice** — 07:00 America/New_York digest to Cayden of new
+   non-shell campaigns and new sequence variants since the previous
+   7am (D216). First tick seeds silently. `copy_notice` is an allow
+   kind. The machine does not change the live email.
 Plus `action_result` confirmations: a tapped button finished, a signature
 was auto-written (first time per campaign only, D92/D95), a reconnect
 happened or hard-failed (D94). **Do not post a separate "Approval recorded"

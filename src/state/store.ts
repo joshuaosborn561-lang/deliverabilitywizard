@@ -44,6 +44,7 @@ import {
 } from "../lib/bounceHold.js";
 import type { TenantOutboundBlockRecord } from "../lib/tenantOutboundBlock.js";
 import { normalizeTenantOutboundHost } from "../lib/tenantOutboundBlock.js";
+import type { CopyNoticeBook } from "../lib/copyNotice.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -317,6 +318,13 @@ export interface AppState {
    * AS(42004)). No restoreAfter. A human clears the record.
    */
   tenantOutboundBlocks: Record<string, TenantOutboundBlockRecord>;
+  /**
+   * D216 — last 7am fingerprint of non-shell campaigns + variant ids.
+   * First tick seeds silently.
+   */
+  copyNoticeBook: CopyNoticeBook;
+  copyNoticeSeededAt: string | null;
+  copyNoticeLastPostedAt: string | null;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -561,6 +569,9 @@ const EMPTY_STATE: AppState = {
   bounceHoldAccountIds: [],
   bounceHoldRestoreAfter: null,
   tenantOutboundBlocks: {},
+  copyNoticeBook: {},
+  copyNoticeSeededAt: null,
+  copyNoticeLastPostedAt: null,
 };
 
 export class StateStore {
@@ -653,6 +664,18 @@ export class StateStore {
         tenantOutboundBlocks: parseTenantOutboundBlocks(
           parsed.tenantOutboundBlocks,
         ),
+        copyNoticeBook:
+          parsed.copyNoticeBook && typeof parsed.copyNoticeBook === "object"
+            ? parsed.copyNoticeBook
+            : {},
+        copyNoticeSeededAt:
+          typeof parsed.copyNoticeSeededAt === "string"
+            ? parsed.copyNoticeSeededAt
+            : null,
+        copyNoticeLastPostedAt:
+          typeof parsed.copyNoticeLastPostedAt === "string"
+            ? parsed.copyNoticeLastPostedAt
+            : null,
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1530,6 +1553,26 @@ export class StateStore {
       }
     }
     return false;
+  }
+
+  getCopyNoticeBook(): CopyNoticeBook {
+    return { ...this.state.copyNoticeBook };
+  }
+
+  setCopyNoticeBook(book: CopyNoticeBook): void {
+    this.state.copyNoticeBook = { ...book };
+  }
+
+  getCopyNoticeSeededAt(): string | null {
+    return this.state.copyNoticeSeededAt;
+  }
+
+  setCopyNoticeSeededAt(iso: string): void {
+    this.state.copyNoticeSeededAt = iso;
+  }
+
+  setCopyNoticeLastPostedAt(iso: string): void {
+    this.state.copyNoticeLastPostedAt = iso;
   }
 
   /** D136 — the monitor's domain→client audit replaces the full list each pass. */

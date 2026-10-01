@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  COPY_NOTICE_MS,
   STAGE_OVERDUE_WINDOWS_MS,
   overdueStages,
   stageHealthView,
@@ -88,5 +89,7 @@ describe("stageHealthView / overdue (D166)", () => {
   it("keeps scan-backfill on a null window and pod-cover on HEALTH_MS", () => {
     assert.equal(STAGE_OVERDUE_WINDOWS_MS["scan-backfill"], null);
     assert.equal(STAGE_OVERDUE_WINDOWS_MS["pod-cover"], HEALTH_MS);
+    assert.equal(STAGE_OVERDUE_WINDOWS_MS["copy-notice"], COPY_NOTICE_MS);
+    assert.equal(COPY_NOTICE_MS, 26 * 60 * 60 * 1000);
   });
 });

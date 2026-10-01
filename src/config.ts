@@ -407,6 +407,12 @@ const ConfigSchema = z.object({
    * America/New_York so midday tracks EST/EDT.
    */
   cronSendVolume: z.string().default("0 12 * * *|30 16 * * *"),
+  /**
+   * D216 — Cayden's next-morning new-campaign / new-variant Slack.
+   * America/New_York so 7am tracks EST/EDT.
+   */
+  enableCopyNotice: boolFromEnv(true),
+  cronCopyNotice: z.string().default("0 7 * * *"),
   providerIds: z
     .string()
     .optional()
@@ -625,6 +631,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cronScan: env.CRON_SCAN ?? "0 9 * * 1,4",
     cronMonitor: env.CRON_MONITOR ?? "0 */6 * * *",
     cronSendVolume: env.CRON_SEND_VOLUME ?? "0 12 * * *|30 16 * * *",
+    enableCopyNotice: env.ENABLE_COPY_NOTICE,
+    cronCopyNotice: env.CRON_COPY_NOTICE ?? "0 7 * * *",
     providerIds: env.PROVIDER_IDS ?? "",
     sequenceNumber: env.SEQUENCE_NUMBER ?? "1",
     stateFilePath: env.STATE_FILE_PATH ?? "/data/state.json",

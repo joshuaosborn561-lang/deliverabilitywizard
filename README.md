@@ -32,6 +32,7 @@ to look. Behaviour questions end at CANON.md.
 | Campaign check | hourly | Re-inspect blocked first-checks, shells, signatures, staffing floor, campaign min-gap converge |
 | Monitor | every 6 h | POD tags first (so decoration writes are not starved by placement pulls), then placement pulls, DNS advisory audit, canary adoption, campaign audit, domain→client advisory |
 | EOD brief | once a day (New York) | Per-client sends + spam scoreboard, untagged campaigns, loaded DRAFTs, domains needing a human |
+| Copy notice | 07:00 America/New_York | New non-shell campaigns and new sequence variants Slack Cayden the next morning (D216) |
 | Boot | on deploy | Canary attach at 90 s only — everything else waits for its cron |
 
 Standing posture, in one breath (decision numbers and detail in CANON.md):
@@ -39,8 +40,9 @@ pulls are **kill-only** — placement scores, bounce rates, blacklists and
 leftover HOLD-UNTIL tags never yank a mailbox; one client per sender,
 staffing floor is max(half that client's named inboxes per POD, 40 per POD) at client inventory; every mailbox owes 21
 warmup days from InboxKit import unless its fleet is pre-warmed; the
-canary fleet diagnoses and never staffs; Slack carries exactly three pages
-(burned domain, isolated spam word, EOD scoreboard) plus action receipts;
+canary fleet diagnoses and never staffs; Slack carries three owner pages
+(burned domain, isolated spam word, EOD scoreboard) plus Cayden's 7am
+copy notice and action receipts;
 real-money spend stops at `/approvals`.
 
 ## Surfaces
@@ -49,7 +51,7 @@ real-money spend stops at `/approvals`.
 |--------|------|---------|
 | `GET` | `/health` | Public liveness: `canonCompliant`, open `canonFindings` by kind, per-stage `stageHealth` |
 | `GET` | `/status` | Full state + effective config (requires `X-Run-Token`) |
-| `POST` | `/run` | Manual trigger: `?mode=scan\|monitor\|pool\|reconnect\|warmup-gate\|health\|mailbox-gap\|pod-cover\|all` |
+| `POST` | `/run` | Manual trigger: `?mode=scan\|monitor\|pool\|reconnect\|warmup-gate\|health\|mailbox-gap\|pod-cover\|copy-notice\|all` |
 | `GET` | `/approvals` | Token-authenticated read-only approval listing |
 | `GET` | `/ops` | Employee console (owner/operator roles, audit log) |
 
@@ -76,6 +78,7 @@ lives in `src/config.ts`; the load-bearing ones:
 | `MAILBOX_MIN_TIME_GAP_MINS` | `10` | Minimum send gap, converged at mailbox AND campaign level |
 | `CAMPAIGN_ESP_MIX_MIN_PERCENT` | `30` | Minimum Google / Microsoft share when topping up |
 | `ENABLE_CLIENT_REST` / `ENABLE_GENERIC_SEND_REST` | `true` | Client A/B fortnight; generic 14-day send clock |
+| `ENABLE_COPY_NOTICE` / `CRON_COPY_NOTICE` | `true` / `0 7 * * *` | 07:00 America/New_York Slack to Cayden of new campaigns / variants (D216) |
 | `TOTAL_TEST_QUOTA` | `0` | SmartDelivery test cap; 0 = unlimited |
 | `MAX_MAILBOXES_PER_TEST` | `50` | SmartDelivery API limit per test |
 | `TOP_UP_EXCLUDE_CAMPAIGNS` | MSRS / HVAC / Roofers ids | Campaigns the staffing loop leaves alone |

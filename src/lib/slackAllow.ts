@@ -5,7 +5,9 @@
  * D163 also uses `ops_alert` for CANON / healthy-sending misses:
  * `notifyPlacementResult` (first under-bar reading), `notifyIsolationVerdict`
  * (COPY / INFRA / INCONCLUSIVE), and first-open core checklist holes —
- * once per campaign per incident. Unclassified send() is slack-quiet dropped.
+ * once per campaign per incident. D216 adds `copy_notice`: Cayden's 7am
+ * America/New_York new-campaign / new-variant digest. Unclassified
+ * send() is slack-quiet dropped.
  */
 export const SLACK_ALLOW_KINDS = [
   "burned_domain",
@@ -14,6 +16,7 @@ export const SLACK_ALLOW_KINDS = [
   "action_result",
   "generic_backfill",
   "ops_alert",
+  "copy_notice",
 ] as const;
 
 export type SlackAllowKind = (typeof SLACK_ALLOW_KINDS)[number];
@@ -25,7 +28,8 @@ export function slackAllowed(kind?: SlackAllowKind | null): boolean {
     kind === "eod_summary" ||
     kind === "action_result" ||
     kind === "generic_backfill" ||
-    kind === "ops_alert"
+    kind === "ops_alert" ||
+    kind === "copy_notice"
   );
 }
 

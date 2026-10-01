@@ -80,6 +80,7 @@ import { UnpauseAfterSigQaService } from "./services/unpauseAfterSigQa.js";
 import { CampaignBounceAutostopService } from "./services/campaignBounceAutostop.js";
 import { parseSchedules } from "./services/sendVolume.js";
 import { ClientDayBriefService } from "./services/clientDayBrief.js";
+import { CopyNoticeBriefService } from "./services/copyNoticeBrief.js";
 import { ClientRestService } from "./services/clientRest.js";
 import { GenericSendRestService } from "./services/genericSendRest.js";
 import { MailboxSettingsService } from "./services/mailboxSettings.js";
@@ -565,6 +566,12 @@ async function main(): Promise<void> {
     config,
     smartlead,
     smartDelivery,
+    slack,
+    state,
+  );
+  const copyNoticeBrief = new CopyNoticeBriefService(
+    config,
+    smartlead,
     slack,
     state,
   );
@@ -1287,6 +1294,11 @@ async function main(): Promise<void> {
       throw new Error(`Invalid CRON_SEND_VOLUME expression: ${expression}`);
     }
   }
+  if (!cron.validate(config.cronCopyNotice)) {
+    throw new Error(
+      `Invalid CRON_COPY_NOTICE expression: ${config.cronCopyNotice}`,
+    );
+  }
 
   cron.schedule(config.cronScan, () => {
     void runScan("cron").catch((error) => {
@@ -1316,6 +1328,23 @@ async function main(): Promise<void> {
       { timezone: "America/New_York" },
     );
   });
+
+  // D216 — 07:00 America/New_York Cayden copy notice. Always
+  // scheduled so a disabled flag still idle-ticks lastOkAt.
+  // No boot kick (D122).
+  cron.schedule(
+    config.cronCopyNotice,
+    () => {
+      void stage("copy-notice", () =>
+        config.enableCopyNotice
+          ? copyNoticeBrief.run()
+          : Promise.resolve({ skipped: true, reason: "disabled" }),
+      ).catch((error) => {
+        console.error("[copy-notice] Unhandled cron error", error);
+      });
+    },
+    { timezone: "America/New_York" },
+  );
 
   if (config.enableDeliveryWatch) {
     cron.schedule(
@@ -2584,6 +2613,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.json({ ok: true, mode: "client-day", result });
         return;
       }
+      if (mode === "copy-notice" || mode === "copy-brief") {
+        assertRuntimeSecrets(config);
+        const result = await stage("copy-notice", () => copyNoticeBrief.run());
+        res.json({ ok: true, mode: "copy-notice", result });
+        return;
+      }
       if (mode === "pod-controls" || mode === "pod-control") {
         assertRuntimeSecrets(config);
         const result = await podControls.run();
@@ -2943,7 +2978,10 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Auto bug remediator: ${bugRemediator.enabled() ? `ENABLED (min ${config.bugRemediatorMinHits} hits, ${config.bugRemediatorCooldownHours}h cooldown, auto-merge ${config.bugRemediatorAutoMerge ? "on" : "off"})` : "disabled (needs ENABLE_BUG_REMEDIATOR + CURSOR_API_KEY)"}`,
     );
     console.log(
-      "[boot] Slack (D71/D149): burned-domain replace, isolated-word replace, EOD sends/spam, ops alerts (stage watchdog + deploy identity)",
+      "[boot] Slack (D71/D149/D216): burned-domain replace, isolated-word replace, EOD sends/spam, ops alerts (stage watchdog + deploy identity), Cayden 7am copy notice",
+    );
+    console.log(
+      `[boot] Copy notice (D216): ${config.enableCopyNotice ? `ENABLED (${config.cronCopyNotice} America/New_York; first tick seeds silently)` : "disabled (stage idle-ticks)"}`,
     );
     console.log(
       `[boot] Lead runout: ${config.enableLeadRunout ? "ENABLED (half / three-quarters / done, logs only, no import)" : "disabled"}`,

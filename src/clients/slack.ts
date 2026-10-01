@@ -60,8 +60,8 @@ export class SlackClient {
 
   /**
    * D71 — only burned-domain replace, isolated-word replace, the EOD
-   * send/spam scoreboard, and the reply after Josh taps a button.
-   * Unclassified calls log and do not post.
+   * send/spam scoreboard, the reply after Josh taps a button, plus
+   * D216 Cayden copy notice. Unclassified calls log and do not post.
    */
   async send(
     text: string,

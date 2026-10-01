@@ -11623,8 +11623,8 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D215\*\*/,
-      stop("CANON is dated D215.", "CANON.md header was not bumped to D215."),
+      /Canon as of \*\*D(215|21[6-9])\*\*/,
+      stop("CANON is dated D215.", "CANON.md header lost D215+."),
     );
     assert.match(
       canon,
@@ -11643,6 +11643,147 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
       decisions,
       /^\| D215 \|/m,
       stop("The status index lists D215 (D127).", "DECISIONS.md status index has no D215 row."),
+    );
+  });
+});
+
+describe("owner intent — D216 next-morning Cayden copy notice", () => {
+  it("D216: 7am ET digest names new campaigns/variants; first tick is silent", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const copy = await readFile(
+      new URL("../lib/copyNotice.ts", import.meta.url),
+      "utf8",
+    );
+    const brief = await readFile(
+      new URL("../services/copyNoticeBrief.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const slackAllow = await readFile(
+      new URL("../lib/slackAllow.ts", import.meta.url),
+      "utf8",
+    );
+    const windows = await readFile(
+      new URL("../lib/stageWindows.ts", import.meta.url),
+      "utf8",
+    );
+    const config = await readFile(new URL("../config.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      copy,
+      /step:\$\{stepNo\}:id:\$\{row\.id\}/,
+      stop(
+        "Variants are keyed by id so a body edit is not a new variant (D216).",
+        "copyNotice.ts no longer keys variants by id.",
+      ),
+    );
+    assert.match(
+      brief,
+      /seeded.*silent first tick \(D216\)/,
+      stop(
+        "First 7am tick seeds silently (D216).",
+        "copyNoticeBrief.ts lost the silent-seed log.",
+      ),
+    );
+    assert.match(
+      brief,
+      /"copy_notice"/,
+      stop(
+        "The digest posts as copy_notice (D216).",
+        "copyNoticeBrief.ts no longer sends copy_notice.",
+      ),
+    );
+    assert.match(
+      slackAllow,
+      /"copy_notice"/,
+      stop(
+        "copy_notice is on the D71 allowlist (D216).",
+        "slackAllow.ts lost copy_notice.",
+      ),
+    );
+    assert.match(
+      config,
+      /cronCopyNotice: z\.string\(\)\.default\("0 7 \* \* \*"\)/,
+      stop(
+        "Default cron is 07:00 (D216).",
+        "config.ts default for cronCopyNotice is no longer 0 7 * * *.",
+      ),
+    );
+    assert.match(
+      index,
+      /timezone: "America\/New_York"/,
+      stop(
+        "Copy notice runs on America/New_York so 7am tracks EST/EDT (D216).",
+        "index.ts lost America/New_York cron timezones.",
+      ),
+    );
+    assert.match(
+      index,
+      /cron\.schedule\(\s*config\.cronCopyNotice/,
+      stop(
+        "Copy notice is on its own 7am cron (D216).",
+        "index.ts no longer schedules cronCopyNotice.",
+      ),
+    );
+    assert.doesNotMatch(
+      index,
+      /copyNoticeBrief\.run\(\)[\s\S]{0,200}setTimeout/,
+      stop(
+        "Copy notice is not boot-kicked (D122/D216).",
+        "index.ts boot-kicks copyNoticeBrief.",
+      ),
+    );
+    assert.match(
+      index,
+      /mode === "copy-notice"/,
+      stop(
+        "/run?mode=copy-notice is the copy-notice tick (D216).",
+        "index.ts lost the copy-notice /run mode.",
+      ),
+    );
+    assert.match(
+      index,
+      /stage\("copy-notice"/,
+      stop(
+        "Copy notice is watchdogged (D131/D216).",
+        "index.ts runs copy-notice outside stage().",
+      ),
+    );
+    assert.match(
+      windows,
+      /"copy-notice": COPY_NOTICE_MS/,
+      stop(
+        "copy-notice has a ~26h overdue window (D216).",
+        "stageWindows.ts lost the copy-notice window.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D216\*\*/,
+      stop("CANON is dated D216.", "CANON.md header was not bumped to D216."),
+    );
+    assert.match(
+      canon,
+      /07:00 America\/New_York/,
+      stop(
+        "CANON names the 7am copy-notice loop (D216).",
+        "CANON.md lost the 07:00 America/New_York copy-notice row.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D216 — Next-morning Cayden copy notice/,
+      stop("The ledger records D216.", "DECISIONS.md no longer has D216."),
+    );
+    assert.match(
+      decisions,
+      /^\| D216 \|/m,
+      stop("The status index lists D216 (D127).", "DECISIONS.md status index has no D216 row."),
     );
   });
 });

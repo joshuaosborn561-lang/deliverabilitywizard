@@ -222,6 +222,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
 | D214 | Live — leftover newest ignores inventory (D215) | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
 | D215 | Live | Health-resume newest stamp ignores inventory (shared-book / skip-if-fresh refresh); leftover is after the deepest non-inventory lastOk so an inventory-only kill cannot hide pod-cover |
+| D216 | Live | 07:00 America/New_York Slack to Cayden of new non-shell campaigns and new sequence variants since the last 7am; first tick seeds silently; a body edit of an existing variant id is not new |
 
 ---
 
@@ -6956,6 +6957,41 @@ window or D122.
 when picking newest; the 15:45 production board leftovers
 at pod-cover, not client-rest; warmup-gate interrupt
 still resumes at campaign-health; CANON dated D215.
+
+---
+
+## D216 — Next-morning Cayden copy notice
+
+**Date.** 2026-10-01.
+
+**Decision.** Josh (owner): every time a new campaign or a
+new sequence variant lands, Cayden needs to know at 7am
+EST the next day. A 07:00 America/New_York Slack digest
+(`copy_notice`) names new non-shell campaigns and new
+variant ids since the previous 7am tick. First tick seeds
+the fingerprint book and stays silent so the whole board
+does not dump. COMPLETED / STOPPED / canary / word-hunt /
+pod-control shells stay off the list. A body or subject
+edit of an existing variant id is not a new variant. The
+machine does not change the live email. No boot kick
+(D122). `/run?mode=copy-notice`. Stage window ~26h.
+
+**Why.** Cayden writes and QA's copy. A campaign or
+variant that appears overnight is otherwise silent until
+someone notices it on the board.
+
+**Rejected.** Immediate Slack on create (wakes nobody
+useful at 11pm and is not a next-morning brief). Hashing
+body text as the variant key (an edit would look like a
+new variant). Dumping every existing campaign on first
+deploy. Boot-kicking the scan (D122).
+
+**Supersedes / amends.** Amends D71: `copy_notice` joins
+the allowlist. Does not change the EOD scoreboard.
+
+**Guards.** 7am America/New_York cron; silent first seed;
+variant keys by id; slack kind `copy_notice`; CANON dated
+D216.
 
 ---
 

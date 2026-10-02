@@ -73,6 +73,8 @@ export interface PlacementResults {
   rows: PlacementResultRow[];
   errors: string[];
   stale?: boolean;
+  /** This pass stopped because SmartDelivery returned 429. The tab waits out the cooldown and continues. */
+  rateLimited?: boolean;
   /** False when the catalog walk 429'd or found fewer live tests than we know exist. */
   complete?: boolean;
   /**
@@ -296,6 +298,7 @@ export class PlacementResultsService {
     if (now < this.rateLimitedUntil && fallback) {
       const value = this.snapshotView(fallback, {
         stale: true,
+        rateLimited: true,
         errors: force
           ? [humanizeAlertError("listTests: Rate limit exceeded")]
           : [],
@@ -408,13 +411,14 @@ export class PlacementResultsService {
 
   private snapshotView(
     fallback: PlacementResults,
-    opts: { stale: boolean; errors: string[] },
+    opts: { stale: boolean; errors: string[]; rateLimited?: boolean },
   ): PlacementResults {
     return {
       generatedAt: fallback.generatedAt,
       rows: fallback.rows,
       errors: uniqueErrors(opts.errors),
       stale: opts.stale,
+      rateLimited: opts.rateLimited || undefined,
       complete: fallback.complete,
       listOffset: fallback.listOffset,
     };
@@ -446,6 +450,7 @@ export class PlacementResultsService {
       if (fallback) {
         const value = this.snapshotView(fallback, {
           stale: true,
+          rateLimited: isRateLimitNoise(message),
           errors: force ? [note] : [],
         });
         this.cache = {
@@ -613,6 +618,7 @@ export class PlacementResultsService {
       rows: assembled,
       errors: uniqueErrors(force ? errors : []),
       listOffset: listed.nextOffset,
+      rateLimited: this.rateLimitedUntil > Date.now() || undefined,
       complete:
         membershipSettled &&
         !listed.truncated &&

@@ -3746,6 +3746,17 @@ describe("owner intent — D114 canary tests hang on a paused shell", () => {
         "isCanaryShellCampaign is gone.",
       ),
     );
+    const reconciler = await import("node:fs/promises").then((fs) =>
+      fs.readFile(new URL("../services/testReconciler.ts", import.meta.url), "utf8"),
+    );
+    assert.match(
+      reconciler,
+      /reconcileCampaignLink/,
+      stop(
+        "A Canary copy test is stopped only when its live campaign is inactive. The paused shell is not that signal (D55/D114).",
+        "testReconciler.ts no longer links Canary copy tests to the live campaign.",
+      ),
+    );
   });
 });
 

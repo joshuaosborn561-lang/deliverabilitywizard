@@ -404,7 +404,9 @@ or the day is done. Silent findings are a bug (D163).
   shell** carrying that copy, with one unique instrumentation seed lead
   (`canary.instrumentation.{shellId}@…`) (D114–D120). Shells stay PAUSED —
   the checker converges a non-paused shell back to PAUSED itself (D131) —
-  and are invisible to START/top-up/fan-out/bounce/board.
+  and are invisible to START/top-up/fan-out/bounce/board. The reconciler
+  stops a Canary copy test when the live campaign in the test name is no
+  longer active. The paused shell is not that signal (D55/D114).
 - **Known-good pod controls**: versioned no-offer control email on the paused
   **Pod control shell** (D56); every serving inbox must sit on a living
   known-good test — coverage is per email, and newcomers to a pod get

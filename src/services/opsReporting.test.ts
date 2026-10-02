@@ -1202,6 +1202,85 @@ describe("PlacementResultsService", () => {
     assert.equal(result.rows[0]?.createdAt, "2026-09-28T00:00:00.000Z");
     assert.equal(result.rows[0]?.runNumber, 59);
   });
+
+  it("continues the row refresh below the row that 429'd instead of restarting at the top", async () => {
+    const state = await stateFixture();
+    const oldDate = "2026-08-01T00:00:00.000Z";
+    const rows = [103, 102, 101].map((id, i) => ({
+      id: String(id),
+      name: `Auto: Campaign ${7 + i}`,
+      campaignId: 7 + i,
+      campaignName: `Campaign ${7 + i}`,
+      status: "ACTIVE",
+      createdAt: oldDate,
+      inboxPercent: 70,
+      spamPercent: 20,
+      googleInboxPercent: 75,
+      microsoftInboxPercent: 100,
+      totalSeeds: 10,
+      providers: [],
+    }));
+    state.setPlacementResults({
+      generatedAt: new Date().toISOString(),
+      complete: true,
+      rows,
+    });
+    const details: string[] = [];
+    let rateLimitId: string | undefined = "102";
+    const smartDelivery = {
+      listTests: async () => {
+        throw new Error("every live campaign already has a row");
+      },
+      getProviderwiseReport: async () => {
+        throw new Error("scores are already on the row");
+      },
+      getTestDetails: async (id: number | string) => {
+        details.push(String(id));
+        if (String(id) === rateLimitId) throw new Error("Rate limit exceeded");
+        return {
+          updated_at: new Date().toISOString(),
+          test_run_no: 12,
+          status: "ACTIVE",
+        };
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 7, name: "Campaign 7", status: "ACTIVE" },
+        { id: 8, name: "Campaign 8", status: "ACTIVE" },
+        { id: 9, name: "Campaign 9", status: "ACTIVE" },
+      ],
+    } as unknown as SmartleadClient;
+    const makeService = () =>
+      new PlacementResultsService(
+        smartDelivery,
+        bookOf(smartlead),
+        state,
+        60_000,
+        60_000,
+      );
+
+    // Pass 1: row 103 refreshes, row 102 429s.
+    const first = await makeService().get(true);
+    assert.deepEqual(details, ["103", "102"]);
+    assert.equal(first.rateLimited, true);
+    assert.equal(state.getPlacementResults()?.fillCursor, "102");
+    assert.notEqual(first.rows.find((row) => row.id === "103")?.createdAt, oldDate);
+
+    // Pass 2 (new cooldown window): starts below 102, so 101 is refreshed first.
+    rateLimitId = undefined;
+    details.length = 0;
+    const second = await makeService().get(true);
+    assert.equal(details[0], "101", "the row below the 429 goes first");
+    assert.ok(details.includes("102"), "then it wraps to the row that 429'd");
+    assert.equal(second.rateLimited, undefined);
+    assert.equal(state.getPlacementResults()?.fillCursor, undefined);
+    assert.equal(
+      second.rows.filter((row) => row.createdAt === oldDate).length,
+      0,
+      "every row now shows its latest run",
+    );
+  });
 });
 
 describe("latestPlacementAt", () => {

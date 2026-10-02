@@ -763,8 +763,13 @@ describe("PlacementResultsService", () => {
     );
     assert.match(
       app,
-      /data\.complete === false && !data\.stale/,
+      /data\.searching/,
       "an unfinished catalog walk keeps loading on the Placement tab",
+    );
+    assert.equal(
+      /data\.complete === false && !data\.stale/.test(app),
+      false,
+      "a stale score must not stop the walk before deeper living tests are read",
     );
     assert.match(
       app,
@@ -1280,6 +1285,230 @@ describe("PlacementResultsService", () => {
       0,
       "every row now shows its latest run",
     );
+  });
+
+  it("keeps walking past the newest 200 rows until an ACTIVE campaign's living auto is found", async () => {
+    const state = await stateFixture();
+    const offsets: number[] = [];
+    const emcorId = 4036499;
+    const smartDelivery = {
+      listTests: async (body: { offset?: number } = {}) => {
+        const offset = Number(body.offset ?? 0);
+        offsets.push(offset);
+        if (offset < 400) {
+          return Array.from({ length: 100 }, (_, i) => ({
+            spam_test_id: 900000 + offset + i,
+            test_name: `Pod control: ${offset + i}`,
+            status: "ACTIVE",
+            test_type: "auto",
+            every_days: 1,
+            created_at: "2026-09-30T00:00:00.000Z",
+          }));
+        }
+        return [
+          {
+            spam_test_id: 543280,
+            test_name: "Auto: EMCOR A Property | AirPods",
+            status: "ACTIVE",
+            test_type: "auto",
+            every_days: 1,
+            created_at: "2026-09-28T00:00:00.000Z",
+            inbox_count: 8,
+            spam_count: 1,
+            adjusted_total_email_count: 10,
+          },
+          {
+            spam_test_id: 543500,
+            test_name: "Canary copy: #4036499 EMCOR A Property | AirPods",
+            status: "ACTIVE",
+            test_type: "auto",
+            every_days: 1,
+            created_at: "2026-09-29T00:00:00.000Z",
+            campaign_id: emcorId,
+            inbox_count: 1,
+            spam_count: 9,
+            adjusted_total_email_count: 10,
+          },
+        ];
+      },
+      getProviderwiseReport: async () => ({
+        status: "ACTIVE",
+        result: [
+          {
+            provider_name: "G Suite",
+            inbox_count: 8,
+            spam_count: 1,
+            adjusted_total_email_count: 10,
+          },
+        ],
+      }),
+      getTestDetails: async () => ({
+        updated_at: new Date().toISOString(),
+        test_run_no: 4,
+        status: "ACTIVE",
+        every_days: 1,
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: emcorId,
+          name: "EMCOR A Property | AirPods",
+          status: "ACTIVE",
+        },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const first = await service.get(true);
+    assert.equal(first.searching, true);
+    assert.equal(
+      first.rows.some((row) => row.campaignId === emcorId),
+      false,
+      "offset 0 and 100 are newer pod-control tests, not the EMCOR auto",
+    );
+    assert.deepEqual(offsets, [0, 100]);
+
+    let result = first;
+    for (let pass = 0; pass < 6 && result.searching; pass += 1) {
+      result = await service.get(true);
+    }
+    const found = result.rows.find((row) => row.campaignId === emcorId);
+    assert.equal(found?.id, "543280");
+    assert.equal(found?.campaignName, "EMCOR A Property | AirPods");
+    assert.equal(
+      result.rows.some((row) => /canary copy/i.test(row.name)),
+      false,
+    );
+    assert.ok(offsets.includes(400));
+    assert.equal(result.searching, undefined);
+    assert.equal(result.complete, true);
+  });
+
+  it("links a living auto by details.campaign_id when the list omits it and the name does not match", async () => {
+    const state = await stateFixture();
+    const emcorId = 4036508;
+    const detailsIds: string[] = [];
+    const smartDelivery = {
+      listTests: async () => [
+        {
+          spam_test_id: 543291,
+          test_name: "Auto: EMCOR C Hospitals | Scope (old)",
+          status: "ACTIVE",
+          test_type: "auto",
+          every_days: 1,
+          created_at: "2026-09-28T00:00:00.000Z",
+          inbox_count: 7,
+          spam_count: 1,
+          adjusted_total_email_count: 10,
+        },
+        {
+          spam_test_id: 543292,
+          test_name: "Canary copy: #4036508 EMCOR C Hospitals | Scope",
+          status: "ACTIVE",
+          every_days: 1,
+          campaign_id: emcorId,
+        },
+      ],
+      getProviderwiseReport: async () => ({
+        status: "ACTIVE",
+        result: [
+          {
+            provider_name: "Office365",
+            inbox_count: 6,
+            spam_count: 1,
+            adjusted_total_email_count: 7,
+          },
+        ],
+      }),
+      getTestDetails: async (id: number | string) => {
+        detailsIds.push(String(id));
+        if (String(id) === "543291") {
+          return {
+            campaign_id: emcorId,
+            updated_at: new Date().toISOString(),
+            test_run_no: 2,
+            status: "ACTIVE",
+            every_days: 1,
+          };
+        }
+        return { updated_at: new Date().toISOString(), status: "ACTIVE" };
+      },
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: emcorId,
+          name: "EMCOR C Hospitals | Scope",
+          status: "ACTIVE",
+        },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const result = await service.get(true);
+    assert.deepEqual(
+      result.rows.map((row) => row.id),
+      ["543291"],
+    );
+    assert.equal(result.rows[0]?.campaignId, emcorId);
+    assert.equal(detailsIds.includes("543291"), true);
+    assert.equal(detailsIds.includes("543292"), false);
+    assert.equal(
+      result.rows.some((row) => /canary copy/i.test(row.name)),
+      false,
+    );
+  });
+
+  it("does not invent a campaign when the list and the details both omit campaign_id", async () => {
+    const state = await stateFixture();
+    const smartDelivery = {
+      listTests: async () => [
+        {
+          spam_test_id: 543244,
+          test_name: "Auto: something else",
+          status: "ACTIVE",
+          test_type: "auto",
+          every_days: 1,
+          created_at: "2026-09-28T00:00:00.000Z",
+        },
+      ],
+      getProviderwiseReport: async () => ({ result: [] }),
+      getTestDetails: async () => ({
+        status: "ACTIVE",
+        every_days: 1,
+        updated_at: new Date().toISOString(),
+      }),
+    } as unknown as SmartDeliveryClient;
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 4037559,
+          name: "EMCOR E Small Ops | Backup | Team | SEG",
+          status: "ACTIVE",
+        },
+      ],
+    } as unknown as SmartleadClient;
+    const service = new PlacementResultsService(
+      smartDelivery,
+      bookOf(smartlead),
+      state,
+      1,
+    );
+    const result = await service.get(true);
+    assert.equal(
+      result.rows.some((row) => row.campaignId === 4037559),
+      false,
+    );
+    assert.equal(result.rows.some((row) => row.id === "543244"), false);
   });
 });
 

@@ -165,6 +165,8 @@ export interface PlacementResultsSnapshot {
   complete?: boolean;
   /** Next catalog page. Kept so a 429 does not restart the walk at pod-control tests. */
   listOffset?: number;
+  /** Test id the row refresh stopped on. The next pass starts after it so lower rows get a turn. */
+  fillCursor?: string;
 }
 
 export interface PendingResumeRecord {

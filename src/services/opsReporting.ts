@@ -82,6 +82,11 @@ export interface PlacementResults {
    * walk that stops early has to resume here instead of starting over.
    */
   listOffset?: number;
+  /**
+   * Test id the row refresh stopped on. Each pass used to start at the top
+   * of the board, so a 429 meant the bottom rows never got a call.
+   */
+  fillCursor?: string;
 }
 
 /** D187 — live-sender cap after canary copy is filtered out (D126). */
@@ -356,6 +361,7 @@ export class PlacementResultsService {
       errors: [],
       complete: snapshot.complete,
       listOffset: snapshot.listOffset,
+      fillCursor: snapshot.fillCursor,
     };
   }
 
@@ -421,6 +427,7 @@ export class PlacementResultsService {
       rateLimited: opts.rateLimited || undefined,
       complete: fallback.complete,
       listOffset: fallback.listOffset,
+      fillCursor: fallback.fillCursor,
     };
   }
 
@@ -431,6 +438,7 @@ export class PlacementResultsService {
       rows: value.rows,
       complete: value.complete,
       listOffset: value.listOffset,
+      fillCursor: value.fillCursor,
     });
     void this.state.save().catch((error) => {
       console.warn("[ops-placement] snapshot save failed", error);
@@ -579,11 +587,15 @@ export class PlacementResultsService {
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     let skipProviders = false;
+    let fillCursor: string | undefined;
     // Finish one row before the next. A 429 used to leave every row with a
     // different hole: Google without Inbox, or a score without a date.
-    for (const row of assembled) {
+    // Start after the row the last pass stopped on. Every pass began at the
+    // top, so the rows below the first 429 were never reached.
+    for (const row of rotateFromCursor(assembled, previousSnapshot?.fillCursor)) {
       if (skipProviders) break;
       if (!placementRowNeedsScore(row) && !placementRowNeedsDate(row)) continue;
+      fillCursor = row.id;
       try {
         if (placementRowNeedsScore(row)) {
           await this.scorePlacementRow(row);
@@ -618,6 +630,7 @@ export class PlacementResultsService {
       rows: assembled,
       errors: uniqueErrors(force ? errors : []),
       listOffset: listed.nextOffset,
+      fillCursor: skipProviders ? fillCursor : undefined,
       rateLimited: this.rateLimitedUntil > Date.now() || undefined,
       complete:
         membershipSettled &&
@@ -1030,7 +1043,19 @@ function shouldPersistPlacement(
     if (droppedCurrent) return false;
   }
   if ((previous.listOffset ?? 0) !== (next.listOffset ?? 0)) return true;
+  if ((previous.fillCursor ?? "") !== (next.fillCursor ?? "")) return true;
   return placementBoardSignature(next.rows) !== placementBoardSignature(previous.rows);
+}
+
+/** Rows after the cursor first, then wrap to the top. No cursor keeps board order. */
+function rotateFromCursor<T extends { id: string }>(
+  rows: T[],
+  cursor: string | undefined,
+): T[] {
+  if (!cursor) return rows;
+  const index = rows.findIndex((row) => row.id === cursor);
+  if (index < 0) return rows;
+  return [...rows.slice(index + 1), ...rows.slice(0, index + 1)];
 }
 
 function applyProviderwise(

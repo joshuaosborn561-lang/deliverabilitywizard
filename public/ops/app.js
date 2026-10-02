@@ -297,7 +297,11 @@ async function loadPlacement(force = false, pass = 0) {
   const stamp = formatDate(data.generatedAt);
   $("#placement-updated").textContent = `${data.stale ? "Last snapshot" : "Updated"} ${stamp} · ${state.placementRows.length} tests`;
   const errors = Array.isArray(data.errors) ? data.errors.filter(Boolean) : [];
-  if (data.stale && state.placementRows.length) {
+  if (data.rateLimited && state.placementRows.length) {
+    banner.textContent =
+      "SmartDelivery rate-limited this pass. The remaining tests update in a minute.";
+    banner.className = "muted";
+  } else if (data.stale && state.placementRows.length) {
     banner.textContent =
       errors[0] ||
       "Showing the last saved snapshot — SmartDelivery did not refresh this pass.";
@@ -307,6 +311,12 @@ async function loadPlacement(force = false, pass = 0) {
     banner.className = "error";
   }
   renderPlacement();
+  // A 429 used to stop the tab, so every row after the first limit kept its old date.
+  // Wait out the cooldown, then continue. Do not call again inside the window.
+  if (pass < 20 && data.rateLimited) {
+    await new Promise((resolve) => setTimeout(resolve, 65_000));
+    return loadPlacement(true, pass + 1);
+  }
   // The catalog walk is a couple of pages per request so a 429 does not wipe
   // the offset. Keep going while live campaigns are still missing.
   if (pass < 30 && data.complete === false && !data.stale) {

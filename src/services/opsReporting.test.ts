@@ -354,6 +354,7 @@ describe("PlacementResultsService", () => {
     );
     const opened = await service.get();
     assert.equal(opened.stale, true);
+    assert.equal(opened.rateLimited, true);
     assert.equal(opened.rows[0]?.id, "101");
     assert.equal(opened.rows[0]?.inboxPercent, 70);
     assert.deepEqual(
@@ -764,6 +765,11 @@ describe("PlacementResultsService", () => {
       app,
       /data\.complete === false && !data\.stale/,
       "an unfinished catalog walk keeps loading on the Placement tab",
+    );
+    assert.match(
+      app,
+      /data\.rateLimited[\s\S]{0,200}65_000/,
+      "a rate limit waits out the cooldown and then refreshes the remaining rows",
     );
   });
 

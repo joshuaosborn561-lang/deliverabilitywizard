@@ -227,6 +227,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
 | D221 | Live | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D222 | Live | Monday 8:16am CT InboxKit lapsed-license sweep is detection-only: page still-connected lapsed/cancelled/inactive seats and scheduled cancellations, grouped per client. Past cancel dates belong to Onboarding. No deletes and no unlinks |
 
 ---
 
@@ -7228,6 +7229,43 @@ table + `validateGenericPool` flag idle and multi-client;
 `generic_multi_client`; PowerGRYD and TERRL-substitute
 skip idle; `enableGenericSendRest` defaults off; CANON
 dated D221.
+
+---
+
+## D222 — Monday InboxKit lapsed-license sweep; detection only
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (owner): every Monday at 8:16am
+America/Chicago, compare InboxKit mailbox status to
+Smartlead connected accounts. Page `#deliverability`
+(C0BJQUTV7A8) per client when a seat is lapsed /
+cancelled / inactive but still connected, or is
+scheduled for cancellation. Seats whose cancel date is
+already in the past belong to Onboarding and stay off
+this list. Detection only: no deletes, no unlinks, no
+InboxKit or Smartlead writes. Post nothing when the
+list is empty. Weekdays-only idle (the cron is Monday).
+No em dashes in Slack copy. Fleet reads use the D220
+complete `GET /email-accounts` pager.
+
+**Why.** Lapsed InboxKit licenses that stay connected
+keep sending and burn reputation. The weekly check was
+an agent/manual job. Past-cancel seats are already
+Onboarding's problem.
+
+**Rejected.** Auto-deleting or unlinking from this
+sweep. A daily cron. Mixing past-cancel seats into the
+page. Per-mailbox Slack cards.
+
+**Supersedes / amends.** Amends D71 Slack (uses the
+#deliverability note path). Does not change D1 warmup,
+D4 spend, or InboxKit buy/retire paths.
+
+**Guards.** Monday 8:16am CT cron; weekend / non-Monday
+idle; still-connected + scheduled-cancel kinds; past
+cancel skipped; Slack has no em dash and says no
+deletes / no unlinks; CANON dated D222.
 
 ---
 

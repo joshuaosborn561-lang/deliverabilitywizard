@@ -74,6 +74,7 @@ import { GenericPoolCanonService } from "./services/genericPoolCanon.js";
 import { MailboxTypeTagService } from "./services/mailboxTypeTags.js";
 import { TerlHoldService } from "./services/terlHold.js";
 import { SpendDigestService } from "./services/spendDigest.js";
+import { InboxkitLicenseSweepService } from "./services/inboxkitLicenseSweep.js";
 import { canonOpsIdleReason } from "./lib/canonOpsHours.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
@@ -573,6 +574,12 @@ async function main(): Promise<void> {
   );
   const terlHold = new TerlHoldService(config, smartlead, state, slack);
   const spendDigest = new SpendDigestService(state, slack);
+  const inboxkitLicenseSweep = new InboxkitLicenseSweepService(
+    config,
+    smartlead,
+    inboxkit,
+    slack,
+  );
   const clientDayBrief = new ClientDayBriefService(
     config,
     smartlead,
@@ -1149,6 +1156,10 @@ async function main(): Promise<void> {
     return stage("spend-digest", async () => spendDigest.postDigest(opts));
   };
 
+  const runInboxkitLicenseSweep = async (opts: { force?: boolean } = {}) => {
+    return stage("inboxkit-license", async () => inboxkitLicenseSweep.run(opts));
+  };
+
   const runOpsDeliverability = async () => {
     if (opsCheckInFlight || monitorInFlight) {
       throw new Error("A deliverability monitor is already running.");
@@ -1335,6 +1346,11 @@ async function main(): Promise<void> {
       `Invalid CRON_SPEND_DIGEST expression: ${config.cronSpendDigest}`,
     );
   }
+  if (!cron.validate(config.cronInboxkitLicenseSweep)) {
+    throw new Error(
+      `Invalid CRON_INBOXKIT_LICENSE_SWEEP expression: ${config.cronInboxkitLicenseSweep}`,
+    );
+  }
   const sendVolumeSchedules = parseSchedules(config.cronSendVolume);
   for (const expression of sendVolumeSchedules) {
     if (!cron.validate(expression)) {
@@ -1461,6 +1477,19 @@ async function main(): Promise<void> {
         });
       },
       { timezone: config.spendDigestTimezone },
+    );
+  }
+
+  if (config.enableInboxkitLicenseSweep) {
+    cron.schedule(
+      config.cronInboxkitLicenseSweep,
+      () => {
+        void runInboxkitLicenseSweep().catch((error) => {
+          console.error("[inboxkit-license] Unhandled cron error", error);
+          feedBugRemediator("inboxkit-license-cron", error);
+        });
+      },
+      { timezone: config.inboxkitLicenseTimezone },
     );
   }
 
@@ -2444,6 +2473,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       enableSpendDigest: config.enableSpendDigest,
       cronSpendDigest: config.cronSpendDigest,
       spendDigestTimezone: config.spendDigestTimezone,
+      enableInboxkitLicenseSweep: config.enableInboxkitLicenseSweep,
+      cronInboxkitLicenseSweep: config.cronInboxkitLicenseSweep,
       autoAllowGenericClientIds: config.autoAllowGenericClientIds,
       slackBatchGenericBackfill: config.slackBatchGenericBackfill,
       slackFoldApprovalRecorded: config.slackFoldApprovalRecorded,
@@ -2510,6 +2541,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         cronTerlEod: config.cronTerlEod,
         enableSpendDigest: config.enableSpendDigest,
         cronSpendDigest: config.cronSpendDigest,
+        enableInboxkitLicenseSweep: config.enableInboxkitLicenseSweep,
+        cronInboxkitLicenseSweep: config.cronInboxkitLicenseSweep,
         enableCampaignHealth: config.enableCampaignHealth,
         enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
         cronBounceAutostop: config.cronBounceAutostop,
@@ -2620,7 +2653,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         mode === "generic-cleanup" ||
         mode === "mailbox-type-tags" ||
         mode === "terl-eod" ||
-        mode === "spend-digest"
+        mode === "spend-digest" ||
+        mode === "inboxkit-license"
       ) {
         assertRuntimeSecrets(config);
         if (mode === "hold-enforcement" || mode === "holds") {
@@ -2656,6 +2690,11 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         if (mode === "spend-digest") {
           const result = await runSpendDigest({ force: true });
           res.json({ ok: true, mode: "spend-digest", result });
+          return;
+        }
+        if (mode === "inboxkit-license") {
+          const result = await runInboxkitLicenseSweep({ force: true });
+          res.json({ ok: true, mode: "inboxkit-license", result });
           return;
         }
         const result = await runCanonOps({ force: true });
@@ -3029,6 +3068,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Cayden spend digest (D220): ${config.enableSpendDigest ? `ENABLED ${config.cronSpendDigest} ${config.spendDigestTimezone} weekday per-client pending spend` : "disabled"}`,
+    );
+    console.log(
+      `[boot] InboxKit license sweep (D222): ${config.enableInboxkitLicenseSweep ? `ENABLED ${config.cronInboxkitLicenseSweep} ${config.inboxkitLicenseTimezone} Monday detection-only` : "disabled"}`,
     );
     console.log(
       `[boot] Campaign bounce loop (D141/D148): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; burst >${config.bounceBurstCount} bounces/10m from sends <24h old → classify + re-queue, never pause; ledger dumps do nothing; Smartlead bounce protection is UI-only, no API off-switch exists (D157))` : "disabled"}`,

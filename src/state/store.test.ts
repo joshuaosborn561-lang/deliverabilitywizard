@@ -217,3 +217,42 @@ describe("D167 serialized save", () => {
     );
   });
 });
+
+describe("D224 evidence hold state", () => {
+  it("stores reason and evidence and drops the hold at 30 days or when retired clears", async () => {
+    const filePath = `/tmp/dw-evidence-hold-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    const now = new Date("2026-09-28T16:00:00.000Z");
+    state.upsertEvidenceHold({
+      email: "a@getboldercyperpartner.info",
+      accountId: 11,
+      domain: "getboldercyperpartner.info",
+      reason: "retired_or_bad_sender_domain",
+      evidence: { domain: "getboldercyperpartner.info" },
+      heldAt: now.toISOString(),
+      expiresAt: "2026-10-28T16:00:00.000Z",
+      source: "test",
+      tagName: "HOLD-UNTIL-2026-10-28",
+    });
+    await state.save();
+
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    const held = reloaded.getEvidenceHold("a@getboldercyperpartner.info");
+    assert.equal(held?.reason, "retired_or_bad_sender_domain");
+    assert.equal(held?.evidence.domain, "getboldercyperpartner.info");
+    assert.equal(reloaded.isEvidenceHoldAccount(11, now), true);
+    assert.equal(
+      reloaded.pruneEvidenceHolds(now, {
+        retiredDomains: ["getboldercyperpartner.info"],
+      }),
+      0,
+    );
+    assert.equal(
+      reloaded.pruneEvidenceHolds(now, { retiredDomains: [] }),
+      1,
+    );
+    assert.equal(reloaded.getEvidenceHold("a@getboldercyperpartner.info"), undefined);
+  });
+});

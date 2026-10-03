@@ -227,6 +227,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
 | D221 | Live | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
 
 ---
 
@@ -7228,6 +7229,59 @@ table + `validateGenericPool` flag idle and multi-client;
 `generic_multi_client`; PowerGRYD and TERRL-substitute
 skip idle; `enableGenericSendRest` defaults off; CANON
 dated D221.
+
+---
+## D224 — Evidence-per-seat hold gate; drop the 5/10/25% caps
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh HARD: drop the 5 / 10 / 25% numeric hold
+limits. Replace them with an evidence-per-seat gate. Every
+hold request (HOLD tag, mpd 0 as a hold, bounce-hold list,
+TERRL hold) must name each seat and attach that seat's own
+qualifying reason from a fixed list:
+
+1. A hard bounce or block on that mailbox or its tenant
+   (`5.7.233`, `5.1.8`, and the event id).
+2. SMTP or IMAP auth failure on that account.
+3. Its domain is retired or marked as a bad sender (exact
+   domain only).
+4. Its InboxKit seat is lapsed, cancelled, or inactive.
+5. A blacklist hit on that domain (SURBL excluded).
+6. Warmup is under 21 days or warmup reputation fell below
+   threshold.
+
+Any seat without its own evidence is rejected and is never
+held by pattern or by client. Substring or pattern matches
+are refused. Each hold stores its reason and evidence and
+expires when the reason clears, or at 30 days at most.
+Rejected seats are listed in one `#deliverability` message
+for review.
+
+**Why.** On 2026-09-28 a Canon QA script matched
+`boldercyper` and HOLD-tagged all 97 BCP named seats until
+2027, which zeroed BCP's named staffing. Only the
+`getbold` / `keybold` seats had retired-domain evidence.
+A percent cap would still have allowed a pattern blast. The
+gate holds only the evidenced seats and lists the rest.
+
+**Rejected.** 5 seats per client / 10 fleet-wide / 25% of
+named seats as a substitute for evidence. Holding by
+client name or by substring. HOLD-UNTIL dates past 30 days
+without fresh evidence.
+
+**Supersedes / amends.** Amends D213: a 5.1.8 hold still
+has no 7:15pm restore, but it expires when the reason
+clears or at 30 days, then a new hold needs fresh evidence.
+Does not change D219's 24h TERRL window (inside 30 days) or
+D210 (SURBL is never a hit). D216 is claimed by open PR
+#265. D222 / D223 are claimed by open PRs #275 / #276; this
+number is D224.
+
+**Guards.** `gateSeatHolds` is the only hold request gate;
+9/28 replay holds 10 getbold/keybold of 97 and rejects 87;
+no 5/10/25 percent caps; Slack lists rejected seats; CANON
+dated D224.
 
 ---
 

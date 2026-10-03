@@ -59,6 +59,11 @@ import {
   type TerlSubstitution,
 } from "../lib/tenantTerlHold.js";
 import { normalizeTerlHost } from "../lib/tenantTerlHold.js";
+import {
+  evidenceHoldReasonCleared,
+  evidenceHoldStillActive,
+  type EvidenceHoldRecord,
+} from "../lib/evidenceHold.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -354,6 +359,11 @@ export interface AppState {
   terlPausedDays: Record<string, TerlPausedDay>;
   /** D219 — temp same-client generic substitutions. Key campaignId:stoppedId. */
   terlSubstitutions: Record<string, TerlSubstitution>;
+  /**
+   * D224 — every accepted hold stores its own reason and evidence.
+   * Keyed by email. Expires when the reason clears, or at 30 days.
+   */
+  evidenceHolds: Record<string, EvidenceHoldRecord>;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -587,6 +597,37 @@ function parseTenantTerlHolds(
   return out;
 }
 
+function parseEvidenceHolds(raw: unknown): Record<string, EvidenceHoldRecord> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, EvidenceHoldRecord> = {};
+  for (const value of Object.values(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    const email = String(row.email ?? "").trim().toLowerCase();
+    const domain = String(row.domain ?? "").trim().toLowerCase();
+    const reason = String(row.reason ?? "");
+    if (!email || !domain || !reason) continue;
+    if (typeof row.heldAt !== "string" || typeof row.expiresAt !== "string") continue;
+    const accountId = Number(row.accountId);
+    out[email] = {
+      email,
+      accountId:
+        Number.isFinite(accountId) && accountId > 0 ? accountId : undefined,
+      domain,
+      reason: reason as EvidenceHoldRecord["reason"],
+      evidence:
+        row.evidence && typeof row.evidence === "object"
+          ? { ...(row.evidence as EvidenceHoldRecord["evidence"]) }
+          : {},
+      heldAt: row.heldAt,
+      expiresAt: row.expiresAt,
+      source: String(row.source ?? "hold-request"),
+      tagName: String(row.tagName ?? ""),
+    };
+  }
+  return out;
+}
+
 function parseTerlPausedDays(raw: unknown): Record<string, TerlPausedDay> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: Record<string, TerlPausedDay> = {};
@@ -738,6 +779,7 @@ const EMPTY_STATE: AppState = {
   tenantTerlHolds: {},
   terlPausedDays: {},
   terlSubstitutions: {},
+  evidenceHolds: {},
 };
 
 export class StateStore {
@@ -843,6 +885,7 @@ export class StateStore {
         tenantTerlHolds: parseTenantTerlHolds(parsed.tenantTerlHolds),
         terlPausedDays: parseTerlPausedDays(parsed.terlPausedDays),
         terlSubstitutions: parseTerlSubstitutions(parsed.terlSubstitutions),
+        evidenceHolds: parseEvidenceHolds(parsed.evidenceHolds),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1883,6 +1926,51 @@ export class StateStore {
       if (!record.accountIds.includes(id)) record.accountIds.push(id);
     }
     return record;
+  }
+
+  /** D224 — persist one gated hold with its reason and evidence. */
+  upsertEvidenceHold(record: EvidenceHoldRecord): void {
+    this.state.evidenceHolds[record.email.toLowerCase()] = {
+      ...record,
+      email: record.email.toLowerCase(),
+      domain: record.domain.toLowerCase(),
+      evidence: { ...record.evidence },
+    };
+  }
+
+  getEvidenceHold(email: string): EvidenceHoldRecord | undefined {
+    return this.state.evidenceHolds[email.trim().toLowerCase()];
+  }
+
+  listEvidenceHolds(now = new Date()): EvidenceHoldRecord[] {
+    return Object.values(this.state.evidenceHolds).filter((row) =>
+      evidenceHoldStillActive(row, now),
+    );
+  }
+
+  isEvidenceHoldAccount(accountId: number, now = new Date()): boolean {
+    const id = Number(accountId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    return Object.values(this.state.evidenceHolds).some(
+      (row) => row.accountId === id && evidenceHoldStillActive(row, now),
+    );
+  }
+
+  pruneEvidenceHolds(
+    now = new Date(),
+    context: { retiredDomains?: Iterable<string>; badSenderDomains?: Iterable<string> } = {},
+  ): number {
+    let removed = 0;
+    for (const [key, row] of Object.entries(this.state.evidenceHolds)) {
+      if (
+        !evidenceHoldStillActive(row, now) ||
+        evidenceHoldReasonCleared(row, context)
+      ) {
+        delete this.state.evidenceHolds[key];
+        removed += 1;
+      }
+    }
+    return removed;
   }
 
   recordTerlPausedInboxes(input: {

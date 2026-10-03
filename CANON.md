@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D221** (2026-10-03). One page of current truth. When a new
+Canon as of **D224** (2026-10-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -92,6 +92,20 @@ or the day is done. Silent findings are a bug (D163).
   a human clears the hold (D213). mailbox-settings may write 0 only
   to keep those seats at 0. `#campaign-watchdog` gets one page per
   tenant (delist or replace).
+  **Every hold is evidence-per-seat** (D224). A HOLD tag, an mpd-0
+  hold, a bounce-hold id, or a TERRL hold must name each seat and
+  attach that seat's own reason from a fixed list: (1) a hard bounce
+  or block on that mailbox or its tenant (`5.7.233`, `5.1.8`, and
+  the event id), (2) SMTP or IMAP auth failure on that account,
+  (3) its domain is retired or a bad sender (exact domain only),
+  (4) its InboxKit seat is lapsed, cancelled, or inactive, (5) a
+  named blacklist hit on that domain (SURBL excluded), (6) warmup
+  under 21 days or warmup reputation below threshold. A seat
+  without its own evidence is rejected and is never held by
+  pattern, substring, or client. Each hold stores its reason and
+  evidence and expires when the reason clears, or at 30 days at
+  most. Rejected seats post in one `#deliverability` note for
+  review. There is no 5 / 10 / 25% numeric hold cap.
   Write as `max_email_per_day`; read as
   `message_per_day` (D24). 10-minute minimum gap (D30/D35) — held at
   BOTH levels: the mailbox field every health pass, and campaign

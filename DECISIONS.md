@@ -218,11 +218,12 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
 | D211 | Live | 15-minute health chain resumes leftover late stages after a mid-chain SIGTERM (skip-if-fresh, not at boot); `/run?mode=mailbox-gap` is gap-only |
-| D212 | Live | mailbox-gap / health daily-limit writers skip D148 bounce-hold seats (Smartlead account id) until ~00:15 UTC / 7:15pm CT; no mpd writes from this path |
+| D212 | Live — 7:15pm CT restore superseded by D218; skip-raise stays | mailbox-gap / health daily-limit writers skip D148 bounce-hold seats (Smartlead account id); no mpd writes from this path |
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
 | D214 | Live — leftover newest ignores inventory (D215) | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
 | D215 | Live | Health-resume newest stamp ignores inventory (shared-book / skip-if-fresh refresh); leftover is after the deepest non-inventory lastOk so an inventory-only kill cannot hide pod-cover |
 | D217 | Live | Canon pages understaffed only on <40 on-week staffable (agent definition: SMTP/IMAP ok, mpd>0, warmup≥21 when readable, correct client, on-week POD tag); ESP mix + exclusivity are core findings. D216 is claimed by open PR #265 |
+| D218 | Live | TERRL / D148 bounce-hold ids persist; no 7:15pm CT prune+restore to 15. Every max_email_per_day raise path (mailbox-settings, min40, fan-out, top-up, copy-canary) skips held seats |
 
 ---
 
@@ -7014,6 +7015,47 @@ excludes SMTP-fail / mpd 0 / off-week POD / foreign
 client; 41 on-week staffable is not understaffed; 41
 linked / 34 staffable with 7 smtp_fail is; CANON dated
 D217. Decision number skips D216 (open PR #265).
+
+---
+
+## D218 — TERRL bounce-holds persist; no 7:15pm restore to 15
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (owner): seats held at `max_email_per_day=0`
+after a Microsoft 550 5.7.233 (TERRL) stay at 0. Every wizard
+path that can raise a seat's campaign daily cap must respect
+the hold. The hold list is Smartlead account ids and is **not**
+cleared at ~00:15 UTC / 7:15pm CT. A human clears an id.
+
+Writers audited: mailbox-settings / mailbox-gap (D183
+converge — this was the in-app restore), min40-topup,
+client-fan-out, campaign top-up, copy-canary fleet setup.
+The bounce loop still only *arms* the list (`ensureBounceHold`);
+it does not write mpd. An unlisted Outlook-at-0 is held only
+while a TERRL window is open (re-zero before the id lands).
+
+**Why.** 36 seats on 12 Outlook tenants that hit TERRL were
+found back at 15 between ~2026-09-30 and 2026-10-02. D212
+skipped raises only while `bounceHoldRestoreAfter` was in
+the future. `pruneBounceHold` emptied the id list at 00:15
+UTC, then the next health mailbox-gap pass wrote Outlook 15
+(D183). That is the same clock as the paused external agent
+routine (7:15pm CT). The wizard was doing it too.
+
+**Rejected.** Keeping the overnight restore "because Microsoft
+resets at midnight UTC". Josh wanted those seats to stay at 0.
+A later PR may cap a tenant at 80% of its measured send count
+after a 24-hour hold; that is not this change.
+
+**Supersedes / amends.** Amends D212: the skip-raise stays;
+the 7:15pm restore / prune is deleted. Does not change D213
+(5.1.8 permanent tenant outbound block).
+
+**Guards.** `isBounceHoldAccount` ignores restoreAfter;
+`pruneBounceHold` is a no-op; listed ids still `mustNotRaiseHeldMpd`
+after 00:15 UTC; copy-canary skips held mpd writes; CANON
+dated D218.
 
 ---
 

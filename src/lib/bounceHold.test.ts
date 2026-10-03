@@ -5,6 +5,7 @@ import {
   accountOnBounceHold,
   bounceHoldWindowActive,
   hasTodayTenantCapSignal,
+  mustNotRaiseHeldMpd,
   nextBounceHoldRestoreAt,
   tenantLimitAlertKey,
 } from "./bounceHold.js";
@@ -93,7 +94,39 @@ describe("D212 bounce-hold skip", () => {
         midAfternoon,
       ),
       false,
-      "zeros after restore are not held — D183 may write 15",
+      "unlisted zeros after the window are not held",
+    );
+  });
+
+  it("D218: a listed id stays held after 00:15 UTC and must not be raised", () => {
+    const store = {
+      isBounceHoldWindowActive: () => false,
+      isBounceHoldAccount: (id: number) => id === 21648785,
+    };
+    assert.equal(
+      accountOnBounceHold(
+        { id: 21648785, type: "OUTLOOK", message_per_day: 0 },
+        store,
+        afterRestore,
+      ),
+      true,
+    );
+    assert.equal(
+      mustNotRaiseHeldMpd(
+        { id: 21648785, type: "OUTLOOK", message_per_day: 0 },
+        store,
+        afterRestore,
+      ),
+      true,
+    );
+    assert.equal(
+      accountOnBounceHold(
+        { id: 99, type: "OUTLOOK", message_per_day: 0 },
+        store,
+        afterRestore,
+      ),
+      false,
+      "unlisted Outlook at 0 after the window may be written",
     );
   });
 

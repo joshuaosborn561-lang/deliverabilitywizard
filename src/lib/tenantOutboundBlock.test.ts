@@ -48,7 +48,11 @@ describe("D213 tenant outbound-block hold", () => {
 
     state.ensureBounceHold([21831478], new Date("2026-09-30T14:00:00.000Z"));
     state.pruneBounceHold(afterRestore);
-    assert.equal(state.isBounceHoldAccount(21831478, afterRestore), false);
+    assert.equal(
+      state.isBounceHoldAccount(21831478, afterRestore),
+      true,
+      "D218: TERRL hold ids are not cleared at 7:15pm CT",
+    );
     assert.ok(state.isTenantOutboundBlockAccount(21831478));
     assert.equal(
       accountOnBounceHold(

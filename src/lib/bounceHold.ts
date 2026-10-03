@@ -1,15 +1,17 @@
 /**
- * D212 — D148 bounce-hold seats stay at their current daily cap.
+ * D212 / D218 — D148 bounce-hold seats stay at their current daily cap.
  *
- * Tenant-cap triage zeros Outlook `max_email_per_day` until ~00:15 UTC
- * (7:15pm CT) after Microsoft's midnight reset. mailbox-gap / health
- * D183 converge must not write those seats back to 15. This module
- * never writes a daily limit — it only says "skip".
+ * Tenant-cap triage (550 5.7.233 / TERRL) zeros Outlook
+ * `max_email_per_day`. mailbox-gap / health D183, min40, fan-out,
+ * top-up, and canary setup must not write those seats back to 15.
+ * This module never writes a daily limit — it only says "skip".
  *
- * The hold list is keyed by Smartlead account id. A seat is held when
- * its id is on the list and the restore window is still open, or when
- * it is Outlook already at 0 during that same window (Josh's re-zero
- * after a gap pass, before the id is persisted).
+ * D218 — the hold list is durable. A Smartlead account id on the list
+ * stays held across the old 00:15 UTC / 7:15pm CT restore. That restore
+ * is what put 36 SG Outlook seats back to 15 between 2026-09-30 and
+ * 2026-10-02. A human (or a later measured-limit policy) clears the id.
+ * Outlook already at 0 during an open TERRL window is still treated as
+ * held so a re-zero before the id is persisted is not raised.
  */
 
 import { isOutlookMailboxType } from "./sendCeiling.js";
@@ -107,6 +109,9 @@ export function accountOnBounceHold(
   const id = Number(account.id);
   if (!Number.isFinite(id) || id <= 0) return false;
   if (store?.isBounceHoldAccount?.(id, now) === true) return true;
+  // Unlisted Outlook at 0 is held only while a TERRL window is open
+  // (re-zero before the id is persisted). Listed ids stay held even
+  // after that window (D218).
   if (!store?.isBounceHoldWindowActive?.(now)) return false;
   if (!isOutlookMailboxType(account.type ?? account.platform)) return false;
   const raw = account.message_per_day ?? account.max_email_per_day;
@@ -117,4 +122,16 @@ export function accountOnBounceHold(
         ? Number(raw)
         : NaN;
   return current === 0;
+}
+
+/**
+ * True when a writer must not raise this seat's campaign daily cap.
+ * Writing 0 to keep a held seat at 0 is allowed; writing 15/30 is not.
+ */
+export function mustNotRaiseHeldMpd(
+  account: Parameters<typeof accountOnBounceHold>[0],
+  store?: BounceHoldReader | null,
+  now = new Date(),
+): boolean {
+  return accountOnBounceHold(account, store, now);
 }

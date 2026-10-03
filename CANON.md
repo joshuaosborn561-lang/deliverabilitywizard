@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D215** (2026-09-30). One page of current truth. When a new
+Canon as of **D218** (2026-10-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -56,10 +56,13 @@ or the day is done. Silent findings are a bug (D163).
   Gmail/SMTP and every other type **30** (`MESSAGE_PER_DAY`). Do not
   drop the global constant to 15. Outlook-at-15 is compliant, not a
   `mailbox_volume` finding.   A seat on the **D148 bounce-hold list**
-  (Smartlead account id; Outlook already at 0 during the hold window)
-  is skipped by mailbox-gap, the scheduled health pass, fan-out,
-  top-up, and min40 — never written back to 15 — until **~00:15 UTC /
-  7:15pm CT** (D212). The restore is when D183 may write 15 again.
+  (Smartlead account id; Outlook already at 0 during an open TERRL
+  window) is skipped by mailbox-gap, the scheduled health pass,
+  fan-out, top-up, min40, and canary setup — never written back to
+  15 (D212/D218). **There is no 7:15pm CT / 00:15 UTC restore.**
+  Listed ids persist until a human clears them. The old prune that
+  emptied the list at midnight UTC is what put 36 SG Outlook TERRL
+  seats back to 15 between 2026-09-30 and 2026-10-02.
   A **5.1.8 / AS(42004) tenant outbound block**
   (`tenant_outbound_block`, never `tenant_rate_limit`) holds every
   seat on that tenant at 0 with **no automatic restore** — the 7:15pm

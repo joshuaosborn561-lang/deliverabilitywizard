@@ -46,6 +46,7 @@ import {
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { ensureCanaryShell } from "./canaryShell.js";
 import { isExcluded } from "./campaignTopUp.js";
 import {
@@ -481,6 +482,10 @@ export class CopyCanaryService {
       const accountId = pool.smartleadAccountId;
       if (!accountId) continue;
       try {
+        const held = accountOnBounceHold(
+          { id: accountId, platform: pool.platform },
+          this.state,
+        );
         await this.smartlead.updateEmailAccount(accountId, {
           signature: buildPoolSignature({
             firstName: pool.firstName || "Canary",
@@ -488,10 +493,14 @@ export class CopyCanaryService {
             clientBrand: "Canary",
           }),
           from_name: `${pool.firstName || "Canary"} ${pool.lastName || "Box"}`,
-          max_email_per_day: mailboxMessagePerDayTarget(
-            { platform: pool.platform },
-            this.config,
-          ),
+          ...(held
+            ? {}
+            : {
+                max_email_per_day: mailboxMessagePerDayTarget(
+                  { platform: pool.platform },
+                  this.config,
+                ),
+              }),
           time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
         });
         await this.smartlead.configureWarmup(accountId, {

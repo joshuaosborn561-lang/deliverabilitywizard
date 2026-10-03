@@ -161,9 +161,9 @@ export class MailboxSettingsService {
           accountIds: [account.id],
         });
       }
-      // D212 — bounce-hold Outlook zeros stay 0 until the 7:15pm CT restore.
-      // D213 tenant outbound-block zeros are a different list — do not arm
-      // the overnight restore from them.
+      // D212/D218 — bounce-hold Outlook zeros stay 0. Listed ids persist
+      // past 00:15 UTC; pruneBounceHold is a no-op. D213 tenant
+      // outbound-block zeros are a different list — do not arm them.
       if (isOutlookMailboxType(account.type) && current === 0 && !tenantHeld) {
         this.store?.observeBounceHoldZero(account.id);
       }

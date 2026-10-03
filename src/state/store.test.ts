@@ -125,6 +125,11 @@ describe("D213 tenant outbound-block state", () => {
     );
     reloaded.pruneBounceHold(new Date("2026-10-01T00:20:00.000Z"));
     assert.equal(reloaded.isTenantOutboundBlockAccount(21831312), true);
+    assert.equal(
+      reloaded.isBounceHoldAccount(21831478, new Date("2026-10-01T00:20:00.000Z")),
+      true,
+      "D218: TERRL hold ids survive pruneBounceHold / 7:15pm CT",
+    );
     assert.equal(reloaded.clearTenantOutboundBlock("arborbrooksagesunsetxcom.onmicrosoft.com"), true);
     assert.equal(reloaded.isTenantOutboundBlockAccount(21831478), false);
   });

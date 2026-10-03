@@ -222,6 +222,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
 | D214 | Live — leftover newest ignores inventory (D215) | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
 | D215 | Live | Health-resume newest stamp ignores inventory (shared-book / skip-if-fresh refresh); leftover is after the deepest non-inventory lastOk so an inventory-only kill cannot hide pod-cover |
+| D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce. D216 claimed by PR #265; D217 Canon staffable; D218 bounce-hold persist |
 
 ---
 
@@ -6958,4 +6959,61 @@ at pod-cover, not client-rest; warmup-gate interrupt
 still resumes at campaign-health; CANON dated D215.
 
 ---
+
+## D219 — Mailbox type caps and 5.7.233 24h hold + same-client substitute
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (owner): tag each Smartlead mailbox
+`type:google` / `type:m365` / `type:azure` from its domain
+(`tidalstackco.com` is Azure/Entra). Caps: Azure/Entra = 2
+campaign/day + 5 warmup/day; Microsoft 365 = 15 campaign/day,
+warmup unchanged; Google unchanged. On a Microsoft 550 5.7.233
+bounce from a tenant: stop campaign sends for every seat on
+that tenant for 24 hours (rolling window) at
+`max_email_per_day=0`, then resume the **normal type cap**.
+Do not record a learned limit. Do not lower the mpd after a
+bounce. No 80% cap. The stopped seat stays linked and keeps
+its POD tag. In the same campaign and on-week POD, temporarily
+link one extra warm (21+ days) generic from that same client's
+generics, with the signature and sender name set for the
+client, so the POD runs at 41 linked / 40 sending. Never retag
+named seats. Never move seats between PODs. Record the temp
+substitution (stopped seat, substitute seat, campaign, client,
+stop time). When the 24 hours are up, restore the stopped seat
+to its type cap and unlink the substitute so the POD returns
+to 40. If no clean same-client generic is available, do not
+pull one from another client; include that campaign in the
+end-of-day per-client post as `no substitute available, at 39
+sending`. One weekday end-of-day Slack post to #deliverability
+(C0BJQUTV7A8) at about 5:30pm CT, grouped per client, listing
+every inbox that hit 5.7.233 that day and was paused. Post
+nothing on days with no such bounces. Never post per bounce.
+Weekdays only for the type-tag converge. No em dashes in Slack
+copy. Paginate /email-accounts limit=100 via the shared book.
+
+**Why.** Standing send rules the Deliverability agent already
+applies by hand. Wizard cap converge was Outlook-15 / Gmail-30
+and had no Azure 2/5, and TERRL seats were restored to 15.
+An 80% learned cap would lock a tenant under its type default
+after a one-day Microsoft throttle. A stopped seat left
+uncovered drops the on-week POD to 39 sending.
+
+**Rejected.** Leaving type tags as agent-only decoration.
+Keeping the 7:15pm restore to 15 after TERRL. Recording a
+measured send count and capping at 80%. Per-bounce Slack.
+Borrowing another client's generic. Retagging named seats or
+moving seats between PODs to cover the hole.
+
+**Supersedes / amends.** Amends D183 (Outlook 15 is M365; Azure
+is 2). Amends D212: a 5.7.233 tenant is 24h at 0 then the type
+cap, persisted. Amends D140: the tenant-cap Slack is the
+weekday EOD digest, not a per-bounce / once-per-tenant page.
+Does not change D213 (5.1.8 permanent).
+
+**Guards.** Azure domain/tag cap 2/5; M365 15; TERRL 24h then
+type cap; same-client substitute swap-in/swap-out; weekday
+EOD digest with no-sub 39-sending line; type-tag stage
+weekday; Slack note has no em dash; CANON dated D219.
+
 

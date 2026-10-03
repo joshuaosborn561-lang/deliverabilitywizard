@@ -45,7 +45,10 @@ import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
-import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
+import {
+  mailboxMessagePerDayTarget,
+  mailboxWarmupPerDayTarget,
+} from "../lib/sendCeiling.js";
 import { ensureCanaryShell } from "./canaryShell.js";
 import { isExcluded } from "./campaignTopUp.js";
 import {
@@ -489,14 +492,22 @@ export class CopyCanaryService {
           }),
           from_name: `${pool.firstName || "Canary"} ${pool.lastName || "Box"}`,
           max_email_per_day: mailboxMessagePerDayTarget(
-            { platform: pool.platform },
+            {
+              id: accountId,
+              platform: pool.platform,
+              email: pool.email,
+            },
             this.config,
+            this.state,
           ),
           time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
         });
         await this.smartlead.configureWarmup(accountId, {
           warmup_enabled: false,
-          total_warmup_per_day: this.config.warmupTotalPerDay,
+          total_warmup_per_day: mailboxWarmupPerDayTarget(
+            { platform: pool.platform, email: pool.email },
+            this.config,
+          ),
           daily_rampup: this.config.warmupDailyRampup,
           reply_rate_percentage: this.config.warmupReplyRatePercentage,
         });

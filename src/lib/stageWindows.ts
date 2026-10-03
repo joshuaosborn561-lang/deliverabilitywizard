@@ -23,6 +23,8 @@ const HEALTH_MS = 45 * 60 * 1000;
 const SIX_HOURLY_MS = (6 * 60 + 45) * 60 * 1000;
 /** 30-minute canon-ops cadence plus grace for a missed weekday tick. */
 const CANON_OPS_MS = 90 * 60 * 1000;
+/** Daily TERRL EOD digest (weekday 5:30pm CT) plus weekend idle grace. */
+const TERL_EOD_MS = 36 * 60 * 60 * 1000;
 
 /** Fallback for a stage that runs but is missing from the registry below. */
 export const STAGE_FALLBACK_OVERDUE_MS = 45 * 60 * 1000;
@@ -161,4 +163,6 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   "min40-topup": CANON_OPS_MS,
   "powergryd-watch": CANON_OPS_MS,
   "generic-cleanup": CANON_OPS_MS,
+  "mailbox-type-tags": CANON_OPS_MS,
+  "terl-eod": TERL_EOD_MS,
 };

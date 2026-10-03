@@ -44,6 +44,16 @@ import {
 } from "../lib/bounceHold.js";
 import type { TenantOutboundBlockRecord } from "../lib/tenantOutboundBlock.js";
 import { normalizeTenantOutboundHost } from "../lib/tenantOutboundBlock.js";
+import {
+  terlHoldActive,
+  terlHeldUntil,
+  terlSubstitutionKey,
+  type TenantTerlHoldRecord,
+  type TerlPausedDay,
+  type TerlPausedInbox,
+  type TerlSubstitution,
+} from "../lib/tenantTerlHold.js";
+import { normalizeTerlHost } from "../lib/tenantTerlHold.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -319,6 +329,16 @@ export interface AppState {
    * AS(42004)). No restoreAfter. A human clears the record.
    */
   tenantOutboundBlocks: Record<string, TenantOutboundBlockRecord>;
+  /**
+   * D219 — Microsoft 550 5.7.233 tenant holds. 24h at 0, then the
+   * type cap resumes. Other jobs must not write the type default
+   * during the window.
+   */
+  tenantTerlHolds: Record<string, TenantTerlHoldRecord>;
+  /** D219 — Chicago-day log of inboxes zeroed for the EOD digest. */
+  terlPausedDays: Record<string, TerlPausedDay>;
+  /** D219 — temp same-client generic substitutions. Key campaignId:stoppedId. */
+  terlSubstitutions: Record<string, TerlSubstitution>;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -506,6 +526,129 @@ function parseTenantOutboundBlocks(
   return out;
 }
 
+function parseTenantTerlHolds(
+  raw: unknown,
+): Record<string, TenantTerlHoldRecord> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, TenantTerlHoldRecord> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    const tenant = normalizeTerlHost(
+      typeof row.tenant === "string" ? row.tenant : key,
+    );
+    if (!tenant) continue;
+    const domains = Array.isArray(row.domains)
+      ? row.domains
+          .filter((d): d is string => typeof d === "string")
+          .map(normalizeTerlHost)
+          .filter(Boolean)
+      : [];
+    const accountIds = Array.isArray(row.accountIds)
+      ? row.accountIds.filter(
+          (id): id is number => Number.isFinite(id) && Number(id) > 0,
+        )
+      : [];
+    if (typeof row.heldUntil !== "string" || !row.heldUntil) continue;
+    out[tenant] = {
+      tenant,
+      domains: [...new Set(domains)],
+      accountIds: [...new Set(accountIds)],
+      heldUntil: row.heldUntil,
+      firstHeldAt: typeof row.firstHeldAt === "string" ? row.firstHeldAt : row.heldUntil,
+    };
+  }
+  return out;
+}
+
+function parseTerlPausedDays(raw: unknown): Record<string, TerlPausedDay> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, TerlPausedDay> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    const ymd = typeof row.ymd === "string" ? row.ymd : key;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+    const inboxes = Array.isArray(row.inboxes)
+      ? row.inboxes.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const rec = item as Record<string, unknown>;
+          const accountId = Number(rec.accountId);
+          const email = String(rec.email ?? "").trim().toLowerCase();
+          if (!Number.isFinite(accountId) || accountId <= 0 || !email) return [];
+          return [
+            {
+              accountId,
+              email,
+              clientId:
+                typeof rec.clientId === "number" && Number.isFinite(rec.clientId)
+                  ? rec.clientId
+                  : null,
+              clientName: String(rec.clientName ?? ""),
+              tenant: normalizeTerlHost(String(rec.tenant ?? "")),
+              pausedAt: typeof rec.pausedAt === "string" ? rec.pausedAt : "",
+            } satisfies TerlPausedInbox,
+          ];
+        })
+      : [];
+    out[ymd] = {
+      ymd,
+      postedAt: typeof row.postedAt === "string" ? row.postedAt : null,
+      inboxes,
+    };
+  }
+  return out;
+}
+
+function parseTerlSubstitutions(raw: unknown): Record<string, TerlSubstitution> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, TerlSubstitution> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const row = value as Record<string, unknown>;
+    const stoppedAccountId = Number(row.stoppedAccountId);
+    const campaignId = Number(row.campaignId);
+    const clientId = Number(row.clientId);
+    if (
+      !Number.isFinite(stoppedAccountId) ||
+      stoppedAccountId <= 0 ||
+      !Number.isFinite(campaignId) ||
+      campaignId <= 0 ||
+      !Number.isFinite(clientId) ||
+      clientId <= 0
+    ) {
+      continue;
+    }
+    const storedKey =
+      typeof key === "string" && key.includes(":")
+        ? key
+        : terlSubstitutionKey(campaignId, stoppedAccountId);
+    out[storedKey] = {
+      stoppedAccountId,
+      stoppedEmail: String(row.stoppedEmail ?? "").toLowerCase(),
+      substituteAccountId:
+        typeof row.substituteAccountId === "number" &&
+        Number.isFinite(row.substituteAccountId)
+          ? row.substituteAccountId
+          : null,
+      substituteEmail:
+        typeof row.substituteEmail === "string"
+          ? row.substituteEmail.toLowerCase()
+          : null,
+      campaignId,
+      campaignName: String(row.campaignName ?? ""),
+      clientId,
+      clientName: String(row.clientName ?? ""),
+      tenant: normalizeTerlHost(String(row.tenant ?? "")),
+      stoppedAt: typeof row.stoppedAt === "string" ? row.stoppedAt : "",
+      restoreAfter: typeof row.restoreAfter === "string" ? row.restoreAfter : "",
+      restoredAt: typeof row.restoredAt === "string" ? row.restoredAt : null,
+      noSubstitute: row.noSubstitute === true,
+    };
+  }
+  return out;
+}
+
 const EMPTY_POOL_PROVISION: PoolProvisionState = {
   phase: "idle",
 };
@@ -563,6 +706,9 @@ const EMPTY_STATE: AppState = {
   bounceHoldAccountIds: [],
   bounceHoldRestoreAfter: null,
   tenantOutboundBlocks: {},
+  tenantTerlHolds: {},
+  terlPausedDays: {},
+  terlSubstitutions: {},
 };
 
 export class StateStore {
@@ -655,6 +801,9 @@ export class StateStore {
         tenantOutboundBlocks: parseTenantOutboundBlocks(
           parsed.tenantOutboundBlocks,
         ),
+        tenantTerlHolds: parseTenantTerlHolds(parsed.tenantTerlHolds),
+        terlPausedDays: parseTerlPausedDays(parsed.terlPausedDays),
+        terlSubstitutions: parseTerlSubstitutions(parsed.terlSubstitutions),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1532,6 +1681,174 @@ export class StateStore {
       }
     }
     return false;
+  }
+
+  /** D219 — 5.7.233 tenant hold. Rolling 24h, then type cap. */
+  getTenantTerlHold(tenantOrDomain: string): TenantTerlHoldRecord | undefined {
+    const host = normalizeTerlHost(tenantOrDomain);
+    if (!host) return undefined;
+    return (
+      this.state.tenantTerlHolds[host] ??
+      Object.values(this.state.tenantTerlHolds).find(
+        (row) => row.tenant === host || row.domains.includes(host),
+      )
+    );
+  }
+
+  listTenantTerlHolds(): TenantTerlHoldRecord[] {
+    return Object.values(this.state.tenantTerlHolds).map((row) => ({
+      ...row,
+      domains: [...row.domains],
+      accountIds: [...row.accountIds],
+    }));
+  }
+
+  isTenantTerlHoldAccount(accountId: number, now = new Date()): boolean {
+    const id = Number(accountId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    return Object.values(this.state.tenantTerlHolds).some(
+      (row) => row.accountIds.includes(id) && terlHoldActive(row.heldUntil, now),
+    );
+  }
+
+  isTenantTerlHoldDomain(domain: string, now = new Date()): boolean {
+    const record = this.getTenantTerlHold(domain);
+    return Boolean(record && terlHoldActive(record.heldUntil, now));
+  }
+
+  ensureTenantTerlHold(input: {
+    tenant?: string;
+    domains?: Iterable<string>;
+    accountIds?: Iterable<number>;
+    now?: Date;
+  }): TenantTerlHoldRecord | undefined {
+    const now = input.now ?? new Date();
+    const domains = [
+      ...new Set(
+        [...(input.domains ?? [])].map(normalizeTerlHost).filter(Boolean),
+      ),
+    ];
+    const accountIds = [
+      ...new Set(
+        [...(input.accountIds ?? [])].filter(
+          (id) => Number.isFinite(id) && id > 0,
+        ),
+      ),
+    ];
+    const tenantHint = input.tenant ? normalizeTerlHost(input.tenant) : "";
+    let record =
+      (tenantHint ? this.state.tenantTerlHolds[tenantHint] : undefined) ??
+      Object.values(this.state.tenantTerlHolds).find(
+        (row) =>
+          (tenantHint && row.tenant === tenantHint) ||
+          row.domains.some((domain) => domains.includes(domain)),
+      );
+    const key = tenantHint || record?.tenant || domains[0];
+    if (!key) return undefined;
+    const rolling = Boolean(record && terlHoldActive(record.heldUntil, now));
+    if (!record) {
+      record = {
+        tenant: key,
+        domains: [],
+        accountIds: [],
+        heldUntil: terlHeldUntil(now).toISOString(),
+        firstHeldAt: now.toISOString(),
+      };
+      this.state.tenantTerlHolds[key] = record;
+    } else {
+      if (tenantHint && record.tenant !== tenantHint) {
+        delete this.state.tenantTerlHolds[record.tenant];
+        record.tenant = tenantHint;
+        this.state.tenantTerlHolds[tenantHint] = record;
+      }
+      record.heldUntil = terlHeldUntil(now).toISOString();
+      if (!rolling) record.firstHeldAt = now.toISOString();
+    }
+    for (const domain of domains) {
+      if (!record.domains.includes(domain)) record.domains.push(domain);
+    }
+    for (const id of accountIds) {
+      if (!record.accountIds.includes(id)) record.accountIds.push(id);
+    }
+    return record;
+  }
+
+  recordTerlPausedInboxes(input: {
+    ymd: string;
+    inboxes: Iterable<TerlPausedInbox>;
+  }): void {
+    const ymd = input.ymd.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return;
+    const day = this.state.terlPausedDays[ymd] ?? {
+      ymd,
+      postedAt: null,
+      inboxes: [],
+    };
+    for (const row of input.inboxes) {
+      const email = row.email.trim().toLowerCase();
+      if (!email || !Number.isFinite(row.accountId) || row.accountId <= 0) continue;
+      const existing = day.inboxes.find(
+        (item) => item.accountId === row.accountId || item.email === email,
+      );
+      if (existing) continue;
+      day.inboxes.push({
+        ...row,
+        email,
+        tenant: normalizeTerlHost(row.tenant),
+      });
+    }
+    this.state.terlPausedDays[ymd] = day;
+  }
+
+  listTerlPausedInboxes(ymd: string): TerlPausedInbox[] {
+    return [...(this.state.terlPausedDays[ymd]?.inboxes ?? [])];
+  }
+
+  terlEodPosted(ymd: string): boolean {
+    return Boolean(this.state.terlPausedDays[ymd]?.postedAt);
+  }
+
+  markTerlEodPosted(ymd: string, now = new Date()): void {
+    const day = this.state.terlPausedDays[ymd] ?? {
+      ymd,
+      postedAt: null,
+      inboxes: [],
+    };
+    day.postedAt = now.toISOString();
+    this.state.terlPausedDays[ymd] = day;
+  }
+
+  upsertTerlSubstitution(row: TerlSubstitution): void {
+    const key = terlSubstitutionKey(row.campaignId, row.stoppedAccountId);
+    this.state.terlSubstitutions[key] = { ...row };
+  }
+
+  listTerlSubstitutions(): TerlSubstitution[] {
+    return Object.values(this.state.terlSubstitutions).map((row) => ({ ...row }));
+  }
+
+  listActiveTerlSubstitutions(): TerlSubstitution[] {
+    return this.listTerlSubstitutions().filter((row) => !row.restoredAt);
+  }
+
+  listExpiredTerlSubstitutions(now = new Date()): TerlSubstitution[] {
+    return this.listTerlSubstitutions().filter(
+      (row) => !row.restoredAt && Date.parse(row.restoreAfter) <= now.getTime(),
+    );
+  }
+
+  markTerlSubstitutionRestored(key: string, now = new Date()): void {
+    const row = this.state.terlSubstitutions[key];
+    if (row) row.restoredAt = now.toISOString();
+  }
+
+  getTerlSubstitution(
+    campaignId: number,
+    stoppedAccountId: number,
+  ): TerlSubstitution | undefined {
+    return this.state.terlSubstitutions[
+      terlSubstitutionKey(campaignId, stoppedAccountId)
+    ];
   }
 
   /** D136 — the monitor's domain→client audit replaces the full list each pass. */

@@ -712,4 +712,47 @@ describe("MailboxSettingsService", () => {
       signature: "Joshua Osborn\nSalesGlider",
     });
   });
+
+  it("D219: Azure tidalstackco.com is written to 2/day not 15", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 88,
+          type: "OUTLOOK",
+          from_email: "ada@tidalstackco.com",
+          from_name: "Ada Azure",
+          message_per_day: 15,
+          minTimeToWaitInMins: 10,
+          signature: "Ada Azure\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run when only volume drifted");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 1);
+    assert.deepEqual(updates, [{ id: 88, fields: { max_email_per_day: 2 } }]);
+  });
 });

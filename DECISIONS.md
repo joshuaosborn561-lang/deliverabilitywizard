@@ -228,7 +228,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
 | D221 | Live | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
 | D222 | Live — Slack findings + detection-only superseded by D226 | Monday 8:16am CT InboxKit lapsed-license sweep compares InboxKit status to connected Smartlead accounts. D226 hands findings internally and deletes lapsed seats; Slack is only the post-cleanup one-liner when X > 0 |
-| D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0. D223–D225 are claimed by open PRs #276–#278 |
+| D223 | Live | Mechanical POD A/B fortnight rotation skips PowerGRYD 592842 and Goliath 548611. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side |
+| D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
 
 ---
 
@@ -7303,6 +7304,35 @@ CT cadence, complete fleet pager, and weekday idle stay.
 and `/health`; Slack copy is the one-liner and has no em
 dash; deletes use `deleteEmailAccount` + `cancelMailboxes`;
 CANON dated D226.
+
+---
+## D223 — POD A/B rotation skips PowerGRYD and Goliath; flag dual-POD
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (owner): the mechanical D43 fortnight
+POD A/B rotation does not move PowerGRYD (592842) or
+Goliath (548611). Those clients stay on their current
+seats. A mailbox tagged both `POD-A` and `POD-B` is a
+dual-POD miss: page `#deliverability` on weekdays,
+grouped per client. Do not guess which tag to keep. No
+em dashes.
+
+**Why.** PowerGRYD is dedicated inventory. Goliath is
+the leftover POC / hold lane. Dual tags hide which
+half is on-week.
+
+**Rejected.** Rotating PG or Goliath "for consistency".
+Auto-dropping one of the two tags.
+
+**Supersedes / amends.** Amends D43 only for those two
+client ids. Amends D135: dual-POD is flagged, not
+silently converged when the seat is not in a desired
+pod. Does not change D221 generic allocation.
+
+**Guards.** client-rest skips 592842 and 548611;
+`hasDualPodTags` + weekday Slack note; CANON dated
+D226 (newest on this merge).
 
 ---
 

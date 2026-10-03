@@ -483,7 +483,14 @@ async function main(): Promise<void> {
     state,
     inventoryBook,
   );
-  const podTags = new PodTagService(config, smartlead, state, inventoryBook);
+  const podTags = new PodTagService(
+    config,
+    smartlead,
+    state,
+    inventoryBook,
+    undefined,
+    slack,
+  );
   const domainClientAudit = new DomainClientAuditService(
     config,
     state,

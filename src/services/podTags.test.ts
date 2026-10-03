@@ -149,7 +149,62 @@ describe("PodTagService (D135)", () => {
       async () => {},
     );
     const result = await service.run();
-    assert.deepEqual(result, { assigned: 0, removed: 0 });
+    assert.deepEqual(result, { assigned: 0, removed: 0, dualPodFlagged: 0 });
     assert.equal(ensured, 0, "drift-only: nothing ensured when nothing changes");
+  });
+
+  it("D223: flags dual POD-A+POD-B tags and does not write", async () => {
+    const notes: string[] = [];
+    const state = new StateStore(
+      `/tmp/dw-pod-tags-dual-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = new PodTagService(
+      loadConfig({ DRY_RUN: "false" } as NodeJS.ProcessEnv),
+      {
+        ensureTag: async () => {
+          throw new Error("no writes expected");
+        },
+        assignTags: async () => {
+          throw new Error("no writes expected");
+        },
+        removeTags: async () => {
+          throw new Error("no writes expected");
+        },
+      } as never,
+      state,
+      {
+        get: async () => ({
+          campaigns: [
+            { id: 50, name: "TechEvo A", status: "ACTIVE", client_id: 77 },
+          ],
+          accounts: [
+            {
+              id: 9,
+              from_email: "ada@x.com",
+              client_id: 77,
+              tags: [{ tag_name: POD_TAG_A }, { tag_name: POD_TAG_B }],
+            },
+          ],
+          clients: [{ id: 77, name: "TechEvo", logo: "TechEvo" }],
+          fetchedAt: Date.now(),
+        }),
+      } as unknown as InventoryBook,
+      async () => {},
+      {
+        notifyDeliverabilityNote: async (text) => {
+          notes.push(text);
+          return undefined;
+        },
+      },
+    );
+    const result = await service.run({
+      now: new Date("2026-10-05T13:16:00.000Z"),
+    });
+    assert.equal(result.assigned, 0);
+    assert.equal(result.removed, 0);
+    assert.equal(result.dualPodFlagged, 1);
+    assert.match(notes[0]!, /ada@x.com has POD-A and POD-B/);
+    assert.doesNotMatch(notes[0]!, /—/);
   });
 });

@@ -273,6 +273,9 @@ or the day is done. Silent findings are a bug (D163).
   exclusiveExtras peel are retired. Client-named BCP domains
   (`boldercyper*`) are client inventory, never skipped as generics
   (D99/D169). Excluded / canary / pod-control shells are not touched.
+  **PowerGRYD 592842 and Goliath 548611 do not rotate** (D223).
+  A seat tagged both POD-A and POD-B is flagged to
+  `#deliverability` on weekdays; the wizard does not pick a side.
   The split is visible in Smartlead as POD-A/POD-B mailbox tags,
   converged 6-hourly — decoration for humans on named seats (D135).
   Assigned generics also carry a POD so allocation can top A and B

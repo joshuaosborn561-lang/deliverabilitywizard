@@ -318,11 +318,12 @@ export interface AppState {
    */
   min40ShortfallAlerted: Record<string, string>;
   /**
-   * D212 — Smartlead account ids on the D148 bounce-hold list (tenant-cap
-   * Outlook zeroed until ~00:15 UTC). Daily-limit writers skip these.
+   * D212 / D218 — Smartlead account ids on the D148 bounce-hold list
+   * (tenant-cap Outlook zeroed). Daily-limit writers skip raising these.
+   * D218: ids persist; they are not cleared at 00:15 UTC.
    */
   bounceHoldAccountIds: number[];
-  /** D212 — ISO when the 7:15pm CT restore may write D183 15 again. */
+  /** D212 — last TERRL window stamp (informational). D218 does not expire ids. */
   bounceHoldRestoreAfter: string | null;
   /**
    * D213 — permanent Microsoft tenant outbound-block holds (5.1.8 /
@@ -1509,15 +1510,17 @@ export class StateStore {
     return Object.values(this.state.bounceVerdicts);
   }
 
-  /** D212 — bounce-hold list is Smartlead account ids until restoreAfter. */
+  /** D212 — bounce-hold list is Smartlead account ids. D218: no time expiry. */
   isBounceHoldWindowActive(now = new Date()): boolean {
     return bounceHoldWindowActive(this.state.bounceHoldRestoreAfter, now);
   }
 
-  isBounceHoldAccount(accountId: number, now = new Date()): boolean {
+  isBounceHoldAccount(accountId: number, _now = new Date()): boolean {
     const id = Number(accountId);
     if (!Number.isFinite(id) || id <= 0) return false;
-    if (!this.isBounceHoldWindowActive(now)) return false;
+    void _now;
+    // D218 — listed ids stay held after 00:15 UTC. The window is only
+    // used for unlisted Outlook-at-0 re-zeros (accountOnBounceHold).
     return this.state.bounceHoldAccountIds.includes(id);
   }
 
@@ -1562,9 +1565,23 @@ export class StateStore {
     this.state.bounceHoldRestoreAfter = nextBounceHoldRestoreAt(now).toISOString();
   }
 
-  pruneBounceHold(now = new Date()): void {
-    if (this.isBounceHoldWindowActive(now)) return;
-    this.state.bounceHoldAccountIds = [];
+  /**
+   * D218 — do not clear TERRL hold ids at 7:15pm CT. The old prune is
+   * what let mailbox-settings write 15 again. Kept as a no-op so
+   * callers (mailbox-settings) stay compiled.
+   */
+  pruneBounceHold(_now = new Date()): void {
+    void _now;
+  }
+
+  clearBounceHoldAccount(accountId: number): boolean {
+    const id = Number(accountId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    const before = this.state.bounceHoldAccountIds.length;
+    this.state.bounceHoldAccountIds = this.state.bounceHoldAccountIds.filter(
+      (row) => row !== id,
+    );
+    return this.state.bounceHoldAccountIds.length !== before;
   }
 
   /** D213 — permanent tenant outbound-block hold. Never cleared by pruneBounceHold. */

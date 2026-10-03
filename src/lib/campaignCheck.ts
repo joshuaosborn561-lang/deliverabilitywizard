@@ -25,6 +25,7 @@ export const CAMPAIGN_CHECK_KINDS = [
   "canary_inactive",
   "inbox_missing_known_good",
   "understaffed",
+  "esp_mix",
   "no_placement_test",
   "under_warmed",
   "mailbox_gap",

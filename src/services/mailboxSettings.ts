@@ -179,9 +179,9 @@ export class MailboxSettingsService {
           accountIds: [account.id],
         });
       }
-      // D212 — bounce-hold Outlook zeros stay 0. D219 TERRL records
-      // write 0 for 24h then the type cap; do not arm a restore
-      // from a D213 5.1.8 zero.
+      // D212/D218/D219 — bounce-hold / TERRL zeros stay 0 for the
+      // 24h window, then the type cap. Do not arm a restore from a
+      // D213 5.1.8 zero.
       if (isOutlookMailboxType(account.type) && current === 0 && !tenantHeld) {
         this.store?.observeBounceHoldZero(account.id);
       }

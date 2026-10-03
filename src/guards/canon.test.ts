@@ -9587,32 +9587,33 @@ describe("owner intent — D196 on-week client-pod staff floor", () => {
     assert.equal(bFloors.eligible.get(clientCountKey(345263)), 94);
     assert.equal(
       staffFloorForCampaign(campaign, bFloors.eligible, "SalesGlider", bFloors.onWeek),
-      46,
+      40,
       stop(
-        "B-week floor is the on-week pod (46), not half of 94 (D196).",
+        "B-week Canon page floor is 40 on-week staffable (D217), not named inventory 46.",
         `Floor is ${staffFloorForCampaign(campaign, bFloors.eligible, "SalesGlider", bFloors.onWeek)}.`,
       ),
     );
     assert.equal(clientInboxStaffFloor(94), 47);
-    const bFloor = 46;
-    assert.equal(Math.max(0, bFloor - 46), 0);
+    assert.equal(bFloors.onWeek.get(clientCountKey(345263)), 46);
+    assert.equal(Math.max(0, 40 - 41), 0);
     assert.equal(
-      Math.max(0, bFloor - 45),
+      Math.max(0, 40 - 39),
       1,
       stop(
-        "45 of 46 on-week B seats is understaffed by 1 (D196).",
-        "A short on-week pod is no longer flagged.",
+        "39 of 40 on-week staffable is understaffed by 1 (D217).",
+        "A short on-week staffable count is no longer flagged.",
       ),
     );
 
     const aWeek = new Date("2026-01-01T17:00:00Z");
     assert.equal(onWeekCohort(aWeek), "A");
     const aFloors = countClientInboxFloors(...args, aWeek);
+    assert.equal(aFloors.onWeek.get(clientCountKey(345263)), 48);
     assert.equal(
       staffFloorForCampaign(campaign, aFloors.eligible, "SalesGlider", aFloors.onWeek),
-      48,
+      40,
       stop(
-        "A-week floor is the on-week pod (48) (D196).",
+        "A-week Canon page floor is 40 (D217), not named inventory 48.",
         `A-week floor is ${staffFloorForCampaign(campaign, aFloors.eligible, "SalesGlider", aFloors.onWeek)}.`,
       ),
     );
@@ -9655,9 +9656,9 @@ describe("owner intent — D196 on-week client-pod staff floor", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /on-week pod|on-week client pod/,
+      /on-week pod|on-week client pod|on-week staffable/i,
       stop(
-        "CANON states the on-week staff-floor caveat (D196).",
+        "CANON states the on-week staff-floor caveat (D196/D217).",
         "CANON.md lost the on-week floor wording.",
       ),
     );
@@ -9681,6 +9682,86 @@ describe("owner intent — D196 on-week client-pod staff floor", () => {
         "The on-week floor is in the ledger (D196).",
         "DECISIONS.md no longer has D196.",
       ),
+    );
+  });
+});
+
+describe("owner intent — D217 Canon staffable matches the agent", () => {
+  it("D217: page floor is 40 on-week staffable; SMTP-fail does not staff", async () => {
+    const { staffFloorForCampaign } = await import("../lib/clientStaffFloor.js");
+    const { canonStaffableVerdict, CANON_STAFFABLE_MIN } = await import(
+      "../lib/canonStaffable.js"
+    );
+    const { CANON_CORE_KINDS } = await import("../lib/canonCompliance.js");
+    assert.equal(CANON_STAFFABLE_MIN, 40);
+    assert.equal(
+      staffFloorForCampaign(
+        { client_id: 345263, name: "SG PE" },
+        new Map(),
+        "SalesGlider",
+        new Map([["id:345263", 48]]),
+      ),
+      40,
+      stop(
+        "Canon page floor is 40, not named on-week inventory (D217).",
+        "staffFloorForCampaign still rises with named on-week count.",
+      ),
+    );
+    const smtpFail = canonStaffableVerdict({
+      account: {
+        id: 1,
+        from_email: "x@labvascowarranty.info",
+        client_id: 521881,
+        type: "SMTP",
+        is_smtp_success: false,
+        is_imap_success: true,
+        message_per_day: 30,
+        tags: [{ tag_name: "POD-A" }],
+        warmup_details: { created_at: "2026-08-01T00:00:00.000Z" },
+      },
+      email: "x@labvascowarranty.info",
+      campaignClientId: 521881,
+      now: new Date("2026-10-01T17:00:00Z"),
+    });
+    assert.equal(smtpFail.ok, false);
+    assert.ok(smtpFail.reasons.includes("smtp_fail"));
+    assert.ok(
+      (CANON_CORE_KINDS as readonly string[]).includes("esp_mix"),
+      stop("esp_mix is a Canon core kind (D217).", "CANON_CORE_KINDS lost esp_mix."),
+    );
+    assert.ok(
+      (CANON_CORE_KINDS as readonly string[]).includes("cross_client_membership"),
+      stop(
+        "cross_client_membership is a Canon core kind (D217).",
+        "CANON_CORE_KINDS lost exclusivity.",
+      ),
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D21[7-9]\*\*/,
+      stop("CANON dated D217+.", "CANON.md header is not D217 or later."),
+    );
+    assert.match(
+      canon,
+      /on-week staffable/,
+      stop("CANON names on-week staffable (D217).", "CANON.md lost D217 staffable."),
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      decisions,
+      /## D217 — Canon staffable is the agent's on-week count/,
+      stop("D217 is in the ledger.", "DECISIONS.md lost D217."),
+    );
+    assert.match(
+      decisions,
+      /^\| D217 \|/m,
+      stop("D217 is in the status index.", "Status index missing D217."),
     );
   });
 });
@@ -10841,9 +10922,9 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
     );
     assert.match(
       canon,
-      /40 staffable senders per ACTIVE campaign/,
+      /40 (on-week )?staffable senders per ACTIVE campaign/,
       stop(
-        "CANON names the per-campaign 40 (D207).",
+        "CANON names the per-campaign 40 (D207/D217).",
         "CANON.md lost the per-campaign floor.",
       ),
     );
@@ -11624,7 +11705,7 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
     assert.match(
       canon,
       /Canon as of \*\*D21[5-9]\*\*/,
-      stop("CANON is dated D215+.", "CANON.md header lost D215+."),
+      stop("CANON is dated D215 or later.", "CANON.md header lost the D215 generation."),
     );
     assert.match(
       canon,
@@ -11643,6 +11724,74 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
       decisions,
       /^\| D215 \|/m,
       stop("The status index lists D215 (D127).", "DECISIONS.md status index has no D215 row."),
+    );
+  });
+});
+
+describe("owner intent — D218 TERRL holds persist past 7:15pm CT", () => {
+  it("D218: listed bounce-hold ids are not pruned; writers must not raise mpd", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const hold = await readFile(new URL("../lib/bounceHold.ts", import.meta.url), "utf8");
+    const canary = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      store,
+      /D218 — listed ids stay held/,
+      stop(
+        "isBounceHoldAccount no longer expires with restoreAfter (D218).",
+        "store.ts still gates bounce-hold ids on the 7:15 window.",
+      ),
+    );
+    assert.match(
+      store,
+      /pruneBounceHold[\s\S]{0,200}void _now/,
+      stop(
+        "pruneBounceHold is a no-op (D218).",
+        "pruneBounceHold still clears bounceHoldAccountIds.",
+      ),
+    );
+    assert.match(
+      hold,
+      /mustNotRaiseHeldMpd/,
+      stop(
+        "mustNotRaiseHeldMpd is the shared raise gate (D218).",
+        "bounceHold.ts lost mustNotRaiseHeldMpd.",
+      ),
+    );
+    assert.match(
+      canary,
+      /accountOnBounceHold/,
+      stop(
+        "copy-canary skips held daily caps (D218).",
+        "copyCanary.ts still writes max_email_per_day on held seats.",
+      ),
+    );
+    assert.match(
+      canon,
+      /no 7:15pm CT/,
+      stop(
+        "CANON says there is no 7:15pm restore (D218).",
+        "CANON.md still promises the overnight restore.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D21[8-9]\*\*/,
+      stop("CANON dated D218+.", "CANON.md header is not D218 or later."),
+    );
+    assert.match(
+      decisions,
+      /## D218 — TERRL bounce-holds persist/,
+      stop("D218 is in the ledger.", "DECISIONS.md lost D218."),
     );
   });
 });

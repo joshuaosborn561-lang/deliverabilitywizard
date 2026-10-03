@@ -78,7 +78,7 @@ function inventory(opts: {
     accounts.push({
       id: 11,
       type: "OUTLOOK",
-      from_email: "bert@salesglider.com",
+          from_email: "bert@salesgliderset.info",
       from_name: "Bert Named",
       client_id: 345263,
       campaign_ids: [],

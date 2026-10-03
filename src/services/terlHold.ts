@@ -37,6 +37,10 @@ import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import {
+  applyGuardedHoldRequest,
+  type SeatHoldRequest,
+} from "../lib/evidenceHold.js";
 import { owesWarmup } from "./warmupGate.js";
 import { isExcluded } from "./campaignTopUp.js";
 import type { InventorySnapshot } from "./inventory.js";
@@ -100,6 +104,8 @@ export class TerlHoldService {
     inventory: InventorySnapshot;
     dryRun?: boolean;
     now?: Date;
+    eventId?: string;
+    smtpCode?: string;
   }): Promise<TerlHoldApplyResult> {
     const now = input.now ?? new Date();
     const dryRun = input.dryRun ?? this.config.dryRun;
@@ -126,7 +132,38 @@ export class TerlHoldService {
     });
     if (!seats.length) return result;
 
-    const ids = seats.map((seat) => seat.id);
+    const eventId = String(input.eventId ?? "").trim();
+    const smtpCode = String(input.smtpCode ?? "5.7.233").trim();
+    const requests: SeatHoldRequest[] = seats.map((seat) => {
+      const email = accountEmail(seat)!.toLowerCase();
+      return {
+        email,
+        accountId: seat.id,
+        reason: "hard_bounce_or_block",
+        evidence: {
+          eventId,
+          smtpCode,
+          tenant: email.split("@")[1],
+        },
+        source: "terl-hold",
+        expiresAt: terlHeldUntil(now),
+      };
+    });
+    const gated = await applyGuardedHoldRequest({
+      seats: requests,
+      store: this.state,
+      slack: this.slack,
+      context: { now },
+    });
+    const acceptedIds = new Set(
+      gated.accepted
+        .map((row) => row.accountId)
+        .filter((id): id is number => typeof id === "number"),
+    );
+    const acceptedSeats = seats.filter((seat) => acceptedIds.has(seat.id));
+    if (!acceptedSeats.length) return result;
+
+    const ids = acceptedSeats.map((seat) => seat.id);
     for (const host of hosts) {
       this.state.ensureTenantTerlHold({
         tenant: host,
@@ -137,7 +174,7 @@ export class TerlHoldService {
     }
 
     const paused: TerlPausedInbox[] = [];
-    for (const seat of seats) {
+    for (const seat of acceptedSeats) {
       const email = accountEmail(seat)!.toLowerCase();
       const tenant = email.split("@")[1] ?? "";
       const clientId = typeof seat.client_id === "number" ? seat.client_id : null;

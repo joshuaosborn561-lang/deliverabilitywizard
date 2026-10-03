@@ -12197,7 +12197,7 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
     assert.match(
       canon,
       /Canon as of \*\*D22[1-9]\*\*/,
-      stop("CANON is dated D221 or later.", "CANON.md header was not bumped to D221."),
+      stop("CANON is dated D221+.", "CANON.md header is not D221 or later."),
     );
     assert.match(
       canon,
@@ -12306,8 +12306,8 @@ describe("owner intent — D225 weekday surplus generic return", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D225\*\*/,
-      stop("CANON is dated D225.", "CANON.md header was not bumped to D225."),
+      /Canon as of \*\*D22[5-9]\*\*/,
+      stop("CANON is dated D225 or later.", "CANON.md header lost D225+."),
     );
     assert.match(
       canon,
@@ -12348,6 +12348,354 @@ describe("owner intent — D225 weekday surplus generic return", () => {
       decisions,
       /^\| D225 \|/m,
       stop("The status index lists D225 (D127).", "DECISIONS.md status index has no D225 row."),
+    );
+  });
+});
+
+describe("owner intent — D224 evidence-per-seat hold gate", () => {
+  it("D224: holds need per-seat evidence; 9/28 boldercyper replay rejects the other 87", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lib = await readFile(new URL("../lib/evidenceHold.ts", import.meta.url), "utf8");
+    const test = await readFile(
+      new URL("../lib/evidenceHold.test.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const terl = await readFile(
+      new URL("../services/terlHold.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const slack = await readFile(new URL("../clients/slack.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      lib,
+      /export function gateSeatHolds/,
+      stop("gateSeatHolds is the hold request gate (D224).", "evidenceHold.ts lost gateSeatHolds."),
+    );
+    assert.match(
+      lib,
+      /EVIDENCE_HOLD_MAX_DAYS = 30/,
+      stop("Holds expire at 30 days at most (D224).", "evidenceHold.ts lost the 30-day cap."),
+    );
+    assert.doesNotMatch(
+      lib,
+      /0\.05|0\.10|0\.25|HOLD_MAX_PERCENT|5%|10%|25%/,
+      stop(
+        "There is no 5/10/25% numeric hold cap (D224).",
+        "evidenceHold.ts still has a percent hold limit.",
+      ),
+    );
+    assert.match(
+      lib,
+      /substring or pattern matches are refused/,
+      stop("Pattern holds are refused (D224).", "evidenceHold.ts lost the pattern refusal."),
+    );
+    assert.match(
+      lib,
+      /SURBL is never a blacklist hit/,
+      stop("SURBL is excluded (D224/D210).", "evidenceHold.ts no longer refuses SURBL."),
+    );
+    assert.match(
+      lib,
+      /rejectedHoldSlackText/,
+      stop("Rejected seats become one Slack note (D224).", "evidenceHold.ts lost rejectedHoldSlackText."),
+    );
+    assert.match(
+      test,
+      /replays 9\/28/,
+      stop("The 9/28 boldercyper replay is tested (D224).", "evidenceHold.test.ts lost the 9/28 case."),
+    );
+    assert.match(
+      test,
+      /rejected\.length, 87/,
+      stop("The replay rejects 87 seats (D224).", "evidenceHold.test.ts no longer asserts 87 rejected."),
+    );
+    assert.match(
+      bounce,
+      /applyGuardedHoldRequest/,
+      stop(
+        "The bounce loop goes through the evidence gate (D224).",
+        "campaignBounceAutostop.ts no longer calls applyGuardedHoldRequest.",
+      ),
+    );
+    assert.match(
+      terl,
+      /applyGuardedHoldRequest/,
+      stop(
+        "TERRL stops go through the evidence gate (D224).",
+        "terlHold.ts no longer calls applyGuardedHoldRequest.",
+      ),
+    );
+    assert.match(
+      store,
+      /evidenceHolds/,
+      stop("State stores hold reason and evidence (D224).", "store.ts has no evidenceHolds."),
+    );
+    assert.match(
+      slack,
+      /notifyDeliverabilityNote/,
+      stop("Slack can post the rejected-seat note (D224).", "slack.ts lost notifyDeliverabilityNote."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D22[4-9]\*\*/,
+      stop("CANON is dated D224 or later.", "CANON.md header lost D224+."),
+    );
+    assert.match(
+      canon,
+      /Every hold is evidence-per-seat/,
+      stop("CANON names the evidence-per-seat gate (D224).", "CANON.md lost the D224 hold rule."),
+    );
+    assert.match(
+      canon,
+      /no 5 \/ 10 \/ 25% numeric hold cap/,
+      stop("CANON drops the percent caps (D224).", "CANON.md still implies a percent hold cap."),
+    );
+    assert.match(
+      decisions,
+      /## D224 — Evidence-per-seat hold gate/,
+      stop("The ledger records D224.", "DECISIONS.md no longer has D224."),
+    );
+    assert.match(
+      decisions,
+      /^\| D224 \|/m,
+      stop("The status index lists D224 (D127).", "DECISIONS.md status index has no D224 row."),
+    );
+  });
+});
+
+describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
+  it("D222: Monday 8:16am CT InboxKit sweep stays on the board", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
+
+    assert.equal(defaults.enableInboxkitLicenseSweep, true);
+    assert.equal(defaults.cronInboxkitLicenseSweep, "16 8 * * 1");
+    assert.equal(defaults.inboxkitLicenseTimezone, "America/Chicago");
+    assert.ok(
+      "inboxkit-license" in STAGE_OVERDUE_WINDOWS_MS,
+      stop(
+        "inboxkit-license is a /health stage (D222).",
+        "stageWindows.ts lost the inboxkit-license window.",
+      ),
+    );
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const sweep = await readFile(
+      new URL("../services/inboxkitLicenseSweep.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      index,
+      /stage\("inboxkit-license"/,
+      stop("inboxkit-license is watchdogged (D222).", "index.ts lost stage(\"inboxkit-license\")."),
+    );
+    assert.match(
+      index,
+      /mode === "inboxkit-license"/,
+      stop("/run?mode=inboxkit-license exists (D222).", "index.ts lost the inboxkit-license run mode."),
+    );
+    assert.match(
+      sweep,
+      /listAllEmailAccounts/,
+      stop("The sweep uses the complete fleet pager (D220/D222).", "inboxkitLicenseSweep.ts does not call listAllEmailAccounts."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D22[2-9]\*\*/,
+      stop("CANON is dated D222 or later.", "CANON.md header lost D222+."),
+    );
+    assert.match(
+      canon,
+      /8:16am/,
+      stop("CANON names the 8:16am CT sweep (D222).", "CANON.md lost the Monday 8:16am sentence."),
+    );
+    assert.match(
+      decisions,
+      /## D222 — Monday InboxKit lapsed-license sweep/,
+      stop("The ledger records D222.", "DECISIONS.md no longer has D222."),
+    );
+    assert.match(
+      decisions,
+      /^\| D222 \|/m,
+      stop("The status index lists D222 (D127).", "DECISIONS.md status index has no D222 row."),
+    );
+  });
+});
+
+describe("owner intent — D226 InboxKit sweep handoff, Slack only after delete", () => {
+  it("D226: findings stay off Slack; cleanup one-liner only when X > 0", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { formatInboxkitLicenseCleanupSlack } = await import(
+      "../lib/inboxkitLicense.js"
+    );
+
+    assert.equal(
+      formatInboxkitLicenseCleanupSlack(3),
+      "Found 3 inboxes that had lapsed; they're deleted from Smartlead and InboxKit.",
+      stop(
+        "Cleanup Slack is the one-liner (D226).",
+        "formatInboxkitLicenseCleanupSlack drifted.",
+      ),
+    );
+    assert.equal(
+      formatInboxkitLicenseCleanupSlack(0),
+      null,
+      stop("X = 0 posts nothing (D226).", "cleanup Slack fired at X = 0."),
+    );
+    assert.doesNotMatch(
+      String(formatInboxkitLicenseCleanupSlack(2)),
+      /—/,
+      stop("Cleanup Slack has no em dash (D226).", "the one-liner used an em dash."),
+    );
+
+    const sweep = await readFile(
+      new URL("../services/inboxkitLicenseSweep.ts", import.meta.url),
+      "utf8",
+    );
+    const lib = await readFile(
+      new URL("../lib/inboxkitLicense.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      sweep,
+      /deleteEmailAccount/,
+      stop("Lapsed seats are deleted from Smartlead (D226).", "inboxkitLicenseSweep.ts lost deleteEmailAccount."),
+    );
+    assert.match(
+      sweep,
+      /cancelMailboxes/,
+      stop("Lapsed seats are deleted from InboxKit (D226).", "inboxkitLicenseSweep.ts lost cancelMailboxes."),
+    );
+    assert.match(
+      sweep,
+      /setInboxkitLicenseHandoff/,
+      stop("Findings go through state (D226).", "inboxkitLicenseSweep.ts lost the handoff write."),
+    );
+    assert.match(
+      sweep,
+      /formatInboxkitLicenseCleanupSlack/,
+      stop("Slack is the cleanup one-liner (D226).", "inboxkitLicenseSweep.ts lost the cleanup Slack."),
+    );
+    assert.doesNotMatch(
+      sweep,
+      /formatInboxkitLicenseSlack\(/,
+      stop("The finding list is not Slacked (D226).", "inboxkitLicenseSweep.ts still posts findings."),
+    );
+    assert.match(
+      lib,
+      /groupInboxkitLicenseHandoff/,
+      stop("Handoff is grouped per client (D226).", "inboxkitLicense.ts lost groupInboxkitLicenseHandoff."),
+    );
+    assert.match(
+      store,
+      /inboxkitLicenseHandoff/,
+      stop("State holds the InboxKit handoff (D226).", "store.ts has no inboxkitLicenseHandoff."),
+    );
+    assert.match(
+      index,
+      /inboxkitLicenseHandoff/,
+      stop("/health exposes the handoff (D226).", "index.ts /health lost inboxkitLicenseHandoff."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D226\*\*/,
+      stop("CANON is dated D226.", "CANON.md header was not bumped to D226."),
+    );
+    assert.match(
+      decisions,
+      /## D226 — InboxKit sweep hands off internally/,
+      stop("The ledger records D226.", "DECISIONS.md no longer has D226."),
+    );
+    assert.match(
+      decisions,
+      /^\| D226 \|/m,
+      stop("The status index lists D226 (D127).", "DECISIONS.md status index has no D226 row."),
+    );
+  });
+});
+
+describe("owner intent — D223 POD rotation skip + dual-POD flag", () => {
+  it("D223: skip PowerGRYD and Goliath; flag dual POD tags; do not guess a side", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const tags = await readFile(
+      new URL("../services/podTags.ts", import.meta.url),
+      "utf8",
+    );
+    const lib = await readFile(
+      new URL("../lib/podRotation.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      lib,
+      /592842/,
+      stop("PowerGRYD 592842 is skipped (D223).", "podRotation.ts lost the PowerGRYD id."),
+    );
+    assert.match(
+      lib,
+      /548611/,
+      stop("Goliath 548611 is skipped (D223).", "podRotation.ts lost the Goliath id."),
+    );
+    assert.match(
+      rest,
+      /isPodRotationSkippedClient/,
+      stop("client-rest skips the locked clients (D223).", "clientRest.ts no longer consults isPodRotationSkippedClient."),
+    );
+    assert.match(
+      tags,
+      /hasDualPodTags/,
+      stop("pod-tags flags dual POD (D223).", "podTags.ts lost hasDualPodTags."),
+    );
+    assert.match(
+      tags,
+      /I did not pick a side|flagDualPod/,
+      stop("Dual-POD is flagged, not guessed (D223).", "podTags.ts still silently picks a tag."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D22[3-9]\*\*/,
+      stop("CANON is dated D223 or later.", "CANON.md header lost D223+."),
+    );
+    assert.match(
+      decisions,
+      /## D223 — POD A\/B rotation skips PowerGRYD and Goliath/,
+      stop("The ledger records D223.", "DECISIONS.md no longer has D223."),
     );
   });
 });

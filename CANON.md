@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D215** (2026-09-30). One page of current truth. When a new
+Canon as of **D217** (2026-10-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -153,23 +153,37 @@ or the day is done. Silent findings are a bug (D163).
   Generic/POC client_id is cleared, not rewritten (D160). Dedicated
   seats keep that client's signature and are not rewritten back to
   Goliath while they sit on that client's campaigns.
-- **Floor = 40 staffable senders per ACTIVE campaign** from that
-  campaign's own client (D58, D82, D196, D197, D198, D199, D203,
-  D207). Inventory target is still **40 POD-A + 40 POD-B**
-  staffable seats per named client (D203) — named first, then
-  client-signed generics. The live send floor is **not** "40
-  unique senders in the on-week POD"; every ACTIVE campaign
-  owes ≥40 attached staffable senders, which same-client
-  generics share so a client with <40 named seats can still
-  staff every campaign. Operational inventory floor is
-  max(half-client-named-per-pod structural rest, **40 per POD**
-  via named + client-signed generics). Off-week POD's 40 rest
-  ready. If bad senders are peeled, restore each ACTIVE campaign
-  back to 40. Each POD also keeps an **ESP mix floor** (D203):
+- **Floor = 40 on-week staffable senders per ACTIVE campaign**
+  from that campaign's own client (D58, D82, D196, D197, D198,
+  D199, D203, D207, **D217**). **Canon staffable** (D217) is a
+  linked seat that can actually send on the on-week POD: SMTP
+  and IMAP not failing, `max_email_per_day` / `message_per_day`
+  > 0, warmup ≥21 days when a clock is readable, correct client
+  (or that client's dedicated generic), on-week POD-A/POD-B tag
+  (off-week tagged seats do not count; untagged seats are not
+  excluded), not a canary, not HOLD/RETIRE, not InboxKit-lapsed
+  when the store knows. Raw linked membership is not staffable.
+  Inventory target is still **40 POD-A + 40 POD-B** staffable
+  seats per named client (D203) — named first, then
+  client-signed generics. **Canon pages understaffed only when
+  on-week staffable is under 40** — not when named on-week
+  inventory is 46 or 48 and the campaign already has 41/41
+  on-week staffable (D196's max(named on-week, 40) page floor
+  is superseded for paging). Same-client generics share so a
+  client with <40 named seats can still staff every campaign.
+  Operational inventory floor is max(half-client-named-per-pod
+  structural rest, **40 per POD** via named + client-signed
+  generics). Off-week POD's 40 rest ready. If bad senders are
+  peeled, restore each ACTIVE campaign back to 40. Each POD
+  also keeps an **ESP mix floor** (D203):
   when the client has both Outlook and Gmail, neither ESP may sit under ~1/3 of that POD's seats (**14 of a 40-seat POD**).
   A POD must not go monoculture. D192 ESP-balanced ~50/50
   across A/B *within* each ESP still stands — this is a per-POD
-  mix floor on top. Peels consult the **staffable attached**
+  mix floor on top. An ACTIVE campaign whose on-week staffable
+  mix breaks that floor is an `esp_mix` Canon finding (D217).
+  A generic or named seat whose `client_id` is a **foreign**
+  client is a `cross_client_membership` Canon finding (D217) —
+  generics never cross clients. Peels consult the **staffable attached**
   count on that ACTIVE campaign, never raw `campaign_ids`
   length as a surplus counter (D199).   Same-client
   `campaign_ids.length > 1` is not a peel reason on named
@@ -177,11 +191,12 @@ or the day is done. Silent findings are a bug (D163).
   as before (connected-capable, not held, not retired, not
   attach-blocked, not canary — D99, D176, D193). ESP-balanced
   A/B (D192) can leave B smaller than half (94 eligible →
-  A48/B46); understaffed means this ACTIVE campaign is missing
-  an on-week named seat or a client generic that should be
-  attached, or it is under the standing 40. Keep "half this
-  client's inboxes" only when the numbers match; otherwise
-  "on-week client pod" or "on-week minimum 40". No named-client
+  A48/B46); that is not a Canon short when on-week staffable
+  is already ≥40 (D217). Understaffed means this ACTIVE
+  campaign has fewer than 40 on-week staffable senders —
+  SMTP-fail / mpd-0 / off-week / foreign seats do not fill
+  the floor.   Keep "half this client's inboxes" only when the
+  numbers match; otherwise "on-week staffable 40" / on-week minimum 40. No named-client
   exceptions; Vasco is nobody special (D82). PowerGRYD ACTIVE
   campaigns are restaffed to 40 with PowerGRYD's own seats
   (client 592842), shared across PG campaigns — still never
@@ -643,9 +658,10 @@ Never spend, purge, or bypass warmup/holds from chat (D18).
 
 ## Surfaces
 
-`/health` is public: `canonCompliant` yes/no on the core kinds (staffing,
-21-day warmup, signatures, gap, volume, placement test, both canaries,
-merge-tag fill — D108/D180), open `canonFindings` by kind, per-stage `stageHealth` watchdog
+`/health` is public: `canonCompliant` yes/no on the core kinds (staffing
+/ on-week staffable 40, ESP mix, exclusivity, 21-day warmup, signatures,
+gap, volume, placement test, both canaries, merge-tag fill —
+D108/D180/D217), open `canonFindings` by kind, per-stage `stageHealth` watchdog
 (D84) with `overdue` / `overdueStages` / `lastSkipReason` (D166) including
 the D205 canon-ops stages (`hold-enforcement`, `min40-topup`,
 `powergryd-watch`, `generic-cleanup`), and the

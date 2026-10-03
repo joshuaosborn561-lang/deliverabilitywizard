@@ -8,6 +8,8 @@ import type { CampaignCheckRecord } from "./campaignCheck.js";
  */
 export const CANON_CORE_KINDS = [
   "understaffed",
+  "esp_mix",
+  "cross_client_membership",
   "under_warmed",
   "missing_signature_tag",
   "missing_insight_close",

@@ -8,11 +8,11 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import { isCanonStaffable } from "../lib/canonStaffable.js";
 import {
   countClientInboxFloors,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
-import { isStaffableSender } from "../lib/staffableSender.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import {
   campaignHoldReason,
@@ -234,17 +234,29 @@ export class CampaignHealthService {
       for (const id of ids) {
         membership.set(id, (membership.get(id) ?? 0) + 1);
       }
-      const resting = Boolean(this.state.getRestingInbox(email));
       const copyCanary = this.state.isCopyCanary(email);
-      if (
-        !isStaffableSender(account, {
-          resting,
-          copyCanary,
-        })
-      ) {
-        continue;
-      }
+      const lapsed =
+        typeof (this.state as unknown as { isInboxKitLapsed?: (value: string) => boolean })
+          .isInboxKitLapsed === "function"
+          ? (
+              this.state as unknown as {
+                isInboxKitLapsed: (value: string) => boolean;
+              }
+            ).isInboxKitLapsed(email)
+          : false;
       for (const id of ids) {
+        const campaign = campaigns.find((row) => row.id === id);
+        if (
+          !isCanonStaffable({
+            account,
+            email,
+            campaignClientId: campaign?.client_id,
+            copyCanary,
+            inboxKitLapsed: lapsed,
+          })
+        ) {
+          continue;
+        }
         staffable.set(id, (staffable.get(id) ?? 0) + 1);
       }
     }

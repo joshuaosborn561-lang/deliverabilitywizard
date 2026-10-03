@@ -169,8 +169,9 @@ describe("CampaignTopUpService safety", () => {
     const result = await service.run();
     assert.equal(addCalls, 1);
     assert.equal(result.assigned.length, 1);
-    // 100 client inboxes → floor 50. 49 disconnected + 1 placed ⇒ short 49.
-    assert.equal(result.unfilled[0]?.shortBy, 49);
+    // D217: live floor is 40 on-week staffable, not half of ~100 named.
+    // 0 staffable + 1 placed ⇒ short 39.
+    assert.equal(result.unfilled[0]?.shortBy, 39);
   });
 
   it("rolls back donor and target membership before retrying a failed move", async () => {

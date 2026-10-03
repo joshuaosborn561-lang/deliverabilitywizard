@@ -11,6 +11,11 @@ describe("canon compliance (D108)", () => {
 
   it("no when a core hole is open", () => {
     assert.equal(campaignCanonYes(["under_warmed: a@x 3d"]), false);
+    assert.equal(campaignCanonYes(["esp_mix: Outlook 40 / Gmail 0"]), false);
+    assert.equal(
+      campaignCanonYes(["cross_client_membership: generic on two clients"]),
+      false,
+    );
     assert.equal(campaignCanonYes(["missing_canary: none"]), false);
     assert.equal(campaignCanonYes(["mailbox_gap: 1m"]), false);
     assert.equal(

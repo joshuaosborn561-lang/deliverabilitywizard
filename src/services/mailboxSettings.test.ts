@@ -396,6 +396,59 @@ describe("MailboxSettingsService", () => {
     assert.ok(state.isBounceHoldWindowActive());
   });
 
+  it("D218: a listed TERRL hold is not written to 15 after 00:15 UTC", async () => {
+    const state = new StateStore(
+      `/tmp/mailbox-hold-persist-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.ensureBounceHold([141], new Date("2026-09-30T14:00:00.000Z"));
+    state.pruneBounceHold(new Date("2026-10-01T00:20:00.000Z"));
+    assert.equal(
+      state.isBounceHoldAccount(141, new Date("2026-10-01T00:20:00.000Z")),
+      true,
+    );
+
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 141,
+          type: "OUTLOOK",
+          from_email: "ada@crosslaunchcoget.info",
+          from_name: "Ada Hold",
+          message_per_day: 0,
+          minTimeToWaitInMins: 10,
+          signature: "Ada Hold\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 0);
+    assert.ok(result.bounceHoldSkipped >= 1);
+    assert.deepEqual(updates, []);
+  });
+
   it("D213: tenant outbound-block seats stay at 0 after 7:15; drifted seats are written to 0", async () => {
     const state = new StateStore(
       `/tmp/mailbox-tob-${process.pid}-${Date.now()}.json`,
@@ -488,7 +541,10 @@ describe("MailboxSettingsService", () => {
       { max_email_per_day: 15 },
     );
     assert.ok(state.isTenantOutboundBlockAccount(21831478));
-    assert.equal(state.isBounceHoldAccount(21831478, new Date("2026-10-01T00:20:00.000Z")), false);
+    // D218: Outlook-at-0 during the pass is recorded on the TERRL list
+    // and pruneBounceHold no longer clears it. D213 still holds via
+    // tenantOutboundBlocks even if that list were empty.
+    assert.ok(state.isTenantOutboundBlockAccount(21831477));
   });
 
   it("D183: Gmail and SMTP stay at 30; a drifted SMTP is written to 30 not 15", async () => {
@@ -711,5 +767,48 @@ describe("MailboxSettingsService", () => {
     assert.deepEqual(updates[0]?.fields, {
       signature: "Joshua Osborn\nSalesGlider",
     });
+  });
+
+  it("D219: Azure tidalstackco.com is written to 2/day not 15", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 88,
+          type: "OUTLOOK",
+          from_email: "ada@tidalstackco.com",
+          from_name: "Ada Azure",
+          message_per_day: 15,
+          minTimeToWaitInMins: 10,
+          signature: "Ada Azure\nSalesGlider",
+          client_id: 345263,
+          warmup_details: { status: "ACTIVE" },
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run when only volume drifted");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.runGapEnforce({ dryRun: false });
+    assert.equal(result.sendLimitSet, 1);
+    assert.deepEqual(updates, [{ id: 88, fields: { max_email_per_day: 2 } }]);
   });
 });

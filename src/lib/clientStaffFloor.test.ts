@@ -363,13 +363,13 @@ describe("D196 on-week staff floor", () => {
       "SalesGlider",
       floors.onWeek,
     );
-    assert.equal(floor, 46);
+    assert.equal(floor, 40, "D217: live page floor is 40, not named on-week 46");
     assert.equal(clientInboxStaffFloor(94), 47, "half of 94 stays 47");
-    assert.equal(Math.max(0, floor - 46), 0, "46 staffable B seats is not understaffed");
-    assert.equal(Math.max(0, floor - 45), 1, "45 staffable is short 1");
+    assert.equal(Math.max(0, floor - 41), 0, "41 on-week staffable is not understaffed");
+    assert.equal(Math.max(0, floor - 39), 1, "39 staffable is short 1");
     assert.equal(
-      formatStaffFloorDetail(46, floor, 94),
-      "staffable 46/46 (on-week client pod)",
+      formatStaffFloorDetail(41, floor, 94),
+      "staffable 41/40 (on-week staffable 40)",
     );
   });
 
@@ -391,9 +391,9 @@ describe("D196 on-week staff floor", () => {
       "SalesGlider",
       floors.onWeek,
     );
-    assert.equal(floor, 48);
-    assert.equal(Math.max(0, floor - 48), 0);
-    assert.equal(Math.max(0, floor - 47), 1);
+    assert.equal(floor, 40, "D217: A-week page floor is 40, not named on-week 48");
+    assert.equal(Math.max(0, floor - 41), 0);
+    assert.equal(Math.max(0, floor - 39), 1);
   });
 
   it("even split still reads as half this client's named inboxes (40/POD)", () => {
@@ -421,7 +421,7 @@ describe("D196 on-week staff floor", () => {
     assert.equal(floor, 40);
     assert.equal(
       formatStaffFloorDetail(40, floor, 80),
-      "staffable 40/40 (half this client's named inboxes (40/POD))",
+      "staffable 40/40 (on-week staffable 40)",
     );
   });
 
@@ -451,7 +451,7 @@ describe("D196 on-week staff floor", () => {
     assert.equal(floor, 40);
     assert.equal(
       formatStaffFloorDetail(24, floor, 48),
-      "staffable 24/40 (on-week minimum 40)",
+      "staffable 24/40 (on-week staffable 40)",
     );
   });
 

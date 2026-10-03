@@ -70,6 +70,8 @@ import { HoldEnforcementService } from "./services/holdEnforcement.js";
 import { Min40TopUpService } from "./services/min40TopUp.js";
 import { PowerGrydWatchService } from "./services/powerGrydWatch.js";
 import { GenericCleanupService } from "./services/genericCleanup.js";
+import { MailboxTypeTagService } from "./services/mailboxTypeTags.js";
+import { TerlHoldService } from "./services/terlHold.js";
 import { SpendDigestService } from "./services/spendDigest.js";
 import { canonOpsIdleReason } from "./lib/canonOpsHours.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
@@ -562,6 +564,12 @@ async function main(): Promise<void> {
     smartlead,
   );
   const genericCleanup = new GenericCleanupService(config, smartlead, state);
+  const mailboxTypeTags = new MailboxTypeTagService(
+    config,
+    smartlead,
+    inventoryBook,
+  );
+  const terlHold = new TerlHoldService(config, smartlead, state, slack);
   const spendDigest = new SpendDigestService(state, slack);
   const clientDayBrief = new ClientDayBriefService(
     config,
@@ -1083,7 +1091,11 @@ async function main(): Promise<void> {
         config.enableGenericCleanup,
         () => genericCleanup.run({ inventory }),
       ));
-      return { hold, min40, power, cleanup, idle: idle ?? null };
+      const typeTags = await stage("mailbox-type-tags", runOrIdle(
+        config.enableMailboxTypeTags,
+        () => mailboxTypeTags.run({ inventory }),
+      ));
+      return { hold, min40, power, cleanup, typeTags, idle: idle ?? null };
     })().finally(() => {
       canonOpsInFlight = null;
     });
@@ -1105,6 +1117,18 @@ async function main(): Promise<void> {
       bounceAutostopInFlight = null;
     });
     return bounceAutostopInFlight;
+  };
+
+  const runTerlEod = async (opts: { force?: boolean } = {}) => {
+    return stage("terl-eod", async () => {
+      try {
+        const snap = await inventoryBook.get();
+        await terlHold.restoreExpired({ inventory: snap });
+      } catch (error) {
+        console.warn("[terl-eod] restore failed", error);
+      }
+      return terlHold.postEodDigest(opts);
+    });
   };
 
   const runSpendDigest = async (opts: { force?: boolean } = {}) => {
@@ -1287,6 +1311,11 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronCanonOps)) {
     throw new Error(`Invalid CRON_CANON_OPS expression: ${config.cronCanonOps}`);
   }
+  if (!cron.validate(config.cronTerlEod)) {
+    throw new Error(
+      `Invalid CRON_TERL_EOD expression: ${config.cronTerlEod}`,
+    );
+  }
   if (!cron.validate(config.cronSpendDigest)) {
     throw new Error(
       `Invalid CRON_SPEND_DIGEST expression: ${config.cronSpendDigest}`,
@@ -1393,6 +1422,19 @@ async function main(): Promise<void> {
     });
     // No boot kick — the 10-minute cron is soon enough. The first
     // minutes after deploy belong to canary attach (D122).
+  }
+
+  if (config.enableTerlEod) {
+    cron.schedule(
+      config.cronTerlEod,
+      () => {
+        void runTerlEod().catch((error) => {
+          console.error("[terl-eod] Unhandled cron error", error);
+          feedBugRemediator("terl-eod-cron", error);
+        });
+      },
+      { timezone: config.terlEodTimezone },
+    );
   }
 
   if (config.enableSpendDigest) {
@@ -2372,6 +2414,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       enableMin40TopUp: config.enableMin40TopUp,
       enablePowerGrydWatch: config.enablePowerGrydWatch,
       enableGenericCleanup: config.enableGenericCleanup,
+      enableMailboxTypeTags: config.enableMailboxTypeTags,
+      enableTerlEod: config.enableTerlEod,
+      cronTerlEod: config.cronTerlEod,
       enableSpendDigest: config.enableSpendDigest,
       cronSpendDigest: config.cronSpendDigest,
       spendDigestTimezone: config.spendDigestTimezone,
@@ -2436,6 +2481,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         enableMin40TopUp: config.enableMin40TopUp,
         enablePowerGrydWatch: config.enablePowerGrydWatch,
         enableGenericCleanup: config.enableGenericCleanup,
+        enableMailboxTypeTags: config.enableMailboxTypeTags,
+        enableTerlEod: config.enableTerlEod,
+        cronTerlEod: config.cronTerlEod,
         enableSpendDigest: config.enableSpendDigest,
         cronSpendDigest: config.cronSpendDigest,
         enableCampaignHealth: config.enableCampaignHealth,
@@ -2546,6 +2594,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         mode === "powergryd-watch" ||
         mode === "powergryd" ||
         mode === "generic-cleanup" ||
+        mode === "mailbox-type-tags" ||
+        mode === "terl-eod" ||
         mode === "spend-digest"
       ) {
         assertRuntimeSecrets(config);
@@ -2567,6 +2617,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         if (mode === "generic-cleanup") {
           const result = await genericCleanup.run();
           res.json({ ok: true, mode: "generic-cleanup", result });
+          return;
+        }
+        if (mode === "mailbox-type-tags") {
+          const result = await mailboxTypeTags.run();
+          res.json({ ok: true, mode: "mailbox-type-tags", result });
+          return;
+        }
+        if (mode === "terl-eod") {
+          const result = await runTerlEod({ force: true });
+          res.json({ ok: true, mode: "terl-eod", result });
           return;
         }
         if (mode === "spend-digest") {
@@ -2938,7 +2998,10 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Campaign check (D81): ${config.enableCampaignCheck ? `ENABLED first-seen on health; hourly sweep ${config.cronCampaignCheck}` : "disabled"}`,
     );
     console.log(
-      `[boot] Canon ops (D205): ${config.enableCanonOps ? `ENABLED ${config.cronCanonOps} ${config.canonOpsTimezone} weekday ${String(config.canonOpsHourStart).padStart(2, "0")}:00–${String(config.canonOpsHourEnd).padStart(2, "0")}:00; hold=${config.enableHoldEnforcement} min40=${config.enableMin40TopUp} powergryd=${config.enablePowerGrydWatch} cleanup=${config.enableGenericCleanup}` : "disabled (stages idle-tick)"}`,
+      `[boot] Canon ops (D205/D219): ${config.enableCanonOps ? `ENABLED ${config.cronCanonOps} ${config.canonOpsTimezone} weekday ${String(config.canonOpsHourStart).padStart(2, "0")}:00–${String(config.canonOpsHourEnd).padStart(2, "0")}:00; hold=${config.enableHoldEnforcement} min40=${config.enableMin40TopUp} powergryd=${config.enablePowerGrydWatch} cleanup=${config.enableGenericCleanup} typeTags=${config.enableMailboxTypeTags}` : "disabled (stages idle-tick)"}`,
+    );
+    console.log(
+      `[boot] TERRL EOD (D219): ${config.enableTerlEod ? `ENABLED ${config.cronTerlEod} ${config.terlEodTimezone} weekday #deliverability digest; 24h hold then type cap; same-client generic substitute` : "disabled"}`,
     );
     console.log(
       `[boot] Cayden spend digest (D220): ${config.enableSpendDigest ? `ENABLED ${config.cronSpendDigest} ${config.spendDigestTimezone} weekday per-client pending spend` : "disabled"}`,

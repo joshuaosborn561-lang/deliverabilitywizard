@@ -125,8 +125,55 @@ describe("D213 tenant outbound-block state", () => {
     );
     reloaded.pruneBounceHold(new Date("2026-10-01T00:20:00.000Z"));
     assert.equal(reloaded.isTenantOutboundBlockAccount(21831312), true);
+    assert.equal(
+      reloaded.isBounceHoldAccount(21831478, new Date("2026-10-01T00:20:00.000Z")),
+      true,
+      "D218: TERRL hold ids survive pruneBounceHold / 7:15pm CT",
+    );
     assert.equal(reloaded.clearTenantOutboundBlock("arborbrooksagesunsetxcom.onmicrosoft.com"), true);
     assert.equal(reloaded.isTenantOutboundBlockAccount(21831478), false);
+  });
+});
+
+describe("D219 tenant TERRL hold state", () => {
+  it("persists a 24h hold and paused inboxes across reload", async () => {
+    const filePath = `/tmp/dw-terl-store-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    const now = new Date("2026-10-03T15:00:00.000Z");
+    const record = state.ensureTenantTerlHold({
+      tenant: "tidalstackco.com",
+      domains: ["tidalstackco.com"],
+      accountIds: [9, 10],
+      now,
+    });
+    assert.ok(record);
+    assert.equal(state.isTenantTerlHoldAccount(9, now), true);
+    assert.equal(state.isTenantTerlHoldDomain("tidalstackco.com", now), true);
+    state.recordTerlPausedInboxes({
+      ymd: "2026-10-03",
+      inboxes: [
+        {
+          accountId: 9,
+          email: "ada@tidalstackco.com",
+          clientId: 345263,
+          clientName: "SalesGlider",
+          tenant: "tidalstackco.com",
+          pausedAt: now.toISOString(),
+        },
+      ],
+    });
+    await state.save();
+
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    const held = reloaded.getTenantTerlHold("tidalstackco.com");
+    assert.equal(held?.accountIds.includes(9), true);
+    assert.equal(reloaded.isTenantTerlHoldAccount(10, now), true);
+    assert.equal(reloaded.listTerlPausedInboxes("2026-10-03").length, 1);
+    const after = new Date("2026-10-04T16:00:00.000Z");
+    assert.equal(reloaded.isTenantTerlHoldAccount(9, after), false);
+    assert.ok(reloaded.getTenantTerlHold("tidalstackco.com"));
   });
 });
 

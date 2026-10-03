@@ -1,10 +1,13 @@
 import type { CampaignCheckRecord } from "./campaignCheck.js";
+import { GENERIC_POOL_CORE_KINDS } from "./genericPool.js";
 
 /**
  * D108 — the 15-minute yes/no. A living ACTIVE campaign is compliant
  * when none of these core holes are open. DNS / launch bar / client
  * tag sit on the board as "other" and do not flip the main yes.
  * D180 — blank merge tags / missing custom_fields are a core hole.
+ * D221 — an idle or multi-client generic assignment is a core hole
+ * (fleet-wide; stored on the generics table, not a campaign row).
  */
 export const CANON_CORE_KINDS = [
   "understaffed",
@@ -21,6 +24,7 @@ export const CANON_CORE_KINDS = [
   "missing_canary",
   "inbox_missing_known_good",
   "merge_tag_blank",
+  ...GENERIC_POOL_CORE_KINDS,
 ] as const;
 
 export type CanonCoreKind = (typeof CANON_CORE_KINDS)[number];
@@ -63,4 +67,15 @@ export function canonBoard(
     compliant: campaigns.every((row) => row.yes),
     campaigns,
   };
+}
+
+/** D221 — /health yes only when campaign core holes and the generic pool are clean. */
+export function canonCompliantOverall(
+  campaignCompliant: boolean,
+  genericPoolFindings: string[] = [],
+): boolean {
+  if (!campaignCompliant) return false;
+  return !genericPoolFindings.some((finding) =>
+    (CANON_CORE_KINDS as readonly string[]).includes(findingKind(finding)),
+  );
 }

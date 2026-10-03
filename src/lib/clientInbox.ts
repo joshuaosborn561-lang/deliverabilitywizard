@@ -54,7 +54,7 @@ export function isGenericPoolBrandDomain(domain: string | undefined): boolean {
 /**
  * A client inbox belongs to a Smartlead client and is not a pool generic
  * or a pre-warmed fleet sender. Only these take the per-client A/B rest
- * (D43). Generics fill to 50 and rest on a 2-week send clock.
+ * (D43). Generics are the fleet-wide pool (D221), not A/B resters.
  */
 export function isClientInbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
@@ -71,7 +71,7 @@ export function isClientInbox(
   return false;
 }
 
-/** A/B rest is client inboxes only (D43). Generics use the send clock. */
+/** A/B rest is client inboxes only (D43). Generics stay off that cut (D221). */
 export function isRestEligibleMailbox(
   account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
   email: string,

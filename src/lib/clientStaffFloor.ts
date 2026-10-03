@@ -34,8 +34,9 @@ export const POD_INVENTORY_MIN_SENDERS = ON_WEEK_MIN_SENDERS;
 
 /**
  * Exclusive client-signed generics this POD may still take from the
- * free pool (D203). Named first. Zero when named already ≥40 —
+ * free pool (D203/D221). Named first. Zero when named already ≥40 —
  * SalesGlider with ample salesglider* must not carry pool generics.
+ * A generic is assigned only while this cap is positive.
  */
 export function podGenericTopUpCap(namedStaffableInPod: number): number {
   const named = Number.isFinite(namedStaffableInPod)

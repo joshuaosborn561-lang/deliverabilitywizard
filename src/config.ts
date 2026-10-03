@@ -149,10 +149,12 @@ const ConfigSchema = z.object({
    */
   enableClientRest: boolFromEnv(true),
   /**
-   * D43 — generics sit after this many days of live campaign send, then
-   * become supply again after the same sit. Not the client A/B fortnight.
+   * D221 — there is no separate generic send-clock. POD rotation is
+   * the only generic rotation. Default OFF. The leftover days knob
+   * stays so an explicit env override can still run the retired loop
+   * if Josh turns it back on; that is not the standing rule.
    */
-  enableGenericSendRest: boolFromEnv(true),
+  enableGenericSendRest: boolFromEnv(false),
   genericSendRestDays: z.coerce.number().int().positive().default(14),
   /**
    * D48 — standing per-pod control tests (fixed control email, per-sender

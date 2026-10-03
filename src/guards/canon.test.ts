@@ -613,10 +613,10 @@ describe("owner intent — D43 rest model", () => {
     );
     assert.equal(
       defaults.enableGenericSendRest,
-      true,
+      false,
       stop(
-        "Generics sit after ~14 days of live send (D43).",
-        "ENABLE_GENERIC_SEND_REST now defaults off.",
+        "D221 retired the generic send-clock; POD rotation is the only generic rotation.",
+        "ENABLE_GENERIC_SEND_REST now defaults on again.",
       ),
     );
     assert.equal(
@@ -982,7 +982,7 @@ describe("owner intent — D50 live-send warmup", () => {
       defaults.genericSendRestDays,
       14,
       stop(
-        "Generic send / sit rotation stays ~14 days (D43). D50 is the live-send warmup clock only.",
+        "Leftover GENERIC_SEND_REST_DAYS stays 14 if Josh overrides the retired loop (D221). D50 is the live-send warmup clock only.",
         `Generic send rest is now ${defaults.genericSendRestDays} days.`,
       ),
     );
@@ -10023,10 +10023,10 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Dedicated generics\s+per named client are OK and preferred/,
+      /PowerGRYD 592842 dedicated/,
       stop(
-        "CANON names the dedicated-generic model (D198).",
-        "CANON.md lost the dedicated named-client generic rule.",
+        "CANON keeps PowerGRYD as the dedicated-generic exception (D198/D221).",
+        "CANON.md lost the PowerGRYD dedicated-seat exception.",
       ),
     );
     assert.match(
@@ -11796,6 +11796,7 @@ describe("owner intent — D218 TERRL holds persist past 7:15pm CT", () => {
   });
 });
 
+
 describe("owner intent — D219 mailbox type caps and TERRL 24h + substitute", () => {
   it("D219: Azure 2/5, M365 15, 5.7.233 24h then type cap, same-client swap, weekday EOD", async () => {
     const { readFile } = await import("node:fs/promises");
@@ -11942,6 +11943,7 @@ describe("owner intent — D219 mailbox type caps and TERRL 24h + substitute", (
   });
 });
 
+
 describe("owner intent — D220 Cayden spend digest and complete fleet pages", () => {
   it("D220: weekday 7:16am CT digest, per-client grouping, pages until empty, never skip teardown on a partial list", async () => {
     const { readFile } = await import("node:fs/promises");
@@ -12074,8 +12076,8 @@ describe("owner intent — D220 Cayden spend digest and complete fleet pages", (
 
     assert.match(
       canon,
-      /Canon as of \*\*D220\*\*/,
-      stop("CANON is dated D220.", "CANON.md header was not bumped to D220."),
+      /Canon as of \*\*D22[0-9]\*\*/,
+      stop("CANON is dated D220+.", "CANON.md header is not D220 or later."),
     );
     assert.match(
       canon,
@@ -12091,6 +12093,161 @@ describe("owner intent — D220 Cayden spend digest and complete fleet pages", (
       decisions,
       /^\| D220 \|/m,
       stop("The status index lists D220 (D127).", "DECISIONS.md status index has no D220 row."),
+    );
+  });
+});
+
+describe("owner intent — D221 fleet-wide generic pool", () => {
+  it("D221: one pool, assign only to fill a POD to 40, validator + table lock it", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      GENERIC_POOL_POD_FLOOR,
+      GENERIC_POOL_POWERGRYD_CLIENT_ID,
+      GENERIC_POOL_CORE_KINDS,
+    } = await import("../lib/genericPool.js");
+    const { CANON_CORE_KINDS } = await import("../lib/canonCompliance.js");
+    const { validateGenericPool } = await import("../lib/genericPoolCanon.js");
+    const { emptyGenericSeat, clientPodKey } = await import("../lib/genericPool.js");
+
+    assert.equal(
+      GENERIC_POOL_POD_FLOOR,
+      40,
+      stop(
+        "Each POD is topped to 40 staffable senders (D221).",
+        `GENERIC_POOL_POD_FLOOR is ${GENERIC_POOL_POD_FLOOR}.`,
+      ),
+    );
+    assert.equal(
+      GENERIC_POOL_POWERGRYD_CLIENT_ID,
+      592842,
+      stop(
+        "PowerGRYD 592842 is the dedicated-seat exception (D221).",
+        `PowerGRYD client id drifted to ${GENERIC_POOL_POWERGRYD_CLIENT_ID}.`,
+      ),
+    );
+    assert.equal(
+      defaults.enableGenericSendRest,
+      false,
+      stop(
+        "There is no separate generic rotation (D221).",
+        "ENABLE_GENERIC_SEND_REST now defaults on.",
+      ),
+    );
+    for (const kind of GENERIC_POOL_CORE_KINDS) {
+      assert.ok(
+        (CANON_CORE_KINDS as readonly string[]).includes(kind),
+        stop(
+          `${kind} flips /health canonCompliant (D221).`,
+          `CANON_CORE_KINDS dropped ${kind}.`,
+        ),
+      );
+    }
+
+    const idle = validateGenericPool({
+      seats: [
+        emptyGenericSeat("ada@getintroduced.info", {
+          assignedClientId: 77,
+          assignedPod: "A",
+        }),
+      ],
+      namedStaffableByClientPod: new Map([[clientPodKey(77, "A"), 40]]),
+      clientHasActiveCampaign: new Map([[77, true]]),
+    });
+    assert.equal(
+      idle[0]?.kind,
+      "generic_idle",
+      stop(
+        "An assigned generic that is not needed for POD 40 is generic_idle (D221).",
+        "validateGenericPool no longer flags idle assignments.",
+      ),
+    );
+    const multi = validateGenericPool({
+      seats: [
+        emptyGenericSeat("ada@getintroduced.info", {
+          assignedClientId: 77,
+          assignedCampaignIds: [1, 2],
+        }),
+      ],
+      namedStaffableByClientPod: new Map(),
+      campaignClientById: new Map([
+        [1, 77],
+        [2, 88],
+      ]),
+    });
+    assert.equal(
+      multi[0]?.kind,
+      "generic_multi_client",
+      stop(
+        "A generic on two clients is generic_multi_client (D221).",
+        "validateGenericPool no longer flags multi-client assignments.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D221\*\*/,
+      stop("CANON is dated D221.", "CANON.md header was not bumped to D221."),
+    );
+    assert.match(
+      canon,
+      /ONE fleet-wide pool/,
+      stop("CANON names the fleet-wide generic pool (D221).", "CANON.md lost the D221 pool rule."),
+    );
+    assert.match(
+      canon,
+      /generics` table/,
+      stop("CANON names the generics table (D221).", "CANON.md lost the table fields."),
+    );
+    assert.match(
+      canon,
+      /Never pre-split the pool/,
+      stop("CANON forbids pre-splitting generics (D221).", "CANON.md lost the no-pre-split rule."),
+    );
+    assert.match(
+      canon,
+      /no separate generic send-clock/,
+      stop("CANON retires the generic send-clock (D221).", "CANON.md still implies a generic sit clock."),
+    );
+    assert.match(
+      canon,
+      /generic_idle/,
+      stop("CANON names generic_idle (D221).", "CANON.md lost the idle finding."),
+    );
+    assert.match(
+      canon,
+      /generic_multi_client/,
+      stop("CANON names generic_multi_client (D221).", "CANON.md lost the multi-client finding."),
+    );
+    assert.match(
+      store,
+      /genericSeats/,
+      stop("State holds the generics table (D221).", "store.ts has no genericSeats."),
+    );
+    assert.match(
+      index,
+      /genericPoolCanon\.run/,
+      stop("Health rebuilds and validates the pool (D221).", "index.ts no longer runs genericPoolCanon."),
+    );
+    assert.match(
+      decisions,
+      /## D221 — Generics are one fleet-wide pool/,
+      stop("The ledger records D221.", "DECISIONS.md no longer has D221."),
+    );
+    assert.match(
+      decisions,
+      /^\| D221 \|/m,
+      stop("The status index lists D221 (D127).", "DECISIONS.md status index has no D221 row."),
     );
   });
 });

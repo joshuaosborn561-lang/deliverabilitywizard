@@ -61,7 +61,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D40 | Live — standing holds (D205) stay PAUSED and are not auto-STARTed |
 | D41 | Mostly superseded (D43 cohorts, D50 clock, D71 Slack) — burn checklist and DKIM/DMARC advisory live |
 | D42 | Superseded by D43 |
-| D43 | Live — D169 paused/stopped detach superseded by D207 (PAUSED/STOPPED keep seats); split is ESP-balanced within Outlook/Gmail (D192); ACTIVE detach will not drop a campaign below 40 (D197) |
+| D43 | Live — generic send-clock superseded by D221 (POD rotation is the only generic rotation); D169 paused/stopped detach superseded by D207 (PAUSED/STOPPED keep seats); split is ESP-balanced within Outlook/Gmail (D192); ACTIVE detach will not drop a campaign below 40 (D197) |
 | D44 | Historical one-shot (ran 2026-08-21) |
 | D45 | Live |
 | D46 | Live — enforced by D106 |
@@ -91,7 +91,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D72–D73 | Burned numbers — no entry exists (D73 is cited by D78 but was never written) |
 | D74 | Live — log-only clause superseded by D75 |
 | D75 | Live |
-| D76 | Live — exclusive min-40 generic identity rewrite / restore qualified by D197; dedicated named-client seats belong to that client, not Goliath (D198) |
+| D76 | Live for one-client restore of stranded pool seats — "rotating generics belong to the POC" superseded by D221 (fleet-wide pool, assigned only while a POD needs them); exclusive min-40 rewrite qualified by D197 |
 | D77 | Live — Goliath-only unpause generalized by D82 |
 | D78 | Superseded by D80→D88 |
 | D79 | Retired-record (no per-sender bounce pull) — live |
@@ -208,8 +208,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — inventory floor is max(named on-week pod, 40 per POD) per D197/D203; Canon *page* floor is 40 on-week staffable (D217), not named-inventory 46/48 | Named-client inventory split is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not an inventory short |
-| D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); 40 is per ACTIVE campaign (D207); rest-record loophole closed by D209; 40/POD inventory still D203 | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
-| D198 | Live — exclusive + client-sig also dedicated (D199); same-client generics may multi-link (D207/D209); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
+| D197 | Live — D198 keep-above-40 for pool generics superseded by D221 (return surplus); peel count is staffable attached (D199); 40 is per ACTIVE campaign (D207); rest-record loophole closed by D209; 40/POD inventory still D203 | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
+| D198 | Superseded in part by D221 — keep dedicated pool generics even above 40 is retired (PowerGRYD 592842 remains the dedicated exception); exclusive + client-sig still identifies a current assignment (D199); same-client multi-link stays (D207/D209) | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 | D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
@@ -226,6 +226,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D218 | Live — TERRL overnight restore superseded by D219 24h-then-type-cap | TERRL / D148 bounce-hold ids are not pruned at 7:15pm CT. Every max_email_per_day raise path skips held seats during the window |
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
+| D221 | Live | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
 
 ---
 
@@ -7169,3 +7170,64 @@ empty; teardown/fleet checks do not catch to `[]`;
 CANON dated D220.
 
 ---
+## D221 — Generics are one fleet-wide pool; assign only to fill a POD to 40
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh HARD: generics are ONE fleet-wide pool,
+tracked in a `generics` table with one row per generic
+seat: email, sl_account_id, provider, warm_ready_at,
+assigned_client_id (nullable), assigned_campaign_id(s),
+assigned_pod (A/B, nullable), assigned_at, reason. A
+generic gets a client and POD assignment **only** when it
+is needed to bring that client's POD up to 40 staffable
+senders. While assigned, no other client can use it (no
+double sending). Same-client multi-link across that
+client's ACTIVE campaigns stays (D207). As soon as it is
+no longer needed (surplus above 40, campaign paused or
+ended, replaced by a named seat that finished warm),
+unlink it and return it to the pool with
+`assigned_client_id` cleared. Never pre-split generics
+across clients. Never hold idle generics for a client.
+Allocation is per POD: each POD (A and B) is topped to
+40 independently, and generics are never retagged across
+PODs. POD rotation handles generic rotation — there is
+no separate generic send-clock. Exceptions: PowerGRYD
+592842 dedicated seats, and the temporary 24h-stop
+substitute (same-client, released after 24h). A canon
+validator fails / alerts when a generic is assigned to a
+client but is not needed for that client's POD to reach
+40 (`generic_idle`), or when a generic is assigned to
+more than one client (`generic_multi_client`). Both flip
+`/health` `canonCompliant`.
+
+**Why.** Dedicated-keep-above-40 (D198), POC-owned
+rotating generics (D76), and the ~14-day generic
+send-clock (D43) let seats sit idle on a client or
+rotate on a second clock. Josh locked the pool so a
+generic is only a top-up for a short POD.
+
+**Rejected.** Pre-splitting the pool across clients.
+Holding idle generics "just in case". A separate generic
+rotation. Keeping a dedicated generic after the POD is
+already at 40 (except PowerGRYD). Cross-client use,
+including during the 24h TERRL substitute.
+
+**Supersedes / amends.** Supersedes D43's generic
+send-clock (named A/B fortnight rest stays). Supersedes
+D76's "rotating generics belong to the POC". Supersedes
+D198's keep-dedicated-even-above-40 for pool generics
+(PowerGRYD 592842 remains dedicated). Amends D203/D207:
+assign only to fill a POD to 40, return when surplus;
+same-client multi-link stays. Does not change the
+standing 40, never-retag-named-seats, or spend gates.
+
+**Guards.** `GENERIC_POOL_POD_FLOOR` is 40; generics
+table + `validateGenericPool` flag idle and multi-client;
+`CANON_CORE_KINDS` includes `generic_idle` /
+`generic_multi_client`; PowerGRYD and TERRL-substitute
+skip idle; `enableGenericSendRest` defaults off; CANON
+dated D221.
+
+---
+

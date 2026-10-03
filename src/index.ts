@@ -70,6 +70,7 @@ import { HoldEnforcementService } from "./services/holdEnforcement.js";
 import { Min40TopUpService } from "./services/min40TopUp.js";
 import { PowerGrydWatchService } from "./services/powerGrydWatch.js";
 import { GenericCleanupService } from "./services/genericCleanup.js";
+import { GenericPoolCanonService } from "./services/genericPoolCanon.js";
 import { MailboxTypeTagService } from "./services/mailboxTypeTags.js";
 import { TerlHoldService } from "./services/terlHold.js";
 import { SpendDigestService } from "./services/spendDigest.js";
@@ -113,7 +114,7 @@ import { DomainLifecycleService } from "./services/domainLifecycle.js";
 import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
-import { canonBoard } from "./lib/canonCompliance.js";
+import { canonBoard, canonCompliantOverall, findingKind } from "./lib/canonCompliance.js";
 import { placementIsolationHealth } from "./lib/placementSuspect.js";
 import {
   STAGE_OVERDUE_WINDOWS_MS,
@@ -564,6 +565,7 @@ async function main(): Promise<void> {
     smartlead,
   );
   const genericCleanup = new GenericCleanupService(config, smartlead, state);
+  const genericPoolCanon = new GenericPoolCanonService(config, state, slack);
   const mailboxTypeTags = new MailboxTypeTagService(
     config,
     smartlead,
@@ -697,6 +699,10 @@ async function main(): Promise<void> {
         counts.set(kind, (counts.get(kind) ?? 0) + 1);
       }
     }
+    for (const finding of state.listGenericPoolFindings()) {
+      const kind = finding.split(":")[0] ?? "unknown";
+      counts.set(kind, (counts.get(kind) ?? 0) + 1);
+    }
     const summary = [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([kind, n]) => `${kind}=${n}`)
@@ -730,12 +736,11 @@ async function main(): Promise<void> {
           skipIfBeforeStage,
         })
       : null;
-    const genericRest = config.enableGenericSendRest
-      ? await stage("generic-rest", () => genericSendRest.run({ inventory }), {
-          skipIfFreshMs,
-          skipIfBeforeStage,
-        })
-      : null;
+    const genericRest = await stage(
+      "generic-rest",
+      () => genericSendRest.run({ inventory }),
+      { skipIfFreshMs, skipIfBeforeStage },
+    );
     return { clientRest: restResult, genericRest };
   };
 
@@ -982,6 +987,15 @@ async function main(): Promise<void> {
         skipIfFreshMs,
         skipIfBeforeStage,
       });
+
+      // D221 — rebuild the fleet-wide generics table from this pass's
+      // shared book and page idle / multi-client assignments. Not a
+      // watchdog stage (no HEALTH_LOOP insert) so resume math stays put.
+      try {
+        await genericPoolCanon.run({ inventory });
+      } catch (error) {
+        console.warn("[generic-pool] canon validate failed", error);
+      }
 
       logCanonScoreboard();
       const passMs = Date.now() - passStart;
@@ -2361,7 +2375,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     const canonFindingSamples: Record<string, string[]> = {};
     for (const record of Object.values(s.campaignChecks ?? {})) {
       for (const finding of record.findings ?? []) {
-        const kind = finding.split(":")[0] ?? "unknown";
+        const kind = findingKind(finding);
         canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
         const samples = canonFindingSamples[kind] ?? [];
         if (samples.length < 5) {
@@ -2370,7 +2384,17 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         }
       }
     }
+    for (const finding of s.genericPoolFindings ?? []) {
+      const kind = findingKind(finding);
+      canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
+      const samples = canonFindingSamples[kind] ?? [];
+      if (samples.length < 5) {
+        samples.push(finding);
+        canonFindingSamples[kind] = samples;
+      }
+    }
     const board = canonBoard(Object.values(s.campaignChecks ?? {}));
+    const poolFindings = s.genericPoolFindings ?? [];
     const { stages, overdueStages: overdue } = stageHealthView(
       s.stageHealth ?? {},
     );
@@ -2379,7 +2403,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       service: "deliverabilitywizard",
       canonFindings,
       canonFindingSamples,
-      canonCompliant: board.compliant,
+      canonCompliant: canonCompliantOverall(board.compliant, poolFindings),
       canonYes: board.campaigns.filter((row) => row.yes).length,
       canonNo: board.campaigns.filter((row) => !row.yes).length,
       canaryFleetDown: s.canaryFleetDown ?? null,
@@ -3010,7 +3034,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Campaign bounce loop (D141/D148): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; burst >${config.bounceBurstCount} bounces/10m from sends <24h old → classify + re-queue, never pause; ledger dumps do nothing; Smartlead bounce protection is UI-only, no API off-switch exists (D157))` : "disabled"}`,
     );
     console.log(
-      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send` : "no send-clock"}`,
+      `[boot] Sender rest (D43): ${config.enableClientRest ? "ENABLED (per-client A/B, 2 weeks on / 2 weeks off)" : "disabled"}; generics ${config.enableGenericSendRest ? `sit after ${config.genericSendRestDays}d live send (override; D221 default is off)` : "fleet pool, no separate send-clock (D221)"}`,
     );
     console.log(
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (Outlook 15/day, Gmail/SMTP ${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,

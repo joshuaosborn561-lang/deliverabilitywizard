@@ -206,6 +206,8 @@ const FINDING_LABEL: Record<string, string> = {
   missing_canary: "no canary",
   inbox_missing_known_good: "inbox missing known-good test",
   merge_tag_blank: "merge tags sending blank",
+  generic_idle: "generic assigned but not needed for POD 40",
+  generic_multi_client: "generic assigned to more than one client",
 };
 
 /**

@@ -45,6 +45,11 @@ import {
 import type { TenantOutboundBlockRecord } from "../lib/tenantOutboundBlock.js";
 import { normalizeTenantOutboundHost } from "../lib/tenantOutboundBlock.js";
 import {
+  genericSeatKey,
+  normalizeGenericSeat,
+  type GenericSeatRecord,
+} from "../lib/genericPool.js";
+import {
   terlHoldActive,
   terlHeldUntil,
   terlSubstitutionKey,
@@ -333,6 +338,13 @@ export interface AppState {
    */
   tenantOutboundBlocks: Record<string, TenantOutboundBlockRecord>;
   /**
+   * D221 — fleet-wide generic pool. One row per generic seat
+   * (email, sl account, provider, warm-ready, assignment, reason).
+   */
+  genericSeats: Record<string, GenericSeatRecord>;
+  /** D221 — latest generic-pool canon findings (`generic_idle` / `generic_multi_client`). */
+  genericPoolFindings: string[];
+  /**
    * D219 — Microsoft 550 5.7.233 tenant holds. 24h at 0, then the
    * type cap resumes. Other jobs must not write the type default
    * during the window.
@@ -529,6 +541,17 @@ function parseTenantOutboundBlocks(
   return out;
 }
 
+function parseGenericSeats(raw: unknown): Record<string, GenericSeatRecord> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, GenericSeatRecord> = {};
+  for (const value of Object.values(raw as Record<string, unknown>)) {
+    const seat = normalizeGenericSeat(value);
+    if (!seat) continue;
+    out[seat.email] = seat;
+  }
+  return out;
+}
+
 function parseTenantTerlHolds(
   raw: unknown,
 ): Record<string, TenantTerlHoldRecord> {
@@ -710,6 +733,8 @@ const EMPTY_STATE: AppState = {
   bounceHoldAccountIds: [],
   bounceHoldRestoreAfter: null,
   tenantOutboundBlocks: {},
+  genericSeats: {},
+  genericPoolFindings: [],
   tenantTerlHolds: {},
   terlPausedDays: {},
   terlSubstitutions: {},
@@ -809,6 +834,12 @@ export class StateStore {
         tenantOutboundBlocks: parseTenantOutboundBlocks(
           parsed.tenantOutboundBlocks,
         ),
+        genericSeats: parseGenericSeats(parsed.genericSeats),
+        genericPoolFindings: Array.isArray(parsed.genericPoolFindings)
+          ? parsed.genericPoolFindings
+              .map((line) => String(line))
+              .filter((line) => line.trim().length > 0)
+          : [],
         tenantTerlHolds: parseTenantTerlHolds(parsed.tenantTerlHolds),
         terlPausedDays: parseTerlPausedDays(parsed.terlPausedDays),
         terlSubstitutions: parseTerlSubstitutions(parsed.terlSubstitutions),
@@ -1104,6 +1135,55 @@ export class StateStore {
 
   listPoolMailboxes(): PoolMailboxRecord[] {
     return Object.values(this.state.poolMailboxes);
+  }
+
+  /** D221 — fleet-wide generic seat table. */
+  upsertGenericSeat(record: GenericSeatRecord): void {
+    const seat = normalizeGenericSeat(record);
+    if (!seat) return;
+    this.state.genericSeats[seat.email] = seat;
+  }
+
+  getGenericSeat(email: string): GenericSeatRecord | undefined {
+    return this.state.genericSeats[genericSeatKey(email)];
+  }
+
+  listGenericSeats(): GenericSeatRecord[] {
+    return Object.values(this.state.genericSeats);
+  }
+
+  replaceGenericSeats(seats: GenericSeatRecord[]): void {
+    const next: Record<string, GenericSeatRecord> = {};
+    for (const raw of seats) {
+      const seat = normalizeGenericSeat(raw);
+      if (!seat) continue;
+      next[seat.email] = seat;
+    }
+    this.state.genericSeats = next;
+  }
+
+  clearGenericSeatAssignment(email: string): void {
+    const key = genericSeatKey(email);
+    const seat = this.state.genericSeats[key];
+    if (!seat) return;
+    this.state.genericSeats[key] = {
+      ...seat,
+      assignedClientId: null,
+      assignedCampaignIds: [],
+      assignedPod: null,
+      assignedAt: null,
+      reason: null,
+    };
+  }
+
+  setGenericPoolFindings(findings: string[]): void {
+    this.state.genericPoolFindings = findings
+      .map((line) => String(line))
+      .filter((line) => line.trim().length > 0);
+  }
+
+  listGenericPoolFindings(): string[] {
+    return [...this.state.genericPoolFindings];
   }
 
   /**

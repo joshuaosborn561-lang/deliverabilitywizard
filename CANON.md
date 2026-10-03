@@ -265,12 +265,11 @@ or the day is done. Silent findings are a bug (D163).
   that fill for **auto-allow** clients (BCP 542838, TechEvo,
   Parlay 418274, Insight, EMCOR 574020) without an Allow-generics
   card. Prefer named first; when topping a short campaign, prefer
-  the ESP that is under the ~1/3 mix floor. SalesGlider with
-  ample salesglider* named inventory (each POD already ≥40 named)
-  must not carry pool generics. Do **not** rotate the same
+  the ESP that is under the ~1/3 mix floor. SalesGlider with ample salesglider*
+  named inventory (each POD already ≥40 named) must not carry pool generics. Do **not** rotate the same
   generic onto a **different** client's campaign. Leftover D134
-  Slack / retire-tap approvals are a historical record, not
-  attach permission. If a client lane is understaffed and no
+  Slack / retire-tap approvals are a historical record, not attach permission.
+  If a client lane is understaffed and no
   eligible *named* senders remain, fill that POD up to 40 from
   the free pool — do not borrow another named client's
   mailboxes. **Exceptions (D221):** PowerGRYD 592842 dedicated

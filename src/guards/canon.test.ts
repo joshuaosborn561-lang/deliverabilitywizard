@@ -9799,7 +9799,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9934,7 +9934,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10098,7 +10098,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(199|20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10241,7 +10241,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10426,7 +10426,7 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[3-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[3-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D203 or later.", "CANON.md header lost the D203-era stamp."),
     );
     assert.match(
@@ -10652,7 +10652,7 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D(20[5-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[5-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D205 or later.", "CANON.md header was not bumped to D205+."),
     );
     assert.match(
@@ -10836,7 +10836,7 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[7-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[7-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D207+.", "CANON.md header lost the D207-era date."),
     );
     assert.match(

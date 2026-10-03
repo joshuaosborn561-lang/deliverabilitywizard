@@ -55,6 +55,21 @@ export function readSlackBotToken(creds: SlackCredentials): string {
   return creds.botToken?.trim() ?? "";
 }
 
+/** D94 reconnect Slack — list every mailbox; remainder only if Slack length needs a cap. */
+export const RECONNECT_SLACK_LIST_CAP = 40;
+
+export function slackReconnectBullets(
+  items: string[],
+  cap = RECONNECT_SLACK_LIST_CAP,
+): string[] {
+  if (items.length === 0) return [];
+  const shown = items.slice(0, cap);
+  if (items.length > cap) {
+    shown.push(`• …and ${items.length - cap} more`);
+  }
+  return shown;
+}
+
 export class SlackClient {
   constructor(private readonly creds: SlackCredentials) {}
 
@@ -747,14 +762,16 @@ export class SlackClient {
       return;
     }
 
-    const reconnected = (summary.actions ?? [])
-      .filter((a) => a.reauthenticated)
-      .slice(0, 12)
-      .map((a) => `• \`${a.email}\``);
-    const failed = (summary.actions ?? [])
-      .filter((a) => !a.reauthenticated && !/already/i.test(a.message || ""))
-      .slice(0, 8)
-      .map((a) => `• \`${a.email}\` — ${a.message || "failed"}`);
+    const reconnected = slackReconnectBullets(
+      (summary.actions ?? [])
+        .filter((a) => a.reauthenticated)
+        .map((a) => `• \`${a.email}\``),
+    );
+    const failed = slackReconnectBullets(
+      (summary.actions ?? [])
+        .filter((a) => !a.reauthenticated && !/already/i.test(a.message || ""))
+        .map((a) => `• \`${a.email}\` — ${a.message || "failed"}`),
+    );
 
     await this.send(
       [

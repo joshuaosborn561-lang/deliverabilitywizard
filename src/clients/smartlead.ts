@@ -10,6 +10,21 @@ import type {
 
 const BASE_URL = "https://server.smartlead.ai/api/v1/";
 
+/** Smartlead fleet pages are 100 wide. Keep paging until a page is empty. */
+export const EMAIL_ACCOUNTS_PAGE_LIMIT = 100;
+export const EMAIL_ACCOUNTS_MAX_PAGES = 200;
+
+/**
+ * D220 — a fleet / teardown check must not decide from a short or failed
+ * GET /email-accounts read. Throw instead of returning what we have.
+ */
+export class IncompleteEmailAccountListError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "IncompleteEmailAccountListError";
+  }
+}
+
 export interface SmartleadAccountWithCampaigns extends SmartleadEmailAccount {
   campaign_ids?: number[];
   client_id?: number | null;
@@ -206,8 +221,8 @@ export class SmartleadClient {
   } = {}): Promise<SmartleadAccountWithCampaigns[]> {
     const out: SmartleadAccountWithCampaigns[] = [];
     let offset = 0;
-    const limit = 100;
-    for (;;) {
+    const limit = EMAIL_ACCOUNTS_PAGE_LIMIT;
+    for (let pageIndex = 0; pageIndex < EMAIL_ACCOUNTS_MAX_PAGES; pageIndex += 1) {
       const page = await apiRequest<SmartleadAccountWithCampaigns[]>(
         BASE_URL,
         this.apiKey,
@@ -220,13 +235,19 @@ export class SmartleadClient {
           },
         },
       );
-      const rows = Array.isArray(page) ? page : [];
-      out.push(...rows);
-      if (rows.length < limit) break;
-      offset += limit;
+      if (!Array.isArray(page)) {
+        throw new IncompleteEmailAccountListError(
+          "Smartlead GET /email-accounts returned a non-list page. Fleet and teardown checks must not decide from a partial list.",
+        );
+      }
+      if (page.length === 0) return out;
+      out.push(...page);
+      offset += page.length;
       await sleep(400);
     }
-    return out;
+    throw new IncompleteEmailAccountListError(
+      `Smartlead GET /email-accounts still had rows after ${EMAIL_ACCOUNTS_MAX_PAGES} pages of ${limit}. Fleet and teardown checks must not decide from a partial list.`,
+    );
   }
 
   removeEmailAccountsFromCampaign(

@@ -80,3 +80,57 @@ describe("SmartleadClient.updateCampaignStatus", () => {
     assert.deepEqual(calls[0].body, { status: "START" });
   });
 });
+
+describe("SmartleadClient.listAllEmailAccounts (D220)", () => {
+  it("pages GET /email-accounts limit=100 until the response is empty", async () => {
+    const offsets: number[] = [];
+    const limits: number[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const offset = Number(url.searchParams.get("offset") ?? "0");
+      const limit = Number(url.searchParams.get("limit") ?? "0");
+      offsets.push(offset);
+      limits.push(limit);
+      const rows =
+        offset === 0
+          ? Array.from({ length: 100 }, (_, i) => ({ id: i + 1 }))
+          : offset === 100
+            ? Array.from({ length: 40 }, (_, i) => ({ id: 101 + i }))
+            : [];
+      return new Response(JSON.stringify(rows), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new SmartleadClient("test-key");
+    const accounts = await client.listAllEmailAccounts();
+    assert.equal(accounts.length, 140);
+    assert.deepEqual(limits, [100, 100, 100]);
+    assert.deepEqual(offsets, [0, 100, 140]);
+  });
+
+  it("throws on a non-list page instead of returning a partial fleet", async () => {
+    const { IncompleteEmailAccountListError } = await import("./smartlead.js");
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      if (calls === 1) {
+        return new Response(JSON.stringify([{ id: 1 }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ error: "truncated" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new SmartleadClient("test-key");
+    await assert.rejects(
+      () => client.listAllEmailAccounts(),
+      IncompleteEmailAccountListError,
+    );
+  });
+});

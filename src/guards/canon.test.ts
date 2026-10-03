@@ -9741,7 +9741,7 @@ describe("owner intent — D217 Canon staffable matches the agent", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D21[7-9]\*\*/,
+      /Canon as of \*\*D(21[7-9]|22[0-9])\*\*/,
       stop("CANON dated D217+.", "CANON.md header is not D217 or later."),
     );
     assert.match(
@@ -9880,7 +9880,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -10015,7 +10015,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10179,7 +10179,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(199|20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10322,7 +10322,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[0-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[0-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10507,7 +10507,7 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[3-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[3-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D203 or later.", "CANON.md header lost the D203-era stamp."),
     );
     assert.match(
@@ -10733,7 +10733,7 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D(20[5-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[5-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D205 or later.", "CANON.md header was not bumped to D205+."),
     );
     assert.match(
@@ -10917,7 +10917,7 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[7-9]|21[0-9])\*\*/,
+      /Canon as of \*\*D(20[7-9]|21[0-9]|22[0-9])\*\*/,
       stop("CANON is dated D207+.", "CANON.md header lost the D207-era date."),
     );
     assert.match(
@@ -11197,7 +11197,7 @@ describe("owner intent — D210 SURBL never counts as a blacklist hit", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(210|21[1-9])\*\*/,
+      /Canon as of \*\*D(210|21[1-9]|22[0-9])\*\*/,
       stop("CANON is dated D210.", "CANON.md header lost D210+."),
     );
     assert.match(
@@ -11307,7 +11307,7 @@ describe("owner intent — D211 health-chain leftovers resume; mailbox-gap /run 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(211|21[2-9])\*\*/,
+      /Canon as of \*\*D(211|21[2-9]|22[0-9])\*\*/,
       stop("CANON is dated D211.", "CANON.md header lost D211+."),
     );
     assert.match(
@@ -11551,7 +11551,7 @@ describe("owner intent — D213 permanent tenant outbound-block hold", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(213|21[4-9])\*\*/,
+      /Canon as of \*\*D(213|21[4-9]|22[0-9])\*\*/,
       stop("CANON is dated D213.", "CANON.md header lost D213+."),
     );
     assert.match(
@@ -11640,7 +11640,7 @@ describe("owner intent — D214 health resume is chain inversion", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(214|21[5-9])\*\*/,
+      /Canon as of \*\*D(214|21[5-9]|22[0-9])\*\*/,
       stop("CANON is dated D214.", "CANON.md header lost D214+."),
     );
     assert.match(
@@ -11704,8 +11704,8 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D21[5-9]\*\*/,
-      stop("CANON is dated D215 or later.", "CANON.md header lost the D215 generation."),
+      /Canon as of \*\*D(21[5-9]|22[0-9])\*\*/,
+      stop("CANON is dated D215+.", "CANON.md header lost the D215-era stamp."),
     );
     assert.match(
       canon,
@@ -11785,7 +11785,7 @@ describe("owner intent — D218 TERRL holds persist past 7:15pm CT", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D21[8-9]\*\*/,
+      /Canon as of \*\*D(21[8-9]|22[0-9])\*\*/,
       stop("CANON dated D218+.", "CANON.md header is not D218 or later."),
     );
     assert.match(
@@ -11916,8 +11916,8 @@ describe("owner intent — D219 mailbox type caps and TERRL 24h + substitute", (
     );
     assert.match(
       canon,
-      /Canon as of \*\*D219\*\*/,
-      stop("CANON dated D219.", "CANON.md header is not D219."),
+      /Canon as of \*\*D(219|22[0-9])\*\*/,
+      stop("CANON dated D219+.", "CANON.md header is not D219 or later."),
     );
     assert.match(
       canon,
@@ -11938,6 +11938,159 @@ describe("owner intent — D219 mailbox type caps and TERRL 24h + substitute", (
       decisions,
       /## D219 — Mailbox type caps and 5\.7\.233/,
       stop("D219 is in the ledger.", "DECISIONS.md lost D219."),
+    );
+  });
+});
+
+describe("owner intent — D220 Cayden spend digest and complete fleet pages", () => {
+  it("D220: weekday 7:16am CT digest, per-client grouping, pages until empty, never skip teardown on a partial list", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
+
+    assert.equal(defaults.enableSpendDigest, true);
+    assert.equal(defaults.cronSpendDigest, "16 7 * * *");
+    assert.equal(defaults.spendDigestTimezone, "America/Chicago");
+    assert.ok(
+      "spend-digest" in STAGE_OVERDUE_WINDOWS_MS,
+      stop(
+        "spend-digest is a /health stage (D220).",
+        "stageWindows.ts lost the spend-digest window.",
+      ),
+    );
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const smartlead = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    const rig = await readFile(
+      new URL("../services/isolationRig.ts", import.meta.url),
+      "utf8",
+    );
+    const denylist = await readFile(
+      new URL("../lib/resolveIsolationDenylist.ts", import.meta.url),
+      "utf8",
+    );
+    const digest = await readFile(
+      new URL("../lib/spendDigest.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      index,
+      /stage\("spend-digest"/,
+      stop("spend-digest is watchdogged (D220).", "index.ts lost stage(\"spend-digest\")."),
+    );
+    assert.match(
+      index,
+      /cronSpendDigest/,
+      stop("The digest has its own cron (D220).", "index.ts no longer schedules cronSpendDigest."),
+    );
+    assert.match(
+      index,
+      /spendDigestTimezone/,
+      stop("The digest cron is America/Chicago (D220).", "index.ts lost the Chicago timezone."),
+    );
+    assert.match(
+      index,
+      /mode === "spend-digest"/,
+      stop("/run?mode=spend-digest exists (D220).", "index.ts lost the spend-digest run mode."),
+    );
+
+    assert.match(
+      smartlead,
+      /EMAIL_ACCOUNTS_PAGE_LIMIT = 100/,
+      stop("Fleet pages are limit=100 (D220).", "smartlead.ts lost EMAIL_ACCOUNTS_PAGE_LIMIT."),
+    );
+    assert.match(
+      smartlead,
+      /if \(page\.length === 0\) return out/,
+      stop(
+        "Fleet pagination stops only on an empty page (D220).",
+        "listAllEmailAccounts still breaks on a short page.",
+      ),
+    );
+    assert.doesNotMatch(
+      smartlead,
+      /rows\.length < limit/,
+      stop(
+        "A short page is not the end of the fleet (D220).",
+        "listAllEmailAccounts still stops when rows.length < limit.",
+      ),
+    );
+    assert.match(
+      smartlead,
+      /IncompleteEmailAccountListError/,
+      stop(
+        "A non-list page throws instead of returning a partial fleet (D220).",
+        "smartlead.ts lost IncompleteEmailAccountListError.",
+      ),
+    );
+
+    assert.doesNotMatch(
+      branch,
+      /rigEmails\(\)\.catch\(\(\) => \[\]\)/,
+      stop(
+        "Isolation must not skip teardown from a failed fleet list (D220).",
+        "isolationBranch.ts still catches rigEmails to [].",
+      ),
+    );
+    assert.doesNotMatch(
+      rig,
+      /listAllEmailAccounts\(\)\.catch\(\(\) => \[\]\)/,
+      stop(
+        "The isolation rig must not treat a failed list as empty (D220).",
+        "isolationRig.ts still catches listAllEmailAccounts to [].",
+      ),
+    );
+    assert.doesNotMatch(
+      denylist,
+      /listAllEmailAccounts\(\)\.catch\(\(\) => \[\]\)/,
+      stop(
+        "The isolation denylist must not treat a failed list as empty (D220).",
+        "resolveIsolationDenylist.ts still catches listAllEmailAccounts to [].",
+      ),
+    );
+
+    assert.match(
+      digest,
+      /groupSpendItemsByClient/,
+      stop("The digest groups per client (D220).", "spendDigest.ts lost per-client grouping."),
+    );
+    assert.match(
+      digest,
+      /one approval per client/,
+      stop("Each client is one approval (D220).", "spendDigest.ts lost the one-approval copy."),
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D220\*\*/,
+      stop("CANON is dated D220.", "CANON.md header was not bumped to D220."),
+    );
+    assert.match(
+      canon,
+      /7:16am/,
+      stop("CANON names the 7:16am CT digest (D220).", "CANON.md lost the 7:16am sentence."),
+    );
+    assert.match(
+      decisions,
+      /## D220 — Cayden weekday spend digest/,
+      stop("The ledger records D220.", "DECISIONS.md no longer has D220."),
+    );
+    assert.match(
+      decisions,
+      /^\| D220 \|/m,
+      stop("The status index lists D220 (D127).", "DECISIONS.md status index has no D220 row."),
     );
   });
 });

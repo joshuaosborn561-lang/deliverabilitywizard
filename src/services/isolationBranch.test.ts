@@ -30,6 +30,7 @@ async function buildBranch(opts: {
   canaryInbox: number;
   mailboxPlacement?: "PRIMARY" | "SPAM" | "UNKNOWN";
   rigEmails?: string[];
+  rigEmailsError?: Error;
   campaign?: { id: number; name: string; status: string };
   canaryTestId?: string | null;
 }) {
@@ -119,7 +120,10 @@ async function buildBranch(opts: {
   const armed: number[] = [];
   const rig = {
     readLatestControl: async () => null,
-    rigEmails: async () => opts.rigEmails ?? ["iso@techevo.test"],
+    rigEmails: async () => {
+      if (opts.rigEmailsError) throw opts.rigEmailsError;
+      return opts.rigEmails ?? ["iso@techevo.test"];
+    },
     ensureArmed: async () => {
       armed.push(1);
     },
@@ -241,6 +245,25 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.ok(
       after && (after.evaluatedAt === undefined || after.evaluatedAt),
       "re-queue cleared the sticky evaluatedAt long enough to evaluate",
+    );
+  });
+
+  it("D220: a failed fleet list does not skip or deny teardown", async () => {
+    const { branch, teardowns } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+      rigEmailsError: new Error(
+        "Smartlead GET /email-accounts returned a non-list page",
+      ),
+    });
+    await assert.rejects(
+      () => branch.evaluate(AIRPODS.id, { campaignInSpam: true }),
+      /email-accounts|partial list|non-list/i,
+    );
+    assert.equal(
+      teardowns.length,
+      0,
+      "teardown must not run or be skipped from a partial fleet list",
     );
   });
 

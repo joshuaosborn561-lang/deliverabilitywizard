@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D219** (2026-10-03). One page of current truth. When a new
+Canon as of **D220** (2026-10-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -26,6 +26,7 @@ or the day is done. Silent findings are a bug (D163).
 | Campaign check | Hourly (yields to a running health pass, D122) | Re-inspect blocked first-checks; sweep pod/shell posture, signatures, client tag, one-client, canary coverage (both kinds), staffing floor (D81/D82/D196/D197/D198/D199/D203/D207 — never below 40 staffable per ACTIVE campaign; 40/POD named inventory still D203), **step-2 delay** (D186 — `seq_delay_details.delay_in_days` must be 2 on the second email; auto-fix via `sequencesForWrite`; canary / pod-control / word-hunt shells and 1-step instrumentation skipped), **merge-tag fill on ACTIVE campaigns that use custom `{{tags}}`** (D180 — multi-offset lead sample + cheap sent-body hole check; pages `merge_tag_blank`, never edits copy). Reads the shared account book, never its own fetch (D132). Auto-allow clients skip the Allow-generics card (D205 — min-40 stage fills them); remaining generic_unapproved asks in one pass post as **one batched card**. |
 | Canon ops | 30 min, weekday 08:00–18:00 America/Chicago | Five `/health` stages, idle-ticked outside the window so a weekend is not OVERDUE (D205/D219): **hold-enforcement** keeps a configured campaign list + Goliath (548611) 0-ACTIVE until 2026-10-15 PAUSED — the only live-campaign PAUSED write besides shells; bounce loop still never pauses (D148). **min40-topup** fills each ACTIVE named-client campaign to 40 staffable senders from that client — on-week named first, then that client's already-assigned generics shared across all of that client's ACTIVE campaigns, then free-pool generics assigned (`client_id` + signature) and shared the same way (D207). Auto-allow clients (BCP 542838, TechEvo, Parlay 418274, Insight, EMCOR 574020) plus PowerGRYD 592842 execute with no Slack card; everyone else gets one batched Allow-generics ask. Never retags named seats. Never START/PAUSE. An ACTIVE campaign still under 40 after the pass pages one `ops_alert` per campaign per day. PowerGRYD uses its own seats (client 592842 + PG signature via the assign path); if unique staffable inventory is under 40, link all and Slack one inventory shortfall. **powergryd-watch** is still alert-only for dedicated-seat drops and never START / PAUSE (restaff is min40). **generic-cleanup** clears `client_id` + signature from a GENERIC-tagged mailbox that is no longer on that client's ACTIVE campaign. **mailbox-type-tags** converges `type:google` / `type:m365` / `type:azure` from the sending domain (tidalstackco.com is Azure/Entra). |
 | Monitor | Slower cadence | POD-A/POD-B tag converge runs **first** so its handful of decoration writes are not starved by placement pulls (D135/D143), then placement result pulls **that always include `isolation.copyCanaries.*.testId`** (those ids are not in `testedCampaigns`) and may still queue isolation (D158; `Canary copy:` counts as automated; ACTIVE live + canary fill the report cap first; CANON-miss Slack is the 15-minute pager, D163). The **on-ramp cadence is the 15-minute health sweep** (D159), not this loop. DNS advisory audit, lead-runout logging (D52), sending-IP census (D53), canary-fleet adopt while not ready (D86), campaign audit off the shared account book (D132), domain→client advisory audit (D136). Every stage watchdogged into `stageHealth`, overdue judged per stage against its own cadence (`src/lib/stageWindows.ts`); a deleted stage's leftover record is pruned at boot (D131). `/health` names the overdue set (D166). A finished stage checkpoints `lastOk` immediately; `state.save` is serialized so health and monitor cannot clobber a snapshot. A mid-chain kill (Railway SIGTERM) resumes leftover stale 6h stages on the **next 15-minute health tick**, skipping anything still fresh in the cycle — never at boot (D122/D167). The 15-minute health chain does the same for leftover late stages (`mailbox-gap`, isolation-branch, pod-cover, reconnect, isolation-buy-resume) so a deploy recycle cannot starve the tail until a lucky full sitting (D211). Resume is **chain inversion** — a later stage older than the newest earlier lastOk — not "an early stage still inside 15 minutes" (D214). Inventory lastOk is not the sitting frontier (skip-if-fresh / a SIGTERM right after the shared-book fetch); newest is taken from the rest of the loop so a newer inventory stamp cannot resume at client-rest and hide a campaign-health → pod-cover interrupt (D215; prod 2026-09-30 15:45Z leftover was client-rest). A deploy resets the cron, so the next tick is ~15m later and the D211 freshness gate was already false (prod 2026-09-30: campaign-health 15:11Z, pod-cover 13:13Z). Skip the prefix and continue from the leftover. The 6h cron still runs the full chain; the 15m cron still runs the full health chain when nothing is leftover. `/run?mode=mailbox-gap` is gap-only (not the full health pass, not the 6h mailbox-settings converge). `/run?mode=pod-cover` is the pod-cover-only tick (D214). |
+| Cayden spend digest | Weekday 7:16am America/Chicago | One Slack post for Cayden from existing pending-spend state: domain / inbox buys and Retire covers, grouped so each client is one approval. Drops stale or already-resolved rows. Posts nothing when the queue is empty. Does not spend (D220). |
 | EOD brief | Once, America/New_York | Per-client sends + spam scoreboard, untagged campaigns needing a human, DRAFT campaigns with leads loaded (D71, D85, D89). |
 | Boot | On deploy | **Only** canary attach at 90s touches Smartlead (D122). Everything else waits for its cron. Boot also logs its deploy identity (Railway git metadata) and pages Slack when it is missing or not a main build — the stale-snapshot redeployer's signature (D149). State-only D176 heal writes live retire/cover asks, retired / retire-pending history, and the known missing burned domain (`boldercyperpartnertop.info`) onto `attachBlocks` so restaff cannot reattach after a deploy. |
 
@@ -582,11 +583,15 @@ generics keep their confirm pages and strip via the stamped channel + ts.
 3. **EOD client scoreboard** — sends + spam once a day, plus untagged
    campaigns, loaded DRAFTs, domains needing a human, and under-warmed
    inboxes an outside writer keeps re-adding after gate pulls
-   (D85/D89/D136/D143). A separate weekday ~5:30pm CT
-   `#deliverability` digest lists every inbox that hit Microsoft
-   550 5.7.233 that day and was paused, grouped per client, and names
-   any campaign left at 39 sending with no same-client substitute
-   (D219). Nothing on days with no such bounces.
+   (D85/D89/D136/D143). A separate weekday **7:16am CT** Slack digest
+   lists pending domain / inbox buys and Retire covers for Cayden,
+   grouped per client so each client is one approval. Drops stale or
+   already-resolved rows. Nothing on days with an empty queue (D220).
+   A separate weekday ~5:30pm CT `#deliverability` digest lists every
+   inbox that hit Microsoft 550 5.7.233 that day and was paused,
+   grouped per client, and names any campaign left at 39 sending with
+   no same-client substitute (D219). Nothing on days with no such
+   bounces.
 Plus `action_result` confirmations: a tapped button finished, a signature
 was auto-written (first time per campaign only, D92/D95), a reconnect
 happened or hard-failed (D94). **Do not post a separate "Approval recorded"
@@ -645,6 +650,11 @@ strike — D60/D190; fail-#1 buy-ahead still exists until the domain actually re
 autonomous. `REQUIRE_SPEND_APPROVAL` stays on; approvals are single-use,
 client spend carries the $25 domain / 25 mailbox monthly caps (D4/D15).
 Never spend, purge, or bypass warmup/holds from chat (D18).
+The weekday 7:16am CT Cayden digest is a read of that same pending
+state, grouped per client; it is not a second spend path (D220).
+Smartlead fleet checks paginate `GET /email-accounts` with
+`limit=100` until the response is empty. A check must never deny
+or skip a teardown from a partial or failed list (D220).
 
 ## Advisory watchers
 
@@ -693,9 +703,10 @@ D108/D180/D217), open `canonFindings` by kind, per-stage `stageHealth` watchdog
 (D84) with `overdue` / `overdueStages` / `lastSkipReason` (D166) including
 the D205/D219 canon-ops stages (`hold-enforcement`, `min40-topup`,
 `powergryd-watch`, `generic-cleanup`, `mailbox-type-tags`), the
-weekday TERRL EOD digest (`terl-eod`), and the
+weekday Cayden spend digest (`spend-digest`, D220), the weekday
+TERRL EOD digest (`terl-eod`), and the
 build's `deploy` identity — commit/branch/deployment from Railway's git
-metadata (D149). `/status`, `/run`, `/approvals/*` require `RUN_TOKEN`. `/run?mode=mailbox-gap` runs gap-only (D211). `/run?mode=pod-cover` is the pod-cover watchdog tick (D214). `/run?mode=terl-eod` posts the D219 weekday 5.7.233 digest. `/ops` is the
+metadata (D149). `/status`, `/run`, `/approvals/*` require `RUN_TOKEN`. `/run?mode=mailbox-gap` runs gap-only (D211). `/run?mode=pod-cover` is the pod-cover watchdog tick (D214). `/run?mode=spend-digest` posts the D220 weekday Cayden spend digest. `/run?mode=terl-eod` posts the D219 weekday 5.7.233 digest. `/ops` is the
 employee console (owner/operator roles, audit log); Overview shows **days
 until the next D43 A/B fortnight swap** and which pod is sending
 (America/New_York ISO weeks); its Placement tab shows

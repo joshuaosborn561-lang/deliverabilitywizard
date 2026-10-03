@@ -379,6 +379,10 @@ const ConfigSchema = z.object({
   enableTerlEod: boolFromEnv(true),
   cronTerlEod: z.string().default("30 17 * * *"),
   terlEodTimezone: z.string().default("America/Chicago"),
+  /** D220 — weekday 7:16am CT Cayden per-client spend digest. */
+  enableSpendDigest: boolFromEnv(true),
+  cronSpendDigest: z.string().default("16 7 * * *"),
+  spendDigestTimezone: z.string().default("America/Chicago"),
   holdCampaignIds: z
     .string()
     .default("")
@@ -623,6 +627,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableTerlEod: env.ENABLE_TERL_EOD,
     cronTerlEod: env.CRON_TERL_EOD ?? "30 17 * * *",
     terlEodTimezone: env.TERL_EOD_TIMEZONE ?? "America/Chicago",
+    enableSpendDigest: env.ENABLE_SPEND_DIGEST,
+    cronSpendDigest: env.CRON_SPEND_DIGEST ?? "16 7 * * *",
+    spendDigestTimezone: env.SPEND_DIGEST_TIMEZONE ?? "America/Chicago",
     holdCampaignIds: env.HOLD_CAMPAIGN_IDS ?? "",
     holdCampaignNamePatterns: env.HOLD_CAMPAIGN_NAME_PATTERNS ?? "",
     holdClientZeroActive: env.HOLD_CLIENT_ZERO_ACTIVE ?? "",

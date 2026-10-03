@@ -59,6 +59,10 @@ import {
   type TerlSubstitution,
 } from "../lib/tenantTerlHold.js";
 import { normalizeTerlHost } from "../lib/tenantTerlHold.js";
+import {
+  parseInboxkitLicenseHandoff,
+  type InboxkitLicenseHandoff,
+} from "../lib/inboxkitLicense.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -354,6 +358,11 @@ export interface AppState {
   terlPausedDays: Record<string, TerlPausedDay>;
   /** D219 — temp same-client generic substitutions. Key campaignId:stoppedId. */
   terlSubstitutions: Record<string, TerlSubstitution>;
+  /**
+   * D226 — latest Monday InboxKit license sweep handoff for Onboarding
+   * and Deliverability (per-client lapsed + upcoming cancellations).
+   */
+  inboxkitLicenseHandoff: InboxkitLicenseHandoff | null;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -738,6 +747,7 @@ const EMPTY_STATE: AppState = {
   tenantTerlHolds: {},
   terlPausedDays: {},
   terlSubstitutions: {},
+  inboxkitLicenseHandoff: null,
 };
 
 export class StateStore {
@@ -843,6 +853,9 @@ export class StateStore {
         tenantTerlHolds: parseTenantTerlHolds(parsed.tenantTerlHolds),
         terlPausedDays: parseTerlPausedDays(parsed.terlPausedDays),
         terlSubstitutions: parseTerlSubstitutions(parsed.terlSubstitutions),
+        inboxkitLicenseHandoff: parseInboxkitLicenseHandoff(
+          parsed.inboxkitLicenseHandoff,
+        ),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1015,6 +1028,14 @@ export class StateStore {
     record.status = "consumed";
     record.decidedAt = new Date().toISOString();
     return record;
+  }
+
+  setInboxkitLicenseHandoff(handoff: InboxkitLicenseHandoff): void {
+    this.state.inboxkitLicenseHandoff = handoff;
+  }
+
+  getInboxkitLicenseHandoff(): InboxkitLicenseHandoff | null {
+    return this.state.inboxkitLicenseHandoff;
   }
 
   appendOpsAudit(record: OpsAuditRecord): void {

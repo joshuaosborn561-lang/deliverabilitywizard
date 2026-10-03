@@ -229,6 +229,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D221 | Live | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
 | D222 | Live — Slack findings + detection-only superseded by D226 | Monday 8:16am CT InboxKit lapsed-license sweep compares InboxKit status to connected Smartlead accounts. D226 hands findings internally and deletes lapsed seats; Slack is only the post-cleanup one-liner when X > 0 |
 | D223 | Live | Mechanical POD A/B fortnight rotation skips PowerGRYD 592842 and Goliath 548611. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side |
+| D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
 
 ---
@@ -7231,6 +7232,59 @@ table + `validateGenericPool` flag idle and multi-client;
 `generic_multi_client`; PowerGRYD and TERRL-substitute
 skip idle; `enableGenericSendRest` defaults off; CANON
 dated D221.
+
+---
+## D224 — Evidence-per-seat hold gate; drop the 5/10/25% caps
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh HARD: drop the 5 / 10 / 25% numeric hold
+limits. Replace them with an evidence-per-seat gate. Every
+hold request (HOLD tag, mpd 0 as a hold, bounce-hold list,
+TERRL hold) must name each seat and attach that seat's own
+qualifying reason from a fixed list:
+
+1. A hard bounce or block on that mailbox or its tenant
+   (`5.7.233`, `5.1.8`, and the event id).
+2. SMTP or IMAP auth failure on that account.
+3. Its domain is retired or marked as a bad sender (exact
+   domain only).
+4. Its InboxKit seat is lapsed, cancelled, or inactive.
+5. A blacklist hit on that domain (SURBL excluded).
+6. Warmup is under 21 days or warmup reputation fell below
+   threshold.
+
+Any seat without its own evidence is rejected and is never
+held by pattern or by client. Substring or pattern matches
+are refused. Each hold stores its reason and evidence and
+expires when the reason clears, or at 30 days at most.
+Rejected seats are listed in one `#deliverability` message
+for review.
+
+**Why.** On 2026-09-28 a Canon QA script matched
+`boldercyper` and HOLD-tagged all 97 BCP named seats until
+2027, which zeroed BCP's named staffing. Only the
+`getbold` / `keybold` seats had retired-domain evidence.
+A percent cap would still have allowed a pattern blast. The
+gate holds only the evidenced seats and lists the rest.
+
+**Rejected.** 5 seats per client / 10 fleet-wide / 25% of
+named seats as a substitute for evidence. Holding by
+client name or by substring. HOLD-UNTIL dates past 30 days
+without fresh evidence.
+
+**Supersedes / amends.** Amends D213: a 5.1.8 hold still
+has no 7:15pm restore, but it expires when the reason
+clears or at 30 days, then a new hold needs fresh evidence.
+Does not change D219's 24h TERRL window (inside 30 days) or
+D210 (SURBL is never a hit). D216 is claimed by open PR
+#265. D222 / D223 are claimed by open PRs #275 / #276; this
+number is D224.
+
+**Guards.** `gateSeatHolds` is the only hold request gate;
+9/28 replay holds 10 getbold/keybold of 97 and rejects 87;
+no 5/10/25 percent caps; Slack lists rejected seats; CANON
+dated D224.
 
 ---
 

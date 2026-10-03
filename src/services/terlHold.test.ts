@@ -152,6 +152,8 @@ describe("TerlHoldService substitution (D219)", () => {
       }) as never,
       dryRun: false,
       now: NOW,
+      eventId: "evt-terl-salesglider",
+      smtpCode: "5.7.233",
     });
 
     assert.equal(result.zeroed, 1);
@@ -216,6 +218,8 @@ describe("TerlHoldService substitution (D219)", () => {
       inventory: snap,
       dryRun: false,
       now: NOW,
+      eventId: "evt-terl-salesglider",
+      smtpCode: "5.7.233",
     });
     updates.length = 0;
     linked.length = 0;
@@ -272,6 +276,8 @@ describe("TerlHoldService substitution (D219)", () => {
       }) as never,
       dryRun: false,
       now: NOW,
+      eventId: "evt-terl-salesglider",
+      smtpCode: "5.7.233",
     });
     assert.equal(result.substituted, 0);
     assert.equal(result.noSubstitute, 1);
@@ -297,5 +303,35 @@ describe("TerlHoldService substitution (D219)", () => {
     });
     assert.equal(weekend.posted, false);
     assert.equal(notes.length, 1);
+  });
+
+  it("D224: refuses a TERRL stop with no bounce event id and lists the seat", async () => {
+    const state = store();
+    const notes: string[] = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      addEmailAccountsToCampaign: async () => undefined,
+      removeEmailAccountsFromCampaign: async () => undefined,
+    };
+    const service = new TerlHoldService(config(), smartlead, state, {
+      notifyDeliverabilityNote: async (text: string) => {
+        notes.push(text);
+      },
+    });
+    const result = await service.applyStops({
+      domains: ["salesglider.com"],
+      inventory: inventory() as never,
+      dryRun: false,
+      now: NOW,
+    });
+    assert.equal(result.zeroed, 0);
+    assert.equal(state.isTenantTerlHoldAccount(10, NOW), false);
+    assert.deepEqual(updates, []);
+    assert.equal(notes.length, 1);
+    assert.match(notes[0]!, /ada@salesglider\.com/);
+    assert.match(notes[0]!, /event id/);
   });
 });

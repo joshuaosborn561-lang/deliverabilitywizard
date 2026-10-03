@@ -29,6 +29,11 @@ import {
   requestRetireOrCover,
 } from "../lib/retireAsk.js";
 import { accountEmail } from "../clients/smartlead.js";
+import {
+  applyGuardedHoldRequest,
+  extractSmtpCode,
+  type SeatHoldRequest,
+} from "../lib/evidenceHold.js";
 import { isOutlookMailboxType } from "../lib/sendCeiling.js";
 import type { InventoryBook } from "./inventory.js";
 import { TerlHoldService } from "./terlHold.js";
@@ -584,12 +589,33 @@ export class CampaignBounceAutostopService {
     if (dominant === "tenant_rate_limit" && this.state) {
       // D212 — arm the bounce-hold list (account ids).
       // D219 — 24h at 0, stay linked, same-client generic substitute.
+      // D224 — each seat is named with this bounce event as its evidence.
       // Slack is the weekday EOD digest, never this per-bounce page.
+      const eventId = bounceEventId(campaignId, samples);
+      const smtpCode =
+        extractSmtpCode(samples.find((row) => row.snippet)?.snippet) ?? "5.7.233";
       const ids = await this.bounceHoldIdsForDomains(senderDomains);
-      this.state.ensureBounceHold(ids);
-      await this.applyTenantTerlHold(senderDomains, ids, dryRun);
+      const seats = await this.holdRequestsForAccountIds(ids, {
+        reason: "hard_bounce_or_block",
+        eventId,
+        smtpCode,
+        source: "bounce-terl",
+      });
+      const gated = await applyGuardedHoldRequest({
+        seats,
+        store: this.state,
+        slack: this.slack,
+      });
+      const acceptedIds = gated.accepted
+        .map((row) => row.accountId)
+        .filter((id): id is number => typeof id === "number");
+      this.state.ensureBounceHold(acceptedIds);
+      await this.applyTenantTerlHold(senderDomains, acceptedIds, dryRun, {
+        eventId,
+        smtpCode,
+      });
     }
-    await this.armTenantOutboundBlock(samples, dryRun);
+    await this.armTenantOutboundBlock(campaignId, samples, dryRun);
     // D145/D146/D162 — ANY sender_blocked sample opens the retire ask,
     // never dominant-gated, never burst-gated. Same helper the
     // independent PAUSED/slow-drip scan uses.
@@ -622,7 +648,7 @@ export class CampaignBounceAutostopService {
       samples,
       dryRun,
     );
-    await this.armTenantOutboundBlock(samples, dryRun);
+    await this.armTenantOutboundBlock(campaign.id, samples, dryRun);
     this.state?.setBounceSnapshot(campaign.id, {
       bounced: previous?.bounced ?? rows.length,
       sent: previous?.sent ?? 0,
@@ -833,6 +859,7 @@ export class CampaignBounceAutostopService {
    * with no restoreAfter. Ids only — no daily-limit write.
    */
   private async armTenantOutboundBlock(
+    campaignId: number,
     samples: BounceSample[],
     dryRun: boolean,
   ): Promise<void> {
@@ -849,7 +876,27 @@ export class CampaignBounceAutostopService {
       )),
       ...(await this.tenantOutboundHoldIdsForDomains(domains)),
     ];
-    this.state.ensureTenantOutboundBlock({ domains, accountIds: ids });
+    const eventId = bounceEventId(campaignId, blocked);
+    const smtpCode =
+      extractSmtpCode(blocked.find((row) => row.snippet)?.snippet) ?? "5.1.8";
+    const seats = await this.holdRequestsForAccountIds(ids, {
+      reason: "hard_bounce_or_block",
+      eventId,
+      smtpCode,
+      source: "bounce-outbound-block",
+    });
+    const gated = await applyGuardedHoldRequest({
+      seats,
+      store: this.state,
+      slack: this.slack,
+    });
+    const acceptedIds = gated.accepted
+      .map((row) => row.accountId)
+      .filter((id): id is number => typeof id === "number");
+    this.state.ensureTenantOutboundBlock({
+      domains,
+      accountIds: acceptedIds,
+    });
     if (dryRun || !this.slack) return;
     if (typeof this.slack.notifyWatchdogTenantBlock !== "function") return;
     try {
@@ -892,6 +939,7 @@ export class CampaignBounceAutostopService {
     domains: string[],
     accountIds: number[],
     dryRun: boolean,
+    evidence: { eventId: string; smtpCode: string },
   ): Promise<void> {
     if (!this.state || !domains.length) return;
     const now = new Date(this.clock());
@@ -908,6 +956,8 @@ export class CampaignBounceAutostopService {
           inventory: snap,
           dryRun,
           now,
+          eventId: evidence.eventId,
+          smtpCode: evidence.smtpCode,
         });
         return;
       } catch (error) {
@@ -921,6 +971,48 @@ export class CampaignBounceAutostopService {
         accountIds,
         now,
       });
+    }
+  }
+
+  /** D224 — name each seat so the hold gate can attach this event. */
+  private async holdRequestsForAccountIds(
+    accountIds: number[],
+    input: {
+      reason: "hard_bounce_or_block";
+      eventId: string;
+      smtpCode: string;
+      source: string;
+    },
+  ): Promise<SeatHoldRequest[]> {
+    const unique = [...new Set(accountIds.filter((id) => id > 0))];
+    if (!unique.length || !this.book) return [];
+    try {
+      const snap = await this.book.get();
+      const byId = new Map(
+        snap.accounts
+          .filter((account) => typeof account.id === "number")
+          .map((account) => [account.id, account]),
+      );
+      const seats: SeatHoldRequest[] = [];
+      for (const id of unique) {
+        const account = byId.get(id);
+        const email = account ? accountEmail(account)?.toLowerCase() : undefined;
+        if (!email) continue;
+        seats.push({
+          email,
+          accountId: id,
+          reason: input.reason,
+          evidence: {
+            eventId: input.eventId,
+            smtpCode: input.smtpCode,
+            tenant: email.split("@")[1],
+          },
+          source: input.source,
+        });
+      }
+      return seats;
+    } catch {
+      return [];
     }
   }
 
@@ -984,4 +1076,10 @@ export function burstReceiptText(finding: BounceBurstFinding): string {
     "Nothing pauses (D148) — the campaign keeps sending while the incident works itself off.",
   );
   return lines.join("\n");
+}
+
+function bounceEventId(campaignId: number, samples: BounceSample[]): string {
+  const sample = samples[0];
+  if (!sample) return `bounce:${campaignId}`;
+  return `bounce:${campaignId}:${sample.leadEmail}:${sample.senderEmail ?? "unknown"}`;
 }

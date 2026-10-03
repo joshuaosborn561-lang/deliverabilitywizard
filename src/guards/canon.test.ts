@@ -12252,6 +12252,127 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
   });
 });
 
+describe("owner intent — D224 evidence-per-seat hold gate", () => {
+  it("D224: holds need per-seat evidence; 9/28 boldercyper replay rejects the other 87", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const lib = await readFile(new URL("../lib/evidenceHold.ts", import.meta.url), "utf8");
+    const test = await readFile(
+      new URL("../lib/evidenceHold.test.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const terl = await readFile(
+      new URL("../services/terlHold.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const slack = await readFile(new URL("../clients/slack.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      lib,
+      /export function gateSeatHolds/,
+      stop("gateSeatHolds is the hold request gate (D224).", "evidenceHold.ts lost gateSeatHolds."),
+    );
+    assert.match(
+      lib,
+      /EVIDENCE_HOLD_MAX_DAYS = 30/,
+      stop("Holds expire at 30 days at most (D224).", "evidenceHold.ts lost the 30-day cap."),
+    );
+    assert.doesNotMatch(
+      lib,
+      /0\.05|0\.10|0\.25|HOLD_MAX_PERCENT|5%|10%|25%/,
+      stop(
+        "There is no 5/10/25% numeric hold cap (D224).",
+        "evidenceHold.ts still has a percent hold limit.",
+      ),
+    );
+    assert.match(
+      lib,
+      /substring or pattern matches are refused/,
+      stop("Pattern holds are refused (D224).", "evidenceHold.ts lost the pattern refusal."),
+    );
+    assert.match(
+      lib,
+      /SURBL is never a blacklist hit/,
+      stop("SURBL is excluded (D224/D210).", "evidenceHold.ts no longer refuses SURBL."),
+    );
+    assert.match(
+      lib,
+      /rejectedHoldSlackText/,
+      stop("Rejected seats become one Slack note (D224).", "evidenceHold.ts lost rejectedHoldSlackText."),
+    );
+    assert.match(
+      test,
+      /replays 9\/28/,
+      stop("The 9/28 boldercyper replay is tested (D224).", "evidenceHold.test.ts lost the 9/28 case."),
+    );
+    assert.match(
+      test,
+      /rejected\.length, 87/,
+      stop("The replay rejects 87 seats (D224).", "evidenceHold.test.ts no longer asserts 87 rejected."),
+    );
+    assert.match(
+      bounce,
+      /applyGuardedHoldRequest/,
+      stop(
+        "The bounce loop goes through the evidence gate (D224).",
+        "campaignBounceAutostop.ts no longer calls applyGuardedHoldRequest.",
+      ),
+    );
+    assert.match(
+      terl,
+      /applyGuardedHoldRequest/,
+      stop(
+        "TERRL stops go through the evidence gate (D224).",
+        "terlHold.ts no longer calls applyGuardedHoldRequest.",
+      ),
+    );
+    assert.match(
+      store,
+      /evidenceHolds/,
+      stop("State stores hold reason and evidence (D224).", "store.ts has no evidenceHolds."),
+    );
+    assert.match(
+      slack,
+      /notifyDeliverabilityNote/,
+      stop("Slack can post the rejected-seat note (D224).", "slack.ts lost notifyDeliverabilityNote."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D22[4-9]\*\*/,
+      stop("CANON is dated D224 or later.", "CANON.md header lost D224+."),
+    );
+    assert.match(
+      canon,
+      /Every hold is evidence-per-seat/,
+      stop("CANON names the evidence-per-seat gate (D224).", "CANON.md lost the D224 hold rule."),
+    );
+    assert.match(
+      canon,
+      /no 5 \/ 10 \/ 25% numeric hold cap/,
+      stop("CANON drops the percent caps (D224).", "CANON.md still implies a percent hold cap."),
+    );
+    assert.match(
+      decisions,
+      /## D224 — Evidence-per-seat hold gate/,
+      stop("The ledger records D224.", "DECISIONS.md no longer has D224."),
+    );
+    assert.match(
+      decisions,
+      /^\| D224 \|/m,
+      stop("The status index lists D224 (D127).", "DECISIONS.md status index has no D224 row."),
+    );
+  });
+});
+
 describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
   it("D222: Monday 8:16am CT InboxKit sweep stays on the board", async () => {
     const { readFile } = await import("node:fs/promises");

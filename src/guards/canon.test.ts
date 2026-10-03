@@ -12252,6 +12252,106 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
   });
 });
 
+describe("owner intent — D225 weekday surplus generic return", () => {
+  it("D225: min40 and cleanup return idle pool generics on weekdays", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { isChicagoWeekday } = await import("../lib/canonOpsHours.js");
+    const { surplusGenericReturns } = await import("../lib/genericSurplusReturn.js");
+    const { emptyGenericSeat, clientPodKey } = await import("../lib/genericPool.js");
+
+    assert.equal(
+      isChicagoWeekday(new Date("2026-10-05T15:00:00.000Z")),
+      true,
+      stop("D225 returns on a Chicago weekday.", "isChicagoWeekday rejected Monday."),
+    );
+    assert.equal(
+      isChicagoWeekday(new Date("2026-10-03T15:00:00.000Z")),
+      false,
+      stop("D225 is weekday-only.", "isChicagoWeekday accepted Saturday."),
+    );
+    assert.deepEqual(
+      surplusGenericReturns({
+        seats: [
+          emptyGenericSeat("extra@getintroduced.info", {
+            assignedClientId: 77,
+            assignedPod: "A",
+            reason: "pod_top_up",
+          }),
+        ],
+        namedStaffableByClientPod: new Map([[clientPodKey(77, "A"), 40]]),
+        clientHasActiveCampaign: new Map([[77, true]]),
+        now: new Date("2026-10-03T15:00:00.000Z"),
+      }),
+      [],
+      stop("Weekend surplus return is a no-op (D225).", "surplusGenericReturns ran on Saturday."),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const cleanup = await readFile(
+      new URL("../services/genericCleanup.ts", import.meta.url),
+      "utf8",
+    );
+    const apply = await readFile(
+      new URL("../services/genericSurplusReturn.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D22[5-9]\*\*/,
+      stop("CANON is dated D225 or later.", "CANON.md header lost D225+."),
+    );
+    assert.match(
+      canon,
+      /min40-topup[\s*]+and generic-cleanup/,
+      stop("CANON names the D225 return paths.", "CANON.md lost the min40/cleanup return."),
+    );
+    assert.match(
+      min40,
+      /returnSurplusGenerics/,
+      stop("min40-topup returns surplus generics (D225).", "min40TopUp.ts lost returnSurplusGenerics."),
+    );
+    assert.match(
+      cleanup,
+      /returnSurplusGenerics/,
+      stop("generic-cleanup returns surplus generics (D225).", "genericCleanup.ts lost returnSurplusGenerics."),
+    );
+    assert.match(
+      apply,
+      /client_id: null/,
+      stop("Surplus return clears client_id (D225).", "genericSurplusReturn.ts no longer nulls client_id."),
+    );
+    assert.match(
+      apply,
+      /signature: ""/,
+      stop("Surplus return resets the signature (D225).", "genericSurplusReturn.ts no longer blanks signature."),
+    );
+    assert.match(
+      apply,
+      /detachWouldBreakStaffableFloor/,
+      stop("Surplus return consults the 40 floor (D225).", "genericSurplusReturn.ts dropped the floor gate."),
+    );
+    assert.match(
+      decisions,
+      /## D225 — Weekday surplus generic return/,
+      stop("The ledger records D225.", "DECISIONS.md no longer has D225."),
+    );
+    assert.match(
+      decisions,
+      /^\| D225 \|/m,
+      stop("The status index lists D225 (D127).", "DECISIONS.md status index has no D225 row."),
+    );
+  });
+});
+
 describe("owner intent — D224 evidence-per-seat hold gate", () => {
   it("D224: holds need per-seat evidence; 9/28 boldercyper replay rejects the other 87", async () => {
     const { readFile } = await import("node:fs/promises");

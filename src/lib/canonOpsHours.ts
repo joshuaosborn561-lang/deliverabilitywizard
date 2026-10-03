@@ -83,6 +83,15 @@ export function isCanonOpsBusinessHours(
   return clock.hour >= hourStart && clock.hour < hourEnd;
 }
 
+/** Chicago Mon-Fri. Surplus generic return is weekday-only (D225). */
+export function isChicagoWeekday(
+  now: Date = new Date(),
+  timeZone = CANON_OPS_TIMEZONE_DEFAULT,
+): boolean {
+  const { weekday } = chicagoWallClock(now, timeZone);
+  return weekday >= 1 && weekday <= 5;
+}
+
 export function canonOpsIdleReason(
   input: CanonOpsHoursInput = {},
 ): string | undefined {

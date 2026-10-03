@@ -74,8 +74,12 @@ export function validateGenericPool(input: {
   campaignClientById?: ReadonlyMap<number, number | null>;
   liveClientIdsByEmail?: ReadonlyMap<string, readonly number[]>;
   powerGrydClientId?: number;
+  idleExemptEmails?: Iterable<string>;
 }): GenericPoolFinding[] {
   const powerId = input.powerGrydClientId ?? GENERIC_POOL_POWERGRYD_CLIENT_ID;
+  const idleExempt = new Set(
+    [...(input.idleExemptEmails ?? [])].map((email) => email.trim().toLowerCase()),
+  );
   const findings: GenericPoolFinding[] = [];
   const seen = new Set<string>();
   const push = (finding: GenericPoolFinding): void => {
@@ -122,6 +126,7 @@ export function validateGenericPool(input: {
     const clientId = seat.assignedClientId;
     if (clientId == null) continue;
     if (genericPoolIdleExempt(seat, powerId)) continue;
+    if (idleExempt.has(seat.email)) continue;
     if (seat.assignedPod) {
       const key = clientPodKey(clientId, seat.assignedPod);
       const list = assignedByClientPod.get(key) ?? [];

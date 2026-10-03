@@ -12196,8 +12196,8 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D221\*\*/,
-      stop("CANON is dated D221.", "CANON.md header was not bumped to D221."),
+      /Canon as of \*\*D22[1-9]\*\*/,
+      stop("CANON is dated D221+.", "CANON.md header is not D221 or later."),
     );
     assert.match(
       canon,
@@ -12248,6 +12248,65 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
       decisions,
       /^\| D221 \|/m,
       stop("The status index lists D221 (D127).", "DECISIONS.md status index has no D221 row."),
+    );
+  });
+});
+
+describe("owner intent — D223 POD rotation skip + dual-POD flag", () => {
+  it("D223: skip PowerGRYD and Goliath; flag dual POD tags; do not guess a side", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const tags = await readFile(
+      new URL("../services/podTags.ts", import.meta.url),
+      "utf8",
+    );
+    const lib = await readFile(
+      new URL("../lib/podRotation.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      lib,
+      /592842/,
+      stop("PowerGRYD 592842 is skipped (D223).", "podRotation.ts lost the PowerGRYD id."),
+    );
+    assert.match(
+      lib,
+      /548611/,
+      stop("Goliath 548611 is skipped (D223).", "podRotation.ts lost the Goliath id."),
+    );
+    assert.match(
+      rest,
+      /isPodRotationSkippedClient/,
+      stop("client-rest skips the locked clients (D223).", "clientRest.ts no longer consults isPodRotationSkippedClient."),
+    );
+    assert.match(
+      tags,
+      /hasDualPodTags/,
+      stop("pod-tags flags dual POD (D223).", "podTags.ts lost hasDualPodTags."),
+    );
+    assert.match(
+      tags,
+      /I did not pick a side|flagDualPod/,
+      stop("Dual-POD is flagged, not guessed (D223).", "podTags.ts still silently picks a tag."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D223\*\*/,
+      stop("CANON is dated D223.", "CANON.md header was not bumped to D223."),
+    );
+    assert.match(
+      decisions,
+      /## D223 — POD A\/B rotation skips PowerGRYD and Goliath/,
+      stop("The ledger records D223.", "DECISIONS.md no longer has D223."),
     );
   });
 });

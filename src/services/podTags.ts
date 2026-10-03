@@ -1,10 +1,18 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
+import type { SlackClient } from "../clients/slack.js";
+import { clientDisplayName } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
 import { tagNames } from "./warmupGate.js";
 import { loadPods } from "./podControls.js";
 import type { InventoryBook } from "./inventory.js";
 import type { StateStore } from "../state/store.js";
+import {
+  formatDualPodSlack,
+  hasDualPodTags,
+  isPodRotationSkippedClient,
+  podRotationIdleReason,
+} from "../lib/podRotation.js";
 
 export const POD_TAG_A = "POD-A";
 export const POD_TAG_B = "POD-B";
@@ -14,6 +22,7 @@ const TAG_BATCH = 25;
 export interface PodTagResult {
   assigned: number;
   removed: number;
+  dualPodFlagged: number;
 }
 
 /**
@@ -36,9 +45,10 @@ export class PodTagService {
     private readonly book: InventoryBook,
     /** Space between tag writes — the first fleet-wide burst 429'd (D135). */
     private readonly pause: () => Promise<void> = () => sleep(1000),
+    private readonly slack?: Pick<SlackClient, "notifyDeliverabilityNote">,
   ) {}
 
-  async run(): Promise<PodTagResult> {
+  async run(opts: { now?: Date } = {}): Promise<PodTagResult> {
     const pods = await loadPods({
       config: this.config,
       state: this.state,
@@ -52,7 +62,7 @@ export class PodTagService {
       }
     }
 
-    const { accounts } = await this.book.get();
+    const { accounts, clients } = await this.book.get();
     const assignA: number[] = [];
     const assignB: number[] = [];
     const dropA: number[] = [];
@@ -73,7 +83,12 @@ export class PodTagService {
     }
 
     if (!assignA.length && !assignB.length && !dropA.length && !dropB.length) {
-      return { assigned: 0, removed: 0 };
+      const dualPodFlagged = await this.flagDualPod(
+        accounts,
+        clients ?? [],
+        opts.now,
+      );
+      return { assigned: 0, removed: 0, dualPodFlagged };
     }
 
     const tagA = await this.smartlead.ensureTag(POD_TAG_A, "#4FC3F7");
@@ -105,7 +120,59 @@ export class PodTagService {
     console.log(
       `[pod-tags] converged POD-A/POD-B on client mailboxes: assigned=${assigned} removed=${removed}${this.config.dryRun ? " (dry-run: no writes)" : ""}`,
     );
-    return { assigned, removed };
+    const dualPodFlagged = await this.flagDualPod(
+      accounts,
+      clients ?? [],
+      opts.now,
+    );
+    return { assigned, removed, dualPodFlagged };
+  }
+
+  private async flagDualPod(
+    accounts: Array<{
+      id?: number;
+      from_email?: string;
+      email?: string;
+      client_id?: number | null;
+      tags?: Array<{ tag_name?: unknown; name?: unknown }> | string[];
+    }>,
+    clients: Array<{ id: number; name?: string; logo?: string | null }>,
+    now?: Date,
+  ): Promise<number> {
+    if (podRotationIdleReason(now)) return 0;
+    const nameById = new Map(
+      clients.map((client) => [client.id, clientDisplayName(client)]),
+    );
+    const rows: Array<{
+      email: string;
+      clientName: string;
+      clientId: number | null;
+    }> = [];
+    for (const account of accounts) {
+      const clientId =
+        typeof account.client_id === "number" ? account.client_id : null;
+      if (isPodRotationSkippedClient(clientId)) continue;
+      if (!hasDualPodTags(account.tags)) continue;
+      const email = String(account.from_email || account.email || "")
+        .trim()
+        .toLowerCase();
+      if (!email) continue;
+      rows.push({
+        email,
+        clientId,
+        clientName:
+          (clientId != null ? nameById.get(clientId) : undefined) ||
+          (clientId != null ? `Client ${clientId}` : "Unassigned"),
+      });
+    }
+    const text = formatDualPodSlack(rows);
+    if (text && !this.config.dryRun && this.slack) {
+      await this.slack.notifyDeliverabilityNote(text);
+    }
+    if (rows.length) {
+      console.log(`[pod-tags] dual-POD flag ${rows.length} seat(s) (D223)`);
+    }
+    return rows.length;
   }
 }
 

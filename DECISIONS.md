@@ -227,6 +227,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
 | D221 | Live | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D223 | Live | Mechanical POD A/B fortnight rotation skips PowerGRYD 592842 and Goliath 548611. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side. D222 is claimed by open PR #275 |
 
 ---
 
@@ -7228,6 +7229,36 @@ table + `validateGenericPool` flag idle and multi-client;
 `generic_multi_client`; PowerGRYD and TERRL-substitute
 skip idle; `enableGenericSendRest` defaults off; CANON
 dated D221.
+
+---
+
+## D223 — POD A/B rotation skips PowerGRYD and Goliath; flag dual-POD
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (owner): the mechanical D43 fortnight
+POD A/B rotation does not move PowerGRYD (592842) or
+Goliath (548611). Those clients stay on their current
+seats. A mailbox tagged both `POD-A` and `POD-B` is a
+dual-POD miss: page `#deliverability` on weekdays,
+grouped per client. Do not guess which tag to keep. No
+em dashes. D222 is claimed by open PR #275.
+
+**Why.** PowerGRYD is dedicated inventory. Goliath is
+the leftover POC / hold lane. Dual tags hide which
+half is on-week.
+
+**Rejected.** Rotating PG or Goliath "for consistency".
+Auto-dropping one of the two tags.
+
+**Supersedes / amends.** Amends D43 only for those two
+client ids. Amends D135: dual-POD is flagged, not
+silently converged when the seat is not in a desired
+pod. Does not change D221 generic allocation.
+
+**Guards.** client-rest skips 592842 and 548611;
+`hasDualPodTags` + weekday Slack note; CANON dated
+D223.
 
 ---
 

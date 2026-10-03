@@ -64,6 +64,10 @@ import {
   evidenceHoldStillActive,
   type EvidenceHoldRecord,
 } from "../lib/evidenceHold.js";
+import {
+  parseInboxkitLicenseHandoff,
+  type InboxkitLicenseHandoff,
+} from "../lib/inboxkitLicense.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -364,6 +368,11 @@ export interface AppState {
    * Keyed by email. Expires when the reason clears, or at 30 days.
    */
   evidenceHolds: Record<string, EvidenceHoldRecord>;
+  /**
+   * D226 — latest Monday InboxKit license sweep handoff for Onboarding
+   * and Deliverability (per-client lapsed + upcoming cancellations).
+   */
+  inboxkitLicenseHandoff: InboxkitLicenseHandoff | null;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -780,6 +789,7 @@ const EMPTY_STATE: AppState = {
   terlPausedDays: {},
   terlSubstitutions: {},
   evidenceHolds: {},
+  inboxkitLicenseHandoff: null,
 };
 
 export class StateStore {
@@ -886,6 +896,9 @@ export class StateStore {
         terlPausedDays: parseTerlPausedDays(parsed.terlPausedDays),
         terlSubstitutions: parseTerlSubstitutions(parsed.terlSubstitutions),
         evidenceHolds: parseEvidenceHolds(parsed.evidenceHolds),
+        inboxkitLicenseHandoff: parseInboxkitLicenseHandoff(
+          parsed.inboxkitLicenseHandoff,
+        ),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1058,6 +1071,14 @@ export class StateStore {
     record.status = "consumed";
     record.decidedAt = new Date().toISOString();
     return record;
+  }
+
+  setInboxkitLicenseHandoff(handoff: InboxkitLicenseHandoff): void {
+    this.state.inboxkitLicenseHandoff = handoff;
+  }
+
+  getInboxkitLicenseHandoff(): InboxkitLicenseHandoff | null {
+    return this.state.inboxkitLicenseHandoff;
   }
 
   appendOpsAudit(record: OpsAuditRecord): void {

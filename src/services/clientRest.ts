@@ -42,6 +42,10 @@ import {
   type InventorySnapshot,
 } from "./inventory.js";
 import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
+import {
+  clientIdFromRestGroupKey,
+  isPodRotationSkippedClient,
+} from "../lib/podRotation.js";
 
 /**
  * D43 — per-client A/B rest. Half of that client's inboxes sit for two
@@ -290,6 +294,14 @@ export class ClientRestService {
           : clientRestGroupKey(account, email, campaignClientById);
       if (!groupKey) {
         result.skipped.push(`${email}: no client group`);
+        continue;
+      }
+      const rotationClientId =
+        dedicatedClientId ?? clientIdFromRestGroupKey(groupKey);
+      if (isPodRotationSkippedClient(rotationClientId)) {
+        result.skipped.push(
+          `${email}: POD rotation skip client ${rotationClientId} (D223)`,
+        );
         continue;
       }
       const onCampaigns = campaignIdsOf(account);

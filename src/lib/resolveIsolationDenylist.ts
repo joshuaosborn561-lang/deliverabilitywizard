@@ -22,7 +22,7 @@ export async function resolveIsolationDenylist(
   const ids = new Set(config.isolationMailboxIds);
 
   if (domain || emails.size) {
-    const accounts = await smartlead.listAllEmailAccounts().catch(() => []);
+    const accounts = await smartlead.listAllEmailAccounts();
     for (const account of accounts) {
       const email = accountEmail(account);
       if (isIsolationEmail(email, { emails, domain })) {

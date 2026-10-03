@@ -11646,3 +11646,156 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
     );
   });
 });
+
+describe("owner intent — D220 Cayden spend digest and complete fleet pages", () => {
+  it("D220: weekday 7:16am CT digest, per-client grouping, pages until empty, never skip teardown on a partial list", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
+
+    assert.equal(defaults.enableSpendDigest, true);
+    assert.equal(defaults.cronSpendDigest, "16 7 * * *");
+    assert.equal(defaults.spendDigestTimezone, "America/Chicago");
+    assert.ok(
+      "spend-digest" in STAGE_OVERDUE_WINDOWS_MS,
+      stop(
+        "spend-digest is a /health stage (D220).",
+        "stageWindows.ts lost the spend-digest window.",
+      ),
+    );
+
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const smartlead = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    const rig = await readFile(
+      new URL("../services/isolationRig.ts", import.meta.url),
+      "utf8",
+    );
+    const denylist = await readFile(
+      new URL("../lib/resolveIsolationDenylist.ts", import.meta.url),
+      "utf8",
+    );
+    const digest = await readFile(
+      new URL("../lib/spendDigest.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      index,
+      /stage\("spend-digest"/,
+      stop("spend-digest is watchdogged (D220).", "index.ts lost stage(\"spend-digest\")."),
+    );
+    assert.match(
+      index,
+      /cronSpendDigest/,
+      stop("The digest has its own cron (D220).", "index.ts no longer schedules cronSpendDigest."),
+    );
+    assert.match(
+      index,
+      /spendDigestTimezone/,
+      stop("The digest cron is America/Chicago (D220).", "index.ts lost the Chicago timezone."),
+    );
+    assert.match(
+      index,
+      /mode === "spend-digest"/,
+      stop("/run?mode=spend-digest exists (D220).", "index.ts lost the spend-digest run mode."),
+    );
+
+    assert.match(
+      smartlead,
+      /EMAIL_ACCOUNTS_PAGE_LIMIT = 100/,
+      stop("Fleet pages are limit=100 (D220).", "smartlead.ts lost EMAIL_ACCOUNTS_PAGE_LIMIT."),
+    );
+    assert.match(
+      smartlead,
+      /if \(page\.length === 0\) return out/,
+      stop(
+        "Fleet pagination stops only on an empty page (D220).",
+        "listAllEmailAccounts still breaks on a short page.",
+      ),
+    );
+    assert.doesNotMatch(
+      smartlead,
+      /rows\.length < limit/,
+      stop(
+        "A short page is not the end of the fleet (D220).",
+        "listAllEmailAccounts still stops when rows.length < limit.",
+      ),
+    );
+    assert.match(
+      smartlead,
+      /IncompleteEmailAccountListError/,
+      stop(
+        "A non-list page throws instead of returning a partial fleet (D220).",
+        "smartlead.ts lost IncompleteEmailAccountListError.",
+      ),
+    );
+
+    assert.doesNotMatch(
+      branch,
+      /rigEmails\(\)\.catch\(\(\) => \[\]\)/,
+      stop(
+        "Isolation must not skip teardown from a failed fleet list (D220).",
+        "isolationBranch.ts still catches rigEmails to [].",
+      ),
+    );
+    assert.doesNotMatch(
+      rig,
+      /listAllEmailAccounts\(\)\.catch\(\(\) => \[\]\)/,
+      stop(
+        "The isolation rig must not treat a failed list as empty (D220).",
+        "isolationRig.ts still catches listAllEmailAccounts to [].",
+      ),
+    );
+    assert.doesNotMatch(
+      denylist,
+      /listAllEmailAccounts\(\)\.catch\(\(\) => \[\]\)/,
+      stop(
+        "The isolation denylist must not treat a failed list as empty (D220).",
+        "resolveIsolationDenylist.ts still catches listAllEmailAccounts to [].",
+      ),
+    );
+
+    assert.match(
+      digest,
+      /groupSpendItemsByClient/,
+      stop("The digest groups per client (D220).", "spendDigest.ts lost per-client grouping."),
+    );
+    assert.match(
+      digest,
+      /one approval per client/,
+      stop("Each client is one approval (D220).", "spendDigest.ts lost the one-approval copy."),
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D220\*\*/,
+      stop("CANON is dated D220.", "CANON.md header was not bumped to D220."),
+    );
+    assert.match(
+      canon,
+      /7:16am/,
+      stop("CANON names the 7:16am CT digest (D220).", "CANON.md lost the 7:16am sentence."),
+    );
+    assert.match(
+      decisions,
+      /## D220 — Cayden weekday spend digest/,
+      stop("The ledger records D220.", "DECISIONS.md no longer has D220."),
+    );
+    assert.match(
+      decisions,
+      /^\| D220 \|/m,
+      stop("The status index lists D220 (D127).", "DECISIONS.md status index has no D220 row."),
+    );
+  });
+});

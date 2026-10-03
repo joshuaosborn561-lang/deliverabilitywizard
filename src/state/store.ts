@@ -240,6 +240,8 @@ export interface AppState {
   pendingResumes: Record<string, PendingResumeRecord>;
   /** D107 — leftover Nieto / MSRS / Positive campaigns deleted. */
   oldClientTeardownAt: string | null;
+  /** D220 — Chicago YMD of the last Cayden spend digest post. */
+  spendDigestPostedYmd: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
   /** D81 — first-seen campaign audit + hourly sweep records. */
@@ -538,6 +540,7 @@ const EMPTY_STATE: AppState = {
   bugRemediations: {},
   pendingResumes: {},
   oldClientTeardownAt: null,
+  spendDigestPostedYmd: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
   campaignChecks: {},
   genericBackfillApprovals: {},
@@ -619,6 +622,10 @@ export class StateStore {
           ? parsed.lastStaffingShort
           : [],
         oldClientTeardownAt: parsed.oldClientTeardownAt ?? null,
+        spendDigestPostedYmd:
+          typeof parsed.spendDigestPostedYmd === "string"
+            ? parsed.spendDigestPostedYmd
+            : null,
         isolation: normalizeIsolationState(parsed.isolation),
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
@@ -727,6 +734,14 @@ export class StateStore {
 
   setOldClientTeardownAt(iso: string): void {
     this.state.oldClientTeardownAt = iso;
+  }
+
+  spendDigestPosted(ymd: string): boolean {
+    return this.state.spendDigestPostedYmd === ymd;
+  }
+
+  markSpendDigestPosted(ymd: string): void {
+    this.state.spendDigestPostedYmd = ymd;
   }
 
   clearMailboxControls(): number {

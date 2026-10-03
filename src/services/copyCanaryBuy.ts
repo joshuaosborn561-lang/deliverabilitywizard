@@ -261,7 +261,18 @@ export class CopyCanaryBuyService {
         if (clientTied || onCampaigns) takenInSmartlead.add(email);
       }
     } catch (error) {
-      console.warn("[copy-canary-adopt] could not read Smartlead accounts", error);
+      console.warn(
+        "[copy-canary-adopt] Smartlead fleet list failed — not adopting from a partial list",
+        error,
+      );
+      return {
+        found: [],
+        adopted: [],
+        mapped: this.fleetMappedCount(),
+        ready: false,
+        changed: false,
+        reason: "smartlead-list-incomplete",
+      };
     }
 
     let candidates: Array<{
@@ -696,16 +707,9 @@ export class CopyCanaryBuyService {
   }
 
   private async mapSmartleadIds(domains: Set<string>): Promise<void> {
-    let accounts: Awaited<
-      ReturnType<SmartleadClient["listAllEmailAccounts"]>
-    > = [];
-    try {
-      accounts = await this.smartlead.listAllEmailAccounts({
-        fetchCampaigns: false,
-      });
-    } catch {
-      return;
-    }
+    const accounts = await this.smartlead.listAllEmailAccounts({
+      fetchCampaigns: false,
+    });
     const emails = [...(this.store.getCopyCanaryFleet()?.emails ?? [])];
     for (const account of accounts) {
       const email = accountEmail(account)?.toLowerCase();
@@ -726,9 +730,9 @@ export class CopyCanaryBuyService {
   }
 
   private async disableWarmup(domains: Set<string>): Promise<void> {
-    const accounts = await this.smartlead
-      .listAllEmailAccounts({ fetchCampaigns: false })
-      .catch(() => []);
+    const accounts = await this.smartlead.listAllEmailAccounts({
+      fetchCampaigns: false,
+    });
     for (const account of accounts) {
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;

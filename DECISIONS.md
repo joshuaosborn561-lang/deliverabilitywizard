@@ -222,6 +222,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
 | D214 | Live — leftover newest ignores inventory (D215) | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
 | D215 | Live | Health-resume newest stamp ignores inventory (shared-book / skip-if-fresh refresh); leftover is after the deepest non-inventory lastOk so an inventory-only kill cannot hide pod-cover |
+| D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list. D216 claimed by PR #265; D217–D219 claimed by open PRs #270–#272 |
 
 ---
 
@@ -6956,6 +6957,56 @@ window or D122.
 when picking newest; the 15:45 production board leftovers
 at pod-cover, not client-rest; warmup-gate interrupt
 still resumes at campaign-health; CANON dated D215.
+
+---
+
+## D220 — Cayden weekday spend digest; complete email-account pages
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (owner): move the Cayden per-client
+spend digest into the wizard. Every weekday at 7:16am
+America/Chicago, gather pending spend items (domain /
+inbox buys, Retire covers) from existing
+`spendApprovals` and isolation pending
+`retire_domain` / `buy_domains` rows. Group them per
+client so each client is one approval. Drop stale or
+already-resolved rows (executed retire, spent cover,
+consumed / denied / approved spend). Post one Slack
+digest for Cayden via the existing `slack.send`
+`burned_domain` helper. Post nothing when the queue is
+empty. Do not spend, approve, or invent a new spend
+path.
+
+Smartlead fleet checks paginate `GET /email-accounts`
+with `limit=100` until the response is empty. A
+non-list page or a truncated read throws
+`IncompleteEmailAccountListError`. Isolation / canary
+fleet checks must not catch that to `[]` and must not
+deny or skip a teardown from a partial list.
+
+**Why.** The digest was an agent/manual morning job.
+Cayden needs one client-grouped queue, not a pile of
+orphan cards. A short email-accounts page was being
+treated as the end of the fleet, so a teardown could
+see an empty rig and skip.
+
+**Rejected.** Posting per domain (the existing cards
+already do that). A new spend-approval kind. Stopping
+pagination when `rows.length < 100`. Catching a failed
+list as empty and skipping teardown.
+
+**Supersedes / amends.** Amends D71 Slack (digest uses
+the burned-domain allow kind). Amends D132 only for
+direct fleet reads that are not the shared book: those
+reads must be complete or abort. Does not change D4 /
+D49 / D190 spend authority. D216–D219 are claimed by
+open PRs; this number is D220.
+
+**Guards.** Weekday 7:16am CT cron; per-client grouping;
+stale/resolved drop; `listAllEmailAccounts` pages until
+empty; teardown/fleet checks do not catch to `[]`;
+CANON dated D220.
 
 ---
 

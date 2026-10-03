@@ -374,6 +374,10 @@ const ConfigSchema = z.object({
   enableMin40TopUp: boolFromEnv(true),
   enablePowerGrydWatch: boolFromEnv(true),
   enableGenericCleanup: boolFromEnv(true),
+  /** D220 — weekday 7:16am CT Cayden per-client spend digest. */
+  enableSpendDigest: boolFromEnv(true),
+  cronSpendDigest: z.string().default("16 7 * * *"),
+  spendDigestTimezone: z.string().default("America/Chicago"),
   holdCampaignIds: z
     .string()
     .default("")
@@ -614,6 +618,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     enableMin40TopUp: env.ENABLE_MIN40_TOP_UP,
     enablePowerGrydWatch: env.ENABLE_POWERGRYD_WATCH,
     enableGenericCleanup: env.ENABLE_GENERIC_CLEANUP,
+    enableSpendDigest: env.ENABLE_SPEND_DIGEST,
+    cronSpendDigest: env.CRON_SPEND_DIGEST ?? "16 7 * * *",
+    spendDigestTimezone: env.SPEND_DIGEST_TIMEZONE ?? "America/Chicago",
     holdCampaignIds: env.HOLD_CAMPAIGN_IDS ?? "",
     holdCampaignNamePatterns: env.HOLD_CAMPAIGN_NAME_PATTERNS ?? "",
     holdClientZeroActive: env.HOLD_CLIENT_ZERO_ACTIVE ?? "",

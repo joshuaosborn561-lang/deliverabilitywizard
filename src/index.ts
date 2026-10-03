@@ -70,6 +70,7 @@ import { HoldEnforcementService } from "./services/holdEnforcement.js";
 import { Min40TopUpService } from "./services/min40TopUp.js";
 import { PowerGrydWatchService } from "./services/powerGrydWatch.js";
 import { GenericCleanupService } from "./services/genericCleanup.js";
+import { SpendDigestService } from "./services/spendDigest.js";
 import { canonOpsIdleReason } from "./lib/canonOpsHours.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
@@ -561,6 +562,7 @@ async function main(): Promise<void> {
     smartlead,
   );
   const genericCleanup = new GenericCleanupService(config, smartlead, state);
+  const spendDigest = new SpendDigestService(state, slack);
   const clientDayBrief = new ClientDayBriefService(
     config,
     smartlead,
@@ -1105,6 +1107,10 @@ async function main(): Promise<void> {
     return bounceAutostopInFlight;
   };
 
+  const runSpendDigest = async (opts: { force?: boolean } = {}) => {
+    return stage("spend-digest", async () => spendDigest.postDigest(opts));
+  };
+
   const runOpsDeliverability = async () => {
     if (opsCheckInFlight || monitorInFlight) {
       throw new Error("A deliverability monitor is already running.");
@@ -1281,6 +1287,11 @@ async function main(): Promise<void> {
   if (!cron.validate(config.cronCanonOps)) {
     throw new Error(`Invalid CRON_CANON_OPS expression: ${config.cronCanonOps}`);
   }
+  if (!cron.validate(config.cronSpendDigest)) {
+    throw new Error(
+      `Invalid CRON_SPEND_DIGEST expression: ${config.cronSpendDigest}`,
+    );
+  }
   const sendVolumeSchedules = parseSchedules(config.cronSendVolume);
   for (const expression of sendVolumeSchedules) {
     if (!cron.validate(expression)) {
@@ -1382,6 +1393,19 @@ async function main(): Promise<void> {
     });
     // No boot kick — the 10-minute cron is soon enough. The first
     // minutes after deploy belong to canary attach (D122).
+  }
+
+  if (config.enableSpendDigest) {
+    cron.schedule(
+      config.cronSpendDigest,
+      () => {
+        void runSpendDigest().catch((error) => {
+          console.error("[spend-digest] Unhandled cron error", error);
+          feedBugRemediator("spend-digest-cron", error);
+        });
+      },
+      { timezone: config.spendDigestTimezone },
+    );
   }
 
   if (config.enablePoolProvisioner) {
@@ -2348,6 +2372,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       enableMin40TopUp: config.enableMin40TopUp,
       enablePowerGrydWatch: config.enablePowerGrydWatch,
       enableGenericCleanup: config.enableGenericCleanup,
+      enableSpendDigest: config.enableSpendDigest,
+      cronSpendDigest: config.cronSpendDigest,
+      spendDigestTimezone: config.spendDigestTimezone,
       autoAllowGenericClientIds: config.autoAllowGenericClientIds,
       slackBatchGenericBackfill: config.slackBatchGenericBackfill,
       slackFoldApprovalRecorded: config.slackFoldApprovalRecorded,
@@ -2409,6 +2436,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         enableMin40TopUp: config.enableMin40TopUp,
         enablePowerGrydWatch: config.enablePowerGrydWatch,
         enableGenericCleanup: config.enableGenericCleanup,
+        enableSpendDigest: config.enableSpendDigest,
+        cronSpendDigest: config.cronSpendDigest,
         enableCampaignHealth: config.enableCampaignHealth,
         enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
         cronBounceAutostop: config.cronBounceAutostop,
@@ -2516,7 +2545,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         mode === "min40-topup" ||
         mode === "powergryd-watch" ||
         mode === "powergryd" ||
-        mode === "generic-cleanup"
+        mode === "generic-cleanup" ||
+        mode === "spend-digest"
       ) {
         assertRuntimeSecrets(config);
         if (mode === "hold-enforcement" || mode === "holds") {
@@ -2537,6 +2567,11 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         if (mode === "generic-cleanup") {
           const result = await genericCleanup.run();
           res.json({ ok: true, mode: "generic-cleanup", result });
+          return;
+        }
+        if (mode === "spend-digest") {
+          const result = await runSpendDigest({ force: true });
+          res.json({ ok: true, mode: "spend-digest", result });
           return;
         }
         const result = await runCanonOps({ force: true });
@@ -2904,6 +2939,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     );
     console.log(
       `[boot] Canon ops (D205): ${config.enableCanonOps ? `ENABLED ${config.cronCanonOps} ${config.canonOpsTimezone} weekday ${String(config.canonOpsHourStart).padStart(2, "0")}:00–${String(config.canonOpsHourEnd).padStart(2, "0")}:00; hold=${config.enableHoldEnforcement} min40=${config.enableMin40TopUp} powergryd=${config.enablePowerGrydWatch} cleanup=${config.enableGenericCleanup}` : "disabled (stages idle-tick)"}`,
+    );
+    console.log(
+      `[boot] Cayden spend digest (D220): ${config.enableSpendDigest ? `ENABLED ${config.cronSpendDigest} ${config.spendDigestTimezone} weekday per-client pending spend` : "disabled"}`,
     );
     console.log(
       `[boot] Campaign bounce loop (D141/D148): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; burst >${config.bounceBurstCount} bounces/10m from sends <24h old → classify + re-queue, never pause; ledger dumps do nothing; Smartlead bounce protection is UI-only, no API off-switch exists (D157))` : "disabled"}`,

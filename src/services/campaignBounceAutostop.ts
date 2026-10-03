@@ -681,7 +681,11 @@ export class CampaignBounceAutostopService {
     limit: number,
   ): Promise<BounceSample[]> {
     const samples: BounceSample[] = [];
-    const byRecency = [...preferNdrRows(rows)].sort(
+    // Bounced-stats rows are already bounces. Do not drop Not Interested
+    // / Interested here — Smartlead files Exchange NDRs as a reply and
+    // the AI category often lands on Not Interested (EMCOR #4037557).
+    // D162 category preference stays on the sender-block lead fallback.
+    const byRecency = [...rows].sort(
       (a, b) =>
         (Date.parse(String(b.sent_time ?? b.last_sent_time ?? "")) || 0) -
         (Date.parse(String(a.sent_time ?? a.last_sent_time ?? "")) || 0),

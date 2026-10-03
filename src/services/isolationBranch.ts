@@ -268,7 +268,7 @@ export class IsolationBranchService {
     const unwarmedCopyFineAcrossEsps =
       await this.unwarmedCopyFineAcrossEsps(campaignId);
     const rigPrimary = await this.rig.readLatestControl();
-    const rigEmails = await this.rig.rigEmails().catch(() => []);
+    const rigEmails = await this.rig.rigEmails();
     const copyCanarySplit = this.copyCanary
       ? await this.copyCanary.readSplit(campaignId)
       : null;

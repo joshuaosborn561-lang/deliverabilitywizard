@@ -21,12 +21,19 @@ import {
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
+  canonStaffableVerdict,
+  formatCanonStaffFloorDetail,
+  senderEspBucket,
+  summarizeCanonUnstaffable,
+  type CanonStaffableReason,
+} from "../lib/canonStaffable.js";
+import {
   accountIsPeelStaffable,
   clientCountKey,
   countClientInboxFloors,
   detachWouldBreakStaffableFloor,
-  formatStaffFloorDetail,
   ON_WEEK_MIN_SENDERS,
+  podEspMixHolds,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -81,7 +88,7 @@ import {
   sequencesNeedInsightClose,
   sequencesHaveSignaturePlaceholder,
 } from "../lib/signatureQa.js";
-import { isConnectedAccount, isStaffableSender } from "../lib/staffableSender.js";
+import { isConnectedAccount } from "../lib/staffableSender.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign, SmartleadSequence } from "../types/index.js";
 import type { SpamTestSummary } from "../types/index.js";
@@ -1005,6 +1012,8 @@ export class CampaignCheckService {
       campaignIdsOf(account).includes(campaign.id),
     );
     const serving: string[] = [];
+    const staffVerdicts: Array<{ reasons: CanonStaffableReason[] }> = [];
+    let linkedCount = 0;
     for (const account of attached) {
       const email = accountEmail(account);
       if (!email) continue;
@@ -1070,11 +1079,26 @@ export class CampaignCheckService {
           detail: `${email} also sits on ${foreign.map((id) => `#${id}`).join(", ")}`,
         });
       }
-      if (
-        isStaffableSender(account, {
-          resting: Boolean(this.state.getRestingInbox(email.toLowerCase())),
-        })
-      ) {
+      linkedCount += 1;
+      const staff = canonStaffableVerdict({
+        account,
+        email,
+        campaignClientId: campaign.client_id,
+        dedicatedClientId,
+        copyCanary: this.state.isCopyCanary(email),
+        inboxKitLapsed:
+          typeof (this.state as unknown as { isInboxKitLapsed?: (value: string) => boolean })
+            .isInboxKitLapsed === "function"
+            ? (
+                this.state as unknown as {
+                  isInboxKitLapsed: (value: string) => boolean;
+                }
+              ).isInboxKitLapsed(email.toLowerCase())
+            : false,
+        now: new Date(),
+      });
+      staffVerdicts.push(staff);
+      if (staff.ok) {
         serving.push(email.toLowerCase());
       }
       if (
@@ -1099,7 +1123,7 @@ export class CampaignCheckService {
         });
       }
       const volume = readMessagePerDay(account);
-      const wantVolume = mailboxMessagePerDayTarget(account, this.config);
+      const wantVolume = mailboxMessagePerDayTarget(account, this.config, this.state);
       if (
         Number.isFinite(volume) &&
         volume !== wantVolume &&
@@ -1213,12 +1237,51 @@ export class CampaignCheckService {
       );
       const shortBy = Math.max(0, floor - serving.length);
       if (input.depth === "hourly" && shortBy > 0) {
-        const eligible =
-          input.clientInboxCounts.get(clientCountKey(campaign.client_id)) ?? 0;
         findings.push({
           kind: "understaffed",
-          detail: formatStaffFloorDetail(serving.length, floor, eligible),
+          detail: formatCanonStaffFloorDetail({
+            staffable: serving.length,
+            linked: linkedCount,
+            floor,
+            unstaffable: summarizeCanonUnstaffable(staffVerdicts),
+          }),
         });
+      }
+      if (input.depth === "hourly") {
+        let outlook = 0;
+        let gmail = 0;
+        for (const account of attached) {
+          const email = accountEmail(account);
+          if (!email || !serving.includes(email.toLowerCase())) continue;
+          const bucket = senderEspBucket(account);
+          if (bucket === "outlook") outlook += 1;
+          else if (bucket === "gmail") gmail += 1;
+        }
+        const clientHasBothEsps =
+          input.accounts.some(
+            (row) =>
+              row.client_id === campaign.client_id &&
+              senderEspBucket(row) === "outlook",
+          ) &&
+          input.accounts.some(
+            (row) =>
+              row.client_id === campaign.client_id &&
+              senderEspBucket(row) === "gmail",
+          );
+        if (
+          clientHasBothEsps &&
+          !podEspMixHolds({
+            outlook,
+            gmail,
+            clientHasBothEsps: true,
+            podSeats: Math.max(serving.length, ON_WEEK_MIN_SENDERS),
+          })
+        ) {
+          findings.push({
+            kind: "esp_mix",
+            detail: `on-week staffable Outlook ${outlook} / Gmail ${gmail} (want ≥14 of each on a 40-seat POD)`,
+          });
+        }
       }
       if (
         input.depth === "hourly" &&

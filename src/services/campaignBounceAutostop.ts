@@ -31,6 +31,7 @@ import {
 import { accountEmail } from "../clients/smartlead.js";
 import { isOutlookMailboxType } from "../lib/sendCeiling.js";
 import type { InventoryBook } from "./inventory.js";
+import { TerlHoldService } from "./terlHold.js";
 import { sleep } from "../lib/http.js";
 import { BounceResurrectionService } from "./bounceResurrection.js";
 import type { BounceVerdictRecord } from "../state/store.js";
@@ -159,7 +160,10 @@ export class CampaignBounceAutostopService {
     private readonly state?: StateStore,
     private readonly slack?: Pick<
       SlackClient,
-      "send" | "notifyIsolationAction" | "notifyWatchdogTenantBlock"
+      | "send"
+      | "notifyIsolationAction"
+      | "notifyWatchdogTenantBlock"
+      | "notifyDeliverabilityNote"
     >,
     resurrection?: BounceResurrectionService,
     private readonly clock: () => number = Date.now,
@@ -196,6 +200,24 @@ export class CampaignBounceAutostopService {
     }
 
     if (!dryRun && this.state) persistLiveAskAttachBlocks(this.state);
+
+    if (this.state) {
+      try {
+        const snap = this.book ? await this.book.get() : undefined;
+        await new TerlHoldService(
+          this.config,
+          this.smartlead,
+          this.state,
+          this.slack,
+        ).restoreExpired({
+          inventory: snap,
+          dryRun,
+          now: new Date(this.clock()),
+        });
+      } catch (error) {
+        console.warn("[bounce-autostop] TERRL restore failed", error);
+      }
+    }
 
     let campaigns: SmartleadCampaign[];
     try {
@@ -560,33 +582,14 @@ export class CampaignBounceAutostopService {
       `[bounce-autostop] verdict #${campaignId}: ${summary}${senderDomains.length ? ` senders=${senderDomains.join(",")}` : ""}${samples[0] ? ` e.g. "${samples[0].snippet.slice(0, 120)}"` : ""}`,
     );
     if (dominant === "tenant_rate_limit" && this.state) {
-      // D212 — arm the bounce-hold list (account ids). Do not write mpd.
+      // D212 — arm the bounce-hold list (account ids).
+      // D219 — 24h at 0, stay linked, same-client generic substitute.
+      // Slack is the weekday EOD digest, never this per-bounce page.
       const ids = await this.bounceHoldIdsForDomains(senderDomains);
       this.state.ensureBounceHold(ids);
+      await this.applyTenantTerlHold(senderDomains, ids, dryRun);
     }
     await this.armTenantOutboundBlock(samples, dryRun);
-    if (
-      dominant === "tenant_rate_limit" &&
-      !dryRun &&
-      this.slack &&
-      this.state
-    ) {
-      const day = new Date().toISOString().slice(0, 10);
-      for (const domain of senderDomains) {
-        const key = `tenant-limit:${domain}:${day}`;
-        if (this.state.hasAlert(key)) continue;
-        this.state.markAlert(key);
-        await this.slack.send(
-          [
-            `*${domain} hit its Microsoft daily sending cap.*`,
-            `Every send from that tenant is bouncing with 550 5.7.233 (tenant external recipient rate limit) — first seen on campaign #${campaignId}. The lists are fine; the tenant is out of allowance until the cap resets.`,
-            "Fix options: fewer sending mailboxes on that tenant, lower per-mailbox daily caps, split the fleet across tenants, or add licenses.",
-          ].join("\n"),
-          undefined,
-          "burned_domain",
-        );
-      }
-    }
     // D145/D146/D162 — ANY sender_blocked sample opens the retire ask,
     // never dominant-gated, never burst-gated. Same helper the
     // independent PAUSED/slow-drip scan uses.
@@ -880,6 +883,47 @@ export class CampaignBounceAutostopService {
     }
   }
 
+  /**
+   * D219 — every Microsoft seat on the tenant goes to 0 for 24 hours
+   * but stays linked. A same-client warm generic covers the on-week
+   * campaign when one is free. No per-bounce Slack.
+   */
+  private async applyTenantTerlHold(
+    domains: string[],
+    accountIds: number[],
+    dryRun: boolean,
+  ): Promise<void> {
+    if (!this.state || !domains.length) return;
+    const now = new Date(this.clock());
+    if (this.book) {
+      try {
+        const snap = await this.book.get();
+        await new TerlHoldService(
+          this.config,
+          this.smartlead,
+          this.state,
+          this.slack,
+        ).applyStops({
+          domains,
+          inventory: snap,
+          dryRun,
+          now,
+        });
+        return;
+      } catch (error) {
+        console.warn("[bounce-autostop] TERRL applyStops failed", error);
+      }
+    }
+    for (const domain of domains) {
+      this.state.ensureTenantTerlHold({
+        tenant: domain,
+        domains: [domain],
+        accountIds,
+        now,
+      });
+    }
+  }
+
   /** D212 — Outlook seats on the tenant-cap domains, by Smartlead account id. */
   private async bounceHoldIdsForDomains(domains: string[]): Promise<number[]> {
     if (!this.book || !domains.length) return [];
@@ -922,7 +966,7 @@ export function burstReceiptText(finding: BounceBurstFinding): string {
   );
   const plans: Record<string, string> = {
     tenant_rate_limit:
-      "The tenant's Microsoft daily allowance is exhausted. The capped leads re-queue automatically once it resets at midnight UTC; real bad addresses stay dead.",
+      "The tenant's Microsoft daily allowance is exhausted (550 5.7.233). Campaign sends on that tenant go to 0 for 24 hours and stay linked; a same-client warm generic covers the on-week POD when one is free. After 24 hours the seat resumes its type cap and the substitute unlinks. The weekday EOD #deliverability post lists every inbox paused today. Real bad addresses stay dead.",
     tenant_outbound_block:
       "Microsoft blocked the whole tenant from sending outbound (550 5.1.8 / AS(42004)). Seats on that tenant stay at 0 with no automatic restore until a human delists or replaces them. The Watchdog page is the ask.",
     sender_blocked:

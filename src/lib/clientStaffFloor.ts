@@ -365,18 +365,19 @@ export function countOnWeekClientInboxesByKey(
 }
 
 /**
- * Live staff floor for a named client campaign (D58/D82/D196/D197/D207).
+ * Live Canon / campaign-check floor (D217, superseding D196's
+ * max(named on-week, 40) page floor).
  *
- * When `onWeekCounts` is provided (every production caller), the floor
- * is max(that client's named on-week pod, 40). That 40 is **per ACTIVE
- * campaign** (D207) — every live campaign owes ≥40 staffable senders
- * from its own client. Understaffed means this campaign is missing an
- * on-week named seat or a client generic that should be attached, or
- * it is under the standing 40. ESP-odd splits (D192) can leave B
- * smaller than half; that is not a short when the campaign itself is ≥40.
+ * Every ACTIVE campaign pages only when on-week *staffable* senders
+ * are under 40. Named on-week inventory can be 46 or 48 on an ESP-odd
+ * split — that is not a short when the campaign already has ≥40
+ * on-week staffable (SalesGlider 2026-10-03 false pages). Inventory
+ * 40-A + 40-B (D203) is unchanged. `onWeekCounts` stays on the
+ * signature so callers still pass the named split; the page floor
+ * no longer rises with it.
  *
- * Without `onWeekCounts`, falls back to half of `clientInboxCounts`
- * (unit tests / D58 Vasco "no exception" guard).
+ * Without `onWeekCounts` (legacy unit tests / D58 Vasco guard) the
+ * fallback is still half of `clientInboxCounts`.
  */
 export function staffFloorForCampaign(
   campaign: { name?: string | null; client_id?: number | null },
@@ -384,14 +385,14 @@ export function staffFloorForCampaign(
   _clientName?: string | null,
   onWeekCounts?: Map<string, number>,
 ): number {
-  const key = clientCountKey(campaign.client_id);
+  void _clientName;
   if (onWeekCounts) {
-    return Math.max(onWeekCounts.get(key) ?? 0, ON_WEEK_MIN_SENDERS);
+    return ON_WEEK_MIN_SENDERS;
   }
-  return clientInboxStaffFloor(clientInboxCounts.get(key) ?? 0);
+  return clientInboxStaffFloor(clientInboxCounts.get(clientCountKey(campaign.client_id)) ?? 0);
 }
 
-/** Hourly-check / audit copy: keep "half" only when the numbers match. */
+/** Hourly-check / audit copy: live floor is on-week staffable 40 (D217). */
 export function formatStaffFloorDetail(
   serving: number,
   floor: number,
@@ -399,10 +400,10 @@ export function formatStaffFloorDetail(
 ): string {
   const half = clientInboxStaffFloor(eligibleCount);
   const label =
-    floor === half
-      ? "half this client's named inboxes (40/POD)"
-      : floor === ON_WEEK_MIN_SENDERS && half < ON_WEEK_MIN_SENDERS
-        ? "on-week minimum 40"
+    floor === ON_WEEK_MIN_SENDERS
+      ? "on-week staffable 40"
+      : floor === half
+        ? "half this client's named inboxes (40/POD)"
         : "on-week client pod";
   return `staffable ${serving}/${floor} (${label})`;
 }

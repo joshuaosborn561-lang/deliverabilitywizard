@@ -200,7 +200,7 @@ export class IsolationRigService {
     const configured = new Set(this.config.isolationMailboxEmails);
     const domain = effectiveIsolationDomain(this.config, this.state);
     if (!domain && !configured.size) return [];
-    const accounts = await this.smartlead.listAllEmailAccounts().catch(() => []);
+    const accounts = await this.smartlead.listAllEmailAccounts();
     const emails: string[] = [];
     for (const account of accounts) {
       const email = accountEmail(account)?.toLowerCase();

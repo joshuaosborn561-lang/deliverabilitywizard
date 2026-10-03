@@ -130,11 +130,6 @@ function isolationStillPending(
   return true;
 }
 
-function spendStillPending(record: SpendApprovalRecord): boolean {
-  if (record.status !== "pending") return false;
-  return isSpendDigestKind(record.kind);
-}
-
 export function collectPendingSpendItems(
   store: Pick<
     StateStore,
@@ -171,7 +166,7 @@ export function collectPendingSpendItems(
   }
 
   for (const record of store.listSpendApprovals()) {
-    if (!spendStillPending(record)) continue;
+    if (record.status !== "pending" || !isSpendDigestKind(record.kind)) continue;
     const host = domainOf(record.detail);
     const dedupe = `${record.kind}:${host || record.id}`;
     if (seen.has(dedupe)) continue;

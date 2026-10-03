@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { campaignCanonYes, canonBoard } from "./canonCompliance.js";
+import {
+  CANON_CORE_KINDS,
+  campaignCanonYes,
+  canonBoard,
+  canonCompliantOverall,
+} from "./canonCompliance.js";
 
 describe("canon compliance (D108)", () => {
   it("yes when core holes are closed", () => {
@@ -45,5 +50,24 @@ describe("canon compliance (D108)", () => {
     assert.equal(board.compliant, false);
     assert.equal(board.campaigns[0]!.yes, true);
     assert.equal(board.campaigns[1]!.yes, false);
+  });
+
+  it("D221 generic-pool holes flip the overall yes", () => {
+    assert.ok((CANON_CORE_KINDS as readonly string[]).includes("generic_idle"));
+    assert.ok(
+      (CANON_CORE_KINDS as readonly string[]).includes("generic_multi_client"),
+    );
+    assert.equal(canonCompliantOverall(true, []), true);
+    assert.equal(
+      canonCompliantOverall(true, ["generic_idle: ada@x client 77 POD A"]),
+      false,
+    );
+    assert.equal(
+      canonCompliantOverall(true, [
+        "generic_multi_client: ada@x assigned to clients 77,88",
+      ]),
+      false,
+    );
+    assert.equal(campaignCanonYes(["generic_idle: ada@x"]), false);
   });
 });

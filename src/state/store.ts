@@ -44,6 +44,11 @@ import {
 } from "../lib/bounceHold.js";
 import type { TenantOutboundBlockRecord } from "../lib/tenantOutboundBlock.js";
 import { normalizeTenantOutboundHost } from "../lib/tenantOutboundBlock.js";
+import {
+  genericSeatKey,
+  normalizeGenericSeat,
+  type GenericSeatRecord,
+} from "../lib/genericPool.js";
 
 export interface TestedCampaignRecord {
   campaignId: number;
@@ -319,6 +324,13 @@ export interface AppState {
    * AS(42004)). No restoreAfter. A human clears the record.
    */
   tenantOutboundBlocks: Record<string, TenantOutboundBlockRecord>;
+  /**
+   * D221 — fleet-wide generic pool. One row per generic seat
+   * (email, sl account, provider, warm-ready, assignment, reason).
+   */
+  genericSeats: Record<string, GenericSeatRecord>;
+  /** D221 — latest generic-pool canon findings (`generic_idle` / `generic_multi_client`). */
+  genericPoolFindings: string[];
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -506,6 +518,17 @@ function parseTenantOutboundBlocks(
   return out;
 }
 
+function parseGenericSeats(raw: unknown): Record<string, GenericSeatRecord> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, GenericSeatRecord> = {};
+  for (const value of Object.values(raw as Record<string, unknown>)) {
+    const seat = normalizeGenericSeat(value);
+    if (!seat) continue;
+    out[seat.email] = seat;
+  }
+  return out;
+}
+
 const EMPTY_POOL_PROVISION: PoolProvisionState = {
   phase: "idle",
 };
@@ -563,6 +586,8 @@ const EMPTY_STATE: AppState = {
   bounceHoldAccountIds: [],
   bounceHoldRestoreAfter: null,
   tenantOutboundBlocks: {},
+  genericSeats: {},
+  genericPoolFindings: [],
 };
 
 export class StateStore {
@@ -655,6 +680,12 @@ export class StateStore {
         tenantOutboundBlocks: parseTenantOutboundBlocks(
           parsed.tenantOutboundBlocks,
         ),
+        genericSeats: parseGenericSeats(parsed.genericSeats),
+        genericPoolFindings: Array.isArray(parsed.genericPoolFindings)
+          ? parsed.genericPoolFindings
+              .map((line) => String(line))
+              .filter((line) => line.trim().length > 0)
+          : [],
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -939,6 +970,55 @@ export class StateStore {
 
   listPoolMailboxes(): PoolMailboxRecord[] {
     return Object.values(this.state.poolMailboxes);
+  }
+
+  /** D221 — fleet-wide generic seat table. */
+  upsertGenericSeat(record: GenericSeatRecord): void {
+    const seat = normalizeGenericSeat(record);
+    if (!seat) return;
+    this.state.genericSeats[seat.email] = seat;
+  }
+
+  getGenericSeat(email: string): GenericSeatRecord | undefined {
+    return this.state.genericSeats[genericSeatKey(email)];
+  }
+
+  listGenericSeats(): GenericSeatRecord[] {
+    return Object.values(this.state.genericSeats);
+  }
+
+  replaceGenericSeats(seats: GenericSeatRecord[]): void {
+    const next: Record<string, GenericSeatRecord> = {};
+    for (const raw of seats) {
+      const seat = normalizeGenericSeat(raw);
+      if (!seat) continue;
+      next[seat.email] = seat;
+    }
+    this.state.genericSeats = next;
+  }
+
+  clearGenericSeatAssignment(email: string): void {
+    const key = genericSeatKey(email);
+    const seat = this.state.genericSeats[key];
+    if (!seat) return;
+    this.state.genericSeats[key] = {
+      ...seat,
+      assignedClientId: null,
+      assignedCampaignIds: [],
+      assignedPod: null,
+      assignedAt: null,
+      reason: null,
+    };
+  }
+
+  setGenericPoolFindings(findings: string[]): void {
+    this.state.genericPoolFindings = findings
+      .map((line) => String(line))
+      .filter((line) => line.trim().length > 0);
+  }
+
+  listGenericPoolFindings(): string[] {
+    return [...this.state.genericPoolFindings];
   }
 
   /**

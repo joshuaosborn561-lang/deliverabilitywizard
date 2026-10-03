@@ -226,7 +226,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D218 | Live — TERRL overnight restore superseded by D219 24h-then-type-cap | TERRL / D148 bounce-hold ids are not pruned at 7:15pm CT. Every max_email_per_day raise path skips held seats during the window |
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
-| D221 | Live | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D221 | Live — surplus return executed weekday by min40-topup and generic-cleanup (D225) | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D225 | Live | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip PowerGRYD 592842 and active 24h TERRL substitutes so `generic_idle` does not page on legitimate state. D222–D224 are claimed by open PRs #275–#277 |
 
 ---
 
@@ -7228,6 +7229,44 @@ table + `validateGenericPool` flag idle and multi-client;
 `generic_multi_client`; PowerGRYD and TERRL-substitute
 skip idle; `enableGenericSendRest` defaults off; CANON
 dated D221.
+
+---
+## D225 — Weekday surplus generic return on min40 and cleanup
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh: D224 stands (no count caps on top of the
+evidence gate). D221's surplus return is executed on the
+**min40-topup** and **generic-cleanup** attach paths. A fleet-pool
+generic that is not needed for its POD's 40 is unlinked from
+campaigns, `client_id` cleared, and the signature reset, then
+returned to the generics table (`assigned_client_id` cleared).
+That is the write that stops `validateGenericPool` `generic_idle`
+from paging on legitimate surplus. Never unlink a generic if that
+would drop a POD below 40 staffable. Skip PowerGRYD 592842
+dedicated seats and an active 24h TERRL substitute. Weekdays
+only (America/Chicago). D222 / D223 / D224 are claimed by open
+PRs #275 / #276 / #277; this number is D225.
+
+**Why.** D221 already failed `/health` when a generic sat assigned
+above a POD's 40. Cleanup only cleared `client_id` when the seat
+was off that client's ACTIVE campaigns, and min40 only filled
+shorts — leftover assigned extras stayed assigned, so
+`generic_idle` paged on the state the pool rule itself produced.
+
+**Rejected.** Weekend returns. Returning a PowerGRYD dedicated
+seat. Returning an active 24h-stop substitute. Unlinking a
+generic that would drop a POD (or an ACTIVE campaign) below 40
+staffable. Adding 5/10/25% hold caps on top of D224.
+
+**Supersedes / amends.** Amends D221: the return is no longer
+validator-only — min40-topup and generic-cleanup apply it.
+Does not change the standing 40, D224's evidence-per-seat hold
+gate, or the PowerGRYD / TERRL exceptions.
+
+**Guards.** `returnSurplusGenerics` / `surplusGenericReturns`
+weekday-only; PowerGRYD + TERRL skip; `detachWouldBreakStaffableFloor`
+blocks a peel at/under 40; CANON dated D225.
 
 ---
 

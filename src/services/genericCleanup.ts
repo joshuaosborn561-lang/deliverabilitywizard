@@ -11,6 +11,7 @@ import { hasPoolMarkerTag } from "../lib/markerClients.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
+import { returnSurplusGenerics } from "./genericSurplusReturn.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 200;
 
@@ -20,6 +21,7 @@ export interface GenericCleanupResult {
   reason?: string;
   examined: number;
   cleared: Array<{ email: string; clientId: number }>;
+  returned: Array<{ email: string; clientId: number }>;
   errors: string[];
 }
 
@@ -42,13 +44,15 @@ export class GenericCleanupService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot; now?: Date } = {},
   ): Promise<GenericCleanupResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
+    const now = opts.now ?? new Date();
     const result: GenericCleanupResult = {
       dryRun,
       examined: 0,
       cleared: [],
+      returned: [],
       errors: [],
     };
     if (!this.config.enableGenericCleanup) {
@@ -81,6 +85,12 @@ export class GenericCleanupService {
 
       try {
         if (!dryRun) {
+          for (const campaignId of campaignIdsOf(account)) {
+            await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
+              account.id,
+            ]);
+            await sleep(WRITE_GAP_MS);
+          }
           await this.smartlead.updateEmailAccount(account.id, {
             client_id: null,
             signature: "",
@@ -96,6 +106,7 @@ export class GenericCleanupService {
               status: pool.status === "assigned" ? "available" : pool.status,
             });
           }
+          this.state.clearGenericSeatAssignment(email);
         }
         result.cleared.push({ email, clientId });
         console.log(
@@ -107,8 +118,19 @@ export class GenericCleanupService {
       }
     }
 
+    const surplus = await returnSurplusGenerics({
+      config: this.config,
+      smartlead: this.smartlead,
+      state: this.state,
+      inventory: { campaigns, accounts, clients: [], fetchedAt: 0, ...opts.inventory },
+      dryRun,
+      now,
+    });
+    result.returned.push(...surplus.returned);
+    result.errors.push(...surplus.errors);
+
     console.log(
-      `[generic-cleanup] examined=${result.examined} cleared=${result.cleared.length} errors=${result.errors.length}`,
+      `[generic-cleanup] examined=${result.examined} cleared=${result.cleared.length} returned=${result.returned.length} errors=${result.errors.length}`,
     );
     if (!dryRun) await this.state.save();
     return result;

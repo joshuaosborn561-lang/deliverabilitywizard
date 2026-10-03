@@ -52,6 +52,7 @@ import {
   type InventorySnapshot,
 } from "./inventory.js";
 import { isPowerGrydClientId } from "./powerGrydWatch.js";
+import { returnSurplusGenerics } from "./genericSurplusReturn.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 250;
 
@@ -69,6 +70,7 @@ export interface Min40TopUpResult {
   assigned: Min40Assignment[];
   asked: Array<{ campaignId: number; name: string; shortBy: number }>;
   unfilled: Array<{ campaignId: number; name: string; shortBy: number }>;
+  returned: Array<{ email: string; clientId: number }>;
   errors: string[];
   alerts: string[];
 }
@@ -104,6 +106,7 @@ export class Min40TopUpService {
       assigned: [],
       asked: [],
       unfilled: [],
+      returned: [],
       errors: [],
       alerts: [],
     };
@@ -261,9 +264,25 @@ export class Min40TopUpService {
       result,
     );
 
+    const surplus = await returnSurplusGenerics({
+      config: this.config,
+      smartlead: this.smartlead,
+      state: this.state,
+      inventory: {
+        campaigns,
+        accounts,
+        clients,
+        fetchedAt: opts.inventory?.fetchedAt ?? 0,
+      },
+      dryRun,
+      now,
+    });
+    result.returned.push(...surplus.returned);
+    result.errors.push(...surplus.errors);
+
     if (!dryRun) await this.state.save();
     console.log(
-      `[min40-topup] assigned=${result.assigned.length} asked=${result.asked.length} unfilled=${result.unfilled.length} alerts=${result.alerts.length} errors=${result.errors.length}`,
+      `[min40-topup] assigned=${result.assigned.length} asked=${result.asked.length} unfilled=${result.unfilled.length} returned=${result.returned.length} alerts=${result.alerts.length} errors=${result.errors.length}`,
     );
     return result;
   }

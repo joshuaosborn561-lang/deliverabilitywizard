@@ -6,6 +6,7 @@ import {
   validateGenericPool,
 } from "../lib/genericPoolCanon.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
+import { openTerlSubstituteEmails } from "../lib/genericSurplusReturn.js";
 import type { StateStore } from "../state/store.js";
 import type { InventorySnapshot } from "./inventory.js";
 
@@ -72,6 +73,10 @@ export class GenericPoolCanonService {
       campaignClientById: synced.campaignClientById,
       liveClientIdsByEmail: synced.liveClientIdsByEmail,
       powerGrydClientId,
+      idleExemptEmails: openTerlSubstituteEmails(
+        this.state.listActiveTerlSubstitutions(),
+        opts.now,
+      ),
     }).map(genericPoolFindingLine);
 
     const result: GenericPoolCanonResult = {

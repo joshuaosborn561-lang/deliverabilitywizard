@@ -398,5 +398,72 @@ describe("Min40TopUpService (D205)", () => {
     assert.deepEqual(removed, [], "min40 must not peel same-client multi-link");
     assert.deepEqual(attached, []);
     assert.equal(result.assigned.length, 0);
+    assert.equal(result.returned.length, 0);
+  });
+
+  it("D225: returns a surplus generic after the fill pass", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 40 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 10, name: "BCP A", status: "ACTIVE", client_id: 542838 }],
+        accounts: [
+          ...named,
+          {
+            id: 901,
+            from_email: "extra@getintroduced.info",
+            client_id: 542838,
+            signature: "Ada Pool\nBolder Cyber Partners",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+            campaign_ids: [10],
+          },
+        ],
+      },
+    });
+    assert.equal(result.assigned.length, 0);
+    assert.equal(result.returned.length, 1);
+    assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
+    assert.deepEqual(removed, [[10, [901]]]);
+    assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
   });
 });

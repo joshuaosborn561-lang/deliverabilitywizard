@@ -16,6 +16,7 @@
 
 import { isOutlookMailboxType } from "./sendCeiling.js";
 import { accountOnTenantOutboundHold } from "./tenantOutboundBlock.js";
+import { accountOnTenantTerlHold, type TenantTerlHoldStore } from "./tenantTerlHold.js";
 
 /** 15 minutes after UTC midnight ≈ 7:15pm America/Chicago. */
 export const BOUNCE_HOLD_RESTORE_GRACE_MINUTES = 15;
@@ -76,7 +77,7 @@ export function hasTodayTenantCapSignal(
   );
 }
 
-export interface BounceHoldReader {
+export interface BounceHoldReader extends Partial<TenantTerlHoldStore> {
   isBounceHoldWindowActive?(now?: Date): boolean;
   isBounceHoldAccount?(accountId: number, now?: Date): boolean;
   isTenantOutboundBlockAccount?(accountId: number): boolean;
@@ -103,6 +104,20 @@ export function accountOnBounceHold(
       isTenantOutboundBlockDomain: (domain) =>
         store?.isTenantOutboundBlockDomain?.(domain) === true,
     })
+  ) {
+    return true;
+  }
+  if (
+    accountOnTenantTerlHold(
+      account,
+      {
+        isTenantTerlHoldAccount: (id, at) =>
+          store?.isTenantTerlHoldAccount?.(id, at) === true,
+        isTenantTerlHoldDomain: (domain, at) =>
+          store?.isTenantTerlHoldDomain?.(domain, at) === true,
+      },
+      now,
+    )
   ) {
     return true;
   }

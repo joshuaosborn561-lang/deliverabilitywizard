@@ -31,8 +31,10 @@ import {
   OUTLOOK_MESSAGE_PER_DAY,
   isOutlookMailboxType,
   mailboxMessagePerDayTarget,
+  mailboxWarmupPerDayTarget,
 } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
+import { accountOnTenantTerlHold } from "../lib/tenantTerlHold.js";
 import {
   TENANT_OUTBOUND_BLOCK_MPD,
   accountOnTenantOutboundHold,
@@ -40,6 +42,7 @@ import {
 } from "../lib/tenantOutboundBlock.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
+import { TerlHoldService } from "./terlHold.js";
 
 /**
  * Hold every mailbox at the agreed sending settings.
@@ -138,21 +141,36 @@ export class MailboxSettingsService {
     );
 
     console.log(
-      `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to Outlook ${OUTLOOK_MESSAGE_PER_DAY}/day, Gmail/SMTP ${defaultTarget}/day, min gap ${targetGap}m` +
+      `[mailbox-settings] mode=${mode} converging ${accounts.length} mailbox(es) to M365 ${OUTLOOK_MESSAGE_PER_DAY}/day, Azure 2/day, Gmail/SMTP ${defaultTarget}/day, min gap ${targetGap}m` +
         (mode === "full"
-          ? ", signatures/warmup"
+          ? ", signatures/warmup (Azure warmup 5/day)"
           : " (gap+volume; foreign-brand sigs; canary warmup off)"),
     );
 
     let consecutiveFailures = 0;
     this.store?.pruneBounceHold();
+    if (this.store) {
+      try {
+        await new TerlHoldService(
+          this.config,
+          this.smartlead,
+          this.store,
+          this.slack,
+        ).restoreExpired({
+          inventory: { accounts, campaigns, clients, fetchedAt: Date.now() },
+          dryRun,
+        });
+      } catch (error) {
+        console.warn("[mailbox-settings] TERRL restore failed", error);
+      }
+    }
 
     for (const account of accounts) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
 
       // Only write when the value differs — needless writes trip the limiter.
-      const target = mailboxMessagePerDayTarget(account, this.config);
+      const target = mailboxMessagePerDayTarget(account, this.config, this.store);
       const current = readMessagePerDay(account);
       const tenantHeld = accountOnTenantOutboundHold(account, this.store);
       if (tenantHeld) {
@@ -161,19 +179,22 @@ export class MailboxSettingsService {
           accountIds: [account.id],
         });
       }
-      // D212/D218 — bounce-hold Outlook zeros stay 0. Listed ids persist
-      // past 00:15 UTC; pruneBounceHold is a no-op. D213 tenant
-      // outbound-block zeros are a different list — do not arm them.
+      // D212/D218/D219 — bounce-hold / TERRL zeros stay 0 for the
+      // 24h window, then the type cap. Do not arm a restore from a
+      // D213 5.1.8 zero.
       if (isOutlookMailboxType(account.type) && current === 0 && !tenantHeld) {
         this.store?.observeBounceHoldZero(account.id);
       }
-      const held = tenantHeld || accountOnBounceHold(account, this.store);
+      const terlHeld = accountOnTenantTerlHold(account, this.store);
+      const held = tenantHeld || terlHeld || accountOnBounceHold(account, this.store);
       if (held) result.bounceHoldSkipped += 1;
-      const writeTarget = tenantHeld ? TENANT_OUTBOUND_BLOCK_MPD : target;
-      const needsLimit =
-        tenantHeld
-          ? !(Number.isFinite(current) && current === TENANT_OUTBOUND_BLOCK_MPD)
-          : !held && !(Number.isFinite(current) && current === target);
+      const writeTarget =
+        tenantHeld || terlHeld ? TENANT_OUTBOUND_BLOCK_MPD : target;
+      // D212 bounce-hold seats stay at their current cap (already 0).
+      // D213 / live D219 TERRL still write 0 when the seat has drifted.
+      const needsLimit = tenantHeld || terlHeld
+        ? !(Number.isFinite(current) && current === writeTarget)
+        : !held && !(Number.isFinite(current) && current === target);
 
       const needsGap = needsMinTimeGap(account, targetGap);
 
@@ -254,10 +275,11 @@ export class MailboxSettingsService {
         if (needsGap) result.minGapSet += 1;
         if (needsSignature) result.signatureSet += 1;
 
+        const warmupCap = mailboxWarmupPerDayTarget(account, this.config);
         if (!dryRun && needsWarmupOff) {
           await this.smartlead.configureWarmup(account.id, {
             warmup_enabled: false,
-            total_warmup_per_day: this.config.warmupTotalPerDay,
+            total_warmup_per_day: warmupCap,
             daily_rampup: this.config.warmupDailyRampup,
             reply_rate_percentage: this.config.warmupReplyRatePercentage,
           });
@@ -268,7 +290,7 @@ export class MailboxSettingsService {
         if (mode === "full" && !dryRun && needsWarmup) {
           await this.smartlead.configureWarmup(account.id, {
             warmup_enabled: true,
-            total_warmup_per_day: this.config.warmupTotalPerDay,
+            total_warmup_per_day: warmupCap,
             daily_rampup: this.config.warmupDailyRampup,
             reply_rate_percentage: this.config.warmupReplyRatePercentage,
           });

@@ -306,8 +306,8 @@ describe("D140/D148 — a burst reads the SMTP reasons and opens the incident", 
     assert.equal(state.getBounceVerdict(8)?.dominant, "tenant_rate_limit");
     assert.equal(
       sent.filter((text) => /hit its Microsoft daily sending cap/.test(text)).length,
-      1,
-      "one tenant page",
+      0,
+      "D219: no per-bounce tenant Slack; EOD digest owns that list",
     );
     assert.equal(
       sent.filter((text) => /Bounce burst on Burst/.test(text)).length,

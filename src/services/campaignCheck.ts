@@ -1123,7 +1123,7 @@ export class CampaignCheckService {
         });
       }
       const volume = readMessagePerDay(account);
-      const wantVolume = mailboxMessagePerDayTarget(account, this.config);
+      const wantVolume = mailboxMessagePerDayTarget(account, this.config, this.state);
       if (
         Number.isFinite(volume) &&
         volume !== wantVolume &&

@@ -5231,10 +5231,10 @@ describe("owner intent — D140 bounce reasons are read, not guessed", () => {
     );
     assert.match(
       loop,
-      /tenant-limit:\$\{domain\}/,
+      /applyTenantTerlHold|TerlHoldService/,
       stop(
-        "A tenant hitting its cap alerts Josh once per tenant per day (D140).",
-        "campaignBounceAutostop.ts lost the tenant alert dedupe.",
+        "A tenant hitting its cap is the D219 24h hold, not a per-bounce Slack page (D140 classify still runs).",
+        "campaignBounceAutostop.ts lost the TERRL hold apply.",
       ),
     );
   });
@@ -11785,13 +11785,159 @@ describe("owner intent — D218 TERRL holds persist past 7:15pm CT", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D218\*\*/,
-      stop("CANON dated D218.", "CANON.md header is not D218."),
+      /Canon as of \*\*D21[8-9]\*\*/,
+      stop("CANON dated D218+.", "CANON.md header is not D218 or later."),
     );
     assert.match(
       decisions,
       /## D218 — TERRL bounce-holds persist/,
       stop("D218 is in the ledger.", "DECISIONS.md lost D218."),
+    );
+  });
+});
+
+describe("owner intent — D219 mailbox type caps and TERRL 24h + substitute", () => {
+  it("D219: Azure 2/5, M365 15, 5.7.233 24h then type cap, same-client swap, weekday EOD", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const type = await readFile(
+      new URL("../lib/mailboxType.ts", import.meta.url),
+      "utf8",
+    );
+    const terl = await readFile(
+      new URL("../lib/tenantTerlHold.ts", import.meta.url),
+      "utf8",
+    );
+    const hold = await readFile(
+      new URL("../services/terlHold.ts", import.meta.url),
+      "utf8",
+    );
+    const holdTest = await readFile(
+      new URL("../services/terlHold.test.ts", import.meta.url),
+      "utf8",
+    );
+    const tags = await readFile(
+      new URL("../services/mailboxTypeTags.ts", import.meta.url),
+      "utf8",
+    );
+    const bounce = await readFile(
+      new URL("../services/campaignBounceAutostop.ts", import.meta.url),
+      "utf8",
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+
+    assert.match(
+      type,
+      /tidalstackco\.com/,
+      stop("tidalstackco.com is Azure/Entra (D219).", "mailboxType.ts lost the Azure domain."),
+    );
+    assert.match(
+      type,
+      /AZURE_CAMPAIGN_PER_DAY = 2/,
+      stop("Azure campaign cap is 2 (D219).", "mailboxType.ts lost AZURE_CAMPAIGN_PER_DAY."),
+    );
+    assert.match(
+      type,
+      /AZURE_WARMUP_PER_DAY = 5/,
+      stop("Azure warmup cap is 5 (D219).", "mailboxType.ts lost AZURE_WARMUP_PER_DAY."),
+    );
+    assert.match(
+      terl,
+      /TERL_HOLD_MS = 24/,
+      stop("TERRL hold is 24 hours (D219).", "tenantTerlHold.ts lost the 24h window."),
+    );
+    assert.equal(
+      /TERL_LIMIT_FRACTION|80% of the measured|measuredLimit/.test(terl),
+      false,
+      stop("No 80% learned cap (D219).", "tenantTerlHold.ts still records an 80% limit."),
+    );
+    assert.match(
+      terl,
+      /terlEodDigestText/,
+      stop("EOD digest helper exists (D219).", "tenantTerlHold.ts lost terlEodDigestText."),
+    );
+    assert.match(
+      terl,
+      /no substitute available, at/,
+      stop("EOD names a no-sub campaign (D219).", "tenantTerlHold.ts lost the 39-sending line."),
+    );
+    assert.match(
+      hold,
+      /addEmailAccountsToCampaign/,
+      stop("Swap-in links a substitute (D219).", "terlHold.ts lost the campaign link."),
+    );
+    assert.match(
+      hold,
+      /removeEmailAccountsFromCampaign/,
+      stop("Swap-out unlinks the substitute (D219).", "terlHold.ts lost the unlink."),
+    );
+    assert.match(
+      holdTest,
+      /swap-in:/,
+      stop("Swap-in is tested (D219).", "terlHold.test.ts lost the swap-in case."),
+    );
+    assert.match(
+      holdTest,
+      /swap-out:/,
+      stop("Swap-out is tested (D219).", "terlHold.test.ts lost the swap-out case."),
+    );
+    assert.match(
+      tags,
+      /canonOpsIdleReason/,
+      stop("Type tags are weekday-gated (D219).", "mailboxTypeTags.ts no longer uses canonOpsIdleReason."),
+    );
+    assert.match(
+      bounce,
+      /applyTenantTerlHold|TerlHoldService/,
+      stop("Bounce loop applies the TERRL hold (D219).", "campaignBounceAutostop.ts lost the TERRL apply."),
+    );
+    assert.match(
+      slack,
+      /notifyDeliverabilityNote/,
+      stop("Slack can post a #deliverability note (D219).", "slack.ts lost notifyDeliverabilityNote."),
+    );
+    assert.match(
+      index,
+      /stage\("mailbox-type-tags"/,
+      stop("Type-tag stage is watchdogged (D219).", "index.ts lost stage(\"mailbox-type-tags\")."),
+    );
+    assert.match(
+      index,
+      /stage\("terl-eod"/,
+      stop("TERRL EOD is watchdogged (D219).", "index.ts lost stage(\"terl-eod\")."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D219\*\*/,
+      stop("CANON dated D219.", "CANON.md header is not D219."),
+    );
+    assert.match(
+      canon,
+      /24 hours \(rolling\)/,
+      stop("CANON names the 24h TERRL hold (D219).", "CANON.md lost the 24h hold sentence."),
+    );
+    assert.match(
+      canon,
+      /41 linked \/ 40 sending/,
+      stop("CANON names the 41/40 substitute (D219).", "CANON.md lost the substitution sentence."),
+    );
+    assert.equal(
+      /80% of the measured/.test(canon),
+      false,
+      stop("CANON dropped the 80% TERRL cap (D219).", "CANON.md still teaches the 80% cap."),
+    );
+    assert.match(
+      decisions,
+      /## D219 — Mailbox type caps and 5\.7\.233/,
+      stop("D219 is in the ledger.", "DECISIONS.md lost D219."),
     );
   });
 });

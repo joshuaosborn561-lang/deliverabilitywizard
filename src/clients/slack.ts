@@ -146,6 +146,41 @@ export class SlackClient {
    * D213 — one-shot tenant outbound-block page. Not a decision card.
    * Posts to the Watchdog channel id, never as a #deliverability one-tap.
    */
+  /**
+   * D219 — short #deliverability note (no buttons). Never #campaign-watchdog.
+   */
+  async notifyDeliverabilityNote(
+    text: string,
+  ): Promise<{ channel?: string; ts?: string } | undefined> {
+    const channel = deliverabilityChannelId({
+      deliverabilitySlackChannelId: this.creds.deliverabilityChannelId,
+    });
+    if (
+      channel.toLowerCase() === WATCHDOG_SLACK_CHANNEL_NAME ||
+      channel === "campaign-watchdog"
+    ) {
+      throw new Error(
+        "Deliverability notes must not post to #campaign-watchdog (D219).",
+      );
+    }
+    const token =
+      deliverabilityBotToken({
+        deliverabilitySlackBotToken: this.creds.deliverabilityBotToken,
+        slackBotToken: readSlackBotToken(this.creds),
+      }) || readSlackBotToken(this.creds);
+    if (!token) {
+      console.log(
+        `[slack-quiet] dropped deliverability note: ${text.replace(/\n/g, " ").slice(0, 200)}`,
+      );
+      return undefined;
+    }
+    return this.postChatMessage({
+      token,
+      channel: channel || DELIVERABILITY_SLACK_CHANNEL_ID,
+      text,
+    });
+  }
+
   async notifyWatchdogTenantBlock(
     text: string,
   ): Promise<{ channel?: string; ts?: string } | undefined> {

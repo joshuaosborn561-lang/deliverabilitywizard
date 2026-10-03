@@ -563,8 +563,13 @@ export class Min40TopUpService {
               ? {}
               : {
                   max_email_per_day: mailboxMessagePerDayTarget(
-                    { platform: pool.platform },
+                    {
+                      id: pool.smartleadAccountId,
+                      platform: pool.platform,
+                      email: pool.email,
+                    },
                     this.config,
+                    this.state,
                   ),
                 }),
           });

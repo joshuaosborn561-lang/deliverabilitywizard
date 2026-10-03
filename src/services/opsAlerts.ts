@@ -193,6 +193,8 @@ export async function alertCanonMisses(input: {
 
 const FINDING_LABEL: Record<string, string> = {
   understaffed: "not enough inboxes",
+  esp_mix: "ESP mix off on the on-week POD",
+  cross_client_membership: "generic or seat crossed clients",
   under_warmed: "inboxes still warming",
   missing_signature_tag: "signature hole",
   missing_insight_close: "signature hole",

@@ -207,7 +207,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D193 | Live — peel of exclusive min-40 generic seats qualified by D197; dedicated named-client seats are not foreign Goliath (D198); "leave it short / client-inbox only" for the min-40 fill path narrowed by D203; same-client generic share by D207 | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
-| D196 | Live — inventory floor is max(named on-week pod, 40 per POD) per D197/D203; live send floor is 40 per ACTIVE campaign (D207) | Named-client staff floor is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not understaffed |
+| D196 | Live — inventory floor is max(named on-week pod, 40 per POD) per D197/D203; Canon *page* floor is 40 on-week staffable (D217), not named-inventory 46/48 | Named-client inventory split is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not an inventory short |
 | D197 | Live — dedicated named-client seats stay even above 40 (D198); peel count is staffable attached (D199); 40 is per ACTIVE campaign (D207); rest-record loophole closed by D209; 40/POD inventory still D203 | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
 | D198 | Live — exclusive + client-sig also dedicated (D199); same-client generics may multi-link (D207/D209); per-POD exclusive top-up to 40 authorized by D203 | Dedicated generics per named client are preferred; those seats are not foreign Goliath; on-week ACTIVE floor stays ≥40 |
 | D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
@@ -222,7 +222,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D213 | Live | 5.1.8 / AS(42004) is tenant_outbound_block (not tenant_rate_limit); permanent hold at 0, no 7:15 restore; Watchdog once; seed appquickconnectsales.com ids |
 | D214 | Live — leftover newest ignores inventory (D215) | Health resume is chain inversion (later lastOk older than newest earlier); skip the prefix. D211's 15m early-fresh gate starved pod-cover after a deploy reset the cron. `/run?mode=pod-cover` |
 | D215 | Live | Health-resume newest stamp ignores inventory (shared-book / skip-if-fresh refresh); leftover is after the deepest non-inventory lastOk so an inventory-only kill cannot hide pod-cover |
-| D218 | Live | TERRL / D148 bounce-hold ids persist; no 7:15pm CT prune+restore to 15. Every max_email_per_day raise path (mailbox-settings, min40, fan-out, top-up, copy-canary) skips held seats. D216 claimed by PR #265; D217 is the Canon staffable PR |
+| D217 | Live | Canon pages understaffed only on <40 on-week staffable (agent definition: SMTP/IMAP ok, mpd>0, warmup≥21 when readable, correct client, on-week POD tag); ESP mix + exclusivity are core findings. D216 is claimed by open PR #265 |
+| D218 | Live | TERRL / D148 bounce-hold ids persist; no 7:15pm CT prune+restore to 15. Every max_email_per_day raise path (mailbox-settings, min40, fan-out, top-up, copy-canary) skips held seats |
 
 ---
 
@@ -6957,6 +6958,63 @@ window or D122.
 when picking newest; the 15:45 production board leftovers
 at pod-cover, not client-rest; warmup-gate interrupt
 still resumes at campaign-health; CANON dated D215.
+
+---
+
+## D217 — Canon staffable is the agent's on-week count; page only real shorts
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (owner): Canon compliance must compute
+staffable the way the Deliverability agent does, and page
+`understaffed` only on a real short. A seat is staffable
+when it is linked **and** SMTP/IMAP are not failing,
+campaign `message_per_day` / `max_email_per_day` > 0,
+warmup ≥21 days when a clock is readable, the mailbox
+belongs to this campaign's client (or that client's
+dedicated generic), it is not tagged with the off-week
+POD, it is not a canary / HOLD / RETIRE, and it is not
+InboxKit-lapsed when the store knows. The live page floor
+is **40 on-week staffable** per ACTIVE campaign. Named
+on-week inventory of 46 or 48 is not a short when the
+campaign already has ≥40 on-week staffable. `esp_mix`
+(under ~1/3 Outlook or Gmail on a dual-ESP on-week POD)
+and `cross_client_membership` (generics never cross
+clients) are Canon core findings. Inventory 40-A + 40-B
+and the peel floor stay as D203/D207.
+
+**Why.** Production 2026-10-03: SalesGlider #3847939,
+#3847993, #3847995, #4006388, #4006389, #3739758,
+#3748375 were paged "not enough inboxes" at 41/41
+on-week staffable because `staffFloorForCampaign` used
+`max(named on-week inventory, 40)` (D196) — ESP-odd SG
+inventory is 48/46. Same day, TechEvo #3730560 had 41
+linked and only 34 staffable (7 Vasco SMTP fails) and
+Canon did not page: `isStaffableSender` treated unknown
+connectivity as connected and counted every linked seat
+that was not explicitly `is_smtp_success === false` /
+resting / canary, ignored mpd 0, ignored off-week POD
+tags, and ignored foreign `client_id`. The agent already
+peels SMTP-fail and fills to 40 on-week staffable; the
+wizard's pager must match that count.
+
+**Rejected.** Keeping the D196 named-inventory page floor
+("48 on-week named means every campaign owes 48").
+Treating unknown SMTP as a fail (a partial `/email-accounts`
+page would mass-understaff). Changing the peel / min-40
+fill floor in this PR (those already use 40).
+
+**Supersedes / amends.** Amends D196/D207 for *Canon
+pages only*: the live understaffed floor is 40 on-week
+staffable, not max(named on-week, 40). Does not change
+D203 inventory 40/POD or D207 peel/min40.
+
+**Guards.** `staffFloorForCampaign` returns 40 when
+on-week counts are supplied; `canonStaffableVerdict`
+excludes SMTP-fail / mpd 0 / off-week POD / foreign
+client; 41 on-week staffable is not understaffed; 41
+linked / 34 staffable with 7 smtp_fail is; CANON dated
+D217. Decision number skips D216 (open PR #265).
 
 ---
 

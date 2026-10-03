@@ -1,7 +1,9 @@
 /**
- * D222 — InboxKit lapsed-license detection. Compare InboxKit mailbox
- * status to Smartlead connected accounts. Detection only: no deletes,
- * no unlinks. Seats with a past cancel date belong to Onboarding.
+ * D222 / D226 — InboxKit lapsed-license sweep. Compare InboxKit
+ * mailbox status to Smartlead connected accounts. Findings go to
+ * Onboarding and Deliverability through state / /health (not Slack).
+ * Lapsed seats are deleted from Smartlead and InboxKit. The only
+ * Slack post is the post-cleanup one-liner when X > 0.
  */
 
 import { isConnectedAccount } from "./staffableSender.js";
@@ -28,6 +30,9 @@ export const SCHEDULED_CANCEL_STATUSES = [
 export interface InboxkitLicenseMailbox {
   email?: string;
   address?: string;
+  uid?: string;
+  id?: string;
+  workspaceId?: string;
   status?: string;
   license_status?: string;
   renewal_date?: string | null;
@@ -51,10 +56,7 @@ export interface InboxkitLicenseSlAccount {
 }
 
 export type InboxkitLicenseKind = "still_connected" | "scheduled_cancel";
-export type InboxkitLicenseSkip =
-  | "not_connected"
-  | "past_cancel_onboarding"
-  | "healthy";
+export type InboxkitLicenseSkip = "not_connected" | "healthy";
 
 export interface InboxkitLicenseFinding {
   kind: InboxkitLicenseKind;
@@ -64,6 +66,30 @@ export interface InboxkitLicenseFinding {
   inboxkitStatus: string;
   cancelDate: string | null;
   slAccountId: number | null;
+  inboxkitUid: string | null;
+  workspaceId: string | null;
+}
+
+export interface InboxkitLicenseHandoffSeat {
+  email: string;
+  inboxkitStatus: string;
+  cancelDate: string | null;
+  slAccountId: number | null;
+}
+
+export interface InboxkitLicenseHandoffClient {
+  clientId: number | null;
+  clientName: string;
+  stillConnected: InboxkitLicenseHandoffSeat[];
+  upcomingCancellations: InboxkitLicenseHandoffSeat[];
+}
+
+export interface InboxkitLicenseHandoff {
+  at: string;
+  ymd: string;
+  deleted: number;
+  deletedEmails: string[];
+  clients: InboxkitLicenseHandoffClient[];
 }
 
 export function inboxkitMailboxEmail(mailbox: InboxkitLicenseMailbox): string {
@@ -180,9 +206,6 @@ export function classifyInboxkitLicenseSeat(input: {
   const account = input.account ?? null;
   const connected = Boolean(account && isConnectedAccount(account));
   if (!email || !connected) return { skip: "not_connected" };
-  if (isPastCancelDate(input.mailbox, now)) {
-    return { skip: "past_cancel_onboarding" };
-  }
   const { raw: cancelRaw } = cancelDateOf(input.mailbox);
   const clientId =
     typeof account?.client_id === "number" && account.client_id > 0
@@ -190,6 +213,8 @@ export function classifyInboxkitLicenseSeat(input: {
       : null;
   const slAccountId =
     typeof account?.id === "number" && account.id > 0 ? account.id : null;
+  const inboxkitUid = String(input.mailbox.uid || input.mailbox.id || "").trim() || null;
+  const workspaceId = String(input.mailbox.workspaceId || "").trim() || null;
   const base = {
     email,
     clientId,
@@ -197,12 +222,14 @@ export function classifyInboxkitLicenseSeat(input: {
     inboxkitStatus: status || "unknown",
     cancelDate: cancelRaw,
     slAccountId,
+    inboxkitUid,
+    workspaceId,
   };
+  if (isPastCancelDate(input.mailbox, now) || isLapsedInboxkitStatus(status)) {
+    return { finding: { kind: "still_connected", ...base } };
+  }
   if (isScheduledCancelStatus(status) || cancelRaw) {
     return { finding: { kind: "scheduled_cancel", ...base } };
-  }
-  if (isLapsedInboxkitStatus(status)) {
-    return { finding: { kind: "still_connected", ...base } };
   }
   return { skip: "healthy" };
 }
@@ -250,44 +277,64 @@ export function classifyInboxkitLicenseSweep(input: {
   });
 }
 
-export function formatInboxkitLicenseSlack(
+export function groupInboxkitLicenseHandoff(
   findings: InboxkitLicenseFinding[],
-): string | null {
-  if (!findings.length) return null;
-  const byClient = new Map<string, InboxkitLicenseFinding[]>();
+): InboxkitLicenseHandoffClient[] {
+  const byClient = new Map<string, InboxkitLicenseHandoffClient>();
   for (const finding of findings) {
     const key = `${finding.clientName}::${finding.clientId ?? "none"}`;
-    const list = byClient.get(key) ?? [];
-    list.push(finding);
-    byClient.set(key, list);
-  }
-  const blocks: string[] = [
-    "InboxKit license sweep (detection only). No deletes and no unlinks.",
-  ];
-  for (const group of byClient.values()) {
-    const first = group[0]!;
-    const heading =
-      first.clientId != null
-        ? `*${first.clientName}* (${first.clientId})`
-        : `*${first.clientName}*`;
-    blocks.push(heading);
-    const still = group.filter((row) => row.kind === "still_connected");
-    const scheduled = group.filter((row) => row.kind === "scheduled_cancel");
-    if (still.length) {
-      const lines = still.map(
-        (row) =>
-          `  ${row.email} InboxKit ${row.inboxkitStatus} (still connected)`,
-      );
-      blocks.push(`- lapsed / cancelled / inactive but still connected:`);
-      blocks.push(...lines);
+    const group = byClient.get(key) ?? {
+      clientId: finding.clientId,
+      clientName: finding.clientName,
+      stillConnected: [],
+      upcomingCancellations: [],
+    };
+    const seat: InboxkitLicenseHandoffSeat = {
+      email: finding.email,
+      inboxkitStatus: finding.inboxkitStatus,
+      cancelDate: finding.cancelDate,
+      slAccountId: finding.slAccountId,
+    };
+    if (finding.kind === "scheduled_cancel") {
+      group.upcomingCancellations.push(seat);
+    } else {
+      group.stillConnected.push(seat);
     }
-    if (scheduled.length) {
-      blocks.push("- scheduled for cancellation:");
-      for (const row of scheduled) {
-        const when = row.cancelDate ? ` on ${row.cancelDate}` : " (date unknown)";
-        blocks.push(`  ${row.email}${when}`);
-      }
-    }
+    byClient.set(key, group);
   }
-  return blocks.join("\n");
+  return [...byClient.values()];
+}
+
+export function formatInboxkitLicenseCleanupSlack(deleted: number): string | null {
+  if (!Number.isFinite(deleted) || deleted <= 0) return null;
+  return `Found ${deleted} inboxes that had lapsed; they're deleted from Smartlead and InboxKit.`;
+}
+
+export function parseInboxkitLicenseHandoff(
+  raw: unknown,
+): InboxkitLicenseHandoff | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Partial<InboxkitLicenseHandoff>;
+  if (typeof row.at !== "string" || typeof row.ymd !== "string") return null;
+  return {
+    at: row.at,
+    ymd: row.ymd,
+    deleted: Number.isFinite(row.deleted) ? Number(row.deleted) : 0,
+    deletedEmails: Array.isArray(row.deletedEmails)
+      ? row.deletedEmails.map((email) => String(email).toLowerCase())
+      : [],
+    clients: Array.isArray(row.clients)
+      ? row.clients.map((client) => ({
+          clientId:
+            typeof client.clientId === "number" ? client.clientId : null,
+          clientName: String(client.clientName ?? "Unassigned"),
+          stillConnected: Array.isArray(client.stillConnected)
+            ? client.stillConnected
+            : [],
+          upcomingCancellations: Array.isArray(client.upcomingCancellations)
+            ? client.upcomingCancellations
+            : [],
+        }))
+      : [],
+  };
 }

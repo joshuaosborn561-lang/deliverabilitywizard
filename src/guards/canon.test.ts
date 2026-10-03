@@ -12253,7 +12253,7 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
 });
 
 describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
-  it("D222: Monday 8:16am CT detection-only, no deletes, no unlinks, past cancel is Onboarding", async () => {
+  it("D222: Monday 8:16am CT InboxKit sweep stays on the board", async () => {
     const { readFile } = await import("node:fs/promises");
     const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
 
@@ -12271,10 +12271,6 @@ describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
     const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
     const sweep = await readFile(
       new URL("../services/inboxkitLicenseSweep.ts", import.meta.url),
-      "utf8",
-    );
-    const lib = await readFile(
-      new URL("../lib/inboxkitLicense.ts", import.meta.url),
       "utf8",
     );
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
@@ -12298,20 +12294,10 @@ describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
       /listAllEmailAccounts/,
       stop("The sweep uses the complete fleet pager (D220/D222).", "inboxkitLicenseSweep.ts does not call listAllEmailAccounts."),
     );
-    assert.doesNotMatch(
-      sweep,
-      /cancelMailboxes|removeEmailAccountsFromCampaign|deleteMailbox/,
-      stop("The sweep is detection-only (D222).", "inboxkitLicenseSweep.ts writes InboxKit or Smartlead."),
-    );
-    assert.match(
-      lib,
-      /past_cancel_onboarding/,
-      stop("Past cancel dates belong to Onboarding (D222).", "inboxkitLicense.ts lost the past-cancel skip."),
-    );
     assert.match(
       canon,
-      /Canon as of \*\*D222\*\*/,
-      stop("CANON is dated D222.", "CANON.md header was not bumped to D222."),
+      /Canon as of \*\*D22[2-9]\*\*/,
+      stop("CANON is dated D222 or later.", "CANON.md header lost D222+."),
     );
     assert.match(
       canon,
@@ -12327,6 +12313,109 @@ describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
       decisions,
       /^\| D222 \|/m,
       stop("The status index lists D222 (D127).", "DECISIONS.md status index has no D222 row."),
+    );
+  });
+});
+
+describe("owner intent — D226 InboxKit sweep handoff, Slack only after delete", () => {
+  it("D226: findings stay off Slack; cleanup one-liner only when X > 0", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { formatInboxkitLicenseCleanupSlack } = await import(
+      "../lib/inboxkitLicense.js"
+    );
+
+    assert.equal(
+      formatInboxkitLicenseCleanupSlack(3),
+      "Found 3 inboxes that had lapsed; they're deleted from Smartlead and InboxKit.",
+      stop(
+        "Cleanup Slack is the one-liner (D226).",
+        "formatInboxkitLicenseCleanupSlack drifted.",
+      ),
+    );
+    assert.equal(
+      formatInboxkitLicenseCleanupSlack(0),
+      null,
+      stop("X = 0 posts nothing (D226).", "cleanup Slack fired at X = 0."),
+    );
+    assert.doesNotMatch(
+      String(formatInboxkitLicenseCleanupSlack(2)),
+      /—/,
+      stop("Cleanup Slack has no em dash (D226).", "the one-liner used an em dash."),
+    );
+
+    const sweep = await readFile(
+      new URL("../services/inboxkitLicenseSweep.ts", import.meta.url),
+      "utf8",
+    );
+    const lib = await readFile(
+      new URL("../lib/inboxkitLicense.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      sweep,
+      /deleteEmailAccount/,
+      stop("Lapsed seats are deleted from Smartlead (D226).", "inboxkitLicenseSweep.ts lost deleteEmailAccount."),
+    );
+    assert.match(
+      sweep,
+      /cancelMailboxes/,
+      stop("Lapsed seats are deleted from InboxKit (D226).", "inboxkitLicenseSweep.ts lost cancelMailboxes."),
+    );
+    assert.match(
+      sweep,
+      /setInboxkitLicenseHandoff/,
+      stop("Findings go through state (D226).", "inboxkitLicenseSweep.ts lost the handoff write."),
+    );
+    assert.match(
+      sweep,
+      /formatInboxkitLicenseCleanupSlack/,
+      stop("Slack is the cleanup one-liner (D226).", "inboxkitLicenseSweep.ts lost the cleanup Slack."),
+    );
+    assert.doesNotMatch(
+      sweep,
+      /formatInboxkitLicenseSlack\(/,
+      stop("The finding list is not Slacked (D226).", "inboxkitLicenseSweep.ts still posts findings."),
+    );
+    assert.match(
+      lib,
+      /groupInboxkitLicenseHandoff/,
+      stop("Handoff is grouped per client (D226).", "inboxkitLicense.ts lost groupInboxkitLicenseHandoff."),
+    );
+    assert.match(
+      store,
+      /inboxkitLicenseHandoff/,
+      stop("State holds the InboxKit handoff (D226).", "store.ts has no inboxkitLicenseHandoff."),
+    );
+    assert.match(
+      index,
+      /inboxkitLicenseHandoff/,
+      stop("/health exposes the handoff (D226).", "index.ts /health lost inboxkitLicenseHandoff."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D226\*\*/,
+      stop("CANON is dated D226.", "CANON.md header was not bumped to D226."),
+    );
+    assert.match(
+      decisions,
+      /## D226 — InboxKit sweep hands off internally/,
+      stop("The ledger records D226.", "DECISIONS.md no longer has D226."),
+    );
+    assert.match(
+      decisions,
+      /^\| D226 \|/m,
+      stop("The status index lists D226 (D127).", "DECISIONS.md status index has no D226 row."),
     );
   });
 });

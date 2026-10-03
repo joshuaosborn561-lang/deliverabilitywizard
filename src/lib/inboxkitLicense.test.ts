@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import {
   classifyInboxkitLicenseSeat,
   classifyInboxkitLicenseSweep,
-  formatInboxkitLicenseSlack,
+  formatInboxkitLicenseCleanupSlack,
+  groupInboxkitLicenseHandoff,
   inboxkitLicenseIdleReason,
   isPastCancelDate,
 } from "./inboxkitLicense.js";
@@ -12,10 +13,10 @@ const mondayMorning = new Date("2026-10-05T13:16:00.000Z"); // Monday 8:16am CT
 const saturday = new Date("2026-10-03T13:16:00.000Z");
 const tuesday = new Date("2026-10-06T13:16:00.000Z");
 
-describe("inboxkitLicense classifier (D222)", () => {
+describe("inboxkitLicense classifier (D222/D226)", () => {
   it("flags cancelled / inactive / lapsed seats that are still connected", () => {
     const cancelled = classifyInboxkitLicenseSeat({
-      mailbox: { email: "ada@x.com", status: "cancelled" },
+      mailbox: { email: "ada@x.com", status: "cancelled", uid: "ik-1" },
       account: { id: 1, from_email: "ada@x.com", client_id: 77, is_smtp_success: true },
       clientName: "TechEvo",
       now: mondayMorning,
@@ -23,6 +24,7 @@ describe("inboxkitLicense classifier (D222)", () => {
     assert.ok("finding" in cancelled);
     assert.equal(cancelled.finding.kind, "still_connected");
     assert.equal(cancelled.finding.clientId, 77);
+    assert.equal(cancelled.finding.inboxkitUid, "ik-1");
 
     const inactive = classifyInboxkitLicenseSeat({
       mailbox: { email: "bob@x.com", status: "inactive" },
@@ -33,7 +35,7 @@ describe("inboxkitLicense classifier (D222)", () => {
     assert.equal(inactive.finding.kind, "still_connected");
   });
 
-  it("flags scheduled cancellation with the date and skips a past cancel date", () => {
+  it("flags scheduled cancellation with the date and treats a past cancel as lapsed", () => {
     const future = classifyInboxkitLicenseSeat({
       mailbox: {
         email: "soon@x.com",
@@ -63,7 +65,9 @@ describe("inboxkitLicense classifier (D222)", () => {
       account: { id: 4, from_email: "old@x.com", is_smtp_success: true },
       now: mondayMorning,
     });
-    assert.deepEqual(past, { skip: "past_cancel_onboarding" });
+    assert.ok("finding" in past);
+    assert.equal(past.finding.kind, "still_connected");
+    assert.equal(past.finding.cancelDate, "2026-09-01");
   });
 
   it("skips disconnected Smartlead accounts and healthy active seats", () => {
@@ -88,34 +92,43 @@ describe("inboxkitLicense classifier (D222)", () => {
     assert.deepEqual(healthy, { skip: "healthy" });
   });
 
-  it("groups Slack per client and never uses an em dash", () => {
-    const text = formatInboxkitLicenseSlack(
-      classifyInboxkitLicenseSweep({
-        mailboxes: [
-          { email: "ada@x.com", status: "cancelled" },
-          {
-            email: "soon@x.com",
-            status: "scheduled_for_cancellation",
-            renewal_date: "2026-11-01",
-          },
-          { email: "old@x.com", status: "cancelled", cancel_date: "2026-01-01" },
-        ],
-        accounts: [
-          { id: 1, from_email: "ada@x.com", client_id: 77, is_smtp_success: true },
-          { id: 2, from_email: "soon@x.com", client_id: 77, is_smtp_success: true },
-          { id: 3, from_email: "old@x.com", client_id: 77, is_smtp_success: true },
-        ],
-        clientNameById: new Map([[77, "TechEvo"]]),
-        now: mondayMorning,
-      }),
+  it("groups the handoff per client and only Slacks the cleanup line when X > 0", () => {
+    const findings = classifyInboxkitLicenseSweep({
+      mailboxes: [
+        { email: "ada@x.com", status: "cancelled" },
+        {
+          email: "soon@x.com",
+          status: "scheduled_for_cancellation",
+          renewal_date: "2026-11-01",
+        },
+        { email: "old@x.com", status: "cancelled", cancel_date: "2026-01-01" },
+      ],
+      accounts: [
+        { id: 1, from_email: "ada@x.com", client_id: 77, is_smtp_success: true },
+        { id: 2, from_email: "soon@x.com", client_id: 77, is_smtp_success: true },
+        { id: 3, from_email: "old@x.com", client_id: 77, is_smtp_success: true },
+      ],
+      clientNameById: new Map([[77, "TechEvo"]]),
+      now: mondayMorning,
+    });
+    const handoff = groupInboxkitLicenseHandoff(findings);
+    assert.equal(handoff.length, 1);
+    assert.equal(handoff[0]?.clientName, "TechEvo");
+    assert.deepEqual(
+      handoff[0]?.stillConnected.map((row) => row.email).sort(),
+      ["ada@x.com", "old@x.com"],
     );
-    assert.ok(text);
-    assert.match(text, /\*TechEvo\* \(77\)/);
-    assert.match(text, /ada@x.com InboxKit cancelled/);
-    assert.match(text, /soon@x.com on 2026-11-01/);
-    assert.doesNotMatch(text, /old@x.com/);
-    assert.doesNotMatch(text, /—/);
-    assert.match(text, /No deletes and no unlinks/);
+    assert.equal(handoff[0]?.upcomingCancellations[0]?.email, "soon@x.com");
+    assert.equal(handoff[0]?.upcomingCancellations[0]?.cancelDate, "2026-11-01");
+    assert.equal(formatInboxkitLicenseCleanupSlack(0), null);
+    assert.equal(
+      formatInboxkitLicenseCleanupSlack(2),
+      "Found 2 inboxes that had lapsed; they're deleted from Smartlead and InboxKit.",
+    );
+    assert.doesNotMatch(
+      String(formatInboxkitLicenseCleanupSlack(2)),
+      /—/,
+    );
   });
 
   it("idles on weekends and non-Monday weekdays", () => {

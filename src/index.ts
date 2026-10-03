@@ -579,6 +579,7 @@ async function main(): Promise<void> {
     smartlead,
     inboxkit,
     slack,
+    state,
   );
   const clientDayBrief = new ClientDayBriefService(
     config,
@@ -2475,6 +2476,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       spendDigestTimezone: config.spendDigestTimezone,
       enableInboxkitLicenseSweep: config.enableInboxkitLicenseSweep,
       cronInboxkitLicenseSweep: config.cronInboxkitLicenseSweep,
+      inboxkitLicenseHandoff: s.inboxkitLicenseHandoff ?? null,
       autoAllowGenericClientIds: config.autoAllowGenericClientIds,
       slackBatchGenericBackfill: config.slackBatchGenericBackfill,
       slackFoldApprovalRecorded: config.slackFoldApprovalRecorded,
@@ -3070,7 +3072,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Cayden spend digest (D220): ${config.enableSpendDigest ? `ENABLED ${config.cronSpendDigest} ${config.spendDigestTimezone} weekday per-client pending spend` : "disabled"}`,
     );
     console.log(
-      `[boot] InboxKit license sweep (D222): ${config.enableInboxkitLicenseSweep ? `ENABLED ${config.cronInboxkitLicenseSweep} ${config.inboxkitLicenseTimezone} Monday detection-only` : "disabled"}`,
+      `[boot] InboxKit license sweep (D226): ${config.enableInboxkitLicenseSweep ? `ENABLED ${config.cronInboxkitLicenseSweep} ${config.inboxkitLicenseTimezone} Monday handoff + cleanup Slack` : "disabled"}`,
     );
     console.log(
       `[boot] Campaign bounce loop (D141/D148): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; burst >${config.bounceBurstCount} bounces/10m from sends <24h old → classify + re-queue, never pause; ledger dumps do nothing; Smartlead bounce protection is UI-only, no API off-switch exists (D157))` : "disabled"}`,

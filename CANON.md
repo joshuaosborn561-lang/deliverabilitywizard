@@ -55,7 +55,7 @@ or the day is done. Silent findings are a bug (D163).
   `type:azure` from the sending domain (weekday
   `mailbox-type-tags`; `tidalstackco.com` is Azure/Entra).
   **Azure/Entra 2** campaign/day and **5** warmup/day;
-  **Microsoft 365 15** campaign/day (warmup unchanged);
+  Outlook / Microsoft **15** campaign/day (M365; warmup unchanged);
   **Google** stays `MESSAGE_PER_DAY` (30) and the standing warmup.
   Do not drop the global constant to 15. M365-at-15 is compliant,
   not a `mailbox_volume` finding. On a Microsoft **550 5.7.233**

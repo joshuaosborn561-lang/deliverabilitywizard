@@ -34,6 +34,7 @@ import {
   mailboxWarmupPerDayTarget,
 } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
+import { accountOnTenantTerlHold } from "../lib/tenantTerlHold.js";
 import {
   TENANT_OUTBOUND_BLOCK_MPD,
   accountOnTenantOutboundHold,
@@ -169,11 +170,7 @@ export class MailboxSettingsService {
       if (!email || !account.id) continue;
 
       // Only write when the value differs — needless writes trip the limiter.
-      const target = mailboxMessagePerDayTarget(
-        account,
-        this.config,
-        this.store,
-      );
+      const target = mailboxMessagePerDayTarget(account, this.config, this.store);
       const current = readMessagePerDay(account);
       const tenantHeld = accountOnTenantOutboundHold(account, this.store);
       if (tenantHeld) {
@@ -188,12 +185,16 @@ export class MailboxSettingsService {
       if (isOutlookMailboxType(account.type) && current === 0 && !tenantHeld) {
         this.store?.observeBounceHoldZero(account.id);
       }
-      const held = tenantHeld || accountOnBounceHold(account, this.store);
-      const writeTarget = tenantHeld ? TENANT_OUTBOUND_BLOCK_MPD : target;
-      const needsLimit = !(
-        Number.isFinite(current) && current === writeTarget
-      );
-      if (held && !needsLimit) result.bounceHoldSkipped += 1;
+      const terlHeld = accountOnTenantTerlHold(account, this.store);
+      const held = tenantHeld || terlHeld || accountOnBounceHold(account, this.store);
+      if (held) result.bounceHoldSkipped += 1;
+      const writeTarget =
+        tenantHeld || terlHeld ? TENANT_OUTBOUND_BLOCK_MPD : target;
+      // D212 bounce-hold seats stay at their current cap (already 0).
+      // D213 / live D219 TERRL still write 0 when the seat has drifted.
+      const needsLimit = tenantHeld || terlHeld
+        ? !(Number.isFinite(current) && current === writeTarget)
+        : !held && !(Number.isFinite(current) && current === target);
 
       const needsGap = needsMinTimeGap(account, targetGap);
 

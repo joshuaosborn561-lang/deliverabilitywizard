@@ -12311,7 +12311,7 @@ describe("owner intent — D225 weekday surplus generic return", () => {
     );
     assert.match(
       canon,
-      /min40-topup and generic-cleanup/,
+      /min40-topup[\s*]+and generic-cleanup/,
       stop("CANON names the D225 return paths.", "CANON.md lost the min40/cleanup return."),
     );
     assert.match(

@@ -292,8 +292,7 @@ or the day is done. Silent findings are a bug (D163).
   multi-link across that client's ACTIVE campaigns is still
   allowed (D207) — `assigned_campaign_ids` is plural.   As soon as
   it is no longer needed (surplus above 40, campaign paused or
-  ended, replaced by a named seat that finished warm), **min40-topup
-  and generic-cleanup** unlink it on a Chicago weekday and return
+  ended, replaced by a named seat that finished warm), **min40-topup and generic-cleanup** unlink it on a Chicago weekday and return
   it to the pool with `client_id` / `assigned_client_id` cleared
   and the signature reset (D225) — that is what stops
   `generic_idle` paging on legitimate surplus. Never unlink a

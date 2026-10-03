@@ -21,7 +21,7 @@ export interface GenericPoolCanonResult {
 export function genericPoolFindingAlertText(findings: string[]): string {
   const lines = findings.map((line) => `• ${line}`);
   return [
-    ":rotating_light: CANON miss — generic pool assignment is wrong (D221)",
+    ":rotating_light: CANON miss: generic pool assignment is wrong (D221)",
     ...lines,
     "A generic is assigned only to bring a client POD up to 40 staffable senders.",
     "Surplus, paused, or replaced seats return to the fleet pool. One seat, one client.",

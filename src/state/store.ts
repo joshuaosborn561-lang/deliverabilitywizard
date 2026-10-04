@@ -45,8 +45,13 @@ import {
 import type { TenantOutboundBlockRecord } from "../lib/tenantOutboundBlock.js";
 import { normalizeTenantOutboundHost } from "../lib/tenantOutboundBlock.js";
 import {
+  applyAssignGenericSeat,
+  applyReleaseGenericSeat,
+  emptyGenericSeat,
   genericSeatKey,
   normalizeGenericSeat,
+  type AssignGenericSeatInput,
+  type AssignGenericSeatResult,
   type GenericSeatRecord,
 } from "../lib/genericPool.js";
 import {
@@ -1201,11 +1206,34 @@ export class StateStore {
     return Object.values(this.state.poolMailboxes);
   }
 
-  /** D221 — fleet-wide generic seat table. */
+  /** D221 / D231 — fleet-wide generic seat table. Seed only; assign via assignGenericFromTable. */
   upsertGenericSeat(record: GenericSeatRecord): void {
     const seat = normalizeGenericSeat(record);
     if (!seat) return;
     this.state.genericSeats[seat.email] = seat;
+  }
+
+  /**
+   * D231 — insert an unassigned table row for a live generic.
+   * Does not hand the seat out. Assign still goes through
+   * assignGenericFromTable.
+   */
+  ensureGenericSeat(
+    record: Pick<GenericSeatRecord, "email"> & Partial<GenericSeatRecord>,
+  ): GenericSeatRecord | null {
+    const key = genericSeatKey(record.email);
+    const existing = this.state.genericSeats[key];
+    if (existing) return existing;
+    const seat = emptyGenericSeat(record.email, {
+      ...record,
+      assignedClientId: null,
+      assignedCampaignIds: [],
+      assignedPod: null,
+      assignedAt: null,
+      reason: null,
+    });
+    this.state.genericSeats[seat.email] = seat;
+    return seat;
   }
 
   getGenericSeat(email: string): GenericSeatRecord | undefined {
@@ -1226,18 +1254,29 @@ export class StateStore {
     this.state.genericSeats = next;
   }
 
-  clearGenericSeatAssignment(email: string): void {
+  /** D231 — sole assignment write. Refuses missing rows, other clients, POD rotate. */
+  assignGenericFromTable(input: AssignGenericSeatInput): AssignGenericSeatResult {
+    const existing = this.state.genericSeats[genericSeatKey(input.email)];
+    const result = applyAssignGenericSeat(existing, input);
+    if (result.ok) this.state.genericSeats[result.seat.email] = result.seat;
+    return result;
+  }
+
+  /** D231 — sole release write. Appends released_at history. */
+  releaseGenericFromTable(
+    email: string,
+    opts: { now?: Date; reason?: string | null } = {},
+  ): GenericSeatRecord | null {
     const key = genericSeatKey(email);
     const seat = this.state.genericSeats[key];
-    if (!seat) return;
-    this.state.genericSeats[key] = {
-      ...seat,
-      assignedClientId: null,
-      assignedCampaignIds: [],
-      assignedPod: null,
-      assignedAt: null,
-      reason: null,
-    };
+    if (!seat) return null;
+    const next = applyReleaseGenericSeat(seat, opts);
+    this.state.genericSeats[key] = next;
+    return next;
+  }
+
+  clearGenericSeatAssignment(email: string): void {
+    this.releaseGenericFromTable(email);
   }
 
   setGenericPoolFindings(findings: string[]): void {

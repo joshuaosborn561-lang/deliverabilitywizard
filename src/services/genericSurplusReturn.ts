@@ -24,6 +24,7 @@ import {
   stripMailboxPodTags,
 } from "../lib/genericAssign.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import {
   syncGenericSeatsFromInventory,
   type GenericPoolSyncAccount,
@@ -75,7 +76,7 @@ function staffableOnCampaign(
         isCopyCanary: (key) => state.isCopyCanary(key),
       })
     ) {
-      n += 1;
+      n = roundStaffableWeight(n + mailboxStaffableWeight(account));
     }
   }
   return n;
@@ -206,7 +207,9 @@ export async function returnSurplusGenerics(input: {
             status: pool.status === "assigned" ? "available" : pool.status,
           });
         }
-        input.state.clearGenericSeatAssignment(pick.email);
+        input.state.releaseGenericFromTable(pick.email, {
+          reason: pick.pod ? "named_warm_swap" : "surplus_return",
+        });
         account.client_id = null;
         account.signature = "";
       } else {

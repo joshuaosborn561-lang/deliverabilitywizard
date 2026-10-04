@@ -30,6 +30,7 @@ import {
   countClientInboxFloors,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { InventoryBook } from "./inventory.js";
 import type { StateStore } from "../state/store.js";
@@ -141,7 +142,12 @@ export class CampaignAuditService {
       for (const id of ids) {
         senderCounts.set(id, (senderCounts.get(id) ?? 0) + 1);
         if (staffable) {
-          staffableCounts.set(id, (staffableCounts.get(id) ?? 0) + 1);
+          staffableCounts.set(
+            id,
+            roundStaffableWeight(
+              (staffableCounts.get(id) ?? 0) + mailboxStaffableWeight(account),
+            ),
+          );
         }
         if (!domain) continue;
         const byDomain = domainsByCampaign.get(id) ?? new Map<string, number>();

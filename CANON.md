@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D230** (2026-10-03). One page of current truth. When a new
+Canon as of **D233** (2026-10-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -59,6 +59,13 @@ or the day is done. Silent findings are a bug (D163).
   is a flag only Josh grants — generic-pool membership
   (`EXTRA_GENERIC_DOMAINS`, which also carries the GetIntroduced /
   QuickConnect fleets) never implies it (D142).
+- **Azure toward 40 and ESP mix (D232 / D233):** any Azure/Entra
+  mailbox (`type:azure` or tidalstackco.com), generic or named,
+  counts as **0.1** of a regular Microsoft 365 mailbox toward a
+  POD's 40; every other type is **1** (weighted sum ≥40). Azure
+  may only fill or replace Azure or Microsoft (M365/Outlook)
+  slots, never Google slots. When a Google seat leaves, only a Google seat replaces it (min40, 24h TERRL sub, named-warm
+  swap, pool assignment).
 - **Converged every pass**: campaign sends/day (warmups excluded,
   D24/D183/D219) — tagged `type:google` / `type:m365` /
   `type:azure` from the sending domain (weekday
@@ -66,6 +73,18 @@ or the day is done. Silent findings are a bug (D163).
   **Azure/Entra 2** campaign/day and **5** warmup/day;
   Outlook / Microsoft **15** campaign/day (M365; warmup unchanged);
   **Google** stays `MESSAGE_PER_DAY` (30) and the standing warmup.
+  **D232 — Azure weight:** any Azure/Entra mailbox (`type:azure`
+  or tidalstackco.com), generic or named, counts as **0.1** of a
+  regular Microsoft 365 mailbox toward a POD's 40. Every other
+  type counts as **1**. The POD target is a weighted sum of at
+  least 40. Same weights apply to staffable counts, Canon
+  `understaffed`, min40 need, surplus return, the named-warm
+  swap return trigger, and the 24h TERRL substitute (only link
+  a sub when weighted on-week staffable is under 40; prefer a
+  non-Azure generic).
+  **D233 — Azure ESP slot:** Azure may only fill or replace
+  Azure or Microsoft (M365/Outlook) slots, never Google slots,
+  so the POD's ESP mix holds. When a Google seat leaves, only a Google seat replaces it. Same rule in min40, the 24h TERRL sub, named-warm swap, and pool assignment.
   Do not drop the global constant to 15. M365-at-15 is compliant,
   not a `mailbox_volume` finding. On a Microsoft **550 5.7.233**
   (TERRL) from a tenant: every seat on that tenant goes to
@@ -226,8 +245,9 @@ or the day is done. Silent findings are a bug (D163).
   structural rest, **40 per POD** via named + fleet-pool generics).
   Off-week POD's 40 stay assigned and rest ready. If bad senders are
   peeled, restore each ACTIVE campaign back to 40. Each POD
-  also keeps an **ESP mix floor** (D203):
+  also keeps an **ESP mix floor** (D203/D233):
   when the client has both Outlook and Gmail, neither ESP may sit under ~1/3 of that POD's seats (**14 of a 40-seat POD**).
+  Azure counts as Microsoft for that mix and must never take a Google slot.
   A POD must not go monoculture. D192 ESP-balanced ~50/50
   across A/B *within* each ESP still stands — this is a per-POD
   mix floor on top. An ACTIVE campaign whose on-week staffable
@@ -322,11 +342,18 @@ or the day is done. Silent findings are a bug (D163).
   POD back to 40, then it returns to the untagged pool. While
   tagged, no other client can use it. Never pre-split generics
   across clients.
-- **Generics** are **ONE fleet-wide pool** (D221/D230). The wizard tracks
-  every generic seat in a `generics` table (one row per seat):
-  `email`, `sl_account_id`, `provider`, `warm_ready_at`,
-  `assigned_client_id` (nullable), `assigned_campaign_id(s)`,
-  `assigned_pod` (A/B, nullable), `assigned_at`, `reason`. A
+- **Generics** are **ONE fleet-wide pool** (D221/D230/D231). The wizard
+  tracks every generic seat in `state.genericSeats` (the `generics` table
+  in `src/state/store.ts`, one row per seat):
+  seat id (`sl_account_id`), `email`, `assigned_client_id` (nullable),
+  `assigned_pod` (A/B, nullable), `assigned_at`, `reason`, and a
+  `released_at` history, plus `provider`, `warm_ready_at`, and
+  `assigned_campaign_id(s)`. **Every** generic assign and release
+  (min40, TERRL sub, named-warm / surplus return, cleanup) goes
+  through that table — never ad hoc. A check blocks any generic
+  tagged to two clients (`generic_multi_client`) or assigned
+  outside the table (`generic_outside_table`). Health seeds the
+  table from live Smartlead inventory. A
   generic gets a client and POD assignment **only** when
   **that POD** is short of 40 staffable senders
   (D228 — each POD independently, so inventory is 40/40,
@@ -382,7 +409,9 @@ or the day is done. Silent findings are a bug (D163).
   ends, then releases. A generic assigned to a client that does
   not need it for that POD's 40 is a `generic_idle` finding. A
   generic assigned to more than one client is a
-  `generic_multi_client` finding. Both are core CANON misses —
+  `generic_multi_client` finding. A generic tagged in Smartlead
+  without a matching table assignment is
+  `generic_outside_table`. Those three are core CANON misses —
   `/health` goes no and Slack pages once per incident.
   **Exception (D197/D199/D203/D207/D209/D221):** exclusive generic + client-sig seats
   filling a POD shortfall must not be peeled as foreign Goliath

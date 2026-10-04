@@ -31,6 +31,89 @@ export const AZURE_CAMPAIGN_PER_DAY = 2;
 export const AZURE_WARMUP_PER_DAY = 5;
 export const M365_CAMPAIGN_PER_DAY = 15;
 
+/**
+ * D232 — Azure/Entra (type:azure / tidalstackco.com) counts as 0.1
+ * of a regular mailbox toward a POD's 40. Every other type is 1.
+ */
+export const AZURE_STAFFABLE_WEIGHT = 0.1;
+export const REGULAR_STAFFABLE_WEIGHT = 1;
+export const STAFFABLE_WEIGHT_EPS = 1e-9;
+
+export function roundStaffableWeight(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round(value * 10) / 10;
+}
+
+export function mailboxStaffableWeight(account: {
+  type?: string | null;
+  platform?: string | null;
+  from_email?: string | null;
+  email?: string | null;
+  tags?: Array<{ tag_name?: string; name?: string }>;
+} | null | undefined): number {
+  return classifyMailboxSendType(account) === "azure"
+    ? AZURE_STAFFABLE_WEIGHT
+    : REGULAR_STAFFABLE_WEIGHT;
+}
+
+export function weightedStaffableShortfall(
+  weighted: number,
+  floor: number = 40,
+): number {
+  return roundStaffableWeight(Math.max(0, floor - (Number.isFinite(weighted) ? weighted : 0)));
+}
+
+/** D233 — Google vs Microsoft family for mix / replacement. Azure is Microsoft. */
+export type EspSlotFamily = "GOOGLE" | "MICROSOFT";
+
+export function mailboxEspSlot(account: {
+  type?: string | null;
+  platform?: string | null;
+  from_email?: string | null;
+  email?: string | null;
+  tags?: Array<{ tag_name?: string; name?: string }>;
+} | null | undefined): EspSlotFamily | null {
+  const kind = classifyMailboxSendType(account);
+  if (kind === "google") return "GOOGLE";
+  if (kind === "m365" || kind === "azure") return "MICROSOFT";
+  return null;
+}
+
+/** Azure may only fill Azure or M365/Outlook slots, never Google (D233). */
+export function azureMayFillEspSlot(slot: EspSlotFamily | null | undefined): boolean {
+  return slot === "MICROSOFT";
+}
+
+/**
+ * D233 — Azure never takes a Google slot. When a Google seat leaves,
+ * only a Google seat replaces it. Microsoft/Azure may replace each other.
+ */
+export function replacementMayFillEspSlot(
+  replacement: {
+    type?: string | null;
+    platform?: string | null;
+    from_email?: string | null;
+    email?: string | null;
+    tags?: Array<{ tag_name?: string; name?: string }>;
+  } | null | undefined,
+  leaving: {
+    type?: string | null;
+    platform?: string | null;
+    from_email?: string | null;
+    email?: string | null;
+    tags?: Array<{ tag_name?: string; name?: string }>;
+  } | null | undefined,
+): boolean {
+  const leave = mailboxEspSlot(leaving);
+  const fill = mailboxEspSlot(replacement);
+  if (!leave || !fill) return false;
+  if (classifyMailboxSendType(replacement) === "azure") {
+    return azureMayFillEspSlot(leave);
+  }
+  if (leave === "GOOGLE") return fill === "GOOGLE";
+  return true;
+}
+
 export function senderHostOf(
   email: string | null | undefined,
 ): string | null {

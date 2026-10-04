@@ -13,6 +13,7 @@ import { senderIsAttachBlocked } from "./attachBlock.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
 import { assignClientCohorts, onWeekCohort } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
@@ -40,9 +41,9 @@ export const POD_INVENTORY_MIN_SENDERS = ON_WEEK_MIN_SENDERS;
  */
 export function podGenericTopUpCap(namedStaffableInPod: number): number {
   const named = Number.isFinite(namedStaffableInPod)
-    ? Math.max(0, Math.floor(namedStaffableInPod))
+    ? Math.max(0, namedStaffableInPod)
     : 0;
-  return Math.max(0, POD_INVENTORY_MIN_SENDERS - named);
+  return roundStaffableWeight(Math.max(0, POD_INVENTORY_MIN_SENDERS - named));
 }
 
 /**
@@ -127,8 +128,9 @@ export function countStaffableMemberships(
   for (const account of accounts) {
     const email = accountEmail(account);
     if (!email || !accountIsPeelStaffable(account, email, state)) continue;
+    const weight = mailboxStaffableWeight(account);
     for (const id of campaignIdsOf(account)) {
-      counts.set(id, (counts.get(id) ?? 0) + 1);
+      counts.set(id, roundStaffableWeight((counts.get(id) ?? 0) + weight));
     }
   }
   return counts;
@@ -144,13 +146,23 @@ export function noteStaffableDetach(
   campaignId: number,
   account: Pick<
     SmartleadEmailAccount,
-    "is_smtp_success" | "is_imap_success" | "warmup_details"
+    | "is_smtp_success"
+    | "is_imap_success"
+    | "warmup_details"
+    | "type"
+    | "from_email"
+    | "email"
+    | "tags"
   >,
   email: string,
   state: PeelStaffableState = {},
 ): void {
   if (!accountIsPeelStaffable(account, email, state)) return;
-  counts.set(campaignId, Math.max(0, (counts.get(campaignId) ?? 0) - 1));
+  const weight = mailboxStaffableWeight(account);
+  counts.set(
+    campaignId,
+    Math.max(0, roundStaffableWeight((counts.get(campaignId) ?? 0) - weight)),
+  );
 }
 
 /**
@@ -163,9 +175,12 @@ export function noteStaffableDetach(
 export function detachWouldBreakOnWeekMin(
   campaign: { status?: string | null } | undefined,
   remainingBeforeDetach: number,
+  seatWeight: number = 1,
 ): boolean {
   if (String(campaign?.status ?? "").toUpperCase() !== "ACTIVE") return false;
-  return remainingBeforeDetach <= ON_WEEK_MIN_SENDERS;
+  const weight =
+    Number.isFinite(seatWeight) && seatWeight > 0 ? seatWeight : 1;
+  return remainingBeforeDetach - weight < ON_WEEK_MIN_SENDERS - 1e-9;
 }
 
 export type StaffableFloorDetachOpts = {
@@ -209,7 +224,11 @@ export function detachWouldBreakStaffableFloor(
   if (opts.exempt) return false;
   if (hasHoldOrRetireTag(account)) return false;
   if (!accountIsPeelStaffable(account, email, state)) return false;
-  return detachWouldBreakOnWeekMin(campaign, remainingStaffable);
+  return detachWouldBreakOnWeekMin(
+    campaign,
+    remainingStaffable,
+    mailboxStaffableWeight(account),
+  );
 }
 
 /**

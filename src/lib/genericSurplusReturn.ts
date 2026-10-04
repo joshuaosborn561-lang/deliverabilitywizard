@@ -17,7 +17,8 @@ import {
   type GenericAssignedPod,
   type GenericSeatRecord,
 } from "./genericPool.js";
-import { namedWarmSwapReturnCount } from "./namedWarmSwap.js";
+import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
+import type { EspSlotFamily } from "./mailboxType.js";
 
 export const GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY = true;
 
@@ -59,6 +60,8 @@ export function surplusGenericReturns(input: {
   skipEmails?: Iterable<string>;
   now?: Date;
   weekdaysOnly?: boolean;
+  /** D233 — named-warm swap returns the same ESP family that went warm. */
+  preferEspSlot?: EspSlotFamily;
 }): SurplusReturnCandidate[] {
   const now = input.now ?? new Date();
   const weekdaysOnly = input.weekdaysOnly ?? GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY;
@@ -95,12 +98,14 @@ export function surplusGenericReturns(input: {
     const clientId = Number(clientRaw);
     const pod = podRaw as GenericAssignedPod;
     const named = input.namedStaffableByClientPod.get(key) ?? 0;
-    const count = namedWarmSwapReturnCount({
-      namedStaffable: named,
-      assignedCount: seats.length,
-      clientHasActiveCampaign: input.clientHasActiveCampaign?.get(clientId),
-    });
-    for (const seat of rankGenericsOldestWorstFirst(seats).slice(0, count)) {
+    const picked =
+      input.clientHasActiveCampaign?.get(clientId) === false
+        ? rankGenericsOldestWorstFirst(seats)
+        : pickWeightedGenericReturns(seats, {
+            namedStaffable: named,
+            preferEspSlot: input.preferEspSlot,
+          });
+    for (const seat of picked) {
       out.push({
         email: seat.email,
         clientId: seat.assignedClientId!,

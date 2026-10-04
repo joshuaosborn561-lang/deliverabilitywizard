@@ -48,6 +48,7 @@ describe("D221 generic-pool constants", () => {
     assert.deepEqual([...GENERIC_POOL_CORE_KINDS], [
       "generic_idle",
       "generic_multi_client",
+      "generic_outside_table",
     ]);
     for (const kind of GENERIC_POOL_CORE_KINDS) {
       assert.ok(
@@ -97,6 +98,42 @@ describe("D221 validateGenericPool", () => {
     });
     assert.deepEqual(findings, []);
     assert.equal(genericPoolCanonCompliant([]), true);
+  });
+
+  it("D232: a weight-1 generic stays when named is 39.9 (surplus only 0.1)", () => {
+    const findings = validateGenericPool({
+      seats: [
+        seat("ada@getintroduced.info", {
+          assignedClientId: 77,
+          assignedPod: "A",
+          assignedAt: "2026-10-01T00:00:00.000Z",
+          reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+          staffableWeight: 1,
+        }),
+      ],
+      namedStaffableByClientPod: new Map([[clientPodKey(77, "A"), 39.9]]),
+      clientHasActiveCampaign: new Map([[77, true]]),
+    });
+    assert.deepEqual(findings, []);
+  });
+
+  it("D232: an Azure generic is idle when named already fills the weighted 40", () => {
+    const findings = validateGenericPool({
+      seats: [
+        seat("az@tidalstackco.com", {
+          assignedClientId: 77,
+          assignedPod: "A",
+          assignedAt: "2026-10-01T00:00:00.000Z",
+          reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+          staffableWeight: 0.1,
+        }),
+      ],
+      namedStaffableByClientPod: new Map([[clientPodKey(77, "A"), 40]]),
+      clientHasActiveCampaign: new Map([[77, true]]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0]!.kind, "generic_idle");
+    assert.match(findings[0]!.detail, /az@tidalstackco\.com/);
   });
 
   it("flags a generic assigned after the POD is already at 40", () => {
@@ -497,8 +534,8 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     });
     assert.equal(
       warm.namedStaffableByClientPod.get(clientPodKey(77, "A")),
-      1,
-      "exempt Azure seats count toward the POD 40 now",
+      0.1,
+      "exempt Azure seats count as 0.1 toward the POD 40 (D232)",
     );
   });
 });

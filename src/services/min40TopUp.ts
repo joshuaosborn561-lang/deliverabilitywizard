@@ -10,7 +10,16 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
-import { clientPodKey } from "../lib/genericPool.js";
+import {
+  GENERIC_ASSIGN_REASON_POD_TOP_UP,
+  clientPodKey,
+  seatStaffableWeight,
+} from "../lib/genericPool.js";
+import {
+  mailboxEspSlot,
+  mailboxStaffableWeight,
+  roundStaffableWeight,
+} from "../lib/mailboxType.js";
 import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -32,10 +41,7 @@ import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import { isPocClient } from "../lib/pocClient.js";
-import {
-  buildPoolSignature,
-  poolEspFromSmartleadType,
-} from "../lib/poolSignature.js";
+import { buildPoolSignature } from "../lib/poolSignature.js";
 import {
   genericEligibleForClientPod,
   genericPodTagColor,
@@ -130,6 +136,16 @@ export class Min40TopUpService {
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
     const now = opts.now ?? new Date();
+    const seeded = syncGenericSeatsFromInventory({
+      existing: this.state.listGenericSeats(),
+      accounts,
+      campaigns,
+      config: this.config,
+      state: this.state,
+      now,
+      powerGrydClientId: this.config.powerGrydClientId,
+    });
+    if (!dryRun) this.state.replaceGenericSeats(seeded.seats);
     const policy = holdPolicyFromConfig(this.config);
     const todayYmd = chicagoWallClock(now, this.config.canonOpsTimezone).ymd;
     const onWeek = onWeekCohort(now);
@@ -202,7 +218,7 @@ export class Min40TopUpService {
         campaignById,
         now,
       );
-      const shortBy = Math.max(0, ON_WEEK_MIN_SENDERS - staffable);
+      const shortBy = roundStaffableWeight(Math.max(0, ON_WEEK_MIN_SENDERS - staffable));
       if (shortBy <= 0) continue;
 
       const auto =
@@ -383,10 +399,14 @@ export class Min40TopUpService {
       const generic = isGenericMailbox(account, email, this.config, this.state);
       if (generic) {
         if (!genericMayLinkToCampaigns(account, now)) continue;
-        if (this.belongsToClient(account, email, clientId, campaignById)) n += 1;
+        if (this.belongsToClient(account, email, clientId, campaignById)) {
+          n = roundStaffableWeight(n + mailboxStaffableWeight(account));
+        }
         continue;
       }
-      if (namedOnWeek.has(email.toLowerCase())) n += 1;
+      if (namedOnWeek.has(email.toLowerCase())) {
+        n = roundStaffableWeight(n + mailboxStaffableWeight(account));
+      }
     }
     return n;
   }
@@ -452,14 +472,15 @@ export class Min40TopUpService {
     targetPod: "A" | "B",
   ): boolean {
     const seat = this.state.getGenericSeat(email);
+    if (!seat) return false;
     const pool = this.state.getPoolMailbox(email);
     return genericEligibleForClientPod({
       clientId,
       targetPod,
       mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
-      assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,
+      assignedClientId: seat.assignedClientId ?? pool?.assignedClientId ?? null,
       tags: account.tags,
-      assignedPod: seat?.assignedPod ?? null,
+      assignedPod: seat.assignedPod ?? null,
     });
   }
 
@@ -480,18 +501,25 @@ export class Min40TopUpService {
     }
     account.tags = stampMailboxPodTag(account.tags, pod);
     if (dryRun) return;
-    const existing = this.state.getGenericSeat(email);
-    this.state.upsertGenericSeat({
+    if (!this.state.getGenericSeat(email)) {
+      this.state.ensureGenericSeat({
+        email,
+        slAccountId: typeof account.id === "number" ? account.id : null,
+      });
+    }
+    const assigned = this.state.assignGenericFromTable({
       email,
-      slAccountId: typeof account.id === "number" ? account.id : existing?.slAccountId ?? null,
-      provider: existing?.provider ?? "OTHER",
-      warmReadyAt: existing?.warmReadyAt ?? null,
-      assignedClientId: clientId,
-      assignedCampaignIds: existing?.assignedCampaignIds ?? campaignIdsOf(account),
-      assignedPod: pod,
-      assignedAt: existing?.assignedAt ?? new Date().toISOString(),
-      reason: existing?.reason ?? "pod_top_up",
+      clientId,
+      pod,
+      reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+      campaignIds: campaignIdsOf(account),
+      slAccountId: typeof account.id === "number" ? account.id : null,
     });
+    if (!assigned.ok) {
+      console.warn(
+        `[min40] refused generic table assign ${email}: ${assigned.error}`,
+      );
+    }
   }
 
   private async attachSeat(input: {
@@ -510,6 +538,26 @@ export class Min40TopUpService {
         ]);
         recordMembership(input.account, input.campaign.id);
         await sleep(WRITE_GAP_MS);
+        if (isGenericMailbox(input.account, input.email, this.config, this.state)) {
+          if (!this.state.getGenericSeat(input.email)) {
+            this.state.ensureGenericSeat({
+              email: input.email,
+              slAccountId: input.account.id,
+            });
+          }
+          const assigned = this.state.assignGenericFromTable({
+            email: input.email,
+            clientId: input.clientId,
+            reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+            campaignIds: [input.campaign.id],
+            slAccountId: input.account.id,
+          });
+          if (!assigned.ok) {
+            console.warn(
+              `[min40] refused generic table assign ${input.email}: ${assigned.error}`,
+            );
+          }
+        }
       }
       input.result.assigned.push({
         campaignId: input.campaign.id,
@@ -590,10 +638,24 @@ export class Min40TopUpService {
       return (accountEmail(a) ?? "").localeCompare(accountEmail(b) ?? "");
     });
 
+    const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
+    for (const account of input.accounts) {
+      if (!campaignIdsOf(account).includes(input.campaign.id)) continue;
+      const slot = mailboxEspSlot(account);
+      if (slot) espCounts[slot] += 1;
+    }
+
     for (const account of existing) {
-      if (placed >= input.shortBy) break;
+      if (placed >= input.shortBy - 1e-9) break;
       const email = accountEmail(account);
       if (!email) continue;
+      const needed = espFillOrder(
+        espCounts,
+        ON_WEEK_MIN_SENDERS,
+        Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+      );
+      const slot = mailboxEspSlot(account);
+      if (needed.length === 1 && slot && slot !== needed[0]) continue;
       const ok = await this.attachSeat({
         account,
         email,
@@ -604,18 +666,12 @@ export class Min40TopUpService {
       });
       if (ok) {
         selected.add(email.toLowerCase());
-        placed += 1;
+        placed = roundStaffableWeight(placed + mailboxStaffableWeight(account));
+        if (slot) espCounts[slot] += 1;
       }
     }
 
-    const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
-    for (const account of input.accounts) {
-      if (!campaignIdsOf(account).includes(input.campaign.id)) continue;
-      const platform = poolEspFromSmartleadType(account.type);
-      if (platform) espCounts[platform] += 1;
-    }
-
-    while (placed < input.shortBy) {
+    while (placed < input.shortBy - 1e-9) {
       const platformOrder = espFillOrder(
         espCounts,
         ON_WEEK_MIN_SENDERS,
@@ -637,6 +693,7 @@ export class Min40TopUpService {
         if (!isPoolGenericSeat(poolAccount, key, this.config, this.state)) {
           return false;
         }
+        if (!this.state.getGenericSeat(key)) return false;
         if (!this.genericMayTakePod(poolAccount, key, input.clientId, onWeekCohort(input.now))) {
           return false;
         }
@@ -727,7 +784,9 @@ export class Min40TopUpService {
         if (pool.platform === "GOOGLE" || pool.platform === "MICROSOFT") {
           espCounts[pool.platform] += 1;
         }
-        placed += 1;
+        placed = roundStaffableWeight(
+          placed + mailboxStaffableWeight(original ?? pool),
+        );
         input.result.assigned.push({
           campaignId: input.campaign.id,
           campaignName: String(input.campaign.name ?? input.campaign.id),
@@ -774,6 +833,9 @@ export class Min40TopUpService {
       now: input.now,
       powerGrydClientId: this.config.powerGrydClientId,
     });
+    if (!input.dryRun) {
+      this.state.replaceGenericSeats(synced.seats);
+    }
     const onWeek = onWeekCohort(input.now);
     for (const [clientId, clientActive] of input.activeByClient) {
       const powerGryd = isPowerGrydClientId(clientId, this.config.powerGrydClientId);
@@ -787,13 +849,36 @@ export class Min40TopUpService {
       const selected = new Set<string>();
       for (const pod of ["A", "B"] as const) {
         const named = synced.namedStaffableByClientPod.get(clientPodKey(clientId, pod)) ?? 0;
-        const assigned = synced.seats.filter(
-          (seat) => seat.assignedClientId === clientId && seat.assignedPod === pod,
-        ).length;
+        const assigned = synced.seats
+          .filter((seat) => seat.assignedClientId === clientId && seat.assignedPod === pod)
+          .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
         let need = podInventoryNeed(named, assigned);
-        while (need > 0) {
+        const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
+        for (const account of input.accounts) {
+          const email = accountEmail(account);
+          if (!email) continue;
+          const generic = isGenericMailbox(account, email, this.config, this.state);
+          const assignedHere =
+            typeof account.client_id === "number" &&
+            account.client_id === clientId &&
+            mailboxPodOf(account) === pod;
+          const namedHere =
+            !generic &&
+            typeof account.client_id === "number" &&
+            account.client_id === clientId &&
+            (mailboxPodOf(account) === pod || mailboxPodOf(account) == null);
+          if (!assignedHere && !namedHere) continue;
+          const slot = mailboxEspSlot(account);
+          if (slot) espCounts[slot] += 1;
+        }
+        while (need > 1e-9) {
+          const platforms = espFillOrder(
+            espCounts,
+            ON_WEEK_MIN_SENDERS,
+            Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+          );
           const pool = this.state.findReassignablePoolMailbox(
-            ["GOOGLE", "MICROSOFT"],
+            platforms,
             (email) => {
               const key = email.toLowerCase();
               if (selected.has(key)) return false;
@@ -802,6 +887,7 @@ export class Min40TopUpService {
               if (!isPoolGenericSeat(account, email, this.config, this.state)) {
                 return false;
               }
+              if (!this.state.getGenericSeat(key)) return false;
               const owner =
                 typeof account.client_id === "number" ? account.client_id : null;
               if (owner != null && owner !== clientId) return false;
@@ -858,7 +944,9 @@ export class Min40TopUpService {
               email: pool.email,
               clientId,
             });
-            need -= 1;
+            need = roundStaffableWeight(need - mailboxStaffableWeight(original));
+            const placedSlot = mailboxEspSlot(original);
+            if (placedSlot) espCounts[placedSlot] += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             input.result.errors.push(`${pool.email} POD ${pod}: ${message}`);

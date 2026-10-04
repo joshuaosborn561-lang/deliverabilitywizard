@@ -8,6 +8,8 @@ import { isRealNamedClientId } from "./dedicatedGeneric.js";
 import { assignClientCohorts } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
+import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   GENERIC_ASSIGN_REASON_POWERGRYD,
@@ -19,6 +21,8 @@ import {
   genericPoolNeedForPod,
   genericProviderFromAccountType,
   genericSeatKey,
+  seatStaffableWeight,
+  mergeSeededGenericSeat,
   normalizeGenericSeat,
   podFromMailboxTags,
   type GenericAssignedPod,
@@ -117,6 +121,25 @@ export function validateGenericPool(input: {
         detail: `${email} assigned to clients ${clients.join(",")}`,
       });
     }
+    const liveAssigned = live.length > 0 || campaignClients.length > 0;
+    if (liveAssigned && tableClients.length === 0) {
+      push({
+        kind: "generic_outside_table",
+        email,
+        detail: `${email} assigned outside the generics table`,
+      });
+    }
+  }
+
+  for (const [email, live] of input.liveClientIdsByEmail ?? []) {
+    const key = genericSeatKey(email);
+    if (uniquePositiveIds(live).length === 0) continue;
+    if (byEmail.has(key)) continue;
+    push({
+      kind: "generic_outside_table",
+      email: key,
+      detail: `${key} assigned outside the generics table`,
+    });
   }
 
   const assignedByClientPod = new Map<string, GenericSeatRecord[]>();
@@ -143,12 +166,14 @@ export function validateGenericPool(input: {
   const idleEmails = new Set<string>();
   const markSurplus = (
     seats: GenericSeatRecord[],
-    surplus: number,
+    namedStaffable: number,
     why: string,
+    returnAll = false,
   ): void => {
-    if (surplus <= 0) return;
-    const ranked = rankGenericsOldestWorstFirst(seats);
-    for (const seat of ranked.slice(0, surplus)) {
+    const ranked = returnAll
+      ? rankGenericsOldestWorstFirst(seats)
+      : pickWeightedGenericReturns(seats, { namedStaffable });
+    for (const seat of ranked) {
       if (idleEmails.has(seat.email)) continue;
       idleEmails.add(seat.email);
       push({
@@ -178,20 +203,27 @@ export function validateGenericPool(input: {
 
     for (const pod of pods) {
       const seats = assignedByClientPod.get(clientPodKey(clientId, pod)) ?? [];
-      const need = perPodNeed.get(pod) ?? 0;
       const named = input.namedStaffableByClientPod.get(clientPodKey(clientId, pod)) ?? 0;
+      const assignedWeight = seats.reduce(
+        (sum, seat) => sum + seatStaffableWeight(seat),
+        0,
+      );
       const why =
         hasActive === false
           ? `assigned to client ${clientId} POD ${pod} but that client has no ACTIVE campaign`
-          : `assigned to client ${clientId} POD ${pod} but is not needed to reach ${40} (named ${named}, assigned ${seats.length})`;
-      markSurplus(seats, Math.max(0, seats.length - need), why);
+          : `assigned to client ${clientId} POD ${pod} but is not needed to reach ${40} (named ${named}, assigned ${assignedWeight})`;
+      markSurplus(seats, named, why, hasActive === false);
     }
 
     const unpodded = assignedUnpodded.get(clientId) ?? [];
     if (!unpodded.length) continue;
     const poddedAssigned = pods.reduce(
       (sum, pod) =>
-        sum + (assignedByClientPod.get(clientPodKey(clientId, pod))?.length ?? 0),
+        sum +
+        (assignedByClientPod.get(clientPodKey(clientId, pod)) ?? []).reduce(
+          (inner, seat) => inner + seatStaffableWeight(seat),
+          0,
+        ),
       0,
     );
     const leftoverNeed = Math.max(0, totalNeed - poddedAssigned);
@@ -199,7 +231,12 @@ export function validateGenericPool(input: {
       hasActive === false
         ? `assigned to client ${clientId} but that client has no ACTIVE campaign`
         : `assigned to client ${clientId} but is not needed to bring either POD to 40`;
-    markSurplus(unpodded, Math.max(0, unpodded.length - leftoverNeed), why);
+    markSurplus(
+      unpodded,
+      Math.max(0, 40 - leftoverNeed),
+      why,
+      hasActive === false,
+    );
   }
 
   return findings.sort((a, b) => {
@@ -333,7 +370,10 @@ export function syncGenericSeatsFromInventory(
         const key = clientPodKey(clientId, tagged);
         namedStaffableByClientPod.set(
           key,
-          (namedStaffableByClientPod.get(key) ?? 0) + 1,
+          roundStaffableWeight(
+            (namedStaffableByClientPod.get(key) ?? 0) +
+              mailboxStaffableWeight(account),
+          ),
         );
       }
       continue;
@@ -382,13 +422,20 @@ export function syncGenericSeatsFromInventory(
       assignedPod,
       assignedAt,
       reason: assignedReason(existing, assignedClientId, powerId),
+      releasedAt: existing?.releasedAt ?? null,
+      releaseHistory: existing?.releaseHistory ?? [],
+      staffableWeight: mailboxStaffableWeight(account),
     });
-    nextSeats.push(assignedClientId == null ? clearGenericAssignment({
-      ...seat,
-      slAccountId: seat.slAccountId,
-      provider: seat.provider,
-      warmReadyAt: seat.warmReadyAt,
-    }) : seat);
+    const cleared =
+      assignedClientId == null
+        ? clearGenericAssignment({
+            ...seat,
+            slAccountId: seat.slAccountId,
+            provider: seat.provider,
+            warmReadyAt: seat.warmReadyAt,
+          })
+        : seat;
+    nextSeats.push(mergeSeededGenericSeat(existing, cleared, now));
   }
 
   // Named seats without a POD tag take the static ESP-balanced A/B cut
@@ -407,9 +454,15 @@ export function syncGenericSeatsFromInventory(
       const cohort = cohorts.get(row.email);
       const pod: GenericAssignedPod = cohort === "B" ? "B" : "A";
       const key = clientPodKey(clientId, pod);
+      const account = input.accounts.find(
+        (item) => accountEmail(item) === row.email,
+      );
       namedStaffableByClientPod.set(
         key,
-        (namedStaffableByClientPod.get(key) ?? 0) + 1,
+        roundStaffableWeight(
+          (namedStaffableByClientPod.get(key) ?? 0) +
+            mailboxStaffableWeight(account ?? { type: row.type }),
+        ),
       );
     }
   }
@@ -427,6 +480,10 @@ export function syncGenericSeatsFromInventory(
 export function genericPoolCanonCompliant(findings: string[]): boolean {
   return !findings.some((line) => {
     const kind = parseGenericPoolFinding(line).kind;
-    return kind === "generic_idle" || kind === "generic_multi_client";
+    return (
+      kind === "generic_idle" ||
+      kind === "generic_multi_client" ||
+      kind === "generic_outside_table"
+    );
   });
 }

@@ -1,8 +1,10 @@
 import { normalizeSenderEspFamily } from "./esp.js";
 import { ON_WEEK_MIN_SENDERS, POD_INVENTORY_MIN_SENDERS } from "./clientStaffFloor.js";
+import { roundStaffableWeight } from "./mailboxType.js";
 
 /**
- * D221 — fleet-wide generic pool. One table, one row per generic seat.
+ * D221 / D231 — fleet-wide generic pool. One table, one row per
+ * generic seat. Every assign and release goes through this table.
  * D230 — one shared pool. A generic attaches to ONE client and ONE
  * POD and never rotates PODs. It returns to the untagged pool when
  * named seats fill that POD back to 40 (oldest / worst first).
@@ -25,11 +27,26 @@ export const GENERIC_ASSIGN_REASON_POWERGRYD = "powergryd_dedicated";
 export const GENERIC_POOL_CORE_KINDS = [
   "generic_idle",
   "generic_multi_client",
+  "generic_outside_table",
 ] as const;
+
+export const GENERIC_RELEASE_HISTORY_CAP = 50;
 
 export type GenericPoolCoreKind = (typeof GENERIC_POOL_CORE_KINDS)[number];
 export type GenericAssignedPod = "A" | "B";
 export type GenericPoolProvider = "GOOGLE" | "MICROSOFT" | "OTHER";
+export type AssignGenericError =
+  | "missing_from_table"
+  | "other_client"
+  | "pod_rotate"
+  | "invalid";
+
+export interface GenericReleaseEvent {
+  releasedAt: string;
+  clientId: number | null;
+  pod: GenericAssignedPod | null;
+  reason: string | null;
+}
 
 export interface GenericSeatRecord {
   email: string;
@@ -41,6 +58,10 @@ export interface GenericSeatRecord {
   assignedPod: GenericAssignedPod | null;
   assignedAt: string | null;
   reason: string | null;
+  releasedAt: string | null;
+  releaseHistory: GenericReleaseEvent[];
+  /** D232 — Azure 0.1, everything else 1. */
+  staffableWeight: number;
 }
 
 export function isGenericPoolCoreKind(kind: string): kind is GenericPoolCoreKind {
@@ -49,6 +70,13 @@ export function isGenericPoolCoreKind(kind: string): kind is GenericPoolCoreKind
 
 export function genericSeatKey(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function seatStaffableWeight(
+  seat: { staffableWeight?: number | null } | null | undefined,
+): number {
+  const value = Number(seat?.staffableWeight);
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 export function clientPodKey(
@@ -60,9 +88,9 @@ export function clientPodKey(
 
 export function genericPoolNeedForPod(namedStaffableInPod: number): number {
   const named = Number.isFinite(namedStaffableInPod)
-    ? Math.max(0, Math.floor(namedStaffableInPod))
+    ? Math.max(0, namedStaffableInPod)
     : 0;
-  return Math.max(0, GENERIC_POOL_POD_FLOOR - named);
+  return roundStaffableWeight(Math.max(0, GENERIC_POOL_POD_FLOOR - named));
 }
 
 export function genericProviderFromAccountType(
@@ -132,6 +160,7 @@ export function normalizeGenericSeat(raw: unknown): GenericSeatRecord | null {
         .map((id) => Number(id))
         .filter((id) => Number.isFinite(id) && id > 0)
     : [];
+  const releasedAtRaw = (row as { released_at?: unknown }).released_at ?? row.releasedAt;
   return {
     email,
     slAccountId: Number.isFinite(slAccountId) && slAccountId > 0 ? slAccountId : null,
@@ -152,7 +181,49 @@ export function normalizeGenericSeat(raw: unknown): GenericSeatRecord | null {
         : null,
     reason:
       typeof row.reason === "string" && row.reason.trim() ? row.reason.trim() : null,
+    releasedAt:
+      typeof releasedAtRaw === "string" && releasedAtRaw.trim()
+        ? releasedAtRaw
+        : null,
+    releaseHistory: normalizeReleaseHistory(
+      (row as { release_history?: unknown }).release_history ?? row.releaseHistory,
+    ),
+    staffableWeight: normalizeStaffableWeight(row.staffableWeight),
   };
+}
+
+function normalizeStaffableWeight(raw: unknown): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  return Math.round(value * 10) / 10;
+}
+
+function normalizeReleaseHistory(raw: unknown): GenericReleaseEvent[] {
+  if (!Array.isArray(raw)) return [];
+  const out: GenericReleaseEvent[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Partial<GenericReleaseEvent> & { released_at?: unknown };
+    const releasedAt =
+      typeof row.releasedAt === "string" && row.releasedAt.trim()
+        ? row.releasedAt
+        : typeof row.released_at === "string" && row.released_at.trim()
+          ? row.released_at
+          : null;
+    if (!releasedAt) continue;
+    const clientId = Number(row.clientId ?? NaN);
+    const podRaw = String(row.pod ?? "").toUpperCase();
+    out.push({
+      releasedAt,
+      clientId: Number.isFinite(clientId) && clientId > 0 ? clientId : null,
+      pod: podRaw === "A" || podRaw === "B" ? podRaw : null,
+      reason:
+        typeof row.reason === "string" && row.reason.trim()
+          ? row.reason.trim()
+          : null,
+    });
+  }
+  return out.slice(-GENERIC_RELEASE_HISTORY_CAP);
 }
 
 export function emptyGenericSeat(
@@ -169,6 +240,9 @@ export function emptyGenericSeat(
     assignedPod: extras.assignedPod ?? null,
     assignedAt: extras.assignedAt ?? null,
     reason: extras.reason ?? null,
+    releasedAt: extras.releasedAt ?? null,
+    releaseHistory: extras.releaseHistory ?? [],
+    staffableWeight: extras.staffableWeight ?? 1,
   };
 }
 
@@ -182,5 +256,125 @@ export function clearGenericAssignment(
     assignedPod: null,
     assignedAt: null,
     reason: null,
+  };
+}
+
+export interface AssignGenericSeatInput {
+  email: string;
+  clientId: number;
+  pod?: GenericAssignedPod | null;
+  reason: string;
+  campaignIds?: number[];
+  slAccountId?: number | null;
+  now?: Date;
+}
+
+export type AssignGenericSeatResult =
+  | { ok: true; seat: GenericSeatRecord }
+  | { ok: false; error: AssignGenericError };
+
+export function applyAssignGenericSeat(
+  existing: GenericSeatRecord | undefined,
+  input: AssignGenericSeatInput,
+): AssignGenericSeatResult {
+  if (!existing) return { ok: false, error: "missing_from_table" };
+  const clientId = Number(input.clientId);
+  if (!Number.isFinite(clientId) || clientId <= 0) {
+    return { ok: false, error: "invalid" };
+  }
+  if (
+    existing.assignedClientId != null &&
+    existing.assignedClientId !== clientId
+  ) {
+    return { ok: false, error: "other_client" };
+  }
+  const nextPod = input.pod ?? existing.assignedPod ?? null;
+  if (
+    existing.assignedPod != null &&
+    nextPod != null &&
+    existing.assignedPod !== nextPod
+  ) {
+    return { ok: false, error: "pod_rotate" };
+  }
+  const nowIso = (input.now ?? new Date()).toISOString();
+  const campaignIds = [
+    ...new Set([
+      ...existing.assignedCampaignIds,
+      ...(input.campaignIds ?? []).map((id) => Number(id)),
+    ]),
+  ]
+    .filter((id) => Number.isFinite(id) && id > 0)
+    .sort((a, b) => a - b);
+  return {
+    ok: true,
+    seat: {
+      ...existing,
+      slAccountId: input.slAccountId ?? existing.slAccountId,
+      assignedClientId: clientId,
+      assignedCampaignIds: campaignIds,
+      assignedPod: nextPod,
+      assignedAt: existing.assignedAt ?? nowIso,
+      reason: existing.reason ?? input.reason,
+    },
+  };
+}
+
+export function applyReleaseGenericSeat(
+  existing: GenericSeatRecord,
+  opts: { now?: Date; reason?: string | null } = {},
+): GenericSeatRecord {
+  if (existing.assignedClientId == null && existing.assignedPod == null) {
+    return {
+      ...existing,
+      assignedCampaignIds: [],
+      assignedAt: null,
+      reason: null,
+    };
+  }
+  const releasedAt = (opts.now ?? new Date()).toISOString();
+  const event: GenericReleaseEvent = {
+    releasedAt,
+    clientId: existing.assignedClientId,
+    pod: existing.assignedPod,
+    reason: opts.reason ?? existing.reason,
+  };
+  return {
+    ...existing,
+    assignedClientId: null,
+    assignedCampaignIds: [],
+    assignedPod: null,
+    assignedAt: null,
+    reason: null,
+    releasedAt,
+    releaseHistory: [...existing.releaseHistory, event].slice(
+      -GENERIC_RELEASE_HISTORY_CAP,
+    ),
+  };
+}
+
+export function mergeSeededGenericSeat(
+  existing: GenericSeatRecord | undefined,
+  next: GenericSeatRecord,
+  now: Date = new Date(),
+): GenericSeatRecord {
+  const history = existing?.releaseHistory ?? [];
+  const releasedAt = existing?.releasedAt ?? null;
+  if (existing?.assignedClientId != null && next.assignedClientId == null) {
+    const event: GenericReleaseEvent = {
+      releasedAt: now.toISOString(),
+      clientId: existing.assignedClientId,
+      pod: existing.assignedPod,
+      reason: existing.reason ?? "seed_sync",
+    };
+    return {
+      ...next,
+      releasedAt: event.releasedAt,
+      releaseHistory: [...history, event].slice(-GENERIC_RELEASE_HISTORY_CAP),
+    };
+  }
+  return {
+    ...next,
+    releasedAt,
+    releaseHistory: history,
   };
 }

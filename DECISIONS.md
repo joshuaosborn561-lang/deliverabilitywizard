@@ -226,7 +226,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D218 | Live — TERRL overnight restore superseded by D219 24h-then-type-cap | TERRL / D148 bounce-hold ids are not pruned at 7:15pm CT. Every max_email_per_day raise path skips held seats during the window |
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
-| D221 | Live — attach / return lock and "never rotate PODs" governed by D230; surplus return still weekday min40 + cleanup (D225); 40/40 is each POD (D228) | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D221 | Live — attach / return lock and "never rotate PODs" governed by D230; surplus return still weekday min40 + cleanup (D225); 40/40 is each POD (D228); sole table path + `released_at` history by D231 | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` / `generic_outside_table` flip `/health` |
 | D222 | Live — Slack findings + detection-only superseded by D226 | Monday 8:16am CT InboxKit lapsed-license sweep compares InboxKit status to connected Smartlead accounts. D226 hands findings internally and deletes lapsed seats; Slack is only the post-cleanup one-liner when X > 0 |
 | D223 | Live | Mechanical POD A/B fortnight rotation skips PowerGRYD 592842 and Goliath 548611. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side |
 | D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
@@ -235,7 +235,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
 | D228 | Live — one-client / one-POD attach and named-warm return lock is D230 | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
 | D229 | Live | D189 Insight rest-sticky is retired: Insight off-week seats unlink; fan-out will not re-spread off-week POD-B onto Insight. D193 POC-only / "named clients never receive generics" is retired: assigned 40/40 generics stay on every named client; leftover D134 tap is still not a rotating-pool dump. D184/D192 Insight ≠ SalesGlider mix stays |
-| D230 | Live | Governing generic rule: one shared pool in a table; a generic attaches to ONE client and ONE POD (A or B, whichever is under 40) and never rotates PODs; stays until branded named seats fill that POD back to 40, then returns to the untagged pool; while tagged no other client may use it; never pre-split across clients. min40 takes only untagged pool or same client+POD. Named-warm swap returns one generic per newly-warm named seat, oldest/worst first, never below 40; surplus beyond 40 also returns |
+| D230 | Live — sole assign/release path and `released_at` history locked by D231 | Governing generic rule: one shared pool in a table; a generic attaches to ONE client and ONE POD (A or B, whichever is under 40) and never rotates PODs; stays until branded named seats fill that POD back to 40, then returns to the untagged pool; while tagged no other client may use it; never pre-split across clients. min40 takes only untagged pool or same client+POD. Named-warm swap returns one generic per newly-warm named seat, oldest/worst first, never below 40; surplus beyond 40 also returns |
+| D231 | Live | Generics are handed out only through `state.genericSeats` (wizard state table). Each row: seat id, email, client_id or null, POD or null, assigned_at, reason, released_at history. min40 / TERRL sub / named-warm / surplus / cleanup assign and release through that table. Blocks two-client tags and assignments outside the table. Seeded from live Smartlead. |
+| D232 | Live | Azure/Entra mailboxes (type:azure / tidalstackco.com), generic or named, weigh 0.1 toward a POD's 40; every other type weighs 1. Weighted sum ≥40 is the target for staffable counts, Canon understaffed, min40, surplus, named-warm return, and the 24h TERRL sub. |
+| D233 | Live | Azure may only fill or replace Azure or Microsoft (M365/Outlook) slots, never Google slots, so the POD ESP mix holds. When a Google seat leaves, only a Google seat replaces it. Enforced in min40, the 24h TERRL sub, named-warm swap, and pool assignment. |
 
 ---
 
@@ -7620,6 +7623,106 @@ substitutes.
 **Guards.** Flip invariance (no POD retag); min40
 eligibility lock; named-warm swap oldest-first; return
 strips POD tags; CANON dated D230.
+
+---
+
+## D231 — Generics are handed out only through the pool table
+
+**Date.** 2026-10-04.
+
+**Decision.** Josh. Generics must be handed out **only**
+through one generic pool table, a single source of truth
+in wizard state. The table already existed as
+`state.genericSeats` (`src/state/store.ts`, typed in
+`src/lib/genericPool.ts`). Each row holds seat id
+(`slAccountId`), email, `assignedClientId` or null, POD
+or null, `assignedAt`, reason, and a `releasedAt`
+history. Never hand them out ad hoc. Every generic
+assign and release — min40, TERRL sub, named-warm swap
+return, surplus return, cleanup — goes through
+`assignGenericFromTable` / `releaseGenericFromTable`.
+A check blocks any generic tagged to two clients
+(`generic_multi_client`) or assigned outside the table
+(`generic_outside_table`). Health seeds the table from
+the current live Smartlead inventory.
+
+**Why.** D221/D230 named the table, but writers still
+stamped `poolMailboxes` or Smartlead `client_id` without
+going through it, and rows had no release history. A
+seat could be tagged to a client without a table row.
+
+**Rejected.** A second SQL table beside wizard state.
+Ad-hoc assign from `findReassignablePoolMailbox` without
+a `genericSeats` row. Live Smartlead writes from this
+chat.
+
+**Supersedes / amends.** Amends D221/D230: the table is
+the sole assignment path and carries `released_at`
+history. Does not change one-client / one-POD, 40/40,
+or named-warm return order.
+
+**Guards.** Assign refuses missing / other-client / POD
+rotate; release appends history; `generic_outside_table`
+flips `/health`; CANON names `state.genericSeats` and
+the sole-path rule.
+
+---
+
+## D232 — Azure mailboxes weigh 0.1 toward a POD's 40
+
+**Date.** 2026-10-03 (Josh, 8:16pm CT, HARD). Written
+2026-10-04.
+
+**Decision.** Any Azure mailbox (Azure/Entra type, e.g.
+tidalstackco.com — `type:azure` or the Azure domain
+classifier), generic or named, counts as **0.1** of a
+regular Microsoft 365 mailbox when computing a POD's
+40. The POD target is a weighted sum of at least 40:
+Azure = 0.1, every other type = 1. Applies to staffable
+counts, Canon understaffed checks, min40 need, surplus
+return, the named-warm swap return trigger, and the 24h
+TERRL substitute.
+
+**Why.** Azure/Entra seats send 2/day. Counting them as
+a full seat toward 40 overstated coverage.
+
+**Rejected.** Counting Azure as a full 1. Changing the
+Azure send cap. Live Smartlead writes from this chat.
+
+**Supersedes / amends.** Amends D203/D217/D219/D221/
+D228/D230: the "40" is weighted, not a raw seat count.
+Does not change Azure 2/5 caps or one-client / one-POD.
+
+**Guards.** `mailboxStaffableWeight`; weighted min40 /
+surplus / understaffed / TERRL; CANON dated D232.
+
+---
+
+## D233 — Azure never fills a Google slot
+
+**Date.** 2026-10-04 (Josh). Same HARD add-on as D232.
+
+**Decision.** Azure may only fill or replace Azure or
+Microsoft (M365/Outlook) slots, never Google slots, so
+the POD's ESP mix holds. When a Google seat leaves, only
+a Google seat replaces it. Enforced in min40, the 24h
+TERRL substitute, named-warm swap, and pool assignment.
+
+**Why.** Azure is a Microsoft/Entra seat. Putting it on
+a Google hole would drop the Google side of the D203
+mix floor.
+
+**Rejected.** Azure as a wildcard fill. Google replacing
+Azure/Microsoft when the leaving seat is Google.
+
+**Supersedes / amends.** Amends D192/D203/D219/D230
+assignment: replacements stay in-family; Azure is
+Microsoft-family. Does not change the 0.1 weight (D232)
+or the 14-of-40 mix floor.
+
+**Guards.** `replacementMayFillEspSlot`; `espFillOrder`
+does not fall through to Microsoft when Google is short;
+CANON dated D233.
 
 ---
 

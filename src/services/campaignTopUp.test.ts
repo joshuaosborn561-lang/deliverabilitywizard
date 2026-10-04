@@ -8,16 +8,33 @@ import type {
   StateStore,
 } from "../state/store.js";
 import { CampaignTopUpService, espFillOrder, isExcluded } from "./campaignTopUp.js";
+import {
+  applyAssignGenericSeat,
+  emptyGenericSeat,
+  type AssignGenericSeatInput,
+  type GenericSeatRecord,
+} from "../lib/genericPool.js";
 
 describe("espFillOrder", () => {
   it("prefers the ESP that is short of the 30% floor (D43)", () => {
     assert.deepEqual(espFillOrder({ GOOGLE: 40, MICROSOFT: 5 }, 50, 30), [
       "MICROSOFT",
-      "GOOGLE",
     ]);
     assert.deepEqual(espFillOrder({ GOOGLE: 4, MICROSOFT: 40 }, 50, 30), [
       "GOOGLE",
-      "MICROSOFT",
+    ]);
+  });
+
+  it("D233: a Google hole does not fall through to Azure/Microsoft", () => {
+    assert.deepEqual(espFillOrder({ GOOGLE: 10, MICROSOFT: 30 }, 40, 33), [
+      "GOOGLE",
+    ]);
+    assert.ok(!espFillOrder({ GOOGLE: 10, MICROSOFT: 30 }, 40, 33).includes("MICROSOFT"));
+  });
+
+  it("D203/D233: a one-ESP Google campaign still fills Google", () => {
+    assert.deepEqual(espFillOrder({ GOOGLE: 49, MICROSOFT: 0 }, 40, 30), [
+      "GOOGLE",
     ]);
   });
 });
@@ -78,6 +95,7 @@ function fakeState(
   pool: PoolMailboxRecord,
 ): { state: StateStore; current: () => PoolMailboxRecord } {
   let current = { ...pool };
+  const seats = new Map<string, GenericSeatRecord>();
   const state = {
     listPoolMailboxes: () => [current],
     findReassignablePoolMailbox: (
@@ -99,6 +117,25 @@ function fakeState(
     isCopyCanary: () => false,
     hasPendingResume: () => false,
     listPendingResumes: () => [],
+    listGenericSeats: () => [...seats.values()],
+    getGenericSeat: (email: string) => seats.get(email.toLowerCase()),
+    replaceGenericSeats: (next: GenericSeatRecord[]) => {
+      seats.clear();
+      for (const seat of next) seats.set(seat.email.toLowerCase(), seat);
+    },
+    ensureGenericSeat: (record: Pick<GenericSeatRecord, "email">) => {
+      const key = record.email.toLowerCase();
+      const existing = seats.get(key);
+      if (existing) return existing;
+      const seat = emptyGenericSeat(key);
+      seats.set(key, seat);
+      return seat;
+    },
+    assignGenericFromTable: (input: AssignGenericSeatInput) => {
+      const result = applyAssignGenericSeat(seats.get(input.email.toLowerCase()), input);
+      if (result.ok) seats.set(result.seat.email, result.seat);
+      return result;
+    },
     save: async () => undefined,
   } as unknown as StateStore;
   return { state, current: () => current };

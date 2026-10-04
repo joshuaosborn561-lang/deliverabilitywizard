@@ -6,6 +6,7 @@
  */
 
 import { GENERIC_POOL_POD_FLOOR, podFromMailboxTags } from "./genericPool.js";
+import { roundStaffableWeight } from "./mailboxType.js";
 import { onWeekCohort, type RestCohort } from "./restCohort.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 
@@ -57,10 +58,10 @@ export function podInventoryNeed(
   assignedGenerics: number,
 ): number {
   const named = Number.isFinite(namedStaffable)
-    ? Math.max(0, Math.floor(namedStaffable))
+    ? Math.max(0, namedStaffable)
     : 0;
   const assigned = Number.isFinite(assignedGenerics)
-    ? Math.max(0, Math.floor(assignedGenerics))
+    ? Math.max(0, assignedGenerics)
     : 0;
-  return Math.max(0, POD_INVENTORY_EACH - named - assigned);
+  return roundStaffableWeight(Math.max(0, POD_INVENTORY_EACH - named - assigned));
 }

@@ -57,8 +57,9 @@ export class GenericPoolCanonService {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const powerGrydClientId =
       this.config.powerGrydClientId || GENERIC_POOL_POWERGRYD_CLIENT_ID;
+    const existing = this.state.listGenericSeats();
     const synced = syncGenericSeatsFromInventory({
-      existing: this.state.listGenericSeats(),
+      existing,
       accounts: opts.inventory.accounts,
       campaigns: opts.inventory.campaigns,
       config: this.config,
@@ -66,18 +67,44 @@ export class GenericPoolCanonService {
       now: opts.now,
       powerGrydClientId,
     });
-    const findings = validateGenericPool({
+    const idleExemptEmails = openTerlSubstituteEmails(
+      this.state.listActiveTerlSubstitutions(),
+      opts.now,
+    );
+    const post = validateGenericPool({
       seats: synced.seats,
       namedStaffableByClientPod: synced.namedStaffableByClientPod,
       clientHasActiveCampaign: synced.clientHasActiveCampaign,
       campaignClientById: synced.campaignClientById,
       liveClientIdsByEmail: synced.liveClientIdsByEmail,
       powerGrydClientId,
-      idleExemptEmails: openTerlSubstituteEmails(
-        this.state.listActiveTerlSubstitutions(),
-        opts.now,
-      ),
-    }).map(genericPoolFindingLine);
+      idleExemptEmails,
+    });
+    const pre =
+      existing.length === 0
+        ? []
+        : validateGenericPool({
+            seats: existing,
+            namedStaffableByClientPod: synced.namedStaffableByClientPod,
+            clientHasActiveCampaign: synced.clientHasActiveCampaign,
+            campaignClientById: synced.campaignClientById,
+            liveClientIdsByEmail: synced.liveClientIdsByEmail,
+            powerGrydClientId,
+            idleExemptEmails,
+          }).filter(
+            (row) =>
+              row.kind === "generic_outside_table" ||
+              row.kind === "generic_multi_client",
+          );
+    const seen = new Set<string>();
+    const findings = [...pre, ...post]
+      .filter((row) => {
+        const line = genericPoolFindingLine(row);
+        if (seen.has(line)) return false;
+        seen.add(line);
+        return true;
+      })
+      .map(genericPoolFindingLine);
 
     const result: GenericPoolCanonResult = {
       dryRun,

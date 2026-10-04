@@ -103,4 +103,36 @@ describe("D225 surplus generic return picker", () => {
     assert.equal(returningWouldDropPodBelow40(38, 2), false);
     assert.equal(returningWouldDropPodBelow40(40, 0), false);
   });
+
+  it("D228: does not pick a needed off-week POD when the on-week POD is already at 40", () => {
+    const seats = [
+      ...Array.from({ length: 4 }, (_, i) =>
+        seat(`b${i}@getintroduced.info`, {
+          assignedClientId: 77,
+          assignedPod: "B",
+          assignedAt: `2026-10-0${i + 1}T00:00:00.000Z`,
+          reason: "pod_top_up",
+        }),
+      ),
+      seat("extra-a@getintroduced.info", {
+        assignedClientId: 77,
+        assignedPod: "A",
+        assignedAt: "2026-10-02T00:00:00.000Z",
+        reason: "pod_top_up",
+      }),
+    ];
+    const picked = surplusGenericReturns({
+      seats,
+      namedStaffableByClientPod: new Map([
+        [clientPodKey(77, "A"), 40],
+        [clientPodKey(77, "B"), 36],
+      ]),
+      clientHasActiveCampaign: new Map([[77, true]]),
+      now: WEEKDAY,
+    });
+    assert.deepEqual(
+      picked.map((row) => row.email),
+      ["extra-a@getintroduced.info"],
+    );
+  });
 });

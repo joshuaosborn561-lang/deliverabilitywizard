@@ -254,4 +254,53 @@ describe("GenericCleanupService (D205)", () => {
     assert.deepEqual(writes, []);
     assert.equal(result.returned.length, 0);
   });
+
+  it("D228: keeps a needed off-week POD-B assignment with no campaign links", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const service = new GenericCleanupService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: WEEKDAY,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 521881, name: "TechEvo", logo: "TechEvolution" }],
+        campaigns: [{ id: 2, name: "TechEvo B", status: "ACTIVE", client_id: 521881 }],
+        accounts: [
+          ...namedPodA(521881, 2),
+          {
+            id: 902,
+            from_email: "keep-b@getintroduced.info",
+            client_id: 521881,
+            signature: "Ada Pool\nTechEvolution",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-B" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.deepEqual(writes, []);
+    assert.deepEqual(removed, []);
+    assert.equal(result.cleared.length, 0);
+    assert.equal(result.returned.length, 0);
+  });
 });

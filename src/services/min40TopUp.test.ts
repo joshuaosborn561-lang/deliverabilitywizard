@@ -466,4 +466,135 @@ describe("Min40TopUpService (D205)", () => {
     assert.deepEqual(removed, [[10, [901]]]);
     assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
   });
+
+  it("D228: does not attach an off-week POD-B generic onto an A-week campaign", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 20 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 10, name: "BCP A", status: "ACTIVE", client_id: 542838 }],
+        accounts: [
+          ...named,
+          {
+            id: 800,
+            from_email: "off-week@getintroduced.info",
+            client_id: 542838,
+            signature: "Ada Pool\nBolder Cyber Partners",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-B" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.equal(
+      attached.some((row) => row[1].includes(800)),
+      false,
+      "off-week POD-B generic stays assigned but must not link",
+    );
+    assert.equal(
+      result.assigned.some((row) => row.email === "off-week@getintroduced.info"),
+      false,
+    );
+  });
+
+  it("D228: does not restaff off-week named onto an on-week campaign", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const onEmails = Array.from(
+      { length: 37 },
+      (_, i) => `on-${String(i).padStart(2, "0")}@client.info`,
+    );
+    const offEmails = ["off-a@client.info", "off-b@client.info", "off-c@client.info"];
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 10, name: "BCP A", status: "ACTIVE", client_id: 542838 }],
+        accounts: [
+          ...onEmails.map((from_email, i) => ({
+            id: 100 + i,
+            from_email,
+            client_id: 542838,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "POD-A" }],
+            campaign_ids: [10],
+          })),
+          ...offEmails.map((from_email, i) => ({
+            id: 200 + i,
+            from_email,
+            client_id: 542838,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "POD-B" }],
+            campaign_ids: [],
+          })),
+        ],
+      },
+    });
+    assert.equal(
+      attached.some((row) => row[1].some((id) => id >= 200 && id < 203)),
+      false,
+      "alphabetically-early POD-B named must not fill the on-week short",
+    );
+    assert.equal(
+      result.assigned.some((row) => offEmails.includes(row.email)),
+      false,
+    );
+  });
 });

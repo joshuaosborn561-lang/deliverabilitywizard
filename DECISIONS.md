@@ -226,13 +226,14 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D218 | Live — TERRL overnight restore superseded by D219 24h-then-type-cap | TERRL / D148 bounce-hold ids are not pruned at 7:15pm CT. Every max_email_per_day raise path skips held seats during the window |
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
-| D221 | Live — surplus return executed weekday by min40-topup and generic-cleanup (D225) | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D221 | Live — surplus return executed weekday by min40-topup and generic-cleanup (D225); 40/40 is each POD including the off-week cylinder (D228) | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
 | D222 | Live — Slack findings + detection-only superseded by D226 | Monday 8:16am CT InboxKit lapsed-license sweep compares InboxKit status to connected Smartlead accounts. D226 hands findings internally and deletes lapsed seats; Slack is only the post-cleanup one-liner when X > 0 |
 | D223 | Live | Mechanical POD A/B fortnight rotation skips PowerGRYD 592842 and Goliath 548611. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side |
 | D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
-| D225 | Live | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip PowerGRYD 592842 and active 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
+| D225 | Live — surplus is per THAT POD; a needed off-week assignment with no campaign links is not surplus (D228) | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip PowerGRYD 592842 and active 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
 | D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
+| D228 | Live | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
 
 ---
 
@@ -7464,6 +7465,57 @@ is the staffing exemption — the tag wins for seats that have it.
 **Guards.** `isStaffableSender` + `countsAsWarmed21` honor the
 tag; 9/29 tidalstack replay is staffable; Azure 2/5 stay;
 CANON dated D227.
+
+---
+
+## D228 — 40/40 per-POD inventory; campaigns on-week only
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (7:16pm CT, HARD): generics top up
+**each** POD (A and B) to 40 staffable per client, so
+inventory is 40/40, not just the on-week POD. The off-week
+POD keeps its assigned generics (`client_id`, POD tag,
+signature) but no campaign links. Campaigns link only the
+on-week POD. Surplus means generics beyond 40 staffable in
+**THAT POD**. On-week campaigns that still have 1–3 off-week
+named seats linked must unlink those off-week named seats
+without dropping on-week below 40.
+
+**Why.** `validateGenericPool` already counted need per
+POD, but the writers did not. generic-cleanup D205 cleared
+`client_id` + signature whenever a generic was not on an
+ACTIVE campaign — that would strip the off-week cylinder.
+min40 `belongsToClient` attached same-client off-week
+generics onto on-week campaigns. client-rest peeled by
+`assignClientCohorts` and blocked the 1–3 leftover off-week
+named seats when total staffable was already 40. Surplus
+return only walks `generic_idle` (already per-POD) but
+cleanup would have returned needed off-week seats first.
+
+**Rejected.** Computing need or surplus from only the
+on-week POD. Clearing off-week assignments because they
+have no campaign links. Re-attaching off-week named or
+off-week generics to fill an on-week short. Live Smartlead
+writes from this chat (Josh is enforcing the 40/40 split
+himself).
+
+**Supersedes / amends.** Amends D203/D221/D225: the 40 is
+each POD's inventory, including the off-week cylinder that
+is assigned and unlinked. Amends D197/D199/D207/D209: the
+peel floor protects *on-week* staffable; off-week named
+unlink is exempt so leftover off-week seats can leave an
+on-week campaign at 40. Does not change PowerGRYD 592842,
+TERRL substitutes, weekday surplus return, or D223 skip
+of PowerGRYD / Goliath.
+
+**Guards.** `podInventoryNeed` is 40 per POD; off-week
+tagged generics cannot link; cleanup keeps a needed
+off-week assignment; min40 will not attach off-week
+POD-B or alphabetically-early off-week named; surplus
+picker does not pick a needed off-week POD; client-rest
+unlinks off-week named at 40 without clearing generic
+`client_id`; CANON dated D228.
 
 ---
 

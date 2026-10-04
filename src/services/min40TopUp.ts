@@ -34,6 +34,7 @@ import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
+import { genericMayLinkToCampaigns, mailboxPodOf } from "../lib/podInventory.js";
 import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
@@ -83,9 +84,11 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
 /**
  * D207 — every ACTIVE named-client campaign (including PowerGRYD) is
  * topped to 40 staffable senders from its own client. Already-linked
- * on-week named seats and that client's generics are shared first;
- * free-pool generics get the client's id + signature and then sit on
- * every ACTIVE campaign of that same client. Never retag named seats.
+ * on-week named seats and that client's on-week generics are shared
+ * first; free-pool generics get the client's id + signature and then
+ * sit on every ACTIVE campaign of that same client. Off-week POD
+ * generics stay assigned (client_id, POD tag, signature) and do not
+ * link. Never retag named seats.
  * Never START/PAUSE. PowerGRYD uses its own seats; free-pool only via
  * the normal assign path (client 592842 + PG signature).
  */
@@ -187,6 +190,7 @@ export class Min40TopUpService {
         accounts as SmartleadAccountWithCampaigns[],
         namedOnWeek.get(clientId) ?? new Set(),
         campaignById,
+        now,
       );
       const shortBy = Math.max(0, ON_WEEK_MIN_SENDERS - staffable);
       if (shortBy <= 0) continue;
@@ -214,6 +218,7 @@ export class Min40TopUpService {
         clientName,
         shortBy,
         dryRun,
+        now,
         accounts: accounts as SmartleadAccountWithCampaigns[],
         campaignById,
         accountById,
@@ -294,6 +299,7 @@ export class Min40TopUpService {
     onWeek: "A" | "B",
   ): Map<number, Set<string>> {
     const byClient = new Map<number, Array<{ email: string; type?: string | null }>>();
+    const taggedByEmail = new Map<string, "A" | "B">();
     const campaignClient = new Map(campaigns.map((c) => [c.id, c.client_id]));
     for (const account of accounts) {
       const email = accountEmail(account);
@@ -309,13 +315,20 @@ export class Min40TopUpService {
       const list = byClient.get(clientId) ?? [];
       list.push({ email, type: account.type });
       byClient.set(clientId, list);
+      const pod = mailboxPodOf(account);
+      if (pod) taggedByEmail.set(email.toLowerCase(), pod);
     }
     const out = new Map<number, Set<string>>();
     for (const [clientId, rows] of byClient) {
-      const cohorts = assignClientCohorts(rows);
+      const untagged = rows.filter(
+        (row) => !taggedByEmail.has(row.email.toLowerCase()),
+      );
+      const cohorts = assignClientCohorts(untagged);
       const set = new Set<string>();
-      for (const [email, cohort] of cohorts) {
-        if (cohort === onWeek) set.add(email);
+      for (const row of rows) {
+        const key = row.email.toLowerCase();
+        const cohort = taggedByEmail.get(key) ?? cohorts.get(key);
+        if (cohort === onWeek) set.add(key);
       }
       out.set(clientId, set);
     }
@@ -329,6 +342,7 @@ export class Min40TopUpService {
     accounts: SmartleadAccountWithCampaigns[],
     namedOnWeek: Set<string>,
     campaignById: Map<number, SmartleadCampaign>,
+    now: Date,
   ): number {
     let n = 0;
     for (const account of accounts) {
@@ -345,6 +359,7 @@ export class Min40TopUpService {
       }
       const generic = isGenericMailbox(account, email, this.config, this.state);
       if (generic) {
+        if (!genericMayLinkToCampaigns(account, now)) continue;
         if (this.belongsToClient(account, email, clientId, campaignById)) n += 1;
         continue;
       }
@@ -444,6 +459,7 @@ export class Min40TopUpService {
     clientName: string;
     shortBy: number;
     dryRun: boolean;
+    now: Date;
     accounts: SmartleadAccountWithCampaigns[];
     campaignById: Map<number, SmartleadCampaign>;
     accountById: Map<number, SmartleadAccountWithCampaigns>;
@@ -477,6 +493,7 @@ export class Min40TopUpService {
       }
       const generic = isGenericMailbox(account, email, this.config, this.state);
       if (generic) {
+        if (!genericMayLinkToCampaigns(account, input.now)) return false;
         return this.belongsToClient(account, email, input.clientId, input.campaignById);
       }
       return input.namedOnWeek.has(email.toLowerCase());
@@ -541,6 +558,7 @@ export class Min40TopUpService {
         if (!this.seatIsUsable(poolAccount, key, input.campaign, input.campaignById)) {
           return false;
         }
+        if (!genericMayLinkToCampaigns(poolAccount, input.now)) return false;
         if (!isPoolGenericSeat(poolAccount, key, this.config, this.state)) {
           return false;
         }

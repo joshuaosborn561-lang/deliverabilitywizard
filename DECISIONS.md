@@ -201,10 +201,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D184 | Superseded by D192 — exclusive-blank Insight staff inside 345263 is obsolete; never revive | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 | D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
-| D189 | Live — Insight campaigns are now client 582890 (D192); named ids stay rest-sticky | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
+| D189 | Superseded by D229 — Insight rests like any named client; off-week unlinks (D228 on-week-only campaigns) | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
-| D193 | Live — peel of exclusive min-40 generic seats qualified by D197; dedicated named-client seats are not foreign Goliath (D198); "leave it short / client-inbox only" for the min-40 fill path narrowed by D203; same-client generic share by D207 | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
+| D193 | Superseded by D221/D203/D207/D229 — every named client takes pool generics to fill that POD to 40; leftover D134 tap is still not a dump | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — inventory floor is max(named on-week pod, 40 per POD) per D197/D203; Canon *page* floor is 40 on-week staffable (D217), not named-inventory 46/48 | Named-client inventory split is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not an inventory short |
@@ -234,6 +234,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
 | D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
 | D228 | Live | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
+| D229 | Live | D189 Insight rest-sticky is retired: Insight off-week seats unlink; fan-out will not re-spread off-week POD-B onto Insight. D193 POC-only / "named clients never receive generics" is retired: assigned 40/40 generics stay on every named client; leftover D134 tap is still not a rotating-pool dump. D184/D192 Insight ≠ SalesGlider mix stays |
 
 ---
 
@@ -7516,6 +7517,55 @@ POD-B or alphabetically-early off-week named; surplus
 picker does not pick a needed off-week POD; client-rest
 unlinks off-week named at 40 without clearing generic
 `client_id`; CANON dated D228.
+
+---
+
+## D229 — D189 Insight rest-sticky and D193 POC-only generics retired
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh: the live 40/40 split is done. Two
+CANON leftovers conflicted with the 10/3 rules (one shared
+generic pool topping each POD to 40 for every client —
+D221 — and campaigns linking only the on-week POD — D228).
+
+1. **D189 is retired.** Insight campaigns rest like any
+   named client. Off-week seats unlink from Insight.
+   Fan-out must not re-spread an off-week POD-B leftover
+   onto other Insight campaigns. The D184/D192 mix stays:
+   Insight staff never restore onto ACTIVE SalesGlider,
+   and ACTIVE SG staff never restore onto Insight.
+2. **D193's "named clients never receive generics /
+   POC-only staff" read is retired.** Every named client
+   takes fleet-pool generics to fill that POD to 40.
+   Assigned generics (`client_id` + POD) must not be
+   stripped from non-POC clients. A leftover D134 Slack /
+   retire-tap approval is still a historical record, not
+   a rotating-pool dump past the shortfall.
+
+**Why.** `isInsightRestStickyCampaign` blocked off-week
+detach from Insight, so 40/40 enforcement could not clear
+Insight POD-B, and fan-out with `insightRequiresExisting`
+would re-spread any leftover POD-B still on one Insight
+lane. `campaignMayTakeGenerics` stayed POC-only and
+blocked assigned same-client generics from sharing; that
+is not a strip of `client_id` assignments (dedicated
+protect already held), but it is the old D193 attach gate.
+
+**Rejected.** Keeping Insight rest-sticky "because restore
+cannot put seats back." Dumping rotating unassigned
+generics onto every named client because D193 is retired.
+Live Smartlead writes from this chat.
+
+**Supersedes / amends.** Supersedes D189. Supersedes
+D193's POC-only / never-receive-generics read (D134-not-
+permission stays). Does not change D184/D192 Insight ≠
+SalesGlider mix, D221 PowerGRYD / TERRL exceptions, or
+D228 40/40 inventory.
+
+**Guards.** Insight ACTIVE is rest-detachable; off-week
+Insight unlinks; fan-out skips off-week POD and shares
+assigned same-client generics; CANON dated D229.
 
 ---
 

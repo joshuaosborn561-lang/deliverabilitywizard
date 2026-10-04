@@ -63,7 +63,7 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
     assert.notEqual(INSIGHT_CLIENT_ID, SALESGLIDER_CLIENT_ID);
   });
 
-  it("D189: named ids and Insight-prefix + 345263 are rest-sticky; other clients are not", () => {
+  it("D229: named ids and Insight-prefix still classify Insight; they are not rest-sticky", () => {
     assert.equal(
       isInsightRestStickyCampaign({
         id: 3921647,

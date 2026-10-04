@@ -49,11 +49,13 @@ export function isInsightClientId(id: number | null | undefined): boolean {
 }
 
 /**
- * D189 — client-rest must not unlink these. Named Insight ids (now
- * on client 582890), or any campaign whose name starts with
- * `Insight ` on Insight (582890) or leftover SalesGlider (345263).
- * Status does not matter: once a seat leaves Insight, restore
- * cannot put it back (`insightRequiresExisting`).
+ * Insight campaign classifier (named ids, or name starting with
+ * `Insight ` on Insight 582890 / leftover SalesGlider 345263).
+ * D229 retired the D189 rest-sticky exception — client-rest
+ * unlinks off-week seats from these like any other ACTIVE
+ * campaign. The D184/D192 mix still uses this set:
+ * `insightRequiresExisting` on restore/fan-out so a seat that
+ * left Insight is not put back from ACTIVE SalesGlider staff.
  */
 export function isInsightRestStickyCampaign(
   campaign:

@@ -14,18 +14,18 @@ export function hasGenericBackfillApproval(
 }
 
 /**
- * Rotating-pool generics may sit on a POC client only (currently
- * Goliath) for *new attaches beyond a named POD's shortfall-to-40*.
+ * Rotating-pool *dump* (fan-out / top-up extras past a POD's 40)
+ * still stays POC-only. That is not D193's old "named clients
+ * never receive generics."
  *
- * D193 — leftover D134 Slack / retire-tap approvals are a historical
- * record, not attach permission. Do not dump GENERIC / pool-brand
- * senders onto a named lane past the shortfall.
- *
- * D203 narrows D193's "leave it short / client-inbox only" read for
- * the min-40 fill path: exclusive client-signed generics may layer
- * on top of each named POD to fill that POD up to 40 when the named
- * half is short. Prefer named first. SalesGlider with ≥40 named per
- * POD must not carry pool generics.
+ * D203 narrows D193 for the min-40 fill path; D221 / D229 retire
+ * the leftover "named clients never receive generics" read.
+ * Every named client takes fleet-pool generics to fill that POD
+ * to 40. min40-topup is the assign path. Assigned generics
+ * (`client_id` + POD) must not be stripped from non-POC clients.
+ * Leftover D134 Slack / retire-tap approvals are a historical
+ * record, not attach permission — they do not dump the rotating
+ * pool onto a named lane past the shortfall.
  */
 export function campaignMayTakeGenerics(
   campaign: { id: number; name?: string | null },

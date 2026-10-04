@@ -25,10 +25,7 @@ import {
 } from "../lib/restCohort.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import {
-  canAttachMailboxToCampaign,
-  isInsightRestStickyCampaign,
-} from "../lib/insightCampaigns.js";
+import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import {
   countStaffableMemberships,
   detachWouldBreakStaffableFloor,
@@ -68,11 +65,11 @@ import {
  * ACTIVE client campaign each cycle (the D143 "boomerang"), then pulled
  * again — an in-app fight, not an outside sync.
  *
- * D189 — Insight campaigns (named D184 ids, or name starting with
- * `Insight ` on client 345263) are not rest-detachable. Off-week A/B
- * used to strip the exclusive Insight pool; D184 restore then refused
- * those seats (`insightRequiresExisting`) and the lanes collapsed to
- * ~1. Engagers / other SalesGlider ACTIVE rest is unchanged.
+ * D189 retired by D229 — Insight campaigns rest like every other
+ * named client. Off-week seats unlink from Insight; campaigns
+ * keep only the on-week POD (D228). The D184/D192 mix still
+ * holds: Insight staff never restore onto ACTIVE SalesGlider,
+ * and ACTIVE SG staff never restore onto Insight.
  *
  * D197 / D199 / D207 / D209 / D228 — the on-week campaign floor
  * stays ≥40 *on-week* staffable senders. Off-week named (and
@@ -111,8 +108,6 @@ export function isRestDetachableCampaign(
   const status = String(campaign.status ?? "").toUpperCase();
   if (!REST_DETACH_STATUSES.has(status)) return false;
   if (isExcluded(campaign, excluded)) return false;
-  // D189 — Insight exclusive staff survives the fortnight A/B cycle.
-  if (isInsightRestStickyCampaign(campaign)) return false;
   return true;
 }
 
@@ -406,9 +401,8 @@ export class ClientRestService {
           this.config.topUpExcludeCampaigns,
         ),
       );
-      // ACTIVE memberships the box already has — including Insight,
-      // which is not detachable (D189). Using detachable-only here
-      // would re-POST every Insight attach every on-week pass.
+      // ACTIVE memberships the box already has. Using detachable-only
+      // here would re-POST every already-on attach every on-week pass.
       const alreadyOnActive = campaignIdsOf(account).filter((id) => {
         const campaign = campaignById.get(id);
         return String(campaign?.status ?? "").toUpperCase() === "ACTIVE";
@@ -428,16 +422,7 @@ export class ClientRestService {
 
     // Off-week first so last-account on ACTIVE still sees on-week members.
     for (const row of offWeek) {
-      if (!row.detachable.length) {
-        if (row.existing) continue;
-        // D189 — exclusive Insight seats have nothing detachable. Do
-        // not invent a rest record; they stay on Insight and keep
-        // sending. Idle / empty memberships still get marked below.
-        const stickyInsight = campaignIdsOf(row.account).some((id) =>
-          isInsightRestStickyCampaign(campaignById.get(id) ?? { id }),
-        );
-        if (stickyInsight) continue;
-      }
+      if (!row.detachable.length && row.existing) continue;
       const removed = await this.detachFromCampaigns(
         row.account,
         row.email,

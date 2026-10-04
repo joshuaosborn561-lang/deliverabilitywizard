@@ -8,10 +8,14 @@
  * below 40. Azure seats weigh 0.1 (D232).
  */
 
-import { STAFFABLE_WEIGHT_EPS } from "./mailboxType.js";
+import {
+  STAFFABLE_WEIGHT_EPS,
+  type EspSlotFamily,
+} from "./mailboxType.js";
 import {
   GENERIC_POOL_POD_FLOOR,
   seatStaffableWeight,
+  type GenericPoolProvider,
   type GenericSeatRecord,
 } from "./genericPool.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
@@ -52,9 +56,18 @@ export function pickNamedWarmSwapReturns<T extends Pick<GenericSeatRecord, "emai
 }
 
 /** Oldest / worst first, never dropping named + remaining below the weighted 40. */
+function seatEspSlot(
+  seat: { provider?: GenericPoolProvider | null },
+): EspSlotFamily | null {
+  if (seat.provider === "GOOGLE") return "GOOGLE";
+  if (seat.provider === "MICROSOFT") return "MICROSOFT";
+  return null;
+}
+
 export function pickWeightedGenericReturns<
   T extends Pick<GenericSeatRecord, "email" | "assignedAt"> & {
     staffableWeight?: number;
+    provider?: GenericPoolProvider | null;
   },
 >(
   seats: T[],
@@ -62,13 +75,19 @@ export function pickWeightedGenericReturns<
     namedStaffable: number;
     previousNamedStaffable?: number;
     floor?: number;
+    /** D233 — return only this ESP family (Azure is MICROSOFT). */
+    preferEspSlot?: EspSlotFamily;
   },
 ): T[] {
   const floor = input.floor ?? GENERIC_POOL_POD_FLOOR;
   const named = Number.isFinite(input.namedStaffable)
     ? Math.max(0, input.namedStaffable)
     : 0;
-  const ranked = rankGenericsOldestWorstFirst(seats);
+  const prefer = input.preferEspSlot;
+  const ranked = rankGenericsOldestWorstFirst(seats).filter((seat) => {
+    if (!prefer) return true;
+    return seatEspSlot(seat) === prefer;
+  });
   const assignedWeight = ranked.reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
   const previous = input.previousNamedStaffable;
   const newlyWarm =

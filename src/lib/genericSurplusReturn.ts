@@ -18,6 +18,7 @@ import {
   type GenericSeatRecord,
 } from "./genericPool.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
+import type { EspSlotFamily } from "./mailboxType.js";
 
 export const GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY = true;
 
@@ -59,6 +60,8 @@ export function surplusGenericReturns(input: {
   skipEmails?: Iterable<string>;
   now?: Date;
   weekdaysOnly?: boolean;
+  /** D233 — named-warm swap returns the same ESP family that went warm. */
+  preferEspSlot?: EspSlotFamily;
 }): SurplusReturnCandidate[] {
   const now = input.now ?? new Date();
   const weekdaysOnly = input.weekdaysOnly ?? GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY;
@@ -98,7 +101,10 @@ export function surplusGenericReturns(input: {
     const picked =
       input.clientHasActiveCampaign?.get(clientId) === false
         ? rankGenericsOldestWorstFirst(seats)
-        : pickWeightedGenericReturns(seats, { namedStaffable: named });
+        : pickWeightedGenericReturns(seats, {
+            namedStaffable: named,
+            preferEspSlot: input.preferEspSlot,
+          });
     for (const seat of picked) {
       out.push({
         email: seat.email,

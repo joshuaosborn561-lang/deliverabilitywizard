@@ -238,6 +238,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D230 | Live — sole assign/release path and `released_at` history locked by D231 | Governing generic rule: one shared pool in a table; a generic attaches to ONE client and ONE POD (A or B, whichever is under 40) and never rotates PODs; stays until branded named seats fill that POD back to 40, then returns to the untagged pool; while tagged no other client may use it; never pre-split across clients. min40 takes only untagged pool or same client+POD. Named-warm swap returns one generic per newly-warm named seat, oldest/worst first, never below 40; surplus beyond 40 also returns |
 | D231 | Live | Generics are handed out only through `state.genericSeats` (wizard state table). Each row: seat id, email, client_id or null, POD or null, assigned_at, reason, released_at history. min40 / TERRL sub / named-warm / surplus / cleanup assign and release through that table. Blocks two-client tags and assignments outside the table. Seeded from live Smartlead. |
 | D232 | Live | Azure/Entra mailboxes (type:azure / tidalstackco.com), generic or named, weigh 0.1 toward a POD's 40; every other type weighs 1. Weighted sum ≥40 is the target for staffable counts, Canon understaffed, min40, surplus, named-warm return, and the 24h TERRL sub. |
+| D233 | Live | Azure may only fill or replace Azure or Microsoft (M365/Outlook) slots, never Google slots, so the POD ESP mix holds. When a Google seat leaves, only a Google seat replaces it. Enforced in min40, the 24h TERRL sub, named-warm swap, and pool assignment. |
 
 ---
 
@@ -7694,6 +7695,34 @@ Does not change Azure 2/5 caps or one-client / one-POD.
 
 **Guards.** `mailboxStaffableWeight`; weighted min40 /
 surplus / understaffed / TERRL; CANON dated D232.
+
+---
+
+## D233 — Azure never fills a Google slot
+
+**Date.** 2026-10-04 (Josh). Same HARD add-on as D232.
+
+**Decision.** Azure may only fill or replace Azure or
+Microsoft (M365/Outlook) slots, never Google slots, so
+the POD's ESP mix holds. When a Google seat leaves, only
+a Google seat replaces it. Enforced in min40, the 24h
+TERRL substitute, named-warm swap, and pool assignment.
+
+**Why.** Azure is a Microsoft/Entra seat. Putting it on
+a Google hole would drop the Google side of the D203
+mix floor.
+
+**Rejected.** Azure as a wildcard fill. Google replacing
+Azure/Microsoft when the leaving seat is Google.
+
+**Supersedes / amends.** Amends D192/D203/D219/D230
+assignment: replacements stay in-family; Azure is
+Microsoft-family. Does not change the 0.1 weight (D232)
+or the 14-of-40 mix floor.
+
+**Guards.** `replacementMayFillEspSlot`; `espFillOrder`
+does not fall through to Microsoft when Google is short;
+CANON dated D233.
 
 ---
 

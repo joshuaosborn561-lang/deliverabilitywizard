@@ -15,7 +15,11 @@ import {
   clientPodKey,
   seatStaffableWeight,
 } from "../lib/genericPool.js";
-import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
+import {
+  mailboxEspSlot,
+  mailboxStaffableWeight,
+  roundStaffableWeight,
+} from "../lib/mailboxType.js";
 import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -37,10 +41,7 @@ import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
 import { isPocClient } from "../lib/pocClient.js";
-import {
-  buildPoolSignature,
-  poolEspFromSmartleadType,
-} from "../lib/poolSignature.js";
+import { buildPoolSignature } from "../lib/poolSignature.js";
 import {
   genericEligibleForClientPod,
   genericPodTagColor,
@@ -637,10 +638,24 @@ export class Min40TopUpService {
       return (accountEmail(a) ?? "").localeCompare(accountEmail(b) ?? "");
     });
 
+    const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
+    for (const account of input.accounts) {
+      if (!campaignIdsOf(account).includes(input.campaign.id)) continue;
+      const slot = mailboxEspSlot(account);
+      if (slot) espCounts[slot] += 1;
+    }
+
     for (const account of existing) {
       if (placed >= input.shortBy - 1e-9) break;
       const email = accountEmail(account);
       if (!email) continue;
+      const needed = espFillOrder(
+        espCounts,
+        ON_WEEK_MIN_SENDERS,
+        Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+      );
+      const slot = mailboxEspSlot(account);
+      if (needed.length === 1 && slot && slot !== needed[0]) continue;
       const ok = await this.attachSeat({
         account,
         email,
@@ -652,14 +667,8 @@ export class Min40TopUpService {
       if (ok) {
         selected.add(email.toLowerCase());
         placed = roundStaffableWeight(placed + mailboxStaffableWeight(account));
+        if (slot) espCounts[slot] += 1;
       }
-    }
-
-    const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
-    for (const account of input.accounts) {
-      if (!campaignIdsOf(account).includes(input.campaign.id)) continue;
-      const platform = poolEspFromSmartleadType(account.type);
-      if (platform) espCounts[platform] += 1;
     }
 
     while (placed < input.shortBy - 1e-9) {
@@ -844,9 +853,32 @@ export class Min40TopUpService {
           .filter((seat) => seat.assignedClientId === clientId && seat.assignedPod === pod)
           .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
         let need = podInventoryNeed(named, assigned);
+        const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
+        for (const account of input.accounts) {
+          const email = accountEmail(account);
+          if (!email) continue;
+          const generic = isGenericMailbox(account, email, this.config, this.state);
+          const assignedHere =
+            typeof account.client_id === "number" &&
+            account.client_id === clientId &&
+            mailboxPodOf(account) === pod;
+          const namedHere =
+            !generic &&
+            typeof account.client_id === "number" &&
+            account.client_id === clientId &&
+            (mailboxPodOf(account) === pod || mailboxPodOf(account) == null);
+          if (!assignedHere && !namedHere) continue;
+          const slot = mailboxEspSlot(account);
+          if (slot) espCounts[slot] += 1;
+        }
         while (need > 1e-9) {
+          const platforms = espFillOrder(
+            espCounts,
+            ON_WEEK_MIN_SENDERS,
+            Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
+          );
           const pool = this.state.findReassignablePoolMailbox(
-            ["GOOGLE", "MICROSOFT"],
+            platforms,
             (email) => {
               const key = email.toLowerCase();
               if (selected.has(key)) return false;
@@ -913,6 +945,8 @@ export class Min40TopUpService {
               clientId,
             });
             need = roundStaffableWeight(need - mailboxStaffableWeight(original));
+            const placedSlot = mailboxEspSlot(original);
+            if (placedSlot) espCounts[placedSlot] += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             input.result.errors.push(`${pool.email} POD ${pod}: ${message}`);

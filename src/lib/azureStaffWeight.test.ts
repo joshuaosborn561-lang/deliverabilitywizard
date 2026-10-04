@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 import {
   AZURE_STAFFABLE_WEIGHT,
   REGULAR_STAFFABLE_WEIGHT,
+  azureMayFillEspSlot,
+  mailboxEspSlot,
   mailboxStaffableWeight,
+  replacementMayFillEspSlot,
   weightedStaffableShortfall,
 } from "./mailboxType.js";
 import {
@@ -118,6 +121,49 @@ describe("D232 Azure staffable weight", () => {
       }),
       0.1,
     );
+  });
+
+  it("Azure may only fill Microsoft slots; Google leaving needs Google", () => {
+    assert.equal(mailboxEspSlot({ tags: [{ tag_name: "type:azure" }] }), "MICROSOFT");
+    assert.equal(azureMayFillEspSlot("GOOGLE"), false);
+    assert.equal(azureMayFillEspSlot("MICROSOFT"), true);
+    assert.equal(
+      replacementMayFillEspSlot(
+        { from_email: "az@tidalstackco.com", tags: [{ tag_name: "type:azure" }] },
+        { type: "GMAIL", from_email: "ada@gmail.com" },
+      ),
+      false,
+    );
+    assert.equal(
+      replacementMayFillEspSlot(
+        { type: "GMAIL", from_email: "ben@gmail.com" },
+        { type: "GMAIL", from_email: "ada@gmail.com" },
+      ),
+      true,
+    );
+    assert.equal(
+      replacementMayFillEspSlot(
+        { from_email: "az@tidalstackco.com", tags: [{ tag_name: "type:azure" }] },
+        { type: "OUTLOOK", from_email: "ada@salesglider.com" },
+      ),
+      true,
+    );
+    const googleWarm = pickWeightedGenericReturns(
+      [
+        emptyGenericSeat("az@tidalstackco.com", {
+          assignedAt: "2026-10-01T00:00:00.000Z",
+          staffableWeight: 0.1,
+          provider: "MICROSOFT",
+        }),
+        emptyGenericSeat("pool@gmail.com", {
+          assignedAt: "2026-10-03T00:00:00.000Z",
+          staffableWeight: 1,
+          provider: "GOOGLE",
+        }),
+      ],
+      { namedStaffable: 40, preferEspSlot: "GOOGLE" },
+    );
+    assert.deepEqual(googleWarm.map((row) => row.email), ["pool@gmail.com"]);
   });
 
   it("reports weighted total, shortfall, and non-Azure warm pool cover", () => {

@@ -63,6 +63,57 @@ export function weightedStaffableShortfall(
   return roundStaffableWeight(Math.max(0, floor - (Number.isFinite(weighted) ? weighted : 0)));
 }
 
+/** D233 — Google vs Microsoft family for mix / replacement. Azure is Microsoft. */
+export type EspSlotFamily = "GOOGLE" | "MICROSOFT";
+
+export function mailboxEspSlot(account: {
+  type?: string | null;
+  platform?: string | null;
+  from_email?: string | null;
+  email?: string | null;
+  tags?: Array<{ tag_name?: string; name?: string }>;
+} | null | undefined): EspSlotFamily | null {
+  const kind = classifyMailboxSendType(account);
+  if (kind === "google") return "GOOGLE";
+  if (kind === "m365" || kind === "azure") return "MICROSOFT";
+  return null;
+}
+
+/** Azure may only fill Azure or M365/Outlook slots, never Google (D233). */
+export function azureMayFillEspSlot(slot: EspSlotFamily | null | undefined): boolean {
+  return slot === "MICROSOFT";
+}
+
+/**
+ * D233 — Azure never takes a Google slot. When a Google seat leaves,
+ * only a Google seat replaces it. Microsoft/Azure may replace each other.
+ */
+export function replacementMayFillEspSlot(
+  replacement: {
+    type?: string | null;
+    platform?: string | null;
+    from_email?: string | null;
+    email?: string | null;
+    tags?: Array<{ tag_name?: string; name?: string }>;
+  } | null | undefined,
+  leaving: {
+    type?: string | null;
+    platform?: string | null;
+    from_email?: string | null;
+    email?: string | null;
+    tags?: Array<{ tag_name?: string; name?: string }>;
+  } | null | undefined,
+): boolean {
+  const leave = mailboxEspSlot(leaving);
+  const fill = mailboxEspSlot(replacement);
+  if (!leave || !fill) return false;
+  if (classifyMailboxSendType(replacement) === "azure") {
+    return azureMayFillEspSlot(leave);
+  }
+  if (leave === "GOOGLE") return fill === "GOOGLE";
+  return true;
+}
+
 export function senderHostOf(
   email: string | null | undefined,
 ): string | null {

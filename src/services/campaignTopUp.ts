@@ -109,17 +109,36 @@ export function isExcluded(
   });
 }
 
-/** Prefer the ESP that is short of the mix floor (D43: ~30% each). */
+/**
+ * Prefer the ESP that is short of the mix floor (D43: ~30% each).
+ * D233 — when one family is short, do not fall through to the other.
+ * Azure is MICROSOFT; a GOOGLE→MICROSOFT fallback would put Azure
+ * on a Google hole.
+ */
 export function espFillOrder(
   counts: { GOOGLE: number; MICROSOFT: number },
   floor: number,
   minPercent: number,
+  clientHasBothEsps?: boolean,
 ): Array<"GOOGLE" | "MICROSOFT"> {
   const minEsp = Math.ceil((floor * minPercent) / 100);
   const needGoogle = Math.max(0, minEsp - counts.GOOGLE);
   const needMicrosoft = Math.max(0, minEsp - counts.MICROSOFT);
-  if (needGoogle > needMicrosoft) return ["GOOGLE", "MICROSOFT"];
-  if (needMicrosoft > needGoogle) return ["MICROSOFT", "GOOGLE"];
+  const both =
+    clientHasBothEsps ?? (counts.GOOGLE > 0 && counts.MICROSOFT > 0);
+  // One-ESP clients are not required to invent the other family (D203).
+  if (!both) {
+    if (counts.GOOGLE > 0 && counts.MICROSOFT === 0) return ["GOOGLE"];
+    if (counts.MICROSOFT > 0 && counts.GOOGLE === 0) return ["MICROSOFT"];
+    return counts.MICROSOFT > counts.GOOGLE
+      ? ["MICROSOFT", "GOOGLE"]
+      : ["GOOGLE", "MICROSOFT"];
+  }
+  if (needGoogle > needMicrosoft) return ["GOOGLE"];
+  if (needMicrosoft > needGoogle) return ["MICROSOFT"];
+  if (needGoogle > 0) {
+    return counts.MICROSOFT > counts.GOOGLE ? ["MICROSOFT"] : ["GOOGLE"];
+  }
   return counts.MICROSOFT > counts.GOOGLE
     ? ["MICROSOFT", "GOOGLE"]
     : ["GOOGLE", "MICROSOFT"];

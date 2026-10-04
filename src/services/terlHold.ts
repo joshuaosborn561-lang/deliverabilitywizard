@@ -27,7 +27,10 @@ import {
 import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { weightedStaffableOnCampaign } from "../lib/azureStaffWeight.js";
 import { ON_WEEK_MIN_SENDERS } from "../lib/clientStaffFloor.js";
-import { mailboxStaffableWeight } from "../lib/mailboxType.js";
+import {
+  mailboxStaffableWeight,
+  replacementMayFillEspSlot,
+} from "../lib/mailboxType.js";
 import { chicagoWallClock, canonOpsIdleReason } from "../lib/canonOpsHours.js";
 import { sleep } from "../lib/http.js";
 import { onWeekCohort } from "../lib/restCohort.js";
@@ -501,6 +504,7 @@ export class TerlHoldService {
         .filter((id): id is number => typeof id === "number"),
     );
     const onWeek = onWeekCohort(input.now);
+    const stopped = input.accounts.find((row) => row.id === input.stoppedAccountId);
     const ranked: SmartleadAccountWithCampaigns[] = [];
     for (const account of input.accounts) {
       const email = accountEmail(account);
@@ -553,6 +557,7 @@ export class TerlHoldService {
       }
       if (this.state.isTenantTerlHoldAccount(account.id, input.now)) continue;
       if (this.state.isCopyCanary(email)) continue;
+      if (stopped && !replacementMayFillEspSlot(account, stopped)) continue;
       ranked.push(account);
     }
     ranked.sort((a, b) => {

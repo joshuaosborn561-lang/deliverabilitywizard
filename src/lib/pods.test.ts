@@ -154,4 +154,47 @@ describe("pods", () => {
     assert.deepEqual(byPool.A, ["aaa@client.com", "zzy@client.com"]);
     assert.deepEqual(byPool.B, ["aab@client.com", "zzz@client.com"]);
   });
+
+  it("D234: an already-tagged named seat keeps its POD even when the cut disagrees", () => {
+    const now = new Date("2026-10-05T14:00:00Z");
+    const pods = buildPods({
+      now,
+      config: {
+        extraGenericMailboxes: [],
+        extraGenericDomains: [],
+        prewarmedDomains: [],
+      },
+      state: state(),
+      isolation: { emails: new Set(), domain: "" },
+      accounts: [
+        {
+          accountId: 1,
+          email: "aaa@client.com",
+          clientId: 9,
+          clientName: "Acme",
+          type: "GMAIL",
+          tags: [{ tag_name: "POD-B" }],
+          onActiveCampaign: true,
+          resting: false,
+        },
+        {
+          accountId: 2,
+          email: "zzz@client.com",
+          clientId: 9,
+          clientName: "Acme",
+          type: "GMAIL",
+          tags: [{ tag_name: "POD-A" }],
+          onActiveCampaign: true,
+          resting: false,
+        },
+      ],
+    });
+    const byPool = Object.fromEntries(
+      pods
+        .filter((pod) => pod.pool === "A" || pod.pool === "B")
+        .map((pod) => [pod.pool, pod.mailboxes.map((mailbox) => mailbox.email)]),
+    );
+    assert.deepEqual(byPool.A, ["zzz@client.com"]);
+    assert.deepEqual(byPool.B, ["aaa@client.com"]);
+  });
 });

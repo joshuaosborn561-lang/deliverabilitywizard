@@ -491,7 +491,15 @@ export class Min40TopUpService {
     pod: "A" | "B",
     dryRun: boolean,
   ): Promise<void> {
-    if (lockedGenericPod({ tags: account.tags, assignedPod: this.state.getGenericSeat(email)?.assignedPod }) === pod) {
+    const locked = lockedGenericPod({
+      tags: account.tags,
+      assignedPod: this.state.getGenericSeat(email)?.assignedPod,
+    });
+    if (locked === pod) return;
+    if (locked != null) {
+      console.warn(
+        `[min40] D234 refuse POD retag ${email} has=POD-${locked} want=POD-${pod}`,
+      );
       return;
     }
     if (!dryRun && typeof account.id === "number" && this.smartlead.ensureTag && this.smartlead.assignTags) {

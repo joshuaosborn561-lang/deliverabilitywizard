@@ -75,7 +75,7 @@ import { MailboxTypeTagService } from "./services/mailboxTypeTags.js";
 import { TerlHoldService } from "./services/terlHold.js";
 import { SpendDigestService } from "./services/spendDigest.js";
 import { InboxkitLicenseSweepService } from "./services/inboxkitLicenseSweep.js";
-import { canonOpsIdleReason } from "./lib/canonOpsHours.js";
+import { canonOpsIdleReason, weekendWriterIdleReason } from "./lib/canonOpsHours.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
@@ -742,14 +742,24 @@ async function main(): Promise<void> {
     inventory?: InventorySnapshot,
     skipIfFreshMs?: number,
     skipIfBeforeStage?: HealthLoopStage | null,
+    joshLive?: boolean,
   ) => {
     // D129 — the D44/D59/D61 one-shots ran in Aug 2026 and are deleted;
     // rest gates are just the living D43 loops now.
+    // D234 — Sat/Sun idle unless Josh-live `/run`.
+    const weekendIdle = weekendWriterIdleReason({ joshLive });
     const restResult = config.enableClientRest
-      ? await stage("client-rest", () => clientRest.run({ inventory }), {
-          skipIfFreshMs,
-          skipIfBeforeStage,
-        })
+      ? await stage(
+          "client-rest",
+          () =>
+            (weekendIdle
+              ? Promise.resolve({ skipped: true as const, reason: weekendIdle })
+              : clientRest.run({ inventory, joshLive })) as Promise<unknown>,
+          {
+            skipIfFreshMs,
+            skipIfBeforeStage,
+          },
+        )
       : null;
     const genericRest = await stage(
       "generic-rest",
@@ -812,7 +822,7 @@ async function main(): Promise<void> {
    * send clock → top-up/fan-out → reconnect. Mailbox-settings converge is
    * throttled (every 6h). Measure stays on CRON_MONITOR.
    */
-  const runHealth = async () => {
+  const runHealth = async (opts: { joshLive?: boolean } = {}) => {
     assertRuntimeSecrets(config);
     if (healthInFlight) {
       console.log("[health] Already running — skipping overlapping trigger");
@@ -876,7 +886,12 @@ async function main(): Promise<void> {
         return { skipped: true as const, reason: "inventory-failed" };
       }
 
-      const rest = await runRestGates(inventory, skipIfFreshMs, skipIfBeforeStage);
+      const rest = await runRestGates(
+        inventory,
+        skipIfFreshMs,
+        skipIfBeforeStage,
+        opts.joshLive,
+      );
 
       await stage("client-tag", () => campaignClientTag.run({ inventory }), {
         skipIfFreshMs,
@@ -1188,7 +1203,7 @@ async function main(): Promise<void> {
   };
 
   const runMonitor = async (
-    opts: { remediate?: boolean; resume?: boolean } = {},
+    opts: { remediate?: boolean; resume?: boolean; joshLive?: boolean } = {},
   ) => {
     assertRuntimeSecrets(config);
     if (monitorInFlight) {
@@ -1212,7 +1227,9 @@ async function main(): Promise<void> {
       // the 6h cycle so a mid-chain SIGTERM continues from the leftover
       // tail instead of rerunning the whole sitting.
       if (config.enablePodControls) {
-        await stage("pod-tags", () => podTags.run(), { skipIfFreshMs });
+        await stage("pod-tags", () => podTags.run({ joshLive: opts.joshLive }), {
+          skipIfFreshMs,
+        });
       }
       const monitorResult = await stage("monitor-results", () => monitor.run(), {
         skipIfFreshMs,
@@ -2612,12 +2629,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     try {
       const mode = String(req.query.mode ?? req.body?.mode ?? "scan");
       if (mode === "monitor") {
-        const result = await runMonitor({ remediate: false });
+        const result = await runMonitor({ remediate: false, joshLive: true });
         res.json({ ok: true, mode: "monitor", result });
         return;
       }
       if (mode === "health" || mode === "campaign-health") {
-        const result = await runHealth();
+        const result = await runHealth({ joshLive: true });
         res.json({ ok: true, mode: "health", result });
         return;
       }
@@ -2734,14 +2751,14 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           });
           return;
         }
-        const rest = await runRestGates();
+        const rest = await runRestGates(undefined, undefined, undefined, true);
         const result = await clientFanOut.run();
         res.json({ ok: true, mode: "fan-out", result: { ...rest, fanOut: result } });
         return;
       }
       if (mode === "client-rest" || mode === "rest") {
         assertRuntimeSecrets(config);
-        const result = await clientRest.run();
+        const result = await clientRest.run({ joshLive: true });
         res.json({ ok: true, mode: "client-rest", result });
         return;
       }

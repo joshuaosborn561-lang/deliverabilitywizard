@@ -172,7 +172,12 @@ export class ClientRestService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; now?: Date; inventory?: InventorySnapshot } = {},
+    opts: {
+      dryRun?: boolean;
+      now?: Date;
+      inventory?: InventorySnapshot;
+      joshLive?: boolean;
+    } = {},
   ): Promise<ClientRestResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const now = opts.now ?? new Date();

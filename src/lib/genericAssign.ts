@@ -68,6 +68,18 @@ export function stampMailboxPodTag(
   tags: Array<{ tag_name?: unknown; name?: unknown }> | string[] | null | undefined,
   pod: GenericAssignedPod,
 ): Array<{ tag_name: string }> {
+  const existing = lockedGenericPod({ tags });
+  if (existing != null && existing !== pod) {
+    // D234 — never flip an already-tagged seat. Keep the lock.
+    return (tags ?? [])
+      .map((tag) =>
+        typeof tag === "string"
+          ? tag.trim()
+          : String(tag.tag_name ?? tag.name ?? "").trim(),
+      )
+      .filter(Boolean)
+      .map((tag_name) => ({ tag_name }));
+  }
   const keep = (tags ?? [])
     .map((tag) =>
       typeof tag === "string"

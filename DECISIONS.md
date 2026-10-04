@@ -239,6 +239,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D231 | Live | Generics are handed out only through `state.genericSeats` (wizard state table). Each row: seat id, email, client_id or null, POD or null, assigned_at, reason, released_at history. min40 / TERRL sub / named-warm / surplus / cleanup assign and release through that table. Blocks two-client tags and assignments outside the table. Seeded from live Smartlead. |
 | D232 | Live | Azure/Entra mailboxes (type:azure / tidalstackco.com), generic or named, weigh 0.1 toward a POD's 40; every other type weighs 1. Weighted sum ≥40 is the target for staffable counts, Canon understaffed, min40, surplus, named-warm return, and the 24h TERRL sub. |
 | D233 | Live | Azure may only fill or replace Azure or Microsoft (M365/Outlook) slots, never Google slots, so the POD ESP mix holds. When a Google seat leaves, only a Google seat replaces it. Enforced in min40, the 24h TERRL sub, named-warm swap, and pool assignment. |
+| D234 | Live | Already-tagged POD-A/POD-B seats are immutable. Only an untagged seat may receive a first POD tag. No job may retag A↔B. Weekend writers (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`. |
 
 ---
 
@@ -7723,6 +7724,47 @@ or the 14-of-40 mix floor.
 **Guards.** `replacementMayFillEspSlot`; `espFillOrder`
 does not fall through to Microsoft when Google is short;
 CANON dated D233.
+
+---
+
+## D234 — Already-tagged POD seats are immutable
+
+**Date.** 2026-10-03 9:22–9:31pm CT incident; written
+2026-10-04 (Josh, URGENT).
+
+**Decision.** No code path may change a POD-A or POD-B
+tag on an already-tagged seat. Only an untagged seat
+may receive a first POD tag. Named seats never retag
+across PODs. Generics never rotate PODs. The `pod-tags`
+job first-tags untagged named seats only and refuses
+A→B / B→A. `stampMailboxPodTag` and min40 refuse a
+flip. `buildPods` honors an existing tag over a
+recomputed ESP-balanced cut. Weekend writers
+(`pod-tags`, `client-rest`) idle Saturday and Sunday
+except Josh-live `/run` (RUN_TOKEN). Canon-ops was
+already weekday 08:00–18:00 CT.
+
+**Why.** After #283 deployed, `pod-tags` recomputed
+`assignClientCohorts` via `loadPods` / `buildPods` and
+flipped 14 named seats Insight 10 / TechEvo 3 / EMCOR 1
+plus 3 generics POD-A → POD-B. `client-rest` then
+unlinked the newly-B seats from on-week ACTIVE
+campaigns. The named split is static (D203). Dual-POD
+Slack was already weekend-idle; the tag writes were
+not. min40 / cleanup correctly idled.
+
+**Rejected.** Recomputing the ESP-balanced cut and
+writing the opposite tag. Weekend cron retags or
+rest-unlinks. Live Smartlead writes from this chat.
+
+**Supersedes / amends.** Amends D135 converge: first-tag
+only, never retag. Amends D203/D230: the lock is
+mechanical on every writer. Does not change 40/40,
+one-client / one-POD, or Azure weight.
+
+**Guards.** `mayWritePodTag`; pod-tags refuses retag;
+stampMailboxPodTag keeps the existing tag; weekend
+writer idle except Josh-live; CANON dated D234.
 
 ---
 

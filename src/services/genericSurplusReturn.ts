@@ -1,7 +1,7 @@
 /**
- * D225 — apply surplus generic returns from min40-topup and
- * generic-cleanup. Unlink, clear client_id, reset signature,
- * clear the generics table assignment.
+ * D225 / D235 — apply surplus generic returns from min40-topup and
+ * generic-cleanup. Unlink, clear client_id, reset signature, strip
+ * POD-A/POD-B, and record released_at.
  */
 
 import {
@@ -16,13 +16,7 @@ import {
   accountIsPeelStaffable,
   detachWouldBreakStaffableFloor,
 } from "../lib/clientStaffFloor.js";
-import {
-  GENERIC_POD_TAG_COLOR_A,
-  GENERIC_POD_TAG_COLOR_B,
-  GENERIC_POD_TAG_A,
-  GENERIC_POD_TAG_B,
-  stripMailboxPodTags,
-} from "../lib/genericAssign.js";
+import { returnGenericToUntaggedPool } from "../lib/genericReturn.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import {
@@ -179,39 +173,19 @@ export async function returnSurplusGenerics(input: {
           unlinked.push(campaignId);
           await sleep(WRITE_GAP_MS);
         }
-        await input.smartlead.updateEmailAccount(account.id, {
-          client_id: null,
-          signature: "",
-        });
-        await sleep(WRITE_GAP_MS);
-        if (input.smartlead.ensureTag && input.smartlead.removeTags) {
-          const tagA = await input.smartlead.ensureTag(
-            GENERIC_POD_TAG_A,
-            GENERIC_POD_TAG_COLOR_A,
-          );
-          const tagB = await input.smartlead.ensureTag(
-            GENERIC_POD_TAG_B,
-            GENERIC_POD_TAG_COLOR_B,
-          );
-          await input.smartlead.removeTags([account.id], [tagA.id, tagB.id]);
-          account.tags = stripMailboxPodTags(account.tags);
-          await sleep(WRITE_GAP_MS);
-        }
-        const pool = input.state.getPoolMailbox(pick.email);
-        if (pool) {
-          input.state.upsertPoolMailbox({
-            ...pool,
-            assignedClientId: undefined,
-            assignedClientName: undefined,
-            assignedAt: undefined,
-            status: pool.status === "assigned" ? "available" : pool.status,
-          });
-        }
-        input.state.releaseGenericFromTable(pick.email, {
+        const cleared = await returnGenericToUntaggedPool({
+          smartlead: input.smartlead,
+          state: input.state,
+          account,
+          email: pick.email,
           reason: pick.pod ? "named_warm_swap" : "surplus_return",
+          now,
         });
-        account.client_id = null;
-        account.signature = "";
+        if (!cleared.ok) {
+          result.errors.push(`${pick.email}: return refused (${cleared.reason})`);
+          continue;
+        }
+        await sleep(WRITE_GAP_MS);
       } else {
         unlinked.push(...campaignIds);
       }

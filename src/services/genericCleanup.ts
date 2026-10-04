@@ -17,6 +17,7 @@ import {
   type GenericPoolSyncAccount,
 } from "../lib/genericPoolCanon.js";
 import { keepAssignedGenericForPodInventory } from "../lib/podInventory.js";
+import { returnGenericToUntaggedPool } from "../lib/genericReturn.js";
 import { returnSurplusGenerics } from "./genericSurplusReturn.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 200;
@@ -128,28 +129,22 @@ export class GenericCleanupService {
             dropMembership(account, campaignId);
             await sleep(WRITE_GAP_MS);
           }
-          await this.smartlead.updateEmailAccount(account.id, {
-            client_id: null,
-            signature: "",
+          const cleared = await returnGenericToUntaggedPool({
+            smartlead: this.smartlead,
+            state: this.state,
+            account,
+            email,
+            reason: "cleanup",
+            now,
           });
-          account.client_id = null;
-          account.signature = "";
-          await sleep(WRITE_GAP_MS);
-          const pool = this.state.getPoolMailbox(email);
-          if (pool) {
-            this.state.upsertPoolMailbox({
-              ...pool,
-              assignedClientId: undefined,
-              assignedClientName: undefined,
-              assignedAt: undefined,
-              status: pool.status === "assigned" ? "available" : pool.status,
-            });
+          if (!cleared.ok) {
+            result.errors.push(`${email}: return refused (${cleared.reason})`);
+            continue;
           }
-          this.state.releaseGenericFromTable(email, { reason: "cleanup" });
         }
         result.cleared.push({ email, clientId });
         console.log(
-          `[generic-cleanup] cleared client_id ${clientId} + signature on ${email}`,
+          `[generic-cleanup] returned ${email} from client ${clientId} (client_id, signature, POD tag cleared)`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

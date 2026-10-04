@@ -1,7 +1,11 @@
 /**
- * D234 — an already-tagged POD-A or POD-B seat is immutable.
- * Only an untagged seat may receive a first POD tag. Dual-tagged
- * seats stay flagged (D223); this lock does not pick a side.
+ * D234 — an already-tagged POD-A or POD-B seat is immutable
+ * (never A→B or B→A). Only an untagged seat may receive a first
+ * POD tag. Dual-tagged seats stay flagged (D223); this lock does
+ * not pick a side.
+ *
+ * D235 — returning a *generic* to the untagged pool may strip
+ * POD-A/POD-B. Named seats never lose a POD tag this way.
  */
 
 import { podFromMailboxTags, type GenericAssignedPod } from "./genericPool.js";

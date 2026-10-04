@@ -12765,8 +12765,8 @@ describe("owner intent — D227 WARMUP-GATE-EXEMPT counts as 21+ warm", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D227\*\*/,
-      stop("CANON is dated D227.", "CANON.md header was not bumped to D227."),
+      /Canon as of \*\*D22[7-9]\*\*/,
+      stop("CANON is dated D227 or later.", "CANON.md header lost D227+."),
     );
     assert.match(
       canon,
@@ -12782,6 +12782,84 @@ describe("owner intent — D227 WARMUP-GATE-EXEMPT counts as 21+ warm", () => {
       decisions,
       /^\| D227 \|/m,
       stop("The status index lists D227 (D127).", "DECISIONS.md status index has no D227 row."),
+    );
+  });
+});
+
+describe("owner intent — D228 40/40 per-POD inventory", () => {
+  it("D228: each POD tops to 40; campaigns on-week only; surplus per THAT POD", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const inventory = await readFile(
+      new URL("../lib/podInventory.ts", import.meta.url),
+      "utf8",
+    );
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const cleanup = await readFile(
+      new URL("../services/genericCleanup.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      inventory,
+      /export function podInventoryNeed/,
+      stop("podInventoryNeed is the 40/40 shortfall (D228).", "podInventory.ts lost podInventoryNeed."),
+    );
+    assert.match(
+      inventory,
+      /keepAssignedGenericForPodInventory/,
+      stop("Needed off-week assignments stay (D228).", "podInventory.ts lost keepAssignedGenericForPodInventory."),
+    );
+    assert.match(
+      min40,
+      /genericMayLinkToCampaigns/,
+      stop("min40 will not attach off-week POD generics (D228).", "min40TopUp.ts lost genericMayLinkToCampaigns."),
+    );
+    assert.match(
+      min40,
+      /mailboxPodOf/,
+      stop("min40 prefers POD tags over assignClientCohorts (D228).", "min40TopUp.ts lost mailboxPodOf."),
+    );
+    assert.match(
+      cleanup,
+      /keepAssignedGenericForPodInventory/,
+      stop("generic-cleanup keeps a needed off-week assignment (D228).", "genericCleanup.ts lost keepAssignedGenericForPodInventory."),
+    );
+    assert.match(
+      rest,
+      /exempt: offWeekNamedUnlink/,
+      stop("Off-week named unlink is peel-floor exempt (D228).", "clientRest.ts lost the off-week named exempt."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D228\*\*/,
+      stop("CANON is dated D228.", "CANON.md header was not bumped to D228."),
+    );
+    assert.match(
+      canon,
+      /40\/40/,
+      stop("CANON names 40/40 inventory (D228).", "CANON.md lost 40/40."),
+    );
+    assert.match(
+      decisions,
+      /## D228 — 40\/40 per-POD inventory/,
+      stop("The ledger records D228.", "DECISIONS.md no longer has D228."),
+    );
+    assert.match(
+      decisions,
+      /^\| D228 \|/m,
+      stop("The status index lists D228 (D127).", "DECISIONS.md status index has no D228 row."),
     );
   });
 });

@@ -176,6 +176,33 @@ describe("D221 validateGenericPool", () => {
     assert.match(findings[0]!.detail, /POD B/);
   });
 
+  it("D228: needed off-week POD-B seats stay assigned when POD-A is already at 40", () => {
+    const findings = validateGenericPool({
+      seats: [
+        seat("extra-a@getintroduced.info", {
+          assignedClientId: 77,
+          assignedPod: "A",
+          assignedAt: "2026-10-02T00:00:00.000Z",
+        }),
+        ...Array.from({ length: 4 }, (_, i) =>
+          seat(`keep-b${i}@getintroduced.info`, {
+            assignedClientId: 77,
+            assignedPod: "B",
+            assignedAt: "2026-10-01T00:00:00.000Z",
+          }),
+        ),
+      ],
+      namedStaffableByClientPod: new Map([
+        [clientPodKey(77, "A"), 40],
+        [clientPodKey(77, "B"), 36],
+      ]),
+      clientHasActiveCampaign: new Map([[77, true]]),
+    });
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0]!.email, "extra-a@getintroduced.info");
+    assert.match(findings[0]!.detail, /POD A/);
+  });
+
   it("returns a generic when the client's campaigns are no longer ACTIVE", () => {
     const findings = validateGenericPool({
       seats: [

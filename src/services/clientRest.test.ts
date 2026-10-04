@@ -1385,20 +1385,17 @@ describe("ClientRestService", () => {
     );
   });
 
-  it("D197: does not bench off-week named seats when ACTIVE is at 40", async () => {
-    const now = new Date("2026-01-01T17:00:00Z"); // B off
-    const emails = Array.from(
+  it("D228: unlinks off-week named from an on-week campaign at 40", async () => {
+    const now = new Date("2026-10-01T17:00:00Z"); // POD A on-week
+    const onEmails = Array.from(
       { length: 40 },
-      (_, i) => `seat-${String(i).padStart(2, "0")}@client.info`,
+      (_, i) => `on-${String(i).padStart(2, "0")}@client.info`,
     );
-    const offEmails = emails.filter(
-      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
-    );
-    assert.ok(offEmails.length >= 1, "need off-week seats to prove the skip");
-
+    const offEmails = ["off-a@client.info", "off-b@client.info", "off-c@client.info"];
+    const emails = [...onEmails, ...offEmails];
     const removed: Array<[number, number[]]> = [];
     const state = new StateStore(
-      `/tmp/client-rest-min40-${process.pid}-${Date.now()}.json`,
+      `/tmp/client-rest-d228-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
     const smartlead = {
@@ -1414,6 +1411,11 @@ describe("ClientRestService", () => {
           created_at: WARMED,
           is_smtp_success: true,
           is_imap_success: true,
+          tags: [
+            {
+              tag_name: offEmails.includes(from_email) ? "POD-B" : "POD-A",
+            },
+          ],
         })),
       removeEmailAccountsFromCampaign: async (
         campaignId: number,
@@ -1431,15 +1433,26 @@ describe("ClientRestService", () => {
       state,
     );
     const result = await service.run({ dryRun: false, now });
-    assert.deepEqual(removed, []);
+    const removedIds = new Set(removed.flatMap((row) => row[1]));
     for (const email of offEmails) {
+      assert.ok(
+        result.benched.some((row) => row.email === email),
+        `${email} off-week named must unlink from the on-week campaign`,
+      );
+    }
+    for (const email of onEmails) {
       assert.equal(
         result.benched.some((row) => row.email === email),
         false,
-        `${email} must stay — peeling would drop Parlay below 40`,
+        `${email} on-week named must stay (on-week floor is 40)`,
       );
     }
-    assert.ok(result.skipped.some((row) => row.includes("per-campaign min 40")));
+    assert.equal(removedIds.size, offEmails.length);
+    assert.equal(
+      result.skipped.some((row) => row.includes("per-campaign min 40")),
+      false,
+      "off-week named must not be blocked by the on-week 40 floor",
+    );
   });
 
   it("D198: dedicated named-client generics rest with that client's A/B pods", async () => {
@@ -1516,22 +1529,22 @@ describe("ClientRestService", () => {
   });
 
   it("D199: disconnected leftovers must not let off-week rest drop staffable below 40", async () => {
-    const now = new Date("2026-01-15T17:00:00Z"); // B on
-    const emails = Array.from(
-      { length: 40 },
-      (_, i) => `seat-${String(i).padStart(2, "0")}@client.info`,
+    const now = new Date("2026-10-01T17:00:00Z"); // POD A on-week
+    const onEmails = Array.from(
+      { length: 20 },
+      (_, i) => `on-${String(i).padStart(2, "0")}@client.info`,
     );
-    const offEmails = emails.filter(
-      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
+    const offEmails = Array.from(
+      { length: 20 },
+      (_, i) => `off-${String(i).padStart(2, "0")}@client.info`,
     );
-    assert.ok(offEmails.length >= 1, "need off-week seats to prove the skip");
 
     const removedIds: number[] = [];
     const state = new StateStore(
       `/tmp/client-rest-d199-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
-    const staffable = emails.map((from_email, index) => ({
+    const staffable = [...onEmails, ...offEmails].map((from_email, index) => ({
       id: 10 + index,
       from_email,
       client_id: 9,
@@ -1539,6 +1552,7 @@ describe("ClientRestService", () => {
       created_at: WARMED,
       is_smtp_success: true,
       is_imap_success: true,
+      tags: [{ tag_name: offEmails.includes(from_email) ? "POD-B" : "POD-A" }],
     }));
     const zombies = Array.from({ length: 32 }, (_, i) => ({
       id: 200 + i,
@@ -1571,16 +1585,27 @@ describe("ClientRestService", () => {
     );
     const result = await service.run({ dryRun: false, now });
     const peeledStaffable = removedIds.filter((id) => id >= 10 && id < 50);
-    assert.deepEqual(
-      peeledStaffable,
-      [],
-      "D199 — 32 disconnected must not look like surplus that can bench on-week staffable seats",
+    const onWeekIds = new Set(
+      staffable
+        .filter((row) => onEmails.includes(row.from_email))
+        .map((row) => row.id),
     );
-    for (const email of offEmails) {
+    assert.equal(
+      peeledStaffable.some((id) => onWeekIds.has(id)),
+      false,
+      "D199 — 32 disconnected must not let rest peel on-week staffable below 40",
+    );
+    for (const email of onEmails) {
       assert.equal(
         result.benched.some((row) => row.email === email),
         false,
-        `${email} must stay — peeling would drop Parlay staffable below 40`,
+        `${email} on-week named must stay`,
+      );
+    }
+    for (const email of offEmails) {
+      assert.ok(
+        result.benched.some((row) => row.email === email),
+        `${email} off-week named unlinks; zombies do not protect it (D228)`,
       );
     }
   });
@@ -1936,20 +1961,18 @@ describe("ClientRestService", () => {
     );
   });
 
-  it("D209: off-week same-client CultureFits generic at 40 is not benched or marked resting", async () => {
-    const now = new Date("2026-01-15T17:00:00Z"); // B on
-    const emails = Array.from(
-      { length: 40 },
-      (_, i) => `seat-${String(i).padStart(2, "0")}@useculturefits.info`,
+  it("D228: unlinks off-week same-client generics from campaigns and keeps the assignment", async () => {
+    const now = new Date("2026-10-01T17:00:00Z"); // POD A on-week
+    const onEmails = Array.from(
+      { length: 4 },
+      (_, i) => `on-${i}@getintroduced.info`,
     );
-    const offEmails = emails.filter(
-      (email) => isOffWeek(assignClientCohorts(emails).get(email)!, now),
-    );
-    assert.ok(offEmails.length >= 1, "need off-week CultureFits seats");
-
+    const offEmails = ["off-0@getintroduced.info", "off-1@getintroduced.info"];
+    const emails = [...onEmails, ...offEmails];
     const removed: Array<[number, number[]]> = [];
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const state = new StateStore(
-      `/tmp/client-rest-d209-${process.pid}-${Date.now()}.json`,
+      `/tmp/client-rest-d228-gen-${process.pid}-${Date.now()}.json`,
     );
     await state.load();
     const smartlead = {
@@ -1962,7 +1985,11 @@ describe("ClientRestService", () => {
           id: 10 + index,
           from_email,
           client_id: 542838,
-          tags: [{ tag_name: "GENERIC" }],
+          signature: "Ada Pool\nBolder Cyber Partners",
+          tags: [
+            { tag_name: "GENERIC" },
+            { tag_name: offEmails.includes(from_email) ? "POD-B" : "POD-A" },
+          ],
           campaign_ids: [3763799, 3763800],
           created_at: WARMED,
           is_smtp_success: true,
@@ -1978,6 +2005,9 @@ describe("ClientRestService", () => {
       ) => {
         removed.push([campaignId, [...ids]]);
       },
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        writes.push({ id, fields });
+      },
       addEmailAccountsToCampaign: async () => undefined,
     } as unknown as SmartleadClient;
 
@@ -1987,39 +2017,24 @@ describe("ClientRestService", () => {
       { send: async () => undefined } as unknown as SlackClient,
       state,
     );
-    const first = await service.run({ dryRun: false, now });
-    assert.deepEqual(removed, [], "first pass must not peel below 40");
+    const result = await service.run({ dryRun: false, now });
     for (const email of offEmails) {
+      assert.ok(
+        result.benched.some((row) => row.email === email),
+        `${email} off-week generic must leave the on-week campaigns`,
+      );
+    }
+    for (const email of onEmails) {
       assert.equal(
-        first.benched.some((row) => row.email === email),
+        result.benched.some((row) => row.email === email),
         false,
-        `${email} must stay on both BCP camps`,
-      );
-      assert.equal(
-        state.getRestingInbox(email),
-        undefined,
-        `${email} must not be marked resting when detach was floor-blocked (D209)`,
+        `${email} on-week generic stays linked`,
       );
     }
-
-    for (const email of offEmails) {
-      state.markRestingInbox({
-        accountId: 10,
-        email,
-        clientId: "id:542838",
-        cohort: "A",
-        kind: "client",
-        restingSince: "2026-01-01T00:00:00.000Z",
-        removedFromCampaigns: [],
-        lastSameEspInbox: null,
-      });
-    }
-    const second = await service.run({ dryRun: false, now });
-    assert.deepEqual(
-      removed,
-      [],
-      "second pass must not treat a leftover rest record as peel-exempt",
+    assert.equal(
+      writes.some((row) => row.fields.client_id === null),
+      false,
+      "POD rotation must not clear client_id on off-week assigned generics",
     );
-    assert.equal(second.benched.length, 0);
   });
 });

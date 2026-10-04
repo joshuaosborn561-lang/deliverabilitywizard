@@ -12,6 +12,7 @@ import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
+import { mailboxPodOf } from "../lib/podInventory.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { pocClientId } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -73,14 +74,18 @@ import {
  * those seats (`insightRequiresExisting`) and the lanes collapsed to
  * ~1. Engagers / other SalesGlider ACTIVE rest is unchanged.
  *
- * D197 / D199 / D207 / D209 — off-week detach will not take an ACTIVE
- * campaign below 40 *staffable* senders. Raw membership leftovers do
- * not count as surplus. A rest record on a still-attached seat does
- * not shrink the floor or exempt the peel (D209). Dedicated
- * named-client generics rest with this client's pods and fan out
- * like named seats. Same-client multi-link is not a peel reason —
- * off-week rest may only trim surplus above 40. PAUSED/STOPPED are
- * never detached.
+ * D197 / D199 / D207 / D209 / D228 — the on-week campaign floor
+ * stays ≥40 *on-week* staffable senders. Off-week named (and
+ * off-week assigned generics) unlink from those campaigns even
+ * when total linked staffable is already 40 — the peel floor
+ * does not protect leftover off-week seats. Raw membership
+ * leftovers do not count as surplus. A rest record on a
+ * still-attached seat does not shrink the floor or exempt an
+ * on-week peel (D209). Dedicated named-client generics rest
+ * with this client's pods and fan out like named seats.
+ * Same-client multi-link is not a peel reason. Off-week
+ * assigned generics keep `client_id` + POD tag + signature
+ * (inventory is 40/40). PAUSED/STOPPED are never detached.
  */
 
 /** Live-client statuses rest may detach from (D207). PAUSED/STOPPED keep seats. */
@@ -322,15 +327,30 @@ export class ClientRestService {
     }
 
     const cohortByEmail = new Map<string, RestCohort>();
-    for (const [, inboxes] of byGroup) {
-      for (const [email, cohort] of assignClientCohorts(inboxes)) {
+    const applyCohorts = (
+      inboxes: Array<{ email: string; type?: string | null }>,
+      tagged: Map<string, RestCohort>,
+    ): void => {
+      const untagged = inboxes.filter((row) => !tagged.has(row.email));
+      for (const [email, cohort] of tagged) {
+        if (inboxes.some((row) => row.email === email)) {
+          cohortByEmail.set(email, cohort);
+        }
+      }
+      for (const [email, cohort] of assignClientCohorts(untagged)) {
         cohortByEmail.set(email, cohort);
       }
+    };
+    const taggedByEmail = new Map<string, RestCohort>();
+    for (const { account, email } of candidates) {
+      const pod = mailboxPodOf(account);
+      if (pod) taggedByEmail.set(email, pod);
+    }
+    for (const [, inboxes] of byGroup) {
+      applyCohorts(inboxes, taggedByEmail);
     }
     for (const [, inboxes] of dedicatedByGroup) {
-      for (const [email, cohort] of assignClientCohorts(inboxes)) {
-        cohortByEmail.set(email, cohort);
-      }
+      applyCohorts(inboxes, taggedByEmail);
     }
 
     type RestWork = {
@@ -426,6 +446,7 @@ export class ClientRestService {
         dryRun,
         result,
         campaignById,
+        true,
       );
       // D209 — only write a rest record after a successful detach, or
       // when the seat is already idle (nothing detachable). Marking a
@@ -571,6 +592,7 @@ export class ClientRestService {
     dryRun: boolean,
     result: ClientRestResult,
     campaignById: Map<number, SmartleadCampaign>,
+    offWeekNamedUnlink = false,
   ): Promise<number[]> {
     const removed: number[] = [];
     for (const campaignId of campaignIds) {
@@ -582,6 +604,7 @@ export class ClientRestService {
           account,
           email,
           this.state,
+          { exempt: offWeekNamedUnlink },
         )
       ) {
         result.skipped.push(

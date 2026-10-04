@@ -11,6 +11,12 @@ import { hasPoolMarkerTag } from "../lib/markerClients.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
+import {
+  syncGenericSeatsFromInventory,
+  validateGenericPool,
+  type GenericPoolSyncAccount,
+} from "../lib/genericPoolCanon.js";
+import { keepAssignedGenericForPodInventory } from "../lib/podInventory.js";
 import { returnSurplusGenerics } from "./genericSurplusReturn.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 200;
@@ -31,10 +37,12 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
 }
 
 /**
- * D205 — a GENERIC-tagged mailbox keeps a client's client_id +
- * signature only while it sits on that client's ACTIVE campaign.
- * When it is no longer sending for them, clear both. PowerGRYD
- * dedicated seats are hands-off. Named seats are never rewritten.
+ * D205 / D228 — a GENERIC-tagged mailbox keeps a client's
+ * client_id + signature while it sits on that client's ACTIVE
+ * campaign, **or** while it is assigned to a POD that still needs
+ * it for the 40/40 inventory (off-week: no campaign links). Surplus
+ * in THAT POD still returns. PowerGRYD dedicated seats are
+ * hands-off. Named seats are never rewritten.
  */
 export class GenericCleanupService {
   constructor(
@@ -59,12 +67,31 @@ export class GenericCleanupService {
       return { ...result, skipped: true, reason: "disabled" };
     }
 
-    const { campaigns, accounts } =
-      opts.inventory ?? (await fetchInventory(this.smartlead));
+    const inventory = opts.inventory ?? (await fetchInventory(this.smartlead));
+    const { campaigns, accounts } = inventory;
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );
     const powerId = this.config.powerGrydClientId;
+    const synced = syncGenericSeatsFromInventory({
+      existing: this.state.listGenericSeats(),
+      accounts: accounts as GenericPoolSyncAccount[],
+      campaigns: campaigns as SmartleadCampaign[],
+      config: this.config,
+      state: this.state,
+      now,
+      powerGrydClientId: powerId,
+    });
+    const idleEmails = validateGenericPool({
+      seats: synced.seats,
+      namedStaffableByClientPod: synced.namedStaffableByClientPod,
+      clientHasActiveCampaign: synced.clientHasActiveCampaign,
+      campaignClientById: synced.campaignClientById,
+      liveClientIdsByEmail: synced.liveClientIdsByEmail,
+      powerGrydClientId: powerId,
+    })
+      .filter((row) => row.kind === "generic_idle")
+      .map((row) => row.email);
 
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -82,6 +109,15 @@ export class GenericCleanupService {
         return campaign.client_id === clientId;
       });
       if (stillSendingForClient) continue;
+      if (
+        keepAssignedGenericForPodInventory({
+          email,
+          tags: account.tags,
+          idleEmails,
+        })
+      ) {
+        continue;
+      }
 
       try {
         if (!dryRun) {

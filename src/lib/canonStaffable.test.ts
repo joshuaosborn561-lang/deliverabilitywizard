@@ -173,4 +173,41 @@ describe("canonStaffable (D217)", () => {
     assert.equal(verdict.ok, true);
     assert.deepEqual(verdict.reasons, []);
   });
+
+  it("D227: WARMUP-GATE-EXEMPT tidalstack 9/29 import is not under_warmed", () => {
+    const now = new Date("2026-10-04T00:04:00Z");
+    const account = seat({
+      from_email: "ada@tidalstackco.com",
+      type: "OUTLOOK",
+      tags: [
+        { tag_name: "POD-A" },
+        { tag_name: "type:azure" },
+        { tag_name: "WARMUP-GATE-EXEMPT" },
+      ],
+      warmup_details: { created_at: "2026-09-29T00:00:00.000Z" },
+      created_at: "2026-09-29T00:00:00.000Z",
+    });
+    const verdict = canonStaffableVerdict({
+      account,
+      email: "ada@tidalstackco.com",
+      campaignClientId: 345263,
+      now,
+    });
+    assert.equal(verdict.ok, true);
+    assert.equal(verdict.reasons.includes("under_warmed"), false);
+    assert.equal(
+      canonStaffableVerdict({
+        account: seat({
+          from_email: "ada@tidalstackco.com",
+          tags: [{ tag_name: "POD-A" }, { tag_name: "type:azure" }],
+          warmup_details: { created_at: "2026-09-29T00:00:00.000Z" },
+        }),
+        email: "ada@tidalstackco.com",
+        campaignClientId: 345263,
+        now,
+      }).reasons.includes("under_warmed"),
+      true,
+      "without the tag, a 9/29 Smartlead clock is still under 21 days",
+    );
+  });
 });

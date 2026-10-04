@@ -394,6 +394,20 @@ export function isWarmupGateExempt(tags: string[]): boolean {
   return tags.some((t) => t.trim().toUpperCase() === WARMUP_GATE_EXEMPT_TAG);
 }
 
+/**
+ * D227 — a seat counts as 21+ days warm when Josh tagged it
+ * WARMUP-GATE-EXEMPT, or when a readable clock is already ≥21.
+ * Missing clocks stay undecided here; callers that fail-closed
+ * (owesWarmup) still treat unknown as owing unless exempt.
+ */
+export function countsAsWarmed21(
+  tags: string[],
+  daysWarmed: number | null | undefined,
+): boolean {
+  if (isWarmupGateExempt(tags)) return true;
+  return typeof daysWarmed === "number" && Number.isFinite(daysWarmed) && daysWarmed >= 21;
+}
+
 /** Return HOLD-UNTIL date if the hold has not expired yet (end of that UTC day). */
 export function activeHoldUntilDate(tags: string[], now = new Date()): string | null {
   for (const tag of tags) {

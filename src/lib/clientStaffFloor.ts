@@ -107,7 +107,7 @@ export type PeelStaffableState = {
 export function accountIsPeelStaffable(
   account: Pick<
     SmartleadEmailAccount,
-    "is_smtp_success" | "is_imap_success" | "warmup_details"
+    "is_smtp_success" | "is_imap_success" | "warmup_details" | "tags"
   >,
   email: string,
   state: PeelStaffableState = {},

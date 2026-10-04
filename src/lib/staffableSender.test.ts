@@ -60,4 +60,36 @@ describe("staffableSender", () => {
       true,
     );
   });
+
+  it("D227: WARMUP-GATE-EXEMPT tidalstack seats staff as 21+ days warm", () => {
+    const blocked = {
+      is_smtp_success: true,
+      is_imap_success: true,
+      warmup_details: {
+        is_warmup_blocked: true,
+        created_at: "2026-09-29T00:00:00.000Z",
+      },
+      created_at: "2026-09-29T00:00:00.000Z",
+    };
+    assert.equal(
+      isStaffableSender(blocked),
+      false,
+      "warmup-blocked without the exempt tag does not staff",
+    );
+    assert.equal(
+      isStaffableSender({
+        ...blocked,
+        tags: [
+          { tag_name: "WARMUP-GATE-EXEMPT" },
+          { tag_name: "type:azure" },
+        ],
+      }),
+      true,
+      "InboxKit-prewarmed Azure seats tagged WARMUP-GATE-EXEMPT staff now",
+    );
+    assert.equal(
+      isStaffableSender(blocked, { warmupExempt: true }),
+      true,
+    );
+  });
 });

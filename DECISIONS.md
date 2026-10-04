@@ -239,7 +239,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D231 | Live | Generics are handed out only through `state.genericSeats` (wizard state table). Each row: seat id, email, client_id or null, POD or null, assigned_at, reason, released_at history. min40 / TERRL sub / named-warm / surplus / cleanup assign and release through that table. Blocks two-client tags and assignments outside the table. Seeded from live Smartlead. |
 | D232 | Live | Azure/Entra mailboxes (type:azure / tidalstackco.com), generic or named, weigh 0.1 toward a POD's 40; every other type weighs 1. Weighted sum ≥40 is the target for staffable counts, Canon understaffed, min40, surplus, named-warm return, and the 24h TERRL sub. |
 | D233 | Live | Azure may only fill or replace Azure or Microsoft (M365/Outlook) slots, never Google slots, so the POD ESP mix holds. When a Google seat leaves, only a Google seat replaces it. Enforced in min40, the 24h TERRL sub, named-warm swap, and pool assignment. |
-| D234 | Live | Already-tagged POD-A/POD-B seats are immutable. Only an untagged seat may receive a first POD tag. No job may retag A↔B. Weekend writers (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`. |
+| D234 | Live — generic strip-on-return allowed by D235 | Already-tagged POD-A/POD-B seats are immutable (never A↔B). Only an untagged seat may receive a first POD tag. Weekend writers (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`. |
+| D235 | Live | A generic carries a client and POD tag only while staffed. Every return (surplus, named-warm swap, cleanup, 24h TERRL sub) clears POD-A/POD-B with client_id and signature and records released_at. D234 still allows that strip and a first-tag on assign. Named seats stay immutable. |
 
 ---
 
@@ -7765,6 +7766,43 @@ one-client / one-POD, or Azure weight.
 **Guards.** `mayWritePodTag`; pod-tags refuses retag;
 stampMailboxPodTag keeps the existing tag; weekend
 writer idle except Josh-live; CANON dated D234.
+
+---
+
+## D235 — A generic carries a client and POD tag only while staffed
+
+**Date.** 2026-10-04 (Josh, follow-up to the generic rule
+and #284).
+
+**Decision.** A generic carries a client and POD-A/POD-B
+tag only while it is staffed. Every return path — surplus
+return, named-warm swap return, generic-cleanup, and the
+24h TERRL substitute release — must clear the POD tag
+along with `client_id` and signature, and record
+`released_at` in the generic pool table. The D234 lock
+still allows stripping a POD tag from a generic being
+returned, and still allows adding a first POD tag to an
+untagged pool generic being assigned. Named seats stay
+immutable (never A↔B, never stripped by a return).
+
+**Why.** D230/D231 already said return goes to the
+untagged pool. Cleanup and the 24h TERRL restore cleared
+`client_id` / signature (or only unlinked) and left the
+POD tag on. After #284 the lock could be read as
+"never remove a POD tag."
+
+**Rejected.** Leaving a returned generic tagged POD-A or
+POD-B. Treating D234 as a ban on strip-on-return. Live
+Smartlead writes from this chat.
+
+**Supersedes / amends.** Amends D234: strip-on-return for
+generics is allowed. Amends D219 TERRL restore: the
+substitute is fully returned to the untagged pool, not
+only unlinked. Does not change named-seat immutability
+or one-client / one-POD while staffed.
+
+**Guards.** `returnGenericToUntaggedPool`;
+`mayStripPodTagOnGenericReturn`; CANON dated D235.
 
 ---
 

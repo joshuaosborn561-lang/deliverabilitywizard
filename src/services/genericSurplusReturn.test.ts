@@ -57,10 +57,22 @@ async function readyState(): Promise<StateStore> {
   return state;
 }
 
-describe("returnSurplusGenerics (D225)", () => {
-  it("unlinks a surplus generic, clears client_id, and resets the signature", async () => {
+function tagOps() {
+  const removedTags: Array<[number[], number[]]> = [];
+  return {
+    removedTags,
+    ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+    removeTags: async (ids: number[], tagIds: number[]) => {
+      removedTags.push([ids, tagIds]);
+    },
+  };
+}
+
+describe("returnSurplusGenerics (D225/D235)", () => {
+  it("unlinks a surplus generic, clears client_id/signature/POD, and records released_at", async () => {
     const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const removed: Array<[number, number[]]> = [];
+    const tags = tagOps();
     const state = await readyState();
     state.upsertGenericSeat(
       emptyGenericSeat("extra@getintroduced.info", {
@@ -94,6 +106,8 @@ describe("returnSurplusGenerics (D225)", () => {
         ) => {
           removed.push([campaignId, [...ids]]);
         },
+        ensureTag: tags.ensureTag,
+        removeTags: tags.removeTags,
       } as unknown as SmartleadClient,
       state,
       now: WEEKDAY,
@@ -114,12 +128,18 @@ describe("returnSurplusGenerics (D225)", () => {
     });
     assert.deepEqual(removed, [[2, [901]]]);
     assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
+    assert.deepEqual(tags.removedTags, [[[901], [1, 2]]]);
     assert.equal(result.returned.length, 1);
     assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
     assert.equal(result.returned[0]?.clientId, 521881);
-    assert.equal(state.getGenericSeat("extra@getintroduced.info")?.assignedClientId, null);
-    assert.equal(state.getGenericSeat("extra@getintroduced.info")?.releaseHistory.length, 1);
-    assert.equal(state.getGenericSeat("extra@getintroduced.info")?.releaseHistory[0]?.clientId, 521881);
+    const seat = state.getGenericSeat("extra@getintroduced.info");
+    assert.equal(seat?.assignedClientId, null);
+    assert.equal(seat?.assignedPod, null);
+    assert.equal(seat?.releasedAt, WEEKDAY.toISOString());
+    assert.equal(seat?.releaseHistory.length, 1);
+    assert.equal(seat?.releaseHistory[0]?.clientId, 521881);
+    assert.equal(seat?.releaseHistory[0]?.pod, "A");
+    assert.equal(seat?.releaseHistory[0]?.reason, "named_warm_swap");
     assert.equal(state.getPoolMailbox("extra@getintroduced.info")?.assignedClientId, undefined);
     assert.equal(state.getPoolMailbox("extra@getintroduced.info")?.status, "available");
   });
@@ -127,6 +147,7 @@ describe("returnSurplusGenerics (D225)", () => {
   it("skips PowerGRYD 592842 and an active 24h TERRL substitute", async () => {
     const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const removed: Array<[number, number[]]> = [];
+    const tags = tagOps();
     const state = await readyState();
     state.upsertTerlSubstitution({
       stoppedAccountId: 1,
@@ -155,6 +176,8 @@ describe("returnSurplusGenerics (D225)", () => {
         ) => {
           removed.push([campaignId, [...ids]]);
         },
+        ensureTag: tags.ensureTag,
+        removeTags: tags.removeTags,
       } as unknown as SmartleadClient,
       state,
       now: WEEKDAY,
@@ -203,6 +226,8 @@ describe("returnSurplusGenerics (D225)", () => {
     );
     assert.deepEqual(removed, [[2, [904]]]);
     assert.deepEqual(writes, [{ id: 904, fields: { client_id: null, signature: "" } }]);
+    assert.deepEqual(tags.removedTags, [[[904], [1, 2]]]);
+    assert.equal(state.getGenericSeat("keep-me@getintroduced.info")?.releasedAt, WEEKDAY.toISOString());
   });
 
   it("does nothing on a Chicago weekend", async () => {

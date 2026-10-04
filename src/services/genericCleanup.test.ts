@@ -26,10 +26,22 @@ function namedPodA(clientId: number, campaignId: number, n = 40) {
   }));
 }
 
-describe("GenericCleanupService (D205)", () => {
-  it("clears client_id + signature when a GENERIC is off that client's ACTIVE campaigns", async () => {
+function tagOps() {
+  const removedTags: Array<[number[], number[]]> = [];
+  return {
+    removedTags,
+    ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+    removeTags: async (ids: number[], tagIds: number[]) => {
+      removedTags.push([ids, tagIds]);
+    },
+  };
+}
+
+describe("GenericCleanupService (D205/D235)", () => {
+  it("clears client_id + signature + POD and records released_at when a GENERIC is off that client's ACTIVE campaigns", async () => {
     const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const removed: Array<[number, number[]]> = [];
+    const tags = tagOps();
     const state = new StateStore(stateFile());
     await state.load();
     const service = new GenericCleanupService(
@@ -44,6 +56,8 @@ describe("GenericCleanupService (D205)", () => {
         ) => {
           removed.push([campaignId, [...ids]]);
         },
+        ensureTag: tags.ensureTag,
+        removeTags: tags.removeTags,
       } as unknown as SmartleadClient,
       state,
     );
@@ -94,9 +108,16 @@ describe("GenericCleanupService (D205)", () => {
     });
     assert.deepEqual(writes, [{ id: 10, fields: { client_id: null, signature: "" } }]);
     assert.deepEqual(removed, [[1, [10]]]);
+    assert.deepEqual(tags.removedTags, [[[10], [1, 2]]]);
     assert.equal(result.cleared.length, 1);
     assert.equal(result.cleared[0]?.email, "gone@pool.info");
     assert.equal(result.returned.length, 0);
+    const seat = state.getGenericSeat("gone@pool.info");
+    assert.equal(seat?.assignedClientId, null);
+    assert.equal(seat?.assignedPod, null);
+    assert.equal(seat?.releasedAt, WEEKDAY.toISOString());
+    assert.equal(seat?.releaseHistory[0]?.clientId, 521881);
+    assert.equal(seat?.releaseHistory[0]?.reason, "cleanup");
   });
 
   it("D209: CultureFits generic still on two ACTIVE camps of that client is not cleared", async () => {
@@ -140,9 +161,10 @@ describe("GenericCleanupService (D205)", () => {
     assert.equal(result.returned.length, 0);
   });
 
-  it("D225: unlinks a surplus generic and returns it to the pool", async () => {
+  it("D225/D235: unlinks a surplus generic, strips POD, and records released_at", async () => {
     const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const removed: Array<[number, number[]]> = [];
+    const tags = tagOps();
     const state = new StateStore(stateFile());
     await state.load();
     state.upsertGenericSeat(
@@ -179,6 +201,8 @@ describe("GenericCleanupService (D205)", () => {
         ) => {
           removed.push([campaignId, [...ids]]);
         },
+        ensureTag: tags.ensureTag,
+        removeTags: tags.removeTags,
       } as unknown as SmartleadClient,
       state,
     );
@@ -207,10 +231,15 @@ describe("GenericCleanupService (D205)", () => {
     });
     assert.deepEqual(removed, [[2, [901]]]);
     assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
+    assert.deepEqual(tags.removedTags, [[[901], [1, 2]]]);
     assert.equal(result.cleared.length, 0);
     assert.equal(result.returned.length, 1);
     assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
-    assert.equal(state.getGenericSeat("extra@getintroduced.info")?.assignedClientId, null);
+    const seat = state.getGenericSeat("extra@getintroduced.info");
+    assert.equal(seat?.assignedClientId, null);
+    assert.equal(seat?.assignedPod, null);
+    assert.equal(seat?.releasedAt, WEEKDAY.toISOString());
+    assert.equal(seat?.releaseHistory[0]?.pod, "A");
     assert.equal(state.getPoolMailbox("extra@getintroduced.info")?.status, "available");
   });
 

@@ -3,8 +3,9 @@
  *
  * Stop: mpd=0, stay linked, POD tag untouched. One same-client warm
  * generic temporarily links on the on-week campaign (41 linked / 40
- * sending). Restore after 24h: type cap back, unlink the substitute.
- * Never retag named seats. Never borrow another client's generic.
+ * sending). Restore after 24h: type cap back, unlink the substitute,
+ * and return it to the untagged pool (D235). Never retag named seats.
+ * Never borrow another client's generic.
  */
 
 import type { AppConfig } from "../config.js";
@@ -20,6 +21,7 @@ import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { genericEligibleForClientPod, lockedGenericPod } from "../lib/genericAssign.js";
+import { returnGenericToUntaggedPool } from "../lib/genericReturn.js";
 import {
   GENERIC_ASSIGN_REASON_TERRL_SUBSTITUTE,
   genericProviderFromAccountType,
@@ -106,7 +108,8 @@ export class TerlHoldService {
       | "updateEmailAccount"
       | "addEmailAccountsToCampaign"
       | "removeEmailAccountsFromCampaign"
-    >,
+    > &
+      Partial<Pick<SmartleadClient, "ensureTag" | "removeTags">>,
     private readonly state: StateStore,
     private readonly slack?: Pick<SlackClient, "notifyDeliverabilityNote">,
   ) {}
@@ -410,6 +413,32 @@ export class TerlHoldService {
               row.substituteAccountId,
             ]);
             await sleep(WRITE_GAP_MS);
+            const substitute = byId.get(row.substituteAccountId);
+            const substituteEmail =
+              row.substituteEmail ||
+              (substitute ? accountEmail(substitute) : "") ||
+              "";
+            if (substitute && substituteEmail) {
+              const cleared = await returnGenericToUntaggedPool({
+                smartlead: this.smartlead,
+                state: this.state,
+                account: substitute,
+                email: substituteEmail,
+                reason: "terrl_sub_release",
+                now,
+              });
+              if (!cleared.ok) {
+                result.errors.push(
+                  `${substituteEmail}: TERRL return refused (${cleared.reason})`,
+                );
+              }
+              await sleep(WRITE_GAP_MS);
+            } else if (substituteEmail) {
+              this.state.releaseGenericFromTable(substituteEmail, {
+                reason: "terrl_sub_release",
+                now,
+              });
+            }
           }
         } catch (error) {
           result.errors.push(

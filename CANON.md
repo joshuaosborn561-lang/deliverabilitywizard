@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D234** (2026-10-04). One page of current truth. When a new
+Canon as of **D235** (2026-10-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -296,12 +296,18 @@ or the day is done. Silent findings are a bug (D163).
   **static** even A/B (D43/D203) that is **ESP-balanced ~50/50 within Outlook and within Gmail**
   per non-generic client (D192) — not an alphabetical-only half.
   Never retag or move named seats between POD-A and POD-B to staff
-  the on-week campaign (D203/D234). **D234:** an already-tagged
+  the on-week campaign (D203/D234). **D234:** a named already-tagged
   POD-A or POD-B seat is immutable — only an untagged seat may
   receive a first POD tag. No job (pod-tags, min40, rest, rotation,
   ESP-balance) may change A to B or B to A. Weekend writers
   (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`.
-  Generics are not part of that named cut.
+  **D235:** a generic carries a client and POD tag only while
+  staffed. Returning it to the untagged pool (surplus, named-warm
+  swap, cleanup, 24h TERRL sub release) clears POD-A/POD-B along
+  with `client_id` and signature and records `released_at`. The
+  D234 lock still allows that strip, and still allows a first POD
+  tag on an untagged pool generic being assigned. Named seats stay
+  immutable. Generics are not part of that named cut.
   On top of the D192 cut, each POD keeps the D203 mix floor: when
   both ESPs exist on the client, prefer neither Outlook nor Gmail
   under ~1/3 of that POD's 40.
@@ -343,7 +349,8 @@ or the day is done. Silent findings are a bug (D163).
   generic pool — D192).
 - **Generics (D230, governing):** Generics are one shared pool,
   tracked in a table. A generic attaches to ONE client and ONE POD,
-  A or B, whichever is under 40, and never rotates PODs. It stays
+  A or B, whichever is under 40, and never rotates PODs. It carries
+  that client and POD tag **only while staffed** (D235). It stays
   with that POD until the client's branded named seats fill that
   POD back to 40, then it returns to the untagged pool. While
   tagged, no other client can use it. Never pre-split generics
@@ -372,8 +379,9 @@ or the day is done. Silent findings are a bug (D163).
   it is no longer needed (surplus beyond 40 staffable in THAT
   POD, campaign paused or ended, replaced by a named seat that
   finished warm), **min40-topup and generic-cleanup** unlink it on a Chicago weekday and return
-  it to the pool with `client_id` / `assigned_client_id` cleared
-  and the signature reset (D225/D228) — that is what stops
+  it to the untagged pool with `client_id` / `assigned_client_id`
+  cleared, the signature reset, the POD-A/POD-B tag stripped, and
+  `released_at` recorded (D225/D228/D235) — that is what stops
   `generic_idle` paging on legitimate surplus. A needed
   off-week assignment is not surplus just because it has no
   campaign links. Never unlink a

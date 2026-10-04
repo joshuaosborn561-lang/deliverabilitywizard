@@ -192,11 +192,12 @@ describe("TerlHoldService substitution (D219)", () => {
     assert.equal(state.isTenantTerlHoldAccount(10, NOW), true);
   });
 
-  it("swap-out: restores the type cap and unlinks the substitute after 24h", async () => {
+  it("swap-out: restores the type cap and returns the substitute to the untagged pool after 24h", async () => {
     const state = store();
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const linked: Array<{ campaignId: number; ids: number[] }> = [];
     const unlinked: Array<{ campaignId: number; ids: number[] }> = [];
+    const removedTags: Array<[number[], number[]]> = [];
     const smartlead = {
       updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
         updates.push({ id, fields });
@@ -209,6 +210,10 @@ describe("TerlHoldService substitution (D219)", () => {
         ids: number[],
       ) => {
         unlinked.push({ campaignId, ids });
+      },
+      ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+      removeTags: async (ids: number[], tagIds: number[]) => {
+        removedTags.push([ids, tagIds]);
       },
     };
     const snap = inventory() as never;
@@ -245,6 +250,24 @@ describe("TerlHoldService substitution (D219)", () => {
       updates.filter((row) => row.id === 10),
       [{ id: 10, fields: { max_email_per_day: 15 } }],
     );
+    assert.deepEqual(
+      updates.filter((row) => row.id === 20),
+      [{ id: 20, fields: { client_id: null, signature: "" } }],
+    );
+    assert.deepEqual(removedTags, [[[20], [1, 2]]]);
+    const casey = (snap as { accounts: Array<Record<string, unknown>> }).accounts.find(
+      (row) => row.id === 20,
+    );
+    assert.deepEqual(casey?.tags, [{ tag_name: "GENERIC" }]);
+    assert.equal(casey?.client_id, null);
+    assert.equal(casey?.signature, "");
+    const seat = state.getGenericSeat("casey@getintroduced.co");
+    assert.equal(seat?.assignedClientId, null);
+    assert.equal(seat?.assignedPod, null);
+    assert.equal(seat?.releasedAt, AFTER.toISOString());
+    assert.equal(seat?.releaseHistory[0]?.clientId, 345263);
+    assert.equal(seat?.releaseHistory[0]?.pod, "A");
+    assert.equal(seat?.releaseHistory[0]?.reason, "terrl_sub_release");
     const row = state.getTerlSubstitution(3847939, 10);
     assert.ok(row?.restoredAt);
     assert.equal(state.isTenantTerlHoldAccount(10, AFTER), false);

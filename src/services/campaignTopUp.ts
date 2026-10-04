@@ -38,6 +38,11 @@ import {
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import { genericEligibleForClientPod } from "../lib/genericAssign.js";
+import {
+  GENERIC_ASSIGN_REASON_POD_TOP_UP,
+  applyAssignGenericSeat,
+} from "../lib/genericPool.js";
+import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
@@ -147,6 +152,18 @@ export class CampaignTopUpService {
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
     const now = new Date();
+    if (!dryRun) {
+      const seeded = syncGenericSeatsFromInventory({
+        existing: this.state.listGenericSeats(),
+        accounts,
+        campaigns,
+        config: this.config,
+        state: this.state,
+        now,
+        powerGrydClientId: this.config.powerGrydClientId,
+      });
+      this.state.replaceGenericSeats(seeded.seats);
+    }
     const accountById = new Map(
       (accounts as SmartleadAccountWithCampaigns[])
         .filter((account) => typeof account.id === "number")
@@ -488,20 +505,34 @@ export class CampaignTopUpService {
                 poolAccount &&
                 typeof campaign.client_id === "number" &&
                 isGenericMailbox(poolAccount, key, this.config, this.state) &&
-                !genericEligibleForClientPod({
-                  clientId: campaign.client_id,
-                  targetPod: onWeekCohort(now),
-                  mailboxClientId:
-                    typeof poolAccount.client_id === "number"
-                      ? poolAccount.client_id
-                      : null,
-                  assignedClientId:
-                    this.state.getGenericSeat(key)?.assignedClientId ??
-                    this.state.getPoolMailbox(key)?.assignedClientId ??
-                    null,
-                  tags: poolAccount.tags,
-                  assignedPod: this.state.getGenericSeat(key)?.assignedPod ?? null,
-                })
+                (() => {
+                  const seat = this.state.getGenericSeat(key);
+                  if (!seat) return true;
+                  if (
+                    !genericEligibleForClientPod({
+                      clientId: campaign.client_id,
+                      targetPod: onWeekCohort(now),
+                      mailboxClientId:
+                        typeof poolAccount.client_id === "number"
+                          ? poolAccount.client_id
+                          : null,
+                      assignedClientId:
+                        seat.assignedClientId ??
+                        this.state.getPoolMailbox(key)?.assignedClientId ??
+                        null,
+                      tags: poolAccount.tags,
+                      assignedPod: seat.assignedPod,
+                    })
+                  ) {
+                    return true;
+                  }
+                  return !applyAssignGenericSeat(seat, {
+                    email: key,
+                    clientId: campaign.client_id,
+                    pod: onWeekCohort(now),
+                    reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+                  }).ok;
+                })()
               )
             );
           },
@@ -656,6 +687,32 @@ export class CampaignTopUpService {
               assignedClientName: clientName,
               assignedAt: new Date().toISOString(),
             });
+            if (
+              original &&
+              typeof clientId === "number" &&
+              isGenericMailbox(original, pool.email, this.config, this.state)
+            ) {
+              if (!this.state.getGenericSeat(pool.email)) {
+                this.state.ensureGenericSeat({
+                  email: pool.email,
+                  slAccountId: pool.smartleadAccountId ?? null,
+                });
+              }
+              const assigned = this.state.assignGenericFromTable({
+                email: pool.email,
+                clientId,
+                pod: onWeekCohort(now),
+                reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+                campaignIds: [campaign.id],
+                slAccountId: pool.smartleadAccountId ?? null,
+                now,
+              });
+              if (!assigned.ok) {
+                throw new Error(
+                  `generic table assign refused (${assigned.error})`,
+                );
+              }
+            }
           }
           placed += 1;
           if (pool.platform === "GOOGLE" || pool.platform === "MICROSOFT") {

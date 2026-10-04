@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D230** (2026-10-03). One page of current truth. When a new
+Canon as of **D231** (2026-10-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -322,11 +322,18 @@ or the day is done. Silent findings are a bug (D163).
   POD back to 40, then it returns to the untagged pool. While
   tagged, no other client can use it. Never pre-split generics
   across clients.
-- **Generics** are **ONE fleet-wide pool** (D221/D230). The wizard tracks
-  every generic seat in a `generics` table (one row per seat):
-  `email`, `sl_account_id`, `provider`, `warm_ready_at`,
-  `assigned_client_id` (nullable), `assigned_campaign_id(s)`,
-  `assigned_pod` (A/B, nullable), `assigned_at`, `reason`. A
+- **Generics** are **ONE fleet-wide pool** (D221/D230/D231). The wizard
+  tracks every generic seat in `state.genericSeats` (the `generics` table
+  in `src/state/store.ts`, one row per seat):
+  seat id (`sl_account_id`), `email`, `assigned_client_id` (nullable),
+  `assigned_pod` (A/B, nullable), `assigned_at`, `reason`, and a
+  `released_at` history, plus `provider`, `warm_ready_at`, and
+  `assigned_campaign_id(s)`. **Every** generic assign and release
+  (min40, TERRL sub, named-warm / surplus return, cleanup) goes
+  through that table — never ad hoc. A check blocks any generic
+  tagged to two clients (`generic_multi_client`) or assigned
+  outside the table (`generic_outside_table`). Health seeds the
+  table from live Smartlead inventory. A
   generic gets a client and POD assignment **only** when
   **that POD** is short of 40 staffable senders
   (D228 — each POD independently, so inventory is 40/40,
@@ -382,7 +389,9 @@ or the day is done. Silent findings are a bug (D163).
   ends, then releases. A generic assigned to a client that does
   not need it for that POD's 40 is a `generic_idle` finding. A
   generic assigned to more than one client is a
-  `generic_multi_client` finding. Both are core CANON misses —
+  `generic_multi_client` finding. A generic tagged in Smartlead
+  without a matching table assignment is
+  `generic_outside_table`. Those three are core CANON misses —
   `/health` goes no and Slack pages once per incident.
   **Exception (D197/D199/D203/D207/D209/D221):** exclusive generic + client-sig seats
   filling a POD shortfall must not be peeled as foreign Goliath

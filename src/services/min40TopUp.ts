@@ -10,7 +10,10 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
-import { clientPodKey } from "../lib/genericPool.js";
+import {
+  GENERIC_ASSIGN_REASON_POD_TOP_UP,
+  clientPodKey,
+} from "../lib/genericPool.js";
 import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -130,6 +133,16 @@ export class Min40TopUpService {
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
     const now = opts.now ?? new Date();
+    const seeded = syncGenericSeatsFromInventory({
+      existing: this.state.listGenericSeats(),
+      accounts,
+      campaigns,
+      config: this.config,
+      state: this.state,
+      now,
+      powerGrydClientId: this.config.powerGrydClientId,
+    });
+    if (!dryRun) this.state.replaceGenericSeats(seeded.seats);
     const policy = holdPolicyFromConfig(this.config);
     const todayYmd = chicagoWallClock(now, this.config.canonOpsTimezone).ymd;
     const onWeek = onWeekCohort(now);
@@ -452,14 +465,15 @@ export class Min40TopUpService {
     targetPod: "A" | "B",
   ): boolean {
     const seat = this.state.getGenericSeat(email);
+    if (!seat) return false;
     const pool = this.state.getPoolMailbox(email);
     return genericEligibleForClientPod({
       clientId,
       targetPod,
       mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
-      assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,
+      assignedClientId: seat.assignedClientId ?? pool?.assignedClientId ?? null,
       tags: account.tags,
-      assignedPod: seat?.assignedPod ?? null,
+      assignedPod: seat.assignedPod ?? null,
     });
   }
 
@@ -480,18 +494,25 @@ export class Min40TopUpService {
     }
     account.tags = stampMailboxPodTag(account.tags, pod);
     if (dryRun) return;
-    const existing = this.state.getGenericSeat(email);
-    this.state.upsertGenericSeat({
+    if (!this.state.getGenericSeat(email)) {
+      this.state.ensureGenericSeat({
+        email,
+        slAccountId: typeof account.id === "number" ? account.id : null,
+      });
+    }
+    const assigned = this.state.assignGenericFromTable({
       email,
-      slAccountId: typeof account.id === "number" ? account.id : existing?.slAccountId ?? null,
-      provider: existing?.provider ?? "OTHER",
-      warmReadyAt: existing?.warmReadyAt ?? null,
-      assignedClientId: clientId,
-      assignedCampaignIds: existing?.assignedCampaignIds ?? campaignIdsOf(account),
-      assignedPod: pod,
-      assignedAt: existing?.assignedAt ?? new Date().toISOString(),
-      reason: existing?.reason ?? "pod_top_up",
+      clientId,
+      pod,
+      reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+      campaignIds: campaignIdsOf(account),
+      slAccountId: typeof account.id === "number" ? account.id : null,
     });
+    if (!assigned.ok) {
+      console.warn(
+        `[min40] refused generic table assign ${email}: ${assigned.error}`,
+      );
+    }
   }
 
   private async attachSeat(input: {
@@ -510,6 +531,26 @@ export class Min40TopUpService {
         ]);
         recordMembership(input.account, input.campaign.id);
         await sleep(WRITE_GAP_MS);
+        if (isGenericMailbox(input.account, input.email, this.config, this.state)) {
+          if (!this.state.getGenericSeat(input.email)) {
+            this.state.ensureGenericSeat({
+              email: input.email,
+              slAccountId: input.account.id,
+            });
+          }
+          const assigned = this.state.assignGenericFromTable({
+            email: input.email,
+            clientId: input.clientId,
+            reason: GENERIC_ASSIGN_REASON_POD_TOP_UP,
+            campaignIds: [input.campaign.id],
+            slAccountId: input.account.id,
+          });
+          if (!assigned.ok) {
+            console.warn(
+              `[min40] refused generic table assign ${input.email}: ${assigned.error}`,
+            );
+          }
+        }
       }
       input.result.assigned.push({
         campaignId: input.campaign.id,
@@ -637,6 +678,7 @@ export class Min40TopUpService {
         if (!isPoolGenericSeat(poolAccount, key, this.config, this.state)) {
           return false;
         }
+        if (!this.state.getGenericSeat(key)) return false;
         if (!this.genericMayTakePod(poolAccount, key, input.clientId, onWeekCohort(input.now))) {
           return false;
         }
@@ -774,6 +816,9 @@ export class Min40TopUpService {
       now: input.now,
       powerGrydClientId: this.config.powerGrydClientId,
     });
+    if (!input.dryRun) {
+      this.state.replaceGenericSeats(synced.seats);
+    }
     const onWeek = onWeekCohort(input.now);
     for (const [clientId, clientActive] of input.activeByClient) {
       const powerGryd = isPowerGrydClientId(clientId, this.config.powerGrydClientId);
@@ -802,6 +847,7 @@ export class Min40TopUpService {
               if (!isPoolGenericSeat(account, email, this.config, this.state)) {
                 return false;
               }
+              if (!this.state.getGenericSeat(key)) return false;
               const owner =
                 typeof account.client_id === "number" ? account.client_id : null;
               if (owner != null && owner !== clientId) return false;

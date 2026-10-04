@@ -145,7 +145,7 @@ export class GenericCleanupService {
               status: pool.status === "assigned" ? "available" : pool.status,
             });
           }
-          this.state.clearGenericSeatAssignment(email);
+          this.state.releaseGenericFromTable(email, { reason: "cleanup" });
         }
         result.cleared.push({ email, clientId });
         console.log(

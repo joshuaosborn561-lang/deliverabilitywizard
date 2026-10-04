@@ -48,6 +48,7 @@ describe("D221 generic-pool constants", () => {
     assert.deepEqual([...GENERIC_POOL_CORE_KINDS], [
       "generic_idle",
       "generic_multi_client",
+      "generic_outside_table",
     ]);
     for (const kind of GENERIC_POOL_CORE_KINDS) {
       assert.ok(

@@ -206,7 +206,9 @@ export async function returnSurplusGenerics(input: {
             status: pool.status === "assigned" ? "available" : pool.status,
           });
         }
-        input.state.clearGenericSeatAssignment(pick.email);
+        input.state.releaseGenericFromTable(pick.email, {
+          reason: pick.pod ? "named_warm_swap" : "surplus_return",
+        });
         account.client_id = null;
         account.signature = "";
       } else {

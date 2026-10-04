@@ -118,6 +118,8 @@ describe("returnSurplusGenerics (D225)", () => {
     assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
     assert.equal(result.returned[0]?.clientId, 521881);
     assert.equal(state.getGenericSeat("extra@getintroduced.info")?.assignedClientId, null);
+    assert.equal(state.getGenericSeat("extra@getintroduced.info")?.releaseHistory.length, 1);
+    assert.equal(state.getGenericSeat("extra@getintroduced.info")?.releaseHistory[0]?.clientId, 521881);
     assert.equal(state.getPoolMailbox("extra@getintroduced.info")?.assignedClientId, undefined);
     assert.equal(state.getPoolMailbox("extra@getintroduced.info")?.status, "available");
   });

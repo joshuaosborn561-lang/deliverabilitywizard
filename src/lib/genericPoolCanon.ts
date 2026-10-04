@@ -19,6 +19,7 @@ import {
   genericPoolNeedForPod,
   genericProviderFromAccountType,
   genericSeatKey,
+  mergeSeededGenericSeat,
   normalizeGenericSeat,
   podFromMailboxTags,
   type GenericAssignedPod,
@@ -117,6 +118,25 @@ export function validateGenericPool(input: {
         detail: `${email} assigned to clients ${clients.join(",")}`,
       });
     }
+    const liveAssigned = live.length > 0 || campaignClients.length > 0;
+    if (liveAssigned && tableClients.length === 0) {
+      push({
+        kind: "generic_outside_table",
+        email,
+        detail: `${email} assigned outside the generics table`,
+      });
+    }
+  }
+
+  for (const [email, live] of input.liveClientIdsByEmail ?? []) {
+    const key = genericSeatKey(email);
+    if (uniquePositiveIds(live).length === 0) continue;
+    if (byEmail.has(key)) continue;
+    push({
+      kind: "generic_outside_table",
+      email: key,
+      detail: `${key} assigned outside the generics table`,
+    });
   }
 
   const assignedByClientPod = new Map<string, GenericSeatRecord[]>();
@@ -382,13 +402,19 @@ export function syncGenericSeatsFromInventory(
       assignedPod,
       assignedAt,
       reason: assignedReason(existing, assignedClientId, powerId),
+      releasedAt: existing?.releasedAt ?? null,
+      releaseHistory: existing?.releaseHistory ?? [],
     });
-    nextSeats.push(assignedClientId == null ? clearGenericAssignment({
-      ...seat,
-      slAccountId: seat.slAccountId,
-      provider: seat.provider,
-      warmReadyAt: seat.warmReadyAt,
-    }) : seat);
+    const cleared =
+      assignedClientId == null
+        ? clearGenericAssignment({
+            ...seat,
+            slAccountId: seat.slAccountId,
+            provider: seat.provider,
+            warmReadyAt: seat.warmReadyAt,
+          })
+        : seat;
+    nextSeats.push(mergeSeededGenericSeat(existing, cleared, now));
   }
 
   // Named seats without a POD tag take the static ESP-balanced A/B cut
@@ -427,6 +453,10 @@ export function syncGenericSeatsFromInventory(
 export function genericPoolCanonCompliant(findings: string[]): boolean {
   return !findings.some((line) => {
     const kind = parseGenericPoolFinding(line).kind;
-    return kind === "generic_idle" || kind === "generic_multi_client";
+    return (
+      kind === "generic_idle" ||
+      kind === "generic_multi_client" ||
+      kind === "generic_outside_table"
+    );
   });
 }

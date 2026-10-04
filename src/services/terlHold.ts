@@ -19,6 +19,12 @@ import {
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { genericEligibleForClientPod, lockedGenericPod } from "../lib/genericAssign.js";
+import {
+  GENERIC_ASSIGN_REASON_TERRL_SUBSTITUTE,
+  genericProviderFromAccountType,
+} from "../lib/genericPool.js";
+import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { chicagoWallClock, canonOpsIdleReason } from "../lib/canonOpsHours.js";
 import { sleep } from "../lib/http.js";
 import { onWeekCohort } from "../lib/restCohort.js";
@@ -120,6 +126,18 @@ export class TerlHoldService {
     if (!hosts.size) return result;
 
     const { accounts, campaigns, clients = [] } = input.inventory;
+    if (!dryRun) {
+      const seeded = syncGenericSeatsFromInventory({
+        existing: this.state.listGenericSeats(),
+        accounts,
+        campaigns,
+        config: this.config,
+        state: this.state,
+        now,
+        powerGrydClientId: this.config.powerGrydClientId,
+      });
+      this.state.replaceGenericSeats(seeded.seats);
+    }
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((row) => [row.id, row]),
     );
@@ -284,11 +302,40 @@ export class TerlHoldService {
             continue;
           }
         }
+        const substituteEmail = accountEmail(pick)?.toLowerCase() ?? "";
+        if (substituteEmail && !dryRun) {
+          if (!this.state.getGenericSeat(substituteEmail)) {
+            this.state.ensureGenericSeat({
+              email: substituteEmail,
+              slAccountId: pick.id,
+              provider: genericProviderFromAccountType(pick.type),
+            });
+          }
+          const assigned = this.state.assignGenericFromTable({
+            email: substituteEmail,
+            clientId: campaignClientId,
+            pod: lockedGenericPod({
+              tags: pick.tags,
+              assignedPod: this.state.getGenericSeat(substituteEmail)?.assignedPod,
+            }),
+            reason: GENERIC_ASSIGN_REASON_TERRL_SUBSTITUTE,
+            campaignIds: [campaignId],
+            slAccountId: pick.id,
+            now,
+          });
+          if (!assigned.ok) {
+            result.errors.push(
+              `${substituteEmail}: table assign refused (${assigned.error})`,
+            );
+            result.noSubstitute += 1;
+            continue;
+          }
+        }
         this.state.upsertTerlSubstitution({
           stoppedAccountId: seat.id,
           stoppedEmail: email,
           substituteAccountId: pick.id,
-          substituteEmail: accountEmail(pick)?.toLowerCase() ?? "",
+          substituteEmail,
           campaignId,
           campaignName: campaign.name ?? "",
           clientId: campaignClientId,
@@ -451,6 +498,8 @@ export class TerlHoldService {
       if (used.has(account.id)) continue;
       if (campaignIdsOf(account).includes(input.campaign.id)) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
+      const seat = this.state.getGenericSeat(email);
+      if (!seat) continue;
       const dedicated = resolveDedicatedGenericClientId(
         account,
         email,
@@ -458,8 +507,28 @@ export class TerlHoldService {
         this.state,
       );
       const sameClient =
-        dedicated === input.clientId || account.client_id === input.clientId;
+        dedicated === input.clientId ||
+        account.client_id === input.clientId ||
+        seat.assignedClientId === input.clientId ||
+        seat.assignedClientId == null;
       if (!sameClient) continue;
+      const targetPod =
+        lockedGenericPod({
+          tags: account.tags,
+          assignedPod: seat.assignedPod,
+        }) ?? onWeek;
+      if (
+        !genericEligibleForClientPod({
+          clientId: input.clientId,
+          targetPod,
+          mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
+          assignedClientId: seat.assignedClientId,
+          tags: account.tags,
+          assignedPod: seat.assignedPod,
+        })
+      ) {
+        continue;
+      }
       if (owesWarmup(account, email, this.config, this.state)) continue;
       if (account.is_smtp_success === false || account.is_imap_success === false) {
         continue;

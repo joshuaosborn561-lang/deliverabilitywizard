@@ -50,21 +50,28 @@ describe("D232 Azure staffable weight", () => {
   });
 
   it("will not return a weight-1 generic when only 0.1 surplus remains", () => {
-    const picked = pickWeightedGenericReturns(
+    const tooHeavy = pickWeightedGenericReturns(
       [
         emptyGenericSeat("old@getintroduced.info", {
           assignedAt: "2026-10-01T00:00:00.000Z",
           staffableWeight: 1,
         }),
+      ],
+      { namedStaffable: 39.9 },
+    );
+    assert.deepEqual(tooHeavy.map((row) => row.email), []);
+
+    const azureOnly = pickWeightedGenericReturns(
+      [
         emptyGenericSeat("azure@tidalstackco.com", {
           assignedAt: "2026-10-02T00:00:00.000Z",
           staffableWeight: 0.1,
         }),
       ],
-      { namedStaffable: 39.9 },
+      { namedStaffable: 40 },
     );
     assert.deepEqual(
-      picked.map((row) => row.email),
+      azureOnly.map((row) => row.email),
       ["azure@tidalstackco.com"],
     );
   });

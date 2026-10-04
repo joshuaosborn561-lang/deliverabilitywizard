@@ -1,20 +1,23 @@
 /**
- * D225 — surplus pool generics return to the fleet table.
- * A generic that is not needed for its POD's 40 is unlinked,
- * client_id cleared, signature reset. PowerGRYD 592842 and an
- * active 24h TERRL substitute stay. Never drop a POD below 40
- * staffable. Weekdays only.
+ * D225 / D230 — morning named-warm swap + surplus return.
+ * One generic per named seat that goes warm, oldest / worst first,
+ * plus any extras past 40. Returns to the untagged pool.
+ * PowerGRYD 592842 and an active 24h TERRL substitute stay.
+ * Never drop a POD below 40 staffable. Weekdays only.
  */
 
 import { isChicagoWeekday } from "./canonOpsHours.js";
+import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
 import {
   GENERIC_POOL_POD_FLOOR,
   GENERIC_POOL_POWERGRYD_CLIENT_ID,
+  clientPodKey,
   genericPoolIdleExempt,
   genericSeatKey,
+  type GenericAssignedPod,
   type GenericSeatRecord,
 } from "./genericPool.js";
-import { validateGenericPool } from "./genericPoolCanon.js";
+import { namedWarmSwapReturnCount } from "./namedWarmSwap.js";
 
 export const GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY = true;
 
@@ -65,32 +68,54 @@ export function surplusGenericReturns(input: {
   const skip = new Set(
     [...(input.skipEmails ?? [])].map((email) => genericSeatKey(email)),
   );
-  const idle = validateGenericPool({
-    seats: input.seats,
-    namedStaffableByClientPod: input.namedStaffableByClientPod,
-    clientHasActiveCampaign: input.clientHasActiveCampaign,
-    campaignClientById: input.campaignClientById,
-    liveClientIdsByEmail: input.liveClientIdsByEmail,
-    powerGrydClientId: powerId,
-    idleExemptEmails: skip,
-  }).filter((row) => row.kind === "generic_idle");
-
-  const byEmail = new Map(
-    input.seats.map((seat) => [genericSeatKey(seat.email), seat]),
-  );
-  const out: SurplusReturnCandidate[] = [];
-  for (const finding of idle) {
-    const seat = byEmail.get(genericSeatKey(finding.email));
-    if (!seat || seat.assignedClientId == null) continue;
+  void input.campaignClientById;
+  void input.liveClientIdsByEmail;
+  const grouped = new Map<string, GenericSeatRecord[]>();
+  const unpodded: SurplusReturnCandidate[] = [];
+  for (const seat of input.seats) {
+    if (seat.assignedClientId == null) continue;
     if (genericPoolIdleExempt(seat, powerId)) continue;
-    if (skip.has(seat.email)) continue;
-    out.push({
-      email: seat.email,
-      clientId: seat.assignedClientId,
-      pod: seat.assignedPod,
-    });
+    if (skip.has(genericSeatKey(seat.email))) continue;
+    if (!seat.assignedPod) {
+      unpodded.push({
+        email: seat.email,
+        clientId: seat.assignedClientId,
+        pod: null,
+      });
+      continue;
+    }
+    const key = clientPodKey(seat.assignedClientId, seat.assignedPod);
+    const list = grouped.get(key) ?? [];
+    list.push(seat);
+    grouped.set(key, list);
   }
-  return out;
+  const out: SurplusReturnCandidate[] = [...unpodded];
+  for (const [key, seats] of grouped) {
+    const [clientRaw, podRaw] = key.split(":");
+    const clientId = Number(clientRaw);
+    const pod = podRaw as GenericAssignedPod;
+    const named = input.namedStaffableByClientPod.get(key) ?? 0;
+    const count = namedWarmSwapReturnCount({
+      namedStaffable: named,
+      assignedCount: seats.length,
+      clientHasActiveCampaign: input.clientHasActiveCampaign?.get(clientId),
+    });
+    for (const seat of rankGenericsOldestWorstFirst(seats).slice(0, count)) {
+      out.push({
+        email: seat.email,
+        clientId: seat.assignedClientId!,
+        pod,
+      });
+    }
+  }
+  return rankGenericsOldestWorstFirst(
+    out.map((row) => ({
+      ...row,
+      assignedAt:
+        input.seats.find((seat) => genericSeatKey(seat.email) === genericSeatKey(row.email))
+          ?.assignedAt ?? null,
+    })),
+  ).map(({ email, clientId, pod }) => ({ email, clientId, pod }));
 }
 
 /** True when keeping this generic is required to hold the POD at 40. */

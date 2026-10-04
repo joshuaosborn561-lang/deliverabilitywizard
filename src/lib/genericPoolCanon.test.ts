@@ -138,11 +138,11 @@ describe("D221 validateGenericPool", () => {
     });
     assert.equal(findings.length, 3);
     assert.ok(findings.every((row) => row.kind === "generic_idle"));
-    const emails = findings.map((row) => row.email).sort();
+    const emails = findings.map((row) => row.email);
     assert.deepEqual(emails, [
-      "g5@getintroduced.info",
-      "g6@getintroduced.info",
-      "g7@getintroduced.info",
+      "g0@getintroduced.info",
+      "g1@getintroduced.info",
+      "g2@getintroduced.info",
     ]);
   });
 

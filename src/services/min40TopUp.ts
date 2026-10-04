@@ -10,6 +10,8 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
+import { clientPodKey } from "../lib/genericPool.js";
+import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
@@ -34,7 +36,14 @@ import {
   buildPoolSignature,
   poolEspFromSmartleadType,
 } from "../lib/poolSignature.js";
-import { genericMayLinkToCampaigns, mailboxPodOf } from "../lib/podInventory.js";
+import {
+  genericEligibleForClientPod,
+  genericPodTagColor,
+  genericPodTagName,
+  lockedGenericPod,
+  stampMailboxPodTag,
+} from "../lib/genericAssign.js";
+import { genericMayLinkToCampaigns, mailboxPodOf, podInventoryNeed } from "../lib/podInventory.js";
 import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
@@ -88,7 +97,8 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
  * first; free-pool generics get the client's id + signature and then
  * sit on every ACTIVE campaign of that same client. Off-week POD
  * generics stay assigned (client_id, POD tag, signature) and do not
- * link. Never retag named seats.
+ * link. Never retag named seats. Never retag a generic across PODs
+ * (D230) — first assign of an untagged pool seat stamps that POD.
  * Never START/PAUSE. PowerGRYD uses its own seats; free-pool only via
  * the normal assign path (client 592842 + PG signature).
  */
@@ -259,6 +269,18 @@ export class Min40TopUpService {
       });
     }
 
+    await this.fillShortPods({
+      dryRun,
+      now,
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      campaigns: campaigns as SmartleadCampaign[],
+      campaignById,
+      accountByEmail,
+      brandByClientId,
+      activeByClient,
+      result,
+    });
+
     await this.alertUnfilled(result, todayYmd, dryRun);
     await this.alertPowerGrydInventory(
       accounts as SmartleadAccountWithCampaigns[],
@@ -269,6 +291,7 @@ export class Min40TopUpService {
       result,
     );
 
+    // D230 — morning named-warm swap + surplus beyond 40.
     const surplus = await returnSurplusGenerics({
       config: this.config,
       smartlead: this.smartlead,
@@ -422,6 +445,55 @@ export class Min40TopUpService {
     return dedicated === clientId;
   }
 
+  private genericMayTakePod(
+    account: SmartleadAccountWithCampaigns,
+    email: string,
+    clientId: number,
+    targetPod: "A" | "B",
+  ): boolean {
+    const seat = this.state.getGenericSeat(email);
+    const pool = this.state.getPoolMailbox(email);
+    return genericEligibleForClientPod({
+      clientId,
+      targetPod,
+      mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
+      assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,
+      tags: account.tags,
+      assignedPod: seat?.assignedPod ?? null,
+    });
+  }
+
+  private async stampGenericPod(
+    account: SmartleadAccountWithCampaigns,
+    email: string,
+    clientId: number,
+    pod: "A" | "B",
+    dryRun: boolean,
+  ): Promise<void> {
+    if (lockedGenericPod({ tags: account.tags, assignedPod: this.state.getGenericSeat(email)?.assignedPod }) === pod) {
+      return;
+    }
+    if (!dryRun && typeof account.id === "number" && this.smartlead.ensureTag && this.smartlead.assignTags) {
+      const tag = await this.smartlead.ensureTag(genericPodTagName(pod), genericPodTagColor(pod));
+      await this.smartlead.assignTags([account.id], [tag.id]);
+      await sleep(WRITE_GAP_MS);
+    }
+    account.tags = stampMailboxPodTag(account.tags, pod);
+    if (dryRun) return;
+    const existing = this.state.getGenericSeat(email);
+    this.state.upsertGenericSeat({
+      email,
+      slAccountId: typeof account.id === "number" ? account.id : existing?.slAccountId ?? null,
+      provider: existing?.provider ?? "OTHER",
+      warmReadyAt: existing?.warmReadyAt ?? null,
+      assignedClientId: clientId,
+      assignedCampaignIds: existing?.assignedCampaignIds ?? campaignIdsOf(account),
+      assignedPod: pod,
+      assignedAt: existing?.assignedAt ?? new Date().toISOString(),
+      reason: existing?.reason ?? "pod_top_up",
+    });
+  }
+
   private async attachSeat(input: {
     account: SmartleadAccountWithCampaigns;
     email: string;
@@ -494,7 +566,10 @@ export class Min40TopUpService {
       const generic = isGenericMailbox(account, email, this.config, this.state);
       if (generic) {
         if (!genericMayLinkToCampaigns(account, input.now)) return false;
-        return this.belongsToClient(account, email, input.clientId, input.campaignById);
+        if (!this.belongsToClient(account, email, input.clientId, input.campaignById)) {
+          return false;
+        }
+        return this.genericMayTakePod(account, email, input.clientId, onWeekCohort(input.now));
       }
       return input.namedOnWeek.has(email.toLowerCase());
     });
@@ -562,6 +637,9 @@ export class Min40TopUpService {
         if (!isPoolGenericSeat(poolAccount, key, this.config, this.state)) {
           return false;
         }
+        if (!this.genericMayTakePod(poolAccount, key, input.clientId, onWeekCohort(input.now))) {
+          return false;
+        }
         const on = campaignIdsOf(poolAccount);
         for (const id of on) {
           const other = input.campaignById.get(id);
@@ -617,6 +695,13 @@ export class Min40TopUpService {
             assignedClientName: input.clientName,
             assignedAt: new Date().toISOString(),
           });
+          await this.stampGenericPod(
+            original,
+            pool.email,
+            input.clientId,
+            onWeekCohort(input.now),
+            input.dryRun,
+          );
           for (const sibling of input.clientActive) {
             if (sibling.id === input.campaign.id) continue;
             if (campaignIdsOf(original).includes(sibling.id)) continue;
@@ -667,6 +752,121 @@ export class Min40TopUpService {
       }
     }
     return placed;
+  }
+
+  private async fillShortPods(input: {
+    dryRun: boolean;
+    now: Date;
+    accounts: SmartleadAccountWithCampaigns[];
+    campaigns: SmartleadCampaign[];
+    campaignById: Map<number, SmartleadCampaign>;
+    accountByEmail: Map<string, SmartleadAccountWithCampaigns>;
+    brandByClientId: Map<number, string>;
+    activeByClient: Map<number, SmartleadCampaign[]>;
+    result: Min40TopUpResult;
+  }): Promise<void> {
+    const synced = syncGenericSeatsFromInventory({
+      existing: this.state.listGenericSeats(),
+      accounts: input.accounts,
+      campaigns: input.campaigns,
+      config: this.config,
+      state: this.state,
+      now: input.now,
+      powerGrydClientId: this.config.powerGrydClientId,
+    });
+    const onWeek = onWeekCohort(input.now);
+    for (const [clientId, clientActive] of input.activeByClient) {
+      const powerGryd = isPowerGrydClientId(clientId, this.config.powerGrydClientId);
+      if (
+        !powerGryd &&
+        !clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)
+      ) {
+        continue;
+      }
+      const brand = input.brandByClientId.get(clientId) || String(clientId);
+      const selected = new Set<string>();
+      for (const pod of ["A", "B"] as const) {
+        const named = synced.namedStaffableByClientPod.get(clientPodKey(clientId, pod)) ?? 0;
+        const assigned = synced.seats.filter(
+          (seat) => seat.assignedClientId === clientId && seat.assignedPod === pod,
+        ).length;
+        let need = podInventoryNeed(named, assigned);
+        while (need > 0) {
+          const pool = this.state.findReassignablePoolMailbox(
+            ["GOOGLE", "MICROSOFT"],
+            (email) => {
+              const key = email.toLowerCase();
+              if (selected.has(key)) return false;
+              const account = input.accountByEmail.get(key);
+              if (!account) return false;
+              if (!isPoolGenericSeat(account, email, this.config, this.state)) {
+                return false;
+              }
+              const owner =
+                typeof account.client_id === "number" ? account.client_id : null;
+              if (owner != null && owner !== clientId) return false;
+              if (lockedGenericPod({ tags: account.tags }) === pod) return false;
+              if (!this.seatIsUsable(account, email, clientActive[0]!, input.campaignById)) {
+                return false;
+              }
+              return this.genericMayTakePod(account, email, clientId, pod);
+            },
+          );
+          if (!pool?.smartleadAccountId) break;
+          const original = input.accountByEmail.get(pool.email.toLowerCase());
+          if (!original) break;
+          const firstName = pool.firstName || "Pool";
+          const lastName = pool.lastName || "User";
+          try {
+            if (!input.dryRun) {
+              await this.smartlead.updateEmailAccount(pool.smartleadAccountId, {
+                signature: buildPoolSignature({
+                  firstName,
+                  lastName,
+                  clientBrand: brand,
+                }),
+                from_name: `${firstName} ${lastName}`,
+                client_id: clientId,
+                time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
+              });
+              original.client_id = clientId;
+              this.state.upsertPoolMailbox({
+                ...pool,
+                status: "assigned",
+                assignedClientId: clientId,
+                assignedAt: new Date().toISOString(),
+              });
+              await this.stampGenericPod(original, pool.email, clientId, pod, input.dryRun);
+              if (pod === onWeek) {
+                for (const campaign of clientActive) {
+                  if (campaignIdsOf(original).includes(campaign.id)) continue;
+                  if (!this.seatIsUsable(original, pool.email, campaign, input.campaignById)) {
+                    continue;
+                  }
+                  await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
+                    pool.smartleadAccountId,
+                  ]);
+                  recordMembership(original, campaign.id);
+                  await sleep(WRITE_GAP_MS);
+                }
+              }
+            }
+            selected.add(pool.email.toLowerCase());
+            input.result.assigned.push({
+              campaignId: clientActive[0]?.id ?? 0,
+              campaignName: String(clientActive[0]?.name ?? clientId),
+              email: pool.email,
+              clientId,
+            });
+            need -= 1;
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            input.result.errors.push(`${pool.email} POD ${pod}: ${message}`);
+            break;
+          }
+        }
+      }
+    }
   }
 
   private async alertUnfilled(

@@ -37,6 +37,8 @@ import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
+import { genericEligibleForClientPod } from "../lib/genericAssign.js";
+import { onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -144,6 +146,7 @@ export class CampaignTopUpService {
 
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
+    const now = new Date();
     const accountById = new Map(
       (accounts as SmartleadAccountWithCampaigns[])
         .filter((account) => typeof account.id === "number")
@@ -480,6 +483,25 @@ export class CampaignTopUpService {
               !(
                 poolAccount &&
                 !canAttachMailboxToCampaign(poolAccount, campaign, campaignById)
+              ) &&
+              !(
+                poolAccount &&
+                typeof campaign.client_id === "number" &&
+                isGenericMailbox(poolAccount, key, this.config, this.state) &&
+                !genericEligibleForClientPod({
+                  clientId: campaign.client_id,
+                  targetPod: onWeekCohort(now),
+                  mailboxClientId:
+                    typeof poolAccount.client_id === "number"
+                      ? poolAccount.client_id
+                      : null,
+                  assignedClientId:
+                    this.state.getGenericSeat(key)?.assignedClientId ??
+                    this.state.getPoolMailbox(key)?.assignedClientId ??
+                    null,
+                  tags: poolAccount.tags,
+                  assignedPod: this.state.getGenericSeat(key)?.assignedPod ?? null,
+                })
               )
             );
           },

@@ -226,15 +226,16 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D218 | Live — TERRL overnight restore superseded by D219 24h-then-type-cap | TERRL / D148 bounce-hold ids are not pruned at 7:15pm CT. Every max_email_per_day raise path skips held seats during the window |
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
-| D221 | Live — surplus return executed weekday by min40-topup and generic-cleanup (D225); 40/40 is each POD including the off-week cylinder (D228) | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
+| D221 | Live — attach / return lock and "never rotate PODs" governed by D230; surplus return still weekday min40 + cleanup (D225); 40/40 is each POD (D228) | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` flip `/health` |
 | D222 | Live — Slack findings + detection-only superseded by D226 | Monday 8:16am CT InboxKit lapsed-license sweep compares InboxKit status to connected Smartlead accounts. D226 hands findings internally and deletes lapsed seats; Slack is only the post-cleanup one-liner when X > 0 |
 | D223 | Live | Mechanical POD A/B fortnight rotation skips PowerGRYD 592842 and Goliath 548611. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side |
 | D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
-| D225 | Live — surplus is per THAT POD; a needed off-week assignment with no campaign links is not surplus (D228) | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip PowerGRYD 592842 and active 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
+| D225 | Live — surplus is per THAT POD; a needed off-week assignment with no campaign links is not surplus (D228); return order and untagged-pool strip governed by D230 | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip PowerGRYD 592842 and active 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
 | D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
-| D228 | Live | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
+| D228 | Live — one-client / one-POD attach and named-warm return lock is D230 | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
 | D229 | Live | D189 Insight rest-sticky is retired: Insight off-week seats unlink; fan-out will not re-spread off-week POD-B onto Insight. D193 POC-only / "named clients never receive generics" is retired: assigned 40/40 generics stay on every named client; leftover D134 tap is still not a rotating-pool dump. D184/D192 Insight ≠ SalesGlider mix stays |
+| D230 | Live | Governing generic rule: one shared pool in a table; a generic attaches to ONE client and ONE POD (A or B, whichever is under 40) and never rotates PODs; stays until branded named seats fill that POD back to 40, then returns to the untagged pool; while tagged no other client may use it; never pre-split across clients. min40 takes only untagged pool or same client+POD. Named-warm swap returns one generic per newly-warm named seat, oldest/worst first, never below 40; surplus beyond 40 also returns |
 
 ---
 
@@ -7566,6 +7567,59 @@ D228 40/40 inventory.
 **Guards.** Insight ACTIVE is rest-detachable; off-week
 Insight unlinks; fan-out skips off-week POD and shares
 assigned same-client generics; CANON dated D229.
+
+---
+
+## D230 — One client, one POD; named-warm return to the untagged pool
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (8:13pm CT, HARD). Governing generic
+rule, verbatim:
+
+> Generics are one shared pool, tracked in a table. A
+> generic attaches to ONE client and ONE POD, A or B,
+> whichever is under 40, and never rotates PODs. It stays
+> with that POD until the client's branded named seats
+> fill that POD back to 40, then it returns to the
+> untagged pool. While tagged, no other client can use
+> it. Never pre-split generics across clients.
+
+1. On rotation or flip, a generic is never retagged or
+   moved to the other POD. It rests and sends with its
+   own POD.
+2. min40 assigns only untagged pool generics, or ones
+   already on that same client and POD, to any POD (A or
+   B) under 40.
+3. Return trigger: a generic leaves its POD only when
+   that POD's warm named staffable count, without
+   generics, reaches the needed level. Return one generic
+   per named seat that goes warm, never dropping the POD
+   below 40, oldest / worst generic first. Wired into
+   the morning named-warm swap. Surplus beyond 40 also
+   returns.
+
+**Why.** D221/D228 said 40/40 and "do not retag across
+PODs" but leftover paths could still take another
+client's assigned generic, leave a returned seat tagged,
+or rank newest-first on surplus. A flip must not move a
+generic onto the other cylinder.
+
+**Rejected.** Pre-splitting the pool across clients.
+Retagging a generic from A to B on fortnight flip.
+Taking a generic from another client to fill a short.
+Returning newest-first. Live Smartlead writes from this
+chat.
+
+**Supersedes / amends.** Supersedes conflicting D221 /
+D228 / D225 wording on generic rotation, assign source,
+and return order. Does not change 40/40 inventory,
+on-week-only campaign links, PowerGRYD 592842, or TERRL
+substitutes.
+
+**Guards.** Flip invariance (no POD retag); min40
+eligibility lock; named-warm swap oldest-first; return
+strips POD tags; CANON dated D230.
 
 ---
 

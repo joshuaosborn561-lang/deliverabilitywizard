@@ -30,9 +30,11 @@ export interface PodTagResult {
  * Every client mailbox sitting in a rest pod carries a POD-A or POD-B tag,
  * converged drift-only on the monitor pass: assign the missing tag, drop
  * the opposite one. Mailboxes outside a client pod (generics, canaries,
- * idle inboxes) are left alone — an idle inbox keeps its last pod tag
- * until it staffs again, which avoids tag churn every time staffing
- * breathes. Tags are decoration for humans; nothing reads them back.
+ * idle inboxes) are left alone — D230 locks a generic to the POD it
+ * was stamped with; this converge must never retag or move it. An
+ * idle inbox keeps its last pod tag until it staffs again. Named
+ * tags are decoration for humans; assigned generic POD tags are the
+ * D230 lock.
  */
 export class PodTagService {
   constructor(

@@ -3,9 +3,10 @@ import { ON_WEEK_MIN_SENDERS, POD_INVENTORY_MIN_SENDERS } from "./clientStaffFlo
 
 /**
  * D221 — fleet-wide generic pool. One table, one row per generic seat.
- * A generic is assigned a client + POD only to bring that POD up to
- * 40 staffable senders. Surplus returns to the pool. No pre-split,
- * no idle hold, no separate generic rotation (POD rotation is it).
+ * D230 — one shared pool. A generic attaches to ONE client and ONE
+ * POD and never rotates PODs. It returns to the untagged pool when
+ * named seats fill that POD back to 40 (oldest / worst first).
+ * Surplus beyond 40 also returns. Never pre-split across clients.
  */
 
 export const GENERIC_POOL_POD_FLOOR = POD_INVENTORY_MIN_SENDERS;

@@ -16,6 +16,13 @@ import {
   accountIsPeelStaffable,
   detachWouldBreakStaffableFloor,
 } from "../lib/clientStaffFloor.js";
+import {
+  GENERIC_POD_TAG_COLOR_A,
+  GENERIC_POD_TAG_COLOR_B,
+  GENERIC_POD_TAG_A,
+  GENERIC_POD_TAG_B,
+  stripMailboxPodTags,
+} from "../lib/genericAssign.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
 import {
   syncGenericSeatsFromInventory,
@@ -86,7 +93,8 @@ export async function returnSurplusGenerics(input: {
   smartlead: Pick<
     SmartleadClient,
     "removeEmailAccountsFromCampaign" | "updateEmailAccount"
-  >;
+  > &
+    Partial<Pick<SmartleadClient, "ensureTag" | "removeTags">>;
   state: StateStore;
   inventory: InventorySnapshot;
   dryRun?: boolean;
@@ -175,6 +183,19 @@ export async function returnSurplusGenerics(input: {
           signature: "",
         });
         await sleep(WRITE_GAP_MS);
+        if (input.smartlead.ensureTag && input.smartlead.removeTags) {
+          const tagA = await input.smartlead.ensureTag(
+            GENERIC_POD_TAG_A,
+            GENERIC_POD_TAG_COLOR_A,
+          );
+          const tagB = await input.smartlead.ensureTag(
+            GENERIC_POD_TAG_B,
+            GENERIC_POD_TAG_COLOR_B,
+          );
+          await input.smartlead.removeTags([account.id], [tagA.id, tagB.id]);
+          account.tags = stripMailboxPodTags(account.tags);
+          await sleep(WRITE_GAP_MS);
+        }
         const pool = input.state.getPoolMailbox(pick.email);
         if (pool) {
           input.state.upsertPoolMailbox({

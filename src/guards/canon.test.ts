@@ -12625,8 +12625,8 @@ describe("owner intent — D226 InboxKit sweep handoff, Slack only after delete"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D226\*\*/,
-      stop("CANON is dated D226.", "CANON.md header was not bumped to D226."),
+      /Canon as of \*\*D22[6-9]\*\*/,
+      stop("CANON is dated D226 or later.", "CANON.md header lost D226+."),
     );
     assert.match(
       decisions,
@@ -12696,6 +12696,92 @@ describe("owner intent — D223 POD rotation skip + dual-POD flag", () => {
       decisions,
       /## D223 — POD A\/B rotation skips PowerGRYD and Goliath/,
       stop("The ledger records D223.", "DECISIONS.md no longer has D223."),
+    );
+  });
+});
+
+describe("owner intent — D227 WARMUP-GATE-EXEMPT counts as 21+ warm", () => {
+  it("D227: exempt tag staffs now; Azure 2/5 stay", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { AZURE_CAMPAIGN_PER_DAY, AZURE_WARMUP_PER_DAY } = await import(
+      "../lib/mailboxType.js"
+    );
+    assert.equal(AZURE_CAMPAIGN_PER_DAY, 2);
+    assert.equal(AZURE_WARMUP_PER_DAY, 5);
+
+    const staffable = await readFile(
+      new URL("../lib/staffableSender.ts", import.meta.url),
+      "utf8",
+    );
+    const gate = await readFile(
+      new URL("../services/warmupGate.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const pool = await readFile(
+      new URL("../lib/genericPoolCanon.ts", import.meta.url),
+      "utf8",
+    );
+    const surplus = await readFile(
+      new URL("../lib/genericSurplusReturn.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      staffable,
+      /WARMUP-GATE-EXEMPT|isWarmupGateExempt/,
+      stop(
+        "isStaffableSender honors WARMUP-GATE-EXEMPT (D227).",
+        "staffableSender.ts still ignores the exempt tag.",
+      ),
+    );
+    assert.match(
+      gate,
+      /export function countsAsWarmed21/,
+      stop("countsAsWarmed21 is the 21+ grant (D227).", "warmupGate.ts lost countsAsWarmed21."),
+    );
+    assert.match(
+      min40,
+      /owesWarmup/,
+      stop("min40-topup still consults owesWarmup (D227/D139).", "min40TopUp.ts lost owesWarmup."),
+    );
+    assert.match(
+      pool,
+      /isStaffableSender/,
+      stop("Generic-pool named count uses isStaffableSender (D227).", "genericPoolCanon.ts lost isStaffableSender."),
+    );
+    assert.match(
+      surplus,
+      /namedStaffableByClientPod/,
+      stop("Surplus return uses the named staffable count (D227).", "genericSurplusReturn.ts lost namedStaffableByClientPod."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D227\*\*/,
+      stop("CANON is dated D227.", "CANON.md header was not bumped to D227."),
+    );
+    assert.match(
+      canon,
+      /WARMUP-GATE-EXEMPT/,
+      stop("CANON names the exempt tag (D227).", "CANON.md lost WARMUP-GATE-EXEMPT."),
+    );
+    assert.match(
+      decisions,
+      /## D227 — WARMUP-GATE-EXEMPT counts as 21\+ days warm/,
+      stop("The ledger records D227.", "DECISIONS.md no longer has D227."),
+    );
+    assert.match(
+      decisions,
+      /^\| D227 \|/m,
+      stop("The status index lists D227 (D127).", "DECISIONS.md status index has no D227 row."),
     );
   });
 });

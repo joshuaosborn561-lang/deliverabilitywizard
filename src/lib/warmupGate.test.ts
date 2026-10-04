@@ -2,10 +2,12 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   activeHoldUntilDate,
+  countsAsWarmed21,
   daysSince,
   isActiveCampaignStatus,
   isPrewarmedGeneric,
   owedWarmupDays,
+  owesWarmup,
   warmupClockStartedAt,
   warmupStartedAt,
 } from "../services/warmupGate.js";
@@ -161,6 +163,45 @@ describe("warmupGate helpers", () => {
       { getPoolMailbox: () => undefined },
     );
     assert.equal(started, "2026-06-01T00:00:00.000Z");
+  });
+
+  it("D227: WARMUP-GATE-EXEMPT counts as 21+ days and does not owe warmup", () => {
+    const now = Date.parse("2026-10-04T00:04:00.000Z");
+    const days = daysSince("2026-09-29T00:00:00.000Z", now);
+    assert.ok(days < 21, "9/29 → 10/4 is still under 21 days");
+    assert.equal(countsAsWarmed21([], days), false);
+    assert.equal(countsAsWarmed21(["WARMUP-GATE-EXEMPT"], days), true);
+    assert.equal(countsAsWarmed21(["warmup-gate-exempt", "type:azure"], 5), true);
+    assert.equal(countsAsWarmed21([], 21), true);
+
+    const config = {
+      campaignMinWarmupDays: 21,
+      freshInboxWarmupDays: 21,
+      prewarmedDomains: [],
+      extraGenericMailboxes: [],
+    };
+    const state = { getPoolMailbox: () => undefined, isCopyCanary: () => false };
+    const fiveDaysAgo = new Date(Date.now() - 5 * 86_400_000).toISOString();
+    const tidal = {
+      id: 1,
+      from_email: "ada@tidalstackco.com",
+      created_at: fiveDaysAgo,
+      warmup_details: { created_at: fiveDaysAgo },
+      tags: [{ tag_name: "WARMUP-GATE-EXEMPT" }, { tag_name: "type:azure" }],
+    };
+    assert.equal(
+      owesWarmup(tidal, "ada@tidalstackco.com", config, state),
+      false,
+    );
+    assert.equal(
+      owesWarmup(
+        { ...tidal, tags: [{ tag_name: "type:azure" }] },
+        "ada@tidalstackco.com",
+        config,
+        state,
+      ),
+      true,
+    );
   });
 
   it("does not exempt unrelated client mailboxes", () => {

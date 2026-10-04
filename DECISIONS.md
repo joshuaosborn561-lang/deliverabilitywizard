@@ -232,6 +232,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
 | D225 | Live | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip PowerGRYD 592842 and active 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
+| D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
 
 ---
 
@@ -7428,6 +7429,41 @@ gate, or the PowerGRYD / TERRL exceptions.
 **Guards.** `returnSurplusGenerics` / `surplusGenericReturns`
 weekday-only; PowerGRYD + TERRL skip; `detachWouldBreakStaffableFloor`
 blocks a peel at/under 40; CANON dated D225.
+
+---
+
+## D227 — WARMUP-GATE-EXEMPT counts as 21+ days warm
+
+**Date.** 2026-10-03.
+
+**Decision.** Josh (7:04pm CT): the 100 tidalstackco.com seats
+(Azure/Entra, InboxKit-prewarmed, tagged `WARMUP-GATE-EXEMPT`)
+count as warm **now**. Do not wait 21 days from their 9/29
+Smartlead import. `isStaffableSender`, the generic-pool named
+count, min40-topup, and surplus return honor that tag as 21+
+days warm, including when Smartlead still reports
+`is_warmup_blocked`. Their Azure cap stays 2 campaign + 5
+warmup per day.
+
+**Why.** These seats were InboxKit-prewarmed before the Smartlead
+import. The D1/D50 clock would have kept them off the 40 until
+late October. The tag is the grant; staffable logic that ignored
+it (warmup-blocked seats dropped by `isStaffableSender`) would
+have under-counted the POD and attached surplus generics.
+
+**Rejected.** Waiting out 21 days from the 9/29 Smartlead
+created_at. Adding tidalstackco.com to `PREWARMED_DOMAINS` as a
+domain-wide skip. Changing the Azure 2/5 caps.
+
+**Supersedes / amends.** Amends D1/D50/D105/D139/D217: the
+`WARMUP-GATE-EXEMPT` tag is an authoritative 21+ warm grant for
+staffing. Does not change D219 Azure caps. Closes the open
+question of whether Cayden's tag or `EXTRA_GENERIC_MAILBOXES`
+is the staffing exemption — the tag wins for seats that have it.
+
+**Guards.** `isStaffableSender` + `countsAsWarmed21` honor the
+tag; 9/29 tidalstack replay is staffable; Azure 2/5 stay;
+CANON dated D227.
 
 ---
 

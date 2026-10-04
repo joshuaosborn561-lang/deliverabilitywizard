@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D226** (2026-10-03). One page of current truth. When a new
+Canon as of **D227** (2026-10-03). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -48,8 +48,15 @@ or the day is done. Silent findings are a bug (D163).
 - **Exempt from that clock**: pre-warmed fleets — every mailbox on
   `PREWARMED_DOMAINS` (crosslaunchco.com, crossscaleco.com,
   cleartechco.com) and every from-name fleet in `EXTRA_GENERIC_MAILBOXES`
-  (D19/D142); and the canary fleet (which never staffs anyway, D54).
-  Pre-warmed is a flag only Josh grants — generic-pool membership
+  (D19/D142); the canary fleet (which never staffs anyway, D54);
+  **and every seat tagged `WARMUP-GATE-EXEMPT`** (D227). That tag
+  counts as 21+ days warm for `isStaffableSender`, the generic-pool
+  named count, min40-topup, and surplus return — including when
+  Smartlead still reports warmup-blocked or a short import clock.
+  The tidalstackco.com Azure/Entra fleet Josh tagged that way is
+  warm **now**; do not wait 21 days from the 9/29 Smartlead import.
+  Their Azure cap stays **2 campaign + 5 warmup** (D219). Pre-warmed
+  is a flag only Josh grants — generic-pool membership
   (`EXTRA_GENERIC_DOMAINS`, which also carries the GetIntroduced /
   QuickConnect fleets) never implies it (D142).
 - **Converged every pass**: campaign sends/day (warmups excluded,
@@ -196,7 +203,8 @@ or the day is done. Silent findings are a bug (D163).
   D199, D203, D207, **D217**). **Canon staffable** (D217) is a
   linked seat that can actually send on the on-week POD: SMTP
   and IMAP not failing, `max_email_per_day` / `message_per_day`
-  > 0, warmup ≥21 days when a clock is readable, correct client
+  > 0, warmup ≥21 days when a clock is readable (`WARMUP-GATE-EXEMPT`
+  counts as 21+, D227), correct client
   (or that client's assigned fleet-pool generic), on-week POD-A/POD-B tag
   (off-week tagged seats do not count; untagged seats are not
   excluded), not a canary, not HOLD/RETIRE, not InboxKit-lapsed

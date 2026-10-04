@@ -1,4 +1,5 @@
 import type { SmartleadEmailAccount } from "../types/index.js";
+import { isWarmupGateExempt, tagNames } from "../services/warmupGate.js";
 
 /**
  * A sender counts toward the campaign floor only when it can actually send
@@ -34,6 +35,8 @@ export interface StaffableOptions {
   resting?: boolean;
   /** D54/D55 — the canary fleet never staffs. */
   copyCanary?: boolean;
+  /** D227 — caller already knows the seat is WARMUP-GATE-EXEMPT. */
+  warmupExempt?: boolean;
 }
 
 /**
@@ -42,18 +45,25 @@ export interface StaffableOptions {
  * signal, and using it under-counted live generics (TechEvo showed 29/87
  * "staffable" while SMTP/IMAP were fine). Measure/remediation owns spammy
  * removal; until a placement rate is known, connected membership staffs.
+ *
+ * D227 — `WARMUP-GATE-EXEMPT` counts as 21+ days warm. InboxKit-prewarmed
+ * Azure seats tagged that way staff even when Smartlead still reports
+ * warmup-blocked or a 9/29 import clock.
  */
 export function isStaffableSender(
   account: Pick<
     SmartleadEmailAccount,
-    "is_smtp_success" | "is_imap_success" | "warmup_details"
+    "is_smtp_success" | "is_imap_success" | "warmup_details" | "tags"
   >,
   options: StaffableOptions = {},
 ): boolean {
   if (!isConnectedAccount(account)) return false;
   if (options.resting) return false;
   if (options.copyCanary) return false;
-  if (account.warmup_details?.is_warmup_blocked) return false;
+  const exempt =
+    options.warmupExempt === true ||
+    isWarmupGateExempt(tagNames(account as SmartleadEmailAccount));
+  if (account.warmup_details?.is_warmup_blocked && !exempt) return false;
   // D130 — the held/recovery tier and its placement-rate bar are gone;
   // kill-only (D51) means a connected, non-resting, non-canary inbox staffs.
   return true;

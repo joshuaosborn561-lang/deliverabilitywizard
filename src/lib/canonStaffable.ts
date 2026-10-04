@@ -24,8 +24,8 @@ import { readMessagePerDay } from "./mailboxSendSettings.js";
 import { onWeekCohort, type RestCohort } from "./restCohort.js";
 import { isConnectedAccount } from "./staffableSender.js";
 import {
+  countsAsWarmed21,
   daysSince,
-  isWarmupGateExempt,
   tagNames,
   warmupClockStartedAt,
 } from "../services/warmupGate.js";
@@ -126,12 +126,13 @@ export function accountMatchesCampaignClient(
 function warmupDaysOf(
   account: CanonStaffableInput["account"],
   email: string,
+  now?: Date,
 ): number | null {
   const started = warmupClockStartedAt(account, email, {
     getPoolMailbox: () => undefined,
   });
   if (!started) return null;
-  const days = daysSince(started);
+  const days = daysSince(started, now?.getTime());
   return Number.isFinite(days) ? days : null;
 }
 
@@ -154,13 +155,13 @@ export function canonStaffableVerdict(
   if (input.inboxKitLapsed) reasons.push("inboxkit_lapsed");
   if (hasHoldOrRetireTag(account, now)) reasons.push("held");
 
-  const exempt =
-    input.warmupExempt === true || isWarmupGateExempt(tagNames(account));
   const days =
     input.warmupDays !== undefined
       ? input.warmupDays
-      : warmupDaysOf(account, input.email);
-  if (!exempt && days != null && days < 21) reasons.push("under_warmed");
+      : warmupDaysOf(account, input.email, now);
+  const warmed =
+    input.warmupExempt === true || countsAsWarmed21(tagNames(account), days);
+  if (!warmed && days != null && days < 21) reasons.push("under_warmed");
 
   if (
     !accountMatchesCampaignClient(

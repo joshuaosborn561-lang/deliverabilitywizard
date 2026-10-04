@@ -413,4 +413,65 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     assert.equal(result.seats[0]!.reason, GENERIC_ASSIGN_REASON_TERRL_SUBSTITUTE);
     assert.equal(result.seats[0]!.assignedAt, "2026-10-02T00:00:00.000Z");
   });
+
+  it("D227: WARMUP-GATE-EXEMPT tidalstack named seats count as staffable", () => {
+    const blocked = {
+      is_smtp_success: true as const,
+      is_imap_success: true as const,
+      warmup_details: {
+        is_warmup_blocked: true,
+        created_at: "2026-09-29T00:00:00.000Z",
+      },
+      created_at: "2026-09-29T00:00:00.000Z",
+    };
+    const cold = syncGenericSeatsFromInventory({
+      existing: [],
+      accounts: [
+        {
+          id: 1,
+          email: "ada@tidalstackco.com",
+          type: "OUTLOOK",
+          client_id: 77,
+          campaign_ids: [10],
+          tags: [{ tag_name: "POD-A" }, { tag_name: "type:azure" }],
+          ...blocked,
+        },
+      ],
+      campaigns: [{ id: 10, client_id: 77, status: "ACTIVE" }],
+      config,
+      state,
+    });
+    assert.equal(
+      cold.namedStaffableByClientPod.get(clientPodKey(77, "A")) ?? 0,
+      0,
+      "warmup-blocked without the exempt tag is not named staffable",
+    );
+
+    const warm = syncGenericSeatsFromInventory({
+      existing: [],
+      accounts: [
+        {
+          id: 1,
+          email: "ada@tidalstackco.com",
+          type: "OUTLOOK",
+          client_id: 77,
+          campaign_ids: [10],
+          tags: [
+            { tag_name: "POD-A" },
+            { tag_name: "type:azure" },
+            { tag_name: "WARMUP-GATE-EXEMPT" },
+          ],
+          ...blocked,
+        },
+      ],
+      campaigns: [{ id: 10, client_id: 77, status: "ACTIVE" }],
+      config,
+      state,
+    });
+    assert.equal(
+      warm.namedStaffableByClientPod.get(clientPodKey(77, "A")),
+      1,
+      "exempt Azure seats count toward the POD 40 now",
+    );
+  });
 });

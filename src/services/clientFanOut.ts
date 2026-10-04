@@ -24,6 +24,7 @@ import {
   type InventorySnapshot,
 } from "./inventory.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
+import { isOffWeekPodSeat } from "../lib/podInventory.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
 import type { StateStore } from "../state/store.js";
@@ -71,9 +72,10 @@ export class ClientFanOutService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot; now?: Date } = {},
   ): Promise<ClientFanOutResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
+    const now = opts.now ?? new Date();
     const result: ClientFanOutResult = {
       dryRun,
       groups: 0,
@@ -199,6 +201,10 @@ export class ClientFanOutService {
           groupIsBcp,
         );
         if (!belongs) continue;
+        if (isOffWeekPodSeat(account, now)) {
+          result.skipped.push(`${email}: off-week POD (D228/D229)`);
+          continue;
+        }
 
         const on = new Set(campaignIdsOf(account));
         // D84 — a client-owned inbox belongs on every ACTIVE campaign for its
@@ -228,10 +234,17 @@ export class ClientFanOutService {
             continue;
           }
           if (generic && !campaignAllowsGenerics(campaign)) {
-            result.skipped.push(
-              `${email}: generics need POC or Slack approve on #${campaign.id}`,
-            );
-            continue;
+            // D229 — assigned same-client generics may share (D207/D221).
+            // Rotating unassigned extras still need POC / Slack.
+            const assignedSameClient =
+              typeof account.client_id === "number" &&
+              account.client_id === campaign.client_id;
+            if (!assignedSameClient) {
+              result.skipped.push(
+                `${email}: generics need POC or Slack approve on #${campaign.id}`,
+              );
+              continue;
+            }
           }
           const list = pendingByCampaign.get(campaign.id) ?? [];
           list.push({ accountId: account.id, email, account });

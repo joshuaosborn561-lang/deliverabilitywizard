@@ -231,8 +231,15 @@ describe("ClientFanOutService", () => {
     );
 
     const result = await service.run({ dryRun: false });
-    assert.deepEqual(adds, [[2, [101]]]);
-    assert.ok(result.skipped.some((row) => row.includes("spare@crosslaunchco.com")));
+    assert.ok(
+      adds.some((row) => row[0] === 2 && row[1].includes(100)),
+      "assigned same-client generic shares onto Vasco B (D229)",
+    );
+    assert.ok(
+      adds.some((row) => row[0] === 2 && row[1].includes(101)),
+      "named Vasco seat still fans",
+    );
+    void result;
   });
 
   it("D99: a BCP-owned inbox with no client_id still fans onto tagged BCP campaigns", async () => {
@@ -414,7 +421,7 @@ describe("D139 — staffing never hands the gate its next pull", () => {
     assert.deepEqual(adds, [[3921651, [44]]]);
   });
 
-  it("D193: does not fan GENERIC pool senders onto a client campaign", async () => {
+  it("D229: assigned same-client generics share; rotating extras do not dump", async () => {
     const adds: Array<[number, number[]]> = [];
     const smartlead = {
       listCampaigns: async () => [
@@ -437,9 +444,18 @@ describe("D139 — staffing never hands the gate its next pull", () => {
           from_email: "ada@trygetintroduced.info",
           created_at: "2026-06-01T00:00:00Z",
           from_name: "Ada Pool",
-          signature: "Ada Pool\nGoliath Cybersecurity",
+          signature: "Ada Pool\nTechEvolution",
           campaign_ids: [3847798],
           client_id: 521881,
+          tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+        },
+        {
+          id: 12,
+          from_email: "spare@trygetintroduced.info",
+          created_at: "2026-06-01T00:00:00Z",
+          from_name: "Spare Pool",
+          campaign_ids: [3847798],
+          client_id: null,
           tags: [{ tag_name: "GENERIC" }],
         },
         {
@@ -486,14 +502,84 @@ describe("D139 — staffing never hands the gate its next pull", () => {
       } as unknown as StateStore,
     );
 
-    const result = await service.run({ dryRun: false });
-    assert.deepEqual(
-      adds,
-      [[3847800, [22]]],
-      "only the TechEvo-named inbox fans; GENERIC getintroduced stays off",
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+    });
+    assert.ok(
+      adds.some((row) => row[0] === 3847800 && row[1].includes(11)),
+      "assigned TechEvo generic shares onto the sibling campaign",
     );
     assert.ok(
-      result.skipped.some((row) => row.includes("ada@trygetintroduced.info")),
+      adds.some((row) => row[0] === 3847800 && row[1].includes(22)),
+      "named TechEvo seat still fans",
     );
+    assert.equal(
+      adds.some((row) => row[1].includes(12)),
+      false,
+      "rotating unassigned generic is not dumped onto TechEvo",
+    );
+    assert.ok(
+      result.skipped.some((row) => row.includes("spare@trygetintroduced.info")),
+    );
+  });
+
+  it("D229: does not re-spread an off-week POD-B seat onto Insight", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 582890,
+        },
+        {
+          id: 3921651,
+          name: "Insight Pipeline B",
+          status: "ACTIVE",
+          client_id: 582890,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 30,
+          from_email: "off@joshpersonal.com",
+          created_at: "2026-06-01T00:00:00Z",
+          campaign_ids: [3921647],
+          client_id: 582890,
+          tags: [{ tag_name: "POD-B" }],
+        },
+      ],
+      listClients: async () => [
+        { id: 582890, name: "Insight", logo: "Insight" },
+      ],
+      addEmailAccountsToCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        isCopyCanary: () => false,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+      } as unknown as StateStore,
+    );
+
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+    });
+    assert.deepEqual(adds, []);
+    assert.ok(result.skipped.some((row) => row.includes("off-week POD")));
   });
 });

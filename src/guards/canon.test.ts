@@ -8751,15 +8751,15 @@ describe("owner intent — D187 ops Placement lists 80 live tests", () => {
   });
 });
 
-describe("owner intent — D189 Insight is not client-rest detachable", () => {
-  it("D189: client-rest leaves Insight attached; Engagers still rest", async () => {
+describe("owner intent — D189 Insight rest-sticky retired (D229)", () => {
+  it("D229: Insight off-week unlinks; D184 mix stays", async () => {
     const { readFile } = await import("node:fs/promises");
-    const insight = await readFile(
-      new URL("../lib/insightCampaigns.ts", import.meta.url),
-      "utf8",
-    );
     const rest = await readFile(
       new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const fanout = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
       "utf8",
     );
     const canon = await readFile(
@@ -8771,77 +8771,60 @@ describe("owner intent — D189 Insight is not client-rest detachable", () => {
       "utf8",
     );
 
-    assert.match(
-      insight,
-      /export function isInsightRestStickyCampaign/,
-      stop(
-        "Insight rest-sticky is a named helper (D189).",
-        "insightCampaigns.ts lost isInsightRestStickyCampaign.",
-      ),
-    );
-    assert.match(
-      insight,
-      /startsWith\("Insight "\)/,
-      stop(
-        "A SalesGlider campaign named Insight … is rest-sticky (D189).",
-        "insightCampaigns.ts lost the Insight name-prefix check.",
-      ),
-    );
-    assert.match(
+    assert.doesNotMatch(
       rest,
       /isInsightRestStickyCampaign/,
       stop(
-        "Client-rest consults Insight stickiness before detach (D189).",
-        "clientRest.ts no longer calls isInsightRestStickyCampaign.",
-      ),
-    );
-    assert.match(
-      rest,
-      /Insight exclusive staff survives the fortnight/,
-      stop(
-        "Detach helper documents the Insight exception (D189).",
-        "clientRest.ts lost the D189 detach comment.",
+        "Client-rest no longer treats Insight as rest-sticky (D229).",
+        "clientRest.ts still calls isInsightRestStickyCampaign.",
       ),
     );
     assert.doesNotMatch(
       rest,
       /updateCampaignStatus/,
       stop(
-        "Client-rest must not START/STOP Insight campaigns (D189).",
+        "Client-rest must not START/STOP Insight campaigns (D189 leftover).",
         "clientRest.ts now writes campaign status.",
       ),
     );
     assert.match(
-      canon,
-      /does not unlink or bench mailboxes off Insight/,
+      fanout,
+      /isOffWeekPodSeat/,
       stop(
-        "CANON states client-rest does not strip Insight (D189).",
-        "CANON.md lost the D189 Insight rest exclusion.",
+        "Fan-out will not re-spread off-week POD seats (D229).",
+        "clientFanOut.ts lost isOffWeekPodSeat.",
+      ),
+    );
+    assert.match(
+      rest,
+      /insightRequiresExisting:\s*true/,
+      stop(
+        "On-week restore still honors the Insight / SG mix (D184/D192).",
+        "clientRest.ts lost insightRequiresExisting.",
       ),
     );
     assert.match(
       canon,
-      /Engagers \/ other SalesGlider\s+ACTIVE rest is unchanged/,
+      /D189 retired/,
+      stop("CANON retires D189 (D229).", "CANON.md still teaches Insight rest-sticky."),
+    );
+    assert.match(
+      canon,
+      /Engagers \/ other\s+SalesGlider ACTIVE rest is unchanged/,
       stop(
-        "CANON keeps Engagers rest unchanged (D189).",
+        "CANON keeps Engagers rest unchanged (D229).",
         "CANON.md lost the Engagers-unchanged clause.",
       ),
     );
     assert.match(
-      canon,
-      /D189/,
-      stop(
-        "CANON names D189.",
-        "CANON.md dropped D189 when a later decision landed.",
-      ),
+      decisions,
+      /## D229 — D189 Insight rest-sticky and D193 POC-only generics retired/,
+      stop("The ledger records D229.", "DECISIONS.md no longer has D229."),
     );
     assert.match(
       decisions,
-      /## D189 — Client-rest does not strip Insight campaigns/,
-      stop(
-        "The Insight client-rest exclusion is in the ledger (D189).",
-        "DECISIONS.md no longer has D189.",
-      ),
+      /^\| D229 \|/m,
+      stop("The status index lists D229 (D127).", "DECISIONS.md status index has no D229 row."),
     );
   });
 });
@@ -9148,7 +9131,7 @@ describe("owner intent — D193 named clients never take GENERIC pool senders", 
       ),
       false,
       stop(
-        "Named client campaigns stay client-inbox only (D193).",
+        "A leftover D134 tap is not attach permission (D193/D229).",
         "campaignMayTakeGenerics still treats a D134 approval as attach permission.",
       ),
     );
@@ -12843,8 +12826,8 @@ describe("owner intent — D228 40/40 per-POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D228\*\*/,
-      stop("CANON is dated D228.", "CANON.md header was not bumped to D228."),
+      /Canon as of \*\*D22[8-9]\*\*/,
+      stop("CANON is dated D228 or later.", "CANON.md header lost D228+."),
     );
     assert.match(
       canon,
@@ -12860,6 +12843,47 @@ describe("owner intent — D228 40/40 per-POD inventory", () => {
       decisions,
       /^\| D228 \|/m,
       stop("The status index lists D228 (D127).", "DECISIONS.md status index has no D228 row."),
+    );
+  });
+});
+
+describe("owner intent — D229 D193 POC-only generics retired", () => {
+  it("D229: assigned same-client generics share; D193 dump stays retired", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const fanout = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.match(
+      fanout,
+      /assignedSameClient/,
+      stop(
+        "Fan-out shares assigned same-client generics (D229).",
+        "clientFanOut.ts lost the assigned-same-client share.",
+      ),
+    );
+    assert.match(
+      canon,
+      /named clients never receive generics/,
+      stop(
+        "CANON names the retired D193 read (D229).",
+        "CANON.md lost the D193 retirement sentence.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D229\*\*/,
+      stop("CANON is dated D229.", "CANON.md header was not bumped to D229."),
+    );
+    assert.match(
+      decisions,
+      /^\| D229 \|/m,
+      stop("The status index lists D229 (D127).", "DECISIONS.md status index has no D229 row."),
     );
   });
 });

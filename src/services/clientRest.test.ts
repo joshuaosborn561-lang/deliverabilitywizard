@@ -116,7 +116,7 @@ describe("isRestDetachableCampaign", () => {
     assert.equal(isRestDetachableCampaign(undefined, []), false);
   });
 
-  it("D189: ACTIVE Insight is not detachable; Engagers still are", () => {
+  it("D229: ACTIVE Insight is detachable like any other named campaign", () => {
     assert.equal(
       isRestDetachableCampaign(
         {
@@ -127,8 +127,8 @@ describe("isRestDetachableCampaign", () => {
         },
         [],
       ),
-      false,
-      "named Insight id stays attached",
+      true,
+      "D189 rest-sticky is retired — off-week unlinks from Insight",
     );
     assert.equal(
       isRestDetachableCampaign(
@@ -136,12 +136,11 @@ describe("isRestDetachableCampaign", () => {
           id: 4000001,
           name: "Insight Extra Lane",
           status: "ACTIVE",
-          client_id: 345263,
+          client_id: 582890,
         },
         [],
       ),
-      false,
-      "Insight name prefix on client 345263",
+      true,
     );
     assert.equal(
       isRestDetachableCampaign(
@@ -159,19 +158,6 @@ describe("isRestDetachableCampaign", () => {
     assert.equal(
       isRestDetachableCampaign(
         {
-          id: 90,
-          name: "Insight Other Client",
-          status: "ACTIVE",
-          client_id: 9,
-        },
-        [],
-      ),
-      true,
-      "another client's Insight-named campaign still rests",
-    );
-    assert.equal(
-      isRestDetachableCampaign(
-        {
           id: 3921647,
           name: "Insight Consolidation Gateway SEG",
           status: "PAUSED",
@@ -180,7 +166,7 @@ describe("isRestDetachableCampaign", () => {
         [],
       ),
       false,
-      "paused Insight still sticky — D184 cannot restore once unlinked",
+      "PAUSED Insight still keeps seats (D207)",
     );
   });
 });
@@ -1093,7 +1079,7 @@ describe("ClientRestService", () => {
     );
   });
 
-  it("D189: does not unlink off-week from ACTIVE Insight; Engagers still rest", async () => {
+  it("D229: unlinks off-week from ACTIVE Insight; Engagers still rest", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // B off
     const insightEmails = [
       "a@salesglidertop.org",
@@ -1173,21 +1159,14 @@ describe("ClientRestService", () => {
     );
 
     const result = await service.run({ dryRun: false, now });
-    assert.equal(
+    assert.ok(
       removed.some((row) => row[0] === 3921647 || row[0] === 4000001),
-      false,
-      "must not unlink exclusive Insight seats",
+      "off-week Insight seats unlink (D189 rest-sticky retired)",
     );
     for (const email of offInsight) {
-      assert.equal(
+      assert.ok(
         result.benched.some((row) => row.email === email),
-        false,
-        `${email} exclusive Insight must not be benched`,
-      );
-      assert.equal(
-        state.getRestingInbox(email),
-        undefined,
-        `${email} must not be marked resting while staying on Insight`,
+        `${email} off-week Insight must leave the on-week campaigns`,
       );
     }
     for (const email of offEngagers) {
@@ -1203,7 +1182,7 @@ describe("ClientRestService", () => {
     );
   });
 
-  it("D189: shared Insight+Engagers off-week leaves Insight, benches Engagers", async () => {
+  it("D229: shared Insight+Engagers off-week unlinks both", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // B off
     const emails = [
       "a@salesglidertop.org",
@@ -1264,15 +1243,15 @@ describe("ClientRestService", () => {
     );
 
     const result = await service.run({ dryRun: false, now });
-    assert.equal(
+    assert.ok(
       removed.some((row) => row[0] === 3921647),
-      false,
-      "shared seat must stay on Insight",
+      "off-week shared seat unlinks from Insight",
     );
     for (const email of offEmails) {
       const row = result.benched.find((entry) => entry.email === email);
-      assert.ok(row, `expected ${email} benched from Engagers`);
-      assert.deepEqual(row.campaignIds, [89]);
+      assert.ok(row, `expected ${email} benched from Insight and Engagers`);
+      assert.ok(row.campaignIds.includes(3921647));
+      assert.ok(row.campaignIds.includes(89));
     }
     assert.ok(
       removed.some((row) => row[0] === 89),
@@ -1280,7 +1259,7 @@ describe("ClientRestService", () => {
     );
   });
 
-  it("D189: on-week exclusive Insight is not re-POSTed onto Insight or Engagers", async () => {
+  it("D184/D229: on-week exclusive Insight is not re-POSTed onto Engagers", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const insightOn = "a@salesglidertop.org";
     const engagerOn = "b@salesglidertop.org";
@@ -1373,9 +1352,9 @@ describe("ClientRestService", () => {
       "exclusive Insight must not fan onto Engagers",
     );
     assert.equal(
-      removed.some((row) => row[0] === 3921647),
+      removed.some((row) => row[1].includes(20)),
       false,
-      "on-week must not detach Insight",
+      "on-week exclusive Insight must stay linked",
     );
     assert.ok(
       result.skipped.some((row) =>

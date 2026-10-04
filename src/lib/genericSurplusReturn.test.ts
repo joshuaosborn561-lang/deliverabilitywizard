@@ -35,6 +35,15 @@ describe("D225 surplus generic return picker", () => {
     });
     assert.equal(picked.length, 4);
     assert.ok(picked.every((row) => row.clientId === 77));
+    assert.deepEqual(
+      picked.map((row) => row.email),
+      [
+        "g0@getintroduced.info",
+        "g1@getintroduced.info",
+        "g2@getintroduced.info",
+        "g3@getintroduced.info",
+      ],
+    );
   });
 
   it("skips PowerGRYD and an active 24h TERRL substitute", () => {

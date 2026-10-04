@@ -7,6 +7,7 @@ import { isClientInbox, isGenericMailbox } from "./clientInbox.js";
 import { isRealNamedClientId } from "./dedicatedGeneric.js";
 import { assignClientCohorts } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
+import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   GENERIC_ASSIGN_REASON_POWERGRYD,
@@ -146,11 +147,7 @@ export function validateGenericPool(input: {
     why: string,
   ): void => {
     if (surplus <= 0) return;
-    const ranked = [...seats].sort((a, b) => {
-      const aAt = Date.parse(a.assignedAt ?? "") || 0;
-      const bAt = Date.parse(b.assignedAt ?? "") || 0;
-      return bAt - aAt;
-    });
+    const ranked = rankGenericsOldestWorstFirst(seats);
     for (const seat of ranked.slice(0, surplus)) {
       if (idleEmails.has(seat.email)) continue;
       idleEmails.add(seat.email);

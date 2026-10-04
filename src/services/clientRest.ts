@@ -82,7 +82,8 @@ import {
  * with this client's pods and fan out like named seats.
  * Same-client multi-link is not a peel reason. Off-week
  * assigned generics keep `client_id` + POD tag + signature
- * (inventory is 40/40). PAUSED/STOPPED are never detached.
+ * (inventory is 40/40). A generic never rotates PODs (D230).
+ * PAUSED/STOPPED are never detached.
  */
 
 /** Live-client statuses rest may detach from (D207). PAUSED/STOPPED keep seats. */
@@ -326,6 +327,9 @@ export class ClientRestService {
       inboxes: Array<{ email: string; type?: string | null }>,
       tagged: Map<string, RestCohort>,
     ): void => {
+      // D230 — a tagged generic keeps its POD. Untagged dedicated
+      // leftovers still take the static cut; that cut must not
+      // overwrite a locked POD tag.
       const untagged = inboxes.filter((row) => !tagged.has(row.email));
       for (const [email, cohort] of tagged) {
         if (inboxes.some((row) => row.email === email)) {

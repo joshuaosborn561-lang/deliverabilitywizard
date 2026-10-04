@@ -136,12 +136,14 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(pending.length, 1);
   });
 
-  it("never writes POD tags", async () => {
+  it("never retags named seats or a generic across PODs", async () => {
     const src = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("./min40TopUp.ts", import.meta.url), "utf8"),
     );
     assert.doesNotMatch(src, /updateMailboxTags/);
     assert.match(src, /Never retag named seats/);
+    assert.match(src, /Never retag a generic across PODs/);
+    assert.match(src, /genericEligibleForClientPod|genericMayTakePod/);
   });
 
   it("D207: shares a client generic across that client's ACTIVE campaigns", async () => {
@@ -596,5 +598,184 @@ describe("Min40TopUpService (D205)", () => {
       result.assigned.some((row) => offEmails.includes(row.email)),
       false,
     );
+  });
+
+  it("D230: does not take another client's generic or move a POD-B seat to A", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const tagWrites: Array<[number[], number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "foreign@getintroduced.info",
+      domain: "getintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 801,
+      status: "assigned",
+      assignedClientId: 999001,
+      warmedAt,
+    });
+    state.upsertPoolMailbox({
+      email: "other-pod@getintroduced.info",
+      domain: "getintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 802,
+      status: "assigned",
+      assignedClientId: 542838,
+      warmedAt,
+    });
+    const named = Array.from({ length: 20 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({
+          id: name === "POD-A" ? 71 : 72,
+          name,
+        }),
+        assignTags: async (accountIds: number[], tagIds: number[]) => {
+          tagWrites.push([accountIds, tagIds]);
+        },
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 10, name: "BCP A", status: "ACTIVE", client_id: 542838 }],
+        accounts: [
+          ...named,
+          {
+            id: 801,
+            from_email: "foreign@getintroduced.info",
+            client_id: 999001,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+            campaign_ids: [],
+          },
+          {
+            id: 802,
+            from_email: "other-pod@getintroduced.info",
+            client_id: 542838,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-B" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.equal(
+      attached.some((row) => row[1].includes(801) || row[1].includes(802)),
+      false,
+      "must not take a foreign generic or flip a POD-B seat onto A",
+    );
+    assert.equal(
+      result.assigned.some((row) =>
+        ["foreign@getintroduced.info", "other-pod@getintroduced.info"].includes(
+          row.email,
+        ),
+      ),
+      false,
+    );
+    assert.equal(
+      tagWrites.some((row) => row[0].includes(802)),
+      false,
+      "must not retag the POD-B generic",
+    );
+  });
+
+  it("D230: stamps the first POD tag on an untagged pool assign", async () => {
+    const tagWrites: Array<[number[], number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    const named = Array.from({ length: 20 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({
+          id: name === "POD-A" ? 71 : 72,
+          name,
+        }),
+        assignTags: async (accountIds: number[], tagIds: number[]) => {
+          tagWrites.push([accountIds, tagIds]);
+        },
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 10, name: "BCP A", status: "ACTIVE", client_id: 542838 }],
+        accounts: [
+          ...named,
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.deepEqual(tagWrites, [[[900], [71]]]);
+    assert.equal(state.getGenericSeat("spare@crosslaunchco.com")?.assignedPod, "A");
   });
 });

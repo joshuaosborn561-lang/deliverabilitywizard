@@ -2016,4 +2016,103 @@ describe("ClientRestService", () => {
       "POD rotation must not clear client_id on off-week assigned generics",
     );
   });
+
+  it("D230: flip unlinks/relinks a generic with its own POD and never retags", async () => {
+    const weekA = new Date("2026-10-01T17:00:00Z");
+    const weekB = new Date("2026-10-12T17:00:00Z");
+    const tagWrites: string[] = [];
+    const onEmails = Array.from({ length: 4 }, (_, i) => `on-${i}@getintroduced.info`);
+    const offEmails = ["off-0@getintroduced.info", "off-1@getintroduced.info"];
+    const emails = [...onEmails, ...offEmails];
+    const accounts = emails.map((from_email, index) => ({
+      id: 10 + index,
+      from_email,
+      client_id: 542838,
+      signature: "Ada Pool\nBolder Cyber Partners",
+      tags: [
+        { tag_name: "GENERIC" },
+        { tag_name: offEmails.includes(from_email) ? "POD-B" : "POD-A" },
+      ],
+      campaign_ids: offEmails.includes(from_email) ? [] : [3763799],
+      created_at: WARMED,
+      is_smtp_success: true,
+      is_imap_success: true,
+    }));
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 3763799, name: "BCP HC With Team", status: "ACTIVE", client_id: 542838 },
+      ],
+      listAllEmailAccounts: async () => accounts,
+      listClients: async () => [
+        { id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        for (const id of ids) {
+          const row = accounts.find((account) => account.id === id);
+          if (row) {
+            row.campaign_ids = row.campaign_ids.filter((item) => item !== campaignId);
+          }
+        }
+      },
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        for (const id of ids) {
+          const row = accounts.find((account) => account.id === id);
+          if (row && !row.campaign_ids.includes(campaignId)) {
+            row.campaign_ids.push(campaignId);
+          }
+        }
+      },
+      updateEmailAccount: async () => undefined,
+      assignTags: async () => {
+        tagWrites.push("assign");
+      },
+      removeTags: async () => {
+        tagWrites.push("remove");
+      },
+    } as unknown as SmartleadClient;
+    const state = new StateStore(
+      `/tmp/client-rest-d230-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const first = await service.run({ dryRun: false, now: weekA });
+    for (const email of onEmails) {
+      assert.equal(
+        first.benched.some((row) => row.email === email),
+        false,
+        `${email} POD-A generic stays linked on A-week`,
+      );
+    }
+    const second = await service.run({ dryRun: false, now: weekB });
+    const benchedOn = onEmails.filter((email) =>
+      second.benched.some((row) => row.email === email),
+    );
+    assert.ok(
+      benchedOn.length >= 3,
+      `POD-A generics unlink on B-week (benched ${benchedOn.join(",")})`,
+    );
+    for (const email of offEmails) {
+      assert.ok(
+        second.restored.some((row) => row.email === email),
+        `${email} POD-B generic relinks on B-week`,
+      );
+    }
+    assert.deepEqual(tagWrites, []);
+    for (const row of accounts) {
+      const want = offEmails.includes(row.from_email) ? "POD-B" : "POD-A";
+      assert.deepEqual(
+        row.tags.map((tag) => tag.tag_name),
+        ["GENERIC", want],
+        `${row.from_email} must keep ${want} through the flip`,
+      );
+    }
+  });
 });

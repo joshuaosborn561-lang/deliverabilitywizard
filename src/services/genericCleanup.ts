@@ -10,7 +10,7 @@ import { isPowerGrydClientId } from "./powerGrydWatch.js";
 import { hasPoolMarkerTag } from "../lib/markerClients.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
-import { fetchInventory, type InventorySnapshot } from "./inventory.js";
+import { dropMembership, fetchInventory, type InventorySnapshot } from "./inventory.js";
 import {
   syncGenericSeatsFromInventory,
   validateGenericPool,
@@ -125,12 +125,15 @@ export class GenericCleanupService {
             await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [
               account.id,
             ]);
+            dropMembership(account, campaignId);
             await sleep(WRITE_GAP_MS);
           }
           await this.smartlead.updateEmailAccount(account.id, {
             client_id: null,
             signature: "",
           });
+          account.client_id = null;
+          account.signature = "";
           await sleep(WRITE_GAP_MS);
           const pool = this.state.getPoolMailbox(email);
           if (pool) {

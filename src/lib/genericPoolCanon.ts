@@ -8,6 +8,8 @@ import { isRealNamedClientId } from "./dedicatedGeneric.js";
 import { assignClientCohorts } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
+import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   GENERIC_ASSIGN_REASON_POWERGRYD,
@@ -19,6 +21,7 @@ import {
   genericPoolNeedForPod,
   genericProviderFromAccountType,
   genericSeatKey,
+  seatStaffableWeight,
   mergeSeededGenericSeat,
   normalizeGenericSeat,
   podFromMailboxTags,
@@ -163,12 +166,14 @@ export function validateGenericPool(input: {
   const idleEmails = new Set<string>();
   const markSurplus = (
     seats: GenericSeatRecord[],
-    surplus: number,
+    namedStaffable: number,
     why: string,
+    returnAll = false,
   ): void => {
-    if (surplus <= 0) return;
-    const ranked = rankGenericsOldestWorstFirst(seats);
-    for (const seat of ranked.slice(0, surplus)) {
+    const ranked = returnAll
+      ? rankGenericsOldestWorstFirst(seats)
+      : pickWeightedGenericReturns(seats, { namedStaffable });
+    for (const seat of ranked) {
       if (idleEmails.has(seat.email)) continue;
       idleEmails.add(seat.email);
       push({
@@ -198,20 +203,27 @@ export function validateGenericPool(input: {
 
     for (const pod of pods) {
       const seats = assignedByClientPod.get(clientPodKey(clientId, pod)) ?? [];
-      const need = perPodNeed.get(pod) ?? 0;
       const named = input.namedStaffableByClientPod.get(clientPodKey(clientId, pod)) ?? 0;
+      const assignedWeight = seats.reduce(
+        (sum, seat) => sum + seatStaffableWeight(seat),
+        0,
+      );
       const why =
         hasActive === false
           ? `assigned to client ${clientId} POD ${pod} but that client has no ACTIVE campaign`
-          : `assigned to client ${clientId} POD ${pod} but is not needed to reach ${40} (named ${named}, assigned ${seats.length})`;
-      markSurplus(seats, Math.max(0, seats.length - need), why);
+          : `assigned to client ${clientId} POD ${pod} but is not needed to reach ${40} (named ${named}, assigned ${assignedWeight})`;
+      markSurplus(seats, named, why, hasActive === false);
     }
 
     const unpodded = assignedUnpodded.get(clientId) ?? [];
     if (!unpodded.length) continue;
     const poddedAssigned = pods.reduce(
       (sum, pod) =>
-        sum + (assignedByClientPod.get(clientPodKey(clientId, pod))?.length ?? 0),
+        sum +
+        (assignedByClientPod.get(clientPodKey(clientId, pod)) ?? []).reduce(
+          (inner, seat) => inner + seatStaffableWeight(seat),
+          0,
+        ),
       0,
     );
     const leftoverNeed = Math.max(0, totalNeed - poddedAssigned);
@@ -219,7 +231,12 @@ export function validateGenericPool(input: {
       hasActive === false
         ? `assigned to client ${clientId} but that client has no ACTIVE campaign`
         : `assigned to client ${clientId} but is not needed to bring either POD to 40`;
-    markSurplus(unpodded, Math.max(0, unpodded.length - leftoverNeed), why);
+    markSurplus(
+      unpodded,
+      Math.max(0, 40 - leftoverNeed),
+      why,
+      hasActive === false,
+    );
   }
 
   return findings.sort((a, b) => {
@@ -353,7 +370,10 @@ export function syncGenericSeatsFromInventory(
         const key = clientPodKey(clientId, tagged);
         namedStaffableByClientPod.set(
           key,
-          (namedStaffableByClientPod.get(key) ?? 0) + 1,
+          roundStaffableWeight(
+            (namedStaffableByClientPod.get(key) ?? 0) +
+              mailboxStaffableWeight(account),
+          ),
         );
       }
       continue;
@@ -404,6 +424,7 @@ export function syncGenericSeatsFromInventory(
       reason: assignedReason(existing, assignedClientId, powerId),
       releasedAt: existing?.releasedAt ?? null,
       releaseHistory: existing?.releaseHistory ?? [],
+      staffableWeight: mailboxStaffableWeight(account),
     });
     const cleared =
       assignedClientId == null
@@ -433,9 +454,15 @@ export function syncGenericSeatsFromInventory(
       const cohort = cohorts.get(row.email);
       const pod: GenericAssignedPod = cohort === "B" ? "B" : "A";
       const key = clientPodKey(clientId, pod);
+      const account = input.accounts.find(
+        (item) => accountEmail(item) === row.email,
+      );
       namedStaffableByClientPod.set(
         key,
-        (namedStaffableByClientPod.get(key) ?? 0) + 1,
+        roundStaffableWeight(
+          (namedStaffableByClientPod.get(key) ?? 0) +
+            mailboxStaffableWeight(account ?? { type: row.type }),
+        ),
       );
     }
   }

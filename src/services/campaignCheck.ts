@@ -27,6 +27,7 @@ import {
   summarizeCanonUnstaffable,
   type CanonStaffableReason,
 } from "../lib/canonStaffable.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import {
   accountIsPeelStaffable,
   clientCountKey,
@@ -1235,12 +1236,20 @@ export class CampaignCheckService {
         clientName,
         input.onWeekInboxCounts,
       );
-      const shortBy = Math.max(0, floor - serving.length);
-      if (input.depth === "hourly" && shortBy > 0) {
+      const staffableWeight = roundStaffableWeight(
+        serving.reduce((sum, email) => {
+          const account = attached.find(
+            (row) => accountEmail(row)?.toLowerCase() === email,
+          );
+          return sum + mailboxStaffableWeight(account);
+        }, 0),
+      );
+      const shortBy = Math.max(0, floor - staffableWeight);
+      if (input.depth === "hourly" && shortBy > 1e-9) {
         findings.push({
           kind: "understaffed",
           detail: formatCanonStaffFloorDetail({
-            staffable: serving.length,
+            staffable: staffableWeight,
             linked: linkedCount,
             floor,
             unstaffable: summarizeCanonUnstaffable(staffVerdicts),

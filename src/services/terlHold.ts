@@ -25,6 +25,9 @@ import {
   genericProviderFromAccountType,
 } from "../lib/genericPool.js";
 import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
+import { weightedStaffableOnCampaign } from "../lib/azureStaffWeight.js";
+import { ON_WEEK_MIN_SENDERS } from "../lib/clientStaffFloor.js";
+import { mailboxStaffableWeight } from "../lib/mailboxType.js";
 import { chicagoWallClock, canonOpsIdleReason } from "../lib/canonOpsHours.js";
 import { sleep } from "../lib/http.js";
 import { onWeekCohort } from "../lib/restCohort.js";
@@ -240,6 +243,13 @@ export class TerlHoldService {
         }
         const client = clientById.get(campaignClientId);
         const clientName = client ? clientDisplayName(client) : `Client ${campaignClientId}`;
+        const weighted = weightedStaffableOnCampaign({
+          campaignId,
+          accounts: accounts as SmartleadAccountWithCampaigns[],
+          excludeAccountIds: [seat.id],
+          isCopyCanary: (value) => this.state.isCopyCanary(value),
+        });
+        if (weighted >= ON_WEEK_MIN_SENDERS - 1e-9) continue;
         const pick = this.pickSubstitute({
           campaign,
           clientId: campaignClientId,
@@ -551,6 +561,9 @@ export class TerlHoldService {
       const aMatch = aPod === onWeek ? 0 : aPod == null ? 1 : 2;
       const bMatch = bPod === onWeek ? 0 : bPod == null ? 1 : 2;
       if (aMatch !== bMatch) return aMatch - bMatch;
+      const aAzure = mailboxStaffableWeight(a) < 1 ? 1 : 0;
+      const bAzure = mailboxStaffableWeight(b) < 1 ? 1 : 0;
+      if (aAzure !== bAzure) return aAzure - bAzure;
       return (accountEmail(a) ?? "").localeCompare(accountEmail(b) ?? "");
     });
     return ranked[0];

@@ -13,7 +13,9 @@ import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   clientPodKey,
+  seatStaffableWeight,
 } from "../lib/genericPool.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -215,7 +217,7 @@ export class Min40TopUpService {
         campaignById,
         now,
       );
-      const shortBy = Math.max(0, ON_WEEK_MIN_SENDERS - staffable);
+      const shortBy = roundStaffableWeight(Math.max(0, ON_WEEK_MIN_SENDERS - staffable));
       if (shortBy <= 0) continue;
 
       const auto =
@@ -396,10 +398,14 @@ export class Min40TopUpService {
       const generic = isGenericMailbox(account, email, this.config, this.state);
       if (generic) {
         if (!genericMayLinkToCampaigns(account, now)) continue;
-        if (this.belongsToClient(account, email, clientId, campaignById)) n += 1;
+        if (this.belongsToClient(account, email, clientId, campaignById)) {
+          n = roundStaffableWeight(n + mailboxStaffableWeight(account));
+        }
         continue;
       }
-      if (namedOnWeek.has(email.toLowerCase())) n += 1;
+      if (namedOnWeek.has(email.toLowerCase())) {
+        n = roundStaffableWeight(n + mailboxStaffableWeight(account));
+      }
     }
     return n;
   }
@@ -632,7 +638,7 @@ export class Min40TopUpService {
     });
 
     for (const account of existing) {
-      if (placed >= input.shortBy) break;
+      if (placed >= input.shortBy - 1e-9) break;
       const email = accountEmail(account);
       if (!email) continue;
       const ok = await this.attachSeat({
@@ -645,7 +651,7 @@ export class Min40TopUpService {
       });
       if (ok) {
         selected.add(email.toLowerCase());
-        placed += 1;
+        placed = roundStaffableWeight(placed + mailboxStaffableWeight(account));
       }
     }
 
@@ -656,7 +662,7 @@ export class Min40TopUpService {
       if (platform) espCounts[platform] += 1;
     }
 
-    while (placed < input.shortBy) {
+    while (placed < input.shortBy - 1e-9) {
       const platformOrder = espFillOrder(
         espCounts,
         ON_WEEK_MIN_SENDERS,
@@ -769,7 +775,9 @@ export class Min40TopUpService {
         if (pool.platform === "GOOGLE" || pool.platform === "MICROSOFT") {
           espCounts[pool.platform] += 1;
         }
-        placed += 1;
+        placed = roundStaffableWeight(
+          placed + mailboxStaffableWeight(original ?? pool),
+        );
         input.result.assigned.push({
           campaignId: input.campaign.id,
           campaignName: String(input.campaign.name ?? input.campaign.id),
@@ -832,11 +840,11 @@ export class Min40TopUpService {
       const selected = new Set<string>();
       for (const pod of ["A", "B"] as const) {
         const named = synced.namedStaffableByClientPod.get(clientPodKey(clientId, pod)) ?? 0;
-        const assigned = synced.seats.filter(
-          (seat) => seat.assignedClientId === clientId && seat.assignedPod === pod,
-        ).length;
+        const assigned = synced.seats
+          .filter((seat) => seat.assignedClientId === clientId && seat.assignedPod === pod)
+          .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
         let need = podInventoryNeed(named, assigned);
-        while (need > 0) {
+        while (need > 1e-9) {
           const pool = this.state.findReassignablePoolMailbox(
             ["GOOGLE", "MICROSOFT"],
             (email) => {
@@ -904,7 +912,7 @@ export class Min40TopUpService {
               email: pool.email,
               clientId,
             });
-            need -= 1;
+            need = roundStaffableWeight(need - mailboxStaffableWeight(original));
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             input.result.errors.push(`${pool.email} POD ${pod}: ${message}`);

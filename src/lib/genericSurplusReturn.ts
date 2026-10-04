@@ -17,7 +17,7 @@ import {
   type GenericAssignedPod,
   type GenericSeatRecord,
 } from "./genericPool.js";
-import { namedWarmSwapReturnCount } from "./namedWarmSwap.js";
+import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 
 export const GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY = true;
 
@@ -95,12 +95,11 @@ export function surplusGenericReturns(input: {
     const clientId = Number(clientRaw);
     const pod = podRaw as GenericAssignedPod;
     const named = input.namedStaffableByClientPod.get(key) ?? 0;
-    const count = namedWarmSwapReturnCount({
-      namedStaffable: named,
-      assignedCount: seats.length,
-      clientHasActiveCampaign: input.clientHasActiveCampaign?.get(clientId),
-    });
-    for (const seat of rankGenericsOldestWorstFirst(seats).slice(0, count)) {
+    const picked =
+      input.clientHasActiveCampaign?.get(clientId) === false
+        ? rankGenericsOldestWorstFirst(seats)
+        : pickWeightedGenericReturns(seats, { namedStaffable: named });
+    for (const seat of picked) {
       out.push({
         email: seat.email,
         clientId: seat.assignedClientId!,

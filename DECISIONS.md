@@ -237,6 +237,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D229 | Live | D189 Insight rest-sticky is retired: Insight off-week seats unlink; fan-out will not re-spread off-week POD-B onto Insight. D193 POC-only / "named clients never receive generics" is retired: assigned 40/40 generics stay on every named client; leftover D134 tap is still not a rotating-pool dump. D184/D192 Insight ≠ SalesGlider mix stays |
 | D230 | Live — sole assign/release path and `released_at` history locked by D231 | Governing generic rule: one shared pool in a table; a generic attaches to ONE client and ONE POD (A or B, whichever is under 40) and never rotates PODs; stays until branded named seats fill that POD back to 40, then returns to the untagged pool; while tagged no other client may use it; never pre-split across clients. min40 takes only untagged pool or same client+POD. Named-warm swap returns one generic per newly-warm named seat, oldest/worst first, never below 40; surplus beyond 40 also returns |
 | D231 | Live | Generics are handed out only through `state.genericSeats` (wizard state table). Each row: seat id, email, client_id or null, POD or null, assigned_at, reason, released_at history. min40 / TERRL sub / named-warm / surplus / cleanup assign and release through that table. Blocks two-client tags and assignments outside the table. Seeded from live Smartlead. |
+| D232 | Live | Azure/Entra mailboxes (type:azure / tidalstackco.com), generic or named, weigh 0.1 toward a POD's 40; every other type weighs 1. Weighted sum ≥40 is the target for staffable counts, Canon understaffed, min40, surplus, named-warm return, and the 24h TERRL sub. |
 
 ---
 
@@ -7663,6 +7664,36 @@ or named-warm return order.
 rotate; release appends history; `generic_outside_table`
 flips `/health`; CANON names `state.genericSeats` and
 the sole-path rule.
+
+---
+
+## D232 — Azure mailboxes weigh 0.1 toward a POD's 40
+
+**Date.** 2026-10-03 (Josh, 8:16pm CT, HARD). Written
+2026-10-04.
+
+**Decision.** Any Azure mailbox (Azure/Entra type, e.g.
+tidalstackco.com — `type:azure` or the Azure domain
+classifier), generic or named, counts as **0.1** of a
+regular Microsoft 365 mailbox when computing a POD's
+40. The POD target is a weighted sum of at least 40:
+Azure = 0.1, every other type = 1. Applies to staffable
+counts, Canon understaffed checks, min40 need, surplus
+return, the named-warm swap return trigger, and the 24h
+TERRL substitute.
+
+**Why.** Azure/Entra seats send 2/day. Counting them as
+a full seat toward 40 overstated coverage.
+
+**Rejected.** Counting Azure as a full 1. Changing the
+Azure send cap. Live Smartlead writes from this chat.
+
+**Supersedes / amends.** Amends D203/D217/D219/D221/
+D228/D230: the "40" is weighted, not a raw seat count.
+Does not change Azure 2/5 caps or one-client / one-POD.
+
+**Guards.** `mailboxStaffableWeight`; weighted min40 /
+surplus / understaffed / TERRL; CANON dated D232.
 
 ---
 

@@ -24,6 +24,7 @@ import {
   stripMailboxPodTags,
 } from "../lib/genericAssign.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import {
   syncGenericSeatsFromInventory,
   type GenericPoolSyncAccount,
@@ -75,7 +76,7 @@ function staffableOnCampaign(
         isCopyCanary: (key) => state.isCopyCanary(key),
       })
     ) {
-      n += 1;
+      n = roundStaffableWeight(n + mailboxStaffableWeight(account));
     }
   }
   return n;

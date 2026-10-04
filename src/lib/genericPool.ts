@@ -1,5 +1,6 @@
 import { normalizeSenderEspFamily } from "./esp.js";
 import { ON_WEEK_MIN_SENDERS, POD_INVENTORY_MIN_SENDERS } from "./clientStaffFloor.js";
+import { roundStaffableWeight } from "./mailboxType.js";
 
 /**
  * D221 / D231 — fleet-wide generic pool. One table, one row per
@@ -59,6 +60,8 @@ export interface GenericSeatRecord {
   reason: string | null;
   releasedAt: string | null;
   releaseHistory: GenericReleaseEvent[];
+  /** D232 — Azure 0.1, everything else 1. */
+  staffableWeight: number;
 }
 
 export function isGenericPoolCoreKind(kind: string): kind is GenericPoolCoreKind {
@@ -67,6 +70,13 @@ export function isGenericPoolCoreKind(kind: string): kind is GenericPoolCoreKind
 
 export function genericSeatKey(email: string): string {
   return email.trim().toLowerCase();
+}
+
+export function seatStaffableWeight(
+  seat: { staffableWeight?: number | null } | null | undefined,
+): number {
+  const value = Number(seat?.staffableWeight);
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 export function clientPodKey(
@@ -78,9 +88,9 @@ export function clientPodKey(
 
 export function genericPoolNeedForPod(namedStaffableInPod: number): number {
   const named = Number.isFinite(namedStaffableInPod)
-    ? Math.max(0, Math.floor(namedStaffableInPod))
+    ? Math.max(0, namedStaffableInPod)
     : 0;
-  return Math.max(0, GENERIC_POOL_POD_FLOOR - named);
+  return roundStaffableWeight(Math.max(0, GENERIC_POOL_POD_FLOOR - named));
 }
 
 export function genericProviderFromAccountType(
@@ -178,7 +188,14 @@ export function normalizeGenericSeat(raw: unknown): GenericSeatRecord | null {
     releaseHistory: normalizeReleaseHistory(
       (row as { release_history?: unknown }).release_history ?? row.releaseHistory,
     ),
+    staffableWeight: normalizeStaffableWeight(row.staffableWeight),
   };
+}
+
+function normalizeStaffableWeight(raw: unknown): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  return Math.round(value * 10) / 10;
 }
 
 function normalizeReleaseHistory(raw: unknown): GenericReleaseEvent[] {
@@ -225,6 +242,7 @@ export function emptyGenericSeat(
     reason: extras.reason ?? null,
     releasedAt: extras.releasedAt ?? null,
     releaseHistory: extras.releaseHistory ?? [],
+    staffableWeight: extras.staffableWeight ?? 1,
   };
 }
 

@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D231** (2026-10-04). One page of current truth. When a new
+Canon as of **D232** (2026-10-04). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -66,6 +66,14 @@ or the day is done. Silent findings are a bug (D163).
   **Azure/Entra 2** campaign/day and **5** warmup/day;
   Outlook / Microsoft **15** campaign/day (M365; warmup unchanged);
   **Google** stays `MESSAGE_PER_DAY` (30) and the standing warmup.
+  **D232 — Azure weight:** any Azure/Entra mailbox (`type:azure`
+  or tidalstackco.com), generic or named, counts as **0.1** of a
+  regular mailbox toward a POD's 40. Every other type counts as
+  **1**. The POD target is a weighted sum of at least 40. Same
+  weights apply to staffable counts, Canon `understaffed`, min40
+  need, surplus return, the named-warm swap return trigger, and
+  the 24h TERRL substitute (only link a sub when weighted
+  on-week staffable is under 40; prefer a non-Azure generic).
   Do not drop the global constant to 15. M365-at-15 is compliant,
   not a `mailbox_volume` finding. On a Microsoft **550 5.7.233**
   (TERRL) from a tenant: every seat on that tenant goes to

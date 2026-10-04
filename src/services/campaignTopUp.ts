@@ -38,6 +38,7 @@ import {
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import { genericEligibleForClientPod } from "../lib/genericAssign.js";
+import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   applyAssignGenericSeat,
@@ -203,8 +204,9 @@ export class CampaignTopUpService {
       ) {
         continue;
       }
+      const weight = mailboxStaffableWeight(account);
       for (const id of campaignIdsOf(account)) {
-        staffableCounts.set(id, (staffableCounts.get(id) ?? 0) + 1);
+        staffableCounts.set(id, roundStaffableWeight((staffableCounts.get(id) ?? 0) + weight));
       }
     }
 

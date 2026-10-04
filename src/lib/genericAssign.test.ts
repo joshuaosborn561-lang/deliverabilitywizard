@@ -86,9 +86,17 @@ describe("D230 generic assign lock", () => {
     );
   });
 
-  it("stamps a first POD tag without carrying the other side", () => {
-    const stamped = stampMailboxPodTag([{ tag_name: "GENERIC" }, { tag_name: "POD-B" }], "A");
+  it("stamps a first POD tag on an untagged seat", () => {
+    const stamped = stampMailboxPodTag([{ tag_name: "GENERIC" }], "A");
     assert.deepEqual(stamped, [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }]);
     assert.deepEqual(stripMailboxPodTags(stamped), [{ tag_name: "GENERIC" }]);
+  });
+
+  it("D234: refuses to flip an already-tagged POD", () => {
+    const stamped = stampMailboxPodTag(
+      [{ tag_name: "GENERIC" }, { tag_name: "POD-B" }],
+      "A",
+    );
+    assert.deepEqual(stamped, [{ tag_name: "GENERIC" }, { tag_name: "POD-B" }]);
   });
 });

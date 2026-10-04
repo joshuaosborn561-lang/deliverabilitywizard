@@ -31,7 +31,7 @@ describe("PodTagService (D135)", () => {
       cohorts.get(email) === "A" ? POD_TAG_A : POD_TAG_B;
 
     const accounts = [
-      // carries the wrong pod tag — must be corrected
+      // carries the opposite pod tag — D234 must leave it alone
       {
         id: 1,
         from_email: emails[0],
@@ -84,10 +84,13 @@ describe("PodTagService (D135)", () => {
       async () => {},
     );
 
-    const result = await service.run();
-    // accounts 1, 3, 4 need their pod tag; account 1 also drops the wrong one
-    assert.equal(result.assigned, 3);
-    assert.equal(result.removed, 1);
+    const weekday = new Date("2026-10-05T14:00:00.000Z");
+    const result = await service.run({ now: weekday });
+    // D234 — account 1 already has a POD tag (even the "wrong" one): no write.
+    // Untagged 3 and 4 get a first tag. Generic 5 is left alone.
+    assert.equal(result.assigned, 2);
+    assert.equal(result.removed, 0);
+    assert.equal(result.refused, 0);
     const tagIdFor = (email: string) =>
       cohorts.get(email) === "A" ? 71 : 72;
     const assignedPairs = assigns.flatMap(([ids, tags]) =>
@@ -96,18 +99,14 @@ describe("PodTagService (D135)", () => {
     assert.deepEqual(
       assignedPairs.sort((x, y) => x[0] - y[0]),
       [
-        [1, tagIdFor(emails[0]!)],
         [3, tagIdFor(emails[2]!)],
         [4, tagIdFor(emails[3]!)],
       ],
     );
-    const removedPairs = removes.flatMap(([ids, tags]) =>
-      ids.map((id) => [id, tags[0]] as const),
-    );
-    assert.deepEqual(removedPairs, [[1, tagIdFor(emails[0]!) === 71 ? 72 : 71]]);
+    assert.deepEqual(removes, []);
     assert.ok(
-      !assignedPairs.some(([id]) => id === 5),
-      "the generic mailbox is not pod-tagged",
+      !assignedPairs.some(([id]) => id === 1 || id === 5),
+      "already-tagged named seats and generics are not retagged",
     );
   });
 
@@ -148,8 +147,13 @@ describe("PodTagService (D135)", () => {
       ),
       async () => {},
     );
-    const result = await service.run();
-    assert.deepEqual(result, { assigned: 0, removed: 0, dualPodFlagged: 0 });
+    const result = await service.run({ now: new Date("2026-10-05T14:00:00.000Z") });
+    assert.deepEqual(result, {
+      assigned: 0,
+      removed: 0,
+      dualPodFlagged: 0,
+      refused: 0,
+    });
     assert.equal(ensured, 0, "drift-only: nothing ensured when nothing changes");
   });
 
@@ -206,5 +210,70 @@ describe("PodTagService (D135)", () => {
     assert.equal(result.dualPodFlagged, 1);
     assert.match(notes[0]!, /ada@x.com has POD-A and POD-B/);
     assert.doesNotMatch(notes[0]!, /—/);
+  });
+
+  it("D234: weekend cron idles; Josh-live may first-tag an untagged seat", async () => {
+    const saturday = new Date("2026-10-04T02:24:00.000Z");
+    const accounts = [
+      {
+        id: 3,
+        from_email: "fresh@client.info",
+        client_id: 9,
+        campaign_ids: [50],
+        tags: [],
+      },
+    ];
+    const writes: string[] = [];
+    const smartlead = {
+      ensureTag: async (name: string) => {
+        writes.push(`ensure:${name}`);
+        return { id: name === POD_TAG_A ? 71 : 72, name };
+      },
+      assignTags: async (accountIds: number[]) => {
+        writes.push(`assign:${accountIds.join(",")}`);
+      },
+      removeTags: async () => {
+        writes.push("remove");
+      },
+    };
+
+    const idleState = new StateStore(
+      `/tmp/dw-pod-tags-wknd-idle-${process.pid}-${Date.now()}.json`,
+    );
+    await idleState.load();
+    const idleService = new PodTagService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      smartlead as never,
+      idleState,
+      bookWith(
+        [{ id: 50, name: "Client campaign", status: "ACTIVE", client_id: 9 }],
+        accounts,
+      ),
+      async () => {},
+    );
+    const idle = await idleService.run({ now: saturday });
+    assert.equal(idle.skipped, true);
+    assert.match(String(idle.reason), /weekend/);
+    assert.equal(idle.assigned, 0);
+    assert.deepEqual(writes, []);
+
+    const liveState = new StateStore(
+      `/tmp/dw-pod-tags-wknd-live-${process.pid}-${Date.now()}.json`,
+    );
+    await liveState.load();
+    const liveService = new PodTagService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      smartlead as never,
+      liveState,
+      bookWith(
+        [{ id: 50, name: "Client campaign", status: "ACTIVE", client_id: 9 }],
+        accounts,
+      ),
+      async () => {},
+    );
+    const live = await liveService.run({ now: saturday, joshLive: true });
+    assert.equal(live.skipped, undefined);
+    assert.ok(live.assigned >= 1);
+    assert.ok(writes.some((row) => row.startsWith("assign:")));
   });
 });

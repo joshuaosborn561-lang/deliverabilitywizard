@@ -1,9 +1,8 @@
 import type { AppConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SlackClient } from "../clients/slack.js";
-import { clientDisplayName } from "../clients/smartlead.js";
+import { accountEmail, clientDisplayName } from "../clients/smartlead.js";
 import { sleep } from "../lib/http.js";
-import { tagNames } from "./warmupGate.js";
 import { loadPods } from "./podControls.js";
 import type { InventoryBook } from "./inventory.js";
 import type { StateStore } from "../state/store.js";
@@ -13,6 +12,8 @@ import {
   isPodRotationSkippedClient,
   podRotationIdleReason,
 } from "../lib/podRotation.js";
+import { existingPodTag } from "../lib/podTagLock.js";
+import { weekendWriterIdleReason } from "../lib/canonOpsHours.js";
 
 export const POD_TAG_A = "POD-A";
 export const POD_TAG_B = "POD-B";
@@ -23,18 +24,21 @@ export interface PodTagResult {
   assigned: number;
   removed: number;
   dualPodFlagged: number;
+  skipped?: boolean;
+  reason?: string;
+  refused?: number;
 }
 
 /**
  * D135 — the A/B rest split is visible in Smartlead, not only in state.
- * Every client mailbox sitting in a rest pod carries a POD-A or POD-B tag,
- * converged drift-only on the monitor pass: assign the missing tag, drop
- * the opposite one. Mailboxes outside a client pod (generics, canaries,
- * idle inboxes) are left alone — D230 locks a generic to the POD it
- * was stamped with; this converge must never retag or move it. An
- * idle inbox keeps its last pod tag until it staffs again. Named
- * tags are decoration for humans; assigned generic POD tags are the
- * D230 lock.
+ * Every client mailbox sitting in a rest pod carries a POD-A or POD-B tag.
+ * D234 — only an *untagged* seat may receive a first POD tag. An
+ * already-tagged seat is immutable (never A→B or B→A). Mailboxes
+ * outside a client pod (generics, canaries, idle inboxes) are left
+ * alone — D230 locks a generic to the POD it was stamped with. An
+ * idle inbox keeps its last pod tag. Named tags are decoration for
+ * humans; assigned generic POD tags are the D230 lock. Weekend
+ * writers idle Sat/Sun except Josh-live `/run`.
  */
 export class PodTagService {
   constructor(
@@ -50,7 +54,23 @@ export class PodTagService {
     private readonly slack?: Pick<SlackClient, "notifyDeliverabilityNote">,
   ) {}
 
-  async run(opts: { now?: Date } = {}): Promise<PodTagResult> {
+  async run(opts: { now?: Date; joshLive?: boolean } = {}): Promise<PodTagResult> {
+    const weekendIdle = weekendWriterIdleReason({
+      now: opts.now,
+      joshLive: opts.joshLive,
+    });
+    if (weekendIdle) {
+      console.log(`[pod-tags] ${weekendIdle}`);
+      return {
+        assigned: 0,
+        removed: 0,
+        dualPodFlagged: 0,
+        refused: 0,
+        skipped: true,
+        reason: weekendIdle,
+      };
+    }
+
     const pods = await loadPods({
       config: this.config,
       state: this.state,
@@ -67,36 +87,49 @@ export class PodTagService {
     const { accounts, clients } = await this.book.get();
     const assignA: number[] = [];
     const assignB: number[] = [];
-    const dropA: number[] = [];
-    const dropB: number[] = [];
+    const firstTagEmails: string[] = [];
+    const refusedEmails: string[] = [];
     for (const account of accounts) {
       const want = desired.get(account.id);
       if (!want) continue;
-      const tags = tagNames(account).map((tag) => tag.toUpperCase());
-      const hasA = tags.includes(POD_TAG_A);
-      const hasB = tags.includes(POD_TAG_B);
-      if (want === "A") {
-        if (!hasA) assignA.push(account.id);
-        if (hasB) dropB.push(account.id);
-      } else {
-        if (!hasB) assignB.push(account.id);
-        if (hasA) dropA.push(account.id);
+      if (hasDualPodTags(account.tags)) continue;
+      const existing = existingPodTag(account.tags);
+      const email = accountEmail(account) || String(account.id);
+      if (existing) {
+        if (existing !== want) {
+          refusedEmails.push(`${email} has POD-${existing} want POD-${want}`);
+        }
+        continue;
       }
+      if (want === "A") assignA.push(account.id);
+      else assignB.push(account.id);
+      firstTagEmails.push(`${email}→POD-${want}`);
     }
 
-    if (!assignA.length && !assignB.length && !dropA.length && !dropB.length) {
+    if (refusedEmails.length) {
+      console.log(
+        `[pod-tags] D234 lock refused retag (${refusedEmails.length}): ${refusedEmails.join(", ")}`,
+      );
+    }
+
+    if (!assignA.length && !assignB.length) {
       const dualPodFlagged = await this.flagDualPod(
         accounts,
         clients ?? [],
         opts.now,
       );
-      return { assigned: 0, removed: 0, dualPodFlagged };
+      return {
+        assigned: 0,
+        removed: 0,
+        dualPodFlagged,
+        refused: refusedEmails.length,
+      };
     }
 
     const tagA = await this.smartlead.ensureTag(POD_TAG_A, "#4FC3F7");
     const tagB = await this.smartlead.ensureTag(POD_TAG_B, "#9575CD");
     let assigned = 0;
-    let removed = 0;
+    const removed = 0;
     if (!this.config.dryRun) {
       for (const batch of chunk(assignA, TAG_BATCH)) {
         await this.smartlead.assignTags(batch, [tagA.id]);
@@ -108,26 +141,16 @@ export class PodTagService {
         assigned += batch.length;
         await this.pause();
       }
-      for (const batch of chunk(dropA, TAG_BATCH)) {
-        await this.smartlead.removeTags(batch, [tagA.id]);
-        removed += batch.length;
-        await this.pause();
-      }
-      for (const batch of chunk(dropB, TAG_BATCH)) {
-        await this.smartlead.removeTags(batch, [tagB.id]);
-        removed += batch.length;
-        await this.pause();
-      }
     }
     console.log(
-      `[pod-tags] converged POD-A/POD-B on client mailboxes: assigned=${assigned} removed=${removed}${this.config.dryRun ? " (dry-run: no writes)" : ""}`,
+      `[pod-tags] first-tag POD-A/POD-B on untagged client mailboxes: assigned=${assigned} removed=${removed} refused=${refusedEmails.length}${this.config.dryRun ? " (dry-run: no writes)" : ""} emails=${firstTagEmails.join(",") || "none"}`,
     );
     const dualPodFlagged = await this.flagDualPod(
       accounts,
       clients ?? [],
       opts.now,
     );
-    return { assigned, removed, dualPodFlagged };
+    return { assigned, removed, dualPodFlagged, refused: refusedEmails.length };
   }
 
   private async flagDualPod(

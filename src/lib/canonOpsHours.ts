@@ -99,3 +99,20 @@ export function canonOpsIdleReason(
   const tz = input.timezone ?? CANON_OPS_TIMEZONE_DEFAULT;
   return `outside weekday ${String(input.hourStart ?? CANON_OPS_HOUR_START_DEFAULT).padStart(2, "0")}:00–${String(input.hourEnd ?? CANON_OPS_HOUR_END_DEFAULT).padStart(2, "0")}:00 ${tz}`;
 }
+
+/**
+ * D234 — Sat/Sun writers idle unless Josh is live (`/run` with
+ * RUN_TOKEN). Cron health / monitor must not retag or rest-unlink
+ * over a weekend.
+ */
+export function weekendWriterIdleReason(input: {
+  now?: Date;
+  joshLive?: boolean;
+  timeZone?: string;
+} = {}): string | undefined {
+  if (input.joshLive) return undefined;
+  if (isChicagoWeekday(input.now, input.timeZone ?? CANON_OPS_TIMEZONE_DEFAULT)) {
+    return undefined;
+  }
+  return "weekend (writers idle Sat/Sun except Josh-live)";
+}

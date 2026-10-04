@@ -1,4 +1,5 @@
 import { isGenericMailbox } from "./clientInbox.js";
+import { existingPodTag } from "./podTagLock.js";
 import { assignClientCohorts, isOffWeek, type RestCohort } from "./restCohort.js";
 import { isIsolationEmail, type IsolationDenylist } from "./isolationDomain.js";
 import type { AppConfig } from "../config.js";
@@ -32,6 +33,7 @@ export interface PodAccountInput {
   fromName?: string;
   /** Smartlead account.type — D192 ESP-balanced A/B. */
   type?: string | null;
+  tags?: Array<{ tag_name?: unknown; name?: unknown }> | string[] | null;
   onActiveCampaign: boolean;
   resting: boolean;
 }
@@ -100,7 +102,8 @@ export function buildPods(input: {
     );
     const grouped: Record<RestCohort, PodMailbox[]> = { A: [], B: [] };
     for (const account of accounts) {
-      const cohort = cohorts.get(account.email.trim().toLowerCase());
+      const locked = existingPodTag(account.tags);
+      const cohort = locked ?? cohorts.get(account.email.trim().toLowerCase());
       if (!cohort) continue;
       grouped[cohort].push({
         accountId: account.accountId,

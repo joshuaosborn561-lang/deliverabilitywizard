@@ -7,6 +7,7 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import { isClientNamedMailbox, migrateClientNamedPoolRecords } from "../lib/clientNamedDomain.js";
 import { hasPoolMarkerTag } from "../lib/markerClients.js";
 import { sleep } from "../lib/http.js";
 import {
@@ -76,6 +77,11 @@ export class GenericCleanupService {
 
     const inventory = opts.inventory ?? (await fetchInventory(this.smartlead));
     const { campaigns, accounts, clients = [] } = inventory;
+    migrateClientNamedPoolRecords({
+      state: this.state,
+      accounts,
+      clients,
+    });
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
     );
@@ -112,6 +118,7 @@ export class GenericCleanupService {
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
+      if (isClientNamedMailbox(email, clients)) continue;
       if (!hasPoolMarkerTag(account)) continue;
       result.examined += 1;
       const clientId =

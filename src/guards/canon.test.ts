@@ -13813,8 +13813,8 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D239\*\*/,
-      stop("CANON is dated D239.", "CANON.md header was not bumped to D239."),
+      /Canon as of \*\*D243\*\*/,
+      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
     );
     assert.match(
       canon,
@@ -13860,6 +13860,168 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
       sync,
       /owesWarmup/,
       stop("Named staffable applies the 21-day gate (D239).", "genericPoolCanon.ts lost owesWarmup."),
+    );
+  });
+});
+
+describe("owner intent — D243 client-named domains + later-of warmup", () => {
+  it("D243: client-named hosts are never generic; Culture Fits stays leftover; clock is later-of", async () => {
+    const { isGenericMailbox, isPoolGenericSeat, isClientInbox } = await import(
+      "../lib/clientInbox.js"
+    );
+    const { isClientNamedDomain, isCultureFitsDomain } = await import(
+      "../lib/clientNamedDomain.js"
+    );
+    const { leftoverNullGenericTokenInDomain, isIntentionalNullGenericDomain } =
+      await import("../lib/markerClients.js");
+    const { warmupClockStartedAt } = await import("../services/warmupGate.js");
+    const { readFile } = await import("node:fs/promises");
+
+    const goliath = "ada@goliathcybersecurityget.info";
+    const fleet = {
+      extraGenericMailboxes: [],
+      extraGenericDomains: [],
+      prewarmedDomains: [],
+    };
+    const poolState = {
+      getPoolMailbox: () =>
+        ({ email: goliath, status: "assigned" }) as never,
+    };
+    assert.equal(
+      isClientNamedDomain("goliathcybersecurityget.info"),
+      true,
+      stop("Goliath hosts are client-named (D243).", "isClientNamedDomain missed goliathcybersecurityget.info."),
+    );
+    assert.equal(
+      isGenericMailbox(
+        { client_id: 548611, tags: [{ tag_name: "GENERIC" }] },
+        goliath,
+        fleet,
+        poolState,
+      ),
+      false,
+      stop("A leftover pool record cannot make a Goliath seat generic (D243).", "isGenericMailbox still treats goliathcybersecurity* as pool."),
+    );
+    assert.equal(
+      isPoolGenericSeat(
+        { client_id: 548611, tags: [{ tag_name: "GENERIC" }] },
+        goliath,
+        fleet,
+        poolState,
+      ),
+      false,
+      stop("min40 must not take client-named seats as supply (D243).", "isPoolGenericSeat still captures goliathcybersecurity*."),
+    );
+    assert.equal(
+      isClientInbox(
+        { client_id: 548611, tags: [{ tag_name: "POD-A" }] },
+        goliath,
+        fleet,
+        poolState,
+      ),
+      true,
+      stop("A Goliath named seat stays client inventory (D243).", "isClientInbox lost goliathcybersecurity*."),
+    );
+    assert.equal(
+      isCultureFitsDomain("culturefitsnow.com"),
+      true,
+      stop("Culture Fits stays the D192 leftover (D243).", "isCultureFitsDomain missed culturefitsnow.com."),
+    );
+    assert.equal(
+      leftoverNullGenericTokenInDomain("culturefitsnow.com"),
+      "culturefits",
+      stop("Culture Fits leftover tokens stay (D243).", "leftoverNullGenericTokenInDomain lost culturefits."),
+    );
+    assert.equal(
+      leftoverNullGenericTokenInDomain("goliathcybersecurityget.info"),
+      null,
+      stop("Goliath is no longer a leftover-null token (D243).", "leftoverNullGenericTokenInDomain still matches goliath."),
+    );
+    assert.equal(
+      isIntentionalNullGenericDomain("goliathcybersecurityget.info", [
+        { client_id: null, tags: [] },
+      ]),
+      false,
+      stop("Goliath named hosts are not intentional nulls (D243).", "isIntentionalNullGenericDomain still skips Goliath attach."),
+    );
+
+    const later = warmupClockStartedAt(
+      {
+        id: 1,
+        created_at: "2026-10-03T00:00:00.000Z",
+        warmup_details: { created_at: "2026-10-03T00:00:00.000Z" },
+      },
+      goliath,
+      {
+        getPoolMailbox: () =>
+          ({
+            email: goliath,
+            warmedAt: "2026-09-22T00:00:00.000Z",
+          }) as never,
+      },
+    );
+    assert.equal(
+      later,
+      "2026-10-03T00:00:00.000Z",
+      stop("Warmup clock is the later of purchase and Smartlead (D243).", "warmupClockStartedAt still prefers the earlier purchase."),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const inbox = await readFile(new URL("../lib/clientInbox.ts", import.meta.url), "utf8");
+    const audit = await readFile(new URL("../services/domainClientAudit.ts", import.meta.url), "utf8");
+    const cleanup = await readFile(new URL("../services/genericCleanup.ts", import.meta.url), "utf8");
+    const warmup = await readFile(new URL("../services/warmupGate.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D243\*\*/,
+      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+    );
+    assert.match(
+      canon,
+      /Client-named domains \(D243\)/,
+      stop("CANON names client-named domains (D243).", "CANON.md lost the D243 named-domain rule."),
+    );
+    assert.match(
+      canon,
+      /whichever is later/,
+      stop("CANON states the later-of warmup clock (D243).", "CANON.md lost later-of."),
+    );
+    assert.match(
+      canon,
+      /Culture Fits 418275/,
+      stop("CANON keeps Culture Fits as the D192 leftover (D243).", "CANON.md lost the Culture Fits exception."),
+    );
+    assert.match(
+      decisions,
+      /## D243 — Client-named domains are named seats/,
+      stop("The ledger records D243.", "DECISIONS.md no longer has D243."),
+    );
+    assert.match(
+      decisions,
+      /^\| D243 \|/m,
+      stop("The status index lists D243 (D127).", "DECISIONS.md status index has no D243 row."),
+    );
+    assert.match(
+      inbox,
+      /isClientNamedDomain/,
+      stop("Classifiers consult isClientNamedDomain (D243).", "clientInbox.ts lost isClientNamedDomain."),
+    );
+    assert.match(
+      audit,
+      /never re-add GENERIC/,
+      stop("Domain-client never re-adds GENERIC on named hosts (D243).", "domainClientAudit.ts lost the D243 skip."),
+    );
+    assert.match(
+      cleanup,
+      /isClientNamedMailbox/,
+      stop("Cleanup skips client-named seats (D243).", "genericCleanup.ts lost isClientNamedMailbox."),
+    );
+    assert.match(
+      warmup,
+      /laterIsoStamp/,
+      stop("Warmup uses laterIsoStamp (D243).", "warmupGate.ts lost laterIsoStamp."),
     );
   });
 });

@@ -133,8 +133,8 @@ describe("warmupGate helpers", () => {
     );
   });
 
-  it("prefers the InboxKit import stamp over Smartlead's warmup record", () => {
-    const started = warmupClockStartedAt(
+  it("uses the later of InboxKit purchase and Smartlead warmup start (D243)", () => {
+    const laterPurchase = warmupClockStartedAt(
       {
         id: 1,
         created_at: "2026-01-01T00:00:00.000Z",
@@ -149,7 +149,28 @@ describe("warmupGate helpers", () => {
           }) as never,
       },
     );
-    assert.equal(started, "2026-08-10T00:00:00.000Z");
+    assert.equal(laterPurchase, "2026-08-10T00:00:00.000Z");
+
+    const laterSmartlead = warmupClockStartedAt(
+      {
+        id: 2,
+        created_at: "2026-10-03T00:00:00.000Z",
+        warmup_details: { created_at: "2026-10-03T00:00:00.000Z" },
+      },
+      "ada@goliathcybersecurityget.info",
+      {
+        getPoolMailbox: () =>
+          ({
+            email: "ada@goliathcybersecurityget.info",
+            warmedAt: "2026-09-22T00:00:00.000Z",
+          }) as never,
+      },
+    );
+    assert.equal(
+      laterSmartlead,
+      "2026-10-03T00:00:00.000Z",
+      "Goliath ready 10/24 is 21 days from the later Smartlead clock, not the 9/22 purchase",
+    );
   });
 
   it("falls back to Smartlead when the mailbox is not in the pool", () => {

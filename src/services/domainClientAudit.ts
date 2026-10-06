@@ -10,6 +10,10 @@ import { isFleetDomain } from "../lib/domainControl.js";
 import { effectiveIsolationDomain } from "../lib/isolationDomain.js";
 import { isGenericMailbox, isGenericPoolDomain } from "../lib/clientInbox.js";
 import {
+  isClientNamedDomain,
+  migrateClientNamedPoolRecords,
+} from "../lib/clientNamedDomain.js";
+import {
   confidentClientForDomain,
   GENERIC_CLIENT_NAME,
   GENERIC_TAG,
@@ -66,10 +70,13 @@ export interface DomainClientAuditResult {
  * - everything else stays an advisory. split_clients is always advisory.
  *   A box that already carries a real client_id is never rewritten here.
  *
- * D192 — do not confident-attach intentional null generics (Goliath
- * leftovers / TJ / Vasco / GENERIC-tagged without client intent /
- * generic-pool / EXTRA_GENERIC). Advisory/skip, never a write, when
- * client_id is already null. Canaries never get a client_id.
+ * D192 / D243 — do not confident-attach intentional null generics
+ * (Culture Fits leftovers / TJ / Vasco / GENERIC-tagged without
+ * client intent / generic-pool / EXTRA_GENERIC). Goliath
+ * client-named hosts are named seats for 548611, never leftover
+ * nulls. Advisory/skip, never a write, when client_id is already
+ * null. Canaries never get a client_id. Domain-client must never
+ * re-add GENERIC to a client-named domain.
  *
  * Skipped on purpose: BCP-owned replacement domains (BCP even with no
  * client_id, D99), the isolation domain, the canary fleet, retired
@@ -97,6 +104,11 @@ export class DomainClientAuditService {
     const clientsById = new Map(clients.map((client) => [client.id, client]));
     const isolationDomain = effectiveIsolationDomain(this.config, this.state);
 
+    migrateClientNamedPoolRecords({
+      state: this.state,
+      accounts,
+      clients,
+    });
     const leftover = this.stampLeftoverMarkers(clients);
     const attached: DomainClientAuditResult["attached"] = [];
     let writesLeft = ATTACH_CAP;
@@ -348,6 +360,8 @@ export class DomainClientAuditService {
       if (domain && this.state.getDomainHistory(domain)?.status === "retired") {
         continue;
       }
+      // D243 — never re-add GENERIC (or detach) a client-named seat.
+      if (domain && isClientNamedDomain(domain, [])) continue;
 
       const leftoverAssigned =
         typeof account.client_id === "number" &&

@@ -10,6 +10,7 @@ import {
   syncGenericSeatsFromInventory,
   validateGenericPool,
 } from "../lib/genericPoolCanon.js";
+import { migrateClientNamedPoolRecords } from "../lib/clientNamedDomain.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
 import { openTerlSubstituteEmails } from "../lib/genericSurplusReturn.js";
 import type { StateStore } from "../state/store.js";
@@ -62,6 +63,11 @@ export class GenericPoolCanonService {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const powerGrydClientId =
       this.config.powerGrydClientId || GENERIC_POOL_POWERGRYD_CLIENT_ID;
+    migrateClientNamedPoolRecords({
+      state: this.state,
+      accounts: opts.inventory.accounts,
+      clients: opts.inventory.clients,
+    });
     const existing = this.state.listGenericSeats();
     const synced = syncGenericSeatsFromInventory({
       existing,

@@ -22,7 +22,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 
 | Decision | Status |
 |---|---|
-| D1 | Live (the import clock) — duration superseded by D50 (21 days) |
+| D1 | Live (the import clock) — duration superseded by D50 (21 days); start is the later of purchase and Smartlead import/warmup (D243) |
 | D2 | Live |
 | D3 | Live — qualified by D26/D27 |
 | D4 | Live — retire / cover-buy Slack taps also Cayden (D190) |
@@ -203,7 +203,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D187 | Live | Ops Placement lists up to 80 ACTIVE live tests (was 40) |
 | D189 | Superseded by D229 — Insight rests like any named client; off-week unlinks (D228 on-week-only campaigns) | Client-rest does not unlink or bench mailboxes off Insight campaigns (client 345263); D184 exclusive staff survives the A/B fortnight |
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
-| D192 | Live | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
+| D192 | Live — Goliath leftover-null clause superseded by D243 (Goliath named domains are named seats); Culture Fits leftover stays | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
 | D193 | Superseded by D221/D203/D207/D229 — every named client takes pool generics to fill that POD to 40; leftover D134 tap is still not a dump | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
 | D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
@@ -245,6 +245,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D237 | Live | PowerGRYD 592842 is a full named client. Leave-alone / dedicated-generic / rotation-skip / idle-exempt / min40 auto-allow special-cases are deleted. Not the D236 POC mode. Campaigns may PAUSE when done. |
 | D238 | Live | Canary fleet is hard-locked: identify by copyCanary fleet membership + Canary signature backstop; exclude from every attach/staff/top-up/generic-pool/POC path; never set client_id/POD/GENERIC; Canon pages `canary_on_live` / `canary_warmup_on` |
 | D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
+| D243 | Live | Client-named domains are that client's named seats (never GENERIC / pool); warmup clock is later of purchase and Smartlead import; Goliath leftovers are named 548611; Culture Fits 418275 stays a D192 exception |
 
 ---
 
@@ -7974,6 +7975,75 @@ used by generic-pool validate / surplus / min40 fill.
 **Guards.** `syncGenericSeatsFromInventory` skips canary,
 GABE-VM-RESERVED, and `owesWarmup`; CANON names the
 21-day + reserved + canary exclusions.
+
+---
+
+## D243 — Client-named domains are named seats; warmup is later-of
+
+**Date.** 2026-10-05 8:16pm CT (Josh, CANON HARD). Landed
+2026-10-06 before the Tuesday 8am CT generic-cleanup pass.
+
+**Decision.** Any seat on a client-named domain is that
+client's named seat. Match the sending domain against
+list_clients names plus known slugs:
+goliathcybersecurity, techevolution, salesglider,
+boldercyber, emcor/mesa, cornerstone, parlay, roofs,
+nutter, insight/joshosborn, powergryd, vector,
+deeproots. A match is tagged to that client, split into
+that client's PODs (already-tagged POD-A/POD-B are not
+re-split, D234), and never counts as a generic or sits
+in the shared pool. Exclude those seats from generic
+cleanup, surplus return, min40 supply, and the generic
+pool canon. Migrate leftover wizard pool records and
+generic-table rows into named state on the health /
+generic-pool / cleanup pass. Domain-client must never
+re-add GENERIC to a client-named host.
+
+Warmup clock is the **later** of InboxKit purchase
+(`warmedAt`) and Smartlead `created_at` / warmup start,
+unless the seat has `WARMUP-GATE-EXEMPT` or a
+`PREWARMED_DOMAINS` entry. Goliath ready dates are
+10/13 and 10/24; TechEvo 10/20 — those are 21 days from
+the later Smartlead clock, not the earlier purchase.
+
+D192's "Goliath leftovers stay unassigned" is reversed
+for client-named Goliath hosts: they are named inventory
+for 548611. **Culture Fits 418275 / culturefits* stays
+the D192 leftover** pending Josh — do not classify,
+migrate, or retag those seats.
+
+**Why.** 2026-10-05 night: Josh moved 21 Goliath seats
+to client 548611 (goliathcybersecurity{get,try,use,go}
+and {get,try,use}goliathcybersecurity .info, 11 POD-A /
+10 POD-B) and 6 TechEvo seats to 521881
+(techevolutiononeget.info / trytechevolutionone.info,
+3 A / 3 B). GENERIC removed; signature `First Last\n<brand>`.
+Wizard state still held pool records, so domain-client
+would re-add GENERIC and 8am generic-cleanup would clear
+client_id + signature. The purchase-first warmup clock
+made seats look warmer than the Smartlead import.
+min40 could grab pool-record seats as cross-client
+supply.
+
+**Rejected.** Leaving Goliath hosts as intentional-null
+pool leftovers (D192). Using InboxKit purchase alone.
+Re-splitting already-tagged POD seats. Treating Culture
+Fits as named without Josh's call. Requiring a manual
+`/run` migrate after deploy.
+
+**Supersedes / amends.** Amends D1/D50: clock start is
+later-of, not purchase-only. Amends D192: Goliath
+client-named hosts are named 548611; Culture Fits /
+Vasco leftover-null stays. Amends D160/D221/D225/D230:
+client-named hosts are never GENERIC / pool / cleanup /
+min40 supply.
+
+**Guards.** `isClientNamedDomain`; `isGenericMailbox` /
+`isPoolGenericSeat` return false for those hosts even
+with leftover GENERIC or a pool record; domain-client
+skips GENERIC tag; cleanup skips them; warmup
+`laterIsoStamp`; CANON dated D243; Culture Fits stays
+untouched.
 
 ---
 

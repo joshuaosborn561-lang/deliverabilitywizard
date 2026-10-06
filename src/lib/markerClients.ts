@@ -13,6 +13,8 @@
  * those leftovers as a real client token.
  */
 
+import { isClientNamedSlugDomain } from "./clientNamedDomain.js";
+
 export const GENERIC_TAG = "GENERIC";
 export const POC_TAG = "POC";
 
@@ -104,11 +106,11 @@ export function clientDomainTokens(client: {
 }
 
 /**
- * D192 — leftover tokens that must stay `client_id` null. D142 used
- * to confident-attach Goliath-token leftovers back to 548611 (and
- * the same for TJ / Vasco). These are project generic-pool leftovers,
- * not Smartlead clients. Advisory/skip, never a write, when the box
- * is already null.
+ * D192 — leftover tokens that must stay `client_id` null. D243
+ * took Goliath client-named hosts (goliathcybersecurity* /
+ * getgoliath*) out of this list — those are named seats for
+ * 548611. Culture Fits 418275 / culturefits* and Vasco leftovers
+ * stay unused-null attach-skip pending Josh.
  *
  * D209 — CultureFits and Vasco seats that already staff a named
  * client's ACTIVE campaigns are normal GENERIC pool seats (client
@@ -118,8 +120,6 @@ export function clientDomainTokens(client: {
  * generic-rest / top-up.
  */
 export const NULL_GENERIC_LEFTOVER_TOKENS = [
-  "goliath",
-  "goliathcybersecurity",
   "culturefits",
   "culturefit",
   "vasco",
@@ -148,8 +148,9 @@ export function leftoverNullGenericTokenInDomain(
  * D192 — do not write a client_id onto an intentional null generic.
  * True when the domain is already unassigned and is generic-pool /
  * EXTRA_GENERIC / GENERIC-tagged without client intent / a leftover
- * Goliath-TJ-Vasco token. A box that already carries a real client_id
- * is never rewritten here (D142).
+ * Culture Fits / Vasco token. A box that already carries a real
+ * client_id is never rewritten here (D142). Goliath named hosts
+ * are not leftovers (D243).
  */
 export function isIntentionalNullGenericDomain(
   domain: string,
@@ -161,6 +162,8 @@ export function isIntentionalNullGenericDomain(
 ): boolean {
   const host = domain.trim().toLowerCase();
   if (!host) return false;
+  // D243 — client-named hosts are named inventory, not leftover nulls.
+  if (isClientNamedSlugDomain(host)) return false;
   if (extraGenericDomains.some((row) => row.trim().toLowerCase() === host)) {
     return true;
   }

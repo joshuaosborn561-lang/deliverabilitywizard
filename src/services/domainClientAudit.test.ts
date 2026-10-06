@@ -397,7 +397,7 @@ describe("DomainClientAuditService (D172)", () => {
 describe("DomainClientAuditService (D192)", () => {
   const warmed = new Date(Date.now() - 60 * 86_400_000).toISOString();
 
-  it("does not confident-attach null Goliath leftovers or canaries", async () => {
+  it("D243: attaches Goliath named hosts; skips Culture Fits leftovers and canaries", async () => {
     const state = new StateStore(
       `/tmp/dw-d192-null-${process.pid}-${Date.now()}.json`,
     );
@@ -460,13 +460,21 @@ describe("DomainClientAuditService (D192)", () => {
       smartlead as never,
       async () => {},
     );
-    const { attached, advisories } = await service.run();
+    const { attached, tagged, advisories } = await service.run();
 
-    assert.deepEqual(writes, [], "null leftovers and canaries must not get a client_id");
-    assert.equal(attached.length, 0);
-    const goliath = advisories.find((row) => row.domain === "getgoliathcyber.info");
-    assert.equal(goliath?.kind, "unmapped");
-    assert.match(goliath?.note ?? "", /intentional null generic/);
-    assert.match(goliath?.note ?? "", /D192/);
+    assert.equal(tagged, 0, "D243 — never re-add GENERIC on a client-named host");
+    assert.ok(
+      writes.some((row) => row.id === 1 && row.client_id === 548611),
+      "Goliath named domain attaches to 548611",
+    );
+    assert.ok(attached.some((row) => row.domain === "getgoliathcyber.info"));
+    assert.ok(
+      !writes.some((row) => row.id === 2 || row.id === 3),
+      "Culture Fits leftovers and canaries stay unassigned",
+    );
+    const culture = advisories.find((row) => row.domain === "culturefitsnow.com");
+    assert.equal(culture?.kind, "unmapped");
+    assert.match(culture?.note ?? "", /intentional null generic/);
+    assert.match(culture?.note ?? "", /D192/);
   });
 });

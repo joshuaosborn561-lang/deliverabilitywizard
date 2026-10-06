@@ -64,9 +64,9 @@ export function isPrewarmedGeneric(
  * Keep ACTIVE campaigns from sending on mailboxes that have not served the
  * 21-day clock (MIN_CAMPAIGN_WARMUP_DAYS / freshInboxWarmupDays, D50/D105).
  *
- * Age is measured from the InboxKit import stamp when the mailbox is in
- * the pool. Smartlead's warmup record is the fallback only (D1). HOLD-UNTIL
- * tags are inert residue and never a pull (D51/D59/D128).
+ * Age is the later of the InboxKit import stamp and Smartlead
+ * created_at / warmup start (D1/D50/D243). HOLD-UNTIL tags are
+ * inert residue and never a pull (D51/D59/D128).
  */
 export class WarmupGateService {
   constructor(
@@ -489,16 +489,29 @@ export function poolWarmedAt(
   return stamp;
 }
 
+/** Later of two ISO timestamps; invalid / missing values drop out. */
+export function laterIsoStamp(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): string | null {
+  const ta = a && Number.isFinite(Date.parse(a)) ? Date.parse(a) : null;
+  const tb = b && Number.isFinite(Date.parse(b)) ? Date.parse(b) : null;
+  if (ta == null) return tb != null ? String(b) : null;
+  if (tb == null) return String(a);
+  return ta >= tb ? String(a) : String(b);
+}
+
 /**
- * D1 / D50 — live-send age starts at InboxKit import when we have it.
- * Smartlead's warmup record is the fallback only.
+ * D1 / D50 / D243 — live-send age starts at the later of InboxKit
+ * purchase (`warmedAt`) and Smartlead created_at / warmup start.
+ * WARMUP-GATE-EXEMPT and PREWARMED_DOMAINS skip the clock in owesWarmup.
  */
 export function warmupClockStartedAt(
   account: Parameters<typeof warmupStartedAt>[0],
   email: string,
   state: Pick<StateStore, "getPoolMailbox">,
 ): string | null {
-  return poolWarmedAt(email, state) ?? warmupStartedAt(account);
+  return laterIsoStamp(poolWarmedAt(email, state), warmupStartedAt(account));
 }
 
 export function daysSince(iso: string, now = Date.now()): number {

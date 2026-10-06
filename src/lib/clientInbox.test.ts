@@ -39,8 +39,26 @@ describe("isClientInbox", () => {
     );
   });
 
-  it("D238: a Canary-signature seat is never generic or client inventory", () => {
+  it("D238: a living Canary-signature seat is never generic or client inventory", () => {
     const canary = {
+      client_id: 521881,
+      from_name: "Ada Lovelace",
+      signature: "Ada Lovelace\nCanary",
+      tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+    };
+    const email = "ada@newcanary.test";
+    const extra = {
+      ...fleet,
+      extraGenericDomains: [...fleet.extraGenericDomains, "newcanary.test"],
+      prewarmedDomains: ["crosslaunchco.com"],
+    };
+    assert.equal(isGenericMailbox(canary, email, extra, { getPoolMailbox: () => undefined }), false);
+    assert.equal(isPoolGenericSeat(canary, email, extra, { getPoolMailbox: () => undefined }), false);
+    assert.equal(isClientInbox(canary, email, extra, { getPoolMailbox: () => undefined }), false);
+  });
+
+  it("D240: a released contaminated canary is a normal generic", () => {
+    const released = {
       client_id: 521881,
       from_name: "Leila Sanchez",
       signature: "Leila Sanchez\nCanary",
@@ -52,9 +70,9 @@ describe("isClientInbox", () => {
       extraGenericDomains: [...fleet.extraGenericDomains, "getcrosslaunchco.info"],
       prewarmedDomains: ["crosslaunchco.com"],
     };
-    assert.equal(isGenericMailbox(canary, email, extra, { getPoolMailbox: () => undefined }), false);
-    assert.equal(isPoolGenericSeat(canary, email, extra, { getPoolMailbox: () => undefined }), false);
-    assert.equal(isClientInbox(canary, email, extra, { getPoolMailbox: () => undefined }), false);
+    assert.equal(isGenericMailbox(released, email, extra, { getPoolMailbox: () => undefined }), true);
+    assert.equal(isPoolGenericSeat(released, email, extra, { getPoolMailbox: () => undefined }), true);
+    assert.equal(isClientInbox(released, email, extra, { getPoolMailbox: () => undefined }), false);
   });
 
   it("treats a GENERIC mailbox tag as a generic (D160)", () => {

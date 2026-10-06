@@ -1081,13 +1081,13 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(attached.some((row) => row[0] === 4085160), false);
   });
 
-  it("D238: never attaches a Canary-signature fleet seat to TechEvo", async () => {
+  it("D238: never attaches a living Canary-signature fleet seat to TechEvo", async () => {
     const attached: Array<[number, number[]]> = [];
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const state = new StateStore(stateFile());
     await state.load();
     state.ensureGenericSeat({
-      email: "leilasanchez@getcrosslaunchco.info",
+      email: "ada@newcanary.test",
       slAccountId: 22637921,
     });
     const named = Array.from({ length: 8 }, (_, i) => ({
@@ -1134,13 +1134,13 @@ describe("Min40TopUpService (D205)", () => {
           ...named,
           {
             id: 22637921,
-            from_email: "leilasanchez@getcrosslaunchco.info",
-            from_name: "Leila Sanchez",
-            signature: "Leila Sanchez\nCanary",
+            from_email: "ada@newcanary.test",
+            from_name: "Ada Lovelace",
+            signature: "Ada Lovelace\nCanary",
             type: "GMAIL",
             is_smtp_success: true,
             is_imap_success: true,
-            tags: [{ tag_name: "GENERIC" }],
+            tags: [{ tag_name: "CANARY" }],
             campaign_ids: [],
             created_at: "2026-01-01T00:00:00.000Z",
           },

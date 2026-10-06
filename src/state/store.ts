@@ -8,7 +8,11 @@ import {
 } from "../lib/monthlyCaps.js";
 import {
   isCopyCanaryFleetEmail,
+  isReleasedCanaryEmail,
+  mergeReleasedCanaryFleet,
+  sanitizeCopyCanaryFleet,
   type CopyCanaryFleetRecord,
+  type ReleasedCanaryFleetRecord,
 } from "../lib/copyCanaryFleet.js";
 import {
   EMPTY_ISOLATION_STATE,
@@ -2382,7 +2386,13 @@ export class StateStore {
     emails: string[],
     testId?: string,
   ): void {
-    const unique = [...new Set(emails.map((email) => email.toLowerCase()))];
+    const unique = [
+      ...new Set(
+        emails
+          .map((email) => email.toLowerCase())
+          .filter((email) => !this.isReleasedCanary(email)),
+      ),
+    ];
     const existing = this.state.isolation.copyCanaries[String(campaignId)];
     this.state.isolation.copyCanaries[String(campaignId)] = {
       campaignId,
@@ -2420,27 +2430,77 @@ export class StateStore {
   listCopyCanaryEmails(): Set<string> {
     const out = new Set<string>();
     for (const row of Object.values(this.state.isolation.copyCanaries)) {
-      for (const email of row.emails) out.add(email.toLowerCase());
+      for (const email of row.emails) {
+        const key = email.toLowerCase();
+        if (!this.isReleasedCanary(key)) out.add(key);
+      }
     }
     return out;
   }
 
+  isReleasedCanary(email: string): boolean {
+    return isReleasedCanaryEmail(email, this.getReleasedCanaryFleet());
+  }
+
+  getReleasedCanaryFleet(): ReleasedCanaryFleetRecord {
+    return mergeReleasedCanaryFleet(this.state.isolation.releasedCanaryFleet);
+  }
+
+  setReleasedCanaryFleet(record: ReleasedCanaryFleetRecord): void {
+    this.state.isolation.releasedCanaryFleet = mergeReleasedCanaryFleet(record);
+  }
+
+  mergeReleasedCanaryFleet(
+    extra?: Partial<ReleasedCanaryFleetRecord> | null,
+  ): ReleasedCanaryFleetRecord {
+    const merged = mergeReleasedCanaryFleet(
+      this.state.isolation.releasedCanaryFleet,
+      extra,
+    );
+    this.state.isolation.releasedCanaryFleet = merged;
+    return merged;
+  }
+
   isCopyCanary(email: string): boolean {
     const lower = email.toLowerCase();
+    if (this.isReleasedCanary(lower)) return false;
     if (this.listCopyCanaryEmails().has(lower)) return true;
-    return isCopyCanaryFleetEmail(lower, this.getCopyCanaryFleet());
+    return isCopyCanaryFleetEmail(
+      lower,
+      this.getCopyCanaryFleet(),
+      this.getReleasedCanaryFleet(),
+    );
   }
 
   setCopyCanaryFleet(record: CopyCanaryFleetRecord): void {
-    this.state.isolation.copyCanaryFleet = {
-      ...record,
-      domains: [...new Set(record.domains.map((row) => row.toLowerCase()))],
-      emails: [...new Set(record.emails.map((row) => row.toLowerCase()))],
-    };
+    const released = this.getReleasedCanaryFleet();
+    const sanitized = sanitizeCopyCanaryFleet(
+      {
+        ...record,
+        domains: [...new Set(record.domains.map((row) => row.toLowerCase()))],
+        emails: [...new Set(record.emails.map((row) => row.toLowerCase()))],
+      },
+      released,
+    );
+    this.state.isolation.copyCanaryFleet = sanitized;
   }
 
   getCopyCanaryFleet(): CopyCanaryFleetRecord | null {
-    return this.state.isolation.copyCanaryFleet;
+    const sanitized = sanitizeCopyCanaryFleet(
+      this.state.isolation.copyCanaryFleet,
+      this.getReleasedCanaryFleet(),
+    );
+    if (
+      sanitized &&
+      this.state.isolation.copyCanaryFleet &&
+      (sanitized.emails.length !==
+        this.state.isolation.copyCanaryFleet.emails.length ||
+        sanitized.domains.length !==
+          this.state.isolation.copyCanaryFleet.domains.length)
+    ) {
+      this.state.isolation.copyCanaryFleet = sanitized;
+    }
+    return sanitized;
   }
 
   upsertDomainHistory(record: DomainControlHistoryRecord): void {

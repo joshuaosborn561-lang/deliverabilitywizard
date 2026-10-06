@@ -245,6 +245,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D237 | Live | PowerGRYD 592842 is a full named client. Leave-alone / dedicated-generic / rotation-skip / idle-exempt / min40 auto-allow special-cases are deleted. Not the D236 POC mode. Campaigns may PAUSE when done. |
 | D238 | Live | Canary fleet is hard-locked: identify by copyCanary fleet membership + Canary signature backstop; exclude from every attach/staff/top-up/generic-pool/POC path; never set client_id/POD/GENERIC; Canon pages `canary_on_live` / `canary_warmup_on` |
 | D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
+| D240 | Live | Canary fleet swap: living fleet is size 10, adopted by CANARY tag and/or CANARY_FLEET_EMAILS; contaminated 6-seat getcrosslaunchco.info / crosslaunchcoget.info fleet is released and is no longer a D238 canary; empty replacement fleet is one fleet-level notice |
 | D241 | Live — write exemption folded into D242 CALLER FOLLOW-UP class | GABE-VM-RESERVED seats are exempt from every mutating stage (never unlink / link / retag / rewrite); min40 POC fill skips campaigns named Gabe and campaigns whose linked seats are GABE-VM-RESERVED, not just 4074266 |
 | D242 | Live | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
 | D243 | Live | Client-named domains are that client's named seats (never GENERIC / pool); warmup clock is later of purchase and Smartlead import; Goliath leftovers are named 548611; Culture Fits 418275 stays a D192 exception |
@@ -7973,6 +7974,66 @@ used by generic-pool validate / surplus / min40 fill.
 **Guards.** `syncGenericSeatsFromInventory` skips canary,
 GABE-VM-RESERVED, and `owesWarmup`; CANON names the
 21-day + reserved + canary exclusions.
+
+---
+
+## D240 — Canary fleet swap: release the contaminated 6, adopt 10
+
+**Date.** 2026-10-05 (Josh) / recorded 2026-10-06.
+
+**Decision.** The current 6-seat canary fleet
+(`getcrosslaunchco.info` / `crosslaunchcoget.info`:
+leilasanchez, kwamelopez, aminarodriguez, marcusrossi,
+jasminecosta, ninajefferson) is contaminated — they sent
+lead mail. They become regular generic-pool seats. The
+living fleet is replaced by 10 brand-new inboxes (5 Google
++ 5 M365 on 4 new domains), warmup off, signature
+`First Last\nCanary`, Smartlead tag `CANARY`, no client,
+no campaigns.
+
+Sanctioned replace of the `copyCanary` registry: adopt by
+the `CANARY` Smartlead tag and/or `CANARY_FLEET_EMAILS`.
+Fleet size is **10**, not fixed 6. The "one Google domain
++ one Outlook domain" minimum stays, generalized across
+however many domains the new fleet uses.
+`/run?mode=adopt-canary-fleet` is the flip once the new
+seats are in Smartlead.
+
+An explicit **released-fleet list** (hardcoded defaults +
+`RELEASED_CANARY_FLEET_EMAILS` / `RELEASED_CANARY_FLEET_DOMAINS`
++ state, `/run?mode=release-canary-fleet`) means the old
+6 emails/domains are never re-adopted or rebuilt from the
+original purchase, and are **no longer canaries for D238**.
+After release they are normal generics: no signature
+rewrite to Canary, no forced warmup-off, no
+`canary_warmup_on` page.
+
+Until the new fleet is registered, canary-copy tests may
+have no senders. That is **one fleet-level notice**
+(`canaryFleetDown`), not per-campaign spam. Do not
+auto-request the old 2×3 porkbun buy.
+
+**Why.** Josh: the current 6 sent lead mail and cannot stay
+as unwarmed copy canaries. Onboarding is buying 10 new
+inboxes. The D86 InboxKit guess and `reconcileFleetPurchase`
+would put the old domains back.
+
+**Rejected.** Rebuilding the old purchase. Leaving the
+Canary-signature backstop locked on released seats (that
+would keep paging `canary_warmup_on` and block them as
+generics). Per-campaign `missing_canary` spam while the
+replacement is in flight.
+
+**Supersedes / amends.** Amends D54 (registry size 10, not
+fixed 2×3; porkbun buy SKU unchanged). Amends D86 (tag/env
+adopt is the sanctioned replace; InboxKit guess must skip
+released domains). Amends D238: released seats are not
+locked canaries. Amends D85: empty replacement fleet is
+the same one fleet-level fact.
+
+**Guards.** `isReleasedCanaryEmail`; `adoptRegisteredFleet`;
+CANON dated D240; empty attach skips buy; D238 tests use a
+living `newcanary.test` seat, not leilasanchez.
 
 ---
 

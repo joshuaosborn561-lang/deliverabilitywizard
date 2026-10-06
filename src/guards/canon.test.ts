@@ -1266,14 +1266,44 @@ describe("owner intent — D60 canary buy once", () => {
 });
 
 describe("owner intent — D54 dedicated canary fleet", () => {
-  it("D54: two domains, three inboxes each, Google + Outlook, warmup off, Josh-only spend", async () => {
-    const { COPY_CANARY_FLEET_DOMAIN_COUNT, COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN } =
+  it("D54/D240: living fleet is size 10 with one Google + one Outlook minimum; porkbun buy SKU stays 2×3", async () => {
+    const {
+      COPY_CANARY_FLEET_DOMAIN_COUNT,
+      COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN,
+      COPY_CANARY_FLEET_SIZE,
+      COPY_CANARY_FLEET_MIN_GOOGLE_DOMAINS,
+      COPY_CANARY_FLEET_MIN_MICROSOFT_DOMAINS,
+    } =
       await import("../lib/copyCanaryFleet.js");
+    assert.equal(
+      COPY_CANARY_FLEET_SIZE,
+      10,
+      stop(
+        "The living canary fleet is 10 seats (D240).",
+        `Fleet size is now ${COPY_CANARY_FLEET_SIZE}.`,
+      ),
+    );
+    assert.equal(
+      COPY_CANARY_FLEET_MIN_GOOGLE_DOMAINS,
+      1,
+      stop(
+        "The canary fleet still owes at least one Google domain (D54/D240).",
+        `Min Google domains is now ${COPY_CANARY_FLEET_MIN_GOOGLE_DOMAINS}.`,
+      ),
+    );
+    assert.equal(
+      COPY_CANARY_FLEET_MIN_MICROSOFT_DOMAINS,
+      1,
+      stop(
+        "The canary fleet still owes at least one Outlook domain (D54/D240).",
+        `Min Outlook domains is now ${COPY_CANARY_FLEET_MIN_MICROSOFT_DOMAINS}.`,
+      ),
+    );
     assert.equal(
       COPY_CANARY_FLEET_DOMAIN_COUNT,
       2,
       stop(
-        "The canary fleet is two new domains (D54).",
+        "The porkbun canary buy SKU is still two domains (D54).",
         `Domain count is now ${COPY_CANARY_FLEET_DOMAIN_COUNT}.`,
       ),
     );
@@ -1281,7 +1311,7 @@ describe("owner intent — D54 dedicated canary fleet", () => {
       COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN,
       3,
       stop(
-        "Each canary domain gets three inboxes (D54).",
+        "The porkbun canary buy SKU is still three inboxes per domain (D54).",
         `Mailboxes per domain is now ${COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN}.`,
       ),
     );
@@ -13752,23 +13782,31 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.equal(
       isLockedCanarySeat(
+        { signature: "Ada Lovelace\nCanary" },
+        "ada@newcanary.test",
+      ),
+      true,
+      stop("Canary signature locks the living seat (D238).", "isLockedCanarySeat missed the signature backstop."),
+    );
+    assert.equal(
+      isLockedCanarySeat(
         { signature: "Leila Sanchez\nCanary" },
         "leilasanchez@getcrosslaunchco.info",
       ),
-      true,
-      stop("Canary signature locks the seat (D238).", "isLockedCanarySeat missed the signature backstop."),
+      false,
+      stop("Released 2026-10-05 seats are not canaries (D240).", "isLockedCanarySeat still locks leilasanchez."),
     );
     assert.equal(
       isGenericMailbox(
         {
           client_id: 521881,
-          signature: "Leila Sanchez\nCanary",
+          signature: "Ada Lovelace\nCanary",
           tags: [{ tag_name: "GENERIC" }],
         },
-        "leilasanchez@getcrosslaunchco.info",
+        "ada@newcanary.test",
         {
           extraGenericMailboxes: [],
-          extraGenericDomains: ["getcrosslaunchco.info"],
+          extraGenericDomains: ["newcanary.test"],
           prewarmedDomains: ["crosslaunchco.com"],
         },
         { getPoolMailbox: () => undefined },
@@ -13778,11 +13816,11 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
     );
     assert.equal(
       isPoolGenericSeat(
-        { signature: "Leila Sanchez\nCanary" },
-        "leilasanchez@getcrosslaunchco.info",
+        { signature: "Ada Lovelace\nCanary" },
+        "ada@newcanary.test",
         {
           extraGenericMailboxes: [],
-          extraGenericDomains: ["getcrosslaunchco.info"],
+          extraGenericDomains: ["newcanary.test"],
           prewarmedDomains: [],
         },
         { getPoolMailbox: () => undefined },
@@ -14259,5 +14297,65 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.match(unpause, /callerFollowUpForbidsStatusWrite/);
     assert.match(health, /callerFollowUpForbidsStatusWrite/);
     assert.match(isolation, /callerFollowUpMustPageBeforeAct/);
+  });
+});
+
+describe("owner intent — D240 canary fleet swap", () => {
+  it("D240: released list, tag/env adopt, size 10, empty-fleet is one notice", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { isReleasedCanaryEmail, COPY_CANARY_FLEET_SIZE } = await import(
+      "../lib/copyCanaryFleet.js"
+    );
+    const { hasCanaryTag, CANARY_TAG } = await import("../lib/markerClients.js");
+    const { isLockedCanarySeat } = await import("../lib/canaryLock.js");
+
+    assert.equal(COPY_CANARY_FLEET_SIZE, 10);
+    assert.equal(CANARY_TAG, "CANARY");
+    assert.equal(hasCanaryTag({ tags: [{ tag_name: "CANARY" }] }), true);
+    assert.equal(isReleasedCanaryEmail("ninajefferson@getcrosslaunchco.info"), true);
+    assert.equal(
+      isLockedCanarySeat(
+        { signature: "Nina Jefferson\nCanary" },
+        "ninajefferson@crosslaunchcoget.info",
+      ),
+      false,
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const buy = await readFile(new URL("../services/copyCanaryBuy.ts", import.meta.url), "utf8");
+    const attach = await readFile(new URL("../services/copyCanary.ts", import.meta.url), "utf8");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D243\*\*/,
+      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+    );
+    assert.match(
+      canon,
+      /released/,
+      stop("CANON names the released canary fleet (D240).", "CANON.md lost released."),
+    );
+    assert.match(
+      decisions,
+      /## D240 — /,
+      stop("The ledger records D240.", "DECISIONS.md has no D240 entry."),
+    );
+    assert.match(
+      buy,
+      /adoptRegisteredFleet/,
+      stop("Adopt-by-tag/env exists (D240).", "copyCanaryBuy.ts lost adoptRegisteredFleet."),
+    );
+    assert.match(
+      attach,
+      /awaiting CANARY-tagged replacement/,
+      stop("Empty fleet is one skip, not a buy ask (D240).", "copyCanary.ts still auto-buys after release."),
+    );
+    assert.match(
+      index,
+      /adopt-canary-fleet/,
+      stop("/run adopt-canary-fleet exists (D240).", "index.ts lost the adopt run mode."),
+    );
   });
 });

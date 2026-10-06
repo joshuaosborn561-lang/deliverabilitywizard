@@ -9,9 +9,14 @@ import {
   COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN,
   COPY_CANARY_FLEET_SIZE,
   domainsFromCanaryBuyActions,
+  fleetMeetsEspMinimum,
+  isReleasedCanaryDomain,
+  isReleasedCanaryEmail,
   platformForCanaryDomainIndex,
   type CopyCanaryFleetRecord,
 } from "../lib/copyCanaryFleet.js";
+import { hasCanaryTag } from "../lib/markerClients.js";
+import { parsePersonName, poolEspFromSmartleadType } from "../lib/poolSignature.js";
 import { generateDomainSpins } from "../lib/domainNaming.js";
 import { sleep } from "../lib/http.js";
 import { pickUniquePersonNames } from "../lib/personNames.js";
@@ -65,6 +70,7 @@ export class CopyCanaryBuyService {
     const decidedBy = action.decidedBy ?? "Josh";
     const already = domainsFromCanaryBuyActions(
       this.store.listIsolationActions(),
+      this.store.getReleasedCanaryFleet(),
     );
     const fleetDomains = this.store.getCopyCanaryFleet()?.domains ?? [];
     const domains =
@@ -92,8 +98,8 @@ export class CopyCanaryBuyService {
     const emails = fleet?.emails ?? [];
     const ready =
       !mailboxes.awaitingNameservers &&
-      emails.length >= COPY_CANARY_FLEET_SIZE &&
-      exported.mapped >= COPY_CANARY_FLEET_SIZE;
+      emails.length >= COPY_CANARY_FLEET_DOMAIN_COUNT * COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN &&
+      exported.mapped >= COPY_CANARY_FLEET_DOMAIN_COUNT * COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN;
     this.patchFleet({
       status: mailboxes.awaitingNameservers
         ? "awaiting_mailboxes"
@@ -151,8 +157,12 @@ export class CopyCanaryBuyService {
       const fleet = this.store.getCopyCanaryFleet();
       const emails = fleet?.emails ?? [];
       const ready =
-        emails.length >= COPY_CANARY_FLEET_SIZE &&
-        exported.mapped >= COPY_CANARY_FLEET_SIZE;
+        emails.length >=
+          COPY_CANARY_FLEET_DOMAIN_COUNT *
+            COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN &&
+        exported.mapped >=
+          COPY_CANARY_FLEET_DOMAIN_COUNT *
+            COPY_CANARY_FLEET_MAILBOXES_PER_DOMAIN;
       this.patchFleet({
         status: ready ? "ready" : "awaiting_export",
         domains,
@@ -178,6 +188,177 @@ export class CopyCanaryBuyService {
   }
 
   /**
+   * D240 — sanctioned replace of the copyCanary registry.
+   *
+   * Prefer `CANARY_FLEET_EMAILS`, else every Smartlead seat tagged
+   * `CANARY`. Released emails/domains are never adopted. Size 10 is
+   * allowed; ready means at least one Google domain and one Outlook
+   * domain. Does not set client_id / POD / GENERIC.
+   */
+  async adoptRegisteredFleet(): Promise<CopyCanaryAdoptResult> {
+    this.store.mergeReleasedCanaryFleet({
+      emails: this.config.releasedCanaryFleetEmails,
+      domains: this.config.releasedCanaryFleetDomains,
+    });
+    const released = this.store.getReleasedCanaryFleet();
+    this.clearReleasedPoolFlags();
+
+    let accounts: Awaited<
+      ReturnType<SmartleadClient["listAllEmailAccounts"]>
+    > = [];
+    try {
+      accounts = await this.smartlead.listAllEmailAccounts({
+        fetchCampaigns: true,
+      });
+    } catch (error) {
+      console.warn(
+        "[copy-canary-adopt] Smartlead fleet list failed — not replacing from a partial list",
+        error,
+      );
+      return {
+        found: [],
+        adopted: [],
+        mapped: this.fleetMappedCount(),
+        ready: false,
+        changed: false,
+        reason: "smartlead-list-incomplete",
+      };
+    }
+
+    const byEmail = new Map<
+      string,
+      (typeof accounts)[number]
+    >();
+    for (const account of accounts) {
+      const email = accountEmail(account)?.toLowerCase();
+      if (email) byEmail.set(email, account);
+    }
+
+    const envEmails = this.config.canaryFleetEmails.filter(
+      (email) => !isReleasedCanaryEmail(email, released),
+    );
+    const tagged = accounts
+      .filter((account) => hasCanaryTag(account))
+      .map((account) => accountEmail(account)?.toLowerCase() ?? "")
+      .filter((email) => email && !isReleasedCanaryEmail(email, released));
+
+    const wanted = envEmails.length ? envEmails : tagged;
+    const found = [...new Set(wanted)];
+    if (!found.length) {
+      const fleet = this.store.getCopyCanaryFleet();
+      return {
+        found: [],
+        adopted: [],
+        mapped: this.fleetMappedCount(),
+        ready: Boolean(fleet?.emails.length) && fleetMeetsEspMinimum(fleet!),
+        changed: false,
+        reason:
+          "no CANARY-tagged seats or CANARY_FLEET_EMAILS yet — released fleet stays off",
+      };
+    }
+
+    const cap = this.config.canaryFleetSize || COPY_CANARY_FLEET_SIZE;
+    const google: string[] = [];
+    const microsoft: string[] = [];
+    const other: string[] = [];
+    for (const email of found) {
+      const account = byEmail.get(email);
+      const platform = poolEspFromSmartleadType(account?.type) ?? "GOOGLE";
+      if (platform === "MICROSOFT") microsoft.push(email);
+      else google.push(email);
+    }
+    const picked: string[] = [];
+    const take = (list: string[]) => {
+      for (const email of list) {
+        if (picked.length >= cap) break;
+        if (!picked.includes(email)) picked.push(email);
+      }
+    };
+    take(google.slice(0, Math.ceil(cap / 2)));
+    take(microsoft.slice(0, Math.ceil(cap / 2)));
+    take([...google, ...microsoft, ...other]);
+
+    const prior = new Set(this.store.getCopyCanaryFleet()?.emails ?? []);
+    const googleDomains = new Set<string>();
+    const microsoftDomains = new Set<string>();
+    for (const email of picked) {
+      const account = byEmail.get(email);
+      const domain = email.split("@")[1] ?? "";
+      const platform = poolEspFromSmartleadType(account?.type) ?? "GOOGLE";
+      if (platform === "MICROSOFT") microsoftDomains.add(domain);
+      else googleDomains.add(domain);
+      const names = parsePersonName(account?.from_name || email.split("@")[0]);
+      const existing = this.store.getPoolMailbox(email);
+      this.store.upsertPoolMailbox({
+        email,
+        domain,
+        platform,
+        smartleadAccountId: existing?.smartleadAccountId ?? account?.id,
+        firstName: names.firstName,
+        lastName: names.lastName,
+        status: "available",
+        copyCanary: true,
+      });
+    }
+    for (const email of prior) {
+      if (picked.includes(email)) continue;
+      const row = this.store.getPoolMailbox(email);
+      if (row?.copyCanary) {
+        this.store.upsertPoolMailbox({ ...row, copyCanary: false });
+      }
+    }
+
+    const domains = [...new Set([...googleDomains, ...microsoftDomains])];
+    const googleDomain = [...googleDomains][0];
+    const microsoftDomain = [...microsoftDomains][0];
+    const ready = fleetMeetsEspMinimum({
+      googleDomain,
+      microsoftDomain,
+      domains,
+      googleDomains: [...googleDomains],
+      microsoftDomains: [...microsoftDomains],
+    });
+    this.patchFleet({
+      status: ready ? "ready" : "awaiting_export",
+      domains,
+      googleDomain,
+      microsoftDomain,
+      emails: picked,
+      source: envEmails.length ? "env" : "tag",
+    });
+
+    const domainSet = new Set(domains);
+    if (!this.config.dryRun) {
+      await this.disableWarmup(domainSet);
+    }
+    const mapped = this.fleetMappedCount();
+    await this.store.save();
+    const changed =
+      picked.some((email) => !prior.has(email)) ||
+      prior.size !== picked.length ||
+      (ready && this.store.getCopyCanaryFleet()?.status === "ready");
+    console.log(
+      `[copy-canary-adopt] D240 registered=${picked.length} mapped=${mapped} ready=${ready} source=${envEmails.length ? "env" : "tag"}`,
+    );
+    return {
+      found,
+      adopted: picked,
+      mapped,
+      ready,
+      changed,
+    };
+  }
+
+  private clearReleasedPoolFlags(): void {
+    const released = this.store.getReleasedCanaryFleet();
+    for (const row of this.store.listPoolMailboxes()) {
+      if (!row.copyCanary) continue;
+      if (!isReleasedCanaryEmail(row.email, released)) continue;
+      this.store.upsertPoolMailbox({ ...row, copyCanary: false });
+    }
+  }
+
+  /**
    * D86 — adopt a fleet Josh bought by hand in InboxKit.
    *
    * The buy flow assumes the app made the purchase, so a manual buy used to
@@ -191,8 +372,20 @@ export class CopyCanaryBuyService {
    * is turned off (D83). Test attachment stays with the normal sweep.
    */
   async adoptManualPurchase(): Promise<CopyCanaryAdoptResult | null> {
+    this.store.mergeReleasedCanaryFleet({
+      emails: this.config.releasedCanaryFleetEmails,
+      domains: this.config.releasedCanaryFleetDomains,
+    });
+    const taggedOrEnv = await this.adoptRegisteredFleet();
+    if (taggedOrEnv.adopted.length || taggedOrEnv.changed) {
+      return taggedOrEnv;
+    }
     const fleet = this.store.getCopyCanaryFleet();
-    if (fleet?.status === "ready" && !this.store.getCanaryFleetDown()) {
+    if (
+      fleet?.status === "ready" &&
+      fleet.emails.length &&
+      !this.store.getCanaryFleetDown()
+    ) {
       return null;
     }
     // A FRESH app-made purchase mid-flight is resume()'s job. A purchase
@@ -293,6 +486,12 @@ export class CopyCanaryBuyService {
       ).toLowerCase();
       if (!email || !domain) continue;
       if (planDomains.has(domain) || excludedDomains.has(domain)) continue;
+      if (isReleasedCanaryDomain(domain, this.store.getReleasedCanaryFleet())) {
+        continue;
+      }
+      if (isReleasedCanaryEmail(email, this.store.getReleasedCanaryFleet())) {
+        continue;
+      }
       if (takenInSmartlead.has(email)) continue;
       const existing = this.store.getPoolMailbox(email);
       if (existing && !existing.copyCanary) continue;
@@ -737,6 +936,9 @@ export class CopyCanaryBuyService {
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;
       const domain = email.split("@")[1] ?? "";
+      if (this.store.isReleasedCanary(email) || isReleasedCanaryDomain(domain)) {
+        continue;
+      }
       if (!this.store.isCopyCanary(email) && !domains.has(domain)) continue;
       try {
         await this.smartlead.configureWarmup(account.id, {

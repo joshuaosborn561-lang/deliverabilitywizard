@@ -2819,6 +2819,54 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         res.json({ ok: true, mode: "copy-canary-resume", result: { finished } });
         return;
       }
+      if (mode === "adopt-canary-fleet" || mode === "canary-adopt") {
+        assertRuntimeSecrets(config);
+        const result = await copyCanaryBuy.adoptRegisteredFleet();
+        if (result.ready || result.adopted.length) {
+          const attach = await copyCanary.attach();
+          res.json({
+            ok: true,
+            mode: "adopt-canary-fleet",
+            result: { ...result, attach },
+          });
+          return;
+        }
+        res.json({ ok: true, mode: "adopt-canary-fleet", result });
+        return;
+      }
+      if (mode === "release-canary-fleet" || mode === "canary-release") {
+        const current = state.getCopyCanaryFleet();
+        const released = state.mergeReleasedCanaryFleet({
+          emails: [
+            ...config.releasedCanaryFleetEmails,
+            ...(current?.emails ?? []),
+          ],
+          domains: [
+            ...config.releasedCanaryFleetDomains,
+            ...(current?.domains ?? []),
+          ],
+          releasedAt: new Date().toISOString(),
+        });
+        for (const email of current?.emails ?? []) {
+          const row = state.getPoolMailbox(email);
+          if (row?.copyCanary) {
+            state.upsertPoolMailbox({ ...row, copyCanary: false });
+          }
+        }
+        state.setCopyCanaryFleet({
+          status: "missing",
+          domains: [],
+          emails: [],
+          updatedAt: new Date().toISOString(),
+        });
+        await state.save();
+        res.json({
+          ok: true,
+          mode: "release-canary-fleet",
+          result: { released },
+        });
+        return;
+      }
       if (mode === "delivery-watch" || mode === "copy-watch") {
         assertRuntimeSecrets(config);
         const result = await deliveryWatch.run();

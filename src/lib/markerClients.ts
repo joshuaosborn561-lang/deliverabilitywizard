@@ -17,6 +17,7 @@ import { isClientNamedSlugDomain } from "./clientNamedDomain.js";
 
 export const GENERIC_TAG = "GENERIC";
 export const POC_TAG = "POC";
+export const CANARY_TAG = "CANARY";
 
 /** Leftover D142 client-record names — never create these again. */
 export const GENERIC_CLIENT_NAME = "Generic";
@@ -54,6 +55,19 @@ export function hasPocReservationTag(account: {
   tags?: Array<{ tag_name?: unknown; name?: unknown }>;
 }): boolean {
   return mailboxTagNames(account).some((name) => isPocReservationTag(name));
+}
+
+/** D240 — Smartlead `CANARY` tag marks a living copy-canary seat. */
+export function isCanaryTag(name: string | null | undefined): boolean {
+  return String(name ?? "").trim().toUpperCase() === CANARY_TAG;
+}
+
+export function hasCanaryTag(account: {
+  tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+}): boolean {
+  return mailboxTagNames({ tags: account.tags ?? [] }).some((name) =>
+    isCanaryTag(name),
+  );
 }
 
 export function isMarkerClientName(name: string | null | undefined): boolean {

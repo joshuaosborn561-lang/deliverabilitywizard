@@ -240,7 +240,9 @@ describe("Min40TopUpService (D205)", () => {
           slackCalls.push(text);
         },
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
+        notifyGenericBackfillBatch: async () => {
+          slackCalls.push("Allow generics");
+        },
       } as unknown as SlackClient,
       state,
     );
@@ -418,6 +420,7 @@ describe("Min40TopUpService (D205)", () => {
       is_imap_success: true,
       tags: [{ tag_name: "POD-A" }],
       campaign_ids: [10],
+      created_at: "2026-01-01T00:00:00.000Z",
     }));
     const service = new Min40TopUpService(
       loadConfig({ DRY_RUN: "false" }),

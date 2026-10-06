@@ -23,6 +23,7 @@ function namedPodA(clientId: number, campaignId: number, n = 40) {
     is_imap_success: true,
     tags: [{ tag_name: "POD-A" }],
     campaign_ids: [campaignId],
+    created_at: "2026-01-01T00:00:00.000Z",
   }));
 }
 

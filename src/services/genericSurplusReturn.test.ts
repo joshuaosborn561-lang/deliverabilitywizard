@@ -29,6 +29,7 @@ function namedPodA(
     is_imap_success: true,
     tags: [{ tag_name: "POD-A" }],
     campaign_ids: campaignIds,
+    created_at: "2026-01-01T00:00:00.000Z",
   }));
 }
 

@@ -206,14 +206,6 @@ export function sanitizeCopyCanaryFleet(
     domains,
     googleDomain,
     microsoftDomain,
-    status:
-      emails.length && fleetMeetsEspMinimum({ ...fleet, emails, domains, googleDomain, microsoftDomain })
-        ? fleet.status === "missing"
-          ? "awaiting_export"
-          : fleet.status
-        : fleet.status === "ready"
-          ? "awaiting_export"
-          : fleet.status,
   };
 }
 

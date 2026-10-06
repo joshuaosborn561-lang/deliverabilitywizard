@@ -637,6 +637,9 @@ export class CopyCanaryBuyService {
     );
     const fleet = this.store.getCopyCanaryFleet();
     for (const domain of fleet?.domains ?? []) owned.add(domain.toLowerCase());
+    for (const domain of this.store.getReleasedCanaryFleet().domains) {
+      owned.add(domain.toLowerCase());
+    }
     const candidates = generateDomainSpins(parent).filter(
       (spin) => !owned.has(spin.domain),
     );

@@ -37,6 +37,7 @@ import {
   campaignIdFromCanaryTestName,
   isCanaryCopyTestName,
 } from "../lib/isolationNames.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isCanaryShellCampaign } from "../lib/canaryShell.js";
 import { copySequence, isolationManualPayload } from "../lib/isolationPlacement.js";
 import { sleep } from "../lib/http.js";
@@ -449,14 +450,11 @@ export class CopyCanaryService {
     dryRun: boolean,
     result: CopyCanaryAttachResult,
   ): Promise<void> {
-    const fleet = this.state.getCopyCanaryFleet();
-    if (!fleet) return;
     const shellIds = new Set(
       campaigns.filter((row) => isCanaryShellCampaign(row)).map((row) => row.id),
     );
-    for (const email of fleet.emails) {
-      const account = accountByEmail.get(email);
-      if (!account) continue;
+    for (const [email, account] of accountByEmail) {
+      if (!isLockedCanarySeat(account, email, this.state)) continue;
       for (const campaignId of campaignIdsOf(account)) {
         if (shellIds.has(campaignId)) continue;
         // D207 — canary fleet never staffs; the floor does not protect it.

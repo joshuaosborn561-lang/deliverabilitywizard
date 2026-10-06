@@ -3,15 +3,22 @@ import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
 import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
+import {
+  isGabeVmReserved,
+  isLockedCanarySeat,
+} from "./canaryLock.js";
 import { isClientInbox, isGenericMailbox } from "./clientInbox.js";
+import { owesWarmup } from "../services/warmupGate.js";
 import { isRealNamedClientId } from "./dedicatedGeneric.js";
 import { assignClientCohorts } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
+import { isGabePostCallCampaign } from "./pocClient.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
+  GENERIC_ASSIGN_REASON_POC_ENGAGEMENT,
   GENERIC_ASSIGN_REASON_POWERGRYD,
   GENERIC_POOL_POWERGRYD_CLIENT_ID,
   clearGenericAssignment,
@@ -66,6 +73,17 @@ function campaignIsActive(status: string | null | undefined): boolean {
   return value === "ACTIVE" || value === "START";
 }
 
+function campaignIsLivingForClient(
+  status: string | null | undefined,
+  clientId: number | null,
+  pocEngagementClientIds: ReadonlySet<number>,
+): boolean {
+  if (campaignIsActive(status)) return true;
+  if (clientId == null || !pocEngagementClientIds.has(clientId)) return false;
+  const value = String(status ?? "").toUpperCase();
+  return value === "DRAFT" || value === "DRAFTED";
+}
+
 /**
  * D221 — fail when a generic is assigned to a client that does not
  * need it for that POD's 40, or when one seat is on more than one
@@ -79,9 +97,15 @@ export function validateGenericPool(input: {
   campaignClientById?: ReadonlyMap<number, number | null>;
   liveClientIdsByEmail?: ReadonlyMap<string, readonly number[]>;
   powerGrydClientId?: number;
+  pocEngagementClientIds?: Iterable<number>;
   idleExemptEmails?: Iterable<string>;
 }): GenericPoolFinding[] {
   const powerId = input.powerGrydClientId ?? GENERIC_POOL_POWERGRYD_CLIENT_ID;
+  const pocIds = new Set(
+    [...(input.pocEngagementClientIds ?? [])].filter(
+      (id) => Number.isFinite(id) && id > 0,
+    ),
+  );
   const idleExempt = new Set(
     [...(input.idleExemptEmails ?? [])].map((email) => email.trim().toLowerCase()),
   );
@@ -149,7 +173,14 @@ export function validateGenericPool(input: {
     const seat = rows[0]!;
     const clientId = seat.assignedClientId;
     if (clientId == null) continue;
-    if (genericPoolIdleExempt(seat, powerId)) continue;
+    if (
+      genericPoolIdleExempt(seat, {
+        powerGrydClientId: powerId,
+        pocEngagementClientIds: pocIds,
+      })
+    ) {
+      continue;
+    }
     if (idleExempt.has(seat.email)) continue;
     if (seat.assignedPod) {
       const key = clientPodKey(clientId, seat.assignedPod);
@@ -260,12 +291,15 @@ export interface GenericPoolSyncInput {
   config: Pick<
     AppConfig,
     "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains"
-  >;
+  > &
+    Partial<Pick<AppConfig, "campaignMinWarmupDays" | "freshInboxWarmupDays">>;
   state: Pick<StateStore, "getPoolMailbox" | "isCopyCanary"> & {
     isMarkerClientId?: StateStore["isMarkerClientId"];
+    getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
   };
   now?: Date;
   powerGrydClientId?: number;
+  pocEngagementClientIds?: Iterable<number>;
 }
 
 export interface GenericPoolSyncResult {
@@ -292,10 +326,14 @@ function assignedReason(
   existing: GenericSeatRecord | undefined,
   clientId: number | null,
   powerId: number,
+  pocEngagementClientIds: ReadonlySet<number>,
 ): string | null {
   if (clientId == null) return null;
   if (existing?.reason && existing.assignedClientId === clientId) {
     return existing.reason;
+  }
+  if (pocEngagementClientIds.has(clientId)) {
+    return GENERIC_ASSIGN_REASON_POC_ENGAGEMENT;
   }
   if (clientId === powerId) return GENERIC_ASSIGN_REASON_POWERGRYD;
   return GENERIC_ASSIGN_REASON_POD_TOP_UP;
@@ -311,6 +349,11 @@ export function syncGenericSeatsFromInventory(
 ): GenericPoolSyncResult {
   const now = input.now ?? new Date();
   const powerId = input.powerGrydClientId ?? GENERIC_POOL_POWERGRYD_CLIENT_ID;
+  const pocIds = new Set(
+    [...(input.pocEngagementClientIds ?? [])].filter(
+      (id) => Number.isFinite(id) && id > 0,
+    ),
+  );
   const isMarker = input.state.isMarkerClientId?.bind(input.state);
   const existingByEmail = new Map(
     input.existing
@@ -327,7 +370,13 @@ export function syncGenericSeatsFromInventory(
         ? campaign.client_id
         : null;
     campaignClientById.set(campaign.id, clientId);
-    if (clientId != null && campaignIsActive(campaign.status)) {
+    if (isGabePostCallCampaign(campaign.id)) {
+      if (clientId != null && !clientHasActiveCampaign.has(clientId)) {
+        clientHasActiveCampaign.set(clientId, false);
+      }
+      continue;
+    }
+    if (clientId != null && campaignIsLivingForClient(campaign.status, clientId, pocIds)) {
       clientHasActiveCampaign.set(clientId, true);
     } else if (clientId != null && !clientHasActiveCampaign.has(clientId)) {
       clientHasActiveCampaign.set(clientId, false);
@@ -342,14 +391,27 @@ export function syncGenericSeatsFromInventory(
   for (const account of input.accounts) {
     const email = accountEmail(account);
     if (!email) continue;
+    if (isLockedCanarySeat(account, email, input.state)) continue;
     const withCampaigns = account as SmartleadAccountWithCampaigns;
     const generic = isGenericMailbox(account, email, input.config, input.state);
     if (!generic) {
       if (
         !isClientInbox(account, email, input.config, input.state) ||
+        isGabeVmReserved(account) ||
         !isStaffableSender(account, {
           copyCanary: Boolean(input.state.isCopyCanary?.(email)),
-        })
+        }) ||
+        owesWarmup(
+          account as SmartleadAccountWithCampaigns,
+          email,
+          {
+            campaignMinWarmupDays: input.config.campaignMinWarmupDays ?? 21,
+            freshInboxWarmupDays: input.config.freshInboxWarmupDays ?? 21,
+            prewarmedDomains: input.config.prewarmedDomains,
+            extraGenericMailboxes: input.config.extraGenericMailboxes,
+          },
+          input.state,
+        )
       ) {
         continue;
       }
@@ -421,7 +483,7 @@ export function syncGenericSeatsFromInventory(
       assignedCampaignIds,
       assignedPod,
       assignedAt,
-      reason: assignedReason(existing, assignedClientId, powerId),
+      reason: assignedReason(existing, assignedClientId, powerId, pocIds),
       releasedAt: existing?.releasedAt ?? null,
       releaseHistory: existing?.releaseHistory ?? [],
       staffableWeight: mailboxStaffableWeight(account),

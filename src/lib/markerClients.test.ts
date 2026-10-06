@@ -4,8 +4,10 @@ import {
   clientDomainTokens,
   confidentClientForDomain,
   GENERIC_TAG,
+  hasPocReservationTag,
   hasPoolMarkerTag,
   isIntentionalNullGenericDomain,
+  isPocReservationTag,
   isPoolMarkerTag,
   leftoverNullGenericTokenInDomain,
   POC_TAG,
@@ -113,5 +115,9 @@ describe("D160 pool marker tags", () => {
     assert.equal(hasPoolMarkerTag({ tags: [{ name: "poc" }] }), true);
     assert.equal(hasPoolMarkerTag({ tags: [{ tag_name: "POD-A" }] }), false);
     assert.equal(hasPoolMarkerTag({ tags: [] }), false);
+    assert.equal(isPocReservationTag(POC_TAG), true);
+    assert.equal(isPocReservationTag(GENERIC_TAG), false);
+    assert.equal(hasPocReservationTag({ tags: [{ tag_name: "POC" }] }), true);
+    assert.equal(hasPocReservationTag({ tags: [{ tag_name: "GENERIC" }] }), false);
   });
 });

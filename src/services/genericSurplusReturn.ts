@@ -19,6 +19,7 @@ import {
 import { returnGenericToUntaggedPool } from "../lib/genericReturn.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
+import { pocEngagementClientIds } from "../lib/pocClient.js";
 import {
   syncGenericSeatsFromInventory,
   type GenericPoolSyncAccount,
@@ -83,6 +84,7 @@ export async function returnSurplusGenerics(input: {
     | "extraGenericDomains"
     | "prewarmedDomains"
     | "powerGrydClientId"
+    | "pocClientNamePatterns"
     | "dryRun"
   >;
   smartlead: Pick<
@@ -100,6 +102,11 @@ export async function returnSurplusGenerics(input: {
   const result: SurplusGenericReturnResult = { returned: [], errors: [] };
   const powerId =
     input.config.powerGrydClientId || GENERIC_POOL_POWERGRYD_CLIENT_ID;
+  const pocIds = pocEngagementClientIds(
+    input.inventory.clients ?? [],
+    input.config.pocClientNamePatterns ?? [],
+    input.state.listEndedPocClientIds(),
+  );
   const skip = openTerlSubstituteEmails(
     input.state.listActiveTerlSubstitutions(),
     now,
@@ -112,6 +119,7 @@ export async function returnSurplusGenerics(input: {
     state: input.state,
     now,
     powerGrydClientId: powerId,
+    pocEngagementClientIds: pocIds,
   });
   const picks = surplusGenericReturns({
     seats: synced.seats,
@@ -120,6 +128,7 @@ export async function returnSurplusGenerics(input: {
     campaignClientById: synced.campaignClientById,
     liveClientIdsByEmail: synced.liveClientIdsByEmail,
     powerGrydClientId: powerId,
+    pocEngagementClientIds: pocIds,
     skipEmails: skip,
     now,
   });
@@ -142,7 +151,9 @@ export async function returnSurplusGenerics(input: {
   for (const pick of picks) {
     const account = accountByEmail.get(pick.email);
     if (!account || typeof account.id !== "number") continue;
-    if (account.client_id === powerId) continue;
+    if (typeof account.client_id === "number" && pocIds.includes(account.client_id)) {
+      continue;
+    }
 
     const campaignIds = campaignIdsOf(account);
     let blocked = false;

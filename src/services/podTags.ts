@@ -14,6 +14,8 @@ import {
 } from "../lib/podRotation.js";
 import { existingPodTag } from "../lib/podTagLock.js";
 import { weekendWriterIdleReason } from "../lib/canonOpsHours.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import { pocEngagementClientIds } from "../lib/pocClient.js";
 
 export const POD_TAG_A = "POD-A";
 export const POD_TAG_B = "POD-B";
@@ -85,6 +87,11 @@ export class PodTagService {
     }
 
     const { accounts, clients } = await this.book.get();
+    const pocSkipIds = pocEngagementClientIds(
+      clients ?? [],
+      this.config.pocClientNamePatterns,
+      this.state.listEndedPocClientIds(),
+    );
     const assignA: number[] = [];
     const assignB: number[] = [];
     const firstTagEmails: string[] = [];
@@ -92,7 +99,17 @@ export class PodTagService {
     for (const account of accounts) {
       const want = desired.get(account.id);
       if (!want) continue;
+      const lockEmail = accountEmail(account) || "";
+      if (lockEmail && isLockedCanarySeat(account, lockEmail, this.state)) {
+        continue;
+      }
       if (hasDualPodTags(account.tags)) continue;
+      if (
+        typeof account.client_id === "number" &&
+        isPodRotationSkippedClient(account.client_id, pocSkipIds)
+      ) {
+        continue;
+      }
       const existing = existingPodTag(account.tags);
       const email = accountEmail(account) || String(account.id);
       if (existing) {
@@ -117,6 +134,7 @@ export class PodTagService {
         accounts,
         clients ?? [],
         opts.now,
+        pocSkipIds,
       );
       return {
         assigned: 0,
@@ -149,6 +167,7 @@ export class PodTagService {
       accounts,
       clients ?? [],
       opts.now,
+      pocSkipIds,
     );
     return { assigned, removed, dualPodFlagged, refused: refusedEmails.length };
   }
@@ -163,6 +182,7 @@ export class PodTagService {
     }>,
     clients: Array<{ id: number; name?: string; logo?: string | null }>,
     now?: Date,
+    extraSkipIds: Iterable<number> = [],
   ): Promise<number> {
     if (podRotationIdleReason(now)) return 0;
     const nameById = new Map(
@@ -176,7 +196,7 @@ export class PodTagService {
     for (const account of accounts) {
       const clientId =
         typeof account.client_id === "number" ? account.client_id : null;
-      if (isPodRotationSkippedClient(clientId)) continue;
+      if (isPodRotationSkippedClient(clientId, extraSkipIds)) continue;
       if (!hasDualPodTags(account.tags)) continue;
       const email = String(account.from_email || account.email || "")
         .trim()

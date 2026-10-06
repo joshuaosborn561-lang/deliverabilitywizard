@@ -13,6 +13,7 @@ import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
@@ -153,6 +154,10 @@ export class ClientFanOutService {
       for (const account of accounts as SmartleadAccountWithCampaigns[]) {
         const email = accountEmail(account);
         if (!email || !account.id) continue;
+        if (isLockedCanarySeat(account, email, this.state)) {
+          result.skipped.push(`${email}: canary fleet lock (D54/D238)`);
+          continue;
+        }
 
         // Never fan a mailbox that must sit out: retired domains stay off
         // forever (D65), a leftover HOLD-UNTIL tag sits inert until it

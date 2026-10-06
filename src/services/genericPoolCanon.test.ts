@@ -45,6 +45,7 @@ describe("D221 generic-pool canon service", () => {
       tags: [{ tag_name: "POD-A" }],
       is_smtp_success: true,
       is_imap_success: true,
+      created_at: "2026-01-01T00:00:00.000Z",
     }));
 
     const first = await service.run({

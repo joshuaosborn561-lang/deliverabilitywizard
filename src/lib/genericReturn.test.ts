@@ -52,7 +52,10 @@ describe("D235 generic return to the untagged pool", () => {
         updateEmailAccount: async (id, fields) => {
           writes.push({ id, fields });
         },
-        ensureTag: async (name) => ({ id: name === "POD-A" ? 1 : 2, name }),
+        ensureTag: async (name) => ({
+          id: name === "POD-A" ? 1 : name === "POD-B" ? 2 : 3,
+          name,
+        }),
         removeTags: async (ids, tagIds) => {
           removed.push([ids, tagIds]);
         },
@@ -65,7 +68,7 @@ describe("D235 generic return to the untagged pool", () => {
     });
     assert.equal(result.ok, true);
     assert.deepEqual(writes, [{ id: 9, fields: { client_id: null, signature: "" } }]);
-    assert.deepEqual(removed, [[[9], [1, 2]]]);
+    assert.deepEqual(removed, [[[9], [1, 2, 3]]]);
     assert.deepEqual(account.tags, [{ tag_name: "GENERIC" }]);
     assert.equal(account.client_id, null);
     assert.equal(account.signature, "");

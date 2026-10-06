@@ -14,7 +14,7 @@ import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { mailboxPodOf } from "../lib/podInventory.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
-import { pocClientId } from "../lib/pocClient.js";
+import { pocClientId, pocEngagementClientIds } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import {
@@ -202,6 +202,11 @@ export class ClientRestService {
       clients,
       this.config.pocClientNamePatterns,
     );
+    const pocSkipIds = pocEngagementClientIds(
+      clients,
+      this.config.pocClientNamePatterns,
+      this.state.listEndedPocClientIds(),
+    );
 
     const campaignById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c]),
@@ -304,9 +309,9 @@ export class ClientRestService {
       }
       const rotationClientId =
         dedicatedClientId ?? clientIdFromRestGroupKey(groupKey);
-      if (isPodRotationSkippedClient(rotationClientId)) {
+      if (isPodRotationSkippedClient(rotationClientId, pocSkipIds)) {
         result.skipped.push(
-          `${email}: POD rotation skip client ${rotationClientId} (D223)`,
+          `${email}: POD rotation skip client ${rotationClientId} (D223/D236)`,
         );
         continue;
       }

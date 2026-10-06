@@ -46,7 +46,7 @@ describe("D225 surplus generic return picker", () => {
     );
   });
 
-  it("skips PowerGRYD and an active 24h TERRL substitute", () => {
+  it("skips an active 24h TERRL substitute; PowerGRYD surplus returns (D237)", () => {
     const picked = surplusGenericReturns({
       seats: [
         seat("pg@getintroduced.info", {
@@ -87,7 +87,7 @@ describe("D225 surplus generic return picker", () => {
     });
     assert.deepEqual(
       picked.map((row) => row.email),
-      ["extra@getintroduced.info"],
+      ["pg@getintroduced.info", "extra@getintroduced.info"],
     );
   });
 

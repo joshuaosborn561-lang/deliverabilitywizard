@@ -4,6 +4,7 @@ import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 import { isBcpOwnedDomain } from "./bcp.js";
 import { emailDomainOf } from "./isolationDomain.js";
+import { isLockedCanarySeat } from "./canaryLock.js";
 import { hasPoolMarkerTag } from "./markerClients.js";
 import { isPrewarmedGeneric } from "../services/warmupGate.js";
 
@@ -57,13 +58,17 @@ export function isGenericPoolBrandDomain(domain: string | undefined): boolean {
  * (D43). Generics are the fleet-wide pool (D221), not A/B resters.
  */
 export function isClientInbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags" | "signature">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
-  state: Pick<StateStore, "getPoolMailbox">,
+  state: Pick<StateStore, "getPoolMailbox"> & {
+    isCopyCanary?: StateStore["isCopyCanary"];
+    getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
+  },
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
+  if (isLockedCanarySeat(account, normalized, state)) return false;
   if (isGenericMailbox(account, normalized, config, state)) return false;
   if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
     return true;
@@ -73,16 +78,19 @@ export function isClientInbox(
 
 /** A/B rest is client inboxes only (D43). Generics stay off that cut (D221). */
 export function isRestEligibleMailbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags" | "signature">,
   email: string,
   config: Pick<AppConfig, "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains">,
-  state: Pick<StateStore, "getPoolMailbox">,
+  state: Pick<StateStore, "getPoolMailbox"> & {
+    isCopyCanary?: StateStore["isCopyCanary"];
+    getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
+  },
 ): boolean {
   return isClientInbox(account, email, config, state);
 }
 
 export function isGenericMailbox(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags" | "signature">,
   email: string,
   config: Pick<
     AppConfig,
@@ -90,10 +98,13 @@ export function isGenericMailbox(
   >,
   state: Pick<StateStore, "getPoolMailbox"> & {
     isMarkerClientId?: StateStore["isMarkerClientId"];
+    isCopyCanary?: StateStore["isCopyCanary"];
+    getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
   },
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
+  if (isLockedCanarySeat(account, normalized, state)) return false;
   const domain = emailDomainOf(normalized);
   // D169 / D99 / D161 — client-named BCP domains are client inventory,
   // never a generic. A leftover GENERIC tag, marker client_id, or
@@ -127,7 +138,7 @@ export function isGenericMailbox(
  * helper is identity, not exclusive-attach.
  */
 export function isPoolGenericSeat(
-  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags">,
+  account: Pick<SmartleadEmailAccount, "client_id" | "from_name" | "tags" | "signature">,
   email: string,
   config: Pick<
     AppConfig,
@@ -135,10 +146,13 @@ export function isPoolGenericSeat(
   >,
   state: Pick<StateStore, "getPoolMailbox"> & {
     isMarkerClientId?: StateStore["isMarkerClientId"];
+    isCopyCanary?: StateStore["isCopyCanary"];
+    getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
   },
 ): boolean {
   const normalized = email.trim().toLowerCase();
   if (!normalized.includes("@")) return false;
+  if (isLockedCanarySeat(account, normalized, state)) return false;
   const domain = emailDomainOf(normalized);
   if (domain && isBcpOwnedDomain(domain)) return false;
   if (isGenericPoolDomain(domain)) return true;

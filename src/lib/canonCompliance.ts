@@ -1,4 +1,5 @@
 import type { CampaignCheckRecord } from "./campaignCheck.js";
+import { CANARY_LOCK_CORE_KINDS } from "./canaryLock.js";
 import { GENERIC_POOL_CORE_KINDS } from "./genericPool.js";
 
 /**
@@ -25,6 +26,7 @@ export const CANON_CORE_KINDS = [
   "inbox_missing_known_good",
   "merge_tag_blank",
   ...GENERIC_POOL_CORE_KINDS,
+  ...CANARY_LOCK_CORE_KINDS,
 ] as const;
 
 export type CanonCoreKind = (typeof CANON_CORE_KINDS)[number];

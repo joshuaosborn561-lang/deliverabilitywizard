@@ -8,12 +8,14 @@ import {
 import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign, SmartleadEmailAccount } from "../types/index.js";
+import { isGabeVmReserved, isLockedCanarySeat } from "./canaryLock.js";
 import { isClientInbox } from "./clientInbox.js";
 import { senderIsAttachBlocked } from "./attachBlock.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
 import { assignClientCohorts, onWeekCohort } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
+import { POC_ENGAGEMENT_SEAT_TARGET } from "./pocClient.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
 
 /**
@@ -264,6 +266,7 @@ export function allowsGenericStaff(
 
 type FloorCountState = Pick<StateStore, "getPoolMailbox"> & {
   isCopyCanary?: StateStore["isCopyCanary"];
+  getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
   getDomainHistory?: StateStore["getDomainHistory"];
   listAttachBlocks?: StateStore["listAttachBlocks"];
   listIsolationActions?: StateStore["listIsolationActions"];
@@ -297,6 +300,8 @@ function eligibleClientInboxesByKey(
     // A hold is the HOLD-UNTIL tag (D128) — fan-out refuses those boxes,
     // so a floor that counts them demands staffing nothing can deliver.
     if (state.isCopyCanary?.(email)) continue;
+    if (isLockedCanarySeat(account, email, state)) continue;
+    if (isGabeVmReserved(account)) continue;
     if (activeHoldUntilDate(tagNames(account))) continue;
     const domain = email.split("@")[1]?.toLowerCase();
     const history = domain ? state.getDomainHistory?.(domain) : undefined;
@@ -403,8 +408,10 @@ export function staffFloorForCampaign(
   clientInboxCounts: Map<string, number>,
   _clientName?: string | null,
   onWeekCounts?: Map<string, number>,
+  opts?: { pocEngagement?: boolean },
 ): number {
   void _clientName;
+  if (opts?.pocEngagement) return POC_ENGAGEMENT_SEAT_TARGET;
   if (onWeekCounts) {
     return ON_WEEK_MIN_SENDERS;
   }
@@ -419,10 +426,12 @@ export function formatStaffFloorDetail(
 ): string {
   const half = clientInboxStaffFloor(eligibleCount);
   const label =
-    floor === ON_WEEK_MIN_SENDERS
-      ? "on-week staffable 40"
-      : floor === half
-        ? "half this client's named inboxes (40/POD)"
-        : "on-week client pod";
+    floor === POC_ENGAGEMENT_SEAT_TARGET
+      ? "POC engagement 60"
+      : floor === ON_WEEK_MIN_SENDERS
+        ? "on-week staffable 40"
+        : floor === half
+          ? "half this client's named inboxes (40/POD)"
+          : "on-week client pod";
   return `staffable ${serving}/${floor} (${label})`;
 }

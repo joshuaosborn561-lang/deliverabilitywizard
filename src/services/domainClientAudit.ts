@@ -23,6 +23,7 @@ import { sleep } from "../lib/http.js";
 import type { DomainClientAdvisory } from "../state/store.js";
 import type { StateStore } from "../state/store.js";
 import type { InventoryBook } from "./inventory.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
 import { owesWarmup } from "./warmupGate.js";
 
 /** Client-id / tag writes per pass — the rest converges on later passes. */
@@ -123,7 +124,7 @@ export class DomainClientAuditService {
       if (isBcpOwnedDomain(domain)) continue;
       if (isolationDomain && domain === isolationDomain) continue;
       if (this.state.getPoolMailbox(email)?.copyCanary) continue;
-      if (this.state.isCopyCanary?.(email)) continue;
+      if (isLockedCanarySeat(account, email, this.state)) continue;
       if (this.state.getDomainHistory(domain)?.status === "retired") continue;
       const list = byDomain.get(domain) ?? [];
       list.push(account);
@@ -171,7 +172,7 @@ export class DomainClientAuditService {
             const email = accountEmail(account)?.toLowerCase() ?? "";
             if (!email) return false;
             if (this.state.getPoolMailbox(email)?.copyCanary) return true;
-            if (this.state.isCopyCanary?.(email)) return true;
+            if (isLockedCanarySeat(account, email, this.state)) return true;
             return isGenericMailbox(account, email, this.config, this.state);
           });
         if (match && intentionalNull) {
@@ -196,7 +197,7 @@ export class DomainClientAuditService {
             const email = accountEmail(account)?.toLowerCase() ?? "";
             if (!email) return false;
             if (this.state.getPoolMailbox(email)?.copyCanary) return false;
-            if (this.state.isCopyCanary?.(email)) return false;
+            if (isLockedCanarySeat(account, email, this.state)) return false;
             if (hasPoolMarkerTag(account)) return false;
             if (isGenericMailbox(account, email, this.config, this.state)) {
               return false;
@@ -341,7 +342,7 @@ export class DomainClientAuditService {
       const email = accountEmail(account)?.toLowerCase();
       if (!email || !account.id) continue;
       if (this.state.getPoolMailbox(email)?.copyCanary) continue;
-      if (this.state.isCopyCanary?.(email)) continue;
+      if (isLockedCanarySeat(account, email, this.state)) continue;
       const domain = email.split("@")[1];
       if (isolationDomain && domain === isolationDomain) continue;
       if (domain && this.state.getDomainHistory(domain)?.status === "retired") {

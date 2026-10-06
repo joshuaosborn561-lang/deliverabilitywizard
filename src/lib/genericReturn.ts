@@ -7,7 +7,7 @@
 
 import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
-import { hasPoolMarkerTag } from "./markerClients.js";
+import { hasPoolMarkerTag, POC_TAG } from "./markerClients.js";
 import {
   GENERIC_POD_TAG_A,
   GENERIC_POD_TAG_B,
@@ -61,9 +61,12 @@ export async function returnGenericToUntaggedPool(input: {
       GENERIC_POD_TAG_B,
       GENERIC_POD_TAG_COLOR_B,
     );
-    await smartlead.removeTags([account.id], [tagA.id, tagB.id]);
+    const poc = await smartlead.ensureTag(POC_TAG, "#8E24AA");
+    await smartlead.removeTags([account.id], [tagA.id, tagB.id, poc.id]);
   }
-  account.tags = stripMailboxPodTags(account.tags);
+  account.tags = stripMailboxPodTags(account.tags).filter(
+    (tag) => String(tag.tag_name ?? "").trim().toUpperCase() !== POC_TAG,
+  );
   account.client_id = null;
   account.signature = "";
 

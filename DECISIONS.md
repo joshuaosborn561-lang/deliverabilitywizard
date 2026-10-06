@@ -213,7 +213,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
-| D205 | Live — min40 now shares same-client generics and restaffs PowerGRYD (D207); watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
+| D205 | Live — min40 now shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
 | D207 | Live — rest-record peel loophole closed by D209 | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
@@ -226,11 +226,11 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D218 | Live — TERRL overnight restore superseded by D219 24h-then-type-cap | TERRL / D148 bounce-hold ids are not pruned at 7:15pm CT. Every max_email_per_day raise path skips held seats during the window |
 | D219 | Live | Mailbox type tags (type:google / type:m365 / type:azure; tidalstackco.com = Azure). Caps: Azure 2 campaign + 5 warmup; M365 15 campaign; Google unchanged. 550 5.7.233 holds the tenant 24h at 0 then resumes the type cap (no 80% / no learned limit). Stopped seat stays linked, POD tag untouched; one same-client warm generic temporarily links on the on-week campaign (41/40). Restore + unlink after 24h. No cross-client borrow; EOD names a 39-sending campaign. One weekday ~5:30pm CT #deliverability digest, never per bounce |
 | D220 | Live | Weekday 7:16am CT Cayden per-client spend digest from existing pending-spend state; fleet GET /email-accounts pages limit=100 until empty and never decides teardown from a partial list |
-| D221 | Live — attach / return lock and "never rotate PODs" governed by D230; surplus return still weekday min40 + cleanup (D225); 40/40 is each POD (D228); sole table path + `released_at` history by D231 | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; PowerGRYD 592842 + 24h TERRL substitute are the exceptions; `generic_idle` / `generic_multi_client` / `generic_outside_table` flip `/health` |
+| D221 | Live — attach / return lock and "never rotate PODs" governed by D230; surplus return still weekday min40 + cleanup (D225); 40/40 is each POD (D228); sole table path + `released_at` history by D231; PowerGRYD dedicated exception retired by D237; POC engagement is the idle exception (D236) | Generics are ONE fleet-wide pool (table per seat); assign client+POD only to fill that POD to 40 staffable; return when surplus / paused / replaced; never pre-split or hold idle; no separate generic rotation; 24h TERRL substitute + active POC engagement are the exceptions; `generic_idle` / `generic_multi_client` / `generic_outside_table` flip `/health` |
 | D222 | Live — Slack findings + detection-only superseded by D226 | Monday 8:16am CT InboxKit lapsed-license sweep compares InboxKit status to connected Smartlead accounts. D226 hands findings internally and deletes lapsed seats; Slack is only the post-cleanup one-liner when X > 0 |
-| D223 | Live | Mechanical POD A/B fortnight rotation skips PowerGRYD 592842 and Goliath 548611. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side |
+| D223 | Live — PowerGRYD skip retired by D237; POC engagement skip added by D236 | Mechanical POD A/B fortnight rotation skips Goliath 548611 and active POC-engagement clients. Dual POD-A+POD-B tags are flagged on weekdays; the wizard does not pick a side |
 | D224 | Live | Every hold is evidence-per-seat from a fixed reason list; no pattern / substring / client holds; no 5/10/25% numeric caps; store reason+evidence; expire when the reason clears or at 30 days; rejected seats in one #deliverability note |
-| D225 | Live — surplus is per THAT POD; a needed off-week assignment with no campaign links is not surplus (D228); return order and untagged-pool strip governed by D230 | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip PowerGRYD 592842 and active 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
+| D225 | Live — surplus is per THAT POD; a needed off-week assignment with no campaign links is not surplus (D228); return order and untagged-pool strip governed by D230; PowerGRYD skip retired by D237 | Weekday surplus generic return on min40-topup and generic-cleanup: unlink, clear `client_id`, reset signature; never drop a POD below 40 staffable; skip active POC-engagement seats and 24h TERRL substitutes so `generic_idle` does not page on legitimate state |
 | D226 | Live | Monday InboxKit sweep must not post findings to #deliverability. Handoff per client (lapsed/cancelled/inactive-but-connected + upcoming cancellations with dates) via state / /health. After cleanup, Slack only `Found X inboxes that had lapsed; they're deleted from Smartlead and InboxKit.` when X > 0 |
 | D227 | Live | `WARMUP-GATE-EXEMPT` counts as 21+ days warm for isStaffableSender, generic-pool named count, min40-topup, and surplus return. tidalstackco.com Azure/Entra seats Josh tagged that way are warm now (do not wait 21 days from the 9/29 Smartlead import). Azure cap stays 2 campaign + 5 warmup |
 | D228 | Live — one-client / one-POD attach and named-warm return lock is D230 | Generics top up EACH POD (A and B) to 40 staffable per client (inventory 40/40, not only the on-week POD). Campaigns link only the on-week POD. Off-week POD keeps assigned generics (`client_id`, POD tag, signature) with no campaign links. Surplus is generics beyond 40 staffable in THAT POD. Off-week named leftovers unlink from on-week campaigns without peeling on-week below 40 |
@@ -241,6 +241,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D233 | Live | Azure may only fill or replace Azure or Microsoft (M365/Outlook) slots, never Google slots, so the POD ESP mix holds. When a Google seat leaves, only a Google seat replaces it. Enforced in min40, the 24h TERRL sub, named-warm swap, and pool assignment. |
 | D234 | Live — generic strip-on-return allowed by D235 | Already-tagged POD-A/POD-B seats are immutable (never A↔B). Only an untagged seat may receive a first POD tag. Weekend writers (pod-tags, client-rest) idle Sat/Sun except Josh-live `/run`. |
 | D235 | Live | A generic carries a client and POD tag only while staffed. Every return (surplus, named-warm swap, cleanup, 24h TERRL sub) clears POD-A/POD-B with client_id and signature and records released_at. D234 still allows that strip and a first-tag on assign. Named seats stay immutable. |
+| D236 | Live | POC engagement: reuse `pocClientNamePatterns` (default `goliath,deep roots`). Name-list matches except Goliath 548611 get 60 seats, no PODs, survive DRAFTED/ACTIVE, exempt from rotation, min40 fills to 60 with no Allow ask, `POC` tag reserves the seat, signature is `<from_name>\n{full brand}`. Release only when marked done (`/run?mode=end-poc`). Deep Roots 597783 is the first; never staff Gabe post-call 4074266. |
+| D237 | Live | PowerGRYD 592842 is a full named client. Leave-alone / dedicated-generic / rotation-skip / idle-exempt / min40 auto-allow special-cases are deleted. Not the D236 POC mode. Campaigns may PAUSE when done. |
+| D238 | Live | Canary fleet is hard-locked: identify by copyCanary fleet membership + Canary signature backstop; exclude from every attach/staff/top-up/generic-pool/POC path; never set client_id/POD/GENERIC; Canon pages `canary_on_live` / `canary_warmup_on` |
+| D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
 
 ---
 
@@ -7803,6 +7807,173 @@ or one-client / one-POD while staffed.
 
 **Guards.** `returnGenericToUntaggedPool`;
 `mayStripPodTagOnGenericReturn`; CANON dated D235.
+
+---
+
+## D236 — POC engagement on the existing name list
+
+**Date.** 2026-10-05 (Josh, after staffing Deep Roots).
+
+**Decision.** Some new clients are ~2-week POCs. There is
+already one "who is a POC" list — `pocClientNamePatterns`
+(D81). Reuse it. Default is `goliath,deep roots`. A
+name-list match **except Goliath 548611** (which keeps
+D81 / D223 / the Oct 15 hold) is a **POC engagement**:
+60 weighted seats from the shared generic pool, no PODs,
+no A/B, no 40/40 math, a good Google/Microsoft split,
+Azure 0.1 / Microsoft-only / prefer non-Azure. Generics
+are tagged to that client and marked `POC` (Smartlead
+tag id 531428). That tag still classifies the seat as a
+pool generic, but it **reserves** the seat to its POC
+client — free-pool pickers will not take it for anyone
+else. While the POC is active, exclusivity holds. Seats
+survive DRAFTED or ACTIVE (Deep Roots 4084613 / 4084614
+first-run Tuesday ~8am CT) and only release when the
+POC is marked done. client-rest / pod-tags do not
+POD-split them. min40 auto-fills to 60 with no
+Allow-generics Slack ask, as warm pool seats become
+available. Signature is `<from_name>\n{full client
+brand}` — Deep Roots Capital passes the brand check.
+Gabe's post-call shell **4074266** is never staffed.
+Mark done with `/run?mode=end-poc&clientId=` (state
+overlay `endedPocClientIds`) or by removing the name
+from the pattern list. Deep Roots Capital (Smartlead
+597783) is the first engagement.
+
+**Why.** Staffing Deep Roots showed the existing Goliath
+name-list, the GENERIC-like `POC` tag, generic-cleanup
+idle-returning DRAFTED seats, client-rest POD-splitting
+untagged seats, and min40's non-auto-allow Slack ask
+would all fight a 60-seat no-POD POC. A second client-id
+list would fork the "who is a POC" answer.
+
+**Rejected.** A second `POC_ENGAGEMENT_CLIENT_IDS`
+mechanism. Treating the `POC` tag as GENERIC (free
+pool). Returning POC seats while campaigns are DRAFTED.
+POD-splitting a POC. Allow-generics cards for a POC
+shortfall. Staffing 4074266. Making Goliath a 60-seat
+engagement. Making PowerGRYD the new POC mode.
+
+**Supersedes / amends.** Amends D81: the name list now
+also selects 60-seat engagements (except Goliath).
+Amends D160: `POC` still classifies as generic, and
+also reserves to `client_id`. Amends D205/D221/D223/
+D225: cleanup / surplus / rotation / min40 skip or
+fill engagement POCs as above. Does not change Goliath
+hold, D223 Goliath skip, or D81 QA-unpause.
+
+**Guards.** `isPocEngagementClient`; `hasPocReservationTag`;
+`pocSignature`; CANON dated D237; min40 Deep Roots 60 /
+no Allow / no Gabe; cleanup keeps DRAFTED POC seats.
+
+---
+
+## D237 — PowerGRYD is a full client
+
+**Date.** 2026-10-05 (Josh).
+
+**Decision.** PowerGRYD (Smartlead client 592842) is a
+full named client. Delete the leave-alone / dedicated-
+generic / rotation-skip / idle-exempt / min40 auto-allow
+special-cases. Normal CANON applies: 40/40 PODs, weekday
+rotation, surplus return, cleanup, Allow-generics unless
+Josh adds 592842 to the auto-allow list. Campaigns may
+be paused when done. Do **not** turn PowerGRYD into the
+D236 POC engagement.
+
+**Why.** Josh: PowerGRYD is no longer a carve-out. The
+old dedicated-seat watch and "never return / never
+rotate / always auto-allow" path blocked ordinary
+staffing and pause-when-done.
+
+**Rejected.** Making PowerGRYD a 60-seat no-POD POC.
+Keeping dedicated idle-exempt so `generic_idle` stays
+quiet above 40. Leaving rotation skip in place.
+
+**Supersedes / amends.** Supersedes the D198/D205/D207/
+D221/D223/D225 PowerGRYD dedicated / leave-alone /
+rotation-skip reads. `powergryd-watch` stays alert-only
+and never START/PAUSE (restaff is min40). Does not
+change D236.
+
+**Guards.** `isPodRotationSkippedClient(592842)` is false;
+PowerGRYD seats are not `genericPoolIdleExempt`; CANON
+names PowerGRYD as a full client.
+
+---
+
+## D238 — Canary fleet is hard-locked
+
+**Date.** 2026-10-05 6:48pm CT (Josh).
+
+**Decision.** The 6-seat canary fleet (D54/D55/D83) is
+hard-locked. Nothing may attach, staff, top-up, POD-tag,
+GENERIC-tag, or assign `client_id` on it. Identify a
+canary by registered `copyCanary` fleet membership
+first, and by the two-line `Canary` signature as a
+backstop when fleet state is missing. Exclude them from
+min40, fan-out, top-up, generic-pool, POC, pod-tags, and
+domain-client audit. A Canon check pages Slack when a
+canary is linked to any non-canary-shell campaign
+(`canary_on_live`) or has warmup on (`canary_warmup_on`).
+Those kinds flip `/health`.
+
+**Why.** 2026-10-05: `leilasanchez@getcrosslaunchco.info`
+(Smartlead 22637921, Canary signature, warmup off) was
+found tagged GENERIC+POD-A, `client_id` 521881, and
+linked to all six ACTIVE TechEvo campaigns (3847798,
+3847795, 3847794, 3847792, 3847791, 3730560). Josh
+unlinked it by hand. The attach path was **min40-topup**
+treating a PREWARMED/EXTRA_GENERIC-domain (or GENERIC-
+tagged) seat as pool supply when `isCopyCanary` was
+false, then **client-fan-out** spreading the same-client
+generic across every ACTIVE TechEvo campaign. copyCanary
+detach only walked `fleet.emails` and no-op'd when the
+fleet record was stale.
+
+**Rejected.** Relying only on `state.isCopyCanary(email)`.
+Leaving canaries in the generic table because they sit
+on a pool domain. Treating Canary-signature seats as
+named inventory.
+
+**Supersedes / amends.** Amends D54/D55/D83/D86: the
+lock is identification + every writer, not only the
+canary attach service. Amends D142/D160/D221: pool-
+domain / GENERIC-tag classification must not capture a
+locked canary.
+
+**Guards.** `isLockedCanarySeat`; `validateCanaryLock`;
+CANON dated D239; min40/fan-out refuse
+`leilasanchez@getcrosslaunchco.info`.
+
+---
+
+## D239 — generic-idle named count matches Canon staffable
+
+**Date.** 2026-10-05 6:48pm CT (Josh).
+
+**Decision.** The named staffable count that drives
+`generic_idle` must match CANON staffable: apply the
+21-day warmup gate (`WARMUP-GATE-EXEMPT` still counts as
+21+), exclude `GABE-VM-RESERVED`, exclude the canary
+fleet. Today the count treated under-warmed named seats
+and Gabe-reserved seats as inventory and produced 23
+false `generic_idle` findings.
+
+**Why.** Josh: Canon generic-idle counted named seats
+without the 21-day gate and counted GABE-VM-RESERVED as
+named.
+
+**Rejected.** Counting every connected named seat
+regardless of warmup clock. Treating Gabe-reserved
+inboxes as POD inventory.
+
+**Supersedes / amends.** Amends D221/D227 named count
+used by generic-pool validate / surplus / min40 fill.
+
+**Guards.** `syncGenericSeatsFromInventory` skips canary,
+GABE-VM-RESERVED, and `owesWarmup`; CANON names the
+21-day + reserved + canary exclusions.
 
 ---
 

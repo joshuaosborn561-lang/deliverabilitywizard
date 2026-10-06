@@ -25,12 +25,33 @@ export function isPoolMarkerTag(name: string | null | undefined): boolean {
   return n === GENERIC_TAG || n === POC_TAG;
 }
 
+export function isPocReservationTag(name: string | null | undefined): boolean {
+  return String(name ?? "").trim().toUpperCase() === POC_TAG;
+}
+
+export function mailboxTagNames(account: {
+  tags?: Array<{ tag_name?: unknown; name?: unknown }>;
+}): string[] {
+  return (account.tags ?? []).map((tag) =>
+    String(tag.tag_name ?? tag.name ?? "").trim(),
+  );
+}
+
 export function hasPoolMarkerTag(account: {
   tags?: Array<{ tag_name?: unknown; name?: unknown }>;
 }): boolean {
-  return (account.tags ?? [])
-    .map((tag) => String(tag.tag_name ?? tag.name ?? "").trim())
-    .some((name) => isPoolMarkerTag(name));
+  return mailboxTagNames(account).some((name) => isPoolMarkerTag(name));
+}
+
+/**
+ * D236 — the Smartlead `POC` tag (id 531428) reserves the seat to its
+ * `client_id`. Still a pool generic (GENERIC|POC classify the same),
+ * but free-pool pickers must not take it for another client.
+ */
+export function hasPocReservationTag(account: {
+  tags?: Array<{ tag_name?: unknown; name?: unknown }>;
+}): boolean {
+  return mailboxTagNames(account).some((name) => isPocReservationTag(name));
 }
 
 export function isMarkerClientName(name: string | null | undefined): boolean {

@@ -12,6 +12,7 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
@@ -170,7 +171,7 @@ export class OneClientMembershipService {
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
-      if (this.state.isCopyCanary(email)) continue;
+      if (isLockedCanarySeat(account, email, this.state)) continue;
       if (isIsolationEmail(email, isolation)) continue;
       if (
         senderIsAttachBlocked(

@@ -11,6 +11,7 @@ import {
   CampaignScanner,
   dropSendersFromBatches,
   interleaveSendersByEsp,
+  isNoLeadsOnSequenceError,
   OPEN_ENDED_TEST_DAYS,
   parseSendersNotUsedInCampaign,
   schedulerCronValue,
@@ -35,6 +36,24 @@ describe("parseSendersNotUsedInCampaign", () => {
       parseSendersNotUsedInCampaign("No seed accounts found for the provided provider IDs"),
       null,
     );
+  });
+});
+
+describe("isNoLeadsOnSequenceError", () => {
+  it("matches the SmartDelivery empty-sequence refusal", () => {
+    assert.equal(
+      isNoLeadsOnSequenceError(
+        "No leads available for the selected or lower sequence",
+      ),
+      true,
+    );
+    assert.equal(
+      isNoLeadsOnSequenceError(
+        "Failed creating tests for campaign 4085159: No leads available for the selected or lower sequence",
+      ),
+      true,
+    );
+    assert.equal(isNoLeadsOnSequenceError("No seed accounts found"), false);
   });
 });
 
@@ -623,5 +642,107 @@ describe("CampaignScanner — status re-check before creation", () => {
     assert.equal(result.quotaBlocked, true);
     assert.equal(created.length, 0);
     assert.equal(quotaNotices, 1);
+  });
+
+  it("skips CALLER FOLLOW-UP / Gabe Calls campaigns (D242 empty-lead class)", async () => {
+    const config = loadConfig({});
+    const created: unknown[] = [];
+
+    const smartlead = {
+      listCampaigns: async () => [
+        {
+          id: 4085159,
+          name: "Gabe Calls | EMCOR",
+          status: "ACTIVE",
+        } as SmartleadCampaign,
+        campaign(42, "ACTIVE"),
+      ],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: unknown) => {
+        created.push(input);
+        return { id: `test-${created.length}` };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(created.length, 1);
+    assert.equal(
+      (created[0] as { campaign_id: number }).campaign_id,
+      42,
+      "only the non–Gabe Calls campaign should get a placement test",
+    );
+    assert.equal(result.errors.length, 0);
+  });
+
+  it("soft-skips when SmartDelivery says no leads on the sequence", async () => {
+    const config = loadConfig({});
+    let createCalls = 0;
+
+    const smartlead = {
+      listCampaigns: async () => [
+        campaign(100, "ACTIVE"),
+        campaign(101, "ACTIVE"),
+      ],
+      getCampaignEmailAccounts: async () => [
+        { id: 10, from_email: "sender@example.com" },
+      ],
+      getCampaignSequences: async () => [
+        { id: 500, seq_number: 1, subject: "Hi" },
+      ],
+    } as unknown as SmartleadClient;
+
+    const smartDelivery = {
+      assertAccessActive: async () => "ok",
+      listTests: async () => [],
+      enrichCampaignIds: async <T,>(tests: T[]) => tests,
+      resolveProviderIds: async () => [],
+      createAutomatedPlacement: async (input: { campaign_id?: number }) => {
+        createCalls += 1;
+        if (input.campaign_id === 100) {
+          throw new Error(
+            "No leads available for the selected or lower sequence",
+          );
+        }
+        return { id: "ok-101" };
+      },
+      createManualPlacement: async () => ({ id: "manual-id" }),
+    } as unknown as SmartDeliveryClient;
+
+    const result = await new CampaignScanner(
+      config,
+      smartlead,
+      smartDelivery,
+      fakeSlack(),
+      fakeState(),
+    ).run({ trigger: "manual" });
+
+    assert.equal(createCalls, 2, "must continue to the next campaign after a no-leads skip");
+    assert.equal(result.created, 1);
+    assert.ok(result.skipped >= 1);
+    assert.equal(
+      result.errors.length,
+      0,
+      "empty-sequence refusals must not land in result.errors (remediator noise)",
+    );
   });
 });

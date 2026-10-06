@@ -7,6 +7,7 @@
  * an Allow-generics card, release only when marked done.
  */
 
+import { isCallerFollowUpCampaign } from "./callerFollowUp.js";
 import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 
 export const DEFAULT_POC_CLIENT_NAME_PATTERNS = ["goliath", "deep roots"] as const;
@@ -75,11 +76,16 @@ export function isGabePostCallCampaign(
   return campaignId === GABE_POST_CALL_CAMPAIGN_ID;
 }
 
-/** Name contains Gabe, or a known Gabe follow-up campaign id (D241). */
+/**
+ * CALLER FOLLOW-UP class (D242) plus leftover Post-call | Gabe
+ * shells (D236/D241). Name-contains-Gabe keeps min40 off those
+ * shells; the class itself is ids + `Gabe Calls |` prefix.
+ */
 export function isGabeFollowUpCampaign(campaign: {
   id?: number | null;
   name?: string | null;
 }): boolean {
+  if (isCallerFollowUpCampaign(campaign)) return true;
   const id = Number(campaign.id);
   if (
     Number.isFinite(id) &&

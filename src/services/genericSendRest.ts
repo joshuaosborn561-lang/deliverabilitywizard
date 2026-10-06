@@ -7,6 +7,11 @@ import {
   clientDisplayName,
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
+import { isGabeVmReserved } from "../lib/canaryLock.js";
+import {
+  callerFollowUpPolicyFromConfig,
+  callerFollowUpSkipsRestCycle,
+} from "../lib/callerFollowUp.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { pocClientId } from "../lib/pocClient.js";
@@ -109,6 +114,16 @@ export class GenericSendRestService {
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
       if (this.state.isCopyCanary(email)) {
         result.skipped.push(`${email}: copy canary`);
+        continue;
+      }
+      if (
+        isGabeVmReserved(account) ||
+        callerFollowUpSkipsRestCycle(
+          account,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        result.skipped.push(`${email}: CALLER FOLLOW-UP (D242)`);
         continue;
       }
       // D198 — dedicated named-client seats rest with that client's A/B

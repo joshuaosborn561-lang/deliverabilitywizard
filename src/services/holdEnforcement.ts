@@ -5,6 +5,11 @@ import type { SmartleadCampaign } from "../types/index.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
+  callerFollowUpForbidsStatusWrite,
+  callerFollowUpHumanActionAlert,
+  callerFollowUpPolicyFromConfig,
+} from "../lib/callerFollowUp.js";
+import {
   campaignHoldReason,
   holdPolicyFromConfig,
 } from "../lib/holdPolicy.js";
@@ -66,6 +71,26 @@ export class HoldEnforcementService {
       result.examined += 1;
       const status = String(campaign.status ?? "").toUpperCase();
       const name = String(campaign.name ?? campaign.id);
+      if (
+        callerFollowUpForbidsStatusWrite(
+          campaign,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        if (status === "ACTIVE" || status === "START") {
+          await this.slack.send(
+            callerFollowUpHumanActionAlert({
+              action: "pause",
+              campaignId: campaign.id,
+              campaignName: name,
+              reason: `hold would PAUSE (${reason})`,
+            }),
+            undefined,
+            "ops_alert",
+          );
+        }
+        continue;
+      }
       if (status !== "ACTIVE" && status !== "START") {
         result.alreadyPaused += 1;
         continue;

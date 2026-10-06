@@ -28,6 +28,12 @@ import {
   isGabeVmReserved,
   isLockedCanarySeat,
 } from "../lib/canaryLock.js";
+import {
+  callerFollowUpMayAttach,
+  callerFollowUpPolicyFromConfig,
+  isCallerFollowUpCampaign,
+  isCallerFollowUpSupplyBlocked,
+} from "../lib/callerFollowUp.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
@@ -203,6 +209,14 @@ export class Min40TopUpService {
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (isAnyShellCampaign(campaign)) continue;
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
+      if (
+        isCallerFollowUpCampaign(
+          campaign,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        continue;
+      }
       if (typeof campaign.client_id !== "number") continue;
       const poc = pocIds.includes(campaign.client_id);
       if (poc) {
@@ -222,6 +236,14 @@ export class Min40TopUpService {
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (isAnyShellCampaign(campaign)) continue;
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
+      if (
+        isCallerFollowUpCampaign(
+          campaign,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        continue;
+      }
       if (campaignHoldReason(campaign, policy, todayYmd)) continue;
       const clientId = typeof campaign.client_id === "number" ? campaign.client_id : null;
       if (clientId == null) continue;
@@ -446,6 +468,9 @@ export class Min40TopUpService {
       return false;
     }
     if (isGabeVmReserved(account)) return false;
+    if (isCallerFollowUpSupplyBlocked(account, email, callerFollowUpPolicyFromConfig(this.config))) {
+      return false;
+    }
     if (activeHoldUntilDate(tagNames(account))) return false;
     if (hasHoldOrRetireTag(account)) return false;
     if (isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))) {
@@ -610,6 +635,26 @@ export class Min40TopUpService {
     if (typeof input.account.id !== "number") return false;
     if (isLockedCanarySeat(input.account, input.email, this.state)) return false;
     if (isGabeVmReserved(input.account)) return false;
+    if (
+      isCallerFollowUpSupplyBlocked(
+        input.account,
+        input.email,
+        callerFollowUpPolicyFromConfig(this.config),
+      )
+    ) {
+      return false;
+    }
+    if (
+      !callerFollowUpMayAttach({
+        email: input.email,
+        account: input.account,
+        campaign: input.campaign,
+        warmed: true,
+        policy: callerFollowUpPolicyFromConfig(this.config),
+      }).ok
+    ) {
+      return false;
+    }
     try {
       if (!input.dryRun) {
         await this.smartlead.addEmailAccountsToCampaign(input.campaign.id, [

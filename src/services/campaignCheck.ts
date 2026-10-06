@@ -47,6 +47,16 @@ import {
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
+import {
+  callerFollowUpAlertKey,
+  callerFollowUpBridgeRemovalAlert,
+  callerFollowUpBridgeShouldBeRemoved,
+  callerFollowUpHumanActionAlert,
+  callerFollowUpPolicyFromConfig,
+  callerFollowUpSkipsCanonMinGap,
+  isCallerFollowUpCampaign,
+  isCallerFollowUpSender,
+} from "../lib/callerFollowUp.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
 import {
@@ -273,6 +283,18 @@ export class CampaignCheckService {
       );
     }
 
+    if (callerFollowUpBridgeShouldBeRemoved() && this.slack) {
+      const key = callerFollowUpAlertKey({ action: "bridge-remove" });
+      if (!this.state.hasAlert(key)) {
+        await this.slack.send(
+          callerFollowUpBridgeRemovalAlert(),
+          undefined,
+          "ops_alert",
+        );
+        this.state.markAlert(key);
+      }
+    }
+
     const now = new Date().toISOString();
     const sigFixed: Array<{ name: string; brand: string }> = [];
     const insightFixed: string[] = [];
@@ -386,7 +408,11 @@ export class CampaignCheckService {
         ["ACTIVE", "START"].includes(
           String(campaign.status ?? "").toUpperCase(),
         ) &&
-        !isAnyShellCampaign(campaign)
+        !isAnyShellCampaign(campaign) &&
+        !callerFollowUpSkipsCanonMinGap(
+          campaign,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
       ) {
         const rawGap = (
           campaign as { min_time_btwn_emails?: number | string | null }
@@ -717,6 +743,14 @@ export class CampaignCheckService {
       (sequencesHaveSignaturePlaceholder(sequences) ||
         sequencesNeedInsightClose(sequences) ||
         input.findings.some((finding) => finding.kind === "missing_insight_close"));
+    if (
+      isCallerFollowUpCampaign(
+        { id: input.campaignId, name: input.name },
+        callerFollowUpPolicyFromConfig(this.config),
+      )
+    ) {
+      return null;
+    }
     if (!needTag && !needMailbox && !needInsight) {
       return null;
     }
@@ -1034,6 +1068,33 @@ export class CampaignCheckService {
     const attached = input.accounts.filter((account) =>
       campaignIdsOf(account).includes(campaign.id),
     );
+    const classPolicy = callerFollowUpPolicyFromConfig(this.config);
+    if (isCallerFollowUpCampaign(campaign, classPolicy)) {
+      for (const account of attached) {
+        if (isCallerFollowUpSender(account, classPolicy)) continue;
+        const email = accountEmail(account);
+        if (!email) continue;
+        const key = callerFollowUpAlertKey({
+          action: "stray-attach",
+          email,
+          campaignId: campaign.id,
+        });
+        if (this.state.hasAlert(key)) continue;
+        if (!this.slack) continue;
+        await this.slack.send(
+          callerFollowUpHumanActionAlert({
+            action: "unlink",
+            email,
+            campaignId: campaign.id,
+            campaignName: String(campaign.name ?? campaign.id),
+            reason: "non-class mailbox on a CALLER FOLLOW-UP campaign — will not peel",
+          }),
+          undefined,
+          "ops_alert",
+        );
+        this.state.markAlert(key);
+      }
+    }
     const serving: string[] = [];
     const staffVerdicts: Array<{ reasons: CanonStaffableReason[] }> = [];
     let linkedCount = 0;
@@ -1256,7 +1317,15 @@ export class CampaignCheckService {
     });
     findings.push(...mergeTag.findings);
 
-    if (status === "ACTIVE" && !excluded && !isGabeFollowUpCampaign(campaign)) {
+    if (
+      status === "ACTIVE" &&
+      !excluded &&
+      !isGabeFollowUpCampaign(campaign) &&
+      !isCallerFollowUpCampaign(
+        campaign,
+        callerFollowUpPolicyFromConfig(this.config),
+      )
+    ) {
       const pocEngagement = isPocEngagementClient({
         clientId: campaign.client_id,
         hay: clientName,

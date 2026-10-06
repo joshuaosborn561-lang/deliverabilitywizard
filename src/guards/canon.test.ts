@@ -14121,3 +14121,143 @@ describe("owner intent — D241 GABE-VM-RESERVED write exemption", () => {
     );
   });
 });
+
+describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
+  it("D242: class is config-driven and every rule is coded", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      CALLER_FOLLOWUP_CAMPAIGN_IDS_DEFAULT,
+      CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS,
+      CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT,
+      CALLER_FOLLOWUP_SENDER_TAG_DEFAULT,
+      CALLER_FOLLOWUP_TIMEZONE,
+      callerFollowUpDesiredSignature,
+      callerFollowUpForbidsStatusWrite,
+      callerFollowUpMayAttach,
+      callerFollowUpMustKeepEmptySignature,
+      callerFollowUpMustKeepFromName,
+      callerFollowUpMustKeepMessagePerDay,
+      callerFollowUpMustPageBeforeAct,
+      callerFollowUpSkipsCanonMinGap,
+      callerFollowUpSkipsEspMix,
+      callerFollowUpSkipsRestCycle,
+      callerFollowUpSkipsRunwayAndTopUpAlerts,
+      callerFollowUpSkipsStaffingFloor,
+      isCallerFollowUpCampaign,
+      isCallerFollowUpSender,
+    } = await import("../lib/callerFollowUp.js");
+
+    assert.deepEqual(
+      [...CALLER_FOLLOWUP_CAMPAIGN_IDS_DEFAULT],
+      [4085158, 4085159, 4085160],
+    );
+    assert.equal(CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT, "Gabe Calls |");
+    assert.equal(CALLER_FOLLOWUP_SENDER_TAG_DEFAULT, "GABE-VM-RESERVED");
+    assert.equal(CALLER_FOLLOWUP_TIMEZONE, "America/Chicago");
+    assert.equal(CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS, 3);
+    assert.equal(
+      isCallerFollowUpCampaign({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
+      true,
+    );
+    assert.equal(
+      isCallerFollowUpSender({ tags: [{ tag_name: "GABE-VM-RESERVED" }] }),
+      true,
+    );
+    assert.equal(callerFollowUpDesiredSignature(), "");
+    assert.equal(
+      callerFollowUpMustKeepEmptySignature({ tags: [{ tag_name: "GABE-VM-RESERVED" }] }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpMustKeepFromName({ tags: [{ tag_name: "GABE-VM-RESERVED" }] }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: { from_email: "harmony@salesglider.com" },
+        campaign: { id: 4085160, name: "Gabe Calls | Deep Roots" },
+      }).ok,
+      false,
+      stop("Only class boxes sit on Gabe Calls (D242).", "callerFollowUpMayAttach allowed a regular seat."),
+    );
+    assert.equal(
+      callerFollowUpSkipsRestCycle({ tags: [{ tag_name: "GABE-VM-RESERVED" }] }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpSkipsStaffingFloor({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpSkipsEspMix({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpSkipsCanonMinGap({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpSkipsRunwayAndTopUpAlerts({ id: 4085160, name: "Gabe Calls | Deep Roots" }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpMustPageBeforeAct({
+        action: "unlink",
+        account: { tags: [{ tag_name: "GABE-VM-RESERVED" }] },
+      }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpForbidsStatusWrite({ id: 4085158, name: "Gabe Calls | SalesGlider" }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpMustKeepMessagePerDay({ tags: [{ tag_name: "GABE-VM-RESERVED" }] }),
+      true,
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const check = await readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8");
+    const fanout = await readFile(new URL("../services/clientFanOut.ts", import.meta.url), "utf8");
+    const min40 = await readFile(new URL("../services/min40TopUp.ts", import.meta.url), "utf8");
+    const runout = await readFile(new URL("../services/leadRunout.ts", import.meta.url), "utf8");
+    const hold = await readFile(new URL("../services/holdEnforcement.ts", import.meta.url), "utf8");
+    const unpause = await readFile(new URL("../services/unpauseAfterSigQa.ts", import.meta.url), "utf8");
+    const health = await readFile(new URL("../services/campaignHealth.ts", import.meta.url), "utf8");
+    const isolation = await readFile(new URL("../services/isolationExecute.ts", import.meta.url), "utf8");
+    const config = await readFile(new URL("../config.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D243\*\*/,
+      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+    );
+    assert.match(
+      canon,
+      /CALLER FOLLOW-UP/,
+      stop("CANON names the campaign class (D242).", "CANON.md lost CALLER FOLLOW-UP."),
+    );
+    assert.match(
+      decisions,
+      /## D242 — /,
+      stop("The ledger records D242.", "DECISIONS.md has no D242 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D242 \|/m,
+      stop("The status index lists D242 (D127).", "DECISIONS.md status index has no D242 row."),
+    );
+    assert.match(config, /CALLER_FOLLOWUP_CAMPAIGN_IDS/);
+    assert.match(config, /CALLER_FOLLOWUP_NAME_PREFIX/);
+    assert.match(config, /CALLER_FOLLOWUP_SENDER_TAG/);
+    assert.match(check, /callerFollowUpSkipsCanonMinGap/);
+    assert.match(fanout, /callerFollowUpMayAttach/);
+    assert.match(min40, /isCallerFollowUpCampaign/);
+    assert.match(runout, /callerFollowUpSkipsRunwayAndTopUpAlerts/);
+    assert.match(hold, /callerFollowUpForbidsStatusWrite/);
+    assert.match(unpause, /callerFollowUpForbidsStatusWrite/);
+    assert.match(health, /callerFollowUpForbidsStatusWrite/);
+    assert.match(isolation, /callerFollowUpMustPageBeforeAct/);
+  });
+});

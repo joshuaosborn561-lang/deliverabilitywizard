@@ -17,6 +17,10 @@ import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
+import {
+  callerFollowUpPolicyFromConfig,
+  isCallerFollowUpCampaign,
+} from "../lib/callerFollowUp.js";
 import { isGabeFollowUpCampaign, pocClientId } from "../lib/pocClient.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
@@ -194,7 +198,13 @@ export class OneClientMembershipService {
           clientId:
             typeof campaign?.client_id === "number" ? campaign.client_id : null,
           shell: campaign ? isAnyShellCampaign(campaign) : false,
-          protected: campaign ? isGabeFollowUpCampaign(campaign) : false,
+          protected: campaign
+            ? isGabeFollowUpCampaign(campaign) ||
+              isCallerFollowUpCampaign(
+                campaign,
+                callerFollowUpPolicyFromConfig(this.config),
+              )
+            : false,
         };
       });
       if (!memberships.length) continue;

@@ -16,6 +16,10 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
+import {
+  callerFollowUpForbidsStatusWrite,
+  callerFollowUpPolicyFromConfig,
+} from "../lib/callerFollowUp.js";
 import { isPocClient } from "../lib/pocClient.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
@@ -123,6 +127,17 @@ export class UnpauseAfterSigQaService {
       const name = String(campaign.name ?? campaign.id);
       if (isAnyShellCampaign(campaign)) {
         result.blocked.push(`#${campaign.id} ${name}: shell stays paused`);
+        continue;
+      }
+      if (
+        callerFollowUpForbidsStatusWrite(
+          campaign,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        result.blocked.push(
+          `#${campaign.id} ${name}: CALLER FOLLOW-UP never START/PAUSE (D242)`,
+        );
         continue;
       }
       const holdReason = campaignHoldReason(campaign, holdPolicy, todayYmd);

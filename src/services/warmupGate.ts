@@ -10,6 +10,11 @@ import type { InventorySnapshot } from "./inventory.js";
 import { sleep } from "../lib/http.js";
 import { MATCH_THRESHOLD, scoreNameMatch } from "../lib/nameMatch.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
+import {
+  callerFollowUpForbidsStatusWrite,
+  callerFollowUpHumanActionAlert,
+  callerFollowUpPolicyFromConfig,
+} from "../lib/callerFollowUp.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 
@@ -231,6 +236,24 @@ export class WarmupGateService {
         try {
           if (remainingIds.size <= 1 && remainingIds.has(removal.accountId)) {
             // Smartlead rejects removing the last account from an ACTIVE campaign.
+            if (
+              callerFollowUpForbidsStatusWrite(
+                campaign,
+                callerFollowUpPolicyFromConfig(this.config),
+              )
+            ) {
+              await this.slack.send(
+                callerFollowUpHumanActionAlert({
+                  action: "pause",
+                  campaignId: campaign.id,
+                  campaignName: String(campaign.name ?? campaign.id),
+                  reason: "warmup gate would PAUSE the last account",
+                }),
+                undefined,
+                "ops_alert",
+              );
+              continue;
+            }
             try {
               await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
               if (!result.pausedCampaigns.includes(campaign.id)) {
@@ -297,6 +320,24 @@ export class WarmupGateService {
           const message = error instanceof Error ? error.message : String(error);
           // Retry once after pause if Smartlead complains about last account
           if (/at least one|all accounts|last/i.test(message)) {
+            if (
+              callerFollowUpForbidsStatusWrite(
+                campaign,
+                callerFollowUpPolicyFromConfig(this.config),
+              )
+            ) {
+              await this.slack.send(
+                callerFollowUpHumanActionAlert({
+                  action: "pause",
+                  campaignId: campaign.id,
+                  campaignName: String(campaign.name ?? campaign.id),
+                  reason: "warmup gate last-account retry would PAUSE",
+                }),
+                undefined,
+                "ops_alert",
+              );
+              continue;
+            }
             try {
               await this.smartlead.updateCampaignStatus(campaign.id, "PAUSED");
               if (!result.pausedCampaigns.includes(campaign.id)) {

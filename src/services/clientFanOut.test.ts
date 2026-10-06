@@ -623,4 +623,66 @@ describe("D139 — staffing never hands the gate its next pull", () => {
     assert.deepEqual(adds, []);
     assert.ok(result.skipped.some((row) => row.includes("GABE-VM-RESERVED")));
   });
+
+  it("D242: never attaches a regular SalesGlider seat to Gabe Calls", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        {
+          id: 4085158,
+          name: "Gabe Calls | SalesGlider",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 10,
+          from_email: "harmony@gosalesglider.info",
+          created_at: "2026-01-01T00:00:00Z",
+          campaign_ids: [1],
+          client_id: 345263,
+          tags: [{ tag_name: "POD-A" }],
+        },
+        {
+          id: 11,
+          from_email: "gabe@gosalesglider.info",
+          created_at: "2026-10-01T00:00:00Z",
+          campaign_ids: [],
+          client_id: 345263,
+          tags: [],
+        },
+      ],
+      listClients: async () => [{ id: 345263, name: "SalesGlider" }],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        isCopyCanary: () => false,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+      } as unknown as StateStore,
+    );
+
+    await service.run({ dryRun: false, now: new Date("2026-10-06T15:00:00.000Z") });
+    assert.equal(
+      adds.some((row) => row[0] === 4085158 && row[1].includes(10)),
+      false,
+      "regular SG seat must not land on Gabe Calls",
+    );
+    assert.equal(
+      adds.some((row) => row[0] === 4085158 && row[1].includes(11)),
+      false,
+      "under-warmed owned gabe@ must not attach yet",
+    );
+  });
 });

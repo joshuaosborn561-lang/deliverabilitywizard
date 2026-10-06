@@ -1768,3 +1768,61 @@ describe("D186 — step 2 delay must be 2 days", () => {
     assert.match(row?.findings.find((f) => f.kind === "step2_delay")?.detail ?? "", /3d/);
   });
 });
+
+describe("D241 GABE-VM-RESERVED campaign-check", () => {
+  it("does not raise cross_client_membership or rewrite the reserved seat", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const sl = {
+      listCampaigns: async () => [
+        { id: 1, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        {
+          id: 4085160,
+          name: "Gabe Calls | Deep Roots",
+          status: "ACTIVE",
+          client_id: 597783,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 24255314,
+          from_email: "gabriel@salesglider.com",
+          from_name: "Gabe Lopez",
+          signature: "Gabe Lopez\nVoicemail",
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+          campaign_ids: [1, 4085160],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+        { id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" },
+      ],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        writes.push({ id, fields });
+      },
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
+    await service.run({ mode: "first" });
+    const hourly = await service.run({ mode: "hourly" });
+    for (const row of hourly.findings) {
+      assert.equal(
+        row.findings.some((finding) => finding.kind === "cross_client_membership"),
+        false,
+        `cross_client_membership on #${row.campaignId}`,
+      );
+      assert.equal(
+        row.findings.some((finding) => finding.kind === "mailbox_sig"),
+        false,
+        `mailbox_sig on #${row.campaignId}`,
+      );
+    }
+    assert.deepEqual(writes, []);
+  });
+});

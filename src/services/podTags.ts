@@ -14,7 +14,7 @@ import {
 } from "../lib/podRotation.js";
 import { existingPodTag } from "../lib/podTagLock.js";
 import { weekendWriterIdleReason } from "../lib/canonOpsHours.js";
-import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { pocEngagementClientIds } from "../lib/pocClient.js";
 
 export const POD_TAG_A = "POD-A";
@@ -103,6 +103,7 @@ export class PodTagService {
       if (lockEmail && isLockedCanarySeat(account, lockEmail, this.state)) {
         continue;
       }
+      if (isGabeVmReserved(account)) continue;
       if (hasDualPodTags(account.tags)) continue;
       if (
         typeof account.client_id === "number" &&

@@ -12,6 +12,7 @@
  * seats again.
  *
  * D239 — GABE-VM-RESERVED seats are not named staffable inventory.
+ * D241 — mutating stages never unlink, link, retag, or rewrite them.
  */
 
 function accountEmailOf(account: {
@@ -70,6 +71,23 @@ export function isGabeVmReserved(account: {
   return mailboxTagNames({ tags: account.tags ?? [] }).some(
     (name) => name.toUpperCase() === GABE_VM_RESERVED_TAG,
   );
+}
+
+/** Campaigns that already have a GABE-VM-RESERVED seat linked (D241). */
+export function gabeVmReservedCampaignIds(
+  accounts: Array<{
+    tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+    campaign_ids?: unknown;
+  }>,
+): number[] {
+  const ids = new Set<number>();
+  for (const account of accounts) {
+    if (!isGabeVmReserved(account)) continue;
+    for (const campaignId of campaignIdsOfAccount(account)) {
+      ids.add(campaignId);
+    }
+  }
+  return [...ids];
 }
 
 export function isLockedCanarySeat(

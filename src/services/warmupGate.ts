@@ -9,6 +9,7 @@ import {
 import type { InventorySnapshot } from "./inventory.js";
 import { sleep } from "../lib/http.js";
 import { MATCH_THRESHOLD, scoreNameMatch } from "../lib/nameMatch.js";
+import { isGabeVmReserved } from "../lib/canaryLock.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 
@@ -172,7 +173,11 @@ export class WarmupGateService {
         const started = warmupClockStartedAt(account, email, this.state);
         const daysWarmed = started != null ? daysSince(started) : null;
 
-        if (isWarmupGateExempt(tags) || this.state.isCopyCanary(email)) {
+        if (
+          isWarmupGateExempt(tags) ||
+          this.state.isCopyCanary(email) ||
+          isGabeVmReserved(account)
+        ) {
           continue;
         }
 

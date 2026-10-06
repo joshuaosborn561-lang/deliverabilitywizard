@@ -262,6 +262,63 @@ describe("ClientRestService", () => {
     assert.ok(removed.length >= 1);
   });
 
+  it("D241: does not bench or restore a GABE-VM-RESERVED seat", async () => {
+    const now = new Date("2026-01-01T17:00:00Z");
+    const removed: Array<[number, number[]]> = [];
+    const added: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/client-rest-gabe-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 24255314,
+          from_email: "gabriel@salesglider.com",
+          client_id: 345263,
+          campaign_ids: [1],
+          created_at: WARMED,
+          is_smtp_success: true,
+          is_imap_success: true,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+        },
+        ...heldMin40Pads([1], 345263),
+      ],
+      removeEmailAccountsFromCampaign: async (
+        campaignId: number,
+        ids: number[],
+      ) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        added.push([campaignId, [...ids]]);
+      },
+    } as unknown as SmartleadClient;
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "false" }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({ dryRun: false, now });
+    assert.equal(
+      result.benched.some((row) => row.email === "gabriel@salesglider.com"),
+      false,
+    );
+    assert.equal(
+      removed.some((row) => row[1].includes(24255314)),
+      false,
+    );
+    assert.equal(
+      added.some((row) => row[1].includes(24255314)),
+      false,
+    );
+    assert.ok(result.skipped.some((row) => row.includes("GABE-VM-RESERVED")));
+  });
+
   it("restores an on-week rester even with an old same-ESP miss (D59)", async () => {
     const now = new Date("2026-01-01T17:00:00Z"); // A on
     const onEmail = "a@client.info";

@@ -245,6 +245,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D237 | Live | PowerGRYD 592842 is a full named client. Leave-alone / dedicated-generic / rotation-skip / idle-exempt / min40 auto-allow special-cases are deleted. Not the D236 POC mode. Campaigns may PAUSE when done. |
 | D238 | Live | Canary fleet is hard-locked: identify by copyCanary fleet membership + Canary signature backstop; exclude from every attach/staff/top-up/generic-pool/POC path; never set client_id/POD/GENERIC; Canon pages `canary_on_live` / `canary_warmup_on` |
 | D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
+| D241 | Live | GABE-VM-RESERVED seats are exempt from every mutating stage (never unlink / link / retag / rewrite); min40 POC fill skips campaigns named Gabe and campaigns whose linked seats are GABE-VM-RESERVED, not just 4074266 |
 
 ---
 
@@ -7974,6 +7975,54 @@ used by generic-pool validate / surplus / min40 fill.
 **Guards.** `syncGenericSeatsFromInventory` skips canary,
 GABE-VM-RESERVED, and `owesWarmup`; CANON names the
 21-day + reserved + canary exclusions.
+
+---
+
+## D241 — GABE-VM-RESERVED seats are write-exempt
+
+**Date.** 2026-10-06 (Josh).
+
+**Decision.** Smartlead tag `GABE-VM-RESERVED` marks Gabe
+Lopez voicemail follow-up seats: the gabriel@ bridge seats
+24255314, 24255318, 24255344, plus 12 owned gabe@ seats
+coming later. They sit in SL client 345263 (SalesGlider)
+and are deliberately linked to Gabe campaigns for
+SalesGlider, EMCOR/Mesa, and Deep Roots: 4074264/5/6
+`Post-call | Gabe | X` and 4085158/9/60 `Gabe Calls | X`.
+
+Every mutating stage skips them. Never unlink, link,
+retag, or rewrite: one-client peel, campaign-check
+cross-client alert and signature write, warmup-gate
+removal, client-rest A/B unlink and relink, client
+fan-out, mailbox-settings cap / gap / signature,
+pod-tags. Their daily cap is managed manually (ramp to
+35 on Oct 12) — leave `message_per_day` alone.
+
+min40 POC fill skips any campaign whose name contains
+`Gabe` and any campaign whose linked seats are
+`GABE-VM-RESERVED`, not just 4074266. Today
+4085160 `Gabe Calls | Deep Roots` would otherwise fill
+to 60 with POC generics.
+
+**Why.** Josh: D239 only honored the tag in staffing
+counts. The seats are supposed to stay on those Gabe
+campaigns with a hand-managed cap.
+
+**Rejected.** Treating Gabe memberships as foreign
+SalesGlider leftovers. Filling Gabe Calls campaigns to
+the 60-seat POC target. Resetting their cap to 30.
+
+**Supersedes / amends.** Amends D239 (count-only) to a
+full write exemption. Amends D236: Gabe skip is
+name-contains-Gabe plus reserved-linked campaigns, not
+only 4074266. Amends D26/D75 one-client peel and D85
+cross-client alert for these seats.
+
+**Guards.** `isGabeVmReserved` skip in one-client,
+warmup-gate, client-rest, fan-out, mailbox-settings,
+campaign-check, min40, pod-tags; `isGabeFollowUpCampaign`
++ `gabeVmReservedCampaignIds` on `shouldStaffPocCampaign`;
+CANON dated D241.
 
 ---
 

@@ -23,7 +23,11 @@ import {
   roundStaffableWeight,
 } from "../lib/mailboxType.js";
 import { syncGenericSeatsFromInventory } from "../lib/genericPoolCanon.js";
-import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import {
+  gabeVmReservedCampaignIds,
+  isGabeVmReserved,
+  isLockedCanarySeat,
+} from "../lib/canaryLock.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
@@ -193,13 +197,16 @@ export class Min40TopUpService {
       onWeek,
     );
     const livingByClient = new Map<number, SmartleadCampaign[]>();
+    const reservedCampaignIds = gabeVmReservedCampaignIds(
+      accounts as SmartleadAccountWithCampaigns[],
+    );
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (isAnyShellCampaign(campaign)) continue;
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
       if (typeof campaign.client_id !== "number") continue;
       const poc = pocIds.includes(campaign.client_id);
       if (poc) {
-        if (!shouldStaffPocCampaign(campaign)) continue;
+        if (!shouldStaffPocCampaign(campaign, { reservedCampaignIds })) continue;
       } else if (!campaignIsActive(campaign)) {
         continue;
       }
@@ -229,7 +236,7 @@ export class Min40TopUpService {
         endedIds,
       });
       if (pocEngagement) {
-        if (!shouldStaffPocCampaign(campaign)) continue;
+        if (!shouldStaffPocCampaign(campaign, { reservedCampaignIds })) continue;
       } else if (!campaignIsActive(campaign)) {
         continue;
       }
@@ -438,6 +445,7 @@ export class Min40TopUpService {
     if (this.state.getRestingInbox(key) || isLockedCanarySeat(account, key, this.state)) {
       return false;
     }
+    if (isGabeVmReserved(account)) return false;
     if (activeHoldUntilDate(tagNames(account))) return false;
     if (hasHoldOrRetireTag(account)) return false;
     if (isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))) {
@@ -601,6 +609,7 @@ export class Min40TopUpService {
   }): Promise<boolean> {
     if (typeof input.account.id !== "number") return false;
     if (isLockedCanarySeat(input.account, input.email, this.state)) return false;
+    if (isGabeVmReserved(input.account)) return false;
     try {
       if (!input.dryRun) {
         await this.smartlead.addEmailAccountsToCampaign(input.campaign.id, [

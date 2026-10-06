@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   CANARY_LOCK_CORE_KINDS,
   GABE_VM_RESERVED_TAG,
+  gabeVmReservedCampaignIds,
   isCanarySignature,
   isGabeVmReserved,
   isLockedCanarySeat,
@@ -85,5 +86,18 @@ describe("D239 GABE-VM-RESERVED is not named inventory", () => {
       true,
     );
     assert.equal(isGabeVmReserved({ tags: [{ tag_name: "POD-A" }] }), false);
+  });
+
+  it("D241: lists campaigns already linked to a reserved seat", () => {
+    assert.deepEqual(
+      gabeVmReservedCampaignIds([
+        {
+          tags: [{ tag_name: GABE_VM_RESERVED_TAG }],
+          campaign_ids: [4074266, 4085160],
+        },
+        { tags: [{ tag_name: "POD-A" }], campaign_ids: [10] },
+      ]).sort((a, b) => a - b),
+      [4074266, 4085160],
+    );
   });
 });

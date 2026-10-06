@@ -8,6 +8,8 @@ export interface MembershipRow {
   campaignId: number;
   clientId: number | null;
   shell: boolean;
+  /** D241 — Gabe follow-up / reserved memberships are never foreign. */
+  protected?: boolean;
 }
 
 export function ownerClientId(
@@ -61,6 +63,7 @@ export function foreignCampaignIds(
     .filter(
       (row) =>
         !row.shell &&
+        !row.protected &&
         typeof row.clientId === "number" &&
         row.clientId !== ownerId,
     )

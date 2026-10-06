@@ -7,6 +7,7 @@
  * an Allow-generics card, release only when marked done.
  */
 
+import { isCallerFollowUpCampaign } from "./callerFollowUp.js";
 import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 
 export const DEFAULT_POC_CLIENT_NAME_PATTERNS = ["goliath", "deep roots"] as const;
@@ -15,6 +16,16 @@ export const DEEP_ROOTS_CLIENT_ID = 597783;
 
 /** Gabe's post-call shell on Deep Roots — never staff (D236). */
 export const GABE_POST_CALL_CAMPAIGN_ID = 4074266;
+
+/**
+ * Gabe Lopez voicemail follow-up campaigns (D241).
+ * `Post-call | Gabe | X` and `Gabe Calls | X` for SalesGlider,
+ * EMCOR/Mesa, and Deep Roots. Name-contains-Gabe is the live
+ * rule; the ids are the known 2026-10 board.
+ */
+export const GABE_FOLLOW_UP_CAMPAIGN_IDS = [
+  4074264, 4074265, 4074266, 4085158, 4085159, 4085160,
+] as const;
 
 export const POC_ENGAGEMENT_SEAT_TARGET = 60;
 
@@ -65,6 +76,26 @@ export function isGabePostCallCampaign(
   return campaignId === GABE_POST_CALL_CAMPAIGN_ID;
 }
 
+/**
+ * CALLER FOLLOW-UP class (D242) plus leftover Post-call | Gabe
+ * shells (D236/D241). Name-contains-Gabe keeps min40 off those
+ * shells; the class itself is ids + `Gabe Calls |` prefix.
+ */
+export function isGabeFollowUpCampaign(campaign: {
+  id?: number | null;
+  name?: string | null;
+}): boolean {
+  if (isCallerFollowUpCampaign(campaign)) return true;
+  const id = Number(campaign.id);
+  if (
+    Number.isFinite(id) &&
+    (GABE_FOLLOW_UP_CAMPAIGN_IDS as readonly number[]).includes(id)
+  ) {
+    return true;
+  }
+  return String(campaign.name ?? "").toLowerCase().includes("gabe");
+}
+
 export function isPocLivingCampaignStatus(
   status: string | null | undefined,
 ): boolean {
@@ -113,12 +144,26 @@ export function pocEngagementClientIds(
     .map((client) => client.id);
 }
 
-/** Living POC campaign we may staff — not Gabe's post-call shell. */
-export function shouldStaffPocCampaign(campaign: {
-  id?: number | null;
-  status?: string | null;
-}): boolean {
-  if (isGabePostCallCampaign(campaign.id)) return false;
+/**
+ * Living POC campaign we may staff (D236/D241). Never staff a
+ * Gabe-named campaign or a campaign that already has
+ * GABE-VM-RESERVED seats linked.
+ */
+export function shouldStaffPocCampaign(
+  campaign: {
+    id?: number | null;
+    status?: string | null;
+    name?: string | null;
+  },
+  opts?: { reservedCampaignIds?: Iterable<number> },
+): boolean {
+  if (isGabeFollowUpCampaign(campaign)) return false;
+  if (campaign.id != null && opts?.reservedCampaignIds) {
+    const id = Number(campaign.id);
+    for (const reserved of opts.reservedCampaignIds) {
+      if (Number(reserved) === id) return false;
+    }
+  }
   return isPocLivingCampaignStatus(campaign.status);
 }
 

@@ -245,6 +245,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D237 | Live | PowerGRYD 592842 is a full named client. Leave-alone / dedicated-generic / rotation-skip / idle-exempt / min40 auto-allow special-cases are deleted. Not the D236 POC mode. Campaigns may PAUSE when done. |
 | D238 | Live | Canary fleet is hard-locked: identify by copyCanary fleet membership + Canary signature backstop; exclude from every attach/staff/top-up/generic-pool/POC path; never set client_id/POD/GENERIC; Canon pages `canary_on_live` / `canary_warmup_on` |
 | D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
+| D241 | Live — write exemption folded into D242 CALLER FOLLOW-UP class | GABE-VM-RESERVED seats are exempt from every mutating stage (never unlink / link / retag / rewrite); min40 POC fill skips campaigns named Gabe and campaigns whose linked seats are GABE-VM-RESERVED, not just 4074266 |
+| D242 | Live | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
 | D243 | Live | Client-named domains are that client's named seats (never GENERIC / pool); warmup clock is later of purchase and Smartlead import; Goliath leftovers are named 548611; Culture Fits 418275 stays a D192 exception |
 
 ---
@@ -389,8 +391,6 @@ under 120. They do not accumulate — SmartDelivery re-runs the parent test.
 **Tradeoff.** None identified.
 
 **Guard.** `test quota is enforced before creating tests`
-
----
 
 ---
 
@@ -7404,8 +7404,6 @@ pod. Does not change D221 generic allocation.
 D226 (newest on this merge).
 
 ---
-
----
 ## D225 — Weekday surplus generic return on min40 and cleanup
 
 **Date.** 2026-10-03.
@@ -7975,6 +7973,115 @@ used by generic-pool validate / surplus / min40 fill.
 **Guards.** `syncGenericSeatsFromInventory` skips canary,
 GABE-VM-RESERVED, and `owesWarmup`; CANON names the
 21-day + reserved + canary exclusions.
+
+---
+
+## D241 — GABE-VM-RESERVED seats are write-exempt
+
+**Date.** 2026-10-06 (Josh).
+
+**Decision.** Smartlead tag `GABE-VM-RESERVED` marks Gabe
+Lopez voicemail follow-up seats: the gabriel@ bridge seats
+24255314, 24255318, 24255344, plus 12 owned gabe@ seats
+coming later. They sit in SL client 345263 (SalesGlider)
+and are deliberately linked to Gabe campaigns for
+SalesGlider, EMCOR/Mesa, and Deep Roots: 4074264/5/6
+`Post-call | Gabe | X` and 4085158/9/60 `Gabe Calls | X`.
+
+Every mutating stage skips them. Never unlink, link,
+retag, or rewrite: one-client peel, campaign-check
+cross-client alert and signature write, warmup-gate
+removal, client-rest A/B unlink and relink, client
+fan-out, mailbox-settings cap / gap / signature,
+pod-tags. Their daily cap is managed manually (ramp to
+35 on Oct 12) — leave `message_per_day` alone.
+
+min40 POC fill skips any campaign whose name contains
+`Gabe` and any campaign whose linked seats are
+`GABE-VM-RESERVED`, not just 4074266. Today
+4085160 `Gabe Calls | Deep Roots` would otherwise fill
+to 60 with POC generics.
+
+**Why.** Josh: D239 only honored the tag in staffing
+counts. The seats are supposed to stay on those Gabe
+campaigns with a hand-managed cap.
+
+**Rejected.** Treating Gabe memberships as foreign
+SalesGlider leftovers. Filling Gabe Calls campaigns to
+the 60-seat POC target. Resetting their cap to 30.
+
+**Supersedes / amends.** Amends D239 (count-only) to a
+full write exemption. Amends D236: Gabe skip is
+name-contains-Gabe plus reserved-linked campaigns, not
+only 4074266. Amends D26/D75 one-client peel and D85
+cross-client alert for these seats.
+
+**Guards.** `isGabeVmReserved` skip in one-client,
+warmup-gate, client-rest, fan-out, mailbox-settings,
+campaign-check, min40, pod-tags; `isGabeFollowUpCampaign`
++ `gabeVmReservedCampaignIds` on `shouldStaffPocCampaign`;
+CANON dated D241.
+
+---
+
+## D242 — CALLER FOLLOW-UP campaign class
+
+**Date.** 2026-10-06 (Josh, spec 2026-10-05 8:12pm CT).
+
+**Decision.** Gabe's voicemail follow-up is a campaign
+class, not a one-off tag skip. Identify living campaigns by
+configured ids (default 4085158 / 4085159 / 4085160) **or**
+name prefix `Gabe Calls |`, and class senders by
+`CALLER_FOLLOWUP_SENDER_TAG` (default `GABE-VM-RESERVED`)
+plus the known gabriel@ bridge seats. More callers can be
+added later by env.
+
+The three gabriel@ seats sit in SalesGlider 345263 and
+serve all three campaigns. That is the one-client-per-sender
+exception — one-client peel and campaign-check cross-client
+skip it.
+
+Rules every stage must respect (health, rest, top-up/min40,
+fan-out, signature/mailboxSettings, warmup gate, staffing
+floor, ESP mix, schedule, runway/alerts):
+
+1. Signature stays empty. Never apply or converge one.
+2. From name stays as set. Never rename.
+3. Only class boxes on class campaigns. Never fan them out
+   or use them as top-up / generic / POC supply. min40
+   skips the class, including Deep Roots 4085160 POC fill.
+4. Exempt from A/B rest and the generic send clock.
+5. Exempt from the half-client staffing floor and ESP mix.
+6. Mon–Fri 07:00–20:00 America/Chicago, min_time_btw_emails
+   3. Never converge to Mon–Thu or 10.
+7. Exempt from runway and top-up alerts.
+8. Prewarmed (WARMUP-GATE-EXEMPT). Warmup stays on.
+   Placement / bounce / blacklist still monitor; a kill or
+   unlink pages Josh and does not act.
+9. Twelve owned gabe@ boxes stay regular through 21 days,
+   then attach to that client's Gabe Calls campaign only.
+   Bridge gabriel@ seats come off by 2026-11-03 (page, do
+   not unlink).
+10. Never START or PAUSE these campaigns from automation.
+
+Leave `message_per_day` alone (manual ramp to 35 on Oct 12).
+
+**Why.** Josh: each email continues Gabe's call. It must
+read as him and send fast. D241's write skip was necessary
+but not the class.
+
+**Rejected.** Filling Gabe Calls from the POC / generic
+pool. Converging signature, from-name, cap, or Mon–Thu
+10-minute schedule. Auto-unlinking a class seat on
+placement / bounce / blacklist. Auto START/PAUSE.
+
+**Supersedes / amends.** Completes D241 (write exemption
+becomes the class). Amends D26/D75 one-client, D138 min-gap
+converge, D182 send window, D43 rest, D52 runway, D105
+warmup-gate pull (page, do not pull), D236 POC fill.
+
+**Guards.** `src/lib/callerFollowUp.ts` plus stage skips;
+CANON dated D242 with a Campaign classes section.
 
 ---
 

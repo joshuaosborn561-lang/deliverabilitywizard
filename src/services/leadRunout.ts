@@ -15,6 +15,10 @@ import {
   runoutStage,
   type RunoutStage,
 } from "../lib/leadRunout.js";
+import {
+  callerFollowUpPolicyFromConfig,
+  callerFollowUpSkipsRunwayAndTopUpAlerts,
+} from "../lib/callerFollowUp.js";
 import type { StateStore } from "../state/store.js";
 
 export interface LeadRunoutResult {
@@ -64,6 +68,15 @@ export class LeadRunoutService {
     const start = addUtcDays(end, -2);
 
     for (const campaign of active) {
+      if (
+        callerFollowUpSkipsRunwayAndTopUpAlerts(
+          campaign,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        result.skipped.push(`#${campaign.id}: CALLER FOLLOW-UP (D242)`);
+        continue;
+      }
       result.scanned += 1;
       try {
         const [statsRaw, recent] = await Promise.all([

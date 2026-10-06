@@ -3,8 +3,10 @@ import { describe, it } from "node:test";
 import {
   DEEP_ROOTS_CLIENT_ID,
   DEFAULT_POC_CLIENT_NAME_PATTERNS,
+  GABE_FOLLOW_UP_CAMPAIGN_IDS,
   GABE_POST_CALL_CAMPAIGN_ID,
   GOLIATH_CLIENT_ID,
+  isGabeFollowUpCampaign,
   isGabePostCallCampaign,
   isPocClient,
   isPocEngagementClient,
@@ -77,6 +79,38 @@ describe("pocClient (D81/D236)", () => {
       false,
     );
     assert.equal(pocEngagementSeatTarget(), 60);
+  });
+
+  it("D241: never staff a Gabe-named campaign or a reserved-linked campaign", () => {
+    assert.equal(isGabeFollowUpCampaign({ id: 4085160, name: "Gabe Calls | Deep Roots" }), true);
+    assert.equal(isGabeFollowUpCampaign({ id: 99, name: "Post-call | Gabe | SalesGlider" }), true);
+    assert.equal(
+      (GABE_FOLLOW_UP_CAMPAIGN_IDS as readonly number[]).includes(4085160),
+      true,
+    );
+    assert.equal(
+      shouldStaffPocCampaign({
+        id: 4085160,
+        name: "Gabe Calls | Deep Roots",
+        status: "DRAFTED",
+      }),
+      false,
+    );
+    assert.equal(
+      shouldStaffPocCampaign(
+        { id: 4090001, name: "Deep Roots Voicemail", status: "DRAFTED" },
+        { reservedCampaignIds: [4090001] },
+      ),
+      false,
+    );
+    assert.equal(
+      shouldStaffPocCampaign({
+        id: 4084613,
+        name: "Deep Roots A",
+        status: "DRAFTED",
+      }),
+      true,
+    );
   });
 
   it("POC signature is from_name plus the full client brand", () => {

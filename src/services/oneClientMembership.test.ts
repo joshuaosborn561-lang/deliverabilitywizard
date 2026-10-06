@@ -964,4 +964,47 @@ describe("OneClientMembershipService", () => {
     assert.equal(result.signaturesSet, 0);
     assert.deepEqual(updates, []);
   });
+
+  it("D241: does not peel or rewrite a GABE-VM-RESERVED seat", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const service = serviceWith({
+      listCampaigns: async () => [
+        { id: 1, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        {
+          id: 4085160,
+          name: "Gabe Calls | Deep Roots",
+          status: "ACTIVE",
+          client_id: 597783,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 24255314,
+          from_email: "gabriel@salesglider.com",
+          from_name: "Gabe Lopez",
+          signature: "Gabe Lopez\nVoicemail",
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+          campaign_ids: [1, 4085160],
+        },
+        ...padAccounts(4085160, 597783),
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+        { id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" },
+      ],
+      removeEmailAccountsFromCampaign: async (campaignId: number, ids: number[]) => {
+        removed.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+    });
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, []);
+    assert.deepEqual(updates, []);
+    assert.ok(result.skipped.some((row) => row.includes("GABE-VM-RESERVED")));
+  });
 });

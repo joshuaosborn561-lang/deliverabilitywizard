@@ -15,6 +15,10 @@ import {
 } from "../lib/clientStaffFloor.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import {
+  callerFollowUpForbidsStatusWrite,
+  callerFollowUpPolicyFromConfig,
+} from "../lib/callerFollowUp.js";
+import {
   campaignHoldReason,
   holdPolicyFromConfig,
 } from "../lib/holdPolicy.js";
@@ -320,6 +324,18 @@ export class CampaignHealthService {
 
       if (isExcluded({ id: pending.campaignId, name }, this.config.topUpExcludeCampaigns)) {
         this.state.clearPendingResume(pending.campaignId);
+        continue;
+      }
+      if (
+        callerFollowUpForbidsStatusWrite(
+          campaign ?? { id: pending.campaignId, name },
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        this.state.clearPendingResume(pending.campaignId);
+        console.log(
+          `[health] Pending-resume #${pending.campaignId} ${name}: CALLER FOLLOW-UP never START (D242)`,
+        );
         continue;
       }
       const holdReason = campaignHoldReason(

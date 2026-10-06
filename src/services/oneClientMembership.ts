@@ -12,12 +12,16 @@ import {
   clientBrandList,
   findForeignBrand,
 } from "../lib/clientBrand.js";
-import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
-import { pocClientId } from "../lib/pocClient.js";
+import {
+  callerFollowUpPolicyFromConfig,
+  isCallerFollowUpCampaign,
+} from "../lib/callerFollowUp.js";
+import { isGabeFollowUpCampaign, pocClientId } from "../lib/pocClient.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
 import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
@@ -172,6 +176,10 @@ export class OneClientMembershipService {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (isLockedCanarySeat(account, email, this.state)) continue;
+      if (isGabeVmReserved(account)) {
+        result.skipped.push(`${email}: GABE-VM-RESERVED (D241)`);
+        continue;
+      }
       if (isIsolationEmail(email, isolation)) continue;
       if (
         senderIsAttachBlocked(
@@ -190,6 +198,13 @@ export class OneClientMembershipService {
           clientId:
             typeof campaign?.client_id === "number" ? campaign.client_id : null,
           shell: campaign ? isAnyShellCampaign(campaign) : false,
+          protected: campaign
+            ? isGabeFollowUpCampaign(campaign) ||
+              isCallerFollowUpCampaign(
+                campaign,
+                callerFollowUpPolicyFromConfig(this.config),
+              )
+            : false,
         };
       });
       if (!memberships.length) continue;

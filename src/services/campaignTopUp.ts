@@ -10,6 +10,11 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import {
+  callerFollowUpPolicyFromConfig,
+  isCallerFollowUpCampaign,
+  isCallerFollowUpSupplyBlocked,
+} from "../lib/callerFollowUp.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { ownerClientId, peelCampaignIds, type MembershipRow } from "../lib/oneClient.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -100,6 +105,7 @@ export function isExcluded(
   patterns: string[],
 ): boolean {
   if (isAnyShellCampaign(campaign)) return true;
+  if (isCallerFollowUpCampaign(campaign)) return true;
   if (!patterns.length) return false;
   const name = String(campaign.name ?? "").toLowerCase();
   const id = String(campaign.id);
@@ -521,6 +527,14 @@ export class CampaignTopUpService {
                 poolAccount &&
                 isLockedCanarySeat(poolAccount, key, this.state)
               ) &&
+              !(
+                poolAccount &&
+                isCallerFollowUpSupplyBlocked(
+                  poolAccount,
+                  key,
+                  callerFollowUpPolicyFromConfig(this.config),
+                )
+              ) &&
               // D139 — supply that owes warmup days is not supply.
               !(poolAccount && owesWarmup(poolAccount, key, this.config, this.state)) &&
               !(
@@ -839,6 +853,15 @@ export class CampaignTopUpService {
       const email = accountEmail(account)?.toLowerCase();
       if (!email || !account.id) continue;
       if (isLockedCanarySeat(account, email, this.state)) continue;
+      if (
+        isCallerFollowUpSupplyBlocked(
+          account,
+          email,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        continue;
+      }
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
       const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
         const campaign = input.campaignById.get(id);

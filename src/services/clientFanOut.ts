@@ -13,7 +13,14 @@ import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
-import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
+import {
+  callerFollowUpMayAttach,
+  callerFollowUpPolicyFromConfig,
+  isCallerFollowUpCampaign,
+  isCallerFollowUpSender,
+  isCallerFollowUpSupplyBlocked,
+} from "../lib/callerFollowUp.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
@@ -158,6 +165,8 @@ export class ClientFanOutService {
           result.skipped.push(`${email}: canary fleet lock (D54/D238)`);
           continue;
         }
+        // CALLER FOLLOW-UP senders (D242) are not skipped here — they
+        // may attach to class campaigns only, via callerFollowUpMayAttach.
 
         // Never fan a mailbox that must sit out: retired domains stay off
         // forever (D65), a leftover HOLD-UNTIL tag sits inert until it
@@ -227,6 +236,42 @@ export class ClientFanOutService {
 
         for (const campaign of groupCampaigns) {
           if (on.has(campaign.id)) continue;
+          const classAttach = callerFollowUpMayAttach({
+            email,
+            account,
+            campaign,
+            warmed: !owesWarmup(account, email, this.config, this.state),
+            policy: callerFollowUpPolicyFromConfig(this.config),
+          });
+          if (!classAttach.ok) {
+            if (
+              isCallerFollowUpSupplyBlocked(
+                account,
+                email,
+                callerFollowUpPolicyFromConfig(this.config),
+              ) ||
+              isCallerFollowUpSender(
+                account,
+                callerFollowUpPolicyFromConfig(this.config),
+              )
+            ) {
+              result.skipped.push(
+                `${email}: GABE-VM-RESERVED / ${classAttach.reason}`,
+              );
+            }
+            continue;
+          }
+          if (
+            isCallerFollowUpSupplyBlocked(
+              account,
+              email,
+              callerFollowUpPolicyFromConfig(this.config),
+            ) &&
+            classAttach.reason === "not a CALLER FOLLOW-UP attach"
+          ) {
+            result.skipped.push(`${email}: CALLER FOLLOW-UP supply blocked (D242)`);
+            continue;
+          }
           // D184 — Insight and ACTIVE SalesGlider Engagers do not share seats.
           if (
             !canAttachMailboxToCampaign(account, campaign, campaignById, {
@@ -267,7 +312,12 @@ export class ClientFanOutService {
               await this.smartlead.addEmailAccountsToCampaign(campaignId, ids);
               await sleep(200);
               // D30: newly attached mailboxes must hold the 10m gap immediately.
+              // D242 — CALLER FOLLOW-UP senders keep a hand-set cap and
+              // min_time 3; never reset those here.
               for (const row of chunk) {
+                if (isGabeVmReserved(row.account) || isCallerFollowUpSender(row.account, callerFollowUpPolicyFromConfig(this.config))) {
+                  continue;
+                }
                 try {
                   await this.smartlead.updateEmailAccount(row.accountId, {
                     time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
@@ -318,6 +368,23 @@ export class ClientFanOutService {
                   ]);
                   await sleep(150);
                   try {
+                    if (
+                      isGabeVmReserved(row.account) ||
+                      isCallerFollowUpSender(
+                        row.account,
+                        callerFollowUpPolicyFromConfig(this.config),
+                      )
+                    ) {
+                      recordMembership(row.account, campaignId);
+                      result.attached.push({
+                        email: row.email,
+                        accountId: row.accountId,
+                        campaignId,
+                        campaignName: name,
+                        clientKey: groupKey,
+                      });
+                      continue;
+                    }
                     await this.smartlead.updateEmailAccount(row.accountId, {
                       time_to_wait_in_mins: this.config.mailboxMinTimeGapMins,
                       ...(accountOnBounceHold(row.account, this.state)
@@ -365,6 +432,13 @@ export class ClientFanOutService {
       }
     }
 
+    await this.attachCallerFollowUpClass({
+      dryRun,
+      campaigns: campaigns as SmartleadCampaign[],
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      result,
+    });
+
     const skipReasons = new Map<string, number>();
     for (const line of result.skipped) {
       const reason = line.includes(": ")
@@ -405,6 +479,69 @@ export class ClientFanOutService {
     }
 
     return result;
+  }
+
+  /**
+   * D242 — class senders serve every CALLER FOLLOW-UP campaign
+   * (bridge seats sit in SalesGlider and still staff EMCOR / Deep
+   * Roots). Owned gabe@ seats attach to their own campaign only
+   * after the 21-day clock.
+   */
+  private async attachCallerFollowUpClass(input: {
+    dryRun: boolean;
+    campaigns: SmartleadCampaign[];
+    accounts: SmartleadAccountWithCampaigns[];
+    result: ClientFanOutResult;
+  }): Promise<void> {
+    const policy = callerFollowUpPolicyFromConfig(this.config);
+    const living = input.campaigns.filter(
+      (campaign) =>
+        ["ACTIVE", "START"].includes(String(campaign.status ?? "").toUpperCase()) &&
+        isCallerFollowUpCampaign(campaign, policy),
+    );
+    if (!living.length) return;
+
+    for (const account of input.accounts) {
+      const email = accountEmail(account);
+      if (!email || !account.id) continue;
+      const warmed = !owesWarmup(account, email, this.config, this.state);
+      const on = new Set(campaignIdsOf(account));
+      for (const campaign of living) {
+        if (on.has(campaign.id)) continue;
+        const decision = callerFollowUpMayAttach({
+          email,
+          account,
+          campaign,
+          warmed,
+          policy,
+        });
+        if (!decision.ok) continue;
+        if (decision.reason === "not a CALLER FOLLOW-UP attach") continue;
+        try {
+          if (!input.dryRun) {
+            await this.smartlead.addEmailAccountsToCampaign(campaign.id, [
+              account.id,
+            ]);
+            await sleep(200);
+          }
+          recordMembership(account, campaign.id);
+          on.add(campaign.id);
+          input.result.attached.push({
+            email,
+            accountId: account.id,
+            campaignId: campaign.id,
+            campaignName: String(campaign.name ?? campaign.id),
+            clientKey: "caller-followup",
+          });
+          console.log(
+            `[fan-out] caller-followup → #${campaign.id} ${campaign.name}: +${email} (${decision.reason})`,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          input.result.errors.push(`${email} → #${campaign.id}: ${message}`);
+        }
+      }
+    }
   }
 
   private accountBelongsToGroup(

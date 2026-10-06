@@ -842,6 +842,12 @@ describe("Min40TopUpService (D205)", () => {
             status: "DRAFTED",
             client_id: 597783,
           },
+          {
+            id: 4085160,
+            name: "Gabe Calls | Deep Roots",
+            status: "DRAFTED",
+            client_id: 597783,
+          },
         ],
         accounts: [
           {
@@ -891,6 +897,10 @@ describe("Min40TopUpService (D205)", () => {
       attached.some((row) => row[0] === 4074266),
       false,
     );
+    assert.equal(
+      attached.some((row) => row[0] === 4085160),
+      false,
+    );
     assert.ok(
       updates.some(
         (row) =>
@@ -905,6 +915,170 @@ describe("Min40TopUpService (D205)", () => {
       "poc_engagement",
     );
     assert.equal(state.getGenericSeat("spare@crosslaunchco.com")?.assignedPod, null);
+  });
+
+  it("D241: does not fill a campaign whose linked seats are GABE-VM-RESERVED", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({
+          id: name === "POC" ? 531428 : 99,
+          name,
+        }),
+        assignTags: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    await service.run({
+      dryRun: false,
+      now: new Date("2026-10-06T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" }],
+        campaigns: [
+          {
+            id: 4090001,
+            name: "Deep Roots Voicemail",
+            status: "DRAFTED",
+            client_id: 597783,
+          },
+        ],
+        accounts: [
+          {
+            id: 24255314,
+            from_email: "gabriel@salesglider.com",
+            from_name: "Gabe Lopez",
+            client_id: 345263,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GABE-VM-RESERVED" }],
+            campaign_ids: [4090001],
+          },
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.equal(
+      attached.some((row) => row[0] === 4090001),
+      false,
+    );
+  });
+
+  it("D242: does not fill Gabe Calls | SalesGlider or Deep Roots 4085160", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({ id: 1, name }),
+        assignTags: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    await service.run({
+      dryRun: false,
+      now: new Date("2026-10-06T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [
+          { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+          { id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" },
+        ],
+        campaigns: [
+          {
+            id: 4085158,
+            name: "Gabe Calls | SalesGlider",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+          {
+            id: 4085160,
+            name: "Gabe Calls | Deep Roots",
+            status: "DRAFTED",
+            client_id: 597783,
+          },
+        ],
+        accounts: [
+          {
+            id: 24255344,
+            from_email: "gabriel@sorrelquotaio.co",
+            from_name: "Gabriel Lopez",
+            client_id: 345263,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GABE-VM-RESERVED" }],
+            campaign_ids: [4085158, 4085160],
+          },
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.equal(attached.some((row) => row[0] === 4085158), false);
+    assert.equal(attached.some((row) => row[0] === 4085160), false);
   });
 
   it("D238: never attaches a Canary-signature fleet seat to TechEvo", async () => {

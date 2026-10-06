@@ -18,7 +18,7 @@ import {
   mailboxIsExclusiveInsightStaff,
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
-import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -169,6 +169,9 @@ export class MailboxSettingsService {
     for (const account of accounts) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
+      // D241 — Gabe voicemail seats: cap is manual (ramp to 35 on
+      // Oct 12); never rewrite signature / gap / warmup either.
+      if (isGabeVmReserved(account)) continue;
 
       // Only write when the value differs — needless writes trip the limiter.
       const target = mailboxMessagePerDayTarget(account, this.config, this.store);

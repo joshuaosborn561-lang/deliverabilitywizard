@@ -10,6 +10,11 @@ import {
   CANON_OPS_TIMEZONE_DEFAULT,
 } from "./lib/canonOpsHours.js";
 import {
+  CALLER_FOLLOWUP_CAMPAIGN_IDS_DEFAULT,
+  CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT,
+  CALLER_FOLLOWUP_SENDER_TAG_DEFAULT,
+} from "./lib/callerFollowUp.js";
+import {
   DEFAULT_HOLD_CAMPAIGN_IDS,
   DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS,
   DEFAULT_HOLD_CLIENT_ZERO_ACTIVE,
@@ -132,6 +137,21 @@ const ConfigSchema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
+  /**
+   * D242 — CALLER FOLLOW-UP class. Campaign ids or name prefix,
+   * plus the sender tag (GABE-VM-RESERVED today) so more callers
+   * can be added later without a code change.
+   */
+  callerFollowUpCampaignIds: z
+    .string()
+    .default("")
+    .transform((s) => parseIdList(s, CALLER_FOLLOWUP_CAMPAIGN_IDS_DEFAULT)),
+  callerFollowUpNamePrefix: z
+    .string()
+    .default(CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT),
+  callerFollowUpSenderTag: z
+    .string()
+    .default(CALLER_FOLLOWUP_SENDER_TAG_DEFAULT),
   enableCampaignTopUp: boolFromEnv(true),
   /**
    * Fast staffing loop: reconnect → mailbox settings → refill/unpause.
@@ -561,6 +581,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
     pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath,deep roots",
+    callerFollowUpCampaignIds: env.CALLER_FOLLOWUP_CAMPAIGN_IDS ?? "",
+    callerFollowUpNamePrefix:
+      env.CALLER_FOLLOWUP_NAME_PREFIX ?? CALLER_FOLLOWUP_NAME_PREFIX_DEFAULT,
+    callerFollowUpSenderTag:
+      env.CALLER_FOLLOWUP_SENDER_TAG ?? CALLER_FOLLOWUP_SENDER_TAG_DEFAULT,
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,

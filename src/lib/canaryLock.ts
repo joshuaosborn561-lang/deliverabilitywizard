@@ -12,6 +12,9 @@
  * seats again.
  *
  * D239 — GABE-VM-RESERVED seats are not named staffable inventory.
+ * D241 — mutating stages never unlink, link, retag, or rewrite them.
+ * D242 — that tag is the CALLER FOLLOW-UP sender tag; class
+ * senders also include the known gabriel@ bridge seats.
  */
 
 function accountEmailOf(account: {
@@ -34,10 +37,14 @@ import {
   isCopyCanaryFleetEmail,
   type CopyCanaryFleetRecord,
 } from "./copyCanaryFleet.js";
-import { mailboxTagNames } from "./markerClients.js";
+import {
+  CALLER_FOLLOWUP_SENDER_TAG_DEFAULT,
+  callerFollowUpCampaignIdsFromSenders,
+  isCallerFollowUpSender,
+} from "./callerFollowUp.js";
 
 export const CANARY_SIGNATURE_BRAND = "Canary";
-export const GABE_VM_RESERVED_TAG = "GABE-VM-RESERVED";
+export const GABE_VM_RESERVED_TAG = CALLER_FOLLOWUP_SENDER_TAG_DEFAULT;
 
 export const CANARY_LOCK_CORE_KINDS = [
   "canary_on_live",
@@ -66,10 +73,24 @@ export function isCanarySignature(signature: string | null | undefined): boolean
 
 export function isGabeVmReserved(account: {
   tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+  from_email?: string | null;
+  email?: string | null;
+  id?: number | null;
 }): boolean {
-  return mailboxTagNames({ tags: account.tags ?? [] }).some(
-    (name) => name.toUpperCase() === GABE_VM_RESERVED_TAG,
-  );
+  return isCallerFollowUpSender(account);
+}
+
+/** Campaigns that already have a CALLER FOLLOW-UP sender linked (D241/D242). */
+export function gabeVmReservedCampaignIds(
+  accounts: Array<{
+    tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+    from_email?: string | null;
+    email?: string | null;
+    id?: number | null;
+    campaign_ids?: unknown;
+  }>,
+): number[] {
+  return callerFollowUpCampaignIdsFromSenders(accounts);
 }
 
 export function isLockedCanarySeat(

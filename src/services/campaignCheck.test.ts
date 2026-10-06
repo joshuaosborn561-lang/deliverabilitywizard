@@ -1768,3 +1768,127 @@ describe("D186 — step 2 delay must be 2 days", () => {
     assert.match(row?.findings.find((f) => f.kind === "step2_delay")?.detail ?? "", /3d/);
   });
 });
+
+describe("D241 GABE-VM-RESERVED campaign-check", () => {
+  it("does not raise cross_client_membership or rewrite the reserved seat", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const sl = {
+      listCampaigns: async () => [
+        { id: 1, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        {
+          id: 4085160,
+          name: "Gabe Calls | Deep Roots",
+          status: "ACTIVE",
+          client_id: 597783,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 24255314,
+          from_email: "gabriel@salesglider.com",
+          from_name: "Gabe Lopez",
+          signature: "Gabe Lopez\nVoicemail",
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+          campaign_ids: [1, 4085160],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+        { id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" },
+      ],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        writes.push({ id, fields });
+      },
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
+    await service.run({ mode: "first" });
+    const hourly = await service.run({ mode: "hourly" });
+    for (const row of hourly.findings) {
+      assert.equal(
+        row.findings.some((finding) => finding.kind === "cross_client_membership"),
+        false,
+        `cross_client_membership on #${row.campaignId}`,
+      );
+      assert.equal(
+        row.findings.some((finding) => finding.kind === "mailbox_sig"),
+        false,
+        `mailbox_sig on #${row.campaignId}`,
+      );
+    }
+    assert.deepEqual(writes, []);
+  });
+
+  it("D242: does not converge min_gap, understaffed, or ESP mix on Gabe Calls", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const settings: Array<[number, Record<string, unknown>]> = [];
+    const sl = {
+      listCampaigns: async () => [
+        {
+          id: 4085158,
+          name: "Gabe Calls | SalesGlider",
+          status: "ACTIVE",
+          client_id: 345263,
+          min_time_btwn_emails: 3,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 24255344,
+          from_email: "gabriel@sorrelquotaio.co",
+          from_name: "Gabriel Lopez",
+          signature: "",
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+          campaign_ids: [4085158],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 20,
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi — Gabriel Lopez</div>" },
+      ],
+      updateCampaignSettings: async (
+        id: number,
+        body: Record<string, unknown>,
+      ) => {
+        settings.push([id, body]);
+      },
+      updateEmailAccount: async () => {
+        throw new Error("must not rewrite a CALLER FOLLOW-UP mailbox");
+      },
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
+    const hourly = await service.run({ mode: "hourly" });
+    assert.deepEqual(settings, []);
+    const row = hourly.findings.find((item) => item.campaignId === 4085158);
+    assert.equal(
+      (row?.findings ?? []).some((finding) => finding.kind === "campaign_min_gap"),
+      false,
+    );
+    assert.equal(
+      (row?.findings ?? []).some((finding) => finding.kind === "understaffed"),
+      false,
+    );
+    assert.equal(
+      (row?.findings ?? []).some((finding) => finding.kind === "esp_mix"),
+      false,
+    );
+    assert.equal(
+      (row?.findings ?? []).some((finding) => finding.kind === "mailbox_sig"),
+      false,
+    );
+  });
+});

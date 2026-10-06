@@ -7,6 +7,12 @@ import {
   type SmartleadClient,
 } from "../clients/smartlead.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
+import {
+  callerFollowUpAlertKey,
+  callerFollowUpHumanActionAlert,
+  callerFollowUpMustPageBeforeAct,
+  callerFollowUpPolicyFromConfig,
+} from "../lib/callerFollowUp.js";
 import { sleep } from "../lib/http.js";
 import type { InventoryBook } from "./inventory.js";
 import type { SmartleadSequence } from "../types/index.js";
@@ -240,6 +246,34 @@ export class IsolationExecuteService {
     for (const account of onDomain) {
       const ids = campaignIdsOf(account).filter((id) => active.has(id));
       if (!ids.length) continue;
+      if (
+        callerFollowUpMustPageBeforeAct({
+          action: "unlink",
+          account,
+          policy: callerFollowUpPolicyFromConfig(this.config),
+        })
+      ) {
+        const email = accountEmail(account) ?? "";
+        const key = callerFollowUpAlertKey({
+          action: "unlink",
+          email,
+          campaignId: ids[0],
+        });
+        if (!this.state.hasAlert(key)) {
+          await this.slack.send(
+            callerFollowUpHumanActionAlert({
+              action: "unlink",
+              email,
+              campaignId: ids[0],
+              reason: `retire of ${domain} — automation will not pull this seat`,
+            }),
+            undefined,
+            "ops_alert",
+          );
+          this.state.markAlert(key);
+        }
+        continue;
+      }
       for (const campaignId of ids) {
         // D207 — RETIRE / burned-domain pull is exempt from the 40 floor.
         await this.smartlead.removeEmailAccountsFromCampaign(campaignId, [

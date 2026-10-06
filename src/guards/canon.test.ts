@@ -9724,7 +9724,7 @@ describe("owner intent — D217 Canon staffable matches the agent", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D(21[7-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(21[7-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON dated D217+.", "CANON.md header is not D217 or later."),
     );
     assert.match(
@@ -9863,7 +9863,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9998,7 +9998,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10162,7 +10162,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|20[0-9]|21[0-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(199|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10305,7 +10305,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[0-9]|21[0-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10490,7 +10490,7 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[3-9]|21[0-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(20[3-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D203 or later.", "CANON.md header lost the D203-era stamp."),
     );
     assert.match(
@@ -10716,7 +10716,7 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D(20[5-9]|21[0-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(20[5-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D205 or later.", "CANON.md header was not bumped to D205+."),
     );
     assert.match(
@@ -10900,7 +10900,7 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[7-9]|21[0-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(20[7-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D207+.", "CANON.md header lost the D207-era date."),
     );
     assert.match(
@@ -11180,7 +11180,7 @@ describe("owner intent — D210 SURBL never counts as a blacklist hit", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(210|21[1-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(210|21[1-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D210.", "CANON.md header lost D210+."),
     );
     assert.match(
@@ -11290,7 +11290,7 @@ describe("owner intent — D211 health-chain leftovers resume; mailbox-gap /run 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(211|21[2-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(211|21[2-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D211.", "CANON.md header lost D211+."),
     );
     assert.match(
@@ -11534,7 +11534,7 @@ describe("owner intent — D213 permanent tenant outbound-block hold", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(213|21[4-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(213|21[4-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D213.", "CANON.md header lost D213+."),
     );
     assert.match(
@@ -11623,7 +11623,7 @@ describe("owner intent — D214 health resume is chain inversion", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(214|21[5-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(214|21[5-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D214.", "CANON.md header lost D214+."),
     );
     assert.match(
@@ -11687,7 +11687,7 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(21[5-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(21[5-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D215+.", "CANON.md header lost the D215-era stamp."),
     );
     assert.match(
@@ -11768,7 +11768,7 @@ describe("owner intent — D218 TERRL holds persist past 7:15pm CT", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(21[8-9]|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(21[8-9]|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON dated D218+.", "CANON.md header is not D218 or later."),
     );
     assert.match(
@@ -11900,7 +11900,7 @@ describe("owner intent — D219 mailbox type caps and TERRL 24h + substitute", (
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(219|22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(219|22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON dated D219+.", "CANON.md header is not D219 or later."),
     );
     assert.match(
@@ -12059,7 +12059,7 @@ describe("owner intent — D220 Cayden spend digest and complete fleet pages", (
 
     assert.match(
       canon,
-      /Canon as of \*\*D(22[0-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[0-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D220+.", "CANON.md header is not D220 or later."),
     );
     assert.match(
@@ -12179,7 +12179,7 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(22[1-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[1-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D221+.", "CANON.md header is not D221 or later."),
     );
     assert.match(
@@ -12293,7 +12293,7 @@ describe("owner intent — D225 weekday surplus generic return", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(22[5-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[5-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D225 or later.", "CANON.md header lost D225+."),
     );
     assert.match(
@@ -12434,7 +12434,7 @@ describe("owner intent — D224 evidence-per-seat hold gate", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[4-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[4-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D224 or later.", "CANON.md header lost D224+."),
     );
     assert.match(
@@ -12504,7 +12504,7 @@ describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[2-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[2-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D222 or later.", "CANON.md header lost D222+."),
     );
     assert.match(
@@ -12612,7 +12612,7 @@ describe("owner intent — D226 InboxKit sweep handoff, Slack only after delete"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[6-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[6-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D226 or later.", "CANON.md header lost D226+."),
     );
     assert.match(
@@ -12676,7 +12676,7 @@ describe("owner intent — D223 POD rotation skip + dual-POD flag", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[3-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[3-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D223 or later.", "CANON.md header lost D223+."),
     );
     assert.match(
@@ -12752,7 +12752,7 @@ describe("owner intent — D227 WARMUP-GATE-EXEMPT counts as 21+ warm", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[7-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[7-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D227 or later.", "CANON.md header lost D227+."),
     );
     assert.match(
@@ -12830,7 +12830,7 @@ describe("owner intent — D228 40/40 per-POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[8-9]|23[0-9])\*\*/,
+      /Canon as of \*\*D(22[8-9]|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D228 or later.", "CANON.md header lost D228+."),
     );
     assert.match(
@@ -12881,7 +12881,7 @@ describe("owner intent — D229 D193 POC-only generics retired", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(229|23[0-9])\*\*/,
+      /Canon as of \*\*D(229|23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D229.", "CANON.md header was not bumped to D229."),
     );
     assert.match(
@@ -13010,7 +13010,7 @@ describe("owner intent — D230 one client one POD named-warm return", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D23[0-9]\*\*/,
+      /Canon as of \*\*D(23[0-9]|24[0-9])\*\*/,
       stop("CANON is dated D230+.", "CANON.md header was not bumped to D230 or later."),
     );
     assert.match(
@@ -13143,7 +13143,7 @@ describe("owner intent — D231 sole generic table path", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D23[1-9]\*\*/,
+      /Canon as of \*\*D(23[1-9]|24[0-9])\*\*/,
       stop("CANON is dated D231+.", "CANON.md header was not bumped to D231 or later."),
     );
     assert.match(
@@ -13285,7 +13285,7 @@ describe("owner intent — D232 Azure staffable weight", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D23[2-9]\*\*/,
+      /Canon as of \*\*D(23[2-9]|24[0-9])\*\*/,
       stop("CANON is dated D232.", "CANON.md header was not bumped to D232."),
     );
     assert.match(
@@ -13402,7 +13402,7 @@ describe("owner intent — D233 Azure never fills a Google slot", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D23[3-9]\*\*/,
+      /Canon as of \*\*D(23[3-9]|24[0-9])\*\*/,
       stop("CANON is dated D233.", "CANON.md header was not bumped to D233."),
     );
     assert.match(
@@ -13490,7 +13490,7 @@ describe("owner intent — D234 already-tagged POD seats are immutable", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D23[4-9]\*\*/,
+      /Canon as of \*\*D(23[4-9]|24[0-9])\*\*/,
       stop("CANON is dated D234.", "CANON.md header was not bumped to D234."),
     );
     assert.match(
@@ -13573,7 +13573,7 @@ describe("owner intent — D235 generic client/POD only while staffed", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D23[7-9]\*\*/,
+      /Canon as of \*\*D(23[7-9]|24[0-9])\*\*/,
       stop("CANON is dated D237+.", "CANON.md header was not bumped to D237 or later."),
     );
     assert.match(
@@ -13683,7 +13683,7 @@ describe("owner intent — D236 POC engagement + D237 PowerGRYD full client", ()
 
     assert.match(
       canon,
-      /Canon as of \*\*D23[7-9]\*\*/,
+      /Canon as of \*\*D(23[7-9]|24[0-9])\*\*/,
       stop("CANON is dated D237+.", "CANON.md header was not bumped to D237 or later."),
     );
     assert.match(
@@ -13813,8 +13813,8 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D239\*\*/,
-      stop("CANON is dated D239.", "CANON.md header was not bumped to D239."),
+      /Canon as of \*\*D243\*\*/,
+      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
     );
     assert.match(
       canon,
@@ -13860,6 +13860,168 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
       sync,
       /owesWarmup/,
       stop("Named staffable applies the 21-day gate (D239).", "genericPoolCanon.ts lost owesWarmup."),
+    );
+  });
+});
+
+describe("owner intent — D243 client-named domains + later-of warmup", () => {
+  it("D243: client-named hosts are never generic; Culture Fits stays leftover; clock is later-of", async () => {
+    const { isGenericMailbox, isPoolGenericSeat, isClientInbox } = await import(
+      "../lib/clientInbox.js"
+    );
+    const { isClientNamedDomain, isCultureFitsDomain } = await import(
+      "../lib/clientNamedDomain.js"
+    );
+    const { leftoverNullGenericTokenInDomain, isIntentionalNullGenericDomain } =
+      await import("../lib/markerClients.js");
+    const { warmupClockStartedAt } = await import("../services/warmupGate.js");
+    const { readFile } = await import("node:fs/promises");
+
+    const goliath = "ada@goliathcybersecurityget.info";
+    const fleet = {
+      extraGenericMailboxes: [],
+      extraGenericDomains: [],
+      prewarmedDomains: [],
+    };
+    const poolState = {
+      getPoolMailbox: () =>
+        ({ email: goliath, status: "assigned" }) as never,
+    };
+    assert.equal(
+      isClientNamedDomain("goliathcybersecurityget.info"),
+      true,
+      stop("Goliath hosts are client-named (D243).", "isClientNamedDomain missed goliathcybersecurityget.info."),
+    );
+    assert.equal(
+      isGenericMailbox(
+        { client_id: 548611, tags: [{ tag_name: "GENERIC" }] },
+        goliath,
+        fleet,
+        poolState,
+      ),
+      false,
+      stop("A leftover pool record cannot make a Goliath seat generic (D243).", "isGenericMailbox still treats goliathcybersecurity* as pool."),
+    );
+    assert.equal(
+      isPoolGenericSeat(
+        { client_id: 548611, tags: [{ tag_name: "GENERIC" }] },
+        goliath,
+        fleet,
+        poolState,
+      ),
+      false,
+      stop("min40 must not take client-named seats as supply (D243).", "isPoolGenericSeat still captures goliathcybersecurity*."),
+    );
+    assert.equal(
+      isClientInbox(
+        { client_id: 548611, tags: [{ tag_name: "POD-A" }] },
+        goliath,
+        fleet,
+        poolState,
+      ),
+      true,
+      stop("A Goliath named seat stays client inventory (D243).", "isClientInbox lost goliathcybersecurity*."),
+    );
+    assert.equal(
+      isCultureFitsDomain("culturefitsnow.com"),
+      true,
+      stop("Culture Fits stays the D192 leftover (D243).", "isCultureFitsDomain missed culturefitsnow.com."),
+    );
+    assert.equal(
+      leftoverNullGenericTokenInDomain("culturefitsnow.com"),
+      "culturefits",
+      stop("Culture Fits leftover tokens stay (D243).", "leftoverNullGenericTokenInDomain lost culturefits."),
+    );
+    assert.equal(
+      leftoverNullGenericTokenInDomain("goliathcybersecurityget.info"),
+      null,
+      stop("Goliath is no longer a leftover-null token (D243).", "leftoverNullGenericTokenInDomain still matches goliath."),
+    );
+    assert.equal(
+      isIntentionalNullGenericDomain("goliathcybersecurityget.info", [
+        { client_id: null, tags: [] },
+      ]),
+      false,
+      stop("Goliath named hosts are not intentional nulls (D243).", "isIntentionalNullGenericDomain still skips Goliath attach."),
+    );
+
+    const later = warmupClockStartedAt(
+      {
+        id: 1,
+        created_at: "2026-10-03T00:00:00.000Z",
+        warmup_details: { created_at: "2026-10-03T00:00:00.000Z" },
+      },
+      goliath,
+      {
+        getPoolMailbox: () =>
+          ({
+            email: goliath,
+            warmedAt: "2026-09-22T00:00:00.000Z",
+          }) as never,
+      },
+    );
+    assert.equal(
+      later,
+      "2026-10-03T00:00:00.000Z",
+      stop("Warmup clock is the later of purchase and Smartlead (D243).", "warmupClockStartedAt still prefers the earlier purchase."),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const inbox = await readFile(new URL("../lib/clientInbox.ts", import.meta.url), "utf8");
+    const audit = await readFile(new URL("../services/domainClientAudit.ts", import.meta.url), "utf8");
+    const cleanup = await readFile(new URL("../services/genericCleanup.ts", import.meta.url), "utf8");
+    const warmup = await readFile(new URL("../services/warmupGate.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D243\*\*/,
+      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+    );
+    assert.match(
+      canon,
+      /Client-named domains \(D243\)/,
+      stop("CANON names client-named domains (D243).", "CANON.md lost the D243 named-domain rule."),
+    );
+    assert.match(
+      canon,
+      /whichever is later/,
+      stop("CANON states the later-of warmup clock (D243).", "CANON.md lost later-of."),
+    );
+    assert.match(
+      canon,
+      /Culture Fits 418275/,
+      stop("CANON keeps Culture Fits as the D192 leftover (D243).", "CANON.md lost the Culture Fits exception."),
+    );
+    assert.match(
+      decisions,
+      /## D243 — Client-named domains are named seats/,
+      stop("The ledger records D243.", "DECISIONS.md no longer has D243."),
+    );
+    assert.match(
+      decisions,
+      /^\| D243 \|/m,
+      stop("The status index lists D243 (D127).", "DECISIONS.md status index has no D243 row."),
+    );
+    assert.match(
+      inbox,
+      /isClientNamedDomain/,
+      stop("Classifiers consult isClientNamedDomain (D243).", "clientInbox.ts lost isClientNamedDomain."),
+    );
+    assert.match(
+      audit,
+      /never re-add GENERIC/,
+      stop("Domain-client never re-adds GENERIC on named hosts (D243).", "domainClientAudit.ts lost the D243 skip."),
+    );
+    assert.match(
+      cleanup,
+      /isClientNamedMailbox/,
+      stop("Cleanup skips client-named seats (D243).", "genericCleanup.ts lost isClientNamedMailbox."),
+    );
+    assert.match(
+      warmup,
+      /laterIsoStamp/,
+      stop("Warmup uses laterIsoStamp (D243).", "warmupGate.ts lost laterIsoStamp."),
     );
   });
 });

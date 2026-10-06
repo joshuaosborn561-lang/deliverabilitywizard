@@ -196,6 +196,54 @@ describe("isClientInbox", () => {
     );
   });
 
+  it("D243: a leftover pool record cannot make a Goliath named seat generic", () => {
+    const goliath = {
+      client_id: 548611,
+      from_name: "Ada Lovelace",
+      signature: "Ada Lovelace\nGoliath",
+      tags: [{ tag_name: "POD-A" }],
+    };
+    const email = "ada@goliathcybersecurityget.info";
+    const state = {
+      getPoolMailbox: () =>
+        ({ email, status: "assigned", warmedAt: "2026-09-22T00:00:00.000Z" }) as never,
+    };
+    assert.equal(isGenericMailbox(goliath, email, fleet, state), false);
+    assert.equal(isPoolGenericSeat(goliath, email, fleet, state), false);
+    assert.equal(isClientInbox(goliath, email, fleet, state), true);
+    assert.equal(
+      isGenericMailbox(
+        { ...goliath, tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }] },
+        email,
+        fleet,
+        state,
+      ),
+      false,
+      "leftover GENERIC on a client-named host is not pool",
+    );
+  });
+
+  it("D243: Culture Fits stays a leftover generic when tagged GENERIC", () => {
+    assert.equal(
+      isGenericMailbox(
+        { client_id: 418275, tags: [{ tag_name: "GENERIC" }] },
+        "tj@culturefitsnow.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      true,
+    );
+    assert.equal(
+      isClientInbox(
+        { client_id: 418275, tags: [{ tag_name: "GENERIC" }] },
+        "tj@culturefitsnow.com",
+        fleet,
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+    );
+  });
+
   it("D169: a client-named BCP domain is never a generic", () => {
     assert.equal(
       isGenericMailbox(

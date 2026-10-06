@@ -62,8 +62,8 @@ describe("D142 confident domain→client matching", () => {
 });
 
 describe("D192 intentional null generics", () => {
-  it("recognises Goliath / TJ / Vasco leftover tokens and skips attach when null", () => {
-    assert.equal(leftoverNullGenericTokenInDomain("getgoliathcyber.info"), "goliath");
+  it("recognises Culture Fits / Vasco leftover tokens; Goliath named hosts are not leftovers", () => {
+    assert.equal(leftoverNullGenericTokenInDomain("getgoliathcyber.info"), null);
     assert.equal(
       leftoverNullGenericTokenInDomain("culturefitsnow.com"),
       "culturefits",
@@ -74,7 +74,8 @@ describe("D192 intentional null generics", () => {
       isIntentionalNullGenericDomain("getgoliathleftover.info", [
         { client_id: null, tags: [] },
       ]),
-      true,
+      false,
+      "D243 — goliath* hosts are named seats, not leftover nulls",
     );
     assert.equal(
       isIntentionalNullGenericDomain("salesgliderbox.info", [
@@ -92,6 +93,13 @@ describe("D192 intentional null generics", () => {
     );
     assert.equal(
       isIntentionalNullGenericDomain("winparlay.info", [
+        { client_id: null, tags: [{ tag_name: "GENERIC" }] },
+      ]),
+      false,
+      "D243 — a Parlay named domain is not an intentional null leftover",
+    );
+    assert.equal(
+      isIntentionalNullGenericDomain("culturefitsnow.com", [
         { client_id: null, tags: [{ tag_name: "GENERIC" }] },
       ]),
       true,

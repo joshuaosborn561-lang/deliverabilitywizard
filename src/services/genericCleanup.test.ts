@@ -404,4 +404,60 @@ describe("GenericCleanupService (D205/D235)", () => {
     assert.equal(result.cleared.length, 0);
     assert.equal(state.getGenericSeat("poc@getintroduced.info")?.assignedClientId, 597783);
   });
+
+  it("D243: leftover GENERIC on a client-named domain is not cleaned or returned", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "ada@goliathcybersecurityget.info",
+      domain: "goliathcybersecurityget.info",
+      platform: "GOOGLE",
+      firstName: "Ada",
+      lastName: "Lovelace",
+      status: "assigned",
+      assignedClientId: 99,
+    });
+    state.upsertGenericSeat(
+      emptyGenericSeat("ada@goliathcybersecurityget.info", {
+        slAccountId: 44,
+        assignedClientId: 99,
+        assignedPod: "A",
+      }),
+    );
+    const service = new GenericCleanupService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: WEEKDAY,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" }],
+        campaigns: [],
+        accounts: [
+          {
+            id: 44,
+            from_email: "ada@goliathcybersecurityget.info",
+            client_id: 548611,
+            signature: "Ada Lovelace\nGoliath",
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.deepEqual(writes, []);
+    assert.equal(result.cleared.length, 0);
+    assert.equal(result.returned.length, 0);
+    assert.equal(state.getPoolMailbox("ada@goliathcybersecurityget.info"), undefined);
+    assert.equal(state.getGenericSeat("ada@goliathcybersecurityget.info"), undefined);
+  });
 });

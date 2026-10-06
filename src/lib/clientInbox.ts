@@ -3,6 +3,7 @@ import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadEmailAccount } from "../types/index.js";
 import { isBcpOwnedDomain } from "./bcp.js";
+import { isClientNamedDomain } from "./clientNamedDomain.js";
 import { emailDomainOf } from "./isolationDomain.js";
 import { isLockedCanarySeat } from "./canaryLock.js";
 import { hasPoolMarkerTag } from "./markerClients.js";
@@ -110,6 +111,10 @@ export function isGenericMailbox(
   // never a generic. A leftover GENERIC tag, marker client_id, or
   // extraGenericMailbox from-name must not pull them out of A/B rest.
   if (domain && isBcpOwnedDomain(domain)) return false;
+  // D243 — any seat on a client-named domain is that client's named
+  // seat. Leftover GENERIC, pool records, and EXTRA_GENERIC marks
+  // must not put it back in the shared pool. Culture Fits is excluded.
+  if (domain && isClientNamedDomain(domain)) return false;
   if (isGenericPoolDomain(domain)) return true;
   // D193 — getintroduced* / quickconnect* / appquickconnect* (and the
   // other pool brands) are generic even when the exact host is new.
@@ -155,6 +160,7 @@ export function isPoolGenericSeat(
   if (isLockedCanarySeat(account, normalized, state)) return false;
   const domain = emailDomainOf(normalized);
   if (domain && isBcpOwnedDomain(domain)) return false;
+  if (domain && isClientNamedDomain(domain)) return false;
   if (isGenericPoolDomain(domain)) return true;
   if (isGenericPoolBrandDomain(domain)) return true;
   if (domain && config.extraGenericDomains.includes(domain)) return true;

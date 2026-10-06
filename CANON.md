@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D239** (2026-10-05). One page of current truth. When a new
+Canon as of **D243** (2026-10-06). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -34,8 +34,11 @@ or the day is done. Silent findings are a bug (D163).
 ## Mailboxes
 
 - **Warmup clock**: a mailbox owes **21 days from its InboxKit import**
-  (`warmedAt` stamped at import) before live campaign send (D1 clock, D50
-  duration). Never derive it from Smartlead's `warmup_details`. "Warmed
+  (`warmedAt` stamped at import) **or from Smartlead `created_at` /
+  warmup start, whichever is later** (D1 clock, D50 duration, D243
+  later-of). A seat bought before it was imported still owes 21 days
+  from the later Smartlead clock. WARMUP-GATE-EXEMPT and
+  PREWARMED_DOMAINS skip the clock (D227/D142). "Warmed
   ≥14d" is **reporting-only** (pool plan / briefs); the wizard live-send
   gate stays **21 days** (D50/D105/D192). The warmup
   gate is **ON** and pulls an under-21-day mailbox off ACTIVE campaigns on
@@ -59,6 +62,19 @@ or the day is done. Silent findings are a bug (D163).
   is a flag only Josh grants — generic-pool membership
   (`EXTRA_GENERIC_DOMAINS`, which also carries the GetIntroduced /
   QuickConnect fleets) never implies it (D142).
+- **Client-named domains (D243):** any seat whose sending domain
+  matches a client brand/slug (list_clients names plus known slugs:
+  goliathcybersecurity, techevolution, salesglider, boldercyber,
+  emcor/mesa, cornerstone, parlay, roofs, nutter, insight/joshosborn,
+  powergryd, vector, deeproots) is that client's named seat. Tagged
+  to that client, split into that client's PODs — already-tagged
+  POD-A/POD-B are not re-split (D234). Never GENERIC, never the
+  shared pool, excluded from generic cleanup, surplus return, min40
+  supply, and the generic-pool canon. Leftover wizard pool records
+  migrate into named state on the health / generic-pool pass.
+  Domain-client must never re-add GENERIC to these hosts. **Culture Fits 418275
+  / culturefits* stays a D192 leftover** pending Josh — do not classify,
+  migrate, or retag those seats.
 - **Azure toward 40 and ESP mix (D232 / D233):** any Azure/Entra
   mailbox (`type:azure` or tidalstackco.com), generic or named,
   counts as **0.1** of a regular Microsoft 365 mailbox toward a
@@ -349,9 +365,9 @@ or the day is done. Silent findings are a bug (D163).
   independently; that tag is not rotated across PODs (D221/D230).
   **There is no separate generic send-clock** (D43's ~14-day sit is
   retired). A generic assigned to POD-A stays on A, rests and
-  sends with A, and never flips to B (D230). True canaries and
-  Goliath / TJ / Vasco leftovers stay `client_id` null (project
-  generic pool — D192).
+  sends with A, and never flips to B (D230).   True canaries and Culture Fits / TJ / Vasco leftovers stay
+  `client_id` null (project generic pool — D192). Goliath
+  client-named hosts are named seats for 548611 (D243).
 - **Generics (D230, governing):** Generics are one shared pool,
   tracked in a table. A generic attaches to ONE client and ONE POD,
   A or B, whichever is under 40, and never rotates PODs. It carries
@@ -811,10 +827,14 @@ or skip a teardown from a partial or failed list (D220).
   tagging cannot starve that attach: a reserved write budget is held
   back so each pass still attaches client-named domains even when the
   pool still needs labels (D172). **Do not confident-attach
-  intentional null generics** (D192): Goliath leftovers / TJ / Vasco
+  intentional null generics** (D192): Culture Fits leftovers
+  (418275 / culturefits* — pending Josh) / TJ / Vasco
   / GENERIC-tagged without client intent / generic-pool /
   EXTRA_GENERIC — advisory or skip, never a write, when `client_id`
-  is already null. Canaries never get a `client_id`. A confident
+  is already null. **Goliath client-named domains
+  (goliathcybersecurity*, getgoliath*) are named seats for 548611**
+  (D243) — never GENERIC, never pool, never an intentional-null
+  leftover. Canaries never get a `client_id`. A confident
   match that could not write this pass is an EOD advisory that says
   the budget is exhausted — never "none resolve to a client" (that
   mislabel hid Parlay / CornerStone / SalesGlider fleets). Everything
@@ -822,10 +842,10 @@ or skip a teardown from a partial or failed list (D220).
   an advisory: logs plus one EOD-brief section, never a guess, and a
   box already carrying a real client_id is never rewritten
   (D136/D142). Generic fleets, BCP domains, the isolation domain,
-  canaries, retired domains, and D192 null generics are exempt. The
-  leftover Generic and POC Smartlead client records are never
-  recreated; once mailboxes are detached, delete them in the
-  Smartlead UI to stop billing (no delete-client API).
+  canaries, retired domains, and D192 Culture Fits / Vasco null
+  generics are exempt. The leftover Generic and POC Smartlead client
+  records are never recreated; once mailboxes are detached, delete
+  them in the Smartlead UI to stop billing (no delete-client API).
 - **Lead runout**: log at half, three-quarters, done; never import; a
   working campaign running low is urgent in `/ops` (D52).
 - **Sending IPs**: census from placement reports we already pull; never buy

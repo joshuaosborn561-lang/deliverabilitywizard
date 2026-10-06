@@ -61,6 +61,12 @@ one-client-per-sender exception. Every stage respects:
    under rules 1–8. Bridge gabriel@ seats come off by 2026-11-03
    (page Josh; do not unlink).
 10. Never START or PAUSE these campaigns from automation.
+    **Exception (Josh, 2026-10-06):** the allo-caller-email-router
+    may START a CALLER FOLLOW-UP campaign only when it is
+    COMPLETED, right after it adds a lead (Smartlead flips an
+    empty campaign to COMPLETED). Never on PAUSED, DRAFTED,
+    STOPPED, or any other status. The wizard still never STARTs
+    or PAUSEs these campaigns.
 
 Leave `message_per_day` alone on class senders (no reset to 30).
 Caps ramp manually (35 on Oct 12).

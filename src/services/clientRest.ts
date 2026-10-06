@@ -14,6 +14,7 @@ import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { mailboxPodOf } from "../lib/podInventory.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { isGabeVmReserved } from "../lib/canaryLock.js";
 import { pocClientId, pocEngagementClientIds } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
@@ -251,6 +252,10 @@ export class ClientRestService {
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
       if (!email || !account.id) continue;
+      if (isGabeVmReserved(account)) {
+        result.skipped.push(`${email}: GABE-VM-RESERVED (D241)`);
+        continue;
+      }
       const domain = email.split("@")[1]?.toLowerCase();
       if (
         isRetiredSendingDomain(domain, this.state.getDomainHistory(domain))

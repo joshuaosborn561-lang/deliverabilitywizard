@@ -13,7 +13,7 @@ import type { SmartleadCampaign } from "../types/index.js";
 import { isBcpCampaignName, isBcpOwnedDomain } from "../lib/bcp.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
-import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
@@ -156,6 +156,10 @@ export class ClientFanOutService {
         if (!email || !account.id) continue;
         if (isLockedCanarySeat(account, email, this.state)) {
           result.skipped.push(`${email}: canary fleet lock (D54/D238)`);
+          continue;
+        }
+        if (isGabeVmReserved(account)) {
+          result.skipped.push(`${email}: GABE-VM-RESERVED (D241)`);
           continue;
         }
 

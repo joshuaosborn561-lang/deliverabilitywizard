@@ -1,5 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { loadConfig } from "../config.js";
+import type { SlackClient } from "../clients/slack.js";
+import type { SmartleadClient } from "../clients/smartlead.js";
+import { StateStore } from "../state/store.js";
 import {
   activeHoldUntilDate,
   countsAsWarmed21,
@@ -10,6 +14,7 @@ import {
   owesWarmup,
   warmupClockStartedAt,
   warmupStartedAt,
+  WarmupGateService,
 } from "../services/warmupGate.js";
 
 describe("warmupGate helpers", () => {
@@ -238,5 +243,52 @@ describe("warmupGate helpers", () => {
       ),
       false,
     );
+  });
+});
+
+describe("WarmupGateService D241", () => {
+  it("does not pull a GABE-VM-RESERVED seat", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/warmup-gabe-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = new WarmupGateService(
+      loadConfig({ ENABLE_WARMUP_GATE: "true", DRY_RUN: "false" }),
+      {
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+        getEmailAccount: async () => {
+          throw new Error("should not fetch reserved");
+        },
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [],
+        campaigns: [
+          { id: 1, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        ],
+        accounts: [
+          {
+            id: 24255314,
+            from_email: "gabriel@salesglider.com",
+            created_at: new Date(Date.now() - 3 * 86_400_000).toISOString(),
+            campaign_ids: [1],
+            tags: [{ tag_name: "GABE-VM-RESERVED" }],
+          },
+        ],
+      },
+    });
+    assert.equal(result.removed, 0);
+    assert.deepEqual(removed, []);
+    assert.equal(result.removals.length, 0);
   });
 });

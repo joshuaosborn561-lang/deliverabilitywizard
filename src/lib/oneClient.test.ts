@@ -119,3 +119,22 @@ describe("D207 same-client generics multi-link; cross-client still peels", () =>
     );
   });
 });
+
+describe("D241 Gabe follow-up memberships are not foreign", () => {
+  it("does not peel a protected Gabe campaign off a SalesGlider seat", () => {
+    assert.deepEqual(
+      foreignCampaignIds(345263, [
+        { campaignId: 1, clientId: 345263, shell: false },
+        { campaignId: 4085160, clientId: 597783, shell: false, protected: true },
+      ]),
+      [],
+    );
+    assert.deepEqual(
+      peelCampaignIds(345263, [
+        { campaignId: 1, clientId: 345263, shell: false },
+        { campaignId: 4085160, clientId: 597783, shell: false, protected: true },
+      ]),
+      [],
+    );
+  });
+});

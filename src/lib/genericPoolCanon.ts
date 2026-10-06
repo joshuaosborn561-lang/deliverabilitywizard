@@ -14,7 +14,7 @@ import { assignClientCohorts } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
-import { isGabePostCallCampaign } from "./pocClient.js";
+import { isGabeFollowUpCampaign } from "./pocClient.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
@@ -370,7 +370,7 @@ export function syncGenericSeatsFromInventory(
         ? campaign.client_id
         : null;
     campaignClientById.set(campaign.id, clientId);
-    if (isGabePostCallCampaign(campaign.id)) {
+    if (isGabeFollowUpCampaign(campaign)) {
       if (clientId != null && !clientHasActiveCampaign.has(clientId)) {
         clientHasActiveCampaign.set(clientId, false);
       }

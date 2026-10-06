@@ -811,4 +811,50 @@ describe("MailboxSettingsService", () => {
     assert.equal(result.sendLimitSet, 1);
     assert.deepEqual(updates, [{ id: 88, fields: { max_email_per_day: 2 } }]);
   });
+
+  it("D241: leaves a GABE-VM-RESERVED cap and signature alone", async () => {
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const smartlead = {
+      listAllEmailAccounts: async () => [
+        {
+          id: 24255314,
+          from_email: "gabriel@salesglider.com",
+          from_name: "Gabe Lopez",
+          message_per_day: 20,
+          minTimeToWaitInMins: 1,
+          signature: "Gabe Lopez\nVoicemail",
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+          warmup_details: null,
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider", logo: "SalesGlider" },
+      ],
+      listCampaigns: async () => [],
+      updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+        updates.push({ id, fields });
+      },
+      configureWarmup: async () => {
+        throw new Error("warmup should not run on GABE-VM-RESERVED");
+      },
+    } as unknown as SmartleadClient;
+
+    const service = new MailboxSettingsService(
+      loadConfig({
+        MESSAGE_PER_DAY: "30",
+        MAILBOX_MIN_TIME_GAP_MINS: "10",
+        ENFORCE_MAILBOX_SETTINGS: "true",
+      }),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+    );
+
+    const result = await service.run({ dryRun: false, mode: "full" });
+    assert.deepEqual(updates, []);
+    assert.equal(result.sendLimitSet, 0);
+    assert.equal(result.signatureSet, 0);
+    assert.equal(result.minGapSet, 0);
+    assert.equal(result.warmupEnabled, 0);
+  });
 });

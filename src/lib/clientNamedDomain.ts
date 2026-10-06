@@ -19,8 +19,10 @@ import { assignClientCohorts, type RestCohort } from "./restCohort.js";
 import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 import { INSIGHT_CLIENT_ID, SALESGLIDER_CLIENT_ID } from "./insightCampaigns.js";
 import { emailDomainOf } from "./isolationDomain.js";
-import { DEEP_ROOTS_CLIENT_ID } from "./pocClient.js";
 import type { StateStore } from "../state/store.js";
+
+/** Inlined — importing pocClient cycles through callerFollowUp → markerClients. */
+const DEEP_ROOTS_NAMED_CLIENT_ID = 597783;
 
 type PodSide = "A" | "B";
 
@@ -88,7 +90,7 @@ const SLUG_OWNER: Record<string, number> = {
   insight: INSIGHT_CLIENT_ID,
   joshosborn: INSIGHT_CLIENT_ID,
   powergryd: POWERGRYD_CLIENT_ID,
-  deeproots: DEEP_ROOTS_CLIENT_ID,
+  deeproots: DEEP_ROOTS_NAMED_CLIENT_ID,
 };
 
 const SLUGS_LONGEST_FIRST = [...CLIENT_NAMED_DOMAIN_SLUGS].sort(

@@ -116,10 +116,12 @@ function campaignIdsOfAccount(account: { campaign_ids?: unknown }): number[] {
     .filter((id) => Number.isFinite(id) && id > 0);
 }
 
-const BRIDGE_EMAILS = new Set(
+const BRIDGE_EMAILS = new Set<string>(
   CALLER_FOLLOWUP_BRIDGE_SENDERS.map((row) => row.email),
 );
-const BRIDGE_IDS = new Set(CALLER_FOLLOWUP_BRIDGE_SENDERS.map((row) => row.id));
+const BRIDGE_IDS = new Set<number>(
+  CALLER_FOLLOWUP_BRIDGE_SENDERS.map((row) => row.id),
+);
 
 const OWNED_DOMAIN_TO_CAMPAIGN = new Map<string, number>();
 for (const [campaignId, domains] of Object.entries(

@@ -72,9 +72,9 @@ or the day is done. Silent findings are a bug (D163).
   shared pool, excluded from generic cleanup, surplus return, min40
   supply, and the generic-pool canon. Leftover wizard pool records
   migrate into named state on the health / generic-pool pass.
-  Domain-client must never re-add GENERIC to these hosts. **Culture
-  Fits 418275 / culturefits* stays a D192 leftover** pending Josh —
-  do not classify, migrate, or retag those seats.
+  Domain-client must never re-add GENERIC to these hosts. **Culture Fits 418275
+  / culturefits* stays a D192 leftover** pending Josh — do not classify,
+  migrate, or retag those seats.
 - **Azure toward 40 and ESP mix (D232 / D233):** any Azure/Entra
   mailbox (`type:azure` or tidalstackco.com), generic or named,
   counts as **0.1** of a regular Microsoft 365 mailbox toward a

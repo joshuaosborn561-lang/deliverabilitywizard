@@ -16,13 +16,32 @@ import {
   TECHEVO_CLIENT_ID,
 } from "./autoAllowGenerics.js";
 import { assignClientCohorts, type RestCohort } from "./restCohort.js";
-import { genericSeatKey } from "./genericPool.js";
 import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 import { INSIGHT_CLIENT_ID, SALESGLIDER_CLIENT_ID } from "./insightCampaigns.js";
 import { emailDomainOf } from "./isolationDomain.js";
 import { DEEP_ROOTS_CLIENT_ID } from "./pocClient.js";
-import { existingPodTag, type PodSide } from "./podTagLock.js";
 import type { StateStore } from "../state/store.js";
+
+type PodSide = "A" | "B";
+
+function existingNamedPodTag(
+  tags:
+    | Array<{ tag_name?: unknown; name?: unknown }>
+    | string[]
+    | null
+    | undefined,
+): PodSide | null {
+  const names = (tags ?? []).map((tag) =>
+    typeof tag === "string"
+      ? tag.trim().toUpperCase()
+      : String(tag.tag_name ?? tag.name ?? "").trim().toUpperCase(),
+  );
+  const hasA = names.some((name) => name === "POD-A" || name === "POD A");
+  const hasB = names.some((name) => name === "POD-B" || name === "POD B");
+  if (hasA && !hasB) return "A";
+  if (hasB && !hasA) return "B";
+  return null;
+}
 
 export const CULTURE_FITS_CLIENT_ID = 418275;
 
@@ -207,7 +226,7 @@ export function planClientNamedPodSplit(
   for (const seat of seats) {
     const email = seat.email.trim().toLowerCase();
     if (!email.includes("@")) continue;
-    const existing = existingPodTag(seat.tags);
+    const existing = existingNamedPodTag(seat.tags);
     if (existing) {
       out.set(email, existing);
       continue;
@@ -280,7 +299,7 @@ export function migrateClientNamedPoolRecords(input: {
   }
 
   const kept = input.state.listGenericSeats().filter((seat) => {
-    const email = genericSeatKey(seat.email);
+    const email = String(seat.email ?? "").trim().toLowerCase();
     if (!namedEmails.has(email) && !isClientNamedMailbox(email, clients)) {
       return true;
     }
@@ -301,7 +320,7 @@ export function migrateClientNamedPoolRecords(input: {
     .filter((row) => namedEmails.has(row.email));
   const plan = planClientNamedPodSplit(seats);
   for (const row of seats) {
-    const existing = existingPodTag(row.tags);
+    const existing = existingNamedPodTag(row.tags);
     if (existing) result.alreadyTagged.push(row.email);
     else if (plan.has(row.email)) result.untagged.push(row.email);
   }

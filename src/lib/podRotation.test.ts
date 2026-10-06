@@ -9,9 +9,10 @@ import {
 } from "./podRotation.js";
 
 describe("podRotation (D223)", () => {
-  it("skips PowerGRYD 592842 and Goliath 548611 only", () => {
-    assert.equal(isPodRotationSkippedClient(592842), true);
+  it("skips Goliath and extra POC-engagement ids, not PowerGRYD", () => {
+    assert.equal(isPodRotationSkippedClient(592842), false);
     assert.equal(isPodRotationSkippedClient(548611), true);
+    assert.equal(isPodRotationSkippedClient(597783, [597783]), true);
     assert.equal(isPodRotationSkippedClient(521881), false);
     assert.equal(clientIdFromRestGroupKey("id:592842"), 592842);
   });

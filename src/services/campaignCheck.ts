@@ -53,7 +53,6 @@ import {
   type GenericBackfillAskItem,
 } from "../lib/genericBackfillBatch.js";
 import { sleep } from "../lib/http.js";
-import { isPowerGrydClientId } from "./powerGrydWatch.js";
 import {
   desiredMailboxSignature,
   extractSignatureLines,
@@ -69,7 +68,11 @@ import {
   type MembershipRow,
 } from "../lib/oneClient.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
-import { isPocClient } from "../lib/pocClient.js";
+import {
+  isGabePostCallCampaign,
+  isPocClient,
+  isPocEngagementClient,
+} from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import {
   campaignHasStep2DelayRule,
@@ -560,7 +563,14 @@ export class CampaignCheckService {
       if (!findings.length) {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
       }
-      await this.maybeAskGenericBackfill(campaign, name, findings, genericAsks);
+      const taggedClient = clients.find((client) => client.id === campaign.client_id);
+      await this.maybeAskGenericBackfill(
+        campaign,
+        name,
+        clientDisplayName(taggedClient),
+        findings,
+        genericAsks,
+      );
     }
 
     if (genericAsks.length && this.slack) {
@@ -632,6 +642,7 @@ export class CampaignCheckService {
   private async maybeAskGenericBackfill(
     campaign: SmartleadCampaign,
     name: string,
+    clientName: string,
     findings: CampaignFinding[],
     asks: GenericBackfillAskItem[],
   ): Promise<void> {
@@ -642,7 +653,14 @@ export class CampaignCheckService {
     if (clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)) {
       return;
     }
-    if (isPowerGrydClientId(clientId, this.config.powerGrydClientId)) {
+    if (
+      isPocEngagementClient({
+        clientId,
+        hay: clientName,
+        patterns: this.config.pocClientNamePatterns,
+        endedIds: this.state.listEndedPocClientIds(),
+      })
+    ) {
       return;
     }
     asks.push({
@@ -1229,12 +1247,19 @@ export class CampaignCheckService {
     });
     findings.push(...mergeTag.findings);
 
-    if (status === "ACTIVE" && !excluded) {
+    if (status === "ACTIVE" && !excluded && !isGabePostCallCampaign(campaign.id)) {
+      const pocEngagement = isPocEngagementClient({
+        clientId: campaign.client_id,
+        hay: clientName,
+        patterns: this.config.pocClientNamePatterns,
+        endedIds: this.state.listEndedPocClientIds(),
+      });
       const floor = staffFloorForCampaign(
         campaign,
         input.clientInboxCounts,
         clientName,
         input.onWeekInboxCounts,
+        { pocEngagement },
       );
       const staffableWeight = roundStaffableWeight(
         serving.reduce((sum, email) => {

@@ -1,28 +1,30 @@
 /**
- * D223 — mechanical POD A/B rotation. PowerGRYD and Goliath stay
- * out of the fortnight swap. A seat tagged both POD-A and POD-B is
- * a dual-POD miss (flag only; do not guess which tag to keep).
+ * D223 / D236 / D237 — mechanical POD A/B rotation. Goliath stays
+ * out of the fortnight swap. Active POC-engagement clients (Deep
+ * Roots and later name-list matches except Goliath) are also
+ * exempt — they have no PODs. PowerGRYD 592842 is a full client
+ * and rotates. A seat tagged both POD-A and POD-B is a dual-POD
+ * miss (flag only; do not guess which tag to keep).
  */
 
 import { chicagoWallClock } from "./canonOpsHours.js";
+import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 
 export const POWERGRYD_CLIENT_ID = 592842;
-export const GOLIATH_CLIENT_ID = 548611;
+export { GOLIATH_CLIENT_ID };
 
-export const POD_ROTATION_SKIP_CLIENT_IDS = [
-  POWERGRYD_CLIENT_ID,
-  GOLIATH_CLIENT_ID,
-] as const;
+export const POD_ROTATION_SKIP_CLIENT_IDS = [GOLIATH_CLIENT_ID] as const;
 
 export const POD_TAG_A = "POD-A";
 export const POD_TAG_B = "POD-B";
 
 export function isPodRotationSkippedClient(
   clientId: number | null | undefined,
+  extraSkipIds: Iterable<number> = [],
 ): boolean {
-  return (
-    clientId === POWERGRYD_CLIENT_ID || clientId === GOLIATH_CLIENT_ID
-  );
+  if (clientId == null) return false;
+  if (clientId === GOLIATH_CLIENT_ID) return true;
+  return [...extraSkipIds].includes(clientId);
 }
 
 export function clientIdFromRestGroupKey(

@@ -70,6 +70,7 @@ import { HoldEnforcementService } from "./services/holdEnforcement.js";
 import { Min40TopUpService } from "./services/min40TopUp.js";
 import { PowerGrydWatchService } from "./services/powerGrydWatch.js";
 import { GenericCleanupService } from "./services/genericCleanup.js";
+import { EndPocService } from "./services/endPoc.js";
 import { GenericPoolCanonService } from "./services/genericPoolCanon.js";
 import { MailboxTypeTagService } from "./services/mailboxTypeTags.js";
 import { TerlHoldService } from "./services/terlHold.js";
@@ -573,6 +574,7 @@ async function main(): Promise<void> {
     smartlead,
   );
   const genericCleanup = new GenericCleanupService(config, smartlead, state);
+  const endPoc = new EndPocService(config, smartlead, state);
   const genericPoolCanon = new GenericPoolCanonService(config, state, slack);
   const mailboxTypeTags = new MailboxTypeTagService(
     config,
@@ -2677,6 +2679,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         mode === "powergryd-watch" ||
         mode === "powergryd" ||
         mode === "generic-cleanup" ||
+        mode === "end-poc" ||
         mode === "mailbox-type-tags" ||
         mode === "terl-eod" ||
         mode === "spend-digest" ||
@@ -2701,6 +2704,14 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         if (mode === "generic-cleanup") {
           const result = await genericCleanup.run();
           res.json({ ok: true, mode: "generic-cleanup", result });
+          return;
+        }
+        if (mode === "end-poc") {
+          const clientId = Number(req.query.clientId ?? req.body?.clientId ?? 0);
+          const result = await endPoc.run({
+            clientId: Number.isFinite(clientId) && clientId > 0 ? clientId : null,
+          });
+          res.json({ ok: true, mode: "end-poc", result });
           return;
         }
         if (mode === "mailbox-type-tags") {

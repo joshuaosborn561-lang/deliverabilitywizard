@@ -257,13 +257,13 @@ describe("D221 validateGenericPool", () => {
     assert.match(findings[0]!.detail, /no ACTIVE campaign/);
   });
 
-  it("skips idle for PowerGRYD dedicated seats and the 24h TERRL substitute", () => {
+  it("skips idle for POC-engagement seats and the 24h TERRL substitute", () => {
     const findings = validateGenericPool({
       seats: [
-        seat("pg@getintroduced.info", {
-          assignedClientId: GENERIC_POOL_POWERGRYD_CLIENT_ID,
-          assignedPod: "A",
-          reason: GENERIC_ASSIGN_REASON_POWERGRYD,
+        seat("poc@getintroduced.info", {
+          assignedClientId: 597783,
+          assignedPod: null,
+          reason: "poc_engagement",
         }),
         seat("swap@getintroduced.info", {
           assignedClientId: 77,
@@ -277,17 +277,37 @@ describe("D221 validateGenericPool", () => {
         }),
       ],
       namedStaffableByClientPod: new Map([
-        [clientPodKey(GENERIC_POOL_POWERGRYD_CLIENT_ID, "A"), 40],
+        [clientPodKey(597783, "A"), 40],
         [clientPodKey(77, "A"), 40],
         [clientPodKey(88, "B"), 40],
       ]),
       clientHasActiveCampaign: new Map([
-        [GENERIC_POOL_POWERGRYD_CLIENT_ID, true],
+        [597783, true],
         [77, true],
         [88, true],
       ]),
+      pocEngagementClientIds: [597783],
     });
     assert.deepEqual(findings, []);
+  });
+
+  it("D237: PowerGRYD dedicated seats are no longer idle-exempt", () => {
+    const findings = validateGenericPool({
+      seats: [
+        seat("pg@getintroduced.info", {
+          assignedClientId: GENERIC_POOL_POWERGRYD_CLIENT_ID,
+          assignedPod: "A",
+          reason: GENERIC_ASSIGN_REASON_POWERGRYD,
+        }),
+      ],
+      namedStaffableByClientPod: new Map([
+        [clientPodKey(GENERIC_POOL_POWERGRYD_CLIENT_ID, "A"), 40],
+      ]),
+      clientHasActiveCampaign: new Map([
+        [GENERIC_POOL_POWERGRYD_CLIENT_ID, true],
+      ]),
+    });
+    assert.equal(findings[0]?.kind, "generic_idle");
   });
 
   it("fails when one generic is assigned to more than one client", () => {
@@ -411,6 +431,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
           tags: [{ tag_name: "POD-A" }],
           is_smtp_success: true,
           is_imap_success: true,
+          created_at: "2026-01-01T00:00:00.000Z",
         },
         {
           id: 3,
@@ -536,6 +557,79 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       warm.namedStaffableByClientPod.get(clientPodKey(77, "A")),
       0.1,
       "exempt Azure seats count as 0.1 toward the POD 40 (D232)",
+    );
+  });
+
+  it("D238/D239: canary, GABE-VM-RESERVED, and under-21 named seats are not named staffable", () => {
+    const result = syncGenericSeatsFromInventory({
+      existing: [],
+      accounts: [
+        {
+          id: 22637921,
+          email: "leilasanchez@getcrosslaunchco.info",
+          type: "GMAIL",
+          client_id: 521881,
+          signature: "Leila Sanchez\nCanary",
+          campaign_ids: [3847798],
+          tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+          is_smtp_success: true,
+          is_imap_success: true,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: 2,
+          email: "gabe@techevolution.com",
+          type: "GMAIL",
+          client_id: 521881,
+          campaign_ids: [3847798],
+          tags: [{ tag_name: "POD-A" }, { tag_name: "GABE-VM-RESERVED" }],
+          is_smtp_success: true,
+          is_imap_success: true,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: 3,
+          email: "fresh@techevolution.com",
+          type: "GMAIL",
+          client_id: 521881,
+          campaign_ids: [3847798],
+          tags: [{ tag_name: "POD-A" }],
+          is_smtp_success: true,
+          is_imap_success: true,
+          created_at: "2026-10-01T00:00:00.000Z",
+        },
+        {
+          id: 4,
+          email: "warm@techevolution.com",
+          type: "GMAIL",
+          client_id: 521881,
+          campaign_ids: [3847798],
+          tags: [{ tag_name: "POD-A" }],
+          is_smtp_success: true,
+          is_imap_success: true,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      campaigns: [{ id: 3847798, client_id: 521881, status: "ACTIVE" }],
+      config: {
+        extraGenericMailboxes: [],
+        extraGenericDomains: ["crosslaunchco.com", "getcrosslaunchco.info"],
+        prewarmedDomains: ["crosslaunchco.com"],
+        campaignMinWarmupDays: 21,
+        freshInboxWarmupDays: 21,
+      },
+      state,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+    });
+    assert.equal(
+      result.seats.some((row) => row.email.includes("leilasanchez")),
+      false,
+      "canary is not a generic-pool seat",
+    );
+    assert.equal(
+      result.namedStaffableByClientPod.get(clientPodKey(521881, "A")),
+      1,
+      "only the 21-day warm named seat counts",
     );
   });
 });

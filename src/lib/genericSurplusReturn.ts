@@ -2,7 +2,7 @@
  * D225 / D230 — morning named-warm swap + surplus return.
  * One generic per named seat that goes warm, oldest / worst first,
  * plus any extras past 40. Returns to the untagged pool.
- * PowerGRYD 592842 and an active 24h TERRL substitute stay.
+ * Active POC-engagement seats and an active 24h TERRL substitute stay.
  * Never drop a POD below 40 staffable. Weekdays only.
  */
 
@@ -57,6 +57,7 @@ export function surplusGenericReturns(input: {
   campaignClientById?: ReadonlyMap<number, number | null>;
   liveClientIdsByEmail?: ReadonlyMap<string, readonly number[]>;
   powerGrydClientId?: number;
+  pocEngagementClientIds?: Iterable<number>;
   skipEmails?: Iterable<string>;
   now?: Date;
   weekdaysOnly?: boolean;
@@ -68,6 +69,7 @@ export function surplusGenericReturns(input: {
   if (weekdaysOnly && !isChicagoWeekday(now)) return [];
 
   const powerId = input.powerGrydClientId ?? GENERIC_POOL_POWERGRYD_CLIENT_ID;
+  const pocIds = [...(input.pocEngagementClientIds ?? [])];
   const skip = new Set(
     [...(input.skipEmails ?? [])].map((email) => genericSeatKey(email)),
   );
@@ -77,7 +79,14 @@ export function surplusGenericReturns(input: {
   const unpodded: SurplusReturnCandidate[] = [];
   for (const seat of input.seats) {
     if (seat.assignedClientId == null) continue;
-    if (genericPoolIdleExempt(seat, powerId)) continue;
+    if (
+      genericPoolIdleExempt(seat, {
+        powerGrydClientId: powerId,
+        pocEngagementClientIds: pocIds,
+      })
+    ) {
+      continue;
+    }
     if (skip.has(genericSeatKey(seat.email))) continue;
     if (!seat.assignedPod) {
       unpodded.push({

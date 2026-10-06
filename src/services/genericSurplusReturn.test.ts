@@ -61,7 +61,10 @@ function tagOps() {
   const removedTags: Array<[number[], number[]]> = [];
   return {
     removedTags,
-    ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+    ensureTag: async (name: string) => ({
+      id: name === "POD-A" ? 1 : name === "POD-B" ? 2 : 3,
+      name,
+    }),
     removeTags: async (ids: number[], tagIds: number[]) => {
       removedTags.push([ids, tagIds]);
     },
@@ -128,7 +131,7 @@ describe("returnSurplusGenerics (D225/D235)", () => {
     });
     assert.deepEqual(removed, [[2, [901]]]);
     assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
-    assert.deepEqual(tags.removedTags, [[[901], [1, 2]]]);
+    assert.deepEqual(tags.removedTags, [[[901], [1, 2, 3]]]);
     assert.equal(result.returned.length, 1);
     assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
     assert.equal(result.returned[0]?.clientId, 521881);
@@ -144,7 +147,7 @@ describe("returnSurplusGenerics (D225/D235)", () => {
     assert.equal(state.getPoolMailbox("extra@getintroduced.info")?.status, "available");
   });
 
-  it("skips PowerGRYD 592842 and an active 24h TERRL substitute", async () => {
+  it("skips an active 24h TERRL substitute; PowerGRYD surplus returns (D237)", async () => {
     const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const removed: Array<[number, number[]]> = [];
     const tags = tagOps();
@@ -215,19 +218,27 @@ describe("returnSurplusGenerics (D225/D235)", () => {
         ],
       },
     });
-    assert.ok(
-      result.returned.every((row) => row.email === "keep-me@getintroduced.info"),
-      "only the non-exempt surplus generic returns",
+    assert.deepEqual(
+      result.returned.map((row) => row.email).sort(),
+      ["keep-me@getintroduced.info", "pg@getintroduced.info"],
     );
-    assert.equal(result.returned.length, 1);
     assert.equal(
-      removed.some((row) => row[1].includes(902) || row[1].includes(903)),
+      removed.some((row) => row[1].includes(902)),
       false,
+      "TERRL substitute stays",
     );
-    assert.deepEqual(removed, [[2, [904]]]);
-    assert.deepEqual(writes, [{ id: 904, fields: { client_id: null, signature: "" } }]);
-    assert.deepEqual(tags.removedTags, [[[904], [1, 2]]]);
+    assert.ok(removed.some((row) => row[1].includes(903)));
+    assert.ok(removed.some((row) => row[1].includes(904)));
+    assert.ok(
+      writes.some((row) => row.id === 903 && row.fields.client_id === null),
+    );
+    assert.ok(
+      writes.some((row) => row.id === 904 && row.fields.client_id === null),
+    );
+    assert.ok(tags.removedTags.some((row) => row[0][0] === 903));
+    assert.ok(tags.removedTags.some((row) => row[0][0] === 904));
     assert.equal(state.getGenericSeat("keep-me@getintroduced.info")?.releasedAt, WEEKDAY.toISOString());
+    assert.equal(state.getGenericSeat("pg@getintroduced.info")?.releasedAt, WEEKDAY.toISOString());
   });
 
   it("does nothing on a Chicago weekend", async () => {

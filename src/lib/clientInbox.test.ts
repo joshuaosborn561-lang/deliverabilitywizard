@@ -39,6 +39,24 @@ describe("isClientInbox", () => {
     );
   });
 
+  it("D238: a Canary-signature seat is never generic or client inventory", () => {
+    const canary = {
+      client_id: 521881,
+      from_name: "Leila Sanchez",
+      signature: "Leila Sanchez\nCanary",
+      tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+    };
+    const email = "leilasanchez@getcrosslaunchco.info";
+    const extra = {
+      ...fleet,
+      extraGenericDomains: [...fleet.extraGenericDomains, "getcrosslaunchco.info"],
+      prewarmedDomains: ["crosslaunchco.com"],
+    };
+    assert.equal(isGenericMailbox(canary, email, extra, { getPoolMailbox: () => undefined }), false);
+    assert.equal(isPoolGenericSeat(canary, email, extra, { getPoolMailbox: () => undefined }), false);
+    assert.equal(isClientInbox(canary, email, extra, { getPoolMailbox: () => undefined }), false);
+  });
+
   it("treats a GENERIC mailbox tag as a generic (D160)", () => {
     assert.equal(
       isGenericMailbox(

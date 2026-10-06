@@ -30,7 +30,10 @@ function tagOps() {
   const removedTags: Array<[number[], number[]]> = [];
   return {
     removedTags,
-    ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+    ensureTag: async (name: string) => ({
+      id: name === "POD-A" ? 1 : name === "POD-B" ? 2 : 3,
+      name,
+    }),
     removeTags: async (ids: number[], tagIds: number[]) => {
       removedTags.push([ids, tagIds]);
     },
@@ -106,11 +109,20 @@ describe("GenericCleanupService (D205/D235)", () => {
         ],
       },
     });
-    assert.deepEqual(writes, [{ id: 10, fields: { client_id: null, signature: "" } }]);
+    assert.deepEqual(writes, [
+      { id: 10, fields: { client_id: null, signature: "" } },
+      { id: 13, fields: { client_id: null, signature: "" } },
+    ]);
     assert.deepEqual(removed, [[1, [10]]]);
-    assert.deepEqual(tags.removedTags, [[[10], [1, 2]]]);
-    assert.equal(result.cleared.length, 1);
-    assert.equal(result.cleared[0]?.email, "gone@pool.info");
+    assert.deepEqual(tags.removedTags, [
+      [[10], [1, 2, 3]],
+      [[13], [1, 2, 3]],
+    ]);
+    assert.equal(result.cleared.length, 2);
+    assert.deepEqual(
+      result.cleared.map((row) => row.email).sort(),
+      ["gone@pool.info", "pg@pool.info"],
+    );
     assert.equal(result.returned.length, 0);
     const seat = state.getGenericSeat("gone@pool.info");
     assert.equal(seat?.assignedClientId, null);
@@ -231,7 +243,7 @@ describe("GenericCleanupService (D205/D235)", () => {
     });
     assert.deepEqual(removed, [[2, [901]]]);
     assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
-    assert.deepEqual(tags.removedTags, [[[901], [1, 2]]]);
+    assert.deepEqual(tags.removedTags, [[[901], [1, 2, 3]]]);
     assert.equal(result.cleared.length, 0);
     assert.equal(result.returned.length, 1);
     assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
@@ -331,5 +343,64 @@ describe("GenericCleanupService (D205/D235)", () => {
     assert.deepEqual(removed, []);
     assert.equal(result.cleared.length, 0);
     assert.equal(result.returned.length, 0);
+  });
+
+  it("D236: keeps a POC-reserved Deep Roots seat while campaigns are DRAFTED", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.ensureGenericSeat({
+      email: "poc@getintroduced.info",
+      slAccountId: 10,
+    });
+    state.assignGenericFromTable({
+      email: "poc@getintroduced.info",
+      clientId: 597783,
+      reason: "poc_engagement",
+    });
+    const service = new GenericCleanupService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: WEEKDAY,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" }],
+        campaigns: [
+          { id: 4084613, name: "Deep Roots A", status: "DRAFTED", client_id: 597783 },
+        ],
+        accounts: [
+          {
+            id: 10,
+            from_email: "poc@getintroduced.info",
+            client_id: 597783,
+            signature: "Ada Lovelace\nDeep Roots Capital",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POC" }],
+            campaign_ids: [4084613],
+          },
+        ],
+      },
+    });
+    assert.deepEqual(writes, []);
+    assert.deepEqual(removed, []);
+    assert.equal(result.cleared.length, 0);
+    assert.equal(state.getGenericSeat("poc@getintroduced.info")?.assignedClientId, 597783);
   });
 });

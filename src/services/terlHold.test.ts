@@ -211,7 +211,10 @@ describe("TerlHoldService substitution (D219)", () => {
       ) => {
         unlinked.push({ campaignId, ids });
       },
-      ensureTag: async (name: string) => ({ id: name === "POD-A" ? 1 : 2, name }),
+      ensureTag: async (name: string) => ({
+        id: name === "POD-A" ? 1 : name === "POD-B" ? 2 : 3,
+        name,
+      }),
       removeTags: async (ids: number[], tagIds: number[]) => {
         removedTags.push([ids, tagIds]);
       },
@@ -254,7 +257,7 @@ describe("TerlHoldService substitution (D219)", () => {
       updates.filter((row) => row.id === 20),
       [{ id: 20, fields: { client_id: null, signature: "" } }],
     );
-    assert.deepEqual(removedTags, [[[20], [1, 2]]]);
+    assert.deepEqual(removedTags, [[[20], [1, 2, 3]]]);
     const casey = (snap as { accounts: Array<Record<string, unknown>> }).accounts.find(
       (row) => row.id === 20,
     );

@@ -212,7 +212,7 @@ describe("Min40TopUpService (D205)", () => {
     assert.ok(result.assigned.some((row) => row.email === "shared@crosslaunchco.com"));
   });
 
-  it("D207: never attaches a foreign-client seat and restaffs PowerGRYD", async () => {
+  it("D207/D237: never attaches a foreign-client seat; PowerGRYD asks Allow as a full client", async () => {
     const attached: Array<[number, number[]]> = [];
     const slackCalls: string[] = [];
     const state = new StateStore(stateFile());
@@ -281,18 +281,19 @@ describe("Min40TopUpService (D205)", () => {
         ],
       },
     });
-    assert.ok(
-      attached.some((row) => row[0] === 51 && row[1].includes(801)),
-      "PG generic shares onto the other PG ACTIVE",
-    );
     assert.equal(
       attached.some((row) => row[1].includes(802)),
       false,
       "BCP named seat must not land on PowerGRYD",
     );
-    assert.ok(result.unfilled.length >= 1);
-    assert.ok(slackCalls.some((line) => /PowerGRYD has \d+ staffable seats/.test(line)));
-    assert.ok(slackCalls.some((line) => /PG Lane A/.test(line) || /50/.test(line)));
+    assert.equal(
+      attached.length,
+      0,
+      "PowerGRYD is not auto-allow — min40 does not fill without Allow (D237)",
+    );
+    assert.ok(result.asked.some((row) => row.campaignId === 50));
+    assert.ok(result.asked.some((row) => row.campaignId === 51));
+    assert.ok(slackCalls.some((line) => /Allow generics/.test(line)));
   });
 
   it("D207: does not staff a PAUSED campaign and alerts once per under-40 ACTIVE", async () => {
@@ -777,5 +778,205 @@ describe("Min40TopUpService (D205)", () => {
     });
     assert.deepEqual(tagWrites, [[[900], [71]]]);
     assert.equal(state.getGenericSeat("spare@crosslaunchco.com")?.assignedPod, "A");
+  });
+
+  it("D236: fills a Deep Roots DRAFTED POC to 60 with no Allow ask and no Gabe staff", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const tagWrites: Array<[number[], number[]]> = [];
+    const slackCalls: string[] = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({
+          id: name === "POC" ? 531428 : 99,
+          name,
+        }),
+        assignTags: async (accountIds: number[], tagIds: number[]) => {
+          tagWrites.push([accountIds, tagIds]);
+        },
+      } as unknown as SmartleadClient,
+      {
+        send: async (text: string) => {
+          slackCalls.push(text);
+        },
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" }],
+        campaigns: [
+          { id: 4084613, name: "Deep Roots A", status: "DRAFTED", client_id: 597783 },
+          { id: 4084614, name: "Deep Roots B", status: "DRAFTED", client_id: 597783 },
+          {
+            id: 4074266,
+            name: "Post-call | Gabe | Deep Roots",
+            status: "DRAFTED",
+            client_id: 597783,
+          },
+        ],
+        accounts: [
+          {
+            id: 1,
+            from_email: "one@crosslaunchco.com",
+            from_name: "Ada Lovelace",
+            client_id: 597783,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POC" }],
+            campaign_ids: [4084613],
+          },
+          {
+            id: 2,
+            from_email: "two@crosslaunchco.com",
+            from_name: "Ben Franklin",
+            client_id: 597783,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POC" }],
+            campaign_ids: [4084613],
+          },
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.equal(result.asked.length, 0);
+    assert.equal(
+      slackCalls.some((line) => /Allow generics/i.test(line)),
+      false,
+    );
+    assert.ok(result.unfilled.length >= 1);
+    assert.ok(attached.some((row) => row[0] === 4084613 && row[1].includes(900)));
+    assert.ok(attached.some((row) => row[0] === 4084614 && row[1].includes(900)));
+    assert.equal(
+      attached.some((row) => row[0] === 4074266),
+      false,
+    );
+    assert.ok(
+      updates.some(
+        (row) =>
+          row.id === 900 &&
+          row.fields.signature === "Harmony Norris\nDeep Roots Capital" &&
+          row.fields.client_id === 597783,
+      ),
+    );
+    assert.deepEqual(tagWrites, [[[900], [531428]]]);
+    assert.equal(
+      state.getGenericSeat("spare@crosslaunchco.com")?.reason,
+      "poc_engagement",
+    );
+    assert.equal(state.getGenericSeat("spare@crosslaunchco.com")?.assignedPod, null);
+  });
+
+  it("D238: never attaches a Canary-signature fleet seat to TechEvo", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.ensureGenericSeat({
+      email: "leilasanchez@getcrosslaunchco.info",
+      slAccountId: 22637921,
+    });
+    const named = Array.from({ length: 8 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@techevolution.com`,
+      client_id: 521881,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [3847798],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({ id: 1, name }),
+        assignTags: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 521881, name: "TechEvo", logo: "TechEvolution" }],
+        campaigns: [
+          { id: 3847798, name: "TechEvo A", status: "ACTIVE", client_id: 521881 },
+        ],
+        accounts: [
+          ...named,
+          {
+            id: 22637921,
+            from_email: "leilasanchez@getcrosslaunchco.info",
+            from_name: "Leila Sanchez",
+            signature: "Leila Sanchez\nCanary",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.equal(
+      attached.some((row) => row[1].includes(22637921)),
+      false,
+    );
+    assert.equal(
+      updates.some((row) => row.id === 22637921),
+      false,
+    );
   });
 });

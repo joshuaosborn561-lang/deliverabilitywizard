@@ -18,6 +18,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { genericEligibleForClientPod, lockedGenericPod } from "../lib/genericAssign.js";
@@ -585,7 +586,7 @@ export class TerlHoldService {
         continue;
       }
       if (this.state.isTenantTerlHoldAccount(account.id, input.now)) continue;
-      if (this.state.isCopyCanary(email)) continue;
+      if (isLockedCanarySeat(account, email, this.state)) continue;
       if (stopped && !replacementMayFillEspSlot(account, stopped)) continue;
       ranked.push(account);
     }

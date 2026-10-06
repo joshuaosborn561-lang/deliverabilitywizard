@@ -18,6 +18,7 @@ import {
   mailboxIsExclusiveInsightStaff,
   mailboxStaffsActiveSalesGlider,
 } from "../lib/insightCampaigns.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -202,7 +203,9 @@ export class MailboxSettingsService {
       let desiredSig: string | null = null;
       let needsWarmup = false;
       let needsWarmupOff = false;
-      const canary = this.store?.isCopyCanary(email) ?? false;
+      const canary = this.store
+        ? isLockedCanarySeat(account, email, this.store)
+        : false;
       const warmupOn = mailboxWarmupIsOn(account);
       if (canary && warmupOn) needsWarmupOff = true;
 
@@ -233,12 +236,14 @@ export class MailboxSettingsService {
         !mailboxStaffsActiveSalesGlider(account, campaignById);
       if (mode === "full") {
         needsSignature =
+          !canary &&
           !exclusiveInsight &&
           desiredSig != null &&
           (account.signature ?? "") !== desiredSig;
 
         needsWarmup = !canary && !warmupOn;
       } else if (
+        !canary &&
         !exclusiveInsight &&
         foreign &&
         desiredSig &&

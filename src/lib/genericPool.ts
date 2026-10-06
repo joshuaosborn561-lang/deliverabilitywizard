@@ -23,6 +23,7 @@ export const GENERIC_ASSIGN_REASON_TERRL_SUBSTITUTE = "terrl_substitute";
 /** PR (3) draft spelling — honour both so the 24h stop substitute is skipped. */
 export const GENERIC_ASSIGN_REASON_TERRL_SUBSTITUTE_ALIAS = "terl_substitute";
 export const GENERIC_ASSIGN_REASON_POWERGRYD = "powergryd_dedicated";
+export const GENERIC_ASSIGN_REASON_POC_ENGAGEMENT = "poc_engagement";
 
 export const GENERIC_POOL_CORE_KINDS = [
   "generic_idle",
@@ -135,11 +136,44 @@ export function isPowerGrydDedicatedSeat(
   return String(seat.reason ?? "").trim().toLowerCase() === GENERIC_ASSIGN_REASON_POWERGRYD;
 }
 
+export function isPocEngagementAssignedSeat(
+  seat: Pick<GenericSeatRecord, "assignedClientId" | "reason">,
+  pocEngagementClientIds: Iterable<number> = [],
+): boolean {
+  if (
+    String(seat.reason ?? "").trim().toLowerCase() ===
+    GENERIC_ASSIGN_REASON_POC_ENGAGEMENT
+  ) {
+    return true;
+  }
+  const id = seat.assignedClientId;
+  if (typeof id !== "number") return false;
+  return [...pocEngagementClientIds].includes(id);
+}
+
+/**
+ * D236 / D237 — TERRL substitutes and active POC-engagement seats
+ * skip generic_idle. PowerGRYD 592842 is a full client now and is
+ * no longer idle-exempt.
+ */
 export function genericPoolIdleExempt(
   seat: Pick<GenericSeatRecord, "assignedClientId" | "reason">,
-  powerGrydClientId: number = GENERIC_POOL_POWERGRYD_CLIENT_ID,
+  opts:
+    | number
+    | {
+        powerGrydClientId?: number;
+        pocEngagementClientIds?: Iterable<number>;
+      } = {},
 ): boolean {
-  return isPowerGrydDedicatedSeat(seat, powerGrydClientId) || isTerrlSubstituteReason(seat.reason);
+  const parsed =
+    typeof opts === "number"
+      ? { powerGrydClientId: opts, pocEngagementClientIds: [] as number[] }
+      : opts;
+  void parsed.powerGrydClientId;
+  return (
+    isTerrlSubstituteReason(seat.reason) ||
+    isPocEngagementAssignedSeat(seat, parsed.pocEngagementClientIds ?? [])
+  );
 }
 
 export function normalizeGenericSeat(raw: unknown): GenericSeatRecord | null {
@@ -288,8 +322,14 @@ export function applyAssignGenericSeat(
   ) {
     return { ok: false, error: "other_client" };
   }
-  const nextPod = input.pod ?? existing.assignedPod ?? null;
+  const pocEngagement =
+    String(input.reason ?? "").trim().toLowerCase() ===
+    GENERIC_ASSIGN_REASON_POC_ENGAGEMENT;
+  const nextPod = pocEngagement
+    ? null
+    : (input.pod ?? existing.assignedPod ?? null);
   if (
+    !pocEngagement &&
     existing.assignedPod != null &&
     nextPod != null &&
     existing.assignedPod !== nextPod

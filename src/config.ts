@@ -119,12 +119,13 @@ const ConfigSchema = z.object({
   /** Every active campaign should carry at least this many *staffable* senders. */
   minCampaignSenders: z.coerce.number().int().min(0).default(50),
   /**
-   * D81 — POC clients (Goliath today) may receive generics without a
-   * per-campaign Slack tap. Everyone else needs Josh's Slack approve.
+   * D81 / D236 — one name-pattern list. Goliath stays on it for
+   * generic-allow / QA-unpause. Deep Roots (and later matches except
+   * Goliath) are 60-seat no-POD engagement POCs.
    */
   pocClientNamePatterns: z
     .string()
-    .default("goliath")
+    .default("goliath,deep roots")
     .transform((s) =>
       s
         .split(",")
@@ -559,7 +560,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     scoreSameEspOnly: env.SCORE_SAME_ESP_ONLY,
     minSameEspSamples: env.MIN_SAME_ESP_SAMPLES ?? "3",
     minCampaignSenders: env.MIN_CAMPAIGN_SENDERS ?? "50",
-    pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath",
+    pocClientNamePatterns: env.POC_CLIENT_NAME_PATTERNS ?? "goliath,deep roots",
     enableCampaignTopUp: env.ENABLE_CAMPAIGN_TOP_UP,
     enableCampaignHealth: env.ENABLE_CAMPAIGN_HEALTH,
     enableCampaignCheck: env.ENABLE_CAMPAIGN_CHECK,

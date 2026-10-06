@@ -9,6 +9,7 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import { isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { ownerClientId, peelCampaignIds, type MembershipRow } from "../lib/oneClient.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -218,7 +219,7 @@ export class CampaignTopUpService {
       if (
         !isStaffableSender(account, {
           resting,
-          copyCanary: this.state.isCopyCanary(email),
+          copyCanary: isLockedCanarySeat(account, email, this.state),
         })
       ) {
         continue;
@@ -515,6 +516,10 @@ export class CampaignTopUpService {
                   domain,
                 },
                 this.state,
+              ) &&
+              !(
+                poolAccount &&
+                isLockedCanarySeat(poolAccount, key, this.state)
               ) &&
               // D139 — supply that owes warmup days is not supply.
               !(poolAccount && owesWarmup(poolAccount, key, this.config, this.state)) &&
@@ -833,7 +838,7 @@ export class CampaignTopUpService {
     for (const account of input.accounts) {
       const email = accountEmail(account)?.toLowerCase();
       if (!email || !account.id) continue;
-      if (this.state.isCopyCanary(email)) continue;
+      if (isLockedCanarySeat(account, email, this.state)) continue;
       if (!isGenericMailbox(account, email, this.config, this.state)) continue;
       const memberships: MembershipRow[] = campaignIdsOf(account).map((id) => {
         const campaign = input.campaignById.get(id);

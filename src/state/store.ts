@@ -359,6 +359,11 @@ export interface AppState {
   /** D221 — latest generic-pool canon findings (`generic_idle` / `generic_multi_client`). */
   genericPoolFindings: string[];
   /**
+   * D236 — overlay so `/run?mode=end-poc` can release a name-list POC
+   * without waiting for a Railway env change. Ids stay until cleared.
+   */
+  endedPocClientIds: number[];
+  /**
    * D219 — Microsoft 550 5.7.233 tenant holds. 24h at 0, then the
    * type cap resumes. Other jobs must not write the type default
    * during the window.
@@ -790,6 +795,7 @@ const EMPTY_STATE: AppState = {
   tenantOutboundBlocks: {},
   genericSeats: {},
   genericPoolFindings: [],
+  endedPocClientIds: [],
   tenantTerlHolds: {},
   terlPausedDays: {},
   terlSubstitutions: {},
@@ -892,6 +898,11 @@ export class StateStore {
           parsed.tenantOutboundBlocks,
         ),
         genericSeats: parseGenericSeats(parsed.genericSeats),
+        endedPocClientIds: Array.isArray(parsed.endedPocClientIds)
+          ? parsed.endedPocClientIds.filter(
+              (id): id is number => Number.isFinite(id) && id > 0,
+            )
+          : [],
         genericPoolFindings: Array.isArray(parsed.genericPoolFindings)
           ? parsed.genericPoolFindings
               .map((line) => String(line))
@@ -1684,6 +1695,31 @@ export class StateStore {
 
   setPowerGrydAlertedCount(count: number): void {
     this.state.powerGrydAlertedCount = count;
+  }
+
+  /** D236 — overlay so a name-list POC can be marked done without an env change. */
+  listEndedPocClientIds(): number[] {
+    return [...this.state.endedPocClientIds];
+  }
+
+  isPocEnded(clientId: number | null | undefined): boolean {
+    return (
+      typeof clientId === "number" &&
+      this.state.endedPocClientIds.includes(clientId)
+    );
+  }
+
+  markPocEnded(clientId: number): void {
+    if (!Number.isFinite(clientId) || clientId <= 0) return;
+    if (!this.state.endedPocClientIds.includes(clientId)) {
+      this.state.endedPocClientIds.push(clientId);
+    }
+  }
+
+  clearPocEnded(clientId: number): void {
+    this.state.endedPocClientIds = this.state.endedPocClientIds.filter(
+      (id) => id !== clientId,
+    );
   }
 
   /** D207 — one min-40 / PG inventory Slack per key per Chicago day. */

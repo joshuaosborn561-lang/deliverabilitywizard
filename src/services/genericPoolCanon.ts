@@ -1,6 +1,11 @@
 import type { SlackClient } from "../clients/slack.js";
 import type { AppConfig } from "../config.js";
 import {
+  canaryLockAlertText,
+  canaryLockFindingLine,
+  validateCanaryLock,
+} from "../lib/canaryLock.js";
+import {
   genericPoolFindingLine,
   syncGenericSeatsFromInventory,
   validateGenericPool,
@@ -105,6 +110,16 @@ export class GenericPoolCanonService {
         return true;
       })
       .map(genericPoolFindingLine);
+    for (const row of validateCanaryLock({
+      accounts: opts.inventory.accounts,
+      campaigns: opts.inventory.campaigns,
+      state: this.state,
+    })) {
+      const line = canaryLockFindingLine(row);
+      if (seen.has(line)) continue;
+      seen.add(line);
+      findings.push(line);
+    }
 
     const result: GenericPoolCanonResult = {
       dryRun,
@@ -146,11 +161,24 @@ export class GenericPoolCanonService {
 
     if (fresh.length) {
       try {
-        await this.slack.send(
-          genericPoolFindingAlertText(fresh),
-          undefined,
-          "ops_alert",
+        const canaryFresh = fresh.filter((line) =>
+          line.startsWith("canary_"),
         );
+        const poolFresh = fresh.filter((line) => !line.startsWith("canary_"));
+        if (canaryFresh.length) {
+          await this.slack.send(
+            canaryLockAlertText(canaryFresh),
+            undefined,
+            "ops_alert",
+          );
+        }
+        if (poolFresh.length) {
+          await this.slack.send(
+            genericPoolFindingAlertText(poolFresh),
+            undefined,
+            "ops_alert",
+          );
+        }
         const keys = findingKeys(fresh);
         for (const key of keys) this.state.setCanonMissStamp(key, "open");
         result.alerted = keys;

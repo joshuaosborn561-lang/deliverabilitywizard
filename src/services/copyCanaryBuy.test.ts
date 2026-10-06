@@ -97,7 +97,7 @@ describe("CopyCanaryBuyService", () => {
     assert.equal(mailboxBatches[0]?.count, 3);
     assert.equal(mailboxBatches[1]?.platform, "MICROSOFT");
     assert.equal(mailboxBatches[1]?.count, 3);
-    assert.equal(result.emails.length, COPY_CANARY_FLEET_SIZE);
+    assert.equal(result.emails.length, 6);
     assert.equal(state.getCopyCanaryFleet()?.emails.length, 6);
     assert.ok(warmup.every((enabled) => enabled === false));
     for (const email of result.emails) {
@@ -175,7 +175,7 @@ describe("CopyCanaryBuyService", () => {
       title: "Buy the unwarmed canary fleet",
       proof: "proof",
       detail: {
-        domains: ["getcrosslaunchco.info", "crosslaunchcoget.info"],
+        domains: ["getcleartechco.info", "cleartechcoget.info"],
         phase: "awaiting_mailboxes",
       },
     });
@@ -217,8 +217,8 @@ describe("CopyCanaryBuyService", () => {
     const result = await service.run(again);
     assert.equal(created, 0);
     assert.deepEqual(result.domains, [
-      "getcrosslaunchco.info",
-      "crosslaunchcoget.info",
+      "getcleartechco.info",
+      "cleartechcoget.info",
     ]);
   });
 });
@@ -489,5 +489,130 @@ describe("manual fleet adoption (D86)", () => {
     assert.equal(result!.adopted.length, 0);
     assert.match(result!.reason ?? "", /too many/);
     assert.equal(state.getCopyCanaryFleet(), null);
+  });
+});
+
+describe("D240 adopt registered fleet", () => {
+  it("adopts by CANARY tag, size 10, both ESPs, and never re-adopts released seats", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-tag-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.setCopyCanaryFleet({
+      status: "ready",
+      domains: ["getcrosslaunchco.info", "crosslaunchcoget.info"],
+      emails: ["leilasanchez@getcrosslaunchco.info"],
+      googleDomain: "getcrosslaunchco.info",
+      microsoftDomain: "crosslaunchcoget.info",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    });
+    state.upsertPoolMailbox({
+      email: "leilasanchez@getcrosslaunchco.info",
+      domain: "getcrosslaunchco.info",
+      platform: "GOOGLE",
+      firstName: "Leila",
+      lastName: "Sanchez",
+      status: "available",
+      copyCanary: true,
+    });
+    const warmup: Array<{ id: number; enabled: boolean }> = [];
+    const google = Array.from({ length: 5 }, (_, i) => ({
+      id: 300 + i,
+      from_email: `g${i}@freshcanary-g.info`,
+      from_name: `Gale ${i} Google`,
+      type: "GMAIL",
+      tags: [{ tag_name: "CANARY" }],
+    }));
+    const microsoft = Array.from({ length: 5 }, (_, i) => ({
+      id: 400 + i,
+      from_email: `m${i}@freshcanary-o.info`,
+      from_name: `Owen ${i} Outlook`,
+      type: "OUTLOOK",
+      tags: [{ tag_name: "CANARY" }],
+    }));
+    const service = new CopyCanaryBuyService(
+      loadConfig({ DRY_RUN: "false" }),
+      null,
+      null,
+      {
+        listAllEmailAccounts: async () => [
+          {
+            id: 22637921,
+            from_email: "leilasanchez@getcrosslaunchco.info",
+            from_name: "Leila Sanchez",
+            signature: "Leila Sanchez\nCanary",
+            tags: [{ tag_name: "CANARY" }],
+          },
+          ...google,
+          ...microsoft,
+        ],
+        configureWarmup: async (
+          id: number,
+          settings: { warmup_enabled: boolean },
+        ) => {
+          warmup.push({ id, enabled: settings.warmup_enabled });
+        },
+      } as unknown as SmartleadClient,
+      state,
+      {} as unknown as SpendGateway,
+    );
+    const result = await service.adoptRegisteredFleet();
+    assert.equal(result.adopted.length, 10);
+    assert.equal(result.ready, true);
+    assert.equal(
+      result.adopted.includes("leilasanchez@getcrosslaunchco.info"),
+      false,
+    );
+    const fleet = state.getCopyCanaryFleet();
+    assert.equal(fleet?.emails.length, 10);
+    assert.equal(fleet?.source, "tag");
+    assert.ok(fleet?.googleDomain?.endsWith("freshcanary-g.info"));
+    assert.ok(fleet?.microsoftDomain?.endsWith("freshcanary-o.info"));
+    assert.equal(state.isCopyCanary("leilasanchez@getcrosslaunchco.info"), false);
+    assert.equal(
+      state.getPoolMailbox("leilasanchez@getcrosslaunchco.info")?.copyCanary,
+      false,
+    );
+    assert.equal(state.isCopyCanary("g0@freshcanary-g.info"), true);
+    assert.ok(warmup.every((row) => row.enabled === false));
+    assert.ok(!warmup.some((row) => row.id === 22637921));
+  });
+
+  it("adopts CANARY_FLEET_EMAILS over leftover InboxKit domains", async () => {
+    const state = new StateStore(
+      `/tmp/canary-adopt-env-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const service = new CopyCanaryBuyService(
+      loadConfig({
+        DRY_RUN: "true",
+        CANARY_FLEET_EMAILS:
+          "ann@env-g.info,ben@env-o.info",
+      }),
+      null,
+      null,
+      {
+        listAllEmailAccounts: async () => [
+          { id: 1, from_email: "ann@env-g.info", from_name: "Ann Google", type: "GMAIL" },
+          { id: 2, from_email: "ben@env-o.info", from_name: "Ben Outlook", type: "OUTLOOK" },
+          {
+            id: 3,
+            from_email: "other@tagged.info",
+            type: "GMAIL",
+            tags: [{ tag_name: "CANARY" }],
+          },
+        ],
+        configureWarmup: async () => undefined,
+      } as unknown as SmartleadClient,
+      state,
+      {} as unknown as SpendGateway,
+    );
+    const result = await service.adoptRegisteredFleet();
+    assert.deepEqual([...result.adopted].sort(), [
+      "ann@env-g.info",
+      "ben@env-o.info",
+    ]);
+    assert.equal(result.ready, true);
+    assert.equal(state.getCopyCanaryFleet()?.source, "env");
   });
 });

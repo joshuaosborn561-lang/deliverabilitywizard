@@ -402,8 +402,10 @@ describe("CampaignCheckService", () => {
     // Fleet is known but none of its mailboxes are connected in Smartlead.
     state.setCopyCanaryFleet({
       status: "ready",
-      domains: ["getcrosslaunchco.info"],
-      emails: ["canary@getcrosslaunchco.info"],
+      domains: ["canary-g.info"],
+      emails: ["canary@canary-g.info"],
+      googleDomain: "canary-g.info",
+      microsoftDomain: "canary-o.info",
       updatedAt: "2026-08-25T00:00:00.000Z",
     });
     const sl = {
@@ -443,8 +445,10 @@ describe("CampaignCheckService", () => {
     state.setCanaryFleetDown({ since: "2026-08-20T00:00:00.000Z", fleetSize: 1 });
     state.setCopyCanaryFleet({
       status: "ready",
-      domains: ["getcrosslaunchco.info"],
-      emails: ["canary@getcrosslaunchco.info"],
+      domains: ["canary-g.info"],
+      emails: ["canary@canary-g.info"],
+      googleDomain: "canary-g.info",
+      microsoftDomain: "canary-o.info",
       updatedAt: "2026-08-25T00:00:00.000Z",
     });
     const sl = {
@@ -454,7 +458,7 @@ describe("CampaignCheckService", () => {
       listAllEmailAccounts: async () => [
         {
           id: 9,
-          from_email: "canary@getcrosslaunchco.info",
+          from_email: "canary@canary-g.info",
           from_name: "Canary",
           campaign_ids: [],
           is_smtp_success: true,

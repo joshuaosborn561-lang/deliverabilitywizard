@@ -295,6 +295,49 @@ const ConfigSchema = z.object({
   enableCopyCanary: boolFromEnv(true),
   copyCanaryPerCampaign: z.coerce.number().int().min(0).max(10).default(3),
   /**
+   * D240 — explicit living copy-canary emails. When set, adopt uses this
+   * list (minus the released fleet) instead of guessing from InboxKit.
+   * Comma-separated.
+   */
+  canaryFleetEmails: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * D240 — extra released (contaminated) canary emails on top of the
+   * hardcoded 2026-10-05 six-seat fleet. Those seats are never
+   * re-adopted. Comma-separated.
+   */
+  releasedCanaryFleetEmails: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /**
+   * D240 — extra released canary domains on top of
+   * getcrosslaunchco.info / crosslaunchcoget.info.
+   */
+  releasedCanaryFleetDomains: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  /** D240 — living fleet target (not the porkbun 2×3 buy SKU). */
+  canaryFleetSize: z.coerce.number().int().min(2).max(20).default(10),
+  /**
    * Pre-warmed generic mailboxes that live outside the .info pool plan, matched
    * against Smartlead by email address or by from_name (e.g. "Harmony Norris").
    *
@@ -321,7 +364,7 @@ const ConfigSchema = z.object({
   extraGenericDomains: z
     .string()
     .default(
-      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com",
+      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com,getcrosslaunchco.info,crosslaunchcoget.info",
     )
     .transform((s) =>
       s
@@ -626,11 +669,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     minBounceSample: env.MIN_BOUNCE_SAMPLE ?? "50",
     enableCopyCanary: env.ENABLE_COPY_CANARY,
     copyCanaryPerCampaign: env.COPY_CANARY_PER_CAMPAIGN ?? "3",
+    canaryFleetEmails: env.CANARY_FLEET_EMAILS ?? "",
+    releasedCanaryFleetEmails: env.RELEASED_CANARY_FLEET_EMAILS ?? "",
+    releasedCanaryFleetDomains: env.RELEASED_CANARY_FLEET_DOMAINS ?? "",
+    canaryFleetSize: env.CANARY_FLEET_SIZE ?? "10",
     extraGenericMailboxes:
       env.EXTRA_GENERIC_MAILBOXES ?? "harmony norris,breanna escobar",
     extraGenericDomains:
       env.EXTRA_GENERIC_DOMAINS ??
-      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com",
+      "crosslaunchco.com,crossscaleco.com,cleartechco.com,getintroducedapp.com,appgetintroduced.com,appquickconnectsales.com,getcrosslaunchco.info,crosslaunchcoget.info",
     prewarmedDomains:
       env.PREWARMED_DOMAINS ??
       "crosslaunchco.com,crossscaleco.com,cleartechco.com",

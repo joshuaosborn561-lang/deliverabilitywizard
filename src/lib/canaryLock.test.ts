@@ -17,18 +17,33 @@ describe("D238 canary hard lock", () => {
     assert.equal(isCanarySignature("Harmony Norris\nDeep Roots Capital"), false);
     assert.equal(
       isLockedCanarySeat(
-        { signature: "Leila Sanchez\nCanary" },
-        "leilasanchez@getcrosslaunchco.info",
+        { signature: "Ada Lovelace\nCanary" },
+        "ada@newcanary.test",
       ),
       true,
     );
     assert.equal(
       isLockedCanarySeat(
         { signature: "" },
-        "leilasanchez@getcrosslaunchco.info",
-        { isCopyCanary: (email) => email === "leilasanchez@getcrosslaunchco.info" },
+        "ada@newcanary.test",
+        { isCopyCanary: (email) => email === "ada@newcanary.test" },
       ),
       true,
+    );
+    assert.equal(
+      isLockedCanarySeat(
+        { tags: [{ tag_name: "CANARY" }] },
+        "ada@newcanary.test",
+      ),
+      true,
+    );
+    assert.equal(
+      isLockedCanarySeat(
+        { signature: "Leila Sanchez\nCanary" },
+        "leilasanchez@getcrosslaunchco.info",
+      ),
+      false,
+      "released 2026-10-05 seats are not canaries for D238",
     );
     assert.equal(
       isLockedCanarySeat(
@@ -43,8 +58,8 @@ describe("D238 canary hard lock", () => {
     const findings = validateCanaryLock({
       accounts: [
         {
-          from_email: "leilasanchez@getcrosslaunchco.info",
-          signature: "Leila Sanchez\nCanary",
+          from_email: "ada@newcanary.test",
+          signature: "Ada Lovelace\nCanary",
           warmup_details: { status: "ACTIVE" },
           campaign_ids: [3847798, 1],
         },
@@ -70,6 +85,21 @@ describe("D238 canary hard lock", () => {
       false,
       "canary shell membership is allowed",
     );
+  });
+
+  it("D240: a released contaminated seat does not page warmup-on or live-link", () => {
+    const findings = validateCanaryLock({
+      accounts: [
+        {
+          from_email: "leilasanchez@getcrosslaunchco.info",
+          signature: "Leila Sanchez\nCanary",
+          warmup_details: { status: "ACTIVE" },
+          campaign_ids: [3847798],
+        },
+      ],
+      campaigns: [{ id: 3847798, name: "TechEvo A", status: "ACTIVE" }],
+    });
+    assert.equal(findings.length, 0);
   });
 
   it("core kinds flip /health", () => {

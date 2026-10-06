@@ -1,7 +1,10 @@
 import type { MailboxControlPlacement, MailboxControlTag } from "../lib/mailboxControlTag.js";
 import type { IsolationVerdict } from "../lib/isolationVerdict.js";
 import type { VariantKind } from "../lib/copyVariants.js";
-import type { CopyCanaryFleetRecord } from "../lib/copyCanaryFleet.js";
+import type {
+  CopyCanaryFleetRecord,
+  ReleasedCanaryFleetRecord,
+} from "../lib/copyCanaryFleet.js";
 import type { SuppressedTerm } from "../lib/suppressedTerms.js";
 import type { PodPool, PodStatus } from "../lib/pods.js";
 import type { DomainOwnerRecord } from "../lib/domainOwnership.js";
@@ -193,6 +196,8 @@ export interface IsolationState {
   placementScores: Record<string, PlacementScoreRecord>;
   copyCanaries: Record<string, CopyCanaryRecord>;
   copyCanaryFleet: CopyCanaryFleetRecord | null;
+  /** D240 — emails/domains that must never be re-adopted as canaries. */
+  releasedCanaryFleet: ReleasedCanaryFleetRecord | null;
   lastPodControlAt: string | null;
   /** D56 — paused known-good shell campaign id. */
   shellCampaignId: number | null;
@@ -220,6 +225,7 @@ export const EMPTY_ISOLATION_STATE: IsolationState = {
   placementScores: {},
   copyCanaries: {},
   copyCanaryFleet: null,
+  releasedCanaryFleet: null,
   lastPodControlAt: null,
   shellCampaignId: null,
   wordHuntShellCampaignId: null,
@@ -248,6 +254,7 @@ export function normalizeIsolationState(
     placementScores: raw?.placementScores ?? {},
     copyCanaries: raw?.copyCanaries ?? {},
     copyCanaryFleet: raw?.copyCanaryFleet ?? null,
+    releasedCanaryFleet: raw?.releasedCanaryFleet ?? null,
     controlTemplate: raw?.controlTemplate ?? null,
     lastPodControlAt: raw?.lastPodControlAt ?? null,
     shellCampaignId:

@@ -102,10 +102,30 @@ export class CopyCanaryService {
       return result;
     }
 
+    this.state.mergeReleasedCanaryFleet({
+      emails: this.config.releasedCanaryFleetEmails,
+      domains: this.config.releasedCanaryFleetDomains,
+    });
     this.reconcileFleetPurchase();
     const fleet = this.state.getCopyCanaryFleet();
     const fleetEmails = fleet?.emails ?? [];
     if (!fleetEmails.length) {
+      // D240 — after the contaminated fleet is released, do not rebuild
+      // it from the original purchase and do not Slack a 2×3 buy.
+      // One fleet-level skip; campaign-check reports canaryFleetDown.
+      if (this.shouldAwaitReplacement()) {
+        if (!this.state.getCanaryFleetDown()) {
+          this.state.setCanaryFleetDown({
+            since: new Date().toISOString(),
+            fleetSize: 0,
+          });
+        }
+        result.skipped.push(
+          "canary fleet empty — awaiting CANARY-tagged replacement (D240)",
+        );
+        await this.state.save();
+        return result;
+      }
       if (this.shouldSkipFleetBuy()) {
         result.skipped.push("canary fleet already bought — waiting on mailboxes");
       } else {
@@ -827,7 +847,10 @@ export class CopyCanaryService {
 
   private reconcileFleetPurchase(): void {
     const actions = this.state.listIsolationActions();
-    const bought = domainsFromCanaryBuyActions(actions);
+    const bought = domainsFromCanaryBuyActions(
+      actions,
+      this.state.getReleasedCanaryFleet(),
+    );
     if (!bought) return;
     const fleet = this.state.getCopyCanaryFleet();
     if (!fleet?.domains.length) {
@@ -856,10 +879,17 @@ export class CopyCanaryService {
     }
   }
 
+  private shouldAwaitReplacement(): boolean {
+    if (this.config.canaryFleetEmails.length) return true;
+    return this.state.getReleasedCanaryFleet().domains.length > 0;
+  }
+
   private shouldSkipFleetBuy(): boolean {
+    if (this.shouldAwaitReplacement()) return true;
     return canaryFleetBuyAlreadyOpen(
       this.state.getCopyCanaryFleet(),
       this.state.listIsolationActions(),
+      this.state.getReleasedCanaryFleet(),
     );
   }
 

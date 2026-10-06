@@ -1,15 +1,15 @@
 /**
- * D238 — the copy-canary fleet is hard-locked. Six seats, warmup
+ * D238 / D240 — the living copy-canary fleet is hard-locked. Warmup
  * permanently off, never staffing, never on a live campaign (D54/D55/D83).
  * Identify by registered copyCanary fleet membership first, then the
- * two-line `Canary` signature as a backstop when fleet state is stale.
+ * Smartlead `CANARY` tag, then the two-line `Canary` signature as a
+ * backstop when fleet state is stale.
  *
- * 2026-10-05: leilasanchez@getcrosslaunchco.info (Smartlead 22637921)
- * was tagged GENERIC+POD-A, client_id 521881, and fan-out-linked to
- * all six ACTIVE TechEvo campaigns because min40 treated a
- * PREWARMED/EXTRA_GENERIC-domain canary as pool supply when
- * isCopyCanary was false. Nothing may attach, tag, or assign these
- * seats again.
+ * D240 — the 2026-10-05 contaminated 6-seat fleet
+ * (getcrosslaunchco.info / crosslaunchcoget.info) is released. Those
+ * emails/domains are never locked canaries, even if they still carry
+ * a Canary signature. They are normal generics: no signature rewrite
+ * to Canary, no forced warmup-off, no canary_warmup_on page.
  *
  * D239 — GABE-VM-RESERVED seats are not named staffable inventory.
  * D241 — mutating stages never unlink, link, retag, or rewrite them.
@@ -35,13 +35,16 @@ function campaignIdsOfAccount(account: { campaign_ids?: unknown }): number[] {
 import { isCanaryShellCampaign } from "./canaryShell.js";
 import {
   isCopyCanaryFleetEmail,
+  isReleasedCanaryEmail,
   type CopyCanaryFleetRecord,
+  type ReleasedCanaryFleetRecord,
 } from "./copyCanaryFleet.js";
 import {
   CALLER_FOLLOWUP_SENDER_TAG_DEFAULT,
   callerFollowUpCampaignIdsFromSenders,
   isCallerFollowUpSender,
 } from "./callerFollowUp.js";
+import { hasCanaryTag } from "./markerClients.js";
 
 export const CANARY_SIGNATURE_BRAND = "Canary";
 export const GABE_VM_RESERVED_TAG = CALLER_FOLLOWUP_SENDER_TAG_DEFAULT;
@@ -61,7 +64,9 @@ export interface CanaryLockFinding {
 
 export type CanaryLockState = {
   isCopyCanary?: (email: string) => boolean;
+  isReleasedCanary?: (email: string) => boolean;
   getCopyCanaryFleet?: () => CopyCanaryFleetRecord | null | undefined;
+  getReleasedCanaryFleet?: () => ReleasedCanaryFleetRecord | null | undefined;
 };
 
 /** Last line (or any line) of the mailbox signature is the Canary brand. */
@@ -94,16 +99,24 @@ export function gabeVmReservedCampaignIds(
 }
 
 export function isLockedCanarySeat(
-  account: { signature?: string | null },
+  account: {
+    signature?: string | null;
+    tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+  },
   email: string,
   state: CanaryLockState = {},
 ): boolean {
   const key = email.trim().toLowerCase();
   if (!key.includes("@")) return false;
+  const released = state.getReleasedCanaryFleet?.() ?? null;
+  if (state.isReleasedCanary?.(key) || isReleasedCanaryEmail(key, released)) {
+    return false;
+  }
   if (state.isCopyCanary?.(key)) return true;
-  if (isCopyCanaryFleetEmail(key, state.getCopyCanaryFleet?.() ?? null)) {
+  if (isCopyCanaryFleetEmail(key, state.getCopyCanaryFleet?.() ?? null, released)) {
     return true;
   }
+  if (hasCanaryTag(account)) return true;
   return isCanarySignature(account.signature);
 }
 
@@ -116,6 +129,7 @@ export function validateCanaryLock(input: {
     from_email?: string | null;
     email?: string | null;
     signature?: string | null;
+    tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
     warmup_details?: { status?: string | null } | null;
     campaign_ids?: unknown;
   }>;
@@ -156,7 +170,7 @@ export function canaryLockAlertText(findings: string[]): string {
   return [
     ":rotating_light: CANON miss: canary fleet was touched (D54/D55/D83/D238)",
     ...findings.map((line) => `• ${line}`),
-    "The 6-seat canary fleet is hard-locked: warmup off, never staffing, never on a live campaign.",
-    "Identify by copyCanary fleet membership or the Canary signature. Investigate in-thread.",
+    "The living canary fleet is hard-locked: warmup off, never staffing, never on a live campaign.",
+    "Identify by copyCanary fleet membership, the CANARY tag, or the Canary signature. Released seats are generics. Investigate in-thread.",
   ].join("\n");
 }

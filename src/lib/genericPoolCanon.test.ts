@@ -566,12 +566,12 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       accounts: [
         {
           id: 22637921,
-          email: "leilasanchez@getcrosslaunchco.info",
+          email: "ada@newcanary.test",
           type: "GMAIL",
           client_id: 521881,
-          signature: "Leila Sanchez\nCanary",
+          signature: "Ada Lovelace\nCanary",
           campaign_ids: [3847798],
-          tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+          tags: [{ tag_name: "CANARY" }],
           is_smtp_success: true,
           is_imap_success: true,
           created_at: "2026-01-01T00:00:00.000Z",
@@ -613,7 +613,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       campaigns: [{ id: 3847798, client_id: 521881, status: "ACTIVE" }],
       config: {
         extraGenericMailboxes: [],
-        extraGenericDomains: ["crosslaunchco.com", "getcrosslaunchco.info"],
+        extraGenericDomains: ["crosslaunchco.com", "newcanary.test"],
         prewarmedDomains: ["crosslaunchco.com"],
         campaignMinWarmupDays: 21,
         freshInboxWarmupDays: 21,
@@ -622,9 +622,9 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       now: new Date("2026-10-05T15:00:00.000Z"),
     });
     assert.equal(
-      result.seats.some((row) => row.email.includes("leilasanchez")),
+      result.seats.some((row) => row.email.includes("ada@newcanary")),
       false,
-      "canary is not a generic-pool seat",
+      "living canary is not a generic-pool seat",
     );
     assert.equal(
       result.namedStaffableByClientPod.get(clientPodKey(521881, "A")),

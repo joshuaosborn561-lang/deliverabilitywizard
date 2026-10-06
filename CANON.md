@@ -641,20 +641,30 @@ Caps ramp manually (35 on Oct 12).
 
 ## Canary + placement instrumentation
 
-- **Canary fleet** (D54/D238): purpose-bought, 2 domains × 3 inboxes (one Google
-  domain, one Outlook), warmup permanently off (D83), registered
-  `copyCanary`, **hard-locked** — never staffing supply, never a member of
-  a live campaign (D55), never `client_id` / POD / GENERIC tags. Identify
-  by registered fleet membership first, then the two-line `Canary`
-  signature as a backstop when fleet state is stale. min40, fan-out,
+- **Canary fleet** (D54/D238/D240): living fleet is **10 seats** (5 Google
+  + 5 M365 on 4 domains after the 2026-10-05 swap), warmup permanently
+  off (D83), registered `copyCanary`, **hard-locked** — never staffing
+  supply, never a member of a live campaign (D55), never `client_id` /
+  POD / GENERIC tags. Identify by registered fleet membership first,
+  then the Smartlead `CANARY` tag, then the two-line `Canary` signature
+  as a backstop. Minimum usable posture is still **one Google domain +
+  one Outlook domain**. Replace the registry only via sanctioned adopt:
+  Smartlead `CANARY` tag and/or `CANARY_FLEET_EMAILS`,
+  `/run?mode=adopt-canary-fleet`. The 2026-10-05 contaminated 6-seat
+  fleet (`getcrosslaunchco.info` / `crosslaunchcoget.info`: leilasanchez,
+  kwamelopez, aminarodriguez, marcusrossi, jasminecosta, ninajefferson)
+  is on the **released list** (hardcoded + `RELEASED_CANARY_FLEET_*` +
+  state) — never re-adopted, never rebuilt from the original purchase,
+  and **not canaries for D238**. After release they are normal generics:
+  no signature rewrite to Canary, no forced warmup-off, no
+  `canary_warmup_on` page. Until the new fleet is registered, copy tests
+  may have no senders — that is **one fleet-level notice**
+  (`canaryFleetDown`), not per-campaign spam (D85/D240). min40, fan-out,
   top-up, generic-pool, POC, pod-tags, and domain-client audit must not
-  touch them. A canary linked to any non-canary-shell campaign, or with
-  warmup on, is a core Canon miss (`canary_on_live` / `canary_warmup_on`)
-  and pages Slack (D238). 2026-10-05: `leilasanchez@getcrosslaunchco.info`
-  (Smartlead 22637921) was attached as TechEvo pool supply (GENERIC+POD-A,
-  client 521881) by min40 then fan-out — that path is closed. A hand-bought
-  fleet is adopted automatically (D86). A dead fleet is ONE fleet-level
-  fact, not per-campaign findings (D85).
+  touch a *living* canary. A living canary linked to any non-canary-shell
+  campaign, or with warmup on, is a core Canon miss (`canary_on_live` /
+  `canary_warmup_on`) and pages Slack (D238). A hand-bought replacement
+  is adopted automatically (D86/D240).
 - **Canary-copy tests**: one recurring SmartDelivery test per ACTIVE
   campaign named `Canary copy: #{liveId}`, senders = the fleet, copy = that
   campaign's live sequence. The test hangs on a **paused per-campaign Canary
@@ -928,7 +938,11 @@ generic-pool idle / multi-client, canary lock — D108/D180/D217/D221/D238), ope
 (D84) with `overdue` / `overdueStages` / `lastSkipReason` (D166) including
 the D205/D219 canon-ops stages (`hold-enforcement`, `min40-topup`,
 `powergryd-watch`, `generic-cleanup`, `mailbox-type-tags`), `/run?mode=end-poc`
-to mark a name-list POC done and release its seats (D236), the
+to mark a name-list POC done and release its seats (D236),
+`/run?mode=adopt-canary-fleet` to register `CANARY`-tagged (or
+`CANARY_FLEET_EMAILS`) seats as the living fleet and
+`/run?mode=release-canary-fleet` to add the current registry to the
+released list (D240), the
 weekday Cayden spend digest (`spend-digest`, D220), the weekday
 TERRL EOD digest (`terl-eod`), the Monday InboxKit license sweep
 (`inboxkit-license`, D222/D226), and the

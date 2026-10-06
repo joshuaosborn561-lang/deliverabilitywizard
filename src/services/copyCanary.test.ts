@@ -196,7 +196,7 @@ describe("CopyCanaryService", () => {
     assert.equal(state.isCopyCanary("g1@canary-g.info"), true);
   });
 
-  it("asks Josh to buy the fleet when it is missing", async () => {
+  it("D240: empty fleet after release is one skip, not a 2×3 buy ask", async () => {
     const state = new StateStore(
       `/tmp/copy-canary-buy-${process.pid}-${Date.now()}.json`,
     );
@@ -226,9 +226,12 @@ describe("CopyCanaryService", () => {
 
     const result = await service.attach({ dryRun: false });
     assert.deepEqual(added, []);
-    assert.equal(result.buyRequested, true);
-    assert.deepEqual(requested, ["buy_canary_fleet"]);
-    assert.equal(state.getCopyCanaryFleet()?.status, "pending");
+    assert.equal(result.buyRequested, false);
+    assert.deepEqual(requested, []);
+    assert.ok(
+      result.skipped.some((line) => /awaiting CANARY-tagged replacement/i.test(line)),
+    );
+    assert.ok(state.getCanaryFleetDown());
   });
 
   it("does not ask again after the fleet is already bought (D60)", async () => {
@@ -280,12 +283,10 @@ describe("CopyCanaryService", () => {
     const result = await service.attach({ dryRun: false });
     assert.equal(result.buyRequested, false);
     assert.deepEqual(requested, []);
-    assert.deepEqual(state.getCopyCanaryFleet()?.domains, [
-      "getcrosslaunchco.info",
-      "crosslaunchcoget.info",
-    ]);
-    assert.equal(state.getCopyCanaryFleet()?.status, "awaiting_mailboxes");
-    assert.equal(state.getIsolationAction(leftover.id)?.status, "denied");
+    assert.deepEqual(state.getCopyCanaryFleet()?.domains ?? [], []);
+    assert.ok(
+      result.skipped.some((line) => /awaiting CANARY-tagged replacement/i.test(line)),
+    );
   });
 
   it("does not use a pre-warmed fleet mailbox as a canary sender", async () => {

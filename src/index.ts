@@ -3155,7 +3155,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Cayden spend digest (D220): ${config.enableSpendDigest ? `ENABLED ${config.cronSpendDigest} ${config.spendDigestTimezone} weekday per-client pending spend` : "disabled"}`,
     );
     console.log(
-      `[boot] InboxKit license sweep (D226): ${config.enableInboxkitLicenseSweep ? `ENABLED ${config.cronInboxkitLicenseSweep} ${config.inboxkitLicenseTimezone} Monday handoff + cleanup Slack` : "disabled"}`,
+      `[boot] InboxKit license sweep (D226/D245): ${config.enableInboxkitLicenseSweep ? `ENABLED ${config.cronInboxkitLicenseSweep} ${config.inboxkitLicenseTimezone} weekday handoff + cleanup Slack` : "disabled"}`,
     );
     console.log(
       `[boot] Campaign bounce loop (D141/D148): ${config.enableCampaignBounceAutostop ? `ENABLED (${config.cronBounceAutostop}; burst >${config.bounceBurstCount} bounces/10m from sends <24h old → classify + re-queue, never pause; ledger dumps do nothing; Smartlead bounce protection is UI-only, no API off-switch exists (D157))` : "disabled"}`,

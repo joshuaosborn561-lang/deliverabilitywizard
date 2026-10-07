@@ -1,5 +1,5 @@
 /**
- * D222 / D226 — weekly Monday 8:16am CT InboxKit lapsed-license sweep.
+ * D222 / D226 / D245 — weekday 8:16am CT InboxKit lapsed-license sweep.
  * Findings go to Onboarding and Deliverability through state / /health.
  * Lapsed seats are deleted from Smartlead and InboxKit. Slack is only
  * the post-cleanup one-liner when X > 0.
@@ -16,6 +16,7 @@ import {
 import type { SlackClient } from "../clients/slack.js";
 import { sleep } from "../lib/http.js";
 import {
+  buildInboxkitSeatEnds,
   chicagoYmd,
   classifyInboxkitLicenseSweep,
   formatInboxkitLicenseCleanupSlack,
@@ -92,6 +93,9 @@ export class InboxkitLicenseSweepService {
       const clientNameById = new Map(
         clients.map((client) => [client.id, clientDisplayName(client)]),
       );
+      // D245: persist every lapsed / scheduled-cancel seat with its date so
+      // staffing never attaches a seat that is lapsed or ends within 7 days.
+      this.state.setInboxkitSeatEnds(buildInboxkitSeatEnds(mailboxes));
       result.findings = classifyInboxkitLicenseSweep({
         mailboxes,
         accounts,
@@ -183,7 +187,9 @@ export class InboxkitLicenseSweepService {
       const id = ws.uid || ws.id;
       if (!id || seen.has(id)) continue;
       seen.add(id);
-      const rows = await this.inboxkit.listAllMailboxes(id);
+      // D245: InboxKit caps a page at 100 rows; asking for 200 made the
+      // pager stop after page 1 (100 < 200) and miss the rest.
+      const rows = await this.inboxkit.listAllMailboxes(id, 100);
       out.push(
         ...rows.map((row) => ({
           ...row,
@@ -192,7 +198,7 @@ export class InboxkitLicenseSweepService {
       );
     }
     if (!out.length) {
-      out.push(...(await this.inboxkit.listAllMailboxes()));
+      out.push(...(await this.inboxkit.listAllMailboxes(undefined, 100)));
     }
     return out;
   }

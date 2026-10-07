@@ -449,9 +449,9 @@ const ConfigSchema = z.object({
   enableSpendDigest: boolFromEnv(true),
   cronSpendDigest: z.string().default("16 7 * * *"),
   spendDigestTimezone: z.string().default("America/Chicago"),
-  /** D222 — Monday 8:16am CT InboxKit lapsed-license sweep (detection only). */
+  /** D245 — weekday 8:16am CT InboxKit lapsed-license sweep (idle Sat/Sun). */
   enableInboxkitLicenseSweep: boolFromEnv(true),
-  cronInboxkitLicenseSweep: z.string().default("16 8 * * 1"),
+  cronInboxkitLicenseSweep: z.string().default("16 8 * * 1-5"),
   inboxkitLicenseTimezone: z.string().default("America/Chicago"),
   holdCampaignIds: z
     .string()
@@ -710,7 +710,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cronSpendDigest: env.CRON_SPEND_DIGEST ?? "16 7 * * *",
     spendDigestTimezone: env.SPEND_DIGEST_TIMEZONE ?? "America/Chicago",
     enableInboxkitLicenseSweep: env.ENABLE_INBOXKIT_LICENSE_SWEEP,
-    cronInboxkitLicenseSweep: env.CRON_INBOXKIT_LICENSE_SWEEP ?? "16 8 * * 1",
+    cronInboxkitLicenseSweep: env.CRON_INBOXKIT_LICENSE_SWEEP ?? "16 8 * * 1-5",
     inboxkitLicenseTimezone: env.INBOXKIT_LICENSE_TIMEZONE ?? "America/Chicago",
     holdCampaignIds: env.HOLD_CAMPAIGN_IDS ?? "",
     holdCampaignNamePatterns: env.HOLD_CAMPAIGN_NAME_PATTERNS ?? "",

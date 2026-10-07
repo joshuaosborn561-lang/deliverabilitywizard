@@ -250,6 +250,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D242 | Live — attach tightened by D244 | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
 | D243 | Live | Client-named domains are that client's named seats (never GENERIC / pool); warmup clock is later of purchase and Smartlead import; Goliath leftovers are named 548611; Culture Fits 418275 stays a D192 exception |
 | D244 | Live | CALLER FOLLOW-UP attach is tag-then-owned no more: only bridge gabriel@ seats sit on 4085158/9/60 now; owned gabe@ only own-client after 21 warm days; reserved tag never skips those checks; Gabe Calls excluded from fan-out/min40 staffing; reserved seats never get POD-A/POD-B and pod-tags strips existing ones |
+| D245 | Live | InboxKit license sweep runs every weekday 8:16am CT and deletes on the cancel date: real IK rows (`username` + `domain_name`), past scheduled cancel = lapsed even if Smartlead still logs in or is disconnected, stale `active` renewal_date is not lapsed; seat end dates persisted; min40 / POC fill and canon staffable skip lapsed or ending-within-7-days seats |
 
 ---
 
@@ -8281,3 +8282,54 @@ Mesa / Deep Roots / unlisted reserved case on #4085158.
 
 ---
 
+## D245 — InboxKit sweep: delete on the cancel date, daily weekdays
+
+**Date.** 2026-10-07.
+
+**Decision.** Josh (owner, 10/7 9:43am CT): approval is not needed to
+delete an inbox that is `scheduled_for_cancellation` or cancelled. On
+the day it is actually cancelled (cancel date reached or passed),
+delete it everywhere: Smartlead first, then InboxKit. The
+`inboxkit-license` sweep runs **every weekday** at 8:16am
+America/Chicago (cron `16 8 * * 1-5`; weekends idle) and:
+
+1. Builds each InboxKit address from `username` + `domain_name` (the
+   real `/v1/api/mailboxes/list` row has no `email` field).
+2. Treats `scheduled_for_cancellation` with a cancel date on or before
+   today (CT) as lapsed, alongside lapsed / cancelled / inactive.
+3. Matches any Smartlead account, connected or not (a seat that lost
+   SMTP is still linked to ACTIVE campaigns).
+4. Never treats an `active` row with a stale past `renewal_date` as
+   lapsed (InboxKit renews at domain level and does not advance the
+   mailbox field; billing logs show those seats paid).
+5. Never touches an address that has a live row in another workspace.
+6. Pages InboxKit mailboxes at 100 per page (the API cap).
+7. Persists every lapsed / scheduled-cancel seat with its cancel date.
+   min40 / POC fill (`seatIsUsable`) never attaches a seat that is
+   lapsed or ends within 7 days, and `StateStore.isInboxKitLapsed` now
+   exists so the canon-staffable `inboxkit_lapsed` exclusion is live.
+
+**Why.** 10/7: `latoyaflatley@culturefitsaio.info` (IK
+scheduled_for_cancellation 2026-09-11) was still in Smartlead and was
+staffed onto Deep Roots POC 4084613/4084614. The D222/D226 Monday sweep
+had produced zero findings since it shipped: `inboxkitMailboxEmail`
+read `email || address`, which InboxKit never returns, so every row
+was skipped as `not_connected`. Tests fed a synthetic `email` field.
+`StateStore.isInboxKitLapsed` did not exist, so the staffable gate was
+dead code. Weekly cadence plus a `<` date compare also let seats send
+up to 8 days past cancel.
+
+**Rejected.** Waiting for a Monday. An approval card before deleting a
+past-cancel seat. Treating `active` + past `renewal_date` as lapsed.
+Skipping disconnected Smartlead accounts.
+
+**Supersedes / amends.** Amends D222 (Monday-only cadence; past-cancel
+seats no longer skipped) and D226 (delete trigger is the cancel date).
+The D226 handoff and Slack one-liner stay.
+
+**Guards.** `inboxkitMailboxEmail` username + domain_name; cron
+`16 8 * * 1-5`; `isPastCancelDate` uses `<=`; `buildInboxkitSeatEnds` +
+`setInboxkitSeatEnds`; `isInboxKitEndingSoon` in min40 `seatIsUsable`;
+owner-intent test reproduces latoyaflatley; CANON dated D245.
+
+---

@@ -140,3 +140,84 @@ describe("InboxkitLicenseSweepService (D222/D226)", () => {
     );
   });
 });
+
+describe("D245 — weekday sweep deletes latoyaflatley (real IK row shape)", () => {
+  it("Wednesday run deletes the past-cancel seat, records seat ends, and blocks staffing", async () => {
+    const wednesday = new Date("2026-10-07T13:16:00.000Z");
+    const deletedSl: number[] = [];
+    const cancelledIk: string[][] = [];
+    const pageSizes: Array<number | undefined> = [];
+    const notes: string[] = [];
+    const state = await readyState();
+    const service = new InboxkitLicenseSweepService(
+      config(),
+      {
+        listAllEmailAccounts: async () => [
+          {
+            id: 18696010,
+            from_email: "latoyaflatley@culturefitsaio.info",
+            client_id: 597783,
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+          {
+            id: 21831356,
+            from_email: "raymondpatel@outreachdeskhub.com",
+            client_id: null,
+            is_smtp_success: true,
+            is_imap_success: true,
+          },
+        ],
+        listClients: async () => [{ id: 597783, name: "Deep Roots Capital", logo: "Deep Roots" }],
+        deleteEmailAccount: async (id: number) => {
+          deletedSl.push(id);
+        },
+      },
+      {
+        listWorkspaces: async () => [{ uid: "ws-cf" }],
+        listAllMailboxes: async (_ws?: string, pageSize?: number) => {
+          pageSizes.push(pageSize);
+          return [
+            {
+              uid: "80d9a72a-d072-476f-b179-7859905f9440",
+              username: "latoyaflatley",
+              domain_name: "culturefitsaio.info",
+              status: "scheduled_for_cancellation",
+              renewal_date: "2026-09-11T18:22:03.586Z",
+            },
+            {
+              uid: "a378c98e",
+              username: "raymondpatel",
+              domain_name: "outreachdeskhub.com",
+              status: "active",
+              renewal_date: "2026-09-24T00:49:56.000Z",
+            },
+          ] as never;
+        },
+        cancelMailboxes: async (uids: string[]) => {
+          cancelledIk.push([...uids]);
+        },
+      },
+      {
+        notifyDeliverabilityNote: async (text) => {
+          notes.push(text);
+          return undefined;
+        },
+      },
+      state,
+    );
+
+    const result = await service.run({ now: wednesday });
+    assert.equal(result.skipped, undefined);
+    assert.equal(result.deleted, 1);
+    assert.deepEqual(deletedSl, [18696010]);
+    assert.deepEqual(cancelledIk, [["80d9a72a-d072-476f-b179-7859905f9440"]]);
+    assert.deepEqual(pageSizes, [100]);
+    assert.deepEqual(notes, [
+      "Found 1 inboxes that had lapsed; they're deleted from Smartlead and InboxKit.",
+    ]);
+    assert.equal(state.isInboxKitLapsed("latoyaflatley@culturefitsaio.info", wednesday), true);
+    assert.equal(state.isInboxKitEndingSoon("LatoyaFlatley@culturefitsaio.info", wednesday), true);
+    assert.equal(state.isInboxKitEndingSoon("raymondpatel@outreachdeskhub.com", wednesday), false);
+  });
+});

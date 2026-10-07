@@ -12496,7 +12496,7 @@ describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
     const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
 
     assert.equal(defaults.enableInboxkitLicenseSweep, true);
-    assert.equal(defaults.cronInboxkitLicenseSweep, "16 8 * * 1");
+    assert.equal(defaults.cronInboxkitLicenseSweep, "16 8 * * 1-5"); // D245 weekdays
     assert.equal(defaults.inboxkitLicenseTimezone, "America/Chicago");
     assert.ok(
       "inboxkit-license" in STAGE_OVERDUE_WINDOWS_MS,
@@ -13851,8 +13851,8 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D244\*\*/,
-      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
+      /Canon as of \*\*D245\*\*/,
+      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
     );
     assert.match(
       canon,
@@ -14013,8 +14013,8 @@ describe("owner intent — D243 client-named domains + later-of warmup", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D244\*\*/,
-      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
+      /Canon as of \*\*D245\*\*/,
+      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
     );
     assert.match(
       canon,
@@ -14119,8 +14119,8 @@ describe("owner intent — D241 GABE-VM-RESERVED write exemption", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D244\*\*/,
-      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
+      /Canon as of \*\*D245\*\*/,
+      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
     );
     assert.match(
       canon,
@@ -14268,8 +14268,8 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D244\*\*/,
-      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
+      /Canon as of \*\*D245\*\*/,
+      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
     );
     assert.match(
       canon,
@@ -14397,8 +14397,8 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
 
     assert.match(
       canon,
-      /Canon as of \*\*D244\*\*/,
-      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
+      /Canon as of \*\*D245\*\*/,
+      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
     );
     assert.match(
       canon,
@@ -14470,8 +14470,8 @@ describe("owner intent — D240 canary fleet swap", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D244\*\*/,
-      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
+      /Canon as of \*\*D245\*\*/,
+      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
     );
     assert.match(
       canon,
@@ -14498,5 +14498,86 @@ describe("owner intent — D240 canary fleet swap", () => {
       /adopt-canary-fleet/,
       stop("/run adopt-canary-fleet exists (D240).", "index.ts lost the adopt run mode."),
     );
+  });
+});
+
+describe("owner intent — D245 InboxKit sweep deletes on the cancel date, daily weekdays", () => {
+  it("D245: real IK row shape, past scheduled cancel is lapsed, staffing skips ending seats", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { classifyInboxkitLicenseSweep, inboxkitLicenseIdleReason } = await import(
+      "../lib/inboxkitLicense.js"
+    );
+    const findings = classifyInboxkitLicenseSweep({
+      mailboxes: [
+        {
+          uid: "80d9a72a-d072-476f-b179-7859905f9440",
+          username: "latoyaflatley",
+          domain_name: "culturefitsaio.info",
+          status: "scheduled_for_cancellation",
+          renewal_date: "2026-09-11T18:22:03.586Z",
+        },
+      ],
+      accounts: [
+        {
+          id: 18696010,
+          from_email: "latoyaflatley@culturefitsaio.info",
+          client_id: 597783,
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      now: new Date("2026-10-07T13:16:00.000Z"),
+    });
+    assert.equal(
+      findings[0]?.kind,
+      "still_connected",
+      stop(
+        "A past scheduled_for_cancellation seat is deleted (D245, 10/7 latoyaflatley).",
+        "the sweep skipped latoyaflatley (IK rows have username + domain_name, not email).",
+      ),
+    );
+    assert.equal(
+      inboxkitLicenseIdleReason(new Date("2026-10-07T13:16:00.000Z")),
+      undefined,
+      stop("The sweep runs every weekday (D245).", "the sweep idles on a non-Monday weekday."),
+    );
+    assert.match(
+      String(inboxkitLicenseIdleReason(new Date("2026-10-03T13:16:00.000Z"))),
+      /weekend/,
+      stop("The sweep idles Saturday (D245).", "the sweep would run on Saturday."),
+    );
+    assert.match(
+      String(inboxkitLicenseIdleReason(new Date("2026-10-04T13:16:00.000Z"))),
+      /weekend/,
+      stop("The sweep idles Sunday (D245).", "the sweep would run on Sunday."),
+    );
+    assert.equal(defaults.cronInboxkitLicenseSweep, "16 8 * * 1-5");
+
+    const min40 = await readFile(new URL("../services/min40TopUp.ts", import.meta.url), "utf8");
+    const sweep = await readFile(
+      new URL("../services/inboxkitLicenseSweep.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      min40,
+      /isInboxKitEndingSoon/,
+      stop("min40 / POC fill never staffs a seat ending within 7 days (D245).", "min40TopUp.ts lost the InboxKit end gate."),
+    );
+    assert.match(
+      sweep,
+      /setInboxkitSeatEnds/,
+      stop("The sweep persists seat end dates (D245).", "inboxkitLicenseSweep.ts lost setInboxkitSeatEnds."),
+    );
+    assert.match(
+      store,
+      /isInboxKitLapsed\(/,
+      stop("StateStore answers isInboxKitLapsed (D245).", "store.ts has no isInboxKitLapsed (canonStaffable gate is dead)."),
+    );
+    assert.match(canon, /Canon as of \*\*D245\*\*/, stop("CANON is dated D245.", "CANON.md header was not bumped to D245."));
+    assert.match(decisions, /## D245 /, stop("The ledger records D245.", "DECISIONS.md has no D245."));
+    assert.match(decisions, /^\| D245 \|/m, stop("The status index lists D245.", "DECISIONS.md index has no D245 row."));
   });
 });

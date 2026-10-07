@@ -468,6 +468,14 @@ export class Min40TopUpService {
       return false;
     }
     if (isGabeVmReserved(account)) return false;
+    // D245: never staff a seat whose InboxKit license is lapsed or ends
+    // within 7 days (10/5 latoyaflatley: scheduled_for_cancellation 9/11).
+    if (
+      typeof this.state.isInboxKitEndingSoon === "function" &&
+      this.state.isInboxKitEndingSoon(key)
+    ) {
+      return false;
+    }
     if (isCallerFollowUpSupplyBlocked(account, email, callerFollowUpPolicyFromConfig(this.config))) {
       return false;
     }

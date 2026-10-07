@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D243** (2026-10-06). One page of current truth. When a new
+Canon as of **D244** (2026-10-07). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -37,9 +37,19 @@ one-client-per-sender exception. Every stage respects:
    sign-off is hard-coded in the body (`Gabriel Lopez` + client).
 2. From name stays as set. Never rename.
 3. Only these boxes on these campaigns. Never attach any other
-   mailbox. Never fan class boxes out or use them as top-up /
-   generic / POC supply. min40 skips the class, including Deep
-   Roots 4085160 POC fill.
+   mailbox. The `GABE-VM-RESERVED` tag does **not** let a seat
+   skip the own-campaign or 21-day rules (D244 — 10/6–10/7 the
+   tag-first attach helper restaffed unwarmed Mesa / Deep Roots
+   / unlisted reserved seats onto ACTIVE SalesGlider 4085158).
+   Only the three gabriel@ bridge seats may sit on all three
+   campaigns. Owned `gabe@` attach only to that client's Gabe
+   Calls campaign after 21 warm days. Other reserved-tagged
+   seats (new domains not in the owned list) never attach.
+   Never fan class boxes out or use them as top-up / generic /
+   POC supply. min40 **and fan-out staffing** skip the class,
+   including Deep Roots 4085160 POC fill — class attach is a
+   dedicated path, not named-client top-up. Reserved seats
+   never receive POD-A/POD-B; pod-tags strips any that landed.
 4. Exempt from the A/B POD rest cycle and the generic send clock.
    They send every weekday.
 5. Exempt from the half-client staffing floor and the 30/30 ESP
@@ -262,19 +272,23 @@ Caps ramp manually (35 on Oct 12).
 ## Staffing
 
 - **One client per sender, hard.** An inbox sits on every ACTIVE campaign of
-  exactly one client (plus paused shells). **Exception (D242 CALLER
+  exactly one client (plus paused shells).   **Exception (D242 / D244 CALLER
   FOLLOW-UP):** seats tagged `GABE-VM-RESERVED` (or the configured
   `CALLER_FOLLOWUP` sender tag) — Gabe Lopez voicemail follow-up,
   gabriel@ 24255314 / 24255318 / 24255344 plus later gabe@ seats —
-  sit in SalesGlider 345263 and are deliberately linked to
-  `Gabe Calls |` campaigns for SalesGlider, EMCOR/Mesa, and Deep
-  Roots. That class is the one-client exception: peel and
-  campaign-check cross-client skip it. No mutating stage unlinks,
-  links, retags, or rewrites them: one-client peel, campaign-check
-  signature write, warmup-gate pull, client-rest A/B, fan-out to
-  other campaigns, mailbox-settings cap / gap / signature /
-  from-name, pod-tags. Their `message_per_day` is managed by hand
-  (ramp to 35 on Oct 12). Foreign-client memberships are
+  sit in SalesGlider 345263. **Only the three bridge gabriel@
+  seats** may be linked to all three `Gabe Calls |` campaigns
+  today. Owned `gabe@` seats attach only to that client's Gabe
+  Calls campaign after 21 warm days — the reserved tag does not
+  skip those checks and does not allow cross-client attach.
+  Unlisted reserved `gabe@` domains never attach. That class is
+  the one-client exception: peel and campaign-check cross-client
+  skip it. No mutating stage unlinks, links, retags, or rewrites
+  them except stripping illicit POD-A/POD-B (D244): one-client
+  peel, campaign-check signature write, warmup-gate pull,
+  client-rest A/B, fan-out to other campaigns, mailbox-settings
+  cap / gap / signature / from-name. Their `message_per_day` is
+  managed by hand (ramp to 35 on Oct 12). Foreign-client memberships are
   pulled every 15 minutes and the signature reset to the owner (D26, D75)
   **unless** that pull would drop the ACTIVE campaign below 40
   *staffable* senders (D197/D198/D199/D207/D209). Raw membership
@@ -431,7 +445,9 @@ Caps ramp manually (35 on Oct 12).
   `#deliverability` on weekdays; the wizard does not pick a side.
   The split is visible in Smartlead as POD-A/POD-B mailbox tags,
   first-tagged 6-hourly on untagged named seats only (D135/D234) —
-  decoration for humans; never a retag.
+  decoration for humans; never a retag. **CALLER FOLLOW-UP
+  reserved seats never receive a POD tag** (D244); pod-tags
+  strips POD-A/POD-B that already landed on them.
   Assigned generics also carry a POD so allocation can top A and B
   independently; that tag is not rotated across PODs (D221/D230).
   **There is no separate generic send-clock** (D43's ~14-day sit is

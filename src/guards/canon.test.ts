@@ -13851,8 +13851,8 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D243\*\*/,
-      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+      /Canon as of \*\*D244\*\*/,
+      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
     );
     assert.match(
       canon,
@@ -14013,8 +14013,8 @@ describe("owner intent — D243 client-named domains + later-of warmup", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D243\*\*/,
-      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+      /Canon as of \*\*D244\*\*/,
+      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
     );
     assert.match(
       canon,
@@ -14119,8 +14119,8 @@ describe("owner intent — D241 GABE-VM-RESERVED write exemption", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D243\*\*/,
-      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+      /Canon as of \*\*D244\*\*/,
+      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
     );
     assert.match(
       canon,
@@ -14268,8 +14268,8 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D243\*\*/,
-      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+      /Canon as of \*\*D244\*\*/,
+      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
     );
     assert.match(
       canon,
@@ -14297,6 +14297,147 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.match(unpause, /callerFollowUpForbidsStatusWrite/);
     assert.match(health, /callerFollowUpForbidsStatusWrite/);
     assert.match(isolation, /callerFollowUpMustPageBeforeAct/);
+  });
+});
+
+describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign only", () => {
+  it("D244: reserved tag does not skip owned warmup/own-campaign; 10/7 seats stay off #4085158", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      callerFollowUpMayAttach,
+      callerFollowUpMustSkipPodTags,
+      GABE_CALLS_SALESGLIDER_ID,
+    } = await import("../lib/callerFollowUp.js");
+
+    const salesglider = {
+      id: GABE_CALLS_SALESGLIDER_ID,
+      name: "Gabe Calls | SalesGlider",
+    };
+    const reserved = (email: string) => ({
+      from_email: email,
+      tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "POD-A" }],
+    });
+
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reserved("gabe@gosalesglider.info"),
+        campaign: salesglider,
+        warmed: false,
+      }).ok,
+      false,
+      stop(
+        "Unwarmed reserved gabe@ must not attach to Gabe Calls (D244).",
+        "callerFollowUpMayAttach still allows a 1–4 day tagged SalesGlider seat onto #4085158.",
+      ),
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reserved("gabe@getmesaco.info"),
+        campaign: salesglider,
+        warmed: false,
+      }).ok,
+      false,
+      stop(
+        "Mesa reserved gabe@ must not attach to SalesGlider Gabe Calls (D244).",
+        "callerFollowUpMayAttach still allows a Mesa/EMCOR seat onto #4085158.",
+      ),
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reserved("gabe@brightlanehq.info"),
+        campaign: salesglider,
+        warmed: false,
+      }).ok,
+      false,
+      stop(
+        "Deep Roots reserved gabe@ must not attach to SalesGlider Gabe Calls (D244).",
+        "callerFollowUpMayAttach still allows a Deep Roots seat onto #4085158.",
+      ),
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reserved("gabe@larkhavenco.info"),
+        campaign: salesglider,
+        warmed: true,
+      }).ok,
+      false,
+      stop(
+        "Unlisted reserved gabe@ never attaches (D244).",
+        "callerFollowUpMayAttach still allows a non-owned reserved seat onto #4085158.",
+      ),
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: {
+          from_email: "gabriel@sorrelquotaio.co",
+          tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "WARMUP-GATE-EXEMPT" }],
+        },
+        campaign: salesglider,
+      }).ok,
+      true,
+      stop(
+        "Bridge gabriel@ may still sit on Gabe Calls (D244).",
+        "callerFollowUpMayAttach blocked a bridge seat.",
+      ),
+    );
+    assert.equal(
+      callerFollowUpMustSkipPodTags(reserved("gabe@getmesaco.info")),
+      true,
+      stop(
+        "Reserved seats never receive POD tags (D244).",
+        "callerFollowUpMustSkipPodTags missed a reserved Mesa seat.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const helper = await readFile(new URL("../lib/callerFollowUp.ts", import.meta.url), "utf8");
+    const fanout = await readFile(new URL("../services/clientFanOut.ts", import.meta.url), "utf8");
+    const podTags = await readFile(new URL("../services/podTags.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D244\*\*/,
+      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
+    );
+    assert.match(
+      canon,
+      /tag does \*\*not\*\* let a seat/,
+      stop("CANON names the D244 tag-first hole.", "CANON.md lost the reserved-tag attach warning."),
+    );
+    assert.match(
+      decisions,
+      /## D244 — /,
+      stop("The ledger records D244.", "DECISIONS.md has no D244 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D244 \|/m,
+      stop("The status index lists D244 (D127).", "DECISIONS.md status index has no D244 row."),
+    );
+    assert.match(
+      helper,
+      /owned gabe@ still owes 21-day warmup/,
+      stop("Owned-seat warmup is checked before the reserved tag (D244).", "callerFollowUpMayAttach lost the owned-first order."),
+    );
+    assert.doesNotMatch(
+      helper,
+      /bridge \/ tagged class sender on class campaign/,
+      stop(
+        "The tag-first early-ok is deleted (D244).",
+        "callerFollowUpMayAttach still returns ok for any tagged class sender.",
+      ),
+    );
+    assert.match(
+      fanout,
+      /Class attach goes through attachCallerFollowUpClass only/,
+      stop("Fan-out staffing skips Gabe Calls (D244).", "clientFanOut.ts still staffs class campaigns in the group loop."),
+    );
+    assert.match(
+      podTags,
+      /stripReserved/,
+      stop("pod-tags strips POD tags from reserved seats (D244).", "podTags.ts lost reserved POD cleanup."),
+    );
   });
 });
 
@@ -14329,8 +14470,8 @@ describe("owner intent — D240 canary fleet swap", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D243\*\*/,
-      stop("CANON is dated D243.", "CANON.md header was not bumped to D243."),
+      /Canon as of \*\*D244\*\*/,
+      stop("CANON is dated D244.", "CANON.md header was not bumped to D244."),
     );
     assert.match(
       canon,

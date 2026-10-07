@@ -1,4 +1,5 @@
 import { isGenericMailbox } from "./clientInbox.js";
+import { isGabeVmReserved } from "./canaryLock.js";
 import { existingPodTag } from "./podTagLock.js";
 import { assignClientCohorts, isOffWeek, type RestCohort } from "./restCohort.js";
 import { isIsolationEmail, type IsolationDenylist } from "./isolationDomain.js";
@@ -62,6 +63,7 @@ export function buildPods(input: {
     const email = account.email.trim().toLowerCase();
     if (!email.includes("@")) continue;
     if (isIsolationEmail(email, input.isolation)) continue;
+    if (isGabeVmReserved({ tags: account.tags, from_email: email })) continue;
 
     const row: PodMailbox = {
       accountId: account.accountId,

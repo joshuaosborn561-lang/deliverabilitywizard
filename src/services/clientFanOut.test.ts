@@ -685,4 +685,124 @@ describe("D139 — staffing never hands the gate its next pull", () => {
       "under-warmed owned gabe@ must not attach yet",
     );
   });
+
+  it("D244: 10/7 reserved gabe@ seats must not re-attach to ACTIVE #4085158", async () => {
+    const adds: Array<[number, number[]]> = [];
+    const smartlead = {
+      listCampaigns: async () => [
+        { id: 1, name: "SalesGlider Engagers", status: "ACTIVE", client_id: 345263 },
+        {
+          id: 4085158,
+          name: "Gabe Calls | SalesGlider",
+          status: "ACTIVE",
+          client_id: 345263,
+        },
+        {
+          id: 4085159,
+          name: "Gabe Calls | EMCOR",
+          status: "COMPLETED",
+          client_id: 574020,
+        },
+        {
+          id: 4085160,
+          name: "Gabe Calls | Deep Roots",
+          status: "COMPLETED",
+          client_id: 597783,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 24255344,
+          from_email: "gabriel@sorrelquotaio.co",
+          created_at: "2026-01-01T00:00:00Z",
+          campaign_ids: [4085158],
+          client_id: 345263,
+          tags: [
+            { tag_name: "GABE-VM-RESERVED" },
+            { tag_name: "WARMUP-GATE-EXEMPT" },
+          ],
+        },
+        {
+          id: 20,
+          from_email: "gabe@gosalesglider.info",
+          created_at: "2026-10-04T00:00:00Z",
+          campaign_ids: [],
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "POD-A" }],
+        },
+        {
+          id: 21,
+          from_email: "gabe@getmesaco.info",
+          created_at: "2026-10-03T00:00:00Z",
+          campaign_ids: [],
+          client_id: 574020,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "type:m365" }],
+        },
+        {
+          id: 22,
+          from_email: "gabe@brightlanehq.info",
+          created_at: "2026-10-05T00:00:00Z",
+          campaign_ids: [],
+          client_id: 597783,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+        },
+        {
+          id: 23,
+          from_email: "gabe@larkhavenco.info",
+          created_at: "2026-10-06T00:00:00Z",
+          campaign_ids: [],
+          client_id: 345263,
+          tags: [{ tag_name: "GABE-VM-RESERVED" }],
+        },
+      ],
+      listClients: async () => [
+        { id: 345263, name: "SalesGlider" },
+        { id: 574020, name: "EMCOR" },
+        { id: 597783, name: "Deep Roots" },
+      ],
+      addEmailAccountsToCampaign: async (campaignId: number, ids: number[]) => {
+        adds.push([campaignId, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      smartlead,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        isCopyCanary: () => false,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+      } as unknown as StateStore,
+    );
+
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-07T13:30:00.000-05:00"),
+    });
+    const attachedToGabeCalls = adds.flatMap(([campaignId, ids]) =>
+      campaignId === 4085158 ? ids : [],
+    );
+    assert.deepEqual(
+      attachedToGabeCalls,
+      [],
+      "unwarmed / cross-client / unlisted reserved gabe@ must not land on #4085158",
+    );
+    assert.equal(
+      adds.some((row) => row[0] === 4085159 || row[0] === 4085160),
+      false,
+      "COMPLETED Gabe Calls campaigns stay untouched",
+    );
+    assert.equal(
+      adds.some((row) => row[1].includes(20) || row[1].includes(21) || row[1].includes(22) || row[1].includes(23)),
+      false,
+      "reserved gabe@ seats never fan out onto SalesGlider Engagers either",
+    );
+    assert.ok(
+      result.skipped.some((row) => row.includes("gabe@getmesaco.info")),
+      "Mesa reserved seat must be skipped, not silently ignored",
+    );
+  });
 });

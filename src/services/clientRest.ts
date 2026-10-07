@@ -15,6 +15,10 @@ import { isGenericMailbox } from "../lib/clientInbox.js";
 import { mailboxPodOf } from "../lib/podInventory.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
+import {
+  callerFollowUpMayAttach,
+  callerFollowUpPolicyFromConfig,
+} from "../lib/callerFollowUp.js";
 import { pocClientId, pocEngagementClientIds } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
@@ -525,6 +529,17 @@ export class ClientRestService {
           result.skipped.push(
             `${row.email}: Insight / ACTIVE SalesGlider staffing split (D184)`,
           );
+          continue;
+        }
+        const classAttach = callerFollowUpMayAttach({
+          email: row.email,
+          account: row.account,
+          campaign: target,
+          warmed: !owesWarmup(row.account, row.email, this.config, this.state),
+          policy: callerFollowUpPolicyFromConfig(this.config),
+        });
+        if (!classAttach.ok) {
+          result.skipped.push(`${row.email}: ${classAttach.reason}`);
           continue;
         }
         try {

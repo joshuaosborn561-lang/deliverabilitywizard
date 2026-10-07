@@ -18,6 +18,7 @@ import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import {
+  callerFollowUpMayAttach,
   callerFollowUpPolicyFromConfig,
   isCallerFollowUpCampaign,
 } from "../lib/callerFollowUp.js";
@@ -153,6 +154,14 @@ export class OneClientMembershipService {
       .filter((campaign) => {
         if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
         if (isAnyShellCampaign(campaign)) return false;
+        if (
+          isCallerFollowUpCampaign(
+            campaign,
+            callerFollowUpPolicyFromConfig(this.config),
+          )
+        ) {
+          return false;
+        }
         const client =
           typeof campaign.client_id === "number"
             ? clientsById.get(campaign.client_id)
@@ -386,8 +395,22 @@ export class OneClientMembershipService {
     }
 
     // Restore onto the owner first so a generic is not left campaign-less.
+    const classPolicy = callerFollowUpPolicyFromConfig(this.config);
     for (const [campaignId, rows] of restores) {
-      for (const batch of chunk(rows, WRITE_BATCH)) {
+      const campaign = campaignById.get(campaignId);
+      const allowed = rows.filter((row) => {
+        const account = accountById.get(row.accountId);
+        if (!account) return false;
+        return callerFollowUpMayAttach({
+          email: row.email,
+          account,
+          campaign,
+          warmed: true,
+          policy: classPolicy,
+        }).ok;
+      });
+      if (!allowed.length) continue;
+      for (const batch of chunk(allowed, WRITE_BATCH)) {
         try {
           if (!dryRun) {
             await this.smartlead.addEmailAccountsToCampaign(

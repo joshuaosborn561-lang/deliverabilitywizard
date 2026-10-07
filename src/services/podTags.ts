@@ -15,6 +15,7 @@ import {
 import { existingPodTag } from "../lib/podTagLock.js";
 import { weekendWriterIdleReason } from "../lib/canonOpsHours.js";
 import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
+import { callerFollowUpMustSkipPodTags } from "../lib/callerFollowUp.js";
 import { pocEngagementClientIds } from "../lib/pocClient.js";
 
 export const POD_TAG_A = "POD-A";
@@ -96,14 +97,25 @@ export class PodTagService {
     const assignB: number[] = [];
     const firstTagEmails: string[] = [];
     const refusedEmails: string[] = [];
+    const stripReserved: number[] = [];
+    const stripEmails: string[] = [];
     for (const account of accounts) {
-      const want = desired.get(account.id);
-      if (!want) continue;
       const lockEmail = accountEmail(account) || "";
       if (lockEmail && isLockedCanarySeat(account, lockEmail, this.state)) {
         continue;
       }
-      if (isGabeVmReserved(account)) continue;
+      if (
+        callerFollowUpMustSkipPodTags(account, lockEmail) ||
+        isGabeVmReserved(account)
+      ) {
+        if (existingPodTag(account.tags) && typeof account.id === "number") {
+          stripReserved.push(account.id);
+          stripEmails.push(lockEmail || String(account.id));
+        }
+        continue;
+      }
+      const want = desired.get(account.id);
+      if (!want) continue;
       if (hasDualPodTags(account.tags)) continue;
       if (
         typeof account.client_id === "number" &&
@@ -112,7 +124,7 @@ export class PodTagService {
         continue;
       }
       const existing = existingPodTag(account.tags);
-      const email = accountEmail(account) || String(account.id);
+      const email = lockEmail || String(account.id);
       if (existing) {
         if (existing !== want) {
           refusedEmails.push(`${email} has POD-${existing} want POD-${want}`);
@@ -130,7 +142,7 @@ export class PodTagService {
       );
     }
 
-    if (!assignA.length && !assignB.length) {
+    if (!assignA.length && !assignB.length && !stripReserved.length) {
       const dualPodFlagged = await this.flagDualPod(
         accounts,
         clients ?? [],
@@ -148,7 +160,7 @@ export class PodTagService {
     const tagA = await this.smartlead.ensureTag(POD_TAG_A, "#4FC3F7");
     const tagB = await this.smartlead.ensureTag(POD_TAG_B, "#9575CD");
     let assigned = 0;
-    const removed = 0;
+    let removed = 0;
     if (!this.config.dryRun) {
       for (const batch of chunk(assignA, TAG_BATCH)) {
         await this.smartlead.assignTags(batch, [tagA.id]);
@@ -160,9 +172,16 @@ export class PodTagService {
         assigned += batch.length;
         await this.pause();
       }
+      for (const batch of chunk(stripReserved, TAG_BATCH)) {
+        await this.smartlead.removeTags(batch, [tagA.id, tagB.id]);
+        removed += batch.length;
+        await this.pause();
+      }
+    } else {
+      removed = stripReserved.length;
     }
     console.log(
-      `[pod-tags] first-tag POD-A/POD-B on untagged client mailboxes: assigned=${assigned} removed=${removed} refused=${refusedEmails.length}${this.config.dryRun ? " (dry-run: no writes)" : ""} emails=${firstTagEmails.join(",") || "none"}`,
+      `[pod-tags] first-tag POD-A/POD-B on untagged client mailboxes: assigned=${assigned} removed=${removed} refused=${refusedEmails.length}${this.config.dryRun ? " (dry-run: no writes)" : ""} emails=${firstTagEmails.join(",") || "none"}${stripEmails.length ? ` stripped-reserved=${stripEmails.join(",")}` : ""}`,
     );
     const dualPodFlagged = await this.flagDualPod(
       accounts,

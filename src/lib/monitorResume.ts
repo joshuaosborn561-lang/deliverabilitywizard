@@ -15,13 +15,14 @@
 export const MONITOR_CYCLE_MS = 6 * 60 * 60 * 1000;
 
 /**
- * Stages that live on the 6-hour `runMonitor` chain. warmup-gate also runs
- * here but is a 15-minute health stage (HEALTH_MS) — health keeps it fresh,
- * so a resume does not need to re-drive it.
+ * Stages that live on the 6-hour `runMonitor` chain. The monitor's warmup
+ * pass uses `warmup-gate-monitor` (D247) so it cannot invert the health
+ * chain's `warmup-gate` lastOk.
  */
 export const MONITOR_LOOP_STAGES = [
   "pod-tags",
   "monitor-results",
+  "warmup-gate-monitor",
   "test-reconcile",
   "dns-audit",
   "campaign-audit",

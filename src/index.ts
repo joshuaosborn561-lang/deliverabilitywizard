@@ -1,5 +1,6 @@
 import express from "express";
 import cron from "node-cron";
+import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertRuntimeSecrets, configIsReady, loadConfig } from "./config.js";
@@ -104,6 +105,14 @@ import { CursorAssistantService } from "./ops/cursorAssistant.js";
 import { createOpsRouter } from "./ops/router.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
+import { raceStep, stepTimeoutMs } from "./lib/stepTimeout.js";
+import {
+  CANON_OPS_LOCK_MAX_MS,
+  HEALTH_LOCK_MAX_MS,
+  InFlightLock,
+  MONITOR_LOCK_MAX_MS,
+} from "./lib/inFlightLock.js";
+import { startFreezeWatchdog } from "./lib/freezeWatchdog.js";
 import { PodControlService } from "./services/podControls.js";
 import { IsolationRigService } from "./services/isolationRig.js";
 import { CopyIsolationService } from "./services/copyIsolation.js";
@@ -214,7 +223,8 @@ async function main(): Promise<void> {
   const inventoryBook = new InventoryBook(smartlead);
   // Serialise Smartlead writes across health / remediation / settings so
   // overlapping crons do not stampede into 429s (D25).
-  smartlead.setMutationQueue(new MutationQueue(400));
+  const mutationQueue = new MutationQueue(400);
+  smartlead.setMutationQueue(mutationQueue);
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
   );
@@ -299,6 +309,56 @@ async function main(): Promise<void> {
   let healthInFlight: Promise<unknown> | null = null;
   let bounceAutostopInFlight: Promise<unknown> | null = null;
   let canonOpsInFlight: Promise<unknown> | null = null;
+  const healthLock = new InFlightLock("health", HEALTH_LOCK_MAX_MS);
+  const canonOpsLock = new InFlightLock("canonOps", CANON_OPS_LOCK_MAX_MS);
+  const monitorLock = new InFlightLock("monitor", MONITOR_LOCK_MAX_MS);
+  const passContext = new AsyncLocalStorage<{ lock: InFlightLock; token: string }>();
+
+  const alertStaleLock = (lock: InFlightLock, snap: { since: string; stage: string }): void => {
+    const ageMin = ((Date.now() - Date.parse(snap.since)) / 60_000).toFixed(1);
+    const text = `[watchdog] ${lock.name} lock stale after ${ageMin}m at stage ${snap.stage} — taking over`;
+    console.warn(text);
+    if (!config.dryRun) {
+      void slack
+        .send(
+          `:rotating_light: ${lock.name} pass stuck ${ageMin}m at \`${snap.stage}\` (since ${snap.since}). Taking over the lock (D247).`,
+          undefined,
+          "ops_alert",
+        )
+        .catch((error) => console.warn(`[watchdog] ${lock.name} stale-lock alert failed`, error));
+    }
+  };
+
+  const beginPass = (
+    lock: InFlightLock,
+    already: Promise<unknown> | null,
+    label: string,
+  ):
+    | { skipped: true; reason: "already-running" }
+    | { skipped: false; token: string; takeover: boolean } => {
+    if (already && lock.isLive()) {
+      console.log(`[${label}] Already running — skipping overlapping trigger`);
+      return { skipped: true, reason: "already-running" };
+    }
+    const stale = already && lock.isStale() ? lock.snapshot() : null;
+    const acquired = lock.acquire("starting");
+    if (!acquired) {
+      console.log(`[${label}] Already running — skipping overlapping trigger`);
+      return { skipped: true, reason: "already-running" };
+    }
+    if (acquired.takeover && stale) alertStaleLock(lock, stale);
+    return { skipped: false, token: acquired.token, takeover: acquired.takeover };
+  };
+
+  const runWithPass = <T>(
+    lock: InFlightLock,
+    token: string,
+    work: () => Promise<T>,
+  ): Promise<T> => passContext.run({ lock, token }, work);
+
+  const releasePass = (lock: InFlightLock, token: string): boolean => {
+    return lock.release(token);
+  };
   let opsCheckInFlight: Promise<{
     monitor: unknown;
     dns: unknown;
@@ -325,7 +385,7 @@ async function main(): Promise<void> {
   };
 
   const runPoolProvision = async () => {
-    if (healthInFlight) {
+    if (healthLock.isLive()) {
       console.log(
         "[pool-provision] Health pass running — skipping overlapping trigger",
       );
@@ -672,7 +732,7 @@ async function main(): Promise<void> {
 
   const stage = async <T>(
     name: string,
-    fn: () => Promise<T>,
+    fn: (signal?: AbortSignal) => Promise<T>,
     opts: {
       skipIfFreshMs?: number;
       skipIfBeforeStage?: HealthLoopStage | null;
@@ -693,8 +753,14 @@ async function main(): Promise<void> {
       console.log(`[watchdog] stage ${name} skipped — ${why}`);
       return null;
     }
+    const ctx = passContext.getStore();
+    if (ctx && !ctx.lock.owns(ctx.token)) {
+      console.log(`[watchdog] stage ${name} skipped — pass superseded`);
+      return null;
+    }
+    if (ctx) ctx.lock.setStage(ctx.token, name);
     try {
-      const out = await fn();
+      const out = await raceStep((signal) => fn(signal), stepTimeoutMs(name));
       state.recordStageOk(name, Date.now() - startedAt, stageIdleReason(out));
       await checkpointStage(name);
       return out;
@@ -772,7 +838,7 @@ async function main(): Promise<void> {
   };
 
   const runCampaignTopUp = async () => {
-    if (topUpInFlight || healthInFlight) {
+    if (topUpInFlight || healthLock.isLive()) {
       console.log("[top-up] Already running — skipping overlapping trigger");
       return { skipped: true as const, reason: "already-running" };
     }
@@ -826,11 +892,10 @@ async function main(): Promise<void> {
    */
   const runHealth = async (opts: { joshLive?: boolean } = {}) => {
     assertRuntimeSecrets(config);
-    if (healthInFlight) {
-      console.log("[health] Already running — skipping overlapping trigger");
-      return { skipped: true as const, reason: "already-running" };
-    }
-    healthInFlight = (async () => {
+    const began = beginPass(healthLock, healthInFlight, "health");
+    if (began.skipped) return { skipped: true as const, reason: "already-running" };
+    const token = began.token;
+    const run = runWithPass(healthLock, token, async () => {
       const passStart = Date.now();
 
       // D211/D214/D215 — leftover health-loop stages resume after a
@@ -1062,10 +1127,11 @@ async function main(): Promise<void> {
         mailboxSettings: mailboxSettingsResult,
         isolationBranch: isolationBranchResult,
       };
-    })().finally(() => {
-      healthInFlight = null;
     });
-    const result = await healthInFlight;
+    healthInFlight = run.finally(() => {
+      if (releasePass(healthLock, token)) healthInFlight = null;
+    });
+    const result = await run;
     // D167 — leftover 6h stages resume on this tick, not the next cron
     // and not at boot (D122). Fire-and-forget so /run?mode=health and the
     // 15-minute cron do not sit on campaign-audit. skip-if-fresh makes a
@@ -1075,7 +1141,7 @@ async function main(): Promise<void> {
   };
 
   const kickMonitorResume = (): void => {
-    if (monitorInFlight) return;
+    if (monitorLock.isLive()) return;
     const leftover = staleMonitorStages(state.listStageHealth());
     if (!leftover.length) return;
     console.log(
@@ -1090,11 +1156,10 @@ async function main(): Promise<void> {
   const runCanonOps = async (
     opts: { force?: boolean } = {},
   ): Promise<unknown> => {
-    if (canonOpsInFlight) {
-      console.log("[canon-ops] Already running — skipping overlapping trigger");
-      return { skipped: true as const, reason: "already-running" };
-    }
-    canonOpsInFlight = (async () => {
+    const began = beginPass(canonOpsLock, canonOpsInFlight, "canon-ops");
+    if (began.skipped) return { skipped: true as const, reason: "already-running" };
+    const token = began.token;
+    const run = runWithPass(canonOpsLock, token, async () => {
       const idle = opts.force
         ? undefined
         : !config.enableCanonOps
@@ -1142,10 +1207,11 @@ async function main(): Promise<void> {
         () => mailboxTypeTags.run({ inventory }),
       ));
       return { hold, min40, power, cleanup, typeTags, idle: idle ?? null };
-    })().finally(() => {
-      canonOpsInFlight = null;
     });
-    return canonOpsInFlight;
+    canonOpsInFlight = run.finally(() => {
+      if (releasePass(canonOpsLock, token)) canonOpsInFlight = null;
+    });
+    return run;
   };
 
   const runBounceAutostop = async () => {
@@ -1186,7 +1252,7 @@ async function main(): Promise<void> {
   };
 
   const runOpsDeliverability = async () => {
-    if (opsCheckInFlight || monitorInFlight) {
+    if (opsCheckInFlight || monitorLock.isLive()) {
       throw new Error("A deliverability monitor is already running.");
     }
     opsCheckInFlight = (async () => {
@@ -1208,16 +1274,16 @@ async function main(): Promise<void> {
     opts: { remediate?: boolean; resume?: boolean; joshLive?: boolean } = {},
   ) => {
     assertRuntimeSecrets(config);
-    if (monitorInFlight) {
-      console.log("[monitor] Already running — skipping overlapping trigger");
-      return { skipped: true as const, reason: "already-running" };
-    }
+    const began = beginPass(monitorLock, monitorInFlight, "monitor");
+    if (began.skipped) return { skipped: true as const, reason: "already-running" };
+    const token = began.token;
     const skipIfFreshMs = opts.resume ? MONITOR_CYCLE_MS : undefined;
     if (opts.resume && !monitorNeedsResume(state.listStageHealth())) {
       console.log("[monitor] D167 resume — every 6h stage is still fresh");
+      releasePass(monitorLock, token);
       return { skipped: true as const, reason: "all-fresh" };
     }
-    monitorInFlight = (async () => {
+    const run = runWithPass(monitorLock, token, async () => {
       // D131 — every monitor stage is watchdogged like the health pass:
       // a silent 429 death shows up in stageHealth instead of a swallowed
       // console.warn (D84 covered only the 15-minute loop).
@@ -1242,7 +1308,7 @@ async function main(): Promise<void> {
       );
       let warmupGateResult: unknown = null;
       if (config.enableWarmupGate) {
-        warmupGateResult = await stage("warmup-gate", () => runWarmupGate(), {
+        warmupGateResult = await stage("warmup-gate-monitor", () => runWarmupGate(), {
           skipIfFreshMs,
         });
       }
@@ -1320,10 +1386,11 @@ async function main(): Promise<void> {
         podControls: podControlResult,
         isolationRig: isolationRigResult,
       };
-    })().finally(() => {
-      monitorInFlight = null;
     });
-    return monitorInFlight;
+    monitorInFlight = run.finally(() => {
+      if (releasePass(monitorLock, token)) monitorInFlight = null;
+    });
+    return run;
   };
 
   if (!cron.validate(config.cronScan)) {
@@ -1428,7 +1495,7 @@ async function main(): Promise<void> {
 
   if (config.enableCampaignCheck) {
     cron.schedule(config.cronCampaignCheck, () => {
-      if (healthInFlight) {
+      if (healthLock.isLive()) {
         console.log(
           "[campaign-check] Health pass running — skipping overlapping hourly sweep",
         );
@@ -2544,6 +2611,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         threshold: config.remediationInboxThreshold,
         lastOkAt: s.stageHealth?.["isolation-branch"]?.lastOkAt ?? null,
       }),
+      inFlight: {
+        health: healthLock.snapshot(),
+        canonOps: canonOpsLock.snapshot(),
+        monitor: monitorLock.snapshot(),
+      },
+      mutationQueue: mutationQueue.snapshot(),
     });
   });
 
@@ -2754,7 +2827,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
       if (mode === "fan-out" || mode === "client-fanout") {
         assertRuntimeSecrets(config);
-        if (healthInFlight || topUpInFlight) {
+        if (healthLock.isLive() || topUpInFlight) {
           res.json({
             ok: true,
             mode: "fan-out",
@@ -3207,6 +3280,12 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Spend approval gateway: ${config.requireSpendApproval ? "ENABLED (real-money spend held for human approval via /approvals)" : "DISABLED — spend executes unattended"}`,
     );
     console.log(`[boot] State file: ${config.stateFilePath}`);
+    startFreezeWatchdog({
+      getLocks: () => [healthLock, canonOpsLock, monitorLock],
+    });
+    console.log(
+      "[boot] D247 freeze watchdog: event-loop delay >1s logged; blocked >5m or a pass past 2× max exits 1 (Railway restart-on-failure must be on)",
+    );
   });
 }
 

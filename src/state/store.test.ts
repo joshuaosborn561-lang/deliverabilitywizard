@@ -216,6 +216,18 @@ describe("D167 serialized save", () => {
       "a later recordStageOk must not be lost to an overlapping save rename",
     );
   });
+
+  it("D247: writes compact JSON (no pretty-print indent)", async () => {
+    const filePath = `/tmp/dw-state-compact-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    state.recordStageOk("inventory", 10);
+    await state.save();
+    const { readFile } = await import("node:fs/promises");
+    const raw = await readFile(filePath, "utf8");
+    assert.equal(raw.includes("\n  "), false, "compact JSON must not indent");
+    assert.ok(raw.startsWith("{"));
+  });
 });
 
 describe("D224 evidence hold state", () => {

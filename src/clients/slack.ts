@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fetchWithTimeout } from "../lib/http.js";
 import {
   humanizeAlertError,
   isBenignOpsNoise,
@@ -210,7 +211,7 @@ export class SlackClient {
     if (!token) {
       return { ok: false, error: "Slack bot token missing — cannot open modal" };
     }
-    const response = await fetch("https://slack.com/api/views.open", {
+    const response = await fetchWithTimeout("https://slack.com/api/views.open", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -252,7 +253,7 @@ export class SlackClient {
     };
     if (blocks?.length) payload.blocks = blocks;
 
-    const response = await fetch(this.creds.webhookUrl!, {
+    const response = await fetchWithTimeout(this.creds.webhookUrl!, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -296,7 +297,7 @@ export class SlackClient {
     if (input.blocks?.length) payload.blocks = input.blocks;
     if (input.metadata) payload.metadata = input.metadata;
 
-    const response = await fetch("https://slack.com/api/chat.postMessage", {
+    const response = await fetchWithTimeout("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${input.token}`,
@@ -1311,7 +1312,7 @@ export class SlackClient {
     const token = this.postingBotToken();
     if (!token || !channel || !ts) return;
     try {
-      const response = await fetch("https://slack.com/api/reactions.add", {
+      const response = await fetchWithTimeout("https://slack.com/api/reactions.add", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,

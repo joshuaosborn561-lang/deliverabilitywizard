@@ -17,6 +17,8 @@ export interface RequestOptions {
   timeoutMs?: number;
   /** Retries for 429 / 5xx / network errors (default 4). */
   retries?: number;
+  /** Optional caller abort (D247 step timeout). */
+  signal?: AbortSignal;
 }
 
 function buildUrl(
@@ -49,12 +51,18 @@ export async function apiRequest<T>(
     headers = {},
     timeoutMs = 60_000,
     retries = 4,
+    signal,
   } = options;
   const url = buildUrl(baseUrl, path, apiKey, query);
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
+    const onParentAbort = (): void => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener("abort", onParentAbort, { once: true });
+    }
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(url, {
@@ -120,6 +128,7 @@ export async function apiRequest<T>(
         : new Error(String(lastError ?? "request failed"));
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onParentAbort);
     }
   }
   throw lastError instanceof Error
@@ -129,6 +138,29 @@ export async function apiRequest<T>(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Slack / InboxKit fetches — 30s so a hung webhook cannot pin a stage (D247). */
+export const EXTERNAL_FETCH_TIMEOUT_MS = 30_000;
+
+export async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = EXTERNAL_FETCH_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const onParentAbort = (): void => controller.abort();
+  if (init.signal) {
+    if (init.signal.aborted) controller.abort();
+    else init.signal.addEventListener("abort", onParentAbort, { once: true });
+  }
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener("abort", onParentAbort);
+  }
 }
 
 function isAbortError(error: unknown): boolean {

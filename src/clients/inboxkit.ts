@@ -1,4 +1,4 @@
-import { ApiError } from "../lib/http.js";
+import { ApiError, fetchWithTimeout } from "../lib/http.js";
 
 const BASE_URL = "https://api.inboxkit.com";
 
@@ -62,7 +62,7 @@ export class InboxKitClient {
     const ws = workspaceId || this.workspaceId;
     if (ws) headers["X-Workspace-Id"] = ws;
 
-    const response = await fetch(`${BASE_URL}${path}`, {
+    const response = await fetchWithTimeout(`${BASE_URL}${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -246,7 +246,7 @@ export class InboxKitClient {
       mailboxes,
       ...(opts.useWalletBalance ? { use_wallet_balance: true } : {}),
     };
-    const response = await fetch(`${BASE_URL}/v1/api/mailboxes/buy`, {
+    const response = await fetchWithTimeout(`${BASE_URL}/v1/api/mailboxes/buy`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),

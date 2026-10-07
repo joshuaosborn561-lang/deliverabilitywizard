@@ -205,7 +205,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D190 | Live | Burned-domain Slack pages once per strike; Cayden (or Josh) taps Retire / cover Buy; leftover D174 protected copy is healed and silent |
 | D192 | Live — Goliath leftover-null clause superseded by D243 (Goliath named domains are named seats); Culture Fits leftover stays | Insight is Smartlead client 582890 (josh personal; ≠ SalesGlider 345263); ESP-balanced A/B pods; intentional null generics stay null; D184 exclusive-blank staff retired |
 | D193 | Superseded by D221/D203/D207/D229 — every named client takes pool generics to fill that POD to 40; leftover D134 tap is still not a dump | Named client campaigns never receive GENERIC / pool-brand senders — leftover D134 approvals are not attach permission; understaffed client lanes stay short |
-| D194 | Live | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
+| D194 | Live — Insight SEG standing-pref lock retired by D246; Goliath lock stays | Deliverability Slack bot owns #deliverability interactive one-taps; Watchdog channel identity stays separate |
 | D195 | Live | Strip #deliverability ask buttons after resolve (response_url replace_original, else chat.update with the posting token); Josh soft-gift voice (on me / if you're interested) + "so you know, we're {Brand}." identity |
 | D196 | Live — inventory floor is max(named on-week pod, 40 per POD) per D197/D203; Canon *page* floor is 40 on-week staffable (D217), not named-inventory 46/48 | Named-client inventory split is the on-week A/B pod, not ceil(half) — ESP-odd B fortnights are not an inventory short |
 | D197 | Live — D198 keep-above-40 for pool generics superseded by D221 (return surplus); peel count is staffable attached (D199); 40 is per ACTIVE campaign (D207); rest-record loophole closed by D209; 40/POD inventory still D203 | Every ACTIVE on-week campaign keeps ≥40 senders; client-rest / one-client / generic-rest / top-up / Insight unlink must not peel below that floor |
@@ -213,7 +213,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
-| D205 | Live — min40 now shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
+| D205 | Live — Insight SEG removed from hold defaults by D246; min40 shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
 | D207 | Live — rest-record peel loophole closed by D209 | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
@@ -251,6 +251,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D243 | Live | Client-named domains are that client's named seats (never GENERIC / pool); warmup clock is later of purchase and Smartlead import; Goliath leftovers are named 548611; Culture Fits 418275 stays a D192 exception |
 | D244 | Live | CALLER FOLLOW-UP attach is tag-then-owned no more: only bridge gabriel@ seats sit on 4085158/9/60 now; owned gabe@ only own-client after 21 warm days; reserved tag never skips those checks; Gabe Calls excluded from fan-out/min40 staffing; reserved seats never get POD-A/POD-B and pod-tags strips existing ones |
 | D245 | Live | InboxKit license sweep runs every weekday 8:16am CT and deletes on the cancel date: real IK rows (`username` + `domain_name`), past scheduled cancel = lapsed even if Smartlead still logs in or is disconnected, stale `active` renewal_date is not lapsed; seat end dates persisted; min40 / POC fill and canon staffable skip lapsed or ending-within-7-days seats |
+| D246 | Live | Insight SEG standing hold lifted; weekday pulse unpauses bounce holds; hold-enforcement / locked standing prefs no longer keep Insight SEG PAUSED |
+| D247 | Live | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
 
 ---
 
@@ -8333,3 +8335,88 @@ The D226 handoff and Slack one-liner stay.
 owner-intent test reproduces latoyaflatley; CANON dated D245.
 
 ---
+
+## D246 — Insight SEG hold lifted; pulse unpauses bounce holds
+
+**Date.** 2026-10-07.
+
+**Decision.** Josh (owner, 10/7 11:57am CT): lift the Insight SEG
+standing hold. The wizard must not keep Insight SEG PAUSED:
+
+1. Remove Insight SEG from standing hold-enforcement defaults — drop
+   id `3921647` from `DEFAULT_HOLD_CAMPAIGN_IDS` and the
+   `Insight SEG` name pattern from
+   `DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS`. Hold-enforcement still
+   keeps Parlay SEGs, Thesis, Cold Call Followup, SG Staffing
+   CANDIDATES, and Goliath 0-ACTIVE through 2026-10-15.
+2. Unlock Insight SEG in `lockedStandingPrefReason` so one-taps and
+   bounce-hold pulse STARTs are not fighting a locked pause pref.
+   Goliath Oct 15 lock stays.
+3. Cayden's day-gated grokbot pass STARTs bounce holds first, with
+   the same deny list (Insight SEG is not on it).
+
+**Why.** 10/7: hold-enforcement and the weekday pulse were fighting
+over Insight SEG. Josh lifted the hold so bounce-hold STARTs stick.
+
+**Rejected.** Leaving Insight SEG on the standing hold list.
+Re-pausing bounce holds that the pulse just STARTed.
+
+**Supersedes / amends.** Amends D205 (Insight SEG off the hold
+defaults) and D194 (Insight SEG standing-pref lock retired). Goliath
+Oct 15 hold unchanged. Bounce loop still never pauses (D148).
+
+**Guards.** `DEFAULT_HOLD_CAMPAIGN_IDS` / name patterns exclude
+Insight SEG; `lockedStandingPrefReason` returns undefined for Insight
+SEG; CANON dated D247 (this PR also ships D247); owner-intent test;
+grokbot skill bounce-hold first.
+
+---
+
+## D247 — Stuck-pass hardening
+
+**Date.** 2026-10-07.
+
+**Decision.** Production froze on 10/7: one health pass that started
+~11:00 CT never finished. `healthInFlight` blocked every later run,
+and by 13:25 the process stopped responding. Harden the machine so a
+hung step cannot pin the process:
+
+1. **Step timeouts.** `stage()` races each step against a budget:
+   default 10 minutes; inventory 5; campaign-check-first 20;
+   scan-backfill 20. On timeout, record `timeout after Nm` so
+   `consecutiveFailures` increments and D149 overdue alerts fire.
+   Pass an `AbortSignal` into the step where feasible.
+2. **Locks that expire.** `health` (45m), `canonOps` (30m), and
+   `monitor` (3h) record `since` and `stage`. A stale lock is logged,
+   alerted, and taken over with an ownership token so the old pass's
+   cleanup cannot release the new owner. `/health` shows
+   `inFlight.{health,canonOps,monitor}.{since,stage}`.
+3. **MutationQueue.** Each queued Smartlead call times out at 6
+   minutes. `/health` shows queue depth, oldest wait, and the 429
+   streak.
+4. **Freeze watchdog.** Log event-loop delay over 1s. If the loop
+   stays blocked more than 5 minutes, or a pass is stuck past twice
+   its max, `process.exit(1)` so Railway restarts it.
+   **Railway restart-on-failure must be on.**
+5. **Hotspots.** `state.save` writes compact JSON and coalesces
+   per-step checkpoints. Slack and InboxKit fetches time out at 30s.
+6. **Resume bug.** The monitor's warmup pass is `warmup-gate-monitor`
+   so it cannot invert the health leftover.
+
+**Why.** A single hung stage held `healthInFlight` for hours. Later
+crons skipped. The event loop then stopped responding. Timeouts,
+expiring locks, and a Railway restart are the recovery path.
+
+**Rejected.** Leaving the boolean in-flight flags as-is. Waiting for
+a human Railway restart as the only recovery. Sharing `warmup-gate`
+lastOk between health and monitor.
+
+**Supersedes / amends.** Amends D84 / D122 / D167 (in-flight flags
+and serialized save). Does not change staffing, holds, or spend.
+
+**Guards.** Step timeout budgets and `timeout after Nm`; stale-lock
+takeover with ownership token; queue 6m timeout + snapshot; freeze
+watchdog exit (mocked); `warmup-gate-monitor`; CANON dated D247.
+
+---
+

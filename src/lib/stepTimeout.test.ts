@@ -30,8 +30,8 @@ describe("D247 step timeout", () => {
           return "done";
         }, 20),
       (error: unknown) => {
-        assert.equal(error instanceof Error && error.message, true);
-        assert.match(String((error as Error).message), /^timeout after \d+m$/);
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /^timeout after \d+m$/);
         return true;
       },
     );

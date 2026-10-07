@@ -41,18 +41,23 @@ new messages in `#deliverability` (`C0BJQUTV7A8`) and `#campaign-watchdog`
 
 Then, on live Smartlead:
 
+- **Bounce holds first (Josh 2026-10-07 — same job as the weekday
+  campaign-watchdog pulse).** `START` every `PAUSED` campaign that is a
+  bounce hold: `paused_reason` / activity log bounce protection, a
+  Watchdog autobounce stamp, or analytics that look like Smartlead
+  bounce auto-pause. Skip only the standing deny list below, Goliath
+  `548611` through 2026-10-15, 0 linked mailboxes, 0 remaining leads,
+  and no-client leftovers. Restaff that client's on-week seats and
+  generics to 40 on each resumed campaign (D207). Leave a campaign
+  paused when the lifetime rate is already over the armed threshold and
+  the threshold write will not stick — `bounce_autopause_threshold`
+  writes are no-ops (D157). Do not flap a campaign that will peel again
+  on the next bounce. The pulse posts `Unpaused N bounce holds` when
+  N > 0; say the same in your thread reply.
 - On-week pod only. Do not retag named seats between POD-A and POD-B (D203).
   Every ACTIVE campaign owes ≥40 staffable senders from its own client
   (D207). Same-client generics may sit on every ACTIVE campaign of that
   client. Never detach seats from PAUSED/STOPPED.
-- Standing-ON campaigns that Smartlead paused for bounce protection, when
-  the sampled NDRs are tenant rate-limit and not a bad list: restaff the
-  client's on-week seats **and that client's generics** to 40 on the
-  paused campaign (keep the seats — D207) and START. Leave a campaign
-  paused when the lifetime rate is already over the armed threshold and
-  the threshold write will not stick. `POST /campaigns/{id}/settings`
-  with `bounce_autopause_threshold` returns ok and then drops the field
-  (D157). Do not flap a campaign that will peel again on the next bounce.
 - Top up other live non-SEG campaigns of that client to 40 staffable
   seats each, sharing that client's generics. Peel off-week seats only
   from ACTIVE and only when the campaign stays at or above 40. If the
@@ -67,10 +72,13 @@ Then, on live Smartlead:
 
 ## What it does not do
 
-- Do not START or restaff standing holds: Parlay SEG, Insight SEG, Thesis,
-  SalesGlider CANDIDATES, Cold Call Followup `#3739316`, Goliath through
-  15 Oct 2026, Vasco while it is held at zero active, BCP generic
-  campaigns that are STOPPED.
+- Do not START or restaff standing holds: Thesis, SalesGlider CANDIDATES
+  (`3977481` / `3977483` / `3977484` / `3977485`), Cold Call Followup
+  `#3739316`, CALLER FOLLOW-UP Gabe Calls (`4085158` / `4085159` /
+  `4085160`), Goliath through 15 Oct 2026, Vasco while it is held at
+  zero active, BCP generic campaigns that are STOPPED. **Insight SEG is
+  not a standing hold** (Josh lifted it) — bounce-hold resume may START
+  those lists.
 - Do not same-day soft-requeue tenant-cap leads (D147).
 - Do not Retire, Buy, spend, delete, or purge. Those stay on the Slack
   buttons.

@@ -63,7 +63,12 @@ export function buildPods(input: {
     const email = account.email.trim().toLowerCase();
     if (!email.includes("@")) continue;
     if (isIsolationEmail(email, input.isolation)) continue;
-    if (isGabeVmReserved({ tags: account.tags, from_email: email })) continue;
+    const reservedTags = Array.isArray(account.tags)
+      ? account.tags.map((tag) =>
+          typeof tag === "string" ? { tag_name: tag } : tag,
+        )
+      : account.tags;
+    if (isGabeVmReserved({ tags: reservedTags, from_email: email })) continue;
 
     const row: PodMailbox = {
       accountId: account.accountId,

@@ -9297,14 +9297,14 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
         "lockedStandingPrefReason no longer blocks Goliath.",
       ),
     );
-    assert.match(
+    assert.equal(
       lockedStandingPrefReason({
         campaignName: "Insight Consolidation Gateway SEG",
-      }) ?? "",
-      /Insight SEG/,
+      }),
+      undefined,
       stop(
-        "Insight SEG pause standing pref is locked (D194).",
-        "lockedStandingPrefReason no longer blocks Insight SEG.",
+        "Insight SEG pause standing pref is unlocked (D246).",
+        "lockedStandingPrefReason still blocks Insight SEG.",
       ),
     );
 
@@ -13851,8 +13851,8 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D(245|246|24[7-9]|25[0-9])\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header fell behind D245."),
     );
     assert.match(
       canon,
@@ -14013,8 +14013,8 @@ describe("owner intent — D243 client-named domains + later-of warmup", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D(245|246|24[7-9]|25[0-9])\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header fell behind D245."),
     );
     assert.match(
       canon,
@@ -14119,8 +14119,8 @@ describe("owner intent — D241 GABE-VM-RESERVED write exemption", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D(245|246|24[7-9]|25[0-9])\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header fell behind D245."),
     );
     assert.match(
       canon,
@@ -14268,8 +14268,8 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D(245|246|24[7-9]|25[0-9])\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header fell behind D245."),
     );
     assert.match(
       canon,
@@ -14397,8 +14397,8 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D(245|246|24[7-9]|25[0-9])\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header fell behind D245."),
     );
     assert.match(
       canon,
@@ -14470,8 +14470,8 @@ describe("owner intent — D240 canary fleet swap", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D(245|246|24[7-9]|25[0-9])\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header fell behind D245."),
     );
     assert.match(
       canon,
@@ -14576,8 +14576,106 @@ describe("owner intent — D245 InboxKit sweep deletes on the cancel date, daily
       /isInboxKitLapsed\(/,
       stop("StateStore answers isInboxKitLapsed (D245).", "store.ts has no isInboxKitLapsed (canonStaffable gate is dead)."),
     );
-    assert.match(canon, /Canon as of \*\*D245\*\*/, stop("CANON is dated D245.", "CANON.md header was not bumped to D245."));
+    assert.match(canon, /Canon as of \*\*D(245|246|24[7-9]|25[0-9])\*\*/, stop("CANON is dated D245+.", "CANON.md header fell behind D245."));
     assert.match(decisions, /## D245 /, stop("The ledger records D245.", "DECISIONS.md has no D245."));
     assert.match(decisions, /^\| D245 \|/m, stop("The status index lists D245.", "DECISIONS.md index has no D245 row."));
+  });
+});
+
+describe("owner intent — D246 Insight SEG hold lifted; pulse bounce holds", () => {
+  it("D246: Insight SEG off standing holds; standing pref unlocked; CANON / ledger", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      DEFAULT_HOLD_CAMPAIGN_IDS,
+      DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS,
+      campaignHoldReason,
+    } = await import("../lib/holdPolicy.js");
+    const { INSIGHT_SEG_CAMPAIGN_ID, lockedStandingPrefReason } = await import(
+      "../lib/deliverabilitySlack.js"
+    );
+
+    assert.equal(
+      DEFAULT_HOLD_CAMPAIGN_IDS.includes(INSIGHT_SEG_CAMPAIGN_ID),
+      false,
+      stop(
+        "Insight SEG id is not a standing hold (D246).",
+        "DEFAULT_HOLD_CAMPAIGN_IDS still includes Insight SEG.",
+      ),
+    );
+    assert.equal(
+      DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS.some((p) => /insight/i.test(p)),
+      false,
+      stop(
+        "Insight SEG is not a name-pattern hold (D246).",
+        "DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS still matches Insight.",
+      ),
+    );
+    assert.equal(
+      campaignHoldReason(
+        {
+          id: INSIGHT_SEG_CAMPAIGN_ID,
+          name: "Insight Consolidation Gateway SEG",
+        },
+        {
+          campaignIds: DEFAULT_HOLD_CAMPAIGN_IDS,
+          namePatterns: DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS,
+          clientZeroActive: [],
+        },
+        "2026-10-07",
+      ),
+      undefined,
+      stop(
+        "hold-enforcement does not PAUSE Insight SEG (D246).",
+        "campaignHoldReason still holds Insight Consolidation Gateway SEG.",
+      ),
+    );
+    assert.equal(
+      lockedStandingPrefReason({
+        campaignId: INSIGHT_SEG_CAMPAIGN_ID,
+        campaignName: "Insight Partner Sucks SEG",
+      }),
+      undefined,
+      stop(
+        "Insight SEG standing pref is unlocked (D246).",
+        "lockedStandingPrefReason still locks Insight SEG.",
+      ),
+    );
+
+    const skill = await readFile(
+      new URL("../ops/cayden-grokbot.SKILL.md", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      skill,
+      /Bounce holds first/,
+      stop("Grokbot STARTs bounce holds first (D246).", "cayden-grokbot.SKILL.md lost bounce-hold first."),
+    );
+    assert.match(
+      skill,
+      /Insight SEG is\n  not a standing hold/,
+      stop("Grokbot does not treat Insight SEG as a standing hold (D246).", "skill still deny-lists Insight SEG."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D246\*\*/,
+      stop("CANON is dated D246.", "CANON.md header was not bumped to D246."),
+    );
+    assert.match(
+      canon,
+      /not\*\* Insight SEG, D246/,
+      stop("CANON names Insight SEG off hold-enforcement (D246).", "CANON.md lost the Insight SEG hold lift."),
+    );
+    assert.match(
+      decisions,
+      /## D246 — Insight SEG hold lifted/,
+      stop("The ledger records D246.", "DECISIONS.md has no D246."),
+    );
+    assert.match(
+      decisions,
+      /^\| D246 \|/m,
+      stop("The status index lists D246.", "DECISIONS.md index has no D246 row."),
+    );
   });
 });

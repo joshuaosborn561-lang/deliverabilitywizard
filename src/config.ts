@@ -449,7 +449,7 @@ const ConfigSchema = z.object({
   enableSpendDigest: boolFromEnv(true),
   cronSpendDigest: z.string().default("16 7 * * *"),
   spendDigestTimezone: z.string().default("America/Chicago"),
-  /** D222 — Monday 8:16am CT InboxKit lapsed-license sweep (detection only). */
+  /** D245 — weekday 8:16am CT InboxKit lapsed-license sweep (idle Sat/Sun). */
   enableInboxkitLicenseSweep: boolFromEnv(true),
   cronInboxkitLicenseSweep: z.string().default("16 8 * * 1-5"),
   inboxkitLicenseTimezone: z.string().default("America/Chicago"),

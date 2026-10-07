@@ -15,7 +15,9 @@ import {
 
 const mondayMorning = new Date("2026-10-05T13:16:00.000Z"); // Monday 8:16am CT
 const saturday = new Date("2026-10-03T13:16:00.000Z");
+const sunday = new Date("2026-10-04T13:16:00.000Z");
 const tuesday = new Date("2026-10-06T13:16:00.000Z");
+const friday = new Date("2026-10-09T13:16:00.000Z");
 
 describe("inboxkitLicense classifier (D222/D226)", () => {
   it("flags cancelled / inactive / lapsed seats that are still connected", () => {
@@ -139,7 +141,9 @@ describe("inboxkitLicense classifier (D222/D226)", () => {
   it("D245: runs every weekday, idles only on weekends", () => {
     assert.equal(inboxkitLicenseIdleReason(mondayMorning), undefined);
     assert.equal(inboxkitLicenseIdleReason(tuesday), undefined);
+    assert.equal(inboxkitLicenseIdleReason(friday), undefined);
     assert.match(String(inboxkitLicenseIdleReason(saturday)), /weekend/);
+    assert.match(String(inboxkitLicenseIdleReason(sunday)), /weekend/);
   });
 });
 

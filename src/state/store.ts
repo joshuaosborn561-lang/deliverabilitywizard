@@ -387,7 +387,7 @@ export interface AppState {
    */
   evidenceHolds: Record<string, EvidenceHoldRecord>;
   /**
-   * D226 — latest Monday InboxKit license sweep handoff for Onboarding
+   * D226/D245 — latest weekday InboxKit license sweep handoff for Onboarding
    * and Deliverability (per-client lapsed + upcoming cancellations).
    */
   inboxkitLicenseHandoff: InboxkitLicenseHandoff | null;

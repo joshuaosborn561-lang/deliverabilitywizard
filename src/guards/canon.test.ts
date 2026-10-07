@@ -14541,6 +14541,16 @@ describe("owner intent — D245 InboxKit sweep deletes on the cancel date, daily
       undefined,
       stop("The sweep runs every weekday (D245).", "the sweep idles on a non-Monday weekday."),
     );
+    assert.match(
+      String(inboxkitLicenseIdleReason(new Date("2026-10-03T13:16:00.000Z"))),
+      /weekend/,
+      stop("The sweep idles Saturday (D245).", "the sweep would run on Saturday."),
+    );
+    assert.match(
+      String(inboxkitLicenseIdleReason(new Date("2026-10-04T13:16:00.000Z"))),
+      /weekend/,
+      stop("The sweep idles Sunday (D245).", "the sweep would run on Sunday."),
+    );
     assert.equal(defaults.cronInboxkitLicenseSweep, "16 8 * * 1-5");
 
     const min40 = await readFile(new URL("../services/min40TopUp.ts", import.meta.url), "utf8");

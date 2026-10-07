@@ -966,10 +966,10 @@ to mark a name-list POC done and release its seats (D236),
 `/run?mode=release-canary-fleet` to add the current registry to the
 released list (D240), the
 weekday Cayden spend digest (`spend-digest`, D220), the weekday
-TERRL EOD digest (`terl-eod`), the Monday InboxKit license sweep
-(`inboxkit-license`, D222/D226), and the
+TERRL EOD digest (`terl-eod`), the weekday InboxKit license sweep
+(`inboxkit-license`, D222/D226/D245), and the
 build's `deploy` identity — commit/branch/deployment from Railway's git
-metadata (D149). `/status`, `/run`, `/approvals/*` require `RUN_TOKEN`. `/run?mode=mailbox-gap` runs gap-only (D211). `/run?mode=pod-cover` is the pod-cover watchdog tick (D214). `/run?mode=spend-digest` posts the D220 weekday Cayden spend digest. `/run?mode=terl-eod` posts the D219 weekday 5.7.233 digest. `/run?mode=inboxkit-license` runs the Monday InboxKit sweep (handoff + cleanup; Slack only after deletes when X > 0, D226). `/ops` is the
+metadata (D149). `/status`, `/run`, `/approvals/*` require `RUN_TOKEN`. `/run?mode=mailbox-gap` runs gap-only (D211). `/run?mode=pod-cover` is the pod-cover watchdog tick (D214). `/run?mode=spend-digest` posts the D220 weekday Cayden spend digest. `/run?mode=terl-eod` posts the D219 weekday 5.7.233 digest. `/run?mode=inboxkit-license` runs the weekday InboxKit sweep (handoff + cleanup; Slack only after deletes when X > 0, D226/D245). `/ops` is the
 employee console (owner/operator roles, audit log); Overview shows **days
 until the next D43 A/B fortnight swap** and which pod is sending
 (America/New_York ISO weeks); its Placement tab shows

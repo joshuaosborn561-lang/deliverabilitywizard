@@ -276,4 +276,66 @@ describe("PodTagService (D135)", () => {
     assert.ok(live.assigned >= 1);
     assert.ok(writes.some((row) => row.startsWith("assign:")));
   });
+
+  it("D244: strips POD-A/POD-B from GABE-VM-RESERVED seats and never first-tags them", async () => {
+    const state = new StateStore(
+      `/tmp/dw-pod-tags-reserved-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const assigns: Array<[number[], number[]]> = [];
+    const removes: Array<[number[], number[]]> = [];
+    const smartlead = {
+      ensureTag: async (name: string) => ({
+        id: name === POD_TAG_A ? 71 : 72,
+        name,
+      }),
+      assignTags: async (accountIds: number[], tagIds: number[]) => {
+        assigns.push([accountIds, tagIds]);
+      },
+      removeTags: async (accountIds: number[], tagIds: number[]) => {
+        removes.push([accountIds, tagIds]);
+      },
+    };
+    const accounts = [
+      {
+        id: 9,
+        from_email: "gabe@getmesaco.info",
+        client_id: 574020,
+        campaign_ids: [4085158],
+        tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: POD_TAG_A }],
+      },
+      {
+        id: 10,
+        from_email: "gabe@larkhavenco.info",
+        client_id: 345263,
+        campaign_ids: [],
+        tags: [{ tag_name: "GABE-VM-RESERVED" }],
+      },
+    ];
+    const service = new PodTagService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      smartlead as never,
+      state,
+      bookWith(
+        [
+          {
+            id: 4085158,
+            name: "Gabe Calls | SalesGlider",
+            status: "ACTIVE",
+            client_id: 345263,
+          },
+        ],
+        accounts,
+      ),
+      async () => {},
+    );
+    const result = await service.run({ now: new Date("2026-10-07T14:00:00.000Z") });
+    assert.equal(result.assigned, 0);
+    assert.equal(result.removed, 1);
+    assert.deepEqual(assigns, []);
+    assert.equal(removes.length, 1);
+    assert.deepEqual(removes[0]![0], [9]);
+    assert.ok(removes[0]![1]!.includes(71));
+    assert.ok(removes[0]![1]!.includes(72));
+  });
 });

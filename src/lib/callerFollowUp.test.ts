@@ -30,6 +30,7 @@ import {
   callerFollowUpMustKeepFromName,
   callerFollowUpMustKeepMessagePerDay,
   callerFollowUpMustPageBeforeAct,
+  callerFollowUpMustSkipPodTags,
   callerFollowUpOwnedTargetCampaignId,
   callerFollowUpPolicyFromConfig,
   callerFollowUpScheduleHolds,
@@ -218,6 +219,89 @@ describe("CALLER FOLLOW-UP class (D242)", () => {
     assert.ok(owned.includes("gosalesglider.info"));
     assert.ok(owned.includes("trymesaco.info"));
     assert.ok(owned.includes("northpeakteam.info"));
+  });
+
+  it("D244: GABE-VM-RESERVED tag does not skip owned-seat warmup or own-campaign (10/7)", () => {
+    const salesglider = {
+      id: GABE_CALLS_SALESGLIDER_ID,
+      name: "Gabe Calls | SalesGlider",
+    };
+    const reservedMesa = {
+      from_email: "gabe@getmesaco.info",
+      tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "POD-A" }],
+    };
+    const reservedDeepRoots = {
+      from_email: "gabe@brightlanehq.info",
+      tags: [{ tag_name: "GABE-VM-RESERVED" }, { tag_name: "type:m365" }],
+    };
+    const reservedSalesGlider = {
+      from_email: "gabe@gosalesglider.info",
+      tags: [{ tag_name: "GABE-VM-RESERVED" }],
+    };
+    const unlistedReserved = {
+      from_email: "gabe@larkhavenco.info",
+      tags: [{ tag_name: "GABE-VM-RESERVED" }],
+    };
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reservedMesa,
+        campaign: salesglider,
+        warmed: false,
+      }).ok,
+      false,
+      "Mesa reserved gabe@ must not attach to #4085158",
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reservedDeepRoots,
+        campaign: salesglider,
+        warmed: false,
+      }).ok,
+      false,
+      "Deep Roots reserved gabe@ must not attach to #4085158",
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reservedSalesGlider,
+        campaign: salesglider,
+        warmed: false,
+      }).ok,
+      false,
+      "unwarmed SalesGlider gabe@ must not attach even when tagged reserved",
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: unlistedReserved,
+        campaign: salesglider,
+        warmed: true,
+      }).ok,
+      false,
+      "unlisted reserved gabe@ never attaches",
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reservedMesa,
+        campaign: salesglider,
+        warmed: true,
+      }).ok,
+      false,
+      "warmed Mesa gabe@ still only attaches to its own Gabe Calls campaign",
+    );
+    assert.equal(
+      callerFollowUpMayAttach({
+        account: reservedSalesGlider,
+        campaign: salesglider,
+        warmed: true,
+      }).ok,
+      true,
+      "warmed owned SalesGlider gabe@ may attach to its own campaign",
+    );
+    assert.equal(callerFollowUpMustSkipPodTags(reservedMesa), true);
+    assert.equal(callerFollowUpMustSkipPodTags(unlistedReserved), true);
+    assert.equal(
+      callerFollowUpMustSkipPodTags({ from_email: "gabe@gosalesglider.info" }),
+      true,
+    );
   });
 
   it("rule 4: exempt from A/B rest and the generic send clock", () => {

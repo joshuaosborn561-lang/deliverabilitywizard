@@ -103,10 +103,14 @@ export class ClientFanOutService {
       (campaigns as SmartleadCampaign[]).map((campaign) => [campaign.id, campaign]),
     );
 
+    const classPolicy = callerFollowUpPolicyFromConfig(this.config);
     const activeByGroup = new Map<string, SmartleadCampaign[]>();
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
+      // D244 — Gabe Calls is not another named-client campaign to staff.
+      // Class attach goes through attachCallerFollowUpClass only.
+      if (isCallerFollowUpCampaign(campaign, classPolicy)) continue;
       const key = clientGroupKey(campaign);
       if (!key) continue;
       const list = activeByGroup.get(key) ?? [];
@@ -165,8 +169,8 @@ export class ClientFanOutService {
           result.skipped.push(`${email}: canary fleet lock (D54/D238)`);
           continue;
         }
-        // CALLER FOLLOW-UP senders (D242) are not skipped here — they
-        // may attach to class campaigns only, via callerFollowUpMayAttach.
+        // CALLER FOLLOW-UP senders (D242/D244) never fan out onto
+        // regular client campaigns. Class attach is dedicated below.
 
         // Never fan a mailbox that must sit out: retired domains stay off
         // forever (D65), a leftover HOLD-UNTIL tag sits inert until it
@@ -482,10 +486,12 @@ export class ClientFanOutService {
   }
 
   /**
-   * D242 — class senders serve every CALLER FOLLOW-UP campaign
-   * (bridge seats sit in SalesGlider and still staff EMCOR / Deep
-   * Roots). Owned gabe@ seats attach to their own campaign only
-   * after the 21-day clock.
+   * D242 / D244 — the only path that may attach to a CALLER
+   * FOLLOW-UP campaign. Bridge gabriel@ seats may sit on every
+   * living class campaign. Owned gabe@ seats attach to their own
+   * client's campaign only after 21 warm days. Tagged reserved
+   * seats that are neither bridge nor listed-owned never attach.
+   * Regular fan-out / min40 never staff these campaigns.
    */
   private async attachCallerFollowUpClass(input: {
     dryRun: boolean;
@@ -515,7 +521,17 @@ export class ClientFanOutService {
           warmed,
           policy,
         });
-        if (!decision.ok) continue;
+        if (!decision.ok) {
+          if (
+            isCallerFollowUpSupplyBlocked(account, email, policy) ||
+            isCallerFollowUpSender(account, policy)
+          ) {
+            input.result.skipped.push(
+              `${email}: GABE-VM-RESERVED / ${decision.reason}`,
+            );
+          }
+          continue;
+        }
         if (decision.reason === "not a CALLER FOLLOW-UP attach") continue;
         try {
           if (!input.dryRun) {

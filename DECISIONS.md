@@ -247,8 +247,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
 | D240 | Live | Canary fleet swap: living fleet is size 10, adopted by CANARY tag and/or CANARY_FLEET_EMAILS; contaminated 6-seat getcrosslaunchco.info / crosslaunchcoget.info fleet is released and is no longer a D238 canary; empty replacement fleet is one fleet-level notice |
 | D241 | Live — write exemption folded into D242 CALLER FOLLOW-UP class | GABE-VM-RESERVED seats are exempt from every mutating stage (never unlink / link / retag / rewrite); min40 POC fill skips campaigns named Gabe and campaigns whose linked seats are GABE-VM-RESERVED, not just 4074266 |
-| D242 | Live | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
+| D242 | Live — attach tightened by D244 | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
 | D243 | Live | Client-named domains are that client's named seats (never GENERIC / pool); warmup clock is later of purchase and Smartlead import; Goliath leftovers are named 548611; Culture Fits 418275 stays a D192 exception |
+| D244 | Live | CALLER FOLLOW-UP attach is tag-then-owned no more: only bridge gabriel@ seats sit on 4085158/9/60 now; owned gabe@ only own-client after 21 warm days; reserved tag never skips those checks; Gabe Calls excluded from fan-out/min40 staffing; reserved seats never get POD-A/POD-B and pod-tags strips existing ones |
 
 ---
 
@@ -8212,6 +8213,71 @@ with leftover GENERIC or a pool record; domain-client
 skips GENERIC tag; cleanup skips them; warmup
 `laterIsoStamp`; CANON dated D243; Culture Fits stays
 untouched.
+
+---
+
+## D244 — CALLER FOLLOW-UP attach is bridge / own-campaign only
+
+**Date.** 2026-10-07 (Josh). Production: 18 GABE-VM-RESERVED
+`gabe@` seats (created / warmup started 10/3–10/6) kept
+re-attaching to ACTIVE `Gabe Calls | SalesGlider` #4085158
+after three hand-unlinks (10/6 ~8:24am CT, 10/6 5:25pm CT,
+10/7 ~8:30am CT). COMPLETED 4085159 / 4085160 were not
+touched. The set included SalesGlider owned seats, Mesa /
+EMCOR (client 574020), Deep Roots (client 597783), and six
+unlisted new domains (larkhavenco / pinecresthq / fairbrookco
+/ oakmerehq / ridgewellhq / lumenridgehq .info). Several also
+carried POD-A.
+
+**Decision.** Tighten D242 attach so the reserved tag is
+not a free pass onto every living class campaign.
+
+1. `callerFollowUpMayAttach` checks owned `gabe@` first,
+   even when the seat is tagged `GABE-VM-RESERVED`. Owned
+   seats attach only to that client's Gabe Calls campaign
+   and only after 21 warm days. The tag-first early-ok
+   (any tagged class sender on any class campaign) is
+   deleted.
+2. Only the three gabriel@ bridge seats may sit on
+   4085158 / 4085159 / 4085160 now. Unlisted reserved
+   `gabe@` domains never attach.
+3. Gabe Calls campaigns are excluded from regular fan-out
+   group staffing, min40, one-client restore targets, and
+   TERRL substitute supply. Class attach is the dedicated
+   `attachCallerFollowUpClass` path only, and that path
+   uses the tightened helper.
+4. Reserved / owned / bridge seats never receive POD-A or
+   POD-B. pod-tags strips any that already landed. This is
+   the one mutating write still allowed on the class
+   (D241's "never retag" stands for everything else).
+5. The wizard still never START / PAUSE Gabe Calls.
+
+**Why.** `attachCallerFollowUpClass` in client fan-out
+walks every ACTIVE / START `Gabe Calls |` campaign and
+attaches anyone `callerFollowUpMayAttach` allows. The
+helper returned ok for any tagged reserved seat before
+the owned-seat warmup / own-campaign checks, so a 1–4
+day Mesa seat on SalesGlider 4085158 looked legal. The
+warmup gate does not pull reserved seats (D241), so
+once linked they sent. Regular fan-out also treated
+ACTIVE 4085158 as another SalesGlider campaign to staff.
+
+**Rejected.** Leaving the tag-first attach. Treating
+unlisted reserved domains as bridges. Auto-unlinking
+reserved seats (still pages Josh). Filling Gabe Calls
+to 40 / 60.
+
+**Supersedes / amends.** Amends D242 rule 3 + 9: the
+reserved tag no longer authorizes attach by itself.
+Amends D241: illicit POD-A/POD-B on reserved seats may
+be stripped. Amends D234: reserved seats are not a
+named POD-lock — they should not have those tags.
+
+**Guards.** `callerFollowUpMayAttach` owned-first;
+`callerFollowUpMustSkipPodTags`; fan-out skips class
+campaigns in the group loop; pod-tags strip; CANON
+dated D244; owner-intent test reproduces the 10/7
+Mesa / Deep Roots / unlisted reserved case on #4085158.
 
 ---
 

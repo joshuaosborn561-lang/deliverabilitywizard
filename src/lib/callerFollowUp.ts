@@ -259,9 +259,18 @@ export type CallerFollowUpAttachDecision =
   | { ok: false; reason: string };
 
 /**
- * Rule 3 + 9. Only class senders (and warmed owned gabe@ seats
- * targeting that campaign) may sit on a CALLER FOLLOW-UP campaign.
- * Class / owned seats never fan out to any other campaign.
+ * Rule 3 + 9, tightened D244.
+ *
+ * Owned gabe@ seats are checked first even when they carry
+ * GABE-VM-RESERVED — the tag must not skip the 21-day clock or
+ * the own-campaign rule (10/6–10/7: tagged Mesa / Deep Roots /
+ * unlisted reserved seats kept landing on ACTIVE #4085158).
+ *
+ * Only the three gabriel@ bridge seats may sit on any class
+ * campaign. Owned gabe@ attach only to their own client's Gabe
+ * Calls campaign after 21 warm days. Other reserved-tagged
+ * seats (new domains not yet in the owned list) never attach.
+ * Class / owned / reserved seats never fan out.
  */
 export function callerFollowUpMayAttach(input: {
   email?: string | null;
@@ -286,15 +295,10 @@ export function callerFollowUpMayAttach(input: {
     input.email ?? input.account.from_email ?? input.account.email,
   );
   const classCampaign = isCallerFollowUpCampaign(input.campaign, policy);
-  const classSender = isCallerFollowUpSender(input.account, policy);
+  const tagged = isCallerFollowUpSenderTag(input.account, policy);
+  const bridge = isCallerFollowUpBridgeSender(input.account);
   const ownedTarget = callerFollowUpOwnedTargetCampaignId(email);
 
-  if (classSender) {
-    if (!classCampaign) {
-      return { ok: false, reason: "class sender never fans out (D242)" };
-    }
-    return { ok: true, reason: "bridge / tagged class sender on class campaign" };
-  }
   if (ownedTarget != null) {
     if (!classCampaign) {
       return { ok: false, reason: "owned gabe@ never fans out (D242)" };
@@ -307,10 +311,42 @@ export function callerFollowUpMayAttach(input: {
     }
     return { ok: true, reason: "owned gabe@ cleared warmup for its campaign" };
   }
+
+  if (bridge) {
+    if (!classCampaign) {
+      return { ok: false, reason: "class sender never fans out (D242)" };
+    }
+    return { ok: true, reason: "bridge sender on class campaign" };
+  }
+
+  if (tagged) {
+    if (!classCampaign) {
+      return { ok: false, reason: "class sender never fans out (D242)" };
+    }
+    return {
+      ok: false,
+      reason: "reserved seat is not a listed owned gabe@ or bridge — never attach (D244)",
+    };
+  }
+
   if (classCampaign) {
     return { ok: false, reason: "only class senders sit on CALLER FOLLOW-UP (D242)" };
   }
   return { ok: true, reason: "not a CALLER FOLLOW-UP attach" };
+}
+
+/** Reserved / bridge / owned seats never receive a POD-A/POD-B tag. */
+export function callerFollowUpMustSkipPodTags(
+  account: {
+    tags?: Array<{ tag_name?: unknown; name?: unknown }> | null;
+    from_email?: string | null;
+    email?: string | null;
+    id?: number | null;
+  },
+  email?: string | null,
+  policy: CallerFollowUpPolicy = DEFAULT_CALLER_FOLLOWUP_POLICY,
+): boolean {
+  return isCallerFollowUpSupplyBlocked(account, email, policy);
 }
 
 /** Signature stays empty. Never apply or converge one. */

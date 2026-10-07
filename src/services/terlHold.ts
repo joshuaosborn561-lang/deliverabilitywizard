@@ -19,6 +19,10 @@ import {
 } from "../clients/smartlead.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isLockedCanarySeat } from "../lib/canaryLock.js";
+import {
+  callerFollowUpPolicyFromConfig,
+  isCallerFollowUpSupplyBlocked,
+} from "../lib/callerFollowUp.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { genericEligibleForClientPod, lockedGenericPod } from "../lib/genericAssign.js";
@@ -587,6 +591,15 @@ export class TerlHoldService {
       }
       if (this.state.isTenantTerlHoldAccount(account.id, input.now)) continue;
       if (isLockedCanarySeat(account, email, this.state)) continue;
+      if (
+        isCallerFollowUpSupplyBlocked(
+          account,
+          email,
+          callerFollowUpPolicyFromConfig(this.config),
+        )
+      ) {
+        continue;
+      }
       if (stopped && !replacementMayFillEspSlot(account, stopped)) continue;
       ranked.push(account);
     }

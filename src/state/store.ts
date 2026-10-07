@@ -75,7 +75,11 @@ import {
 } from "../lib/evidenceHold.js";
 import {
   parseInboxkitLicenseHandoff,
+  parseInboxkitSeatEnds,
+  seatEndBlocksStaffing,
+  seatEndIsLapsed,
   type InboxkitLicenseHandoff,
+  type InboxkitSeatEnd,
 } from "../lib/inboxkitLicense.js";
 
 export interface TestedCampaignRecord {
@@ -387,6 +391,12 @@ export interface AppState {
    * and Deliverability (per-client lapsed + upcoming cancellations).
    */
   inboxkitLicenseHandoff: InboxkitLicenseHandoff | null;
+  /**
+   * D245 — InboxKit seats that are lapsed or scheduled to cancel, with
+   * their cancel date. Written by every weekday license sweep. Staffing
+   * never attaches a seat that is lapsed or ends within 7 days.
+   */
+  inboxkitSeatEnds: Record<string, InboxkitSeatEnd>;
 }
 
 /** D85 — the single fleet-level fact behind the old 48x canary_inactive. */
@@ -805,6 +815,7 @@ const EMPTY_STATE: AppState = {
   terlSubstitutions: {},
   evidenceHolds: {},
   inboxkitLicenseHandoff: null,
+  inboxkitSeatEnds: {},
 };
 
 export class StateStore {
@@ -919,6 +930,7 @@ export class StateStore {
         inboxkitLicenseHandoff: parseInboxkitLicenseHandoff(
           parsed.inboxkitLicenseHandoff,
         ),
+        inboxkitSeatEnds: parseInboxkitSeatEnds(parsed.inboxkitSeatEnds),
       };
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
@@ -1099,6 +1111,25 @@ export class StateStore {
 
   getInboxkitLicenseHandoff(): InboxkitLicenseHandoff | null {
     return this.state.inboxkitLicenseHandoff;
+  }
+
+  /** D245 — replace the InboxKit seat end map (each sweep is a full read). */
+  setInboxkitSeatEnds(ends: Record<string, InboxkitSeatEnd>): void {
+    this.state.inboxkitSeatEnds = { ...ends };
+  }
+
+  getInboxkitSeatEnd(email: string): InboxkitSeatEnd | undefined {
+    return this.state.inboxkitSeatEnds?.[email.trim().toLowerCase()];
+  }
+
+  /** D245 — lapsed now (cancel date reached, or lapsed status). */
+  isInboxKitLapsed(email: string, now: Date = new Date()): boolean {
+    return seatEndIsLapsed(this.getInboxkitSeatEnd(email), now);
+  }
+
+  /** D245 — do not staff: lapsed, or the InboxKit end date is within 7 days. */
+  isInboxKitEndingSoon(email: string, now: Date = new Date(), days = 7): boolean {
+    return seatEndBlocksStaffing(this.getInboxkitSeatEnd(email), now, days);
   }
 
   appendOpsAudit(record: OpsAuditRecord): void {

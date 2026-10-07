@@ -4,9 +4,15 @@
  * Onboarding and Deliverability through state / /health (not Slack).
  * Lapsed seats are deleted from Smartlead and InboxKit. The only
  * Slack post is the post-cleanup one-liner when X > 0.
+ *
+ * D245 — the real InboxKit mailbox row has no `email`; it carries
+ * `username` + `domain_name`. A seat whose cancel date has been reached
+ * (scheduled_for_cancellation with renewal_date on or before today CT)
+ * is lapsed whether or not Smartlead still logs in. An `active` row with
+ * a stale past renewal_date is NOT lapsed (InboxKit renews at domain
+ * level and does not advance the mailbox field). Runs every weekday.
  */
 
-import { isConnectedAccount } from "./staffableSender.js";
 import { chicagoWallClock } from "./canonOpsHours.js";
 
 export const INBOXKIT_LICENSE_SLACK_CHANNEL_ID = "C0BJQUTV7A8";
@@ -30,6 +36,9 @@ export const SCHEDULED_CANCEL_STATUSES = [
 export interface InboxkitLicenseMailbox {
   email?: string;
   address?: string;
+  username?: string;
+  domain_name?: string;
+  domain?: string;
   uid?: string;
   id?: string;
   workspaceId?: string;
@@ -93,9 +102,17 @@ export interface InboxkitLicenseHandoff {
 }
 
 export function inboxkitMailboxEmail(mailbox: InboxkitLicenseMailbox): string {
-  return String(mailbox.email || mailbox.address || "")
+  const direct = String(mailbox.email || mailbox.address || "")
     .trim()
     .toLowerCase();
+  if (direct.includes("@")) return direct;
+  // D245: InboxKit /v1/api/mailboxes/list rows carry username + domain_name.
+  const user = String(mailbox.username || "").trim().toLowerCase();
+  const domain = String(mailbox.domain_name || mailbox.domain || "")
+    .trim()
+    .toLowerCase();
+  if (user && domain) return user.includes("@") ? user : `${user}@${domain}`;
+  return direct;
 }
 
 export function inboxkitStatusOf(mailbox: InboxkitLicenseMailbox): string {
@@ -172,24 +189,40 @@ export function dateYmd(
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+/**
+ * D245 — the cancel date has been reached: on or before today in
+ * America/Chicago. Delete on the cancel day, not the day after.
+ */
 export function isPastCancelDate(
   mailbox: InboxkitLicenseMailbox,
   now: Date = new Date(),
 ): boolean {
   const { date } = cancelDateOf(mailbox);
   if (!date) return false;
-  return dateYmd(date) < chicagoYmd(now);
+  return dateYmd(date) <= chicagoYmd(now);
 }
 
+/** D245 — cancel date (or lapsed status) within `days` of now. */
+export function isInboxkitEndingWithin(
+  mailbox: InboxkitLicenseMailbox,
+  days: number,
+  now: Date = new Date(),
+): boolean {
+  const status = inboxkitStatusOf(mailbox);
+  if (isLapsedInboxkitStatus(status)) return true;
+  if (!isScheduledCancelStatus(status)) return false;
+  const { date } = cancelDateOf(mailbox);
+  if (!date) return false;
+  return date.getTime() <= now.getTime() + days * 24 * 60 * 60 * 1000;
+}
+
+/** D245 — daily on weekdays (America/Chicago); weekends idle. */
 export function inboxkitLicenseIdleReason(
   now: Date = new Date(),
 ): string | undefined {
   const clock = chicagoWallClock(now);
   if (clock.weekday === 0 || clock.weekday === 6) {
     return "weekend (InboxKit license sweep is weekdays only)";
-  }
-  if (clock.weekday !== 1) {
-    return "not Monday (InboxKit license sweep runs Mondays 8:16am CT)";
   }
   return undefined;
 }
@@ -204,8 +237,9 @@ export function classifyInboxkitLicenseSeat(input: {
   const email = inboxkitMailboxEmail(input.mailbox);
   const status = inboxkitStatusOf(input.mailbox);
   const account = input.account ?? null;
-  const connected = Boolean(account && isConnectedAccount(account));
-  if (!email || !connected) return { skip: "not_connected" };
+  // D245: any Smartlead account counts. A lapsed seat that already lost
+  // SMTP/IMAP is still linked to campaigns and must be removed too.
+  if (!email || !account) return { skip: "not_connected" };
   const { raw: cancelRaw } = cancelDateOf(input.mailbox);
   const clientId =
     typeof account?.client_id === "number" && account.client_id > 0
@@ -251,11 +285,21 @@ export function classifyInboxkitLicenseSweep(input: {
     if (!email || !email.includes("@")) continue;
     if (!byEmail.has(email)) byEmail.set(email, account);
   }
+  // D245: an address re-bought in another workspace (any live row that is
+  // neither lapsed nor scheduled to cancel) is healthy; never delete it.
+  const live = new Set<string>();
+  for (const mailbox of input.mailboxes) {
+    const status = inboxkitStatusOf(mailbox);
+    if (!isLapsedInboxkitStatus(status) && !isScheduledCancelStatus(status)) {
+      const email = inboxkitMailboxEmail(mailbox);
+      if (email) live.add(email);
+    }
+  }
   const out: InboxkitLicenseFinding[] = [];
   const seen = new Set<string>();
   for (const mailbox of input.mailboxes) {
     const email = inboxkitMailboxEmail(mailbox);
-    if (!email || seen.has(email)) continue;
+    if (!email || seen.has(email) || live.has(email)) continue;
     const account = byEmail.get(email);
     const clientId =
       typeof account?.client_id === "number" ? account.client_id : null;
@@ -337,4 +381,72 @@ export function parseInboxkitLicenseHandoff(
         }))
       : [],
   };
+}
+
+/** D245 — per-seat InboxKit end date, persisted for staffing eligibility. */
+export interface InboxkitSeatEnd {
+  status: string;
+  cancelDate: string | null;
+}
+
+/**
+ * D245 — every InboxKit address that is lapsed or scheduled to cancel
+ * (and has no live row elsewhere), keyed by lowercase email.
+ */
+export function buildInboxkitSeatEnds(
+  mailboxes: InboxkitLicenseMailbox[],
+): Record<string, InboxkitSeatEnd> {
+  const live = new Set<string>();
+  const out: Record<string, InboxkitSeatEnd> = {};
+  for (const mailbox of mailboxes) {
+    const email = inboxkitMailboxEmail(mailbox);
+    if (!email) continue;
+    const status = inboxkitStatusOf(mailbox);
+    if (!isLapsedInboxkitStatus(status) && !isScheduledCancelStatus(status)) {
+      live.add(email);
+      continue;
+    }
+    if (out[email]) continue;
+    out[email] = { status, cancelDate: cancelDateOf(mailbox).raw };
+  }
+  for (const email of live) delete out[email];
+  return out;
+}
+
+export function parseInboxkitSeatEnds(raw: unknown): Record<string, InboxkitSeatEnd> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, InboxkitSeatEnd> = {};
+  for (const [email, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const row = value as Partial<InboxkitSeatEnd>;
+    out[email.toLowerCase()] = {
+      status: String(row.status ?? ""),
+      cancelDate: typeof row.cancelDate === "string" ? row.cancelDate : null,
+    };
+  }
+  return out;
+}
+
+/** D245 — staffing gate: lapsed, or cancel date within `days` (default 7). */
+export function seatEndBlocksStaffing(
+  end: InboxkitSeatEnd | undefined,
+  now: Date = new Date(),
+  days = 7,
+): boolean {
+  if (!end) return false;
+  return isInboxkitEndingWithin(
+    { status: end.status, renewal_date: end.cancelDate },
+    days,
+    now,
+  );
+}
+
+/** D245 — lapsed now: lapsed status or cancel date reached (CT day). */
+export function seatEndIsLapsed(
+  end: InboxkitSeatEnd | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!end) return false;
+  if (isLapsedInboxkitStatus(end.status)) return true;
+  return isPastCancelDate({ status: end.status, renewal_date: end.cancelDate }, now);
 }

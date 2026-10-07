@@ -183,8 +183,9 @@ function stringOrUndef(value: unknown): string | undefined {
 }
 
 /**
- * Goliath Oct 15 campaign hold and Insight SEG pause are locked standing
- * prefs (D181/D190/D193). One-taps must not rewrite them.
+ * Goliath Oct 15 campaign hold is a locked standing pref (D181/D190/D193).
+ * Insight SEG pause lock retired by D246 — bounce-hold pulse may START them.
+ * One-taps must not rewrite the Goliath hold.
  */
 export function lockedStandingPrefReason(input: {
   campaignId?: number;
@@ -197,12 +198,6 @@ export function lockedStandingPrefReason(input: {
   const name = String(input.campaignName ?? "");
   if (/\bgoliath\b/i.test(name)) {
     return "Goliath Oct 15 campaign PAUSE hold is unchanged.";
-  }
-  if (input.campaignId === INSIGHT_SEG_CAMPAIGN_ID) {
-    return "Insight SEG pause standing pref is unchanged.";
-  }
-  if (/\binsight\b/i.test(name) && /\bseg\b/i.test(name)) {
-    return "Insight SEG pause standing pref is unchanged.";
   }
   return undefined;
 }

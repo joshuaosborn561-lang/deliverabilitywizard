@@ -332,7 +332,7 @@ export interface AppState {
   canaryFleetDown: CanaryFleetDownRecord | null;
   /**
    * D194 — Josh/Cayden standing START/PAUSE prefs from #deliverability
-   * one-taps. Goliath hold / Insight SEG pause are refused at the handler.
+   * one-taps. Goliath hold is refused at the handler (Insight SEG unlocked by D246).
    */
   campaignStandingPrefs: Record<string, CampaignStandingPref>;
   /** D194 — recorded Deliverability Slack button decisions. */

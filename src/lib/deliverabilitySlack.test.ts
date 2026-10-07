@@ -370,14 +370,20 @@ describe("D194 deliverability Slack one-taps", () => {
     assert.equal(state.getCampaignStandingPref(3739758)?.pref, "keep_paused");
   });
 
-  it("refuses to change Goliath hold or Insight SEG standing prefs", async () => {
+  it("refuses to change Goliath hold; Insight SEG standing pref is unlocked (D246)", async () => {
     assert.match(
       lockedStandingPrefReason({ clientId: 548611, campaignId: 1 }) ?? "",
       /Goliath/,
     );
-    assert.match(
-      lockedStandingPrefReason({ campaignId: INSIGHT_SEG_CAMPAIGN_ID }) ?? "",
-      /Insight SEG/,
+    assert.equal(
+      lockedStandingPrefReason({ campaignId: INSIGHT_SEG_CAMPAIGN_ID }),
+      undefined,
+    );
+    assert.equal(
+      lockedStandingPrefReason({
+        campaignName: "Insight Consolidation Gateway SEG",
+      }),
+      undefined,
     );
     const state = freshState();
     await state.load();
@@ -404,9 +410,11 @@ describe("D194 deliverability Slack one-taps", () => {
       actor: { name: "Josh", role: "owner" },
       state,
     });
-    assert.equal(seg.ok, false);
-    assert.match(seg.message, /Insight SEG/);
-    assert.equal(state.getCampaignStandingPref(INSIGHT_SEG_CAMPAIGN_ID), undefined);
+    assert.equal(seg.ok, true);
+    assert.equal(
+      state.getCampaignStandingPref(INSIGHT_SEG_CAMPAIGN_ID)?.pref,
+      "keep_paused",
+    );
   });
 
   it("dlv_generics_not_now is Josh-only and never Allows", async () => {

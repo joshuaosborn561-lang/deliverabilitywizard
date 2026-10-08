@@ -1,6 +1,8 @@
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
 import {
   campaignIdOf,
+  isAutomatedTest,
+  isTestStoppable,
   normalizeTestList,
   testIdOf,
 } from "../clients/smartdelivery.js";
@@ -77,6 +79,13 @@ export interface PlacementResults {
   rateLimited?: boolean;
   /** False when the catalog walk 429'd or found fewer live tests than we know exist. */
   complete?: boolean;
+  /**
+   * True when an ACTIVE campaign still has no row and later catalog pages
+   * may hold its living test. The tab keeps reading from `listOffset`.
+   * A stale score must not stop that walk — EMCOR's autos sit hundreds of
+   * rows behind newer pod-control and canary tests.
+   */
+  searching?: boolean;
   /**
    * Next `spam-test/report` offset. Newest pages are pod-control tests, so a
    * walk that stops early has to resume here instead of starting over.
@@ -546,21 +555,36 @@ export class PlacementResultsService {
         campaignsLoaded,
       });
     // A board that already has every live campaign does not walk the catalog.
-    // That walk is newest-first pod-control pages and 429s before Auto tests.
-    // When a campaign is missing, read two pages from the saved offset.
+    // That walk is newest-first. Pod-control tests, canary copies, and stopped
+    // history sit in front of older living autos (EMCOR's were around offset
+    // 400–500 in a ~5900-row catalog). Two pages per pass, then the tab
+    // continues at listOffset. The report list still omits campaign_id (D123);
+    // a row joins by wizard state, an exact Auto name, or details.campaign_id.
+    const listStart = previousSnapshot?.listOffset ?? 0;
     const listed = missingCampaign
-      ? await this.listNewestTests(
-          isLive,
-          errors,
-          force,
-          previousSnapshot?.listOffset ?? 0,
-        )
+      ? await this.listNewestTests(isLive, errors, force, listStart)
       : {
           tests: [] as SpamTestSummary[],
           truncated: false,
           exhausted: true,
           nextOffset: 0,
         };
+    const detailsLimited =
+      !missingCampaign || listed.truncated
+        ? false
+        : await this.linkMissingCampaignIds(
+            listed.tests,
+            isLive,
+            liveById,
+            campaignByTest,
+            coveredKnown,
+            errors,
+            force,
+          );
+    if (detailsLimited) {
+      listed.truncated = true;
+      listed.nextOffset = listStart;
+    }
 
     const listedLive = listed.tests.filter(isLive);
     const assembled = this.assembleLiveRows({
@@ -584,6 +608,20 @@ export class PlacementResultsService {
       liveById.size === 0 ||
       uncovered === 0 ||
       listed.exhausted;
+    // Keep paging while a live campaign is still missing. Do not spend this
+    // pass on providerwise — that 429 used to freeze listOffset on the
+    // newest pod-control pages, so a test at offset 400 never got read.
+    const searching =
+      Boolean(missingCampaign) &&
+      campaignsLoaded &&
+      uncovered > 0 &&
+      !listed.exhausted &&
+      !listed.truncated;
+    if (searching) {
+      console.log(
+        `[ops-placement] catalog walk offset=${listed.nextOffset} uncovered=${uncovered}`,
+      );
+    }
 
     const gapMs = process.env.NODE_TEST_CONTEXT ? 0 : 250;
     let skipProviders = false;
@@ -592,34 +630,36 @@ export class PlacementResultsService {
     // different hole: Google without Inbox, or a score without a date.
     // Start after the row the last pass stopped on. Every pass began at the
     // top, so the rows below the first 429 were never reached.
-    for (const row of rotateFromCursor(assembled, previousSnapshot?.fillCursor)) {
-      if (skipProviders) break;
-      if (!placementRowNeedsScore(row) && !placementRowNeedsDate(row)) continue;
-      fillCursor = row.id;
-      try {
-        if (placementRowNeedsScore(row)) {
-          await this.scorePlacementRow(row);
-          if (gapMs) await sleep(gapMs);
-        }
+    if (!searching) {
+      for (const row of rotateFromCursor(assembled, previousSnapshot?.fillCursor)) {
         if (skipProviders) break;
-        if (placementRowNeedsDate(row)) {
-          await this.refreshPlacementDate(row);
-          if (gapMs) await sleep(gapMs);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (isMissingSpamTestNoise(message)) {
-          row.status = "NOT FOUND";
-          continue;
-        }
-        if (isRateLimitNoise(message)) {
-          this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
-          skipProviders = true;
-          if (force) {
+        if (!placementRowNeedsScore(row) && !placementRowNeedsDate(row)) continue;
+        fillCursor = row.id;
+        try {
+          if (placementRowNeedsScore(row)) {
+            await this.scorePlacementRow(row);
+            if (gapMs) await sleep(gapMs);
+          }
+          if (skipProviders) break;
+          if (placementRowNeedsDate(row)) {
+            await this.refreshPlacementDate(row);
+            if (gapMs) await sleep(gapMs);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (isMissingSpamTestNoise(message)) {
+            row.status = "NOT FOUND";
+            continue;
+          }
+          if (isRateLimitNoise(message)) {
+            this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+            skipProviders = true;
+            if (force) {
+              errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
+            }
+          } else {
             errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
           }
-        } else {
-          errors.push(humanizeAlertError(`test ${row.id}: ${message}`));
         }
       }
     }
@@ -632,18 +672,36 @@ export class PlacementResultsService {
       listOffset: listed.nextOffset,
       fillCursor: skipProviders ? fillCursor : undefined,
       rateLimited: this.rateLimitedUntil > Date.now() || undefined,
+      searching: searching || undefined,
       complete:
         membershipSettled &&
         !listed.truncated &&
+        !searching &&
         filled === assembled.length &&
         assembled.length > 0,
-      stale: (listed.truncated || filled < assembled.length) && assembled.length > 0,
+      stale:
+        !searching &&
+        (listed.truncated || filled < assembled.length) &&
+        assembled.length > 0,
     };
     if (!assembled.length) {
+      // The pages read so far were pod controls / canary copies. Remember
+      // the offset anyway — otherwise the next pass restarts at 0 and a
+      // living auto past the newest 200 rows never appears.
+      if (searching || listed.nextOffset > 0) {
+        this.cache = {
+          expiresAt: Date.now() + this.rateLimitCooldownMs,
+          value,
+        };
+      }
       return {
         generatedAt: value.generatedAt,
         rows: [],
         errors: uniqueErrors(errors),
+        listOffset: value.listOffset,
+        searching: value.searching,
+        rateLimited: value.rateLimited,
+        complete: false,
       };
     }
     if (shouldPersistPlacement(previousSnapshot, value)) {
@@ -934,6 +992,83 @@ export class PlacementResultsService {
       exhausted: false,
       nextOffset: offset,
     };
+  }
+
+  /**
+   * The report list omits campaign_id (D123). An Auto test whose name is not
+   * an exact campaign title still belongs on the board when GET /spam-test/{id}
+   * names an ACTIVE campaign. A details payload with no campaign_id is not a
+   * guess — only a stored test id covers that case.
+   * Returns true when SmartDelivery 429'd and this page must be retried.
+   */
+  private async linkMissingCampaignIds(
+    tests: SpamTestSummary[],
+    isLive: (test: SpamTestSummary) => boolean,
+    liveById: Map<number, { name: string }>,
+    campaignByTest: Map<string, { campaignId: number; campaignName: string }>,
+    coveredKnown: Set<number>,
+    errors: string[],
+    force: boolean,
+  ): Promise<boolean> {
+    if (!tests.length || liveById.size === 0) return false;
+    const covered = new Set(coveredKnown);
+    const campaignOf = (test: SpamTestSummary): number | undefined => {
+      const mapped = testIdOf(test)
+        ? campaignByTest.get(testIdOf(test)!)
+        : undefined;
+      return (
+        resolveCampaignId(mapped?.campaignId, test) ??
+        campaignIdFromAutoName(test.test_name, liveById)
+      );
+    };
+    for (const test of tests) {
+      if (!isLive(test)) continue;
+      const campaignId = campaignOf(test);
+      if (campaignId != null) covered.add(campaignId);
+    }
+    const stillMissing = () =>
+      [...liveById.keys()].some((id) => !covered.has(id));
+    if (!stillMissing()) return false;
+    const readDetails = this.smartDelivery.getTestDetails?.bind(
+      this.smartDelivery,
+    );
+    if (!readDetails) return false;
+    let budget = 8;
+    for (const test of tests) {
+      if (budget <= 0 || !stillMissing()) break;
+      if (isLive(test)) continue;
+      if (titleHasCanaryCopyPhrase(test.test_name)) continue;
+      if (campaignIdOf(test)) continue;
+      if (!isAutomatedTest(test) || !isTestStoppable(test)) continue;
+      if (!autoPlacementCampaignName(test.test_name)) continue;
+      const id = testIdOf(test);
+      if (!id) continue;
+      budget -= 1;
+      try {
+        const details = placementDetailsRecord(await readDetails(id));
+        const cid = Number(details.campaign_id ?? details.campaignId);
+        // D123 — no campaign_id on the details payload is not a guess.
+        if (!Number.isFinite(cid) || !liveById.has(cid) || covered.has(cid)) {
+          continue;
+        }
+        if (titleHasCanaryCopyPhrase(liveById.get(cid)?.name)) continue;
+        test.campaign_id = cid;
+        covered.add(cid);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (isRateLimitNoise(message)) {
+          this.rateLimitedUntil = Date.now() + this.rateLimitCooldownMs;
+          if (force) {
+            errors.push(humanizeAlertError(`test ${id}: ${message}`));
+          }
+          return true;
+        }
+        if (force) {
+          errors.push(humanizeAlertError(`test ${id}: ${message}`));
+        }
+      }
+    }
+    return false;
   }
 }
 

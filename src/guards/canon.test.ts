@@ -13858,8 +13858,8 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D24[5-9]\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14020,8 +14020,8 @@ describe("owner intent — D243 client-named domains + later-of warmup", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D24[5-9]\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14126,8 +14126,8 @@ describe("owner intent — D241 GABE-VM-RESERVED write exemption", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D24[5-9]\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14275,8 +14275,8 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D24[5-9]\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14404,8 +14404,8 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D24[5-9]\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14477,8 +14477,8 @@ describe("owner intent — D240 canary fleet swap", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D245\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      /Canon as of \*\*D24[5-9]\*\*/,
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,

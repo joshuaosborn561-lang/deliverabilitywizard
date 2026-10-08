@@ -2134,6 +2134,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         }
 
         const actionId = clicked.action_id ?? "";
+        // D248 — lumped Cayden spend: needs_you_approve_client
         if (
           actionId === NEEDS_YOU_APPROVE_ACTION ||
           actionId.startsWith(`${NEEDS_YOU_APPROVE_ACTION}:`)

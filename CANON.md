@@ -725,6 +725,8 @@ Caps ramp manually (35 on Oct 12).
   known-good control per ESP, and the unwarmed canary fleet sending that
   same copy (D93, D96).
   - Known-good also failing an ESP → **infra**, not a word.
+    A missing standing mailbox-control tag does not override
+    that ESP score (D93).
   - Unwarmed canaries land the copy while live senders fail → infra.
   - Campaign copy fails an ESP, known-good fine everywhere, unwarmed canaries
     also fail that copy → **word hunt** (deletion tests on the isolation

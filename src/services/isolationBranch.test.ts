@@ -365,6 +365,23 @@ describe("IsolationBranchService placement queue (D158)", () => {
     );
   });
 
+  it("D93: UNKNOWN mailbox tag + known-good ESP fail is INFRA", async () => {
+    const { branch, teardowns, state } = await buildBranch({
+      knownGoodInbox: 10,
+      canaryInbox: 0,
+      mailboxPlacement: "UNKNOWN",
+    });
+    const run = await branch.evaluate(AIRPODS.id, { campaignInSpam: true });
+    assert.equal(run.verdict, "INFRA");
+    assert.equal(run.teardownStarted, false);
+    assert.equal(teardowns.length, 0);
+    assert.equal(
+      state.getAttachBlock("techevo.test"),
+      undefined,
+      "UNKNOWN placements do not invent a domain block",
+    );
+  });
+
   it("COPY vs INFRA still follows decideIsolationVerdict", async () => {
     const copy = await buildBranch({ knownGoodInbox: 95, canaryInbox: 0 });
     const copyRun = await copy.branch.evaluate(AIRPODS.id, { campaignInSpam: true });

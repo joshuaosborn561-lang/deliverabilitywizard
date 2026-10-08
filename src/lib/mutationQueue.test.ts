@@ -44,4 +44,21 @@ describe("MutationQueue", () => {
     assert.equal(await queue.enqueue(async () => "ok"), "ok");
     assert.equal(queue.rateLimitStreak, 0);
   });
+
+  it("times out a hung Smartlead call and exposes depth / oldest wait / 429 streak", async () => {
+    const queue = new MutationQueue(0, 30_000, 30);
+    const started = Date.now();
+    const hung = queue.enqueue(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+      return "never";
+    });
+    const waiting = queue.enqueue(async () => "ok");
+    assert.ok(queue.depth >= 1);
+    assert.ok(queue.oldestWaitMs >= 0);
+    assert.equal(queue.snapshot().rateLimitStreak, 0);
+    await assert.rejects(() => hung, /timeout after \d+m/);
+    assert.equal(await waiting, "ok");
+    assert.ok(Date.now() - started < 400);
+    assert.equal(queue.depth, 0);
+  });
 });

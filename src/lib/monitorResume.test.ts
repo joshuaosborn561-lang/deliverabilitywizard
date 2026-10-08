@@ -45,6 +45,7 @@ describe("D167 monitor resume", () => {
     const stageHealth = {
       "pod-tags": { lastOkAt: "2026-09-02T12:02:00.000Z" },
       "monitor-results": { lastOkAt: "2026-09-02T12:08:00.000Z" },
+      "warmup-gate-monitor": { lastOkAt: "2026-09-02T12:09:00.000Z" },
       "test-reconcile": { lastOkAt: "2026-09-02T12:10:00.000Z" },
       "dns-audit": { lastOkAt: "2026-09-02T12:12:00.000Z" },
       "campaign-audit": { lastOkAt: "2026-09-02T14:00:47.000Z" },

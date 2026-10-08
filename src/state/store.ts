@@ -338,7 +338,7 @@ export interface AppState {
   canaryFleetDown: CanaryFleetDownRecord | null;
   /**
    * D194 — Josh/Cayden standing START/PAUSE prefs from #deliverability
-   * one-taps. Goliath hold / Insight SEG pause are refused at the handler.
+   * one-taps. Goliath hold is refused at the handler (Insight SEG unlocked by D246).
    */
   campaignStandingPrefs: Record<string, CampaignStandingPref>;
   /** D194 — recorded Deliverability Slack button decisions. */
@@ -2693,26 +2693,40 @@ export class StateStore {
   /**
    * D167 — serialize disk writes. Concurrent health + monitor used to
    * stringify overlapping snapshots and rename out of order, so a finished
-   * stage's lastOk could vanish even after recordStageOk. Each queued save
+   * stage's lastOk could vanish even after recordStageOk. Each write
    * stringifies AFTER it holds the lock, so it sees every mutation that
    * landed before it started writing.
+   * D247 — compact JSON (pretty-print was a multi-MB stall) and coalesce
+   * per-step checkpoints: overlapping save() calls share one upcoming write
+   * of the latest state instead of N pretty-printed dumps.
    */
+  private saveWanted = false;
+  private saveCoalesce: Promise<void> | null = null;
+
   async save(): Promise<void> {
+    this.saveWanted = true;
+    if (this.saveCoalesce) return this.saveCoalesce;
     const write = async (): Promise<void> => {
-      const dir = path.dirname(this.filePath);
-      await mkdir(dir, { recursive: true });
-      const tmp = `${this.filePath}.${process.pid}.${++this.saveSeq}.tmp`;
-      const body = JSON.stringify(this.state, null, 2);
-      if (this.onSaveSnapshot) await this.onSaveSnapshot();
-      await writeFile(tmp, body, "utf8");
-      await rename(tmp, this.filePath);
+      while (this.saveWanted) {
+        this.saveWanted = false;
+        const dir = path.dirname(this.filePath);
+        await mkdir(dir, { recursive: true });
+        const tmp = `${this.filePath}.${process.pid}.${++this.saveSeq}.tmp`;
+        const body = JSON.stringify(this.state);
+        if (this.onSaveSnapshot) await this.onSaveSnapshot();
+        await writeFile(tmp, body, "utf8");
+        await rename(tmp, this.filePath);
+      }
     };
     const run = this.saveTail.then(write, write);
+    this.saveCoalesce = run.finally(() => {
+      if (this.saveCoalesce === run) this.saveCoalesce = null;
+    });
     this.saveTail = run.then(
       () => undefined,
       () => undefined,
     );
-    return run;
+    return this.saveCoalesce;
   }
 }
 

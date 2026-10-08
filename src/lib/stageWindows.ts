@@ -132,7 +132,9 @@ export const STAGE_OVERDUE_WINDOWS_MS: Record<string, number | null> = {
   reconnect: HEALTH_MS,
   "client-rest": HEALTH_MS,
   "generic-rest": HEALTH_MS,
-  "warmup-gate": HEALTH_MS, // also re-run by the monitor; shares this key
+  "warmup-gate": HEALTH_MS,
+  // D247 — monitor has its own key so its lastOk cannot invert health resume.
+  "warmup-gate-monitor": SIX_HOURLY_MS,
   "client-tag": HEALTH_MS,
   "one-client": HEALTH_MS,
   "qa-unpause": HEALTH_MS,

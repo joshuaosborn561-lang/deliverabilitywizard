@@ -14,6 +14,7 @@
  *      slackChannel + slackTs) with the posting bot token.
  */
 
+import { fetchWithTimeout } from "./http.js";
 import { slackStampsFromDetail, type SlackAskStamp } from "./slackAskStamps.js";
 
 export type IsolationAskDecision = "approve" | "deny";
@@ -130,7 +131,9 @@ export type ResolveIsolationAskResult = {
 export async function resolveIsolationAskMessage(
   input: ResolveIsolationAskInput,
 ): Promise<ResolveIsolationAskResult> {
-  const doFetch = (input.fetchImpl ?? (fetch as unknown as FetchLike)) as FetchLike;
+  const doFetch = (input.fetchImpl ??
+    ((url, init) =>
+      fetchWithTimeout(url, init))) as FetchLike;
   const resolvedLabel = input.resolvedBy
     ? resolvedByLine(input.resolvedBy)
     : resolvedAskLabel(input.kind, input.decision);

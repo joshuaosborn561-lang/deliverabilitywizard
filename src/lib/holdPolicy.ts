@@ -5,21 +5,19 @@
  * PAUSED on a live client campaign, and only for the configured list.
  */
 
-import { INSIGHT_SEG_CAMPAIGN_ID } from "./deliverabilitySlack.js";
 import { isAnyShellCampaign } from "./canaryShell.js";
 
 export const GOLIATH_CLIENT_ID = 548611;
 export const GOLIATH_HOLD_UNTIL_YMD_DEFAULT = "2026-10-15";
 
-/** Parlay SEGs, PE Thesis, Cold Call Followup, Insight SEG (known id). */
+/** Parlay SEGs, PE Thesis, Cold Call Followup. Insight SEG lifted by D246. */
 export const DEFAULT_HOLD_CAMPAIGN_IDS: readonly number[] = [
   3847837, 3847839, 3847844, 3847845, 3847846, 3847847, 3847849, 3847850,
-  3969268, 3739316, INSIGHT_SEG_CAMPAIGN_ID,
+  3969268, 3739316,
 ];
 
-/** Name fragments resolved at runtime (Insight SEG, SG Staffing CANDIDATES). */
+/** Name fragments resolved at runtime (SG Staffing CANDIDATES). */
 export const DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS: readonly string[] = [
-  "Insight SEG",
   "Staffing Owners CANDIDATES",
   "SG Staffing Owners CANDIDATES",
 ];

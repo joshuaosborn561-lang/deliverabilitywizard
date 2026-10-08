@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fetchWithTimeout } from "./http.js";
 
 export async function exchangeSlackOauth(input: {
   clientId: string;
@@ -13,7 +14,7 @@ export async function exchangeSlackOauth(input: {
     code: input.code,
     redirect_uri: input.redirectUri,
   });
-  const response = await fetch("https://slack.com/api/oauth.v2.access", {
+  const response = await fetchWithTimeout("https://slack.com/api/oauth.v2.access", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,

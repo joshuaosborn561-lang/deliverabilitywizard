@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { INSIGHT_SEG_CAMPAIGN_ID } from "./deliverabilitySlack.js";
 import {
   DEFAULT_HOLD_CAMPAIGN_IDS,
+  DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS,
   DEFAULT_HOLD_CLIENT_ZERO_ACTIVE,
   campaignHoldReason,
   campaignMatchesHoldName,
@@ -13,24 +14,32 @@ import {
 
 const policy = {
   campaignIds: DEFAULT_HOLD_CAMPAIGN_IDS,
-  namePatterns: ["Insight SEG", "Staffing Owners CANDIDATES"],
+  namePatterns: DEFAULT_HOLD_CAMPAIGN_NAME_PATTERNS,
   clientZeroActive: DEFAULT_HOLD_CLIENT_ZERO_ACTIVE,
 };
 
-describe("hold policy (D205)", () => {
-  it("holds the seeded Parlay SEG / Thesis / Cold Call / Insight SEG ids", () => {
+describe("hold policy (D205 / D246)", () => {
+  it("holds the seeded Parlay SEG / Thesis / Cold Call ids; Insight SEG is lifted", () => {
     assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3847837));
     assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3969268));
     assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3739316));
-    assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(INSIGHT_SEG_CAMPAIGN_ID));
+    assert.equal(DEFAULT_HOLD_CAMPAIGN_IDS.includes(INSIGHT_SEG_CAMPAIGN_ID), false);
     assert.match(
       campaignHoldReason({ id: 3847837, name: "Parlay SEG" }, policy, "2026-09-29") ?? "",
       /standing campaign hold/,
     );
+    assert.equal(
+      campaignHoldReason(
+        { id: INSIGHT_SEG_CAMPAIGN_ID, name: "Insight Consolidation Gateway SEG" },
+        policy,
+        "2026-10-07",
+      ),
+      undefined,
+    );
   });
 
-  it("resolves Insight SEG and SG Staffing Owners CANDIDATES by name", () => {
-    assert.equal(campaignMatchesHoldName("Insight SEG Owners", policy.namePatterns), true);
+  it("resolves SG Staffing Owners CANDIDATES by name; Insight SEG is not a name hold", () => {
+    assert.equal(campaignMatchesHoldName("Insight SEG Owners", policy.namePatterns), false);
     assert.equal(
       campaignMatchesHoldName(
         "SG Staffing Owners CANDIDATES — wave 2",

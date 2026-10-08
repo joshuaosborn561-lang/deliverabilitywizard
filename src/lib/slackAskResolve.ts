@@ -15,6 +15,8 @@
  *      modal-submit and confirm-page paths, which have no `response_url`).
  */
 
+import { fetchWithTimeout } from "./http.js";
+
 export type IsolationAskDecision = "approve" | "deny";
 
 export type FetchLike = (
@@ -118,7 +120,9 @@ export type ResolveIsolationAskResult = {
 export async function resolveIsolationAskMessage(
   input: ResolveIsolationAskInput,
 ): Promise<ResolveIsolationAskResult> {
-  const doFetch = (input.fetchImpl ?? (fetch as unknown as FetchLike)) as FetchLike;
+  const doFetch = (input.fetchImpl ??
+    ((url, init) =>
+      fetchWithTimeout(url, init))) as FetchLike;
   const resolvedLabel = resolvedAskLabel(input.kind, input.decision);
   const blocks = buildResolvedAskBlocks({
     summary: input.summary,

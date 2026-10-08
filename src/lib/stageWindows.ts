@@ -25,7 +25,7 @@ const SIX_HOURLY_MS = (6 * 60 + 45) * 60 * 1000;
 const CANON_OPS_MS = 90 * 60 * 1000;
 /** Daily TERRL EOD digest (weekday 5:30pm CT) plus weekend idle grace. */
 const TERL_EOD_MS = 36 * 60 * 60 * 1000;
-/** Daily Cayden spend digest (weekday 7:16am CT) plus weekend idle grace. */
+/** Daily Needs you / Cayden spend digest (weekday 8am CT) plus weekend idle grace. */
 const SPEND_DIGEST_MS = 36 * 60 * 60 * 1000;
 /** D245 — weekday InboxKit license sweep; Fri 8:16am to Mon 8:16am is 72h. */
 const INBOXKIT_LICENSE_MS = 76 * 60 * 60 * 1000;

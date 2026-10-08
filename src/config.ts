@@ -54,6 +54,8 @@ const ConfigSchema = z.object({
   deliverabilitySlackBotToken: z.string().default(""),
   deliverabilitySlackSigningSecret: z.string().default(""),
   deliverabilitySlackChannelId: z.string().default("C0BJQUTV7A8"),
+  /** D248 — informational Wizard posts. Empty → daily thread in #deliverability. */
+  deliverabilityLogChannel: z.string().default(""),
   inboxkitApiKey: z.string().default(""),
   inboxkitWorkspaceId: z.string().default(""),
   /** Dedicated InboxKit workspace for the 75 generic recovery-pool mailboxes */
@@ -445,9 +447,9 @@ const ConfigSchema = z.object({
   enableTerlEod: boolFromEnv(true),
   cronTerlEod: z.string().default("30 17 * * *"),
   terlEodTimezone: z.string().default("America/Chicago"),
-  /** D220 — weekday 7:16am CT Cayden per-client spend digest. */
+  /** D248 — weekday 8am CT Needs you post (merged D220 Cayden spend digest). */
   enableSpendDigest: boolFromEnv(true),
-  cronSpendDigest: z.string().default("16 7 * * *"),
+  cronSpendDigest: z.string().default("0 8 * * 1-5"),
   spendDigestTimezone: z.string().default("America/Chicago"),
   /** D245 — weekday 8:16am CT InboxKit lapsed-license sweep (idle Sat/Sun). */
   enableInboxkitLicenseSweep: boolFromEnv(true),
@@ -596,6 +598,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       env.DELIVERABILITY_SLACK_SIGNING_SECRET ?? "",
     deliverabilitySlackChannelId:
       env.DELIVERABILITY_SLACK_CHANNEL_ID ?? "C0BJQUTV7A8",
+    deliverabilityLogChannel: env.DELIVERABILITY_LOG_CHANNEL ?? "",
     inboxkitApiKey: env.INBOXKIT_API_KEY ?? "",
     inboxkitWorkspaceId: env.INBOXKIT_WORKSPACE_ID ?? "",
     genericPoolWorkspaceId:
@@ -707,7 +710,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cronTerlEod: env.CRON_TERL_EOD ?? "30 17 * * *",
     terlEodTimezone: env.TERL_EOD_TIMEZONE ?? "America/Chicago",
     enableSpendDigest: env.ENABLE_SPEND_DIGEST,
-    cronSpendDigest: env.CRON_SPEND_DIGEST ?? "16 7 * * *",
+    cronSpendDigest: env.CRON_SPEND_DIGEST ?? "0 8 * * 1-5",
     spendDigestTimezone: env.SPEND_DIGEST_TIMEZONE ?? "America/Chicago",
     enableInboxkitLicenseSweep: env.ENABLE_INBOXKIT_LICENSE_SWEEP,
     cronInboxkitLicenseSweep: env.CRON_INBOXKIT_LICENSE_SWEEP ?? "16 8 * * 1-5",

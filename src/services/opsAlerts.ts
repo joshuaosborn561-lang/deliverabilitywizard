@@ -91,7 +91,7 @@ export async function alertStageAnomalies(input: {
       lastOkAt: health[name]?.lastOkAt ?? null,
     }));
     try {
-      await input.slack.send(stageRecoveryText(rows), undefined, "ops_alert");
+      await input.slack.send(stageRecoveryText(rows), undefined, "stage_overdue");
       for (const name of recovered) input.store.clearStageAlert(name);
       result.recovered = recovered;
     } catch (error) {
@@ -102,7 +102,7 @@ export async function alertStageAnomalies(input: {
 
   if (fresh.length) {
     try {
-      await input.slack.send(stageAlertText(fresh), undefined, "ops_alert");
+      await input.slack.send(stageAlertText(fresh), undefined, "stage_overdue");
       const iso = new Date(now).toISOString();
       for (const row of fresh) input.store.setStageAlert(row.name, iso);
       result.alerted = fresh.map((row) => row.name);
@@ -175,7 +175,7 @@ export async function alertCanonMisses(input: {
 
   for (const row of fresh) {
     try {
-      await input.slack.send(canonMissText(row), undefined, "ops_alert");
+      await input.slack.send(canonMissText(row), undefined, "canon_miss");
       input.store.setCanonMissAlert(row.campaignId, row.kind);
       result.alerted.push(`${row.campaignId}:${row.kind as CanonMissKind}`);
     } catch (error) {
@@ -255,7 +255,7 @@ async function pageFirstOpenCanonFindings(
       "Investigate in-thread. The checklist keeps remediating; this page is the first alert.",
     ].join("\n");
     try {
-      await input.slack.send(text, undefined, "ops_alert");
+      await input.slack.send(text, undefined, "canon_miss");
       input.store.setCanonMissStamp(key, "open");
       result.alerted.push(`${row.campaignId}:findings`);
     } catch (error) {

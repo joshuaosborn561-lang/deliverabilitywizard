@@ -1,10 +1,12 @@
 /**
- * D220 — weekday 7:16am CT Cayden per-client spend digest.
- * Posts one Slack card from existing pending-spend state. Does not spend.
+ * D248 — weekday 8am CT Needs you post (merged D220 Cayden spend digest).
+ * One Approve per client for Cayden spend. Josh-only listed separately.
+ * Does not spend.
  */
 import type { SlackClient } from "../clients/slack.js";
 import { canonOpsIdleReason, chicagoWallClock } from "../lib/canonOpsHours.js";
-import { buildCaydenSpendDigest } from "../lib/spendDigest.js";
+import { buildNeedsYouDigest } from "../lib/needsYouDigest.js";
+import { remindPendingIsolationActions } from "../lib/isolationActions.js";
 import type { StateStore } from "../state/store.js";
 
 export interface SpendDigestResult {
@@ -13,12 +15,14 @@ export interface SpendDigestResult {
   posted: boolean;
   clients: number;
   items: number;
+  flushed?: number;
 }
 
 export class SpendDigestService {
   constructor(
     private readonly state: StateStore,
-    private readonly slack?: Pick<SlackClient, "send">,
+    private readonly slack?: Pick<SlackClient, "send"> &
+      Partial<Pick<SlackClient, "notifyIsolationAction" | "postThreadReply">>,
   ) {}
 
   async postDigest(
@@ -47,8 +51,25 @@ export class SpendDigestService {
         items: 0,
       };
     }
-    const digest = buildCaydenSpendDigest(this.state);
-    if (!digest.text) {
+    const digest = buildNeedsYouDigest(this.state);
+    let posted = false;
+    if (digest.text && this.slack?.send) {
+      await this.slack.send(digest.text, digest.blocks, "burned_domain");
+      posted = true;
+    }
+    let flushed = 0;
+    if (this.slack?.notifyIsolationAction) {
+      flushed = await remindPendingIsolationActions({
+        store: this.state,
+        slack: this.slack as Pick<
+          SlackClient,
+          "notifyIsolationAction" | "postThreadReply"
+        >,
+        now,
+      });
+    }
+    if (posted || flushed) this.state.markSpendDigestPosted(ymd);
+    if (!digest.text && !flushed) {
       return {
         skipped: true,
         reason: "none",
@@ -57,14 +78,11 @@ export class SpendDigestService {
         items: 0,
       };
     }
-    if (this.slack?.send) {
-      await this.slack.send(digest.text, undefined, "burned_domain");
-    }
-    this.state.markSpendDigestPosted(ymd);
     return {
-      posted: true,
-      clients: digest.groups.length,
-      items: digest.items,
+      posted,
+      clients: digest.cayden.length,
+      items: digest.items.length + digest.josh.length,
+      flushed,
     };
   }
 }

@@ -46,7 +46,8 @@ describe("SpendDigestService (D220)", () => {
     assert.equal(first.posted, true);
     assert.equal(first.clients, 1);
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /one approval per client/);
+    assert.match(sent[0]!, /Needs you/);
+    assert.match(sent[0]!, /one approve per client/);
     const second = await service.postDigest({ now: mondayMorningCt() });
     assert.equal(second.posted, false);
     assert.equal(second.reason, "already-posted");

@@ -31,7 +31,7 @@ describe("D149 — the stage watchdog pages Slack, once per episode", () => {
     const first = await alertStageAnomalies({ store: s, slack: r.slack, now: later });
     assert.deepEqual(first.alerted, ["dns-audit"]);
     assert.equal(r.sends.length, 1);
-    assert.equal(r.sends[0].kind, "ops_alert");
+    assert.equal(r.sends[0].kind, "stage_overdue");
     assert.match(r.sends[0].text, /dns-audit/);
     assert.match(r.sends[0].text, /overdue/);
 
@@ -166,7 +166,7 @@ describe("D163 — CANON misses page Slack, once per campaign per incident", () 
     const first = await alertCanonMisses({ store: s, slack: r.slack, threshold: 80 });
     assert.deepEqual(first.alerted, ["3847794:ugly"]);
     assert.equal(r.sends.length, 1);
-    assert.equal(r.sends[0].kind, "ops_alert");
+    assert.equal(r.sends[0].kind, "canon_miss");
     assert.match(r.sends[0].text, /CANON miss/);
     assert.match(r.sends[0].text, /TechEvo/);
 

@@ -47,6 +47,7 @@ import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
 import { recordIsolationUnlinkAttachBlock } from "../lib/attachBlock.js";
 import { slackKindForIsolationAction } from "../lib/slackAllow.js";
+import { clearAskCopies } from "../lib/slackAskResolve.js";
 import type { IsolationBuyService } from "./isolationBuy.js";
 import type { CopyCanaryBuyService } from "./copyCanaryBuy.js";
 
@@ -71,6 +72,7 @@ export class IsolationExecuteService {
       return { ok: false, message: "That request is no longer waiting." };
     }
     if (action.status !== "pending") {
+      await this.clearCopies(action, actor.name);
       if (
         action.kind === "buy_canary_fleet" &&
         (action.status === "approved" || action.status === "executed")
@@ -131,6 +133,10 @@ export class IsolationExecuteService {
       });
       persistRetiredDomainHistory(this.state, retireHost);
       await this.state.save();
+      await this.clearCopies(
+        this.state.getIsolationAction(actionId) ?? action,
+        actor.name,
+      );
       return {
         ok: true,
         message: `Already retired — ${retireHost} stays off. No second purchase.`,
@@ -144,6 +150,10 @@ export class IsolationExecuteService {
         decidedBy: actor.name,
       });
       await this.state.save();
+      await this.clearCopies(
+        this.state.getIsolationAction(actionId) ?? action,
+        actor.name,
+      );
       await this.announce(
         action.kind,
         `${action.title}\n${actor.name} said not now. I left everything as-is.`,
@@ -177,6 +187,10 @@ export class IsolationExecuteService {
         executedAt: new Date().toISOString(),
       });
       await this.state.save();
+      await this.clearCopies(
+        this.state.getIsolationAction(actionId)!,
+        actor.name,
+      );
       return { ok: true, message: "Done." };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -663,6 +677,27 @@ export class IsolationExecuteService {
       "generic_backfill",
       `Approval recorded for ${label} (D193 — not rotating-pool attach permission). Named-client inventory floor is 40/POD via named + exclusive client-signed generics (D203).`,
     );
+  }
+
+  private async clearCopies(
+    action: IsolationActionRecord | undefined,
+    resolvedBy: string,
+  ): Promise<void> {
+    if (!action) return;
+    const token =
+      typeof this.slack.postingBotToken === "function"
+        ? this.slack.postingBotToken()
+        : "";
+    if (!token) return;
+    try {
+      await clearAskCopies({
+        detail: action.detail,
+        botToken: token,
+        resolvedBy,
+      });
+    } catch (error) {
+      console.warn("[isolation] clear ask copies failed", error);
+    }
   }
 
   private async announce(

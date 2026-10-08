@@ -75,6 +75,11 @@ import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { sleep } from "../lib/http.js";
 import {
+  groupShortStaffedByClient,
+  shortStaffedLines,
+  shortStaffedSnapshot,
+} from "../lib/shortStaffedSlack.js";
+import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
@@ -104,7 +109,14 @@ export interface Min40TopUpResult {
   reason?: string;
   assigned: Min40Assignment[];
   asked: Array<{ campaignId: number; name: string; shortBy: number }>;
-  unfilled: Array<{ campaignId: number; name: string; shortBy: number; floor?: number }>;
+  unfilled: Array<{
+    campaignId: number;
+    name: string;
+    shortBy: number;
+    floor?: number;
+    clientId?: number;
+    clientName?: string;
+  }>;
   returned: Array<{ email: string; clientId: number }>;
   errors: string[];
   alerts: string[];
@@ -318,6 +330,8 @@ export class Min40TopUpService {
           name: String(campaign.name ?? campaign.id),
           shortBy: stillShort,
           floor: target,
+          clientId,
+          clientName,
         });
       }
     }
@@ -1143,17 +1157,23 @@ export class Min40TopUpService {
     dryRun: boolean,
   ): Promise<void> {
     if (!this.slack) return;
-    for (const row of result.unfilled) {
-      const key = `campaign:${row.campaignId}`;
-      if (this.state.getMin40ShortfallAlerted(key) === todayYmd) continue;
-      const floor = row.floor ?? ON_WEEK_MIN_SENDERS;
-      const count = roundStaffableWeight(floor - row.shortBy);
-      const line = `ACTIVE #${row.campaignId} ${row.name} is at ${count}/${floor} staffable (short ${row.shortBy}). Pool/client inventory did not fill the per-campaign floor (D207).`;
-      console.warn(`[min40-topup] ${line}`);
-      result.alerts.push(line);
-      if (!dryRun) {
-        await this.slack.send(line, undefined, "ops_alert");
-        this.state.setMin40ShortfallAlerted(key, todayYmd);
+    const grouped = groupShortStaffedByClient(result.unfilled);
+    const snapshot = shortStaffedSnapshot(grouped);
+    const text = shortStaffedLines(grouped);
+    if (!text) {
+      if (this.state.getShortStaffedSnapshot()) {
+        this.state.setShortStaffedSnapshot("");
+      }
+      return;
+    }
+    if (this.state.getShortStaffedSnapshot() === snapshot) return;
+    console.warn(`[min40-topup] ${text.replace(/\n/g, " | ")}`);
+    result.alerts.push(text);
+    if (!dryRun) {
+      await this.slack.send(text, undefined, "short_staffed");
+      this.state.setShortStaffedSnapshot(snapshot);
+      for (const row of result.unfilled) {
+        this.state.setMin40ShortfallAlerted(`campaign:${row.campaignId}`, todayYmd);
       }
     }
   }

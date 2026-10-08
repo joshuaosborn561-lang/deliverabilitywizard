@@ -277,8 +277,14 @@ export interface AppState {
   pendingResumes: Record<string, PendingResumeRecord>;
   /** D107 — leftover Nieto / MSRS / Positive campaigns deleted. */
   oldClientTeardownAt: string | null;
-  /** D220 — Chicago YMD of the last Cayden spend digest post. */
+  /** D220 / D248 — Chicago YMD of the last Needs you / spend digest post. */
   spendDigestPostedYmd: string | null;
+  /** D248 — daily #deliverability log thread when DELIVERABILITY_LOG_CHANNEL is unset. */
+  deliverabilityLogThread: { ymd: string; channel: string; ts: string } | null;
+  /** D248 — last canary-registered Slack fingerprint (sorted emails). */
+  canaryRegisteredFingerprint: string | null;
+  /** D248 — last short-staffed client snapshot; post only on change. */
+  shortStaffedSnapshot: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
   /** D81 — first-seen campaign audit + hourly sweep records. */
@@ -782,6 +788,9 @@ const EMPTY_STATE: AppState = {
   pendingResumes: {},
   oldClientTeardownAt: null,
   spendDigestPostedYmd: null,
+  deliverabilityLogThread: null,
+  canaryRegisteredFingerprint: null,
+  shortStaffedSnapshot: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
   campaignChecks: {},
   genericBackfillApprovals: {},
@@ -875,6 +884,22 @@ export class StateStore {
         spendDigestPostedYmd:
           typeof parsed.spendDigestPostedYmd === "string"
             ? parsed.spendDigestPostedYmd
+            : null,
+        deliverabilityLogThread:
+          parsed.deliverabilityLogThread &&
+          typeof parsed.deliverabilityLogThread === "object" &&
+          typeof parsed.deliverabilityLogThread.ymd === "string" &&
+          typeof parsed.deliverabilityLogThread.channel === "string" &&
+          typeof parsed.deliverabilityLogThread.ts === "string"
+            ? parsed.deliverabilityLogThread
+            : null,
+        canaryRegisteredFingerprint:
+          typeof parsed.canaryRegisteredFingerprint === "string"
+            ? parsed.canaryRegisteredFingerprint
+            : null,
+        shortStaffedSnapshot:
+          typeof parsed.shortStaffedSnapshot === "string"
+            ? parsed.shortStaffedSnapshot
             : null,
         isolation: normalizeIsolationState(parsed.isolation),
         campaignChecks: parsed.campaignChecks ?? {},
@@ -1011,6 +1036,38 @@ export class StateStore {
 
   markSpendDigestPosted(ymd: string): void {
     this.state.spendDigestPostedYmd = ymd;
+  }
+
+  getDeliverabilityLogThread(): {
+    ymd: string;
+    channel: string;
+    ts: string;
+  } | null {
+    return this.state.deliverabilityLogThread;
+  }
+
+  setDeliverabilityLogThread(row: {
+    ymd: string;
+    channel: string;
+    ts: string;
+  }): void {
+    this.state.deliverabilityLogThread = row;
+  }
+
+  getCanaryRegisteredFingerprint(): string | null {
+    return this.state.canaryRegisteredFingerprint;
+  }
+
+  setCanaryRegisteredFingerprint(fingerprint: string): void {
+    this.state.canaryRegisteredFingerprint = fingerprint;
+  }
+
+  getShortStaffedSnapshot(): string | null {
+    return this.state.shortStaffedSnapshot;
+  }
+
+  setShortStaffedSnapshot(snapshot: string): void {
+    this.state.shortStaffedSnapshot = snapshot;
   }
 
   clearMailboxControls(): number {

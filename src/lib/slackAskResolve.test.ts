@@ -4,6 +4,7 @@ import {
   buildResolvedAskBlocks,
   resolveIsolationAskMessage,
   resolvedAskLabel,
+  resolvedByLine,
   type FetchLike,
 } from "./slackAskResolve.js";
 
@@ -48,6 +49,7 @@ describe("D195 — resolved ask blocks carry no actions", () => {
     assert.match(resolvedAskLabel("generic_backfill", "deny"), /generics stay off/i);
     assert.match(resolvedAskLabel("retire_domain", "approve"), /retired/i);
     assert.match(resolvedAskLabel("buy_domains", "approve"), /cover buy/i);
+    assert.equal(resolvedByLine("Cayden"), "Resolved by Cayden: nothing to do");
   });
 });
 
@@ -143,5 +145,31 @@ describe("D195 — resolveIsolationAskMessage strip paths", () => {
     assert.equal(result.ok, false);
     assert.equal(result.via, "chat_update");
     assert.equal(result.error, "cant_update_message");
+  });
+
+  it("D248: chat.updates every stamped copy to the resolved-by line", async () => {
+    const { fetch, calls } = fakeFetch([
+      { ok: true, json: { ok: true } },
+      { ok: true, json: { ok: true } },
+    ]);
+    const result = await resolveIsolationAskMessage({
+      botToken: "xoxb-posting",
+      stamps: [
+        { channel: "C1", ts: "1.1" },
+        { channel: "C1", ts: "2.2" },
+      ],
+      summary: "*Retire boxmeetconnect.com*",
+      kind: "retire_domain",
+      decision: "approve",
+      resolvedBy: "the wizard",
+      fetchImpl: fetch,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0]?.body.ts, "1.1");
+    assert.equal(calls[1]?.body.ts, "2.2");
+    assert.equal(calls[0]?.body.text, "Resolved by the wizard: nothing to do");
+    const blocks = calls[0]?.body.blocks as Array<{ type: string }>;
+    assert.equal(blocks.some((b) => b.type === "actions"), false);
   });
 });

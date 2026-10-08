@@ -74,7 +74,7 @@ describe("D221 generic-pool canon service", () => {
     assert.equal(state.getGenericSeat("ada@getintroduced.info")?.assignedClientId, 77);
     assert.equal(state.getGenericSeat("ada@getintroduced.info")?.reason, GENERIC_ASSIGN_REASON_POD_TOP_UP);
     assert.equal(sends.length, 1);
-    assert.equal(sends[0]!.kind, "ops_alert");
+    assert.equal(sends[0]!.kind, "canon_miss");
     assert.match(sends[0]!.text, /generic pool assignment is wrong/);
     assert.doesNotMatch(sends[0]!.text, /—/);
 

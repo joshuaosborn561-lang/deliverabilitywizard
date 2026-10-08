@@ -95,22 +95,34 @@ export function decideIsolationVerdict(
   const canary = canaryLean(input);
   const unwarmedAlsoFailed = unwarmedCopyFailed(input, canary);
 
-  // D158 — content_block + ugly canary prefers COPY even with no mailbox
-  // tag. Known-good failing an ESP is still INFRA.
+  // D93 / D96 — providerwise known-good / unwarmed readings do not need a
+  // standing mailbox-control tag. Peterson C1 AIRPODS #3798228 stayed
+  // INCONCLUSIVE on 2026-09-29 because tags were UNKNOWN while the
+  // known-good ESP split already existed.
   if (control === "INSUFFICIENT") {
-    if (input.contentBlock && input.knownGoodFineAcrossEsps === false) {
+    if (input.knownGoodFineAcrossEsps === false) {
+      return {
+        verdict: "INFRA",
+        control,
+        reason: input.contentBlock
+          ? "Dominant bounce class is content_block, but the known-good email on those domains is also failing an ESP. That is the domain / inbox, not a word in the copy."
+          : "The known-good email on those domains is failing an ESP. That is the domain / inbox, not a word in the copy. No standing mailbox-control tag yet.",
+        startCopyTeardown: false,
+        pullInfraDiagnostics: true,
+      };
+    }
+    if (input.unwarmedCopyFineAcrossEsps === true) {
       return {
         verdict: "INFRA",
         control,
         reason:
-          "Dominant bounce class is content_block, but the known-good email on those domains is also failing an ESP. That is the domain / inbox, not a word in the copy.",
+          "The campaign copy is not inboxing on an ESP, but unwarmed senders with that same copy are landing across ESPs. That is the live inboxes / domain, not a word. No standing mailbox-control tag yet.",
         startCopyTeardown: false,
         pullInfraDiagnostics: true,
       };
     }
     if (
       input.contentBlock &&
-      input.knownGoodFineAcrossEsps !== false &&
       (canary.lean === "COPY" || input.unwarmedCopyFineAcrossEsps === false)
     ) {
       return {

@@ -155,6 +155,31 @@ describe("isolation verdict", () => {
     assert.equal(failedControlIsNeverCopy(result), true);
   });
 
+  it("D93: insufficient tags + known-good failing an ESP is INFRA", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["UNKNOWN"],
+      knownGoodFineAcrossEsps: false,
+    });
+    assert.equal(result.verdict, "INFRA");
+    assert.equal(result.control, "INSUFFICIENT");
+    assert.equal(result.startCopyTeardown, false);
+    assert.equal(result.pullInfraDiagnostics, true);
+    assert.equal(failedControlIsNeverCopy(result), true);
+  });
+
+  it("D96: insufficient tags + unwarmed copy landing is INFRA", () => {
+    const result = decideIsolationVerdict({
+      campaignInSpam: true,
+      senderControls: ["UNKNOWN"],
+      unwarmedCopyFineAcrossEsps: true,
+    });
+    assert.equal(result.verdict, "INFRA");
+    assert.equal(result.control, "INSUFFICIENT");
+    assert.equal(result.startCopyTeardown, false);
+    assert.equal(result.pullInfraDiagnostics, true);
+  });
+
   it("D96: warmed and unwarmed both burying is COPY", () => {
     const result = decideIsolationVerdict({
       campaignInSpam: true,

@@ -365,6 +365,19 @@ describe("IsolationBranchService placement queue (D158)", () => {
     );
   });
 
+  it("D93: UNKNOWN mailbox tags + known-good failing an ESP is INFRA", async () => {
+    const infra = await buildBranch({
+      knownGoodInbox: 10,
+      canaryInbox: 0,
+      mailboxPlacement: "UNKNOWN",
+    });
+    const run = await infra.branch.evaluate(AIRPODS.id, { campaignInSpam: true });
+    assert.equal(run.verdict, "INFRA");
+    assert.equal(run.control, "INSUFFICIENT");
+    assert.equal(run.teardownStarted, false);
+    assert.equal(infra.teardowns.length, 0);
+  });
+
   it("COPY vs INFRA still follows decideIsolationVerdict", async () => {
     const copy = await buildBranch({ knownGoodInbox: 95, canaryInbox: 0 });
     const copyRun = await copy.branch.evaluate(AIRPODS.id, { campaignInSpam: true });

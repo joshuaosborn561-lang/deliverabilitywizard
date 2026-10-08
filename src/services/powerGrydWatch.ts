@@ -139,7 +139,7 @@ export class PowerGrydWatchService {
       const line = `PowerGRYD dedicated seats dropped ${previous} → ${count} (target ${target}). Hands-off — I did not peel, restaff, START, or PAUSE anyone.`;
       console.warn(`[powergryd-watch] ${line}`);
       if (!dryRun) {
-        await this.slack.send(line, undefined, "ops_alert");
+        await this.slack.send(line, undefined, "short_staffed");
         this.state.setPowerGrydAlertedCount(count);
       }
       alerted = true;

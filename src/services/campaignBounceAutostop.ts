@@ -428,7 +428,7 @@ export class CampaignBounceAutostopService {
             await this.slack.send(
               burstReceiptText(finding),
               undefined,
-              "action_result",
+              "bounce_burst",
             );
           } catch (error) {
             console.warn("[bounce-autostop] burst receipt failed", error);

@@ -189,7 +189,7 @@ describe("isolation Slack reminds", () => {
     assert.equal(domainAlreadyRetired(store, "salesgliderrun.com"), true);
     const dropped = dismissRetiredDomainAsks(store);
     const count = await remindPendingIsolationActions({ store, slack });
-    assert.equal(dropped, 1);
+    assert.equal(dropped.length, 1);
     assert.equal(count, 0);
     assert.deepEqual(notified, []);
     assert.equal(store.getIsolationAction(leftover.id)?.status, "denied");
@@ -690,6 +690,98 @@ describe("D195 — Josh soft-gift voice + identity substitute", () => {
     assert.match(swap, /so you know, we're TechEvolution\./);
     assert.doesNotMatch(swap, /I'd like to offer|Happy to offer/i);
     assert.doesNotMatch(swap, /—/);
+  });
+});
+
+describe("D248 — in-place update, quiet-hours queue, retire supersedes buy", () => {
+  it("updates the existing card when the strike set changes instead of posting a second copy", async () => {
+    const store = tempStore();
+    const posts: Array<{ update?: { ts?: string } }> = [];
+    const slack = {
+      notifyIsolationAction: async (details: { update?: { ts?: string } }) => {
+        posts.push(details);
+        return details.update
+          ? { channel: "C1", ts: details.update.ts }
+          : { channel: "C1", ts: "1.1" };
+      },
+      postThreadReply: async () => undefined,
+    } as unknown as SlackClient;
+    const first = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire boxmeetconnect.com",
+        proof: "fail 1",
+        detail: {
+          domain: "boxmeetconnect.com",
+          strikeKey: "retire_domain:boxmeetconnect.com:kg:a@x.com",
+        },
+      }),
+    });
+    assert.ok(first);
+    const second = await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire boxmeetconnect.com",
+        proof: "fail 2",
+        detail: {
+          domain: "boxmeetconnect.com",
+          strikeKey: "retire_domain:boxmeetconnect.com:kg:a@x.com,b@x.com",
+        },
+      }),
+    });
+    assert.ok(second);
+    assert.equal(posts.length, 2);
+    assert.equal(posts[1]?.update?.ts, "1.1");
+    const saved = store.getIsolationAction(first!.id);
+    const messages = saved?.detail.slackMessages as Array<{ ts: string }>;
+    assert.equal(messages?.length, 1);
+  });
+
+  it("queues a new ask during quiet hours instead of posting", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const posted = await requestIsolationAction({
+      store,
+      slack,
+      quietHours: true,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire night.info",
+        proof: "AS(42004)",
+        detail: { domain: "night.info" },
+      }),
+    });
+    assert.ok(posted);
+    assert.deepEqual(notified, []);
+    assert.equal(store.getIsolationAction(posted.id)?.detail.queuedForNeedsYou, true);
+  });
+
+  it("denies a pending cover buy when a retire ask opens for the same domain", async () => {
+    const store = tempStore();
+    const { slack } = slackCapture();
+    const buy = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover for boxmeetconnect.com",
+      proof: "cover",
+      detail: { domain: "boxmeetconnect.com" },
+    });
+    store.upsertIsolationAction(buy);
+    await requestIsolationAction({
+      store,
+      slack,
+      action: buildIsolationAction({
+        kind: "retire_domain",
+        title: "Retire boxmeetconnect.com",
+        proof: "AS(42004)",
+        detail: { domain: "boxmeetconnect.com" },
+      }),
+    });
+    assert.equal(store.getIsolationAction(buy.id)?.status, "denied");
+    assert.match(store.getIsolationAction(buy.id)?.error ?? "", /Superseded by retire/);
   });
 });
 

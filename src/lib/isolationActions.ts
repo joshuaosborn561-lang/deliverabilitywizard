@@ -1,5 +1,7 @@
 import type { SlackClient } from "../clients/slack.js";
 import { copySwapProof } from "./isolationProof.js";
+import { appendSlackStamp, latestSlackStamp } from "./slackAskStamps.js";
+import { isJoshQuietHours } from "./slackQuietHours.js";
 import type {
   DomainControlHistoryRecord,
   IsolationActionKind,
@@ -255,21 +257,22 @@ export function domainRecentlyRetired(
 export function dismissRetiredDomainAsks(
   store: Pick<StateStore, "listIsolationActions" | "getDomainHistory" | "upsertIsolationAction">,
   now = new Date().toISOString(),
-): number {
-  let dismissed = 0;
+): IsolationActionRecord[] {
+  const dismissed: IsolationActionRecord[] = [];
   for (const action of store.listIsolationActions()) {
     if (action.kind !== "retire_domain" || action.status !== "pending") continue;
     const host = String(action.detail.domain ?? "").toLowerCase();
     if (!host || !domainAlreadyRetired(store, host)) continue;
-    store.upsertIsolationAction({
+    const next: IsolationActionRecord = {
       ...action,
       status: "denied",
       decidedAt: now,
-      decidedBy: "system",
+      decidedBy: "the wizard",
       error:
         "Already retired (D179). Stale Retire ask dismissed — no second purchase.",
-    });
-    dismissed += 1;
+    };
+    store.upsertIsolationAction(next);
+    dismissed.push(next);
   }
   return dismissed;
 }
@@ -322,14 +325,21 @@ export function persistRetiredDomainHistory(
 
 export async function requestIsolationAction(input: {
   store: StateStore;
-  slack: Pick<SlackClient, "notifyIsolationAction">;
+  slack: Pick<SlackClient, "notifyIsolationAction"> &
+    Partial<Pick<SlackClient, "postThreadReply">>;
   action: IsolationActionRecord;
+  now?: Date;
+  /** Test override. Production uses Josh quiet hours (D248). */
+  quietHours?: boolean;
 }): Promise<IsolationActionRecord | null> {
   healStaleBurnAsks(input.store);
   if (input.action.kind === "retire_domain") {
     const host = String(input.action.detail.domain ?? "").toLowerCase();
     if (host && domainAlreadyRetired(input.store, host)) {
       return null;
+    }
+    if (host) {
+      dismissCoverAsksSupersededByRetire(input.store, host);
     }
   }
   if (input.action.kind === "buy_domains") {
@@ -376,7 +386,10 @@ export async function requestIsolationAction(input: {
         // First time we learn a strike key on a leftover ask: stamp it,
         // do not treat that as a new strike (D190).
         if (!prevKey) return null;
-        await notifyAndStamp(input.store, input.slack, updated);
+        await notifyAndStamp(input.store, input.slack, updated, {
+          now: input.now,
+          quietHours: input.quietHours,
+        });
         return updated;
       }
     }
@@ -390,34 +403,97 @@ export async function requestIsolationAction(input: {
     return null;
   }
   input.store.upsertIsolationAction(action);
-  await notifyAndStamp(input.store, input.slack, action);
+  await notifyAndStamp(input.store, input.slack, action, {
+    now: input.now,
+    quietHours: input.quietHours,
+  });
   return action;
+}
+
+export function dismissCoverAsksSupersededByRetire(
+  store: Pick<StateStore, "listIsolationActions" | "upsertIsolationAction">,
+  domain: string,
+  now = new Date().toISOString(),
+): IsolationActionRecord[] {
+  const host = domain.trim().toLowerCase();
+  if (!host) return [];
+  const dismissed: IsolationActionRecord[] = [];
+  for (const row of store.listIsolationActions()) {
+    if (row.kind !== "buy_domains" || row.status !== "pending") continue;
+    if (domainOfAction(row) !== host) continue;
+    const next: IsolationActionRecord = {
+      ...row,
+      status: "denied",
+      decidedAt: now,
+      decidedBy: "the wizard",
+      error: "Superseded by retire (D248). Cover buy is not a second purchase.",
+    };
+    store.upsertIsolationAction(next);
+    dismissed.push(next);
+  }
+  return dismissed;
 }
 
 async function notifyAndStamp(
   store: Pick<StateStore, "upsertIsolationAction" | "getIsolationAction">,
-  slack: Pick<SlackClient, "notifyIsolationAction">,
+  slack: Pick<SlackClient, "notifyIsolationAction"> &
+    Partial<Pick<SlackClient, "postThreadReply">>,
   action: IsolationActionRecord,
+  opts: { remind?: boolean; now?: Date; quietHours?: boolean } = {},
 ): Promise<void> {
-  const posted = await notifyIsolationActionRecord(slack, action);
   const current = store.getIsolationAction(action.id) ?? action;
-  // D195 — remember where the card landed so a later resolve can strip its
-  // buttons via chat.update with the posting token when there is no
-  // response_url (modal-submit / confirm-page paths).
-  const detail: Record<string, unknown> = { ...current.detail };
-  if (posted?.channel) detail.slackChannel = posted.channel;
-  if (posted?.ts) detail.slackTs = posted.ts;
-  const stamped: IsolationActionRecord = {
+  const latest = latestSlackStamp(current.detail);
+  const quiet =
+    opts.quietHours ??
+    (!process.env.NODE_TEST_CONTEXT && isJoshQuietHours(opts.now));
+  if (quiet && !latest) {
+    store.upsertIsolationAction({
+      ...current,
+      detail: { ...current.detail, queuedForNeedsYou: true },
+    });
+    return;
+  }
+  if (latest) {
+    if (quiet && opts.remind) {
+      return;
+    }
+    await notifyIsolationActionRecord(slack, current, latest);
+    if (opts.remind && slack.postThreadReply) {
+      await slack.postThreadReply(
+        latest.channel,
+        latest.ts,
+        "Still waiting on this.",
+      );
+    }
+    store.upsertIsolationAction({
+      ...current,
+      detail: { ...current.detail, queuedForNeedsYou: false },
+      lastNotifiedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  const posted = await notifyIsolationActionRecord(slack, current);
+  let detail: Record<string, unknown> = {
+    ...current.detail,
+    queuedForNeedsYou: false,
+  };
+  if (posted?.channel && posted.ts) {
+    detail = appendSlackStamp(detail, {
+      channel: posted.channel,
+      ts: posted.ts,
+    });
+  }
+  store.upsertIsolationAction({
     ...current,
     detail,
     lastNotifiedAt: new Date().toISOString(),
-  };
-  store.upsertIsolationAction(stamped);
+  });
 }
 
 export async function notifyIsolationActionRecord(
   slack: Pick<SlackClient, "notifyIsolationAction">,
   action: IsolationActionRecord,
+  update?: { channel: string; ts: string },
 ): Promise<{ channel?: string; ts?: string } | undefined> {
   return slack.notifyIsolationAction({
     title: action.title,
@@ -439,6 +515,7 @@ export async function notifyIsolationActionRecord(
       typeof action.detail.campaignName === "string"
         ? action.detail.campaignName
         : undefined,
+    update,
   });
 }
 
@@ -469,7 +546,9 @@ export function dismissPendingSignatureAsks(
 /** Re-send Slack buttons for pending asks. Does not create or approve anything. */
 export async function remindPendingIsolationActions(input: {
   store: StateStore;
-  slack: Pick<SlackClient, "notifyIsolationAction">;
+  slack: Pick<SlackClient, "notifyIsolationAction"> &
+    Partial<Pick<SlackClient, "postThreadReply">>;
+  now?: Date;
 }): Promise<number> {
   dismissPendingSignatureAsks(input.store);
   dismissRetiredDomainAsks(input.store);
@@ -500,7 +579,10 @@ export async function remindPendingIsolationActions(input: {
       }
       persistRefreshedCopySwap(input.store, next);
     }
-    await notifyAndStamp(input.store, input.slack, next);
+    await notifyAndStamp(input.store, input.slack, next, {
+      remind: true,
+      now: input.now,
+    });
     posted += 1;
   }
   return posted;

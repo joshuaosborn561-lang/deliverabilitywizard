@@ -253,6 +253,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D245 | Live | InboxKit license sweep runs every weekday 8:16am CT and deletes on the cancel date: real IK rows (`username` + `domain_name`), past scheduled cancel = lapsed even if Smartlead still logs in or is disconnected, stale `active` renewal_date is not lapsed; seat end dates persisted; min40 / POC fill and canon staffable skip lapsed or ending-within-7-days seats |
 | D246 | Live | Insight SEG standing hold lifted; weekday pulse unpauses bounce holds; hold-enforcement / locked standing prefs no longer keep Insight SEG PAUSED |
 | D247 | Live | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
+| D248 | Live — D220 cadence / copy amended | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
 
 ---
 
@@ -8417,6 +8418,71 @@ and serialized save). Does not change staffing, holds, or spend.
 **Guards.** Step timeout budgets and `timeout after Nm`; stale-lock
 takeover with ownership token; queue 6m timeout + snapshot; freeze
 watchdog exit (mocked); `warmup-gate-monitor`; CANON dated D247.
+
+---
+
+## D248 — Safe Slack buttons and a quiet #deliverability
+
+**Date.** 2026-10-08.
+
+**Decision.** Josh / Cayden (audit 10/6 8am–10/8 9am CT: 243 posts,
+235 from the wizard, 18 distinct human asks across 42 button cards).
+`#deliverability` is too loud, and every Approve / Retire tap says
+"already done".
+
+1. **Buttons and the handler agree.** Isolation Retire / Buy / Allow /
+   Not now are native Slack buttons. Never put a confirm-page `url` on
+   the same button as `action_id` + `value` — Slack still posts
+   `block_actions` for link buttons, so `/slack/interactions` decided
+   immediately with the clicker as actor and the confirm page then
+   showed "Already retired" / "already \<status\>". Retire and Buy
+   carry Slack's native `confirm` dialog. The handler decides only
+   after that confirm, then updates the card in place. A leftover
+   link-button `block_actions` is ignored. A single tap cannot spend.
+2. **Every posted message ts is persisted** on the ask
+   (`detail.slackMessages`, plus the D195 `slackChannel` / `slackTs`
+   latest). On any resolution — human, wizard auto-dismiss,
+   already-settled, buy superseded by retire — `chat.update` every
+   copy to `Resolved by X: nothing to do` with no buttons.
+3. **Details change updates the existing card.** isolation-remind
+   bumps or threads on that card and does not repost.
+4. **`#deliverability` is only cards that need a person.** Route
+   short-staffed, stage-overdue, CANON-miss, bounce burst, canary
+   registered, hold paused, copy-check no-fix, placement, and
+   lead-expired posts to `DELIVERABILITY_LOG_CHANNEL` (fallback: one
+   daily thread in `#deliverability`). Short-staffed posts only on
+   change, one line per client.
+5. **Canary-registered** posts once per fleet fingerprint change, not
+   every adopt pass.
+6. **One weekday Needs you post at 8:00am CT**, merged with the D220
+   7:16 spend digest. Cayden spend is one Approve per client (standing
+   rule). Josh-only items are listed separately. Anything generated
+   8pm–6am CT or on weekends queues until the next weekday 8am post.
+   The Watchdog pulse stays in `#campaign-watchdog`.
+
+**Why.** `notifyIsolationAction` put both a confirm-page url and
+`isolation_approve` / `isolation_deny` on Retire / Buy / Allow / Not
+now. One tap spent or retired without confirming, then the confirm
+page was "already done". Cards were also reposted when a domain's
+failing-inbox set changed or via isolation-remind; only the newest
+copy lost its buttons, so stale copies piled up (boxmeetconnect.com
+Retire ×3; TechEvo copy-edit cards ×4). Informational ops_alert /
+placement / hold / canary noise filled the channel.
+
+**Rejected.** Keep link buttons and strip `action_id` (still a second
+hop). Leave leftover copies tappable. Continue 7:16 as a separate
+Cayden-only post.
+
+**Supersedes / amends.** Amends D195 (buy / retire / generics are
+native + confirm, not confirm-page url). Amends D220 (8:00am CT Needs
+you post; one Approve per client). Amends D163 / D149 paging
+destination for informational kinds (log channel / daily thread, not
+`#deliverability` cards). Does not touch the Watchdog pulse.
+
+**Guards.** Native Retire / Buy buttons have `confirm` and no `url`;
+`isolationBlockActionShouldDecide` is false for url buttons; all
+stamped copies update on resolve; isolation-remind updates in place;
+quiet hours queue new cards; cron `0 8 * * 1-5`; CANON dated D248.
 
 ---
 

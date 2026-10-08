@@ -29,6 +29,8 @@ export function slackAllowed(kind?: SlackAllowKind | null): boolean {
   );
 }
 
+/** Human #deliverability kinds. Informational kinds use the log lane (D248). */
+
 export function slackKindForIsolationAction(
   kind:
     | "retire_domain"

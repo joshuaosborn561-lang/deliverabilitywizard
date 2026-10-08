@@ -107,7 +107,7 @@ export class HoldEnforcementService {
         await this.slack.send(
           `Paused *${name}* (#${campaign.id}) — ${reason}.`,
           undefined,
-          "ops_alert",
+          "hold_paused",
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

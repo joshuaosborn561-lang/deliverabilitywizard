@@ -77,7 +77,15 @@ import { MailboxTypeTagService } from "./services/mailboxTypeTags.js";
 import { TerlHoldService } from "./services/terlHold.js";
 import { SpendDigestService } from "./services/spendDigest.js";
 import { InboxkitLicenseSweepService } from "./services/inboxkitLicenseSweep.js";
-import { canonOpsIdleReason, weekendWriterIdleReason } from "./lib/canonOpsHours.js";
+import { canonOpsIdleReason, chicagoWallClock, weekendWriterIdleReason } from "./lib/canonOpsHours.js";
+import {
+  isolationBlockActionShouldDecide,
+  NEEDS_YOU_APPROVE_ACTION,
+} from "./lib/slackConfirmButtons.js";
+import {
+  isolationIdsForClient,
+} from "./lib/needsYouDigest.js";
+import { collectPendingSpendItems } from "./lib/spendDigest.js";
 import { CampaignTopUpService } from "./services/campaignTopUp.js";
 import { CampaignHealthService } from "./services/campaignHealth.js";
 import { ClientFanOutService } from "./services/clientFanOut.js";
@@ -247,6 +255,19 @@ async function main(): Promise<void> {
     publicBaseUrl: publicBaseUrlFromEnv(process.env),
     deliverabilityBotToken: config.deliverabilitySlackBotToken,
     deliverabilityChannelId: config.deliverabilitySlackChannelId,
+    logChannel: config.deliverabilityLogChannel,
+  });
+  slack.setLogSink({
+    logChannel: config.deliverabilityLogChannel,
+    humanChannel:
+      config.slackChannelId ||
+      config.slackChannel ||
+      config.deliverabilitySlackChannelId,
+    todayYmd: () => chicagoWallClock(new Date(), "America/Chicago").ymd,
+    getThread: () => state.getDeliverabilityLogThread(),
+    setThread: (row) => {
+      state.setDeliverabilityLogThread(row);
+    },
   });
   // D213 — state-only seed of the known 5.1.8 tenant hold, then one
   // Watchdog page if it has not been posted. No Smartlead writes (D122).
@@ -1622,18 +1643,22 @@ async function main(): Promise<void> {
     if (!result) {
       console.log("[copy-canary-adopt] fleet is healthy — nothing to adopt");
     } else if (result.adopted.length && result.changed) {
-      await slack.send(
-        [
-          `Found the ${result.adopted.length} unwarmed inbox${result.adopted.length === 1 ? "" : "es"} you bought and registered them as the copy-test canaries:`,
-          ...result.adopted.map((email) => `• ${email}`),
-          "Warmup is off and they will never staff a live campaign.",
-          result.ready
-            ? "They are in Smartlead — campaign copy tests start on this pass."
-            : "Smartlead is still importing them; I keep checking and the copy tests start as soon as they land.",
-        ].join("\n"),
-        undefined,
-        "action_result",
-      );
+      const fingerprint = [...result.adopted].map((e) => e.toLowerCase()).sort().join("\n");
+      if (state.getCanaryRegisteredFingerprint() !== fingerprint) {
+        await slack.send(
+          [
+            `Found the ${result.adopted.length} unwarmed inbox${result.adopted.length === 1 ? "" : "es"} you bought and registered them as the copy-test canaries:`,
+            ...result.adopted.map((email) => `• ${email}`),
+            "Warmup is off and they will never staff a live campaign.",
+            result.ready
+              ? "They are in Smartlead — campaign copy tests start on this pass."
+              : "Smartlead is still importing them; I keep checking and the copy tests start as soon as they land.",
+          ].join("\n"),
+          undefined,
+          "canary_registered",
+        );
+        state.setCanaryRegisteredFingerprint(fingerprint);
+      }
     } else if (result.reason?.includes("too many")) {
       await slack.send(
         `I looked for the unwarmed inboxes you bought but ${result.reason}. Tell me the domain and I will register them.`,
@@ -1673,10 +1698,22 @@ async function main(): Promise<void> {
   setTimeout(() => {
     const dropped = dismissPendingSignatureAsks(state);
     const staleRetires = dismissRetiredDomainAsks(state);
-    if (dropped || staleRetires) {
+    if (dropped || staleRetires.length) {
       console.log(
-        `[slack] Dismissed ${dropped} leftover signature ask(s) (D97), ${staleRetires} stale retire ask(s) (D179)`,
+        `[slack] Dismissed ${dropped} leftover signature ask(s) (D97), ${staleRetires.length} stale retire ask(s) (D179)`,
       );
+      for (const ask of staleRetires) {
+        void resolveIsolationAskMessage({
+          detailRecord: ask.detail,
+          botToken: slack.postingBotToken(),
+          resolvedBy: "the wizard",
+          summary: ask.title,
+          kind: ask.kind,
+          decision: "deny",
+        }).catch((error) => {
+          console.warn("[slack] could not clear dismissed retire card", error);
+        });
+      }
       void state.save().catch((error) => {
         console.error("[slack] could not persist ask dismiss", error);
       });
@@ -1772,6 +1809,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     responseUrl?: string;
     summary?: string;
     detail?: string;
+    resolvedBy?: string;
   }): Promise<void> => {
     const action = opts.actionId
       ? state.getIsolationAction(opts.actionId)
@@ -1795,6 +1833,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           typeof action?.detail.slackTs === "string"
             ? action.detail.slackTs
             : undefined,
+        detailRecord: action?.detail,
+        resolvedBy: opts.resolvedBy ?? "the wizard",
         botToken: slack.postingBotToken(),
         summary,
         kind: opts.kind,
@@ -1996,6 +2036,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             actionId: parsed.id,
             kind: decideKind,
             decision: parsed.decision,
+            resolvedBy: "Josh",
             detail: result.message,
           });
         }
@@ -2042,7 +2083,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           type?: string;
           trigger_id?: string;
           user?: { id?: string; name?: string; username?: string };
-          actions?: Array<{ action_id?: string; value?: string }>;
+          actions?: Array<{ action_id?: string; value?: string; url?: string }>;
           view?: {
             callback_id?: string;
             private_metadata?: string;
@@ -2129,6 +2170,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
                   actionId,
                   kind: "swap_copy",
                   decision: "approve",
+                  resolvedBy: name,
                   detail: result.message,
                 });
               }
@@ -2145,7 +2187,74 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           return;
         }
 
-        const actionId = payload.actions?.[0]?.action_id ?? "";
+        const clicked = payload.actions?.[0] ?? {};
+        const clickGate = isolationBlockActionShouldDecide({
+          action_id: clicked.action_id,
+          url: clicked.url,
+          value: clicked.value,
+        });
+        if (clickGate.reason === "url_button") {
+          res.status(200).json({
+            text: "That old link is not a decision. Use a current card — Slack will ask you to confirm before anything is bought or retired.",
+          });
+          return;
+        }
+
+        const actionId = clicked.action_id ?? "";
+        // D248 — lumped Cayden spend: needs_you_approve_client
+        if (
+          actionId === NEEDS_YOU_APPROVE_ACTION ||
+          actionId.startsWith(`${NEEDS_YOU_APPROVE_ACTION}:`)
+        ) {
+          if (role !== "owner" && role !== "operator") {
+            res.status(200).json({
+              text: "Cayden or Josh can approve this client spend.",
+            });
+            return;
+          }
+          const clientKey = String(clicked.value ?? "");
+          res.status(200).json({
+            text: "Working on it — I will post here when it is done.",
+          });
+          const ids = isolationIdsForClient(
+            collectPendingSpendItems(state),
+            clientKey,
+          );
+          void (async () => {
+            const messages: string[] = [];
+            for (const id of ids) {
+              const result = await isolationExecute.decide(id, "approve", {
+                name,
+                role,
+              });
+              messages.push(result.message);
+              if (result.ok) {
+                const ask = state.getIsolationAction(id);
+                await stripResolvedAsk({
+                  actionId: id,
+                  kind: ask?.kind ?? "retire_domain",
+                  decision: "approve",
+                  resolvedBy: name,
+                  detail: result.message,
+                });
+              }
+            }
+            const text = messages.join("\n") || "Nothing pending for that client.";
+            if (payload.response_url) {
+              await fetch(payload.response_url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text }),
+              });
+            } else {
+              await slack.notifyActionResult(text);
+            }
+          })().catch((error) => {
+            console.error("[slack-interactions] needs-you approve failed", error);
+          });
+          return;
+        }
+
         if (isDlvActionId(actionId)) {
           res.status(200).json({
             text: "Working on it — I will post here when it is done.",
@@ -2296,15 +2405,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           .decide(parsed.id, parsed.decision, { name, role })
           .then(async (result) => {
             const text = result.message;
-            // D195 — swap_copy Use suggested / Not now are native buttons, so
-            // the tap hands us a response_url. Strip the buttons with
-            // replace_original; the resolved summary carries the outcome.
-            if (result.ok && parsed.kind === "swap_copy") {
+            if (result.ok) {
               await stripResolvedAsk({
                 actionId: parsed.id,
                 kind: parsed.kind,
                 decision: decideDecision,
                 responseUrl: payload.response_url,
+                resolvedBy: name,
                 detail: text,
               });
               return;
@@ -3225,7 +3332,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] TERRL EOD (D219): ${config.enableTerlEod ? `ENABLED ${config.cronTerlEod} ${config.terlEodTimezone} weekday #deliverability digest; 24h hold then type cap; same-client generic substitute` : "disabled"}`,
     );
     console.log(
-      `[boot] Cayden spend digest (D220): ${config.enableSpendDigest ? `ENABLED ${config.cronSpendDigest} ${config.spendDigestTimezone} weekday per-client pending spend` : "disabled"}`,
+      `[boot] Needs you / spend digest (D248): ${config.enableSpendDigest ? `ENABLED ${config.cronSpendDigest} ${config.spendDigestTimezone} weekday 8am CT Needs you` : "disabled"}`,
     );
     console.log(
       `[boot] InboxKit license sweep (D226/D245): ${config.enableInboxkitLicenseSweep ? `ENABLED ${config.cronInboxkitLicenseSweep} ${config.inboxkitLicenseTimezone} weekday handoff + cleanup Slack` : "disabled"}`,

@@ -175,14 +175,14 @@ export class GenericPoolCanonService {
           await this.slack.send(
             canaryLockAlertText(canaryFresh),
             undefined,
-            "ops_alert",
+            "canon_miss",
           );
         }
         if (poolFresh.length) {
           await this.slack.send(
             genericPoolFindingAlertText(poolFresh),
             undefined,
-            "ops_alert",
+            "canon_miss",
           );
         }
         const keys = findingKeys(fresh);

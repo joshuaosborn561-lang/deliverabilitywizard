@@ -5390,9 +5390,9 @@ describe("owner intent — D158 ugly same-ESP starts isolation", () => {
     );
     assert.match(
       placementBody,
-      /"ops_alert"/,
+      /"placement"/,
       stop(
-        "notifyPlacementResult must pass an allow kind or send() is slack-quiet dropped (D163).",
+        "notifyPlacementResult must pass a kind or send() is slack-quiet dropped (D163/D248).",
         "notifyPlacementResult sends unclassified.",
       ),
     );
@@ -5746,9 +5746,9 @@ describe("owner intent — D163 CANON misses page Slack", () => {
     );
     assert.match(
       verdictBody,
-      /"ops_alert"/,
+      /"canon_miss"/,
       stop(
-        "notifyIsolationVerdict must pass an allow kind or unclassified send() is slack-quiet dropped (D163).",
+        "notifyIsolationVerdict must pass a kind or unclassified send() is slack-quiet dropped (D163/D248).",
         "notifyIsolationVerdict still sends unclassified.",
       ),
     );
@@ -8938,7 +8938,7 @@ describe("owner intent — D190 burned-domain Slack once; Cayden Retire/Buy", ()
     );
     assert.match(
       slack,
-      /Cayden: tap the button \(opens a confirm page\) to retire/,
+      /Cayden: tap Retire this domain\. Slack will ask you to confirm/,
       stop(
         "Retire Slack addresses Cayden (D190).",
         "slack.ts still tells Josh to tap Retire.",
@@ -8946,7 +8946,7 @@ describe("owner intent — D190 burned-domain Slack once; Cayden Retire/Buy", ()
     );
     assert.match(
       slack,
-      /Cayden: tap the button \(opens a confirm page\) to buy client-named cover/,
+      /Cayden: tap Buy replacements\. Slack will ask you to confirm/,
       stop(
         "Cover-buy Slack addresses Cayden (D190).",
         "slack.ts still tells Josh-only to buy cover.",
@@ -9467,15 +9467,22 @@ describe("owner intent — D195 strip ask buttons after resolve; soft-gift voice
     );
     assert.equal(chatCalls[0], "https://slack.com/api/chat.update");
 
-    // swap_copy Use suggested / Not now must be native buttons (no url) so
-    // the tap yields a response_url; other kinds keep the confirm-page url.
+    // D248 — all isolation buttons are native; Retire / Buy add Slack confirm.
     const slack = await readFile(new URL("../clients/slack.ts", import.meta.url), "utf8");
     assert.match(
       slack,
-      /wantsConfirmUrl = details\.kind !== "swap_copy"/,
+      /isolationNativeButton/,
       stop(
-        "swap_copy Use suggested / Not now are native buttons (D195).",
-        "slack.ts still puts a confirm-page url on swap_copy buttons.",
+        "Isolation ask buttons are native Slack buttons (D248).",
+        "slack.ts lost isolationNativeButton.",
+      ),
+    );
+    assert.doesNotMatch(
+      slack,
+      /wantsConfirmUrl/,
+      stop(
+        "Confirm-page urls are gone from isolation buttons (D248).",
+        "slack.ts still builds a confirm-page url on isolation buttons.",
       ),
     );
     assert.match(
@@ -11963,7 +11970,7 @@ describe("owner intent — D220 Cayden spend digest and complete fleet pages", (
     const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
 
     assert.equal(defaults.enableSpendDigest, true);
-    assert.equal(defaults.cronSpendDigest, "16 7 * * *");
+    assert.equal(defaults.cronSpendDigest, "0 8 * * 1-5");
     assert.equal(defaults.spendDigestTimezone, "America/Chicago");
     assert.ok(
       "spend-digest" in STAGE_OVERDUE_WINDOWS_MS,
@@ -12094,8 +12101,8 @@ describe("owner intent — D220 Cayden spend digest and complete fleet pages", (
     );
     assert.match(
       canon,
-      /7:16am/,
-      stop("CANON names the 7:16am CT digest (D220).", "CANON.md lost the 7:16am sentence."),
+      /8:00am CT Needs you/,
+      stop("CANON names the 8am CT Needs you post (D248).", "CANON.md lost the 8am Needs you sentence."),
     );
     assert.match(
       decisions,
@@ -13852,7 +13859,7 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
     assert.match(
       canon,
       /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14014,7 +14021,7 @@ describe("owner intent — D243 client-named domains + later-of warmup", () => {
     assert.match(
       canon,
       /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14120,7 +14127,7 @@ describe("owner intent — D241 GABE-VM-RESERVED write exemption", () => {
     assert.match(
       canon,
       /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14269,7 +14276,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.match(
       canon,
       /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14398,7 +14405,7 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
     assert.match(
       canon,
       /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14471,7 +14478,7 @@ describe("owner intent — D240 canary fleet swap", () => {
     assert.match(
       canon,
       /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
-      stop("CANON is dated D245.", "CANON.md header was not bumped to D245."),
+      stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
       canon,
@@ -14576,7 +14583,7 @@ describe("owner intent — D245 InboxKit sweep deletes on the cancel date, daily
       /isInboxKitLapsed\(/,
       stop("StateStore answers isInboxKitLapsed (D245).", "store.ts has no isInboxKitLapsed (canonStaffable gate is dead)."),
     );
-    assert.match(canon, /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/, stop("CANON is dated D245+.", "CANON.md header fell behind D245."));
+    assert.match(canon, /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/, stop("CANON is dated D245+.", "CANON.md header is before D245."));
     assert.match(decisions, /## D245 /, stop("The ledger records D245.", "DECISIONS.md has no D245."));
     assert.match(decisions, /^\| D245 \|/m, stop("The status index lists D245.", "DECISIONS.md index has no D245 row."));
   });
@@ -14755,8 +14762,8 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D247\*\*/,
-      stop("CANON is dated D247.", "CANON.md header was not bumped to D247."),
+      /Canon as of \*\*D(24[7-9]|25[0-9])\*\*/,
+      stop("CANON is dated D247+.", "CANON.md header is before D247."),
     );
     assert.match(
       decisions,
@@ -14767,6 +14774,103 @@ describe("owner intent — D247 stuck-pass hardening", () => {
       decisions,
       /^\| D247 \|/m,
       stop("The status index lists D247.", "DECISIONS.md index has no D247 row."),
+    );
+  });
+});
+
+describe("owner intent — D248 safe Slack buttons and quiet #deliverability", () => {
+  it("D248: native confirm, all copies resolved, log channel, 8am Needs you", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const slack = await readFile(new URL("../clients/slack.ts", import.meta.url), "utf8");
+    const buttons = await readFile(
+      new URL("../lib/slackConfirmButtons.ts", import.meta.url),
+      "utf8",
+    );
+    const stamps = await readFile(
+      new URL("../lib/slackAskStamps.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      buttons,
+      /isolationBlockActionShouldDecide/,
+      stop(
+        "A leftover url button must not decide (D248).",
+        "slackConfirmButtons.ts lost isolationBlockActionShouldDecide.",
+      ),
+    );
+    assert.match(
+      buttons,
+      /isolationAskNeedsConfirm/,
+      stop(
+        "Retire / Buy require Slack confirm (D248).",
+        "slackConfirmButtons.ts lost isolationAskNeedsConfirm.",
+      ),
+    );
+    assert.match(
+      slack,
+      /isolationNativeButton/,
+      stop(
+        "Isolation cards use native buttons (D248).",
+        "slack.ts lost isolationNativeButton.",
+      ),
+    );
+    assert.doesNotMatch(
+      slack,
+      /wantsConfirmUrl/,
+      stop(
+        "Confirm-page urls are gone (D248).",
+        "slack.ts still builds confirm-page urls on isolation buttons.",
+      ),
+    );
+    assert.match(
+      stamps,
+      /slackMessages/,
+      stop(
+        "Every posted card ts is persisted (D248).",
+        "slackAskStamps.ts lost slackMessages.",
+      ),
+    );
+    assert.match(
+      index,
+      /url_button/,
+      stop(
+        "The interactions handler ignores leftover link buttons (D248).",
+        "index.ts lost the url_button gate.",
+      ),
+    );
+    assert.match(
+      index,
+      /needs_you_approve_client/,
+      stop(
+        "Needs you lumps Cayden spend per client (D248).",
+        "index.ts lost the needs-you approve handler.",
+      ),
+    );
+    assert.equal(defaults.cronSpendDigest, "0 8 * * 1-5");
+    assert.match(
+      canon,
+      /Canon as of \*\*D248\*\*/,
+      stop("CANON is dated D248.", "CANON.md header was not bumped to D248."),
+    );
+    assert.match(
+      canon,
+      /DELIVERABILITY_LOG_CHANNEL/,
+      stop(
+        "CANON names the log channel (D248).",
+        "CANON.md lost DELIVERABILITY_LOG_CHANNEL.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D248 — Safe Slack buttons and a quiet #deliverability/,
+      stop("The ledger records D248.", "DECISIONS.md has no D248."),
     );
   });
 });

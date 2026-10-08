@@ -1,8 +1,8 @@
 /**
- * D195 — strip the decision buttons off a #deliverability ask once it is
- * resolved (Use suggested / Write my own / Not now / Allow generics resolve /
- * Buy resolve). A D133 parent card is often posted as *Deliverability
- * Wizard*, so a `chat.update` with the Watchdog / ai_reply_handler2 token
+ * D195 / D248 — strip the decision buttons off every #deliverability copy
+ * of an ask once it is resolved (human, wizard auto-dismiss, already
+ * settled, buy superseded by retire). A D133 parent card is often posted
+ * as *Deliverability Wizard*, so a `chat.update` with the Watchdog token
  * returns `cant_update_message` — only the posting identity or the tap's
  * `response_url` can edit it.
  *
@@ -10,12 +10,12 @@
  *   1. `response_url` with `replace_original: true` — the native-button tap
  *      hands us a signed URL that edits the exact message regardless of which
  *      identity posted it. Section blocks only; no actions block.
- *   2. `chat.update` with the **posting** bot token, when the ask carries the
- *      `detail.slackChannel` + `detail.slackTs` stamped at post time (the
- *      modal-submit and confirm-page paths, which have no `response_url`).
+ *   2. `chat.update` every stamped copy (`slackMessages` plus legacy
+ *      slackChannel + slackTs) with the posting bot token.
  */
 
 import { fetchWithTimeout } from "./http.js";
+import { slackStampsFromDetail, type SlackAskStamp } from "./slackAskStamps.js";
 
 export type IsolationAskDecision = "approve" | "deny";
 
@@ -27,6 +27,12 @@ export type FetchLike = (
     body?: string;
   },
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+
+/** D248 — every settled copy becomes this one-liner with no buttons. */
+export function resolvedByLine(resolvedBy: string): string {
+  const who = resolvedBy.trim() || "the wizard";
+  return `Resolved by ${who}: nothing to do`;
+}
 
 /** Canned resolved-summary line by ask kind + decision (D195). */
 export function resolvedAskLabel(
@@ -97,6 +103,11 @@ export interface ResolveIsolationAskInput {
   /** Stamped on the ask when notifyIsolationAction posted the card. */
   channel?: string;
   ts?: string;
+  /** Every copy ever posted for this ask (D248). */
+  stamps?: SlackAskStamp[];
+  detailRecord?: Record<string, unknown>;
+  /** Who resolved it — human name or "the wizard". */
+  resolvedBy?: string;
   /** The identity that posted the card (chat.update fallback). */
   botToken?: string;
   summary: string;
@@ -123,14 +134,25 @@ export async function resolveIsolationAskMessage(
   const doFetch = (input.fetchImpl ??
     ((url, init) =>
       fetchWithTimeout(url, init))) as FetchLike;
-  const resolvedLabel = resolvedAskLabel(input.kind, input.decision);
+  const resolvedLabel = input.resolvedBy
+    ? resolvedByLine(input.resolvedBy)
+    : resolvedAskLabel(input.kind, input.decision);
   const blocks = buildResolvedAskBlocks({
-    summary: input.summary,
+    summary: input.resolvedBy ? resolvedLabel : input.summary,
     resolvedLabel,
-    detail: input.detail,
+    detail: input.resolvedBy ? undefined : input.detail,
   });
-  const text = plainText(input.summary, resolvedLabel);
+  const text = input.resolvedBy
+    ? resolvedLabel
+    : plainText(input.summary, resolvedLabel);
+  const stamps: SlackAskStamp[] = [
+    ...(input.stamps ?? slackStampsFromDetail(input.detailRecord)),
+  ];
+  if (!stamps.length && input.channel && input.ts) {
+    stamps.push({ channel: input.channel, ts: input.ts });
+  }
 
+  let viaResponse = false;
   if (input.responseUrl) {
     try {
       const res = await doFetch(input.responseUrl, {
@@ -138,13 +160,12 @@ export async function resolveIsolationAskMessage(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ replace_original: true, text, blocks }),
       });
-      if (res.ok) return { ok: true, via: "response_url" };
-      // Fall through to chat.update if we have the coordinates.
-      if (!(input.channel && input.ts && input.botToken)) {
+      if (res.ok) viaResponse = true;
+      else if (!stamps.length || !input.botToken) {
         return { ok: false, via: "response_url", error: `HTTP ${res.status}` };
       }
     } catch (error) {
-      if (!(input.channel && input.ts && input.botToken)) {
+      if (!stamps.length || !input.botToken) {
         return {
           ok: false,
           via: "response_url",
@@ -154,36 +175,61 @@ export async function resolveIsolationAskMessage(
     }
   }
 
-  if (input.channel && input.ts && input.botToken) {
-    try {
-      const res = await doFetch("https://slack.com/api/chat.update", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${input.botToken}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify({
-          channel: input.channel,
-          ts: input.ts,
-          text,
-          blocks,
-        }),
-      });
-      const body = (await res.json()) as { ok?: boolean; error?: string };
-      if (res.ok && body.ok) return { ok: true, via: "chat_update" };
-      return {
-        ok: false,
-        via: "chat_update",
-        error: body.error ?? `HTTP ${res.status}`,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        via: "chat_update",
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
+  if (viaResponse && stamps.length <= 1) {
+    return { ok: true, via: "response_url" };
   }
 
+  if (input.botToken && stamps.length) {
+    let updated = 0;
+    let lastError: string | undefined;
+    for (const stamp of stamps) {
+      try {
+        const res = await doFetch("https://slack.com/api/chat.update", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${input.botToken}`,
+            "Content-Type": "application/json; charset=utf-8",
+          },
+          body: JSON.stringify({
+            channel: stamp.channel,
+            ts: stamp.ts,
+            text,
+            blocks,
+          }),
+        });
+        const body = (await res.json()) as { ok?: boolean; error?: string };
+        if (res.ok && body.ok) updated += 1;
+        else lastError = body.error ?? `HTTP ${res.status}`;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    if (updated > 0) return { ok: true, via: "chat_update" };
+    if (viaResponse) return { ok: true, via: "response_url" };
+    return {
+      ok: false,
+      via: "chat_update",
+      error: lastError,
+    };
+  }
+
+  if (viaResponse) return { ok: true, via: "response_url" };
   return { ok: false, via: "none" };
+}
+
+export async function clearAskCopies(input: {
+  detail: Record<string, unknown>;
+  botToken?: string;
+  resolvedBy: string;
+  fetchImpl?: FetchLike;
+}): Promise<ResolveIsolationAskResult> {
+  return resolveIsolationAskMessage({
+    detailRecord: input.detail,
+    botToken: input.botToken,
+    resolvedBy: input.resolvedBy,
+    summary: resolvedByLine(input.resolvedBy),
+    kind: "retire_domain",
+    decision: "deny",
+    fetchImpl: input.fetchImpl,
+  });
 }

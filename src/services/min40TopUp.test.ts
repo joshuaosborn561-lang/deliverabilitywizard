@@ -89,7 +89,7 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(result.assigned.length, 1);
     assert.equal(result.asked.length, 0);
     assert.ok(
-      slackCalls.every((line) => /staffable \(short/.test(line)),
+      slackCalls.every((line) => /is short \d+ staffable/.test(line)),
       "auto-allow must not open an Allow-generics card; under-40 ops_alert is ok",
     );
   });
@@ -348,7 +348,18 @@ describe("Min40TopUpService (D205)", () => {
       false,
       "min40 must not attach onto PAUSED",
     );
-    assert.ok(slackCalls.some((line) => /BCP Live/.test(line) && /40/.test(line)));
+    assert.ok(
+      slackCalls.some(
+        (line) =>
+          /Bolder Cyber Partners/.test(line) && /is short \d+ staffable/.test(line),
+      ),
+      "under-40 ACTIVE client gets one short-staffed line (D248)",
+    );
+    assert.equal(
+      slackCalls.some((line) => /BCP Paused/.test(line)),
+      false,
+      "paused campaign is not named in the short-staffed line",
+    );
   });
 
   it("D209: does not unlink a CultureFits generic already shared across two ACTIVE camps at 40", async () => {

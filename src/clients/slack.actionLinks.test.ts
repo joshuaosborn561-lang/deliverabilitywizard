@@ -1,10 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { SlackClient } from "./slack.js";
-import { verifySlackActionLink } from "../lib/slackActionLink.js";
 
-describe("isolation Slack URL buttons", () => {
-  it("puts a signed confirm-page URL on retire / replace", async () => {
+describe("isolation Slack native confirm buttons (D248)", () => {
+  it("Retire / Buy are native buttons with Slack confirm and no url", async () => {
     const client = new SlackClient({
       channelLabel: "#test",
       actionLinkSecret: "secret",
@@ -25,22 +24,21 @@ describe("isolation Slack URL buttons", () => {
     });
 
     const actions = (
-      blocks as Array<{ elements?: Array<{ url?: string; text?: { text?: string } }> }>
+      blocks as Array<{
+        elements?: Array<{
+          url?: string;
+          text?: { text?: string };
+          confirm?: unknown;
+          action_id?: string;
+        }>;
+      }>
     )[1]?.elements;
     const approve = actions?.[0];
-    assert.ok(approve?.url);
-    assert.equal(approve.text?.text, "Retire this domain");
-    const url = new URL(approve.url);
-    assert.equal(url.origin, "https://example.test");
-    assert.equal(url.pathname, "/slack/action");
-    const verified = verifySlackActionLink({
-      secret: "secret",
-      id: url.searchParams.get("id") ?? "",
-      decision: url.searchParams.get("decision") ?? "",
-      exp: url.searchParams.get("exp") ?? "",
-      sig: url.searchParams.get("sig") ?? "",
-    });
-    assert.deepEqual(verified, { ok: true, decision: "approve" });
+    assert.equal(approve?.url, undefined);
+    assert.ok(approve?.confirm, "Retire must use Slack confirm so one tap cannot spend");
+    assert.equal(approve?.text?.text, "Retire this domain");
+    assert.equal(approve?.action_id, "isolation_approve");
+    assert.equal(actions?.[actions.length - 1]?.url, undefined);
   });
 
   it("D153: swap_copy offers Write my own edit without a URL (modal path)", async () => {

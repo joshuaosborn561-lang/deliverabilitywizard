@@ -657,7 +657,11 @@ export class BounceResurrectionService {
       return;
     }
     try {
-      await this.slack.send(lines.join("\n"), undefined, "action_result");
+      await this.slack.send(
+        lines.join("\n"),
+        undefined,
+        fresh > 0 ? "action_result" : "lead_expired",
+      );
       job.receipted = job.requeued;
       this.state.upsertBounceResurrectionJob(job);
     } catch (error) {

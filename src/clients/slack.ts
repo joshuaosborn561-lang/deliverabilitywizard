@@ -5,13 +5,23 @@ import {
   isBenignOpsNoise,
   isRateLimitNoise,
 } from "../lib/alertNoise.js";
-import { slackActionHref } from "../lib/slackActionLink.js";
 import {
   slackAllowed,
   slackKindForIsolationAction,
   type SlackAllowKind,
 } from "../lib/slackAllow.js";
 import { isolationActionValue } from "../lib/slackSignature.js";
+import {
+  ISOLATION_APPROVE_ACTION,
+  ISOLATION_DENY_ACTION,
+  isolationNativeButton,
+} from "../lib/slackConfirmButtons.js";
+import {
+  isSlackLogKind,
+  planDeliverabilityLogPost,
+  type DeliverabilityLogThread,
+  type SlackLogKind,
+} from "../lib/deliverabilityLog.js";
 import { swapCopySlackBody } from "../lib/swapCopyCard.js";
 import {
   SWAP_EDIT_ACTION_ID,
@@ -41,6 +51,16 @@ export interface SlackCredentials {
   deliverabilityBotToken?: string;
   /** D194 — #deliverability (C0BJQUTV7A8). Never #campaign-watchdog. */
   deliverabilityChannelId?: string;
+  /** D248 — informational posts. Empty falls back to a daily thread. */
+  logChannel?: string;
+}
+
+export interface SlackLogSink {
+  logChannel?: string;
+  humanChannel: string;
+  todayYmd: () => string;
+  getThread: () => DeliverabilityLogThread | null;
+  setThread: (row: DeliverabilityLogThread) => void;
 }
 
 export function readSlackBotToken(creds: SlackCredentials): string {
@@ -57,7 +77,13 @@ export function readSlackBotToken(creds: SlackCredentials): string {
 }
 
 export class SlackClient {
+  private logSink?: SlackLogSink;
+
   constructor(private readonly creds: SlackCredentials) {}
+
+  setLogSink(sink: SlackLogSink): void {
+    this.logSink = sink;
+  }
 
   /**
    * D71 — only burned-domain replace, isolated-word replace, the EOD
@@ -67,8 +93,11 @@ export class SlackClient {
   async send(
     text: string,
     blocks?: unknown[],
-    kind?: SlackAllowKind,
+    kind?: SlackAllowKind | SlackLogKind,
   ): Promise<{ channel?: string; ts?: string } | undefined> {
+    if (isSlackLogKind(kind)) {
+      return this.sendToLog(text, blocks);
+    }
     if (!slackAllowed(kind)) {
       console.log(
         `[slack-quiet] dropped ${kind ?? "unclassified"}: ${text.replace(/\n/g, " ").slice(0, 200)}`,
@@ -281,11 +310,108 @@ export class SlackClient {
     });
   }
 
+  async updateChatMessage(input: {
+    channel: string;
+    ts: string;
+    text: string;
+    blocks?: unknown[];
+  }): Promise<{ channel?: string; ts?: string } | undefined> {
+    const token = this.postingBotToken();
+    if (!token || !input.channel || !input.ts) return undefined;
+    const response = await fetch("https://slack.com/api/chat.update", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=utf-8",
+      },
+      body: JSON.stringify({
+        channel: input.channel,
+        ts: input.ts,
+        text: input.text,
+        blocks: input.blocks,
+      }),
+    });
+    const body = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+      channel?: string;
+      ts?: string;
+    };
+    if (!response.ok || !body.ok) {
+      console.warn(`[slack] chat.update failed: ${body.error || response.status}`);
+      return undefined;
+    }
+    return { channel: body.channel ?? input.channel, ts: body.ts ?? input.ts };
+  }
+
+  async postThreadReply(
+    channel: string,
+    threadTs: string,
+    text: string,
+  ): Promise<{ channel?: string; ts?: string } | undefined> {
+    const token = this.postingBotToken();
+    if (!token || !channel || !threadTs) return undefined;
+    return this.postChatMessage({
+      token,
+      channel,
+      text,
+      threadTs,
+    });
+  }
+
+  private async sendToLog(
+    text: string,
+    blocks?: unknown[],
+  ): Promise<{ channel?: string; ts?: string } | undefined> {
+    const token = this.postingBotToken();
+    const human =
+      this.creds.channelId ||
+      this.creds.channelLabel ||
+      this.creds.deliverabilityChannelId ||
+      DELIVERABILITY_SLACK_CHANNEL_ID;
+    const plan = planDeliverabilityLogPost({
+      logChannel: this.logSink?.logChannel || this.creds.logChannel,
+      humanChannel: this.logSink?.humanChannel || human,
+      todayYmd: this.logSink?.todayYmd() ?? new Date().toISOString().slice(0, 10),
+      thread: this.logSink?.getThread() ?? null,
+    });
+    if (!token) {
+      console.log(
+        `[slack-log] ${text.replace(/\n/g, " ").slice(0, 200)}`,
+      );
+      return undefined;
+    }
+    let threadTs = plan.threadTs;
+    if (plan.openParent) {
+      const parent = await this.postChatMessage({
+        token,
+        channel: plan.channel,
+        text: plan.openParent.text,
+      });
+      if (parent.channel && parent.ts) {
+        this.logSink?.setThread({
+          ymd: this.logSink.todayYmd(),
+          channel: parent.channel,
+          ts: parent.ts,
+        });
+        threadTs = parent.ts;
+      }
+    }
+    return this.postChatMessage({
+      token,
+      channel: plan.channel,
+      text,
+      blocks,
+      threadTs,
+    });
+  }
+
   private async postChatMessage(input: {
     token: string;
     channel: string;
     text: string;
     blocks?: unknown[];
+    threadTs?: string;
     metadata?: { event_type: string; event_payload: Record<string, string | number> };
   }): Promise<{ channel?: string; ts?: string }> {
     const payload: Record<string, unknown> = {
@@ -295,6 +421,7 @@ export class SlackClient {
       unfurl_media: false,
     };
     if (input.blocks?.length) payload.blocks = input.blocks;
+    if (input.threadTs) payload.thread_ts = input.threadTs;
     if (input.metadata) payload.metadata = input.metadata;
 
     const response = await fetchWithTimeout("https://slack.com/api/chat.postMessage", {
@@ -760,7 +887,7 @@ export class SlackClient {
         .filter((x): x is string => Boolean(x))
         .join("\n"),
       undefined,
-      "ops_alert",
+      "placement",
     );
   }
 
@@ -1017,7 +1144,7 @@ export class SlackClient {
         .filter((line): line is string => Boolean(line))
         .join("\n"),
       undefined,
-      "ops_alert",
+      "canon_miss",
     );
   }
 
@@ -1058,7 +1185,7 @@ export class SlackClient {
           "Likely the whole message shape, not one word. We did not change the live email.",
         ].join("\n"),
         undefined,
-        "copy_word",
+        "copy_check",
       );
       return;
     }
@@ -1148,6 +1275,8 @@ export class SlackClient {
     element?: string;
     suggestedSwap?: string;
     campaignName?: string;
+    /** D248 — update this card in place instead of posting a new one. */
+    update?: { channel: string; ts: string };
   }): Promise<{ channel?: string; ts?: string } | undefined> {
     const approveLabel =
       details.kind === "swap_copy"
@@ -1177,15 +1306,15 @@ export class SlackClient {
             details.proof,
             "",
             details.kind === "buy_domains"
-              ? "Cayden: tap the button (opens a confirm page) to buy client-named cover if it is not already queued or bought. Goliath replacements are getgoliath* / goliathcybersecurity* style — never a crosslaunchco / pool spin. Josh can tap too. This does not START campaigns (Goliath stays PAUSED through Oct 15)."
+              ? "Cayden: tap Buy replacements. Slack will ask you to confirm before anything is bought. Goliath replacements are getgoliath* / goliathcybersecurity* style — never a crosslaunchco / pool spin. Josh can tap too. This does not START campaigns (Goliath stays PAUSED through Oct 15)."
               : details.kind === "buy_canary_fleet"
-                ? "Cayden cannot approve a purchase. Josh: tap the button — it opens a confirm page. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm on that page."
+                ? "Cayden cannot approve a purchase. Josh: tap Buy canary fleet. Slack will ask you to confirm. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm."
                 : details.kind === "generic_backfill"
-                  ? "Josh: tap Allow generics (opens a confirm page) to let pool generics backfill this campaign. Cayden cannot approve this."
+                  ? "Josh: tap Allow generics to let pool generics backfill this campaign. Cayden cannot approve this."
                   : details.kind === "add_signature_tag"
-                    ? "Josh or Cayden: tap Add %signature% (opens a confirm page). I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
+                    ? "Josh or Cayden: tap Add %signature%. I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
                     : details.kind === "retire_domain"
-                      ? "Cayden: tap the button (opens a confirm page) to retire. Before you confirm, mark this domain a bad outbound sender. One tap pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161/D173), and lets generics cover the campaigns until those warm (D150). Goliath / client 548611 follows the same Retire path (D181). The Oct 15 Goliath campaign hold is separate and unchanged. Josh can tap too."
+                      ? "Cayden: tap Retire this domain. Slack will ask you to confirm before anything is pulled or bought. Before you confirm, mark this domain a bad outbound sender. Confirming pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161/D173), and lets generics cover the campaigns until those warm (D150). Goliath / client 548611 follows the same Retire path (D181). The Oct 15 Goliath campaign hold is separate and unchanged. Josh can tap too."
                       : "Josh or Cayden: *Use suggested edit* applies REPLACE WITH fleet-wide (D133). *Write my own edit* opens a Slack form that shows REMOVE again so you can type a different replacement.",
           ]
             .filter((line): line is string => line !== undefined)
@@ -1201,31 +1330,6 @@ export class SlackClient {
       details.actionId,
       "edit",
     );
-    const secret = this.creds.actionLinkSecret?.trim();
-    const base = this.creds.publicBaseUrl?.trim();
-    // D195 — swap_copy Use suggested / Not now are NATIVE buttons (no
-    // confirm-page url) so the tap reaches /slack/interactions and hands us
-    // a response_url to strip the buttons with. Write my own is already
-    // native (D153). Buy / retire / generics keep their confirm-page url.
-    const wantsConfirmUrl = details.kind !== "swap_copy";
-    const approveUrl =
-      wantsConfirmUrl && secret && base
-        ? slackActionHref({
-            baseUrl: base,
-            secret,
-            id: details.actionId,
-            decision: "approve",
-          })
-        : undefined;
-    const denyUrl =
-      wantsConfirmUrl && secret && base
-        ? slackActionHref({
-            baseUrl: base,
-            secret,
-            id: details.actionId,
-            decision: "deny",
-          })
-        : undefined;
     const kind = slackKindForIsolationAction(details.kind);
     if (!kind) {
       console.log(
@@ -1233,18 +1337,18 @@ export class SlackClient {
       );
       return undefined;
     }
+    // D248 — native buttons only. Retire / Buy carry Slack's confirm
+    // dialog so a single tap cannot spend. Never a url + action_id pair.
     const elements: Array<Record<string, unknown>> = [
-      {
-        type: "button",
-        text: { type: "plain_text", text: approveLabel },
-        style: "primary",
-        action_id: "isolation_approve",
+      isolationNativeButton({
+        label: approveLabel,
+        actionId: ISOLATION_APPROVE_ACTION,
         value: approveValue,
-        ...(approveUrl ? { url: approveUrl } : {}),
-      },
+        kind: details.kind,
+        decision: "approve",
+        style: "primary",
+      }),
     ];
-    // D153 — native interactive button (no url). URL buttons skip
-    // /slack/interactions, so they cannot open a modal.
     if (details.kind === "swap_copy" && findPhrase) {
       elements.push({
         type: "button",
@@ -1253,27 +1357,34 @@ export class SlackClient {
         value: editValue,
       });
     }
-    elements.push({
-      type: "button",
-      text: { type: "plain_text", text: "Not now" },
-      action_id: "isolation_deny",
-      value: denyValue,
-      ...(denyUrl ? { url: denyUrl } : {}),
-    });
-    return this.send(
-      text,
-      [
-        {
-          type: "section",
-          text: { type: "mrkdwn", text },
-        },
-        {
-          type: "actions",
-          elements,
-        },
-      ],
-      kind,
+    elements.push(
+      isolationNativeButton({
+        label: "Not now",
+        actionId: ISOLATION_DENY_ACTION,
+        value: denyValue,
+        kind: details.kind,
+        decision: "deny",
+      }),
     );
+    const blocks = [
+      {
+        type: "section",
+        text: { type: "mrkdwn", text },
+      },
+      {
+        type: "actions",
+        elements,
+      },
+    ];
+    if (details.update?.channel && details.update.ts) {
+      return this.updateChatMessage({
+        channel: details.update.channel,
+        ts: details.update.ts,
+        text,
+        blocks,
+      });
+    }
+    return this.send(text, blocks, kind);
   }
 
   /**
@@ -1330,7 +1441,7 @@ export class SlackClient {
   }
 
   async notifyLeadRunout(details: { text: string }): Promise<void> {
-    await this.send(details.text);
+    await this.send(details.text, undefined, "lead_expired");
   }
 
   async notifySendingInfra(details: { text: string }): Promise<void> {

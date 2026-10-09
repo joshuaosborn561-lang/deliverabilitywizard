@@ -1010,7 +1010,7 @@ async function main(): Promise<void> {
       if (config.enableCampaignCheck) {
         campaignCheckResult = await stage(
           "campaign-check-first",
-          () => campaignCheck.run({ mode: "first", inventory }),
+          (signal) => campaignCheck.run({ mode: "first", inventory, signal }),
           { skipIfFreshMs, skipIfBeforeStage },
         );
       }
@@ -1024,7 +1024,7 @@ async function main(): Promise<void> {
 
       const healthResult = await stage(
         "campaign-health",
-        () => campaignHealth.run({ inventory }),
+        (signal) => campaignHealth.run({ inventory, signal }),
         { skipIfFreshMs, skipIfBeforeStage },
       );
 
@@ -1211,8 +1211,8 @@ async function main(): Promise<void> {
       }
       const runOrIdle = (
         enabled: boolean,
-        run: () => Promise<unknown>,
-      ): (() => Promise<unknown>) => {
+        run: (signal?: AbortSignal) => Promise<unknown>,
+      ): ((signal?: AbortSignal) => Promise<unknown>) => {
         if (!enabled) {
           return async () => ({ skipped: true, reason: "disabled" });
         }
@@ -1227,7 +1227,7 @@ async function main(): Promise<void> {
       ));
       const min40 = await stage("min40-topup", runOrIdle(
         config.enableMin40TopUp,
-        () => min40TopUp.run({ inventory }),
+        (signal) => min40TopUp.run({ inventory, signal }),
       ));
       const power = await stage("powergryd-watch", runOrIdle(
         config.enablePowerGrydWatch,

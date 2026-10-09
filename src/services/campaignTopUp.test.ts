@@ -110,6 +110,11 @@ function fakeState(
     upsertPoolMailbox: (record: PoolMailboxRecord) => {
       current = { ...record };
     },
+    removePoolMailbox: (email: string) => {
+      if (current.email.toLowerCase() === email.toLowerCase()) {
+        current = { ...current, status: "warming" };
+      }
+    },
     getRestingInbox: () => undefined,
     getPoolMailbox: () => undefined,
     getDomainHistory: () => undefined,
@@ -1083,5 +1088,98 @@ describe("CampaignTopUpService safety", () => {
       result.pulledGenerics.some((row) => row.email === keep.email),
       false,
     );
+  });
+
+  it("D251: a ghost pool seat is dropped and does not burn the 3-failure budget", async () => {
+    const { StateStore } = await import("../state/store.js");
+    const state = new StateStore(
+      `/tmp/topup-ghost-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "imanipark@nowgetintroduced.com",
+      domain: "nowgetintroduced.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 99999,
+      firstName: "Ghost",
+      lastName: "Seat",
+      status: "available",
+      warmedAt: "2026-01-01T00:00:00Z",
+    });
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 10,
+      firstName: "Live",
+      lastName: "Seat",
+      status: "available",
+      warmedAt: "2026-01-01T00:00:00Z",
+    });
+    state.ensureGenericSeat({
+      email: "spare@crosslaunchco.com",
+      slAccountId: 10,
+    });
+    const added: Array<[number, number[]]> = [];
+    const warns: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warns.push(args.map(String).join(" "));
+    };
+    const service = new CampaignTopUpService(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          {
+            id: 4084613,
+            name: "Deep Roots POC",
+            status: "ACTIVE",
+            client_id: 548611,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 10,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Live Seat",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        listClients: async () => [
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          added.push([id, ids]);
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      fakeSlack(),
+      state,
+    );
+    try {
+      const result = await service.run();
+      assert.equal(
+        result.errors.some((row) => /missing from Smartlead inventory/i.test(row)),
+        false,
+        `ghost burned the failure budget: ${result.errors.join(" | ")}`,
+      );
+      assert.equal(state.getPoolMailbox("imanipark@nowgetintroduced.com"), undefined);
+      assert.ok(
+        added.some((row) => row[1].includes(10)),
+        "live pool seat should still be tried",
+      );
+      assert.ok(
+        warns.some((row) => /ghost pool seat/i.test(row)),
+        "ghost drop is logged",
+      );
+    } finally {
+      console.warn = origWarn;
+    }
   });
 });

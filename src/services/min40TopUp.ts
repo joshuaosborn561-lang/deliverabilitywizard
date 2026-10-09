@@ -74,6 +74,8 @@ import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { sleep } from "../lib/http.js";
+import { throwIfAborted } from "../lib/abortWork.js";
+import { dropGhostPoolSeats } from "../lib/poolInventoryReconcile.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import {
   groupShortStaffedByClient,
@@ -99,6 +101,8 @@ const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 250;
 
 /** D250 — yield so a 366-campaign × 1000-seat count cannot pin the loop. */
 export const MIN40_YIELD_EVERY = 4;
+/** D251 — yield inside a fill / candidate scan so short campaigns cannot pin the loop. */
+export const MIN40_SEAT_YIELD_EVERY = 8;
 
 interface IndexedSeat {
   account: SmartleadAccountWithCampaigns;
@@ -166,7 +170,12 @@ export class Min40TopUpService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; inventory?: InventorySnapshot; now?: Date } = {},
+    opts: {
+      dryRun?: boolean;
+      inventory?: InventorySnapshot;
+      now?: Date;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<Min40TopUpResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: Min40TopUpResult = {
@@ -222,6 +231,12 @@ export class Min40TopUpService {
         .map((account) => [accountEmail(account)?.toLowerCase(), account] as const)
         .filter((row): row is [string, SmartleadAccountWithCampaigns] => Boolean(row[0])),
     );
+    const ghosts = dropGhostPoolSeats(this.state, accountByEmail);
+    if (ghosts.length) {
+      console.warn(
+        `[min40-topup] dropped ${ghosts.length} ghost pool seat(s) missing from Smartlead inventory`,
+      );
+    }
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
       brandByClientId.set(
@@ -231,12 +246,18 @@ export class Min40TopUpService {
     }
     const seatIndex = await this.indexSeats(
       accounts as SmartleadAccountWithCampaigns[],
+      opts.signal,
     );
     const namedOnWeek = this.namedOnWeekEmails(
       seatIndex.seats,
       campaigns as SmartleadCampaign[],
       clients,
       onWeek,
+    );
+    const seatsByClient = await this.indexSeatsByClient(
+      seatIndex.seats,
+      campaignById,
+      opts.signal,
     );
     const livingByClient = new Map<number, SmartleadCampaign[]>();
     const reservedCampaignIds = gabeVmReservedCampaignIds(
@@ -302,6 +323,7 @@ export class Min40TopUpService {
 
       const target = pocEngagement ? pocEngagementSeatTarget() : ON_WEEK_MIN_SENDERS;
       walked += 1;
+      throwIfAborted(opts.signal);
       if (walked % MIN40_YIELD_EVERY === 0) await yieldEventLoop();
       const staffable = this.countOnWeekStaffable(
         clientId,
@@ -331,6 +353,7 @@ export class Min40TopUpService {
         continue;
       }
 
+      await yieldEventLoop();
       const placed = await this.fillCampaign({
         campaign,
         clientId,
@@ -338,7 +361,7 @@ export class Min40TopUpService {
         shortBy,
         dryRun,
         now,
-        seats: seatIndex.seats,
+        seats: seatsByClient.get(clientId) ?? [],
         members: seatIndex.byCampaign.get(campaign.id) ?? [],
         campaignById,
         accountById,
@@ -349,6 +372,7 @@ export class Min40TopUpService {
         result,
         pocEngagement,
         target,
+        signal: opts.signal,
       });
       const stillShort = Math.max(0, shortBy - placed);
       if (stillShort > 0) {
@@ -388,28 +412,43 @@ export class Min40TopUpService {
       activeByClient,
       result,
       pocIds,
+      signal: opts.signal,
     });
 
     await this.alertUnfilled(result, todayYmd, dryRun);
 
     // D230 — morning named-warm swap + surplus beyond 40.
-    const surplus = await returnSurplusGenerics({
-      config: this.config,
-      smartlead: this.smartlead,
-      state: this.state,
-      inventory: {
-        campaigns,
-        accounts,
-        clients,
-        fetchedAt: opts.inventory?.fetchedAt ?? 0,
-      },
-      dryRun,
-      now,
-    });
-    result.returned.push(...surplus.returned);
-    result.errors.push(...surplus.errors);
+    // D251 — a post-walk abort/save failure must not hide a finished fill
+    // (lastOk stays stale) and must not keep placing after the stage dies.
+    try {
+      throwIfAborted(opts.signal);
+      const surplus = await returnSurplusGenerics({
+        config: this.config,
+        smartlead: this.smartlead,
+        state: this.state,
+        inventory: {
+          campaigns,
+          accounts,
+          clients,
+          fetchedAt: opts.inventory?.fetchedAt ?? 0,
+        },
+        dryRun,
+        now,
+        signal: opts.signal,
+      });
+      result.returned.push(...surplus.returned);
+      result.errors.push(...surplus.errors);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`surplus: ${message}`);
+    }
 
-    if (!dryRun) await this.state.save();
+    try {
+      if (!dryRun) await this.state.save();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      result.errors.push(`save: ${message}`);
+    }
     console.log(
       `[min40-topup] assigned=${result.assigned.length} asked=${result.asked.length} unfilled=${result.unfilled.length} returned=${result.returned.length} alerts=${result.alerts.length} errors=${result.errors.length}`,
     );
@@ -418,11 +457,13 @@ export class Min40TopUpService {
 
   private async indexSeats(
     accounts: SmartleadAccountWithCampaigns[],
+    signal?: AbortSignal,
   ): Promise<SeatIndex> {
     const seats: IndexedSeat[] = [];
     const byCampaign = new Map<number, IndexedSeat[]>();
     let n = 0;
     for (const account of accounts) {
+      throwIfAborted(signal);
       const email = accountEmail(account);
       if (!email) continue;
       const key = email.toLowerCase();
@@ -448,6 +489,63 @@ export class Min40TopUpService {
       if (n % 64 === 0) await yieldEventLoop();
     }
     return { seats, byCampaign };
+  }
+
+  /**
+   * D251 — fill walks this client's seats, not the whole 1300-seat book.
+   * Dedicated / assigned / tagged client ids are resolved once.
+   */
+  private async indexSeatsByClient(
+    seats: IndexedSeat[],
+    campaignById: Map<number, SmartleadCampaign>,
+    signal?: AbortSignal,
+  ): Promise<Map<number, IndexedSeat[]>> {
+    const byClient = new Map<number, IndexedSeat[]>();
+    let n = 0;
+    for (const seat of seats) {
+      throwIfAborted(signal);
+      const ids = new Set<number>();
+      if (typeof seat.account.client_id === "number") {
+        ids.add(seat.account.client_id);
+      }
+      const pool = this.state.getPoolMailbox(seat.email);
+      if (typeof pool?.assignedClientId === "number") {
+        ids.add(pool.assignedClientId);
+      }
+      const table = this.state.getGenericSeat(seat.email);
+      if (typeof table?.assignedClientId === "number") {
+        ids.add(table.assignedClientId);
+      }
+      if (seat.generic) {
+        const dedicated = resolveDedicatedGenericClientId(
+          seat.account,
+          seat.email,
+          [...seat.campaignIds].map((id) => {
+            const campaign = campaignById.get(id);
+            return {
+              clientId: typeof campaign?.client_id === "number" ? campaign.client_id : null,
+              shell: campaign ? isAnyShellCampaign(campaign) : false,
+            };
+          }),
+          this.state,
+          { brandByClientId: undefined },
+        );
+        if (typeof dedicated === "number") ids.add(dedicated);
+      } else {
+        for (const id of seat.campaignIds) {
+          const campaign = campaignById.get(id);
+          if (typeof campaign?.client_id === "number") ids.add(campaign.client_id);
+        }
+      }
+      for (const id of ids) {
+        const list = byClient.get(id);
+        if (list) list.push(seat);
+        else byClient.set(id, [seat]);
+      }
+      n += 1;
+      if (n % 64 === 0) await yieldEventLoop();
+    }
+    return byClient;
   }
 
   private namedOnWeekEmails(
@@ -790,6 +888,7 @@ export class Min40TopUpService {
     result: Min40TopUpResult;
     pocEngagement?: boolean;
     target?: number;
+    signal?: AbortSignal;
   }): Promise<number> {
     const brand =
       input.brandByClientId.get(input.clientId) ||
@@ -798,30 +897,40 @@ export class Min40TopUpService {
     const selected = new Set<string>();
     let placed = 0;
 
-    const existing = input.seats.filter((seat) => {
-      if (selected.has(seat.email)) return false;
-      if (seat.campaignIds.has(input.campaign.id)) return false;
-      if (!seat.peelStaffable) return false;
+    const existing: IndexedSeat[] = [];
+    let scanned = 0;
+    for (const seat of input.seats) {
+      throwIfAborted(input.signal);
+      scanned += 1;
+      if (scanned % MIN40_SEAT_YIELD_EVERY === 0) await yieldEventLoop();
+      if (selected.has(seat.email)) continue;
+      if (seat.campaignIds.has(input.campaign.id)) continue;
+      if (!seat.peelStaffable) continue;
       if (!this.seatIsUsable(seat.account, seat.email, input.campaign, input.campaignById)) {
-        return false;
+        continue;
       }
       if (seat.generic) {
         if (!input.pocEngagement && !genericMayLinkToCampaigns(seat.account, input.now)) {
-          return false;
+          continue;
         }
         if (!this.belongsToClient(seat.account, seat.email, input.clientId, input.campaignById)) {
-          return false;
+          continue;
         }
-        if (input.pocEngagement) return true;
-        return this.genericMayTakePod(
-          seat.account,
-          seat.email,
-          input.clientId,
-          onWeekCohort(input.now),
-        );
+        if (
+          input.pocEngagement ||
+          this.genericMayTakePod(
+            seat.account,
+            seat.email,
+            input.clientId,
+            onWeekCohort(input.now),
+          )
+        ) {
+          existing.push(seat);
+        }
+        continue;
       }
-      return input.namedOnWeek.has(seat.email);
-    });
+      if (input.namedOnWeek.has(seat.email)) existing.push(seat);
+    }
     existing.sort((a, b) => {
       if (a.generic !== b.generic) return a.generic ? 1 : -1;
       return a.email.localeCompare(b.email);
@@ -834,6 +943,7 @@ export class Min40TopUpService {
     }
 
     for (const seat of existing) {
+      throwIfAborted(input.signal);
       if (placed >= input.shortBy - 1e-9) break;
       const email = seat.email;
       const account = seat.account;
@@ -861,6 +971,8 @@ export class Min40TopUpService {
     }
 
     while (placed < input.shortBy - 1e-9) {
+      throwIfAborted(input.signal);
+      await yieldEventLoop();
       const platformOrder = espFillOrder(
         espCounts,
         input.target ?? ON_WEEK_MIN_SENDERS,
@@ -927,7 +1039,10 @@ export class Min40TopUpService {
         );
       if (!pool?.smartleadAccountId) break;
       const original = input.accountByEmail.get(pool.email.toLowerCase());
-      if (!original) break;
+      if (!original) {
+        this.state.removePoolMailbox(pool.email);
+        continue;
+      }
       const firstName = pool.firstName || "Pool";
       const lastName = pool.lastName || "User";
       try {
@@ -1054,6 +1169,7 @@ export class Min40TopUpService {
     activeByClient: Map<number, SmartleadCampaign[]>;
     result: Min40TopUpResult;
     pocIds: number[];
+    signal?: AbortSignal;
   }): Promise<void> {
     const synced = syncGenericSeatsFromInventory({
       existing: this.state.listGenericSeats(),
@@ -1070,6 +1186,7 @@ export class Min40TopUpService {
     }
     const onWeek = onWeekCohort(input.now);
     for (const [clientId, clientActive] of input.activeByClient) {
+      throwIfAborted(input.signal);
       if (input.pocIds.includes(clientId)) continue;
       if (!clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)) {
         continue;
@@ -1100,6 +1217,8 @@ export class Min40TopUpService {
         }
         await yieldEventLoop();
         while (need > 1e-9) {
+          throwIfAborted(input.signal);
+          await yieldEventLoop();
           const platforms = espFillOrder(
             espCounts,
             ON_WEEK_MIN_SENDERS,
@@ -1129,7 +1248,10 @@ export class Min40TopUpService {
           );
           if (!pool?.smartleadAccountId) break;
           const original = input.accountByEmail.get(pool.email.toLowerCase());
-          if (!original) break;
+          if (!original) {
+            this.state.removePoolMailbox(pool.email);
+            continue;
+          }
           const firstName = pool.firstName || "Pool";
           const lastName = pool.lastName || "User";
           try {

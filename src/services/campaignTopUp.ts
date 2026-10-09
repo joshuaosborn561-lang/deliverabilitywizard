@@ -34,6 +34,10 @@ import {
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { pocClientId } from "../lib/pocClient.js";
 import { chunkArray, sleep } from "../lib/http.js";
+import { throwIfAborted } from "../lib/abortWork.js";
+import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
+import { dropGhostPoolSeats } from "../lib/poolInventoryReconcile.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import {
   buildPoolSignature,
   poolEspFromSmartleadType,
@@ -163,7 +167,11 @@ export class CampaignTopUpService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+    opts: {
+      dryRun?: boolean;
+      inventory?: InventorySnapshot;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<TopUpResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: TopUpResult = {
@@ -217,6 +225,20 @@ export class CampaignTopUpService {
             Boolean(row[0]),
         ),
     );
+    const membersByCampaign = indexAccountsByCampaign(
+      accounts as SmartleadAccountWithCampaigns[],
+    );
+    if (
+      typeof this.state.listPoolMailboxes === "function" &&
+      typeof this.state.removePoolMailbox === "function"
+    ) {
+      const ghosts = dropGhostPoolSeats(this.state, accountByEmail);
+      if (ghosts.length) {
+        console.warn(
+          `[top-up] dropped ${ghosts.length} ghost pool seat(s) missing from Smartlead inventory`,
+        );
+      }
+    }
     const staffableCounts = new Map<number, number>();
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       const email = accountEmail(account);
@@ -460,6 +482,8 @@ export class CampaignTopUpService {
 
     const selectedThisRun = new Set<string>();
     for (const { campaign, senders } of needy) {
+      throwIfAborted(opts.signal);
+      await yieldEventLoop();
       const floor = floorByCampaign.get(campaign.id) ?? 0;
       if (!campaignAllowsGenerics(campaign)) {
         const shortBy = Math.max(0, floor - senders);
@@ -483,8 +507,7 @@ export class CampaignTopUpService {
       const brand =
         clientName.replace(/\s*\(.*?\)\s*$/, "").trim() || clientName;
       const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
-      for (const account of accounts as SmartleadAccountWithCampaigns[]) {
-        if (!campaignIdsOf(account).includes(campaign.id)) continue;
+      for (const account of membersByCampaign.get(campaign.id) ?? []) {
         const platform = poolEspFromSmartleadType(account.type);
         if (platform) espCounts[platform] += 1;
       }
@@ -496,6 +519,7 @@ export class CampaignTopUpService {
       // Assigning is two writes per mailbox; a long run trips Smartlead's
       // limiter, so the loop is allowed more attempts than mailboxes needed.
       for (let attempt = 0; placed < need && attempt < need * 2; attempt += 1) {
+        throwIfAborted(opts.signal);
         const platformOrder = espFillOrder(
           espCounts,
           floor,
@@ -507,6 +531,7 @@ export class CampaignTopUpService {
             const key = email.toLowerCase();
             const domain = key.split("@")[1];
             const poolAccount = accountByEmail.get(key);
+            if (!poolAccount) return false;
             return (
               !selectedThisRun.has(key) &&
               !(campaignsByEmail.get(key) ?? []).includes(campaign.id) &&
@@ -593,9 +618,11 @@ export class CampaignTopUpService {
         try {
           const original = accountByEmail.get(pool.email.toLowerCase());
           if (!original) {
-            throw new Error(
-              `${pool.email} is in pool state but missing from Smartlead inventory`,
+            this.state.removePoolMailbox?.(pool.email);
+            console.warn(
+              `[top-up] dropped ghost pool seat ${pool.email} (missing from Smartlead inventory)`,
             );
+            continue;
           }
           const removedDonors: number[] = [];
           let targetAdded = false;

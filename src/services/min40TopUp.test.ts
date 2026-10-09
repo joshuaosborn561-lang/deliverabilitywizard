@@ -1279,4 +1279,205 @@ describe("Min40TopUpService (D205)", () => {
       `min40 on 360 campaigns / ${accounts.length} seats took ${elapsed}ms`,
     );
   });
+
+  it("D251: a 416×1340 short-campaign fill keeps event-loop delay under 2s", async () => {
+    const now = new Date("2026-10-09T16:00:00Z");
+    const onWeek = onWeekCohort(now);
+    const clients = [
+      { id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+      { id: TECHEVO_CLIENT_ID, name: "TechEvo", logo: "TechEvolution" },
+      { id: 418274, name: "Parlay", logo: "Parlay" },
+      { id: 582890, name: "Insight", logo: "Insight" },
+      { id: 574020, name: "EMCOR", logo: "EMCOR" },
+    ];
+    const campaignsPerClient = 84;
+    const namedPerClient = 12;
+    const poolGenerics = 1280;
+    const campaigns = clients.flatMap((client, clientIdx) =>
+      Array.from({ length: campaignsPerClient }, (_, i) => ({
+        id: 10_000 + clientIdx * 1_000 + i,
+        name: `${client.logo} ${i}`,
+        status: "ACTIVE" as const,
+        client_id: client.id,
+      })),
+    );
+    const domainFor = (clientId: number): string => {
+      if (clientId === BCP_CLIENT_ID) return "boldercyperpartner.com";
+      if (clientId === TECHEVO_CLIENT_ID) return "techevolution.com";
+      if (clientId === 418274) return "parlay.com";
+      if (clientId === 582890) return "joshosborn.com";
+      return "getmesaco.info";
+    };
+    const accounts = [
+      ...clients.flatMap((client, clientIdx) => {
+        const campaignIds = campaigns
+          .filter((row) => row.client_id === client.id)
+          .map((row) => row.id);
+        return Array.from({ length: namedPerClient }, (_, i) => ({
+          id: 100_000 + clientIdx * 1_000 + i,
+          from_email: `n${i}@${domainFor(client.id)}`,
+          client_id: client.id,
+          type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+          is_smtp_success: true,
+          is_imap_success: true,
+          tags: [{ tag_name: `POD-${onWeek}` }],
+          campaign_ids: campaignIds,
+          created_at: "2026-01-01T00:00:00.000Z",
+        }));
+      }),
+      ...Array.from({ length: poolGenerics }, (_, i) => ({
+        id: 200_000 + i,
+        from_email: `g${i}@crosslaunchco.com`,
+        from_name: `Pool ${i}`,
+        type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+        is_smtp_success: true,
+        is_imap_success: true,
+        tags: [{ tag_name: "GENERIC" }],
+        campaign_ids: [] as number[],
+        created_at: "2026-01-01T00:00:00.000Z",
+      })),
+    ];
+    const state = new StateStore(stateFile());
+    await state.load();
+    for (const account of accounts.slice(-80)) {
+      const email = String(account.from_email);
+      state.upsertPoolMailbox({
+        email,
+        domain: "crosslaunchco.com",
+        platform: account.type === "GMAIL" ? "GOOGLE" : "MICROSOFT",
+        smartleadAccountId: account.id,
+        firstName: "Pool",
+        lastName: "Seat",
+        status: "available",
+        warmedAt,
+      });
+      state.ensureGenericSeat({ email, slAccountId: account.id });
+    }
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "true" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+
+    let lastBeat = Date.now();
+    let ticks = 0;
+    let maxGap = 0;
+    const timer = setInterval(() => {
+      const nowMs = Date.now();
+      maxGap = Math.max(maxGap, nowMs - lastBeat);
+      lastBeat = nowMs;
+      ticks += 1;
+    }, 15);
+    timer.unref?.();
+
+    const started = Date.now();
+    const result = await service.run({
+      dryRun: true,
+      now,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients,
+        campaigns,
+        accounts,
+      },
+    });
+    const elapsed = Date.now() - started;
+    clearInterval(timer);
+
+    assert.equal(campaigns.length, 420);
+    assert.ok(accounts.length >= 1340);
+    assert.ok(result.unfilled.length > 0, "fixture must exercise the short fill path");
+    assert.ok(
+      ticks > 0,
+      `event loop must breathe during short fills (ticks=${ticks} elapsed=${elapsed}ms)`,
+    );
+    assert.ok(
+      maxGap < 2_000,
+      `largest event-loop gap was ${maxGap}ms — short-campaign fill still pinned /health`,
+    );
+    assert.ok(
+      elapsed < 20_000,
+      `min40 short-fill on ${campaigns.length} campaigns / ${accounts.length} seats took ${elapsed}ms`,
+    );
+  });
+
+  it("D251: aborting the stage signal stops further min40 attaches", async () => {
+    const attached: number[] = [];
+    const controller = new AbortController();
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 8 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: BCP_CLIENT_ID,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number) => {
+          attached.push(id);
+          if (attached.length >= 1) controller.abort();
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    await assert.rejects(
+      () =>
+        service.run({
+          dryRun: false,
+          signal: controller.signal,
+          now: new Date("2026-10-05T15:00:00.000Z"),
+          inventory: {
+            fetchedAt: Date.now(),
+            clients: [{ id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+            campaigns: [
+              { id: 10, name: "BCP A", status: "ACTIVE", client_id: BCP_CLIENT_ID },
+              { id: 11, name: "BCP B", status: "ACTIVE", client_id: BCP_CLIENT_ID },
+            ],
+            accounts: [
+              ...named,
+              {
+                id: 900,
+                from_email: "spare@crosslaunchco.com",
+                from_name: "Harmony Norris",
+                type: "GMAIL",
+                is_smtp_success: true,
+                is_imap_success: true,
+                tags: [{ tag_name: "GENERIC" }],
+                campaign_ids: [],
+                created_at: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /aborted/i);
+        return true;
+      },
+    );
+    assert.ok(attached.length <= 2, `placement continued after abort (${attached.length})`);
+  });
 });

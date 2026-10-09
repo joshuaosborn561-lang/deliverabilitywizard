@@ -29,6 +29,9 @@ import {
   surplusGenericReturns,
 } from "../lib/genericSurplusReturn.js";
 import { sleep } from "../lib/http.js";
+import { throwIfAborted } from "../lib/abortWork.js";
+import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { StateStore } from "../state/store.js";
 import {
   dropMembership,
@@ -57,12 +60,11 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
 
 function staffableOnCampaign(
   campaignId: number,
-  accounts: SmartleadAccountWithCampaigns[],
+  members: SmartleadAccountWithCampaigns[],
   state: Pick<StateStore, "getRestingInbox" | "isCopyCanary">,
 ): number {
   let n = 0;
-  for (const account of accounts) {
-    if (!campaignIdsOf(account).includes(campaignId)) continue;
+  for (const account of members) {
     const email = accountEmail(account);
     if (!email) continue;
     if (
@@ -96,6 +98,7 @@ export async function returnSurplusGenerics(input: {
   inventory: InventorySnapshot;
   dryRun?: boolean;
   now?: Date;
+  signal?: AbortSignal;
 }): Promise<SurplusGenericReturnResult> {
   const now = input.now ?? new Date();
   const dryRun = input.dryRun ?? input.config.dryRun;
@@ -135,6 +138,7 @@ export async function returnSurplusGenerics(input: {
   if (!picks.length) return result;
 
   const accounts = input.inventory.accounts as SmartleadAccountWithCampaigns[];
+  const membersByCampaign = indexAccountsByCampaign(accounts);
   const campaignById = new Map(
     (input.inventory.campaigns as SmartleadCampaign[]).map((row) => [row.id, row]),
   );
@@ -149,6 +153,8 @@ export async function returnSurplusGenerics(input: {
   }
 
   for (const pick of picks) {
+    throwIfAborted(input.signal);
+    await yieldEventLoop();
     const account = accountByEmail.get(pick.email);
     if (!account || typeof account.id !== "number") continue;
     if (typeof account.client_id === "number" && pocIds.includes(account.client_id)) {
@@ -160,7 +166,11 @@ export async function returnSurplusGenerics(input: {
     for (const campaignId of campaignIds) {
       const campaign = campaignById.get(campaignId);
       if (!campaign || !campaignIsActive(campaign)) continue;
-      const remaining = staffableOnCampaign(campaignId, accounts, input.state);
+      const remaining = staffableOnCampaign(
+        campaignId,
+        membersByCampaign.get(campaignId) ?? [],
+        input.state,
+      );
       if (
         detachWouldBreakStaffableFloor(campaign, remaining, account, pick.email, {
           getRestingInbox: (key) => input.state.getRestingInbox(key),

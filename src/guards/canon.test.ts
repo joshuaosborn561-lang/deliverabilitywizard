@@ -15031,8 +15031,8 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D250\*\*/,
-      stop("CANON is dated D250.", "CANON.md header is before D250."),
+      /Canon as of \*\*D251\*\*/,
+      stop("CANON is dated D251.", "CANON.md header is before D251."),
     );
     assert.match(
       decisions,
@@ -15043,6 +15043,92 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
       decisions,
       /^\| D250 \|/m,
       stop("The status index lists D250.", "DECISIONS.md index has no D250 row."),
+    );
+  });
+});
+
+describe("owner intent — D251 residual stall, abort, ghost seats", () => {
+  it("D251: fill yields, abort stops work, ghosts drop, first-check indexes", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const topUp = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.match(
+      min40,
+      /MIN40_SEAT_YIELD_EVERY/,
+      stop("min40 yields inside a seat scan (D251).", "min40TopUp.ts lost MIN40_SEAT_YIELD_EVERY."),
+    );
+    assert.match(
+      min40,
+      /indexSeatsByClient/,
+      stop("min40 indexes seats by client (D251).", "min40TopUp.ts lost indexSeatsByClient."),
+    );
+    assert.match(
+      min40,
+      /throwIfAborted/,
+      stop("min40 honors the stage abort (D251).", "min40TopUp.ts lost throwIfAborted."),
+    );
+    assert.match(
+      min40,
+      /dropGhostPoolSeats/,
+      stop("min40 drops ghost pool seats (D251).", "min40TopUp.ts lost dropGhostPoolSeats."),
+    );
+    assert.match(
+      topUp,
+      /dropGhostPoolSeats/,
+      stop("campaign top-up drops ghost pool seats (D251).", "campaignTopUp.ts lost dropGhostPoolSeats."),
+    );
+    assert.match(
+      topUp,
+      /throwIfAborted/,
+      stop("campaign top-up honors abort (D251).", "campaignTopUp.ts lost throwIfAborted."),
+    );
+    assert.match(
+      check,
+      /indexAccountsByCampaign/,
+      stop("campaign-check indexes members (D251).", "campaignCheck.ts lost indexAccountsByCampaign."),
+    );
+    assert.match(
+      check,
+      /CAMPAIGN_CHECK_ENRICH_BUDGET_MS/,
+      stop("campaign-check caps enrich (D251).", "campaignCheck.ts lost CAMPAIGN_CHECK_ENRICH_BUDGET_MS."),
+    );
+    assert.match(
+      index,
+      /min40TopUp\.run\(\{ inventory, signal \}\)/,
+      stop("canon-ops passes the stage signal into min40 (D251).", "index.ts lost min40 signal."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D251\*\*/,
+      stop("CANON is dated D251.", "CANON.md header is before D251."),
+    );
+    assert.match(
+      decisions,
+      /## D251 — short-campaign fill must not pin the loop/,
+      stop("The ledger records D251.", "DECISIONS.md has no D251."),
+    );
+    assert.match(
+      decisions,
+      /^\| D251 \|/m,
+      stop("The status index lists D251.", "DECISIONS.md index has no D251 row."),
     );
   });
 });

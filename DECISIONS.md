@@ -255,7 +255,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D247 | Live — save path amended by D249 | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
 | D248 | Live — D220 cadence / copy amended | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
 | D249 | Live — min40 walk amended by D250 | Unblock the event loop and persist stamps: sidecar lastOk / Slack / cron stamps, yielding compact JSON (no one-shot stringify of the full state), D215 sitting dies at 45m, campaign-check-first 8m inspect budget, Slack log/canary/remind idempotent across restarts, weekday 6am–8pm CT catch-up for Needs you / InboxKit / TERRL EOD |
-| D250 | Live | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
+| D250 | Live — fill/abort/ghost path amended by D251 | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
+| D251 | Live | Residual :00/:30 stall after D250: short-campaign fill/shortfall/pool pick must yield and walk client-scoped seats; stage abort stops placement and lastOk stamps when the walk finishes; ghost pool seats missing from Smartlead inventory are dropped; campaign-check-first indexes members and bounds enrich |
 
 ---
 
@@ -8591,6 +8592,63 @@ spend.
 
 **Guards.** min40 indexes by campaign and calls yieldEventLoop;
 large-fixture event-loop delay test; CANON dated D250.
+
+---
+
+## D251 — short-campaign fill must not pin the loop; abort must stop work
+
+**Date.** 2026-10-09.
+
+**Decision.** Production on D250 (`main@a819ff13`, deploy 861cce16)
+still stalled the event loop during the Chicago `:00` / `:30`
+canon-ops slot. min40-topup logged `campaigns=416 accounts=1338`
+at 20:30:08Z, then `[watchdog] event-loop delay` of 7–35s for ~7
+minutes (repeatedly ~34–35s). `/health` timed out. A client-day
+fetch died with ETIMEDOUT. The shortfall summary landed at
+20:37:06Z; at 20:38:56Z the stage failed `This operation was
+aborted` so lastOk stayed 2026-10-08T14:12Z even though the walk
+finished. Placement kept logging until 20:40:01Z. Deep Roots
+#4084613 / #4084614 burned three consecutive failures on
+`imanipark@nowgetintroduced.com is in pool state but missing from
+Smartlead inventory`. campaign-check-first kept dying
+`timeout after 20m`.
+
+**Cause.** D250 only yielded the already-at-40 staffable *count*.
+A short campaign still scanned every seat (`fillCampaign` /
+`findReassignablePoolMailbox` / surplus `staffableOnCampaign`)
+with no abort check. `raceStep` aborted the watchdog but not the
+placement promise. Pool state was not reconciled against the
+live book, so a ghost seat was re-picked until the 3-failure
+budget expired. campaign-check-first still walked the full
+account list per campaign and enriched every SmartDelivery test
+before the 8m leftover budget could save the 20m race.
+
+**Fix (outcomes unchanged).** Index seats by client and campaign
+members. Yield inside the fill / pool pick / surplus / inspect
+walks. Pass the stage AbortSignal and stop writes when it
+fires. After the walk finishes, surplus/save errors stay on the
+result so lastOk can stamp. Drop available/assigned pool seats
+missing from Smartlead inventory before pick; a ghost never
+counts as a placement failure. campaign-check-first uses the
+member index, yields, honors abort, and caps enrich. Keep D247
+watchdog, D249 persistence, D250 count-index, and 40/40 POD
+rules.
+
+**Why.** The freeze watchdog is a restart, not a finish. A ghost
+seat must not hide a living candidate. A 20m first-check that
+never returns starves the 15-minute health chain.
+
+**Rejected.** Delete the freeze watchdog. Skip min40. Shrink
+the inventory. Change staffing outcomes. Leave ghosts in pool
+state "for later".
+
+**Supersedes / amends.** Amends D205 / D247 / D249 / D250 (the
+fill, abort, ghost, and first-check walks). Does not change
+staffing, holds, or spend.
+
+**Guards.** min40 client-scoped fill + seat yield + throwIfAborted;
+ghost pool drop; campaign-check member index + enrich cap;
+416×1340 short-fill event-loop delay test; CANON dated D251.
 
 ---
 

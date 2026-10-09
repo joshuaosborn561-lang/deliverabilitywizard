@@ -387,10 +387,12 @@ export function syncGenericSeatsFromInventory(
   const namedStaffableByClientPod = new Map<string, number>();
   const liveClientIdsByEmail = new Map<string, number[]>();
   const nextSeats: GenericSeatRecord[] = [];
+  const accountByEmail = new Map<string, (typeof input.accounts)[number]>();
 
   for (const account of input.accounts) {
     const email = accountEmail(account);
     if (!email) continue;
+    accountByEmail.set(email, account);
     if (isLockedCanarySeat(account, email, input.state)) continue;
     const withCampaigns = account as SmartleadAccountWithCampaigns;
     const generic = isGenericMailbox(account, email, input.config, input.state);
@@ -505,9 +507,7 @@ export function syncGenericSeatsFromInventory(
   for (const [clientKey, rows] of namedByClient) {
     const clientId = Number(clientKey);
     const untagged = rows.filter((row) => {
-      const account = input.accounts.find(
-        (item) => accountEmail(item) === row.email,
-      );
+      const account = accountByEmail.get(row.email);
       return podFromMailboxTags(account?.tags) == null;
     });
     if (!untagged.length) continue;
@@ -516,9 +516,7 @@ export function syncGenericSeatsFromInventory(
       const cohort = cohorts.get(row.email);
       const pod: GenericAssignedPod = cohort === "B" ? "B" : "A";
       const key = clientPodKey(clientId, pod);
-      const account = input.accounts.find(
-        (item) => accountEmail(item) === row.email,
-      );
+      const account = accountByEmail.get(row.email);
       namedStaffableByClientPod.set(
         key,
         roundStaffableWeight(

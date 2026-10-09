@@ -1,4 +1,8 @@
-FROM node:22-bookworm-slim
+# D253 — official Node 22 bookworm-slim via Google's Docker Hub
+# pull-through cache. Bare `node:22-bookworm-slim` resolves to
+# docker.io/library/node; Railway Metal builders 429 there
+# (2026-10-09, four failed deploys of D251/D252).
+FROM mirror.gcr.io/library/node:22-bookworm-slim
 
 WORKDIR /app
 

@@ -15031,8 +15031,8 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D252\*\*/,
-      stop("CANON is dated D252.", "CANON.md header is before D252."),
+      /Canon as of \*\*D(25[2-9]|26[0-9])\*\*/,
+      stop("CANON is dated D252+.", "CANON.md header is before D252."),
     );
     assert.match(
       decisions,
@@ -15116,8 +15116,8 @@ describe("owner intent — D252 min40 pool pick must yield", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D252\*\*/,
-      stop("CANON is dated D252.", "CANON.md header is before D252."),
+      /Canon as of \*\*D(25[2-9]|26[0-9])\*\*/,
+      stop("CANON is dated D252+.", "CANON.md header is before D252."),
     );
     assert.match(
       decisions,
@@ -15199,6 +15199,91 @@ describe("owner intent — D251 campaign-check-first leftover", () => {
       decisions,
       /^\| D251 \|/m,
       stop("The status index lists D251.", "DECISIONS.md index has no D251 row."),
+    );
+  });
+});
+
+describe("owner intent — D253 production image must not pull Node from Docker Hub", () => {
+  it("D253: Dockerfile uses the official-image mirror; D247–D252 and 40/40 stay", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const dockerfile = await readFile(new URL("../../Dockerfile", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.match(
+      dockerfile,
+      /^FROM mirror\.gcr\.io\/library\/node:22-bookworm-slim\s*$/m,
+      stop(
+        "Dockerfile FROMs the official Node 22 bookworm-slim mirror (D253).",
+        "Dockerfile lost mirror.gcr.io/library/node:22-bookworm-slim.",
+      ),
+    );
+    assert.doesNotMatch(
+      dockerfile,
+      /^FROM\s+(?:docker\.io\/(?:library\/)?)?node:/m,
+      stop(
+        "Dockerfile must not pull node from Docker Hub (D253).",
+        "Dockerfile still FROMs docker.io/library/node or a bare node: tag.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D253\*\*/,
+      stop("CANON is dated D253.", "CANON.md header is before D253."),
+    );
+    assert.match(
+      canon,
+      /mirror\.gcr\.io\/library\/node:22-bookworm-slim/,
+      stop("CANON names the D253 base image.", "CANON.md lost the mirror FROM."),
+    );
+    assert.match(
+      canon,
+      /40\/40/,
+      stop("40/40 POD inventory stays (D253).", "CANON.md lost 40/40."),
+    );
+    assert.match(
+      decisions,
+      /## D247 — Stuck-pass hardening/,
+      stop("D247 stays.", "DECISIONS.md lost D247."),
+    );
+    assert.match(
+      decisions,
+      /## D248 — Safe Slack buttons and a quiet #deliverability/,
+      stop("D248 stays.", "DECISIONS.md lost D248."),
+    );
+    assert.match(
+      decisions,
+      /## D249 — Persist stamps, unblock the loop, catch up weekday jobs/,
+      stop("D249 stays.", "DECISIONS.md lost D249."),
+    );
+    assert.match(
+      decisions,
+      /## D250 — min40 must not pin the event loop/,
+      stop("D250 stays.", "DECISIONS.md lost D250."),
+    );
+    assert.match(
+      decisions,
+      /## D251 — short-campaign fill must not pin the loop/,
+      stop("D251 stays.", "DECISIONS.md lost D251."),
+    );
+    assert.match(
+      decisions,
+      /## D252 — min40 pool pick must yield/,
+      stop("D252 stays.", "DECISIONS.md lost D252."),
+    );
+    assert.match(
+      decisions,
+      /## D253 — production image must not pull Node from Docker Hub/,
+      stop("The ledger records D253.", "DECISIONS.md has no D253."),
+    );
+    assert.match(
+      decisions,
+      /^\| D253 \|/m,
+      stop("The status index lists D253.", "DECISIONS.md index has no D253 row."),
     );
   });
 });

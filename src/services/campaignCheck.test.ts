@@ -194,6 +194,33 @@ describe("CampaignCheckService", () => {
     assert.ok(state.getCampaignCheck(3826693)?.firstPassedAt);
   });
 
+  it("D249: first-check stops inspecting when the pass budget is spent", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const sequences: number[] = [];
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "A", status: "ACTIVE", client_id: 548611 },
+          { id: 2, name: "B", status: "ACTIVE", client_id: 548611 },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [goliath],
+        getCampaignSequences: async (id: number) => {
+          sequences.push(id);
+          return [{ seq_number: 1, email_body: "<div>Hi %signature%</div>" }];
+        },
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+    const result = await service.run({ mode: "first", budgetMs: 0 });
+    assert.equal(result.firstChecked, 0);
+    assert.equal(result.deferred, 2);
+    assert.deepEqual(sequences, []);
+  });
+
   it("D81: a clean campaign passes first check; hourly still reads sequences", async () => {
     const state = new StateStore(stateFile());
     await state.load();

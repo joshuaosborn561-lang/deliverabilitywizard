@@ -33,6 +33,13 @@ import { isMonitorStageFresh } from "./monitorResume.js";
 export const HEALTH_CYCLE_MS = 15 * 60 * 1000;
 
 /**
+ * D249 — a leftover sitting dies with the health lock (45m). An inverted
+ * board whose newest non-inventory lastOk is older than this is yesterday's
+ * interrupt, not "still inside the cycle". Run the full chain.
+ */
+export const HEALTH_SITTING_MAX_MS = 45 * 60 * 1000;
+
+/**
  * Stages that live on the 15-minute `runHealth` chain, in order.
  * scan-backfill is event-driven; mailbox-settings-full has its own 6h
  * throttle — neither belongs on the leftover-tail list.
@@ -90,6 +97,8 @@ export function stageLastOkMs(
  */
 export function firstInterruptedHealthStage(
   stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
+  now = Date.now(),
+  sittingMaxMs = HEALTH_SITTING_MAX_MS,
 ): HealthLoopStage | null {
   let newest = Number.NEGATIVE_INFINITY;
   let newestName: HealthLoopStage | null = null;
@@ -104,6 +113,8 @@ export function firstInterruptedHealthStage(
     }
   }
   if (!newestName || newest === Number.NEGATIVE_INFINITY) return null;
+  // D249 — a 24h-old inversion is not a live sitting.
+  if (now - newest > sittingMaxMs) return null;
   const start = HEALTH_LOOP_STAGES.indexOf(newestName) + 1;
   for (const name of HEALTH_LOOP_STAGES.slice(start)) {
     if (stageLastOkMs(stageHealth[name]) < newest) return name;
@@ -163,8 +174,9 @@ export function shouldSkipHealthStage(
  */
 export function healthNeedsResume(
   stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
-  _now = Date.now(),
+  now = Date.now(),
   _freshMs = HEALTH_CYCLE_MS,
+  sittingMaxMs = HEALTH_SITTING_MAX_MS,
 ): boolean {
-  return firstInterruptedHealthStage(stageHealth) != null;
+  return firstInterruptedHealthStage(stageHealth, now, sittingMaxMs) != null;
 }

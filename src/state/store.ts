@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { stringifyYielding } from "../lib/stringifyYielding.js";
 import {
   currentUtcMonth,
   emptyMonthlyUsage,
@@ -285,6 +286,8 @@ export interface AppState {
   canaryRegisteredFingerprint: string | null;
   /** D248 — last short-staffed client snapshot; post only on change. */
   shortStaffedSnapshot: string | null;
+  /** D249 — Chicago YMD of the last pending-isolation "Still waiting" nudge. */
+  isolationRemindPostedYmd: string | null;
   /** D48 — standing pod controls, isolation runs, suppressed terms. */
   isolation: IsolationState;
   /** D81 — first-seen campaign audit + hourly sweep records. */
@@ -791,6 +794,7 @@ const EMPTY_STATE: AppState = {
   deliverabilityLogThread: null,
   canaryRegisteredFingerprint: null,
   shortStaffedSnapshot: null,
+  isolationRemindPostedYmd: null,
   isolation: structuredClone(EMPTY_ISOLATION_STATE),
   campaignChecks: {},
   genericBackfillApprovals: {},
@@ -901,6 +905,10 @@ export class StateStore {
           typeof parsed.shortStaffedSnapshot === "string"
             ? parsed.shortStaffedSnapshot
             : null,
+        isolationRemindPostedYmd:
+          typeof parsed.isolationRemindPostedYmd === "string"
+            ? parsed.isolationRemindPostedYmd
+            : null,
         isolation: normalizeIsolationState(parsed.isolation),
         campaignChecks: parsed.campaignChecks ?? {},
         genericBackfillApprovals: parsed.genericBackfillApprovals ?? {},
@@ -964,6 +972,7 @@ export class StateStore {
       }
       this.state = structuredClone(EMPTY_STATE);
     }
+    await this.applyHotStamps();
     this.loaded = true;
     return this.state;
   }
@@ -1068,6 +1077,19 @@ export class StateStore {
 
   setShortStaffedSnapshot(snapshot: string): void {
     this.state.shortStaffedSnapshot = snapshot;
+  }
+
+  getIsolationRemindPostedYmd(): string | null {
+    return this.state.isolationRemindPostedYmd;
+  }
+
+  setIsolationRemindPostedYmd(ymd: string): void {
+    this.state.isolationRemindPostedYmd = ymd;
+  }
+
+  /** D249 — sibling of state.json; tiny lastOk / Slack / cron stamps. */
+  stampsFilePath(): string {
+    return `${this.filePath}.stamps.json`;
   }
 
   clearMailboxControls(): number {
@@ -2699,11 +2721,127 @@ export class StateStore {
    * D247 — compact JSON (pretty-print was a multi-MB stall) and coalesce
    * per-step checkpoints: overlapping save() calls share one upcoming write
    * of the latest state instead of N pretty-printed dumps.
+   * D249 — lastOk / Slack / cron stamps write to a tiny sidecar first so a
+   * freeze-kill during the full dump cannot roll the watchdog back a day.
+   * The full dump walks the graph in slices (no one-shot JSON.stringify
+   * of this.state on the main thread).
    */
   private saveWanted = false;
   private saveCoalesce: Promise<void> | null = null;
 
+  private hotStamps(): Record<string, unknown> {
+    return {
+      version: 1,
+      savedAt: new Date().toISOString(),
+      lastScanAt: this.state.lastScanAt,
+      lastMonitorAt: this.state.lastMonitorAt,
+      lastReconnectAt: this.state.lastReconnectAt,
+      lastWarmupGateAt: this.state.lastWarmupGateAt,
+      lastHealthAt: this.state.lastHealthAt,
+      lastMailboxSettingsAt: this.state.lastMailboxSettingsAt,
+      spendDigestPostedYmd: this.state.spendDigestPostedYmd,
+      deliverabilityLogThread: this.state.deliverabilityLogThread,
+      canaryRegisteredFingerprint: this.state.canaryRegisteredFingerprint,
+      shortStaffedSnapshot: this.state.shortStaffedSnapshot,
+      isolationRemindPostedYmd: this.state.isolationRemindPostedYmd,
+      inboxkitLicenseYmd: this.state.inboxkitLicenseHandoff?.ymd ?? null,
+      inboxkitLicenseAt: this.state.inboxkitLicenseHandoff?.at ?? null,
+      stageHealth: this.state.stageHealth,
+    };
+  }
+
+  private overlayHotStamps(raw: Record<string, unknown>): void {
+    const str = (value: unknown): string | null =>
+      typeof value === "string" ? value : null;
+    if (str(raw.lastScanAt) !== null || raw.lastScanAt === null) {
+      this.state.lastScanAt = str(raw.lastScanAt);
+    }
+    if (str(raw.lastMonitorAt) !== null || raw.lastMonitorAt === null) {
+      this.state.lastMonitorAt = str(raw.lastMonitorAt);
+    }
+    if (str(raw.lastReconnectAt) !== null || raw.lastReconnectAt === null) {
+      this.state.lastReconnectAt = str(raw.lastReconnectAt);
+    }
+    if (str(raw.lastWarmupGateAt) !== null || raw.lastWarmupGateAt === null) {
+      this.state.lastWarmupGateAt = str(raw.lastWarmupGateAt);
+    }
+    if (str(raw.lastHealthAt) !== null || raw.lastHealthAt === null) {
+      this.state.lastHealthAt = str(raw.lastHealthAt);
+    }
+    if (str(raw.lastMailboxSettingsAt) !== null || raw.lastMailboxSettingsAt === null) {
+      this.state.lastMailboxSettingsAt = str(raw.lastMailboxSettingsAt);
+    }
+    if ("spendDigestPostedYmd" in raw) {
+      this.state.spendDigestPostedYmd = str(raw.spendDigestPostedYmd);
+    }
+    if (
+      raw.deliverabilityLogThread &&
+      typeof raw.deliverabilityLogThread === "object" &&
+      !Array.isArray(raw.deliverabilityLogThread)
+    ) {
+      const row = raw.deliverabilityLogThread as Record<string, unknown>;
+      if (
+        typeof row.ymd === "string" &&
+        typeof row.channel === "string" &&
+        typeof row.ts === "string"
+      ) {
+        this.state.deliverabilityLogThread = {
+          ymd: row.ymd,
+          channel: row.channel,
+          ts: row.ts,
+        };
+      }
+    }
+    if ("canaryRegisteredFingerprint" in raw) {
+      this.state.canaryRegisteredFingerprint = str(
+        raw.canaryRegisteredFingerprint,
+      );
+    }
+    if ("shortStaffedSnapshot" in raw) {
+      this.state.shortStaffedSnapshot = str(raw.shortStaffedSnapshot);
+    }
+    if ("isolationRemindPostedYmd" in raw) {
+      this.state.isolationRemindPostedYmd = str(raw.isolationRemindPostedYmd);
+    }
+    if (raw.stageHealth && typeof raw.stageHealth === "object") {
+      this.state.stageHealth = {
+        ...this.state.stageHealth,
+        ...(raw.stageHealth as AppState["stageHealth"]),
+      };
+    }
+  }
+
+  private async applyHotStamps(): Promise<void> {
+    try {
+      const raw = await readFile(this.stampsFilePath(), "utf8");
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+      this.overlayHotStamps(parsed);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        console.warn(`[state] Failed to read ${this.stampsFilePath()}:`, error);
+      }
+    }
+  }
+
+  /** D249 — persist lastOk / Slack / cron stamps without the full dump. */
+  async saveHot(): Promise<void> {
+    const dir = path.dirname(this.filePath);
+    await mkdir(dir, { recursive: true });
+    const target = this.stampsFilePath();
+    const tmp = `${target}.${process.pid}.${++this.saveSeq}.tmp`;
+    const body = JSON.stringify(this.hotStamps());
+    await writeFile(tmp, body, "utf8");
+    await rename(tmp, target);
+  }
+
   async save(): Promise<void> {
+    try {
+      await this.saveHot();
+    } catch (error) {
+      console.warn("[state] hot-stamp save failed", error);
+    }
     this.saveWanted = true;
     if (this.saveCoalesce) return this.saveCoalesce;
     const write = async (): Promise<void> => {
@@ -2712,10 +2850,19 @@ export class StateStore {
         const dir = path.dirname(this.filePath);
         await mkdir(dir, { recursive: true });
         const tmp = `${this.filePath}.${process.pid}.${++this.saveSeq}.tmp`;
-        const body = JSON.stringify(this.state);
+        const started = Date.now();
+        const body = await stringifyYielding(this.state);
+        console.log(
+          `[state] save compact-json ${Date.now() - started}ms ${body.length} bytes`,
+        );
         if (this.onSaveSnapshot) await this.onSaveSnapshot();
         await writeFile(tmp, body, "utf8");
         await rename(tmp, this.filePath);
+        try {
+          await this.saveHot();
+        } catch (error) {
+          console.warn("[state] hot-stamp save after dump failed", error);
+        }
       }
     };
     const run = this.saveTail.then(write, write);

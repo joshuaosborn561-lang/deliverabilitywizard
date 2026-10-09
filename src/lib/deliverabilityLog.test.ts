@@ -34,4 +34,22 @@ describe("D248 — deliverability log routing", () => {
     });
     assert.deepEqual(next, { channel: "C0BJQUTV7A8", threadTs: "9.9" });
   });
+
+  it("D249: a persisted same-day thread is reused after restart", () => {
+    const afterRestart = planDeliverabilityLogPost({
+      humanChannel: "C0BJQUTV7A8",
+      todayYmd: "2026-10-09",
+      thread: { ymd: "2026-10-09", channel: "C0BJQUTV7A8", ts: "8.14" },
+    });
+    assert.deepEqual(afterRestart, {
+      channel: "C0BJQUTV7A8",
+      threadTs: "8.14",
+    });
+    const newDay = planDeliverabilityLogPost({
+      humanChannel: "C0BJQUTV7A8",
+      todayYmd: "2026-10-10",
+      thread: { ymd: "2026-10-09", channel: "C0BJQUTV7A8", ts: "8.14" },
+    });
+    assert.equal(newDay.openParent?.text, "*Wizard log — 2026-10-10*");
+  });
 });

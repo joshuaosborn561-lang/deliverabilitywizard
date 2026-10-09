@@ -80,6 +80,9 @@ export class InboxkitLicenseSweepService {
     if (!opts.force) {
       const idle = inboxkitLicenseIdleReason(now);
       if (idle) return { ...result, skipped: true, reason: idle };
+      if (this.state.getInboxkitLicenseHandoff()?.ymd === chicagoYmd(now)) {
+        return { ...result, skipped: true, reason: "already-ran-today" };
+      }
     }
 
     try {

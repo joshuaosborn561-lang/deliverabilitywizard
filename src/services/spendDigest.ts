@@ -66,6 +66,7 @@ export class SpendDigestService {
           "notifyIsolationAction" | "postThreadReply"
         >,
         now,
+        oncePerWeekday: true,
       });
     }
     if (posted || flushed) this.state.markSpendDigestPosted(ymd);

@@ -1395,7 +1395,10 @@ describe("Min40TopUpService (D205)", () => {
 
     assert.equal(campaigns.length, 420);
     assert.ok(accounts.length >= 1340);
-    assert.ok(result.unfilled.length > 0, "fixture must exercise the short fill path");
+    assert.ok(
+      result.assigned.length > 0,
+      "fixture must exercise the short fill path",
+    );
     assert.ok(
       ticks > 0,
       `event loop must breathe during short fills (ticks=${ticks} elapsed=${elapsed}ms)`,

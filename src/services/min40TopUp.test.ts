@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import { loadConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SlackClient } from "../clients/slack.js";
+import { BCP_CLIENT_ID, TECHEVO_CLIENT_ID } from "../lib/autoAllowGenerics.js";
+import { onWeekCohort } from "../lib/restCohort.js";
 import { StateStore } from "../state/store.js";
 import { Min40TopUpService } from "./min40TopUp.js";
 
@@ -1165,6 +1167,116 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(
       updates.some((row) => row.id === 22637921),
       false,
+    );
+  });
+
+  it("D250: a production-sized inventory does not pin the event loop", async () => {
+    const now = new Date("2026-10-09T16:00:00Z");
+    const onWeek = onWeekCohort(now);
+    const clients = [
+      { id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
+      { id: TECHEVO_CLIENT_ID, name: "TechEvo", logo: "TechEvolution" },
+    ];
+    const campaignsPerClient = 180;
+    const namedPerClient = 45;
+    const poolGenerics = 800;
+    const campaigns = clients.flatMap((client, clientIdx) =>
+      Array.from({ length: campaignsPerClient }, (_, i) => ({
+        id: 10_000 + clientIdx * 1_000 + i,
+        name: `${client.logo} ${i}`,
+        status: "ACTIVE" as const,
+        client_id: client.id,
+      })),
+    );
+    const accounts = [
+      ...clients.flatMap((client, clientIdx) => {
+        const campaignIds = campaigns
+          .filter((row) => row.client_id === client.id)
+          .map((row) => row.id);
+        const domain =
+          client.id === BCP_CLIENT_ID
+            ? "boldercyperpartner.com"
+            : "techevolution.com";
+        return Array.from({ length: namedPerClient }, (_, i) => ({
+          id: 100_000 + clientIdx * 1_000 + i,
+          from_email: `n${i}@${domain}`,
+          client_id: client.id,
+          type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+          is_smtp_success: true,
+          is_imap_success: true,
+          tags: [{ tag_name: `POD-${onWeek}` }],
+          campaign_ids: campaignIds,
+          created_at: "2026-01-01T00:00:00.000Z",
+        }));
+      }),
+      ...Array.from({ length: poolGenerics }, (_, i) => ({
+        id: 200_000 + i,
+        from_email: `g${i}@crosslaunchco.com`,
+        from_name: `Pool ${i}`,
+        type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+        is_smtp_success: true,
+        is_imap_success: true,
+        tags: [{ tag_name: "GENERIC" }],
+        campaign_ids: [] as number[],
+        created_at: "2026-01-01T00:00:00.000Z",
+      })),
+    ];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "true" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+
+    let lastBeat = Date.now();
+    let ticks = 0;
+    let maxGap = 0;
+    const timer = setInterval(() => {
+      const nowMs = Date.now();
+      maxGap = Math.max(maxGap, nowMs - lastBeat);
+      lastBeat = nowMs;
+      ticks += 1;
+    }, 15);
+    timer.unref?.();
+
+    const started = Date.now();
+    const result = await service.run({
+      dryRun: true,
+      now,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients,
+        campaigns,
+        accounts,
+      },
+    });
+    const elapsed = Date.now() - started;
+    clearInterval(timer);
+
+    assert.equal(campaigns.length, 360);
+    assert.ok(accounts.length >= 890);
+    assert.equal(result.assigned.length, 0);
+    assert.ok(
+      ticks > 0,
+      `event loop must breathe during min40 (ticks=${ticks} elapsed=${elapsed}ms)`,
+    );
+    assert.ok(
+      maxGap < 500,
+      `largest event-loop gap was ${maxGap}ms — a campaigns×accounts scan would freeze /health`,
+    );
+    assert.ok(
+      elapsed < 8_000,
+      `min40 on 360 campaigns / ${accounts.length} seats took ${elapsed}ms`,
     );
   });
 });

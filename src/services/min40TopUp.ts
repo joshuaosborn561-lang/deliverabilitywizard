@@ -74,6 +74,7 @@ import { assignClientCohorts, onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
 import { sleep } from "../lib/http.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import {
   groupShortStaffedByClient,
   shortStaffedLines,
@@ -95,6 +96,23 @@ import {
 import { returnSurplusGenerics } from "./genericSurplusReturn.js";
 
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 250;
+
+/** D250 — yield so a 366-campaign × 1000-seat count cannot pin the loop. */
+export const MIN40_YIELD_EVERY = 4;
+
+interface IndexedSeat {
+  account: SmartleadAccountWithCampaigns;
+  email: string;
+  generic: boolean;
+  peelStaffable: boolean;
+  weight: number;
+  campaignIds: Set<number>;
+}
+
+interface SeatIndex {
+  seats: IndexedSeat[];
+  byCampaign: Map<number, IndexedSeat[]>;
+}
 
 export interface Min40Assignment {
   campaignId: number;
@@ -167,6 +185,9 @@ export class Min40TopUpService {
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
     const now = opts.now ?? new Date();
+    console.log(
+      `[min40-topup] start campaigns=${campaigns.length} accounts=${accounts.length}`,
+    );
     const endedIds = this.state.listEndedPocClientIds();
     const pocIds = pocEngagementClientIds(
       clients,
@@ -208,8 +229,11 @@ export class Min40TopUpService {
         brandFromClientDisplayName(clientDisplayName(client)),
       );
     }
-    const namedOnWeek = this.namedOnWeekEmails(
+    const seatIndex = await this.indexSeats(
       accounts as SmartleadAccountWithCampaigns[],
+    );
+    const namedOnWeek = this.namedOnWeekEmails(
+      seatIndex.seats,
       campaigns as SmartleadCampaign[],
       clients,
       onWeek,
@@ -244,6 +268,7 @@ export class Min40TopUpService {
 
     const askItems: Array<{ campaignId: number; campaignName: string; shortBy: number }> =
       [];
+    let walked = 0;
 
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (isAnyShellCampaign(campaign)) continue;
@@ -276,10 +301,11 @@ export class Min40TopUpService {
       }
 
       const target = pocEngagement ? pocEngagementSeatTarget() : ON_WEEK_MIN_SENDERS;
+      walked += 1;
+      if (walked % MIN40_YIELD_EVERY === 0) await yieldEventLoop();
       const staffable = this.countOnWeekStaffable(
-        campaign.id,
         clientId,
-        accounts as SmartleadAccountWithCampaigns[],
+        seatIndex.byCampaign.get(campaign.id) ?? [],
         namedOnWeek.get(clientId) ?? new Set(),
         campaignById,
         now,
@@ -312,7 +338,8 @@ export class Min40TopUpService {
         shortBy,
         dryRun,
         now,
-        accounts: accounts as SmartleadAccountWithCampaigns[],
+        seats: seatIndex.seats,
+        members: seatIndex.byCampaign.get(campaign.id) ?? [],
         campaignById,
         accountById,
         accountByEmail,
@@ -353,6 +380,7 @@ export class Min40TopUpService {
       dryRun,
       now,
       accounts: accounts as SmartleadAccountWithCampaigns[],
+      seats: seatIndex.seats,
       campaigns: campaigns as SmartleadCampaign[],
       campaignById,
       accountByEmail,
@@ -388,8 +416,42 @@ export class Min40TopUpService {
     return result;
   }
 
-  private namedOnWeekEmails(
+  private async indexSeats(
     accounts: SmartleadAccountWithCampaigns[],
+  ): Promise<SeatIndex> {
+    const seats: IndexedSeat[] = [];
+    const byCampaign = new Map<number, IndexedSeat[]>();
+    let n = 0;
+    for (const account of accounts) {
+      const email = accountEmail(account);
+      if (!email) continue;
+      const key = email.toLowerCase();
+      const ids = campaignIdsOf(account);
+      const seat: IndexedSeat = {
+        account,
+        email: key,
+        generic: isGenericMailbox(account, email, this.config, this.state),
+        peelStaffable: accountIsPeelStaffable(account, email, {
+          getRestingInbox: (restKey) => this.state.getRestingInbox(restKey),
+          isCopyCanary: (restKey) => this.state.isCopyCanary(restKey),
+        }),
+        weight: mailboxStaffableWeight(account),
+        campaignIds: new Set(ids),
+      };
+      seats.push(seat);
+      for (const id of ids) {
+        const list = byCampaign.get(id) ?? [];
+        list.push(seat);
+        byCampaign.set(id, list);
+      }
+      n += 1;
+      if (n % 64 === 0) await yieldEventLoop();
+    }
+    return { seats, byCampaign };
+  }
+
+  private namedOnWeekEmails(
+    seats: IndexedSeat[],
     campaigns: SmartleadCampaign[],
     clients: SmartleadClientRecord[],
     onWeek: "A" | "B",
@@ -397,22 +459,21 @@ export class Min40TopUpService {
     const byClient = new Map<number, Array<{ email: string; type?: string | null }>>();
     const taggedByEmail = new Map<string, "A" | "B">();
     const campaignClient = new Map(campaigns.map((c) => [c.id, c.client_id]));
-    for (const account of accounts) {
-      const email = accountEmail(account);
-      if (!email) continue;
-      if (isGenericMailbox(account, email, this.config, this.state)) continue;
+    for (const seat of seats) {
+      if (seat.generic) continue;
+      const account = seat.account;
       const clientId =
         typeof account.client_id === "number"
           ? account.client_id
-          : campaignIdsOf(account)
+          : [...seat.campaignIds]
               .map((id) => campaignClient.get(id))
               .find((id): id is number => typeof id === "number");
       if (typeof clientId !== "number") continue;
       const list = byClient.get(clientId) ?? [];
-      list.push({ email, type: account.type });
+      list.push({ email: seat.email, type: account.type });
       byClient.set(clientId, list);
       const pod = mailboxPodOf(account);
-      if (pod) taggedByEmail.set(email.toLowerCase(), pod);
+      if (pod) taggedByEmail.set(seat.email, pod);
     }
     const out = new Map<number, Set<string>>();
     for (const [clientId, rows] of byClient) {
@@ -433,37 +494,27 @@ export class Min40TopUpService {
   }
 
   private countOnWeekStaffable(
-    campaignId: number,
     clientId: number,
-    accounts: SmartleadAccountWithCampaigns[],
+    members: IndexedSeat[],
     namedOnWeek: Set<string>,
     campaignById: Map<number, SmartleadCampaign>,
     now: Date,
     opts: { ignorePodWeek?: boolean } = {},
   ): number {
     let n = 0;
-    for (const account of accounts) {
-      if (!campaignIdsOf(account).includes(campaignId)) continue;
-      const email = accountEmail(account);
-      if (!email) continue;
-      if (
-        !accountIsPeelStaffable(account, email, {
-          getRestingInbox: (key) => this.state.getRestingInbox(key),
-          isCopyCanary: (key) => this.state.isCopyCanary(key),
-        })
-      ) {
-        continue;
-      }
-      const generic = isGenericMailbox(account, email, this.config, this.state);
-      if (generic) {
-        if (!opts.ignorePodWeek && !genericMayLinkToCampaigns(account, now)) continue;
-        if (this.belongsToClient(account, email, clientId, campaignById)) {
-          n = roundStaffableWeight(n + mailboxStaffableWeight(account));
+    for (const seat of members) {
+      if (!seat.peelStaffable) continue;
+      if (seat.generic) {
+        if (!opts.ignorePodWeek && !genericMayLinkToCampaigns(seat.account, now)) {
+          continue;
+        }
+        if (this.belongsToClient(seat.account, seat.email, clientId, campaignById)) {
+          n = roundStaffableWeight(n + seat.weight);
         }
         continue;
       }
-      if (namedOnWeek.has(email.toLowerCase())) {
-        n = roundStaffableWeight(n + mailboxStaffableWeight(account));
+      if (namedOnWeek.has(seat.email)) {
+        n = roundStaffableWeight(n + seat.weight);
       }
     }
     return n;
@@ -728,7 +779,8 @@ export class Min40TopUpService {
     shortBy: number;
     dryRun: boolean;
     now: Date;
-    accounts: SmartleadAccountWithCampaigns[];
+    seats: IndexedSeat[];
+    members: IndexedSeat[];
     campaignById: Map<number, SmartleadCampaign>;
     accountById: Map<number, SmartleadAccountWithCampaigns>;
     accountByEmail: Map<string, SmartleadAccountWithCampaigns>;
@@ -746,62 +798,45 @@ export class Min40TopUpService {
     const selected = new Set<string>();
     let placed = 0;
 
-    const existing = input.accounts.filter((account) => {
-      const email = accountEmail(account);
-      if (!email || selected.has(email.toLowerCase())) return false;
-      if (campaignIdsOf(account).includes(input.campaign.id)) return false;
-      if (
-        !accountIsPeelStaffable(account, email, {
-          getRestingInbox: (key) => this.state.getRestingInbox(key),
-          isCopyCanary: (key) => this.state.isCopyCanary(key),
-        })
-      ) {
+    const existing = input.seats.filter((seat) => {
+      if (selected.has(seat.email)) return false;
+      if (seat.campaignIds.has(input.campaign.id)) return false;
+      if (!seat.peelStaffable) return false;
+      if (!this.seatIsUsable(seat.account, seat.email, input.campaign, input.campaignById)) {
         return false;
       }
-      if (!this.seatIsUsable(account, email, input.campaign, input.campaignById)) {
-        return false;
-      }
-      const generic = isGenericMailbox(account, email, this.config, this.state);
-      if (generic) {
-        if (!input.pocEngagement && !genericMayLinkToCampaigns(account, input.now)) {
+      if (seat.generic) {
+        if (!input.pocEngagement && !genericMayLinkToCampaigns(seat.account, input.now)) {
           return false;
         }
-        if (!this.belongsToClient(account, email, input.clientId, input.campaignById)) {
+        if (!this.belongsToClient(seat.account, seat.email, input.clientId, input.campaignById)) {
           return false;
         }
         if (input.pocEngagement) return true;
-        return this.genericMayTakePod(account, email, input.clientId, onWeekCohort(input.now));
+        return this.genericMayTakePod(
+          seat.account,
+          seat.email,
+          input.clientId,
+          onWeekCohort(input.now),
+        );
       }
-      return input.namedOnWeek.has(email.toLowerCase());
+      return input.namedOnWeek.has(seat.email);
     });
     existing.sort((a, b) => {
-      const aGeneric = isGenericMailbox(
-        a,
-        accountEmail(a) ?? "",
-        this.config,
-        this.state,
-      );
-      const bGeneric = isGenericMailbox(
-        b,
-        accountEmail(b) ?? "",
-        this.config,
-        this.state,
-      );
-      if (aGeneric !== bGeneric) return aGeneric ? 1 : -1;
-      return (accountEmail(a) ?? "").localeCompare(accountEmail(b) ?? "");
+      if (a.generic !== b.generic) return a.generic ? 1 : -1;
+      return a.email.localeCompare(b.email);
     });
 
     const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
-    for (const account of input.accounts) {
-      if (!campaignIdsOf(account).includes(input.campaign.id)) continue;
-      const slot = mailboxEspSlot(account);
+    for (const seat of input.members) {
+      const slot = mailboxEspSlot(seat.account);
       if (slot) espCounts[slot] += 1;
     }
 
-    for (const account of existing) {
+    for (const seat of existing) {
       if (placed >= input.shortBy - 1e-9) break;
-      const email = accountEmail(account);
-      if (!email) continue;
+      const email = seat.email;
+      const account = seat.account;
       const needed = espFillOrder(
         espCounts,
         ON_WEEK_MIN_SENDERS,
@@ -819,8 +854,8 @@ export class Min40TopUpService {
         pocEngagement: input.pocEngagement,
       });
       if (ok) {
-        selected.add(email.toLowerCase());
-        placed = roundStaffableWeight(placed + mailboxStaffableWeight(account));
+        selected.add(email);
+        placed = roundStaffableWeight(placed + seat.weight);
         if (slot) espCounts[slot] += 1;
       }
     }
@@ -1011,6 +1046,7 @@ export class Min40TopUpService {
     dryRun: boolean;
     now: Date;
     accounts: SmartleadAccountWithCampaigns[];
+    seats: IndexedSeat[];
     campaigns: SmartleadCampaign[];
     campaignById: Map<number, SmartleadCampaign>;
     accountByEmail: Map<string, SmartleadAccountWithCampaigns>;
@@ -1047,16 +1083,14 @@ export class Min40TopUpService {
           .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
         let need = podInventoryNeed(named, assigned);
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
-        for (const account of input.accounts) {
-          const email = accountEmail(account);
-          if (!email) continue;
-          const generic = isGenericMailbox(account, email, this.config, this.state);
+        for (const seat of input.seats) {
+          const account = seat.account;
           const assignedHere =
             typeof account.client_id === "number" &&
             account.client_id === clientId &&
             mailboxPodOf(account) === pod;
           const namedHere =
-            !generic &&
+            !seat.generic &&
             typeof account.client_id === "number" &&
             account.client_id === clientId &&
             (mailboxPodOf(account) === pod || mailboxPodOf(account) == null);
@@ -1064,6 +1098,7 @@ export class Min40TopUpService {
           const slot = mailboxEspSlot(account);
           if (slot) espCounts[slot] += 1;
         }
+        await yieldEventLoop();
         while (need > 1e-9) {
           const platforms = espFillOrder(
             espCounts,

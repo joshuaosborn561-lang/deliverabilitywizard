@@ -10,11 +10,29 @@
  */
 
 export const STRINGIFY_YIELD_EVERY = 8;
+/** D252 — joining already-walked parts can be a 100s slice on a large state. */
+export const STRINGIFY_JOIN_CHUNK = 32;
 
 export function yieldEventLoop(): Promise<void> {
   return new Promise((resolve) => {
     setImmediate(resolve);
   });
+}
+
+async function joinYielding(
+  parts: string[],
+  open: string,
+  close: string,
+  sep: string,
+): Promise<string> {
+  if (parts.length === 0) return open + close;
+  let out = open;
+  for (let i = 0; i < parts.length; i += STRINGIFY_JOIN_CHUNK) {
+    const slice = parts.slice(i, i + STRINGIFY_JOIN_CHUNK);
+    out += (i === 0 ? "" : sep) + slice.join(sep);
+    await yieldEventLoop();
+  }
+  return out + close;
 }
 
 export async function stringifyYielding(
@@ -43,7 +61,7 @@ export async function stringifyYielding(
         parts.push(item === undefined ? "null" : await walk(item));
         await tick();
       }
-      return `[${parts.join(",")}]`;
+      return joinYielding(parts, "[", "]", ",");
     }
     const record = node as Record<string, unknown>;
     const parts: string[] = [];
@@ -53,7 +71,7 @@ export async function stringifyYielding(
       parts.push(`${JSON.stringify(key)}:${await walk(child)}`);
       await tick();
     }
-    return `{${parts.join(",")}}`;
+    return joinYielding(parts, "{", "}", ",");
   };
 
   return walk(value);

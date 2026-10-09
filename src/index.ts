@@ -1010,7 +1010,7 @@ async function main(): Promise<void> {
       if (config.enableCampaignCheck) {
         campaignCheckResult = await stage(
           "campaign-check-first",
-          () => campaignCheck.run({ mode: "first", inventory }),
+          (signal) => campaignCheck.run({ mode: "first", inventory, signal }),
           { skipIfFreshMs, skipIfBeforeStage },
         );
       }

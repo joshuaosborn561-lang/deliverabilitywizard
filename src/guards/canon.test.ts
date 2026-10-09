@@ -15131,3 +15131,74 @@ describe("owner intent — D252 min40 pool pick must yield", () => {
     );
   });
 });
+
+describe("owner intent — D251 campaign-check-first leftover", () => {
+  it("D251: first-check indexes members, yields, honors abort, caps enrich", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const abort = await readFile(
+      new URL("../lib/abortWork.ts", import.meta.url),
+      "utf8",
+    );
+    const enrich = await readFile(
+      new URL("../clients/smartdelivery.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.match(
+      check,
+      /indexAccountsByCampaign/,
+      stop("campaign-check indexes members (D251).", "campaignCheck.ts lost indexAccountsByCampaign."),
+    );
+    assert.match(
+      check,
+      /CAMPAIGN_CHECK_ENRICH_BUDGET_MS/,
+      stop("campaign-check caps enrich (D251).", "campaignCheck.ts lost CAMPAIGN_CHECK_ENRICH_BUDGET_MS."),
+    );
+    assert.match(
+      check,
+      /throwIfAborted/,
+      stop("campaign-check honors abort (D251).", "campaignCheck.ts lost throwIfAborted."),
+    );
+    assert.match(
+      abort,
+      /export function throwIfAborted/,
+      stop("abortWork throws when the stage signal fires (D251).", "abortWork.ts lost throwIfAborted."),
+    );
+    assert.match(
+      enrich,
+      /deadlineMs/,
+      stop("SmartDelivery enrich honors a deadline (D251).", "smartdelivery.ts lost enrich deadlineMs."),
+    );
+    assert.match(
+      index,
+      /campaignCheck\.run\(\{ mode: "first", inventory, signal \}\)/,
+      stop("health passes the stage signal into campaign-check-first (D251).", "index.ts lost campaign-check-first signal."),
+    );
+    assert.match(
+      canon,
+      /caps SmartDelivery enrich at 90s/,
+      stop("CANON records the D251 first-check enrich cap.", "CANON.md lost the 90s enrich cap."),
+    );
+    assert.match(
+      decisions,
+      /## D251 — short-campaign fill must not pin the loop/,
+      stop("The ledger records D251.", "DECISIONS.md has no D251."),
+    );
+    assert.match(
+      decisions,
+      /^\| D251 \|/m,
+      stop("The status index lists D251.", "DECISIONS.md index has no D251 row."),
+    );
+  });
+});

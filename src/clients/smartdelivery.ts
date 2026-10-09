@@ -177,9 +177,18 @@ export class SmartDeliveryClient {
    */
   async enrichCampaignIds(
     tests: SpamTestSummary[],
+    opts: { signal?: AbortSignal; deadlineMs?: number } = {},
   ): Promise<SpamTestSummary[]> {
     const out: SpamTestSummary[] = [];
     for (const test of tests) {
+      if (opts.signal?.aborted) {
+        out.push(test);
+        continue;
+      }
+      if (opts.deadlineMs != null && Date.now() >= opts.deadlineMs) {
+        out.push(test);
+        continue;
+      }
       if (campaignIdOf(test)) {
         out.push(test);
         continue;

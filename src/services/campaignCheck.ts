@@ -64,6 +64,9 @@ import {
   type GenericBackfillAskItem,
 } from "../lib/genericBackfillBatch.js";
 import { sleep } from "../lib/http.js";
+import { throwIfAborted } from "../lib/abortWork.js";
+import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import {
   desiredMailboxSignature,
   extractSignatureLines,
@@ -160,6 +163,8 @@ const FIRST_CHECK_RETRY_MS = process.env.NODE_TEST_CONTEXT ? 0 : 55 * 60 * 1000;
  * the next pass. The D247 20m race is the backstop, not the budget.
  */
 export const CAMPAIGN_CHECK_FIRST_BUDGET_MS = 8 * 60 * 1000;
+/** D251 — SmartDelivery enrich cannot eat the 20m race. */
+export const CAMPAIGN_CHECK_ENRICH_BUDGET_MS = 90 * 1000;
 
 export type CampaignCheckMode = "first" | "hourly" | "all";
 
@@ -205,6 +210,7 @@ export class CampaignCheckService {
       inventory?: InventorySnapshot;
       budgetMs?: number;
       now?: number;
+      signal?: AbortSignal;
     } = {},
   ): Promise<CampaignCheckResult> {
     const mode = opts.mode ?? "all";
@@ -227,8 +233,12 @@ export class CampaignCheckService {
     const genericAsks: GenericBackfillAskItem[] = [];
 
     // D132 — a check without a handed-down snapshot reads the shared book.
+    throwIfAborted(opts.signal);
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await this.book.get());
+    const accountsByCampaign = indexAccountsByCampaign(
+      accounts as SmartleadAccountWithCampaigns[],
+    );
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
       brandByClientId.set(
@@ -254,7 +264,17 @@ export class CampaignCheckService {
     let listedTestsFailed = false;
     try {
       listedTests = normalizeTestList(await this.smartDelivery.listTests({}));
-      const enriched = await this.smartDelivery.enrichCampaignIds(listedTests);
+      throwIfAborted(opts.signal);
+      const enrichDeadline =
+        startedAt +
+        Math.min(
+          CAMPAIGN_CHECK_ENRICH_BUDGET_MS,
+          budgetMs != null ? Math.max(1_000, Math.floor(budgetMs / 2)) : CAMPAIGN_CHECK_ENRICH_BUDGET_MS,
+        );
+      const enriched = await this.smartDelivery.enrichCampaignIds(listedTests, {
+        signal: opts.signal,
+        deadlineMs: enrichDeadline,
+      });
       tested = testedCampaignCoverage(
         enriched,
         this.state.get().testedCampaigns,
@@ -320,6 +340,7 @@ export class CampaignCheckService {
     const insightSigBlanked: string[] = [];
     const insightSharedUnlinked: string[] = [];
     for (const campaign of campaigns as SmartleadCampaign[]) {
+      throwIfAborted(opts.signal);
       result.examined += 1;
       const name = String(campaign.name ?? campaign.id);
 
@@ -396,6 +417,7 @@ export class CampaignCheckService {
         result.deferred += 1;
         continue;
       }
+      if (result.examined % 4 === 0) await yieldEventLoop();
 
       const kind: "first" | "hourly" = runFirst ? "first" : "hourly";
       // D180 — first-check always samples; hourly resample of first-passed
@@ -406,6 +428,10 @@ export class CampaignCheckService {
         campaign,
         campaigns: campaignById,
         accounts: accounts as SmartleadAccountWithCampaigns[],
+        members: accountsByCampaign.get(campaign.id) ?? [],
+        signal: opts.signal,
+        startedAt,
+        budgetMs,
         clients,
         brandByClientId,
         allBrands,
@@ -499,9 +525,13 @@ export class CampaignCheckService {
         brand,
         sequences,
         accounts: accounts as SmartleadAccountWithCampaigns[],
+        members: accountsByCampaign.get(campaign.id) ?? [],
         campaignById,
         findings,
         otherClientBrands: allBrands,
+        signal: opts.signal,
+        startedAt,
+        budgetMs,
       });
       if (sigApplied) {
         if (sigApplied.wroteTag) {
@@ -557,8 +587,12 @@ export class CampaignCheckService {
         name,
         insight: isInsightCampaign(campaign, inspected.sequences),
         accounts: accounts as SmartleadAccountWithCampaigns[],
+        members: accountsByCampaign.get(campaign.id) ?? [],
         campaignById,
         findings,
+        signal: opts.signal,
+        startedAt,
+        budgetMs,
       });
       if (unlinked.length) {
         findings = findings.filter(
@@ -740,15 +774,33 @@ export class CampaignCheckService {
    * their SalesGlider signatures stay. `desiredMailboxSignature`
    * stays Name / SalesGlider.
    */
+  private attachedAccounts(
+    campaignId: number,
+    accounts: SmartleadAccountWithCampaigns[],
+    members?: SmartleadAccountWithCampaigns[],
+  ): SmartleadAccountWithCampaigns[] {
+    if (members) return members;
+    return accounts.filter((account) => campaignIdsOf(account).includes(campaignId));
+  }
+
+  private budgetLeft(startedAt?: number, budgetMs?: number): boolean {
+    if (startedAt == null || budgetMs == null) return true;
+    return Date.now() - startedAt < budgetMs;
+  }
+
   private async autoApplySignature(input: {
     campaignId: number;
     name: string;
     brand: string;
     sequences: SmartleadSequence[] | null;
     accounts: SmartleadAccountWithCampaigns[];
+    members?: SmartleadAccountWithCampaigns[];
     campaignById: Map<number, SmartleadCampaign>;
     findings: CampaignFinding[];
     otherClientBrands: string[];
+    signal?: AbortSignal;
+    startedAt?: number;
+    budgetMs?: number;
   }): Promise<{
     brand: string;
     wroteTag: boolean;
@@ -822,10 +874,16 @@ export class CampaignCheckService {
       let wroteMailbox = false;
       const blankedEmails: string[] = [];
       const insightCampaign = isInsightCampaign({ id: input.campaignId }, rows);
+      const attached = this.attachedAccounts(
+        input.campaignId,
+        input.accounts,
+        input.members,
+      );
       if (insightCampaign) {
         // D184 — exclusive Insight staff only. NEVER blank ACTIVE SG staff.
-        for (const account of input.accounts) {
-          if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+        for (const account of attached) {
+          throwIfAborted(input.signal);
+          if (!this.budgetLeft(input.startedAt, input.budgetMs)) break;
           if (isGabeVmReserved(account)) continue;
           if (mailboxStaffsActiveSalesGlider(account, input.campaignById)) {
             continue;
@@ -849,8 +907,9 @@ export class CampaignCheckService {
           if (email) blankedEmails.push(email);
         }
       } else {
-        for (const account of input.accounts) {
-          if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+        for (const account of attached) {
+          throwIfAborted(input.signal);
+          if (!this.budgetLeft(input.startedAt, input.budgetMs)) break;
           if (isGabeVmReserved(account)) continue;
           const desired = desiredMailboxSignature({
             fromName: account.from_name,
@@ -901,6 +960,10 @@ export class CampaignCheckService {
     accounts: SmartleadAccountWithCampaigns[];
     campaignById: Map<number, SmartleadCampaign>;
     findings: CampaignFinding[];
+    members?: SmartleadAccountWithCampaigns[];
+    signal?: AbortSignal;
+    startedAt?: number;
+    budgetMs?: number;
   }): Promise<string[]> {
     if (!input.insight) return [];
     const need = input.findings.filter(
@@ -909,16 +972,21 @@ export class CampaignCheckService {
     if (!need.length) return [];
     if (this.config.dryRun) return [];
     const campaign = input.campaignById.get(input.campaignId);
-    let remaining = input.accounts.filter((account) => {
-      if (!campaignIdsOf(account).includes(input.campaignId)) return false;
+    const attached = this.attachedAccounts(
+      input.campaignId,
+      input.accounts,
+      input.members,
+    );
+    let remaining = attached.filter((account) => {
       const email = accountEmail(account);
       return Boolean(
         email && accountIsPeelStaffable(account, email, this.state),
       );
     }).length;
     const unlinked: string[] = [];
-    for (const account of input.accounts) {
-      if (!campaignIdsOf(account).includes(input.campaignId)) continue;
+    for (const account of attached) {
+      throwIfAborted(input.signal);
+      if (!this.budgetLeft(input.startedAt, input.budgetMs)) break;
       if (!mailboxStaffsActiveSalesGlider(account, input.campaignById)) {
         continue;
       }
@@ -1017,6 +1085,10 @@ export class CampaignCheckService {
     sampleMergeTags: boolean;
     priorMergeTagLeadTotal?: number | null;
     priorMergeTagFindings?: string[];
+    members?: SmartleadAccountWithCampaigns[];
+    signal?: AbortSignal;
+    startedAt?: number;
+    budgetMs?: number;
   }): Promise<{
     findings: CampaignFinding[];
     sequences: SmartleadSequence[] | null;
@@ -1092,9 +1164,12 @@ export class CampaignCheckService {
       isPocClient(clientDisplayName(client), this.config.pocClientNamePatterns),
     );
 
-    const attached = input.accounts.filter((account) =>
-      campaignIdsOf(account).includes(campaign.id),
-    );
+    throwIfAborted(input.signal);
+    const attached =
+      input.members ??
+      input.accounts.filter((account) =>
+        campaignIdsOf(account).includes(campaign.id),
+      );
     const classPolicy = callerFollowUpPolicyFromConfig(this.config);
     if (isCallerFollowUpCampaign(campaign, classPolicy)) {
       for (const account of attached) {
@@ -1125,7 +1200,11 @@ export class CampaignCheckService {
     const serving: string[] = [];
     const staffVerdicts: Array<{ reasons: CanonStaffableReason[] }> = [];
     let linkedCount = 0;
+    let memberN = 0;
     for (const account of attached) {
+      throwIfAborted(input.signal);
+      memberN += 1;
+      if (memberN % 8 === 0) await yieldEventLoop();
       const email = accountEmail(account);
       if (!email) continue;
       if (isGabeVmReserved(account)) {
@@ -1334,15 +1413,24 @@ export class CampaignCheckService {
       );
     }
 
-    const mergeTag = await this.inspectMergeTags({
-      campaign,
-      sequences,
-      status,
-      sampleMergeTags: input.sampleMergeTags,
-      priorLeadTotal: input.priorMergeTagLeadTotal,
-      priorFindings: input.priorMergeTagFindings ?? [],
-    });
-    findings.push(...mergeTag.findings);
+    let mergeTag: {
+      findings: CampaignFinding[];
+      checkedAt?: string | null;
+      leadTotal?: number | null;
+      customKeys?: string[];
+    } = { findings: [] };
+    if (this.budgetLeft(input.startedAt, input.budgetMs)) {
+      throwIfAborted(input.signal);
+      mergeTag = await this.inspectMergeTags({
+        campaign,
+        sequences,
+        status,
+        sampleMergeTags: input.sampleMergeTags,
+        priorLeadTotal: input.priorMergeTagLeadTotal,
+        priorFindings: input.priorMergeTagFindings ?? [],
+      });
+      findings.push(...mergeTag.findings);
+    }
 
     if (
       status === "ACTIVE" &&

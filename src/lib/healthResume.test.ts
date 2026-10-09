@@ -196,8 +196,10 @@ describe("D211 health resume", () => {
       "isolation-branch": { lastOkAt: "2026-09-30T12:16:56.000Z" },
       "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
     };
+    // Sitting-fresh `now` — campaign-health 15:11 is the frontier; 16:05
+    // would be 54m later and D249's 45m sitting cap would drop the leftover.
     assert.equal(
-      firstInterruptedHealthStage(stageHealth, Date.parse("2026-09-30T16:05:00.000Z")),
+      firstInterruptedHealthStage(stageHealth, Date.parse("2026-09-30T15:50:00.000Z")),
       "pod-cover",
     );
   });

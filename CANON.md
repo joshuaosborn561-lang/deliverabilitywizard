@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D252** (2026-10-09). One page of current truth. When a new
+Canon as of **D253** (2026-10-09). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -1003,7 +1003,11 @@ tests for ACTIVE sending campaigns only — canary-copy instrumentation is
 hidden (D126) — and lists up to **80** live tests so a 63-campaign board
 still fits with room to grow (D187). Freeform chat goes to the Cursor agent which may open PRs
 but cannot spend, purge, bypass gates, or deploy (D18/D20). `main` deploys to Railway on merge; each deploy
-restarts the cron cycle (D122).
+restarts the cron cycle (D122). The production image `FROM`s
+`mirror.gcr.io/library/node:22-bookworm-slim` — official Node 22
+bookworm-slim via Google's Docker Hub pull-through cache — never
+anonymous `docker.io/library/node` (D253). App behaviour, D247–D252,
+and 40/40 are unchanged.
 
 ## Changing the rules
 

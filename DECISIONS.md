@@ -258,6 +258,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D250 | Live — fill/pool/slack path amended by D252; first-check walk amended by D251 | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
 | D251 | Live — min40 fill/abort/ghost covered by D252 | campaign-check-first indexes members, yields, honors abort, and caps SmartDelivery enrich at 90s |
 | D252 | Live | Residual :30 stall after D250: short-campaign pool pick must yield and skip already-rejected seats; Slack abort after the shortfall cannot fail the stage; lastOk stamps when the walk returns; ghost pool seats drop; stringify joins in chunks |
+| D253 | Live | Production image builds pull Node 22 bookworm-slim from `mirror.gcr.io/library/node`, not anonymous Docker Hub; runtime stays the official image; D247–D252 and 40/40 unchanged |
 
 ---
 
@@ -8709,5 +8710,53 @@ staffing, holds, or spend.
 **Guards.** yielding pool pick + reject set; 416×1338 short-fill
 event-loop delay test; Slack abort stays on the result; CANON
 dated D252.
+
+---
+
+## D253 — production image must not pull Node from Docker Hub
+
+**Date.** 2026-10-09.
+
+**Decision.** The production Dockerfile `FROM`s
+`mirror.gcr.io/library/node:22-bookworm-slim` — Google's
+pull-through cache of the Docker Official Image — not
+`node:22-bookworm-slim` (which BuildKit resolves to
+`docker.io/library/node`). Runtime stays official Node 22 on
+Debian bookworm-slim. App behaviour is unchanged. D247–D252 and
+the 40/40 POD rules stay.
+
+**Why.** Four Railway Metal builder failures on 2026-10-09
+between ~21:22Z and ~21:37Z (4:22–4:37pm CT) died with
+`unexpected status from HEAD request to
+https://registry-1.docker.io/v2/library/node/manifests/22-bookworm-slim:
+429 Too Many Requests`. Two of the four never got past
+`scheduling build on Metal builder`. A ~5 minute retry did not
+help. Merged #301 (D252, `0d80160`) and #300 (D251, `1b0bab6`)
+never reached production; the live image is still `a819ff1`
+(D250). Railway's shared builders share Docker Hub's anonymous
+pull quota.
+
+**Rejected.** Keep retrying Docker Hub (already failed). Log in
+to Docker Hub on Railway (needs a secret; shared builder IPs
+still share the account). Switch to
+`public.ecr.aws/docker/library/node:22-bookworm-slim` — official
+and the same contents, but ECR Public caps unauthenticated pulls
+at 1/s per IP and Railway Metal IPs are shared, so it is the
+same class of 429. Change Node major or Debian suite. Change
+staffing, holds, spend, or 40/40.
+
+**Why this mirror.** `mirror.gcr.io/library/node` is Google's
+cache of Docker Official Images. The `22-bookworm-slim` tag is
+the same `nodejs/docker-node` `22/bookworm-slim` image (same
+OCI source, version, and debian:bookworm-slim base). Cached
+pulls do not count against Docker Hub's anonymous limit, and
+there is no published 1/s anonymous cap like ECR Public.
+
+**Supersedes / amends.** Amends the deploy image only. Does not
+change staffing, holds, spend, or D247–D252.
+
+**Guards.** Dockerfile `FROM` is the mirror tag and must not
+resolve `docker.io/library/node`; CANON dated D253; D247–D252
+and 40/40 stay in the ledger.
 
 ---

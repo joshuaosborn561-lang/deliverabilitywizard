@@ -252,8 +252,9 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D244 | Live | CALLER FOLLOW-UP attach is tag-then-owned no more: only bridge gabriel@ seats sit on 4085158/9/60 now; owned gabe@ only own-client after 21 warm days; reserved tag never skips those checks; Gabe Calls excluded from fan-out/min40 staffing; reserved seats never get POD-A/POD-B and pod-tags strips existing ones |
 | D245 | Live | InboxKit license sweep runs every weekday 8:16am CT and deletes on the cancel date: real IK rows (`username` + `domain_name`), past scheduled cancel = lapsed even if Smartlead still logs in or is disconnected, stale `active` renewal_date is not lapsed; seat end dates persisted; min40 / POC fill and canon staffable skip lapsed or ending-within-7-days seats |
 | D246 | Live | Insight SEG standing hold lifted; weekday pulse unpauses bounce holds; hold-enforcement / locked standing prefs no longer keep Insight SEG PAUSED |
-| D247 | Live | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
+| D247 | Live — save path amended by D249 | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
 | D248 | Live — D220 cadence / copy amended | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
+| D249 | Live | Unblock the event loop and persist stamps: sidecar lastOk / Slack / cron stamps, yielding compact JSON (no one-shot stringify of the full state), D215 sitting dies at 45m, campaign-check-first 8m inspect budget, Slack log/canary/remind idempotent across restarts, weekday 6am–8pm CT catch-up for Needs you / InboxKit / TERRL EOD |
 
 ---
 
@@ -8483,6 +8484,66 @@ destination for informational kinds (log channel / daily thread, not
 `isolationBlockActionShouldDecide` is false for url buttons; all
 stamped copies update on resolve; isolation-remind updates in place;
 quiet hours queue new cards; cron `0 8 * * 1-5`; CANON dated D248.
+
+---
+
+## D249 — Persist stamps, unblock the loop, catch up weekday jobs
+
+**Date.** 2026-10-09.
+
+**Decision.** Production after D247/D248 froze and restart-looped.
+`[watchdog] event-loop delay` of 98–113s several times per health
+pass, then 12-minute freezes (`726839ms` / `741439ms`) that exited
+before `state.save` renamed. `/health` lastOk stamps stayed at
+2026-10-08T14:30Z even when logs showed stages completing. D215
+then skipped inventory through warmup-gate as "still inside the
+cycle" off those 24h-old stamps. Slack re-opened a Wizard log
+thread and re-nudged isolation cards on every boot. Harden:
+
+1. **Stamp sidecar.** `recordStageOk` / Slack / cron stamps write
+   immediately to `state.json.stamps.json`. Load overlays the
+   sidecar over a stale full dump. Tests: stamps survive a restart
+   with no `state.json`, and a sidecar wins over yesterday's dump.
+2. **No one-shot `JSON.stringify(this.state)` on the main thread.**
+   The full dump walks the graph in slices and `setImmediate`s.
+   Per-stage checkpoint is the sidecar; the full dump is
+   fire-and-forget after that. Compact JSON stays (D247).
+3. **D215 sitting dies at 45 minutes.** Chain inversion older than
+   the health lock is a dead sitting — full chain, not leftover
+   skip. A 24h-old stamp is never inside the 15-minute cycle.
+4. **campaign-check-first inspect budget is 8 minutes.** Leftovers
+   stay leftovers. The D247 20m race is the backstop. First-check
+   findings and writes are unchanged.
+5. **Slack restart noise.** One Wizard log thread per CT day
+   (persist the parent ts on open). Canary-adopt announcement once
+   per fleet fingerprint (persist immediately). Pending-button
+   "Still waiting" at most once per weekday, not per boot.
+6. **Weekday catch-up, 6am–8pm CT only.** If Needs you,
+   inboxkit-license, or (after 17:30 CT) terl-eod missed today's
+   Chicago YMD, run it once. Same day does not run twice. Not at
+   boot (D122) — 3 minutes after listen, then each health tick.
+   Quiet hours / weekends stay gated.
+
+**Why.** Compact coalesced `JSON.stringify(this.state)` after every
+stage was still a 100s+ main-thread stall. The freeze watchdog
+killed the process before `rename`, so `/data/state.json` stayed
+at the 10/8 morning snapshot. Resume and Slack then replayed that
+snapshot on every Railway restart.
+
+**Rejected.** Delete the freeze watchdog. Change POD 40/40, holds,
+STOPPED vs PAUSED, or campaign START/PAUSE. Catch up outside
+weekday 6am–8pm CT. Pretty-print the full dump again.
+
+**Supersedes / amends.** Amends D167 / D247 (save path: sidecar +
+yielding compact JSON). Amends D214 / D215 (sitting age cap).
+Amends D248 (Slack idempotent across restarts; Needs you catch-up).
+Amends D245 (InboxKit weekday catch-up). Does not change staffing,
+holds, or spend.
+
+**Guards.** Sidecar lastOk persists without a full dump; stale
+sitting is not a leftover; campaign-check-first 8m budget;
+stringifyYielding; once-per-weekday isolation remind; catch-up
+window 6–20 CT; CANON dated D249.
 
 ---
 

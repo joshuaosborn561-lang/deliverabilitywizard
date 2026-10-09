@@ -60,7 +60,7 @@ export interface SlackLogSink {
   humanChannel: string;
   todayYmd: () => string;
   getThread: () => DeliverabilityLogThread | null;
-  setThread: (row: DeliverabilityLogThread) => void;
+  setThread: (row: DeliverabilityLogThread) => void | Promise<void>;
 }
 
 export function readSlackBotToken(creds: SlackCredentials): string {
@@ -389,7 +389,7 @@ export class SlackClient {
         text: plan.openParent.text,
       });
       if (parent.channel && parent.ts) {
-        this.logSink?.setThread({
+        await this.logSink?.setThread({
           ymd: this.logSink.todayYmd(),
           channel: parent.channel,
           ts: parent.ts,

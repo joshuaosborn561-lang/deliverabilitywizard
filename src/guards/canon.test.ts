@@ -14747,8 +14747,18 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       store,
-      /JSON\.stringify\(this\.state\)/,
-      stop("state.save writes compact JSON (D247).", "store.ts still pretty-prints state."),
+      /stringifyYielding\(this\.state\)/,
+      stop("state.save writes compact JSON off the hot path (D247/D249).", "store.ts lost yielding compact stringify."),
+    );
+    assert.match(
+      store,
+      /saveHot/,
+      stop("lastOk checkpoints write a stamp sidecar (D249).", "store.ts lost saveHot."),
+    );
+    assert.doesNotMatch(
+      store,
+      /JSON\.stringify\(this\.state,\s*null,\s*2\)/,
+      stop("state.save stays compact (D247).", "store.ts pretty-prints state."),
     );
     assert.match(
       slack,
@@ -14856,8 +14866,8 @@ describe("owner intent — D248 safe Slack buttons and quiet #deliverability", (
     assert.equal(defaults.cronSpendDigest, "0 8 * * 1-5");
     assert.match(
       canon,
-      /Canon as of \*\*D248\*\*/,
-      stop("CANON is dated D248.", "CANON.md header was not bumped to D248."),
+      /Canon as of \*\*D(248|249|25[0-9])\*\*/,
+      stop("CANON is dated D248+.", "CANON.md header was not bumped to D248."),
     );
     assert.match(
       canon,
@@ -14871,6 +14881,89 @@ describe("owner intent — D248 safe Slack buttons and quiet #deliverability", (
       decisions,
       /## D248 — Safe Slack buttons and a quiet #deliverability/,
       stop("The ledger records D248.", "DECISIONS.md has no D248."),
+    );
+  });
+});
+
+describe("owner intent — D249 persist stamps, unblock the loop, catch up", () => {
+  it("D249: sidecar stamps, yielding save, stale sitting, 8m first-check, weekday catch-up", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const resume = await readFile(new URL("../lib/healthResume.ts", import.meta.url), "utf8");
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const isolation = await readFile(
+      new URL("../lib/isolationActions.ts", import.meta.url),
+      "utf8",
+    );
+    const catchUp = await readFile(
+      new URL("../lib/weekdayCatchUp.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.match(
+      store,
+      /saveHot/,
+      stop("lastOk writes a stamp sidecar (D249).", "store.ts lost saveHot."),
+    );
+    assert.match(
+      store,
+      /stringifyYielding\(this\.state\)/,
+      stop("full dump is yielding compact JSON (D249).", "store.ts still one-shot stringifies state."),
+    );
+    assert.match(
+      resume,
+      /HEALTH_SITTING_MAX_MS/,
+      stop("D215 sitting dies at 45m (D249).", "healthResume.ts lost HEALTH_SITTING_MAX_MS."),
+    );
+    assert.match(
+      check,
+      /CAMPAIGN_CHECK_FIRST_BUDGET_MS/,
+      stop("first-check inspect is 8-minute bounded (D249).", "campaignCheck.ts lost the budget."),
+    );
+    assert.match(
+      isolation,
+      /oncePerWeekday/,
+      stop("isolation remind is once per weekday (D249).", "isolationActions.ts lost oncePerWeekday."),
+    );
+    assert.match(
+      catchUp,
+      /CATCH_UP_HOUR_START = 6/,
+      stop("catch-up is 6am CT (D249).", "weekdayCatchUp.ts lost the 6am window."),
+    );
+    assert.match(
+      index,
+      /runWeekdayCatchUp/,
+      stop("index catches up missed weekday jobs (D249).", "index.ts lost runWeekdayCatchUp."),
+    );
+    assert.match(
+      index,
+      /oncePerWeekday:\s*true/,
+      stop("boot isolation remind is once per weekday (D249).", "index.ts boot remind is still every restart."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D249\*\*/,
+      stop("CANON is dated D249.", "CANON.md header is before D249."),
+    );
+    assert.match(
+      decisions,
+      /## D249 — Persist stamps, unblock the loop, catch up weekday jobs/,
+      stop("The ledger records D249.", "DECISIONS.md has no D249."),
+    );
+    assert.match(
+      decisions,
+      /^\| D249 \|/m,
+      stop("The status index lists D249.", "DECISIONS.md index has no D249 row."),
     );
   });
 });

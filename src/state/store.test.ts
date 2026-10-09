@@ -228,6 +228,57 @@ describe("D167 serialized save", () => {
     assert.equal(raw.includes("\n  "), false, "compact JSON must not indent");
     assert.ok(raw.startsWith("{"));
   });
+
+  it("D249: stage stamps persist across a restart even if the full dump never lands", async () => {
+    const filePath = `/tmp/dw-state-stamps-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    state.recordStageOk("inventory", 12);
+    state.recordStageOk("warmup-gate", 40);
+    state.setLastHealthAt("2026-10-09T13:25:00.000Z");
+    state.setDeliverabilityLogThread({
+      ymd: "2026-10-09",
+      channel: "C0BJQUTV7A8",
+      ts: "1.1",
+    });
+    state.setCanaryRegisteredFingerprint("ada@x.com\nbob@y.com");
+    state.setIsolationRemindPostedYmd("2026-10-09");
+    await state.saveHot();
+
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    const health = reloaded.listStageHealth();
+    assert.ok(health.inventory?.lastOkAt, "inventory lastOk must survive a missing state.json");
+    assert.ok(health["warmup-gate"]?.lastOkAt, "warmup-gate lastOk must survive");
+    assert.equal(reloaded.get().lastHealthAt, "2026-10-09T13:25:00.000Z");
+    assert.equal(reloaded.getDeliverabilityLogThread()?.ts, "1.1");
+    assert.equal(reloaded.getCanaryRegisteredFingerprint(), "ada@x.com\nbob@y.com");
+    assert.equal(reloaded.getIsolationRemindPostedYmd(), "2026-10-09");
+  });
+
+  it("D249: sidecar stamps win over a stale state.json", async () => {
+    const filePath = `/tmp/dw-state-overlay-${process.pid}-${Date.now()}.json`;
+    const stale = new StateStore(filePath);
+    await stale.load();
+    stale.recordStageOk("inventory", 10);
+    stale.setLastHealthAt("2026-10-08T13:15:00.000Z");
+    await stale.save();
+
+    const live = new StateStore(filePath);
+    await live.load();
+    live.recordStageOk("reconnect", 20);
+    live.setLastHealthAt("2026-10-09T13:25:00.000Z");
+    await live.saveHot();
+
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    assert.ok(reloaded.listStageHealth().reconnect?.lastOkAt);
+    assert.equal(reloaded.get().lastHealthAt, "2026-10-09T13:25:00.000Z");
+    assert.ok(
+      reloaded.listStageHealth().inventory?.lastOkAt,
+      "older lastOks from state.json still load",
+    );
+  });
 });
 
 describe("D224 evidence hold state", () => {

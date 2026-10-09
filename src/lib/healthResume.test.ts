@@ -94,7 +94,7 @@ describe("D211 health resume", () => {
       "isolation-branch": { lastOkAt: "2026-09-30T12:16:56.000Z" },
       "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
     };
-    assert.equal(firstInterruptedHealthStage(stageHealth), "pod-cover");
+    assert.equal(firstInterruptedHealthStage(stageHealth, now), "pod-cover");
     assert.equal(healthNeedsResume(stageHealth, now), true);
     assert.equal(
       shouldSkipHealthStage("inventory", stageHealth.inventory.lastOkAt, {
@@ -143,7 +143,7 @@ describe("D211 health resume", () => {
       "isolation-branch": { lastOkAt: "2026-09-30T12:16:56.000Z" },
       "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
     };
-    assert.equal(firstInterruptedHealthStage(stageHealth), "pod-cover");
+    assert.equal(firstInterruptedHealthStage(stageHealth, now), "pod-cover");
     assert.equal(healthNeedsResume(stageHealth, now), true);
     assert.equal(
       shouldSkipHealthStage("client-rest", stageHealth["client-rest"].lastOkAt, {
@@ -172,7 +172,7 @@ describe("D211 health resume", () => {
       "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
     };
     assert.equal(
-      firstInterruptedHealthStage(stageHealth),
+      firstInterruptedHealthStage(stageHealth, Date.parse("2026-09-30T15:50:30.000Z")),
       "campaign-health",
       "a mid-prefix kill still resumes at the next stage, not the tail",
     );
@@ -196,7 +196,52 @@ describe("D211 health resume", () => {
       "isolation-branch": { lastOkAt: "2026-09-30T12:16:56.000Z" },
       "isolation-buy-resume": { lastOkAt: "2026-09-30T12:21:47.000Z" },
     };
-    assert.equal(firstInterruptedHealthStage(stageHealth), "pod-cover");
+    assert.equal(
+      firstInterruptedHealthStage(stageHealth, Date.parse("2026-09-30T16:05:00.000Z")),
+      "pod-cover",
+    );
+  });
+
+  it("D249: a 24h-old inverted board is not inside the cycle — full chain", () => {
+    // Prod 2026-10-09: every lastOk frozen at or before 2026-10-08T14:30Z.
+    // Newest non-inventory is campaign-health; leftover would be pod-cover
+    // if we ignored age. The sitting is a day dead.
+    const now = Date.parse("2026-10-09T13:30:00.000Z");
+    const stageHealth = {
+      inventory: { lastOkAt: "2026-10-08T13:30:15.996Z" },
+      "client-rest": { lastOkAt: "2026-10-08T13:45:00.000Z" },
+      "generic-rest": { lastOkAt: "2026-10-08T13:45:10.000Z" },
+      "client-tag": { lastOkAt: "2026-10-08T13:46:00.000Z" },
+      "one-client": { lastOkAt: "2026-10-08T13:47:00.000Z" },
+      "qa-unpause": { lastOkAt: "2026-10-08T13:47:10.000Z" },
+      "campaign-check-first": { lastOkAt: "2026-10-08T13:50:00.000Z" },
+      "warmup-gate": { lastOkAt: "2026-10-08T14:00:00.000Z" },
+      "campaign-health": { lastOkAt: "2026-10-08T14:30:00.000Z" },
+      "pod-cover": { lastOkAt: "2026-10-08T12:00:00.000Z" },
+      reconnect: { lastOkAt: "2026-10-08T12:10:00.000Z" },
+      "mailbox-gap": { lastOkAt: "2026-10-08T12:20:00.000Z" },
+      "isolation-branch": { lastOkAt: "2026-10-08T12:30:00.000Z" },
+      "isolation-buy-resume": { lastOkAt: "2026-10-08T12:40:00.000Z" },
+    };
+    assert.equal(firstInterruptedHealthStage(stageHealth, now), null);
+    assert.equal(healthNeedsResume(stageHealth, now), false);
+    assert.equal(
+      shouldSkipHealthStage("inventory", stageHealth.inventory.lastOkAt, {
+        skipIfFreshMs: HEALTH_CYCLE_MS,
+        now,
+      }),
+      false,
+      "a 24h-old inventory stamp is not inside the 15m cycle",
+    );
+    assert.equal(
+      shouldSkipHealthStage("warmup-gate", stageHealth["warmup-gate"].lastOkAt, {
+        skipIfBeforeStage: firstInterruptedHealthStage(stageHealth, now),
+        skipIfFreshMs: HEALTH_CYCLE_MS,
+        now,
+      }),
+      false,
+      "warmup-gate must run when the leftover sitting is stale",
+    );
   });
 
   it("every health-loop stage has a D131 overdue window", async () => {

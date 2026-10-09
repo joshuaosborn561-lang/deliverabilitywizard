@@ -89,6 +89,11 @@ describe("InboxkitLicenseSweepService (D222/D226)", () => {
     assert.ok(
       state.listOpsAudit().some((row) => row.action === "inboxkit-license-handoff"),
     );
+
+    const again = await service.run({ now: mondayMorning });
+    assert.equal(again.skipped, true);
+    assert.equal(again.reason, "already-ran-today");
+    assert.equal(deletedSl.length, 1, "same-day catch-up must not delete twice");
   });
 
   it("does not Slack upcoming cancellations and does not delete them", async () => {

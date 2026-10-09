@@ -154,6 +154,13 @@ const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 80;
  */
 const FIRST_CHECK_RETRY_MS = process.env.NODE_TEST_CONTEXT ? 0 : 55 * 60 * 1000;
 
+/**
+ * D249 — first-check leftover walk is bounded so it cannot eat the
+ * 15-minute health cadence. Uninspected campaigns stay leftovers for
+ * the next pass. The D247 20m race is the backstop, not the budget.
+ */
+export const CAMPAIGN_CHECK_FIRST_BUDGET_MS = 8 * 60 * 1000;
+
 export type CampaignCheckMode = "first" | "hourly" | "all";
 
 export interface CampaignCheckResult {
@@ -165,6 +172,8 @@ export interface CampaignCheckResult {
   firstPassed: number;
   swept: number;
   blocked: string[];
+  /** D249 — campaigns that needed inspect but the pass budget ran out. */
+  deferred: number;
   findings: Array<{
     campaignId: number;
     name: string;
@@ -191,7 +200,12 @@ export class CampaignCheckService {
   ) {}
 
   async run(
-    opts: { mode?: CampaignCheckMode; inventory?: InventorySnapshot } = {},
+    opts: {
+      mode?: CampaignCheckMode;
+      inventory?: InventorySnapshot;
+      budgetMs?: number;
+      now?: number;
+    } = {},
   ): Promise<CampaignCheckResult> {
     const mode = opts.mode ?? "all";
     const result: CampaignCheckResult = {
@@ -203,8 +217,13 @@ export class CampaignCheckService {
       firstPassed: 0,
       swept: 0,
       blocked: [],
+      deferred: 0,
       findings: [],
     };
+    const startedAt = opts.now ?? Date.now();
+    const budgetMs =
+      opts.budgetMs ??
+      (mode === "first" ? CAMPAIGN_CHECK_FIRST_BUDGET_MS : undefined);
     const genericAsks: GenericBackfillAskItem[] = [];
 
     // D132 — a check without a handed-down snapshot reads the shared book.
@@ -369,6 +388,14 @@ export class CampaignCheckService {
         (mode === "hourly" || mode === "all") && openSigFinding;
       const runHourly = healthLeftover || hourlySweep || hourlyLeftoverSig;
       if (!runFirst && !runHourly) continue;
+
+      if (
+        budgetMs != null &&
+        Date.now() - startedAt >= budgetMs
+      ) {
+        result.deferred += 1;
+        continue;
+      }
 
       const kind: "first" | "hourly" = runFirst ? "first" : "hourly";
       // D180 — first-check always samples; hourly resample of first-passed
@@ -661,7 +688,7 @@ export class CampaignCheckService {
 
     await this.state.save();
     console.log(
-      `[campaign-check] mode=${mode} examined=${result.examined} firstSeen=${result.firstSeen} firstChecked=${result.firstChecked} firstPassed=${result.firstPassed} swept=${result.swept} blocked=${result.blocked.length}`,
+      `[campaign-check] mode=${mode} examined=${result.examined} firstSeen=${result.firstSeen} firstChecked=${result.firstChecked} firstPassed=${result.firstPassed} swept=${result.swept} blocked=${result.blocked.length} deferred=${result.deferred}`,
     );
     return result;
   }

@@ -1,6 +1,7 @@
 import type { SlackClient } from "../clients/slack.js";
 import { copySwapProof } from "./isolationProof.js";
 import { appendSlackStamp, latestSlackStamp } from "./slackAskStamps.js";
+import { chicagoWallClock } from "./canonOpsHours.js";
 import { isJoshQuietHours } from "./slackQuietHours.js";
 import type {
   DomainControlHistoryRecord,
@@ -549,7 +550,15 @@ export async function remindPendingIsolationActions(input: {
   slack: Pick<SlackClient, "notifyIsolationAction"> &
     Partial<Pick<SlackClient, "postThreadReply">>;
   now?: Date;
+  /** D249 — at most one "Still waiting" pass per Chicago weekday. */
+  oncePerWeekday?: boolean;
 }): Promise<number> {
+  const now = input.now ?? new Date();
+  const ymd = chicagoWallClock(now).ymd;
+  if (input.oncePerWeekday) {
+    if (input.store.getIsolationRemindPostedYmd() === ymd) return 0;
+    if (isJoshQuietHours(now)) return 0;
+  }
   dismissPendingSignatureAsks(input.store);
   dismissRetiredDomainAsks(input.store);
   healStaleBurnAsks(input.store);
@@ -581,9 +590,12 @@ export async function remindPendingIsolationActions(input: {
     }
     await notifyAndStamp(input.store, input.slack, next, {
       remind: true,
-      now: input.now,
+      now,
     });
     posted += 1;
+  }
+  if (input.oncePerWeekday && posted > 0) {
+    input.store.setIsolationRemindPostedYmd(ymd);
   }
   return posted;
 }

@@ -154,6 +154,11 @@ import {
   shouldSkipHealthStage,
   type HealthLoopStage,
 } from "./lib/healthResume.js";
+import {
+  inWeekdayCatchUpWindow,
+  terlEodCatchUpDue,
+  weekdayJobMissed,
+} from "./lib/weekdayCatchUp.js";
 import { alertCanonMisses, alertStageAnomalies } from "./services/opsAlerts.js";
 import {
   deployIdentityLine,
@@ -267,6 +272,9 @@ async function main(): Promise<void> {
     getThread: () => state.getDeliverabilityLogThread(),
     setThread: (row) => {
       state.setDeliverabilityLogThread(row);
+      return state.saveHot().catch((error) => {
+        console.warn("[slack] could not persist log thread", error);
+      });
     },
   });
   // D213 — state-only seed of the known 5.1.8 tenant hold, then one
@@ -745,10 +753,13 @@ async function main(): Promise<void> {
    */
   const checkpointStage = async (name: string): Promise<void> => {
     try {
-      await state.save();
+      await state.saveHot();
     } catch (error) {
-      console.warn(`[watchdog] stage ${name} checkpoint save failed`, error);
+      console.warn(`[watchdog] stage ${name} checkpoint stamp save failed`, error);
     }
+    void state.save().catch((error) => {
+      console.warn(`[watchdog] stage ${name} full save failed`, error);
+    });
   };
 
   const stage = async <T>(
@@ -1136,6 +1147,9 @@ async function main(): Promise<void> {
         campaigns: inventory.campaigns,
       });
       await state.save();
+      void runWeekdayCatchUp().catch((error) => {
+        console.warn("[catch-up] weekday jobs after health failed", error);
+      });
 
       return {
         clientRest: rest.clientRest,
@@ -1270,6 +1284,43 @@ async function main(): Promise<void> {
 
   const runInboxkitLicenseSweep = async (opts: { force?: boolean } = {}) => {
     return stage("inboxkit-license", async () => inboxkitLicenseSweep.run(opts));
+  };
+
+  /**
+   * D249 — node-cron does not catch a fire that was missed while the
+   * process was down or frozen. Weekday 6am–8pm CT only. Each job is
+   * once per Chicago day. Not at boot (D122) — 3 minutes after listen,
+   * and again after a health pass. One catch-up at a time so InboxKit
+   * cannot delete twice.
+   */
+  let catchUpInFlight: Promise<void> | null = null;
+  const runWeekdayCatchUp = async (): Promise<void> => {
+    if (catchUpInFlight) return catchUpInFlight;
+    catchUpInFlight = (async () => {
+      const now = new Date();
+      if (!inWeekdayCatchUpWindow(now)) return;
+      const ymd = chicagoWallClock(now, "America/Chicago").ymd;
+      if (config.enableSpendDigest && weekdayJobMissed(state.get().spendDigestPostedYmd, ymd)) {
+        console.log(`[catch-up] Needs you / spend-digest missed ${ymd} — running once`);
+        await runSpendDigest();
+      }
+      const ikYmd = state.getInboxkitLicenseHandoff()?.ymd ?? null;
+      if (config.enableInboxkitLicenseSweep && weekdayJobMissed(ikYmd, ymd)) {
+        console.log(`[catch-up] inboxkit-license missed ${ymd} — running once`);
+        await runInboxkitLicenseSweep();
+      }
+      if (
+        config.enableTerlEod &&
+        terlEodCatchUpDue(now) &&
+        !state.terlEodPosted(ymd)
+      ) {
+        console.log(`[catch-up] terl-eod missed ${ymd} — running once`);
+        await runTerlEod();
+      }
+    })().finally(() => {
+      catchUpInFlight = null;
+    });
+    return catchUpInFlight;
   };
 
   const runOpsDeliverability = async () => {
@@ -1658,6 +1709,9 @@ async function main(): Promise<void> {
           "canary_registered",
         );
         state.setCanaryRegisteredFingerprint(fingerprint);
+        await state.saveHot().catch((error) => {
+          console.warn("[copy-canary-adopt] could not persist fingerprint", error);
+        });
       }
     } else if (result.reason?.includes("too many")) {
       await slack.send(
@@ -1718,10 +1772,15 @@ async function main(): Promise<void> {
         console.error("[slack] could not persist ask dismiss", error);
       });
     }
-    void remindPendingIsolationActions({ store: state, slack })
-      .then((count) => {
+    void remindPendingIsolationActions({
+      store: state,
+      slack,
+      oncePerWeekday: true,
+    })
+      .then(async (count) => {
         if (count) {
           console.log(`[slack] Re-posted ${count} pending isolation button(s)`);
+          await state.saveHot();
         }
       })
       .catch((error) => {
@@ -3393,6 +3452,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     console.log(
       "[boot] D247 freeze watchdog: event-loop delay >1s logged; blocked >5m or a pass past 2× max exits 1 (Railway restart-on-failure must be on)",
     );
+    console.log(
+      "[boot] D249 catch-up: weekday 6am–8pm CT Needs you / InboxKit / TERRL EOD once if today's stamp is missing (3m after listen, then each health tick)",
+    );
+    if (secretsReady) {
+      setTimeout(() => {
+        void runWeekdayCatchUp().catch((error) => {
+          console.warn("[catch-up] delayed weekday jobs failed", error);
+        });
+      }, 180_000);
+    }
   });
 }
 

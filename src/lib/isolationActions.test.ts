@@ -103,6 +103,50 @@ describe("isolation Slack reminds", () => {
     assert.equal(store.pendingIsolationActions()[0]?.id, action.id);
   });
 
+  it("D249: weekday isolation remind is once per Chicago day, not per boot", async () => {
+    const store = tempStore();
+    const { slack, notified } = slackCapture();
+    const action = buildIsolationAction({
+      kind: "buy_canary_fleet",
+      title: "Buy canary fleet",
+      proof: "Fleet is missing.",
+      detail: {},
+    });
+    await requestIsolationAction({ store, slack, action });
+    const friday = new Date("2026-10-09T13:14:00.000Z");
+    assert.equal(
+      await remindPendingIsolationActions({
+        store,
+        slack,
+        now: friday,
+        oncePerWeekday: true,
+      }),
+      1,
+    );
+    assert.equal(store.getIsolationRemindPostedYmd(), "2026-10-09");
+    assert.equal(
+      await remindPendingIsolationActions({
+        store,
+        slack,
+        now: new Date("2026-10-09T13:44:00.000Z"),
+        oncePerWeekday: true,
+      }),
+      0,
+      "second boot the same weekday must not nudge again",
+    );
+    assert.equal(notified.length, 2, "request + one weekday remind");
+    assert.equal(
+      await remindPendingIsolationActions({
+        store,
+        slack,
+        now: new Date("2026-10-10T15:00:00.000Z"),
+        oncePerWeekday: true,
+      }),
+      0,
+      "weekend stays quiet",
+    );
+  });
+
   it("does not request or remind a canary buy after one is executed (D60)", async () => {
     const store = tempStore();
     const { slack, notified } = slackCapture();

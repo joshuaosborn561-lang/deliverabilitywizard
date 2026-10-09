@@ -255,7 +255,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D247 | Live — save path amended by D249 | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
 | D248 | Live — D220 cadence / copy amended | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
 | D249 | Live — min40 walk amended by D250 | Unblock the event loop and persist stamps: sidecar lastOk / Slack / cron stamps, yielding compact JSON (no one-shot stringify of the full state), D215 sitting dies at 45m, campaign-check-first 8m inspect budget, Slack log/canary/remind idempotent across restarts, weekday 6am–8pm CT catch-up for Needs you / InboxKit / TERRL EOD |
-| D250 | Live | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
+| D250 | Live — fill/pool/slack path amended by D252 | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
+| D252 | Live | Residual :30 stall after D250: short-campaign pool pick must yield and skip already-rejected seats; Slack abort after the shortfall cannot fail the stage; lastOk stamps when the walk returns; ghost pool seats drop; stringify joins in chunks |
 
 ---
 
@@ -8591,6 +8592,65 @@ spend.
 
 **Guards.** min40 indexes by campaign and calls yieldEventLoop;
 large-fixture event-loop delay test; CANON dated D250.
+
+---
+
+## D252 — min40 pool pick must yield; Slack abort must not hide lastOk
+
+**Date.** 2026-10-09.
+
+**Decision.** Production on D250 (`main@a819ff13`, deploy 861cce16)
+still starved the event loop during the 20:30Z canon-ops slot.
+min40 logged `campaigns=416 accounts=1338` at 20:30:08Z. The
+watchdog then logged 15–36s delays through 20:41:52Z, plus
+105,956ms at 20:38:56Z and 104,336ms at 20:41:52Z. The shortfall
+summary landed at 20:37:06Z (Deep Roots / EMCOR / Insight /
+TechEvo). At 20:38:56Z the stage failed `This operation was
+aborted`, so lastOk stayed 2026-10-08T14:12Z. campaign-check-first
+timed out (20m) at 20:35:44Z and campaign-health timed out (10m)
+at 20:47:12Z; the health pass took 37.1 minutes.
+
+**Cause.** D250 only yielded the already-at-40 staffable *count*.
+A short campaign still called `findReassignablePoolMailbox` —
+`Object.values(poolMailboxes).find(canTake)` — once or twice per
+attempt with no yield and no reject cache. When the pool cannot
+fill (prod: Deep Roots short 101.8), that is a 15–36s synchronous
+walk of ~800+ rows, repeated per short campaign and per
+fillShortPods POD. After the shortfall log, `alertUnfilled`
+`slack.send` uses `fetchWithTimeout` (30s) which surfaces the
+opaque `This operation was aborted` and was not caught, so the
+stage threw and lastOk did not stamp. `returnSurplusGenerics`
+then recounted staffable by walking every account for every
+pick×campaign (`campaignIdsOf` allocates each time). A leftover
+`state.save` join of already-walked JSON parts was still one
+slice. The 10-minute stage budget is sane; the abort was Slack's
+30s fetch, not `timeout after 10m`.
+
+**Fix (outcomes unchanged).** Cache the pool list once. Yield
+inside the pick and skip emails already rejected for that
+predicate. Fill walks that client's seats only. Surplus counts
+from a campaign member index. Slack / surplus / save errors stay
+on the result so lastOk can stamp. A stage abort stops new
+attaches and returns. Drop available/assigned pool seats missing
+from Smartlead inventory before pick. Join stringify parts in
+chunks. Keep D247 watchdog, D249 persistence, D250 count-index,
+and 40/40 POD rules. Do not write daily limits.
+
+**Why.** The freeze watchdog is a restart, not a finish. Canon
+ops has to complete the slot and stamp lastOk so the */15 health
+chain is not starved. A Slack timeout is not a staffing failure.
+
+**Rejected.** Delete the freeze watchdog. Skip min40. Raise the
+10-minute budget. Change 40/40 or START/PAUSE. Claim D251 (open
+PR #300 already holds that number).
+
+**Supersedes / amends.** Amends D205 / D247 / D249 / D250 (the
+fill, pool pick, slack, and surplus walks). Does not change
+staffing, holds, or spend.
+
+**Guards.** yielding pool pick + reject set; 416×1338 short-fill
+event-loop delay test; Slack abort stays on the result; CANON
+dated D252.
 
 ---
 

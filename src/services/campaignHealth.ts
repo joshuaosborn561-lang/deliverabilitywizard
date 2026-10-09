@@ -84,7 +84,11 @@ export class CampaignHealthService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+    opts: {
+      dryRun?: boolean;
+      inventory?: InventorySnapshot;
+      signal?: AbortSignal;
+    } = {},
   ): Promise<CampaignHealthResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: CampaignHealthResult = {
@@ -126,7 +130,11 @@ export class CampaignHealthService {
     result.snapshots = this.buildSnapshots(campaigns, accounts, clients);
 
     try {
-      result.topUp = await this.topUp.run({ dryRun, inventory: inventory ?? undefined });
+      result.topUp = await this.topUp.run({
+        dryRun,
+        inventory: inventory ?? undefined,
+        signal: opts.signal,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`top-up: ${message}`);

@@ -15031,8 +15031,8 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D250\*\*/,
-      stop("CANON is dated D250.", "CANON.md header is before D250."),
+      /Canon as of \*\*D252\*\*/,
+      stop("CANON is dated D252.", "CANON.md header is before D252."),
     );
     assert.match(
       decisions,
@@ -15043,6 +15043,91 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
       decisions,
       /^\| D250 \|/m,
       stop("The status index lists D250.", "DECISIONS.md index has no D250 row."),
+    );
+  });
+});
+
+describe("owner intent — D252 min40 pool pick must yield", () => {
+  it("D252: yielding pool pick, slack abort stays, lastOk can stamp", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const pick = await readFile(
+      new URL("../lib/poolPick.ts", import.meta.url),
+      "utf8",
+    );
+    const surplus = await readFile(
+      new URL("../services/genericSurplusReturn.ts", import.meta.url),
+      "utf8",
+    );
+    const stringify = await readFile(
+      new URL("../lib/stringifyYielding.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.match(
+      pick,
+      /findReassignablePoolMailboxYielding/,
+      stop("pool pick yields (D252).", "poolPick.ts lost findReassignablePoolMailboxYielding."),
+    );
+    assert.match(
+      min40,
+      /findReassignablePoolMailboxYielding/,
+      stop("min40 uses the yielding pool pick (D252).", "min40TopUp.ts still calls the sync finder."),
+    );
+    assert.match(
+      min40,
+      /short-staffed slack/,
+      stop("min40 catches Slack abort (D252).", "min40TopUp.ts lost the Slack catch."),
+    );
+    assert.match(
+      min40,
+      /indexSeatsByClient/,
+      stop("min40 indexes seats by client (D252).", "min40TopUp.ts lost indexSeatsByClient."),
+    );
+    assert.match(
+      min40,
+      /dropGhostPoolSeats/,
+      stop("min40 drops ghost pool seats (D252).", "min40TopUp.ts lost dropGhostPoolSeats."),
+    );
+    assert.match(
+      surplus,
+      /indexAccountsByCampaign/,
+      stop("surplus counts from members (D252).", "genericSurplusReturn.ts still walks every account."),
+    );
+    assert.match(
+      stringify,
+      /joinYielding/,
+      stop("stringify joins in chunks (D252).", "stringifyYielding.ts lost joinYielding."),
+    );
+    assert.match(
+      index,
+      /min40TopUp\.run\(\{ inventory, signal \}\)/,
+      stop("canon-ops passes the stage signal into min40 (D252).", "index.ts lost min40 signal."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D252\*\*/,
+      stop("CANON is dated D252.", "CANON.md header is before D252."),
+    );
+    assert.match(
+      decisions,
+      /## D252 — min40 pool pick must yield/,
+      stop("The ledger records D252.", "DECISIONS.md has no D252."),
+    );
+    assert.match(
+      decisions,
+      /^\| D252 \|/m,
+      stop("The status index lists D252.", "DECISIONS.md index has no D252 row."),
     );
   });
 });

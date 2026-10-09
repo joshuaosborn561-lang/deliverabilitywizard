@@ -10,6 +10,7 @@ import type { SmartleadCampaign } from "../types/index.js";
 import { isClientNamedMailbox, migrateClientNamedPoolRecords } from "../lib/clientNamedDomain.js";
 import { hasPoolMarkerTag } from "../lib/markerClients.js";
 import { sleep } from "../lib/http.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import {
   isPocEngagementClient,
   pocEngagementClientIds,
@@ -115,7 +116,10 @@ export class GenericCleanupService {
       .filter((row) => row.kind === "generic_idle")
       .map((row) => row.email);
 
+    let examined = 0;
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      examined += 1;
+      if (examined % 32 === 0) await yieldEventLoop();
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (isClientNamedMailbox(email, clients)) continue;

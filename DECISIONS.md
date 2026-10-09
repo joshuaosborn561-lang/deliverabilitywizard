@@ -254,7 +254,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D246 | Live | Insight SEG standing hold lifted; weekday pulse unpauses bounce holds; hold-enforcement / locked standing prefs no longer keep Insight SEG PAUSED |
 | D247 | Live — save path amended by D249 | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
 | D248 | Live — D220 cadence / copy amended | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
-| D249 | Live | Unblock the event loop and persist stamps: sidecar lastOk / Slack / cron stamps, yielding compact JSON (no one-shot stringify of the full state), D215 sitting dies at 45m, campaign-check-first 8m inspect budget, Slack log/canary/remind idempotent across restarts, weekday 6am–8pm CT catch-up for Needs you / InboxKit / TERRL EOD |
+| D249 | Live — min40 walk amended by D250 | Unblock the event loop and persist stamps: sidecar lastOk / Slack / cron stamps, yielding compact JSON (no one-shot stringify of the full state), D215 sitting dies at 45m, campaign-check-first 8m inspect budget, Slack log/canary/remind idempotent across restarts, weekday 6am–8pm CT catch-up for Needs you / InboxKit / TERRL EOD |
+| D250 | Live | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
 
 ---
 
@@ -8544,6 +8545,52 @@ holds, or spend.
 sitting is not a leftover; campaign-check-first 8m budget;
 stringifyYielding; once-per-weekday isolation remind; catch-up
 window 6–20 CT; CANON dated D249.
+
+---
+
+## D250 — min40 must not pin the event loop
+
+**Date.** 2026-10-09.
+
+**Decision.** Production on D249 (`main@f3dfd469`) freeze-looped
+again. Every Chicago `:00` / `:30` canon-ops slot logged
+`[hold-enforcement] examined=29` then the D247 watchdog exited
+~12.5 minutes later (`event loop blocked for 750–763s`).
+min40-topup / powergryd-watch / generic-cleanup /
+mailbox-type-tags lastOk stayed 26h stale. `/health` 502'd
+during the block. The D249 sidecar + yielding stringify were
+not the stall: hold-enforcement had already stamped lastOk.
+
+**Cause.** `min40-topup` is the next stage. After inventory is
+already in hand it counted on-week staffable by walking every
+ACTIVE campaign against the full mailbox list with no `await`
+(`countOnWeekStaffable`: `isGenericMailbox` + peel-staffable +
+`campaignIdsOf.includes` per pair). ~366 campaigns × ~1000+
+seats is a synchronous campaigns×accounts scan. When campaigns
+are already at 40 the first `await` is `fillShortPods`, so the
+loop stays blocked until the D247 watchdog kills the process.
+
+**Fix (outcomes unchanged).** Index seats once (email, generic,
+staffable, weight, campaign-id set). Count from the campaign's
+members only. Yield every few campaigns (`setImmediate`) and
+during the index walk. generic-cleanup yields on its account
+walk. Keep D247 freeze watchdog and D249 sidecar / yielding
+stringify. Do not change 40/40, holds, POD rules, PowerGRYD,
+or START/PAUSE.
+
+**Why.** The freeze watchdog is a restart, not a finish. Canon
+ops has to complete the slot and stamp lastOk so the */15
+health chain is not starved.
+
+**Rejected.** Delete the freeze watchdog. Skip min40. Shrink
+the inventory. Change staffing outcomes.
+
+**Supersedes / amends.** Amends D205 / D247 / D249 (min40 and
+cleanup walks must yield). Does not change staffing, holds, or
+spend.
+
+**Guards.** min40 indexes by campaign and calls yieldEventLoop;
+large-fixture event-loop delay test; CANON dated D250.
 
 ---
 

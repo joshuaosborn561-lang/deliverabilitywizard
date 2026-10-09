@@ -2,37 +2,20 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { dropGhostPoolSeats } from "./poolInventoryReconcile.js";
 
-describe("dropGhostPoolSeats (D251)", () => {
+describe("dropGhostPoolSeats (D252)", () => {
   it("drops available/assigned seats missing from inventory and keeps warming", () => {
     const rows = new Map([
       [
         "ghost@nowgetintroduced.com",
-        {
-          email: "ghost@nowgetintroduced.com",
-          domain: "nowgetintroduced.com",
-          platform: "GOOGLE" as const,
-          status: "available",
-          smartleadAccountId: 9,
-        },
+        { email: "ghost@nowgetintroduced.com", status: "available" },
       ],
       [
         "live@crosslaunchco.com",
-        {
-          email: "live@crosslaunchco.com",
-          domain: "crosslaunchco.com",
-          platform: "GOOGLE" as const,
-          status: "assigned",
-          smartleadAccountId: 8,
-        },
+        { email: "live@crosslaunchco.com", status: "assigned" },
       ],
       [
         "new@crosslaunchco.com",
-        {
-          email: "new@crosslaunchco.com",
-          domain: "crosslaunchco.com",
-          platform: "MICROSOFT" as const,
-          status: "warming",
-        },
+        { email: "new@crosslaunchco.com", status: "warming" },
       ],
     ]);
     const dropped = dropGhostPoolSeats(

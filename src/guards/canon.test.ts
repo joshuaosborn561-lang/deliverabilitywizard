@@ -15031,8 +15031,8 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D251\*\*/,
-      stop("CANON is dated D251.", "CANON.md header is before D251."),
+      /Canon as of \*\*D252\*\*/,
+      stop("CANON is dated D252.", "CANON.md header is before D252."),
     );
     assert.match(
       decisions,
@@ -15047,19 +15047,23 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
   });
 });
 
-describe("owner intent — D251 residual stall, abort, ghost seats", () => {
-  it("D251: fill yields, abort stops work, ghosts drop, first-check indexes", async () => {
+describe("owner intent — D252 min40 pool pick must yield", () => {
+  it("D252: yielding pool pick, slack abort stays, lastOk can stamp", async () => {
     const { readFile } = await import("node:fs/promises");
     const min40 = await readFile(
       new URL("../services/min40TopUp.ts", import.meta.url),
       "utf8",
     );
-    const topUp = await readFile(
-      new URL("../services/campaignTopUp.ts", import.meta.url),
+    const pick = await readFile(
+      new URL("../lib/poolPick.ts", import.meta.url),
       "utf8",
     );
-    const check = await readFile(
-      new URL("../services/campaignCheck.ts", import.meta.url),
+    const surplus = await readFile(
+      new URL("../services/genericSurplusReturn.ts", import.meta.url),
+      "utf8",
+    );
+    const stringify = await readFile(
+      new URL("../lib/stringifyYielding.ts", import.meta.url),
       "utf8",
     );
     const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
@@ -15071,35 +15075,86 @@ describe("owner intent — D251 residual stall, abort, ghost seats", () => {
     const stop = (want: string, got: string) => `${want} ${got}`;
 
     assert.match(
+      pick,
+      /findReassignablePoolMailboxYielding/,
+      stop("pool pick yields (D252).", "poolPick.ts lost findReassignablePoolMailboxYielding."),
+    );
+    assert.match(
       min40,
-      /MIN40_SEAT_YIELD_EVERY/,
-      stop("min40 yields inside a seat scan (D251).", "min40TopUp.ts lost MIN40_SEAT_YIELD_EVERY."),
+      /findReassignablePoolMailboxYielding/,
+      stop("min40 uses the yielding pool pick (D252).", "min40TopUp.ts still calls the sync finder."),
+    );
+    assert.match(
+      min40,
+      /short-staffed slack/,
+      stop("min40 catches Slack abort (D252).", "min40TopUp.ts lost the Slack catch."),
     );
     assert.match(
       min40,
       /indexSeatsByClient/,
-      stop("min40 indexes seats by client (D251).", "min40TopUp.ts lost indexSeatsByClient."),
-    );
-    assert.match(
-      min40,
-      /throwIfAborted/,
-      stop("min40 honors the stage abort (D251).", "min40TopUp.ts lost throwIfAborted."),
+      stop("min40 indexes seats by client (D252).", "min40TopUp.ts lost indexSeatsByClient."),
     );
     assert.match(
       min40,
       /dropGhostPoolSeats/,
-      stop("min40 drops ghost pool seats (D251).", "min40TopUp.ts lost dropGhostPoolSeats."),
+      stop("min40 drops ghost pool seats (D252).", "min40TopUp.ts lost dropGhostPoolSeats."),
     );
     assert.match(
-      topUp,
-      /dropGhostPoolSeats/,
-      stop("campaign top-up drops ghost pool seats (D251).", "campaignTopUp.ts lost dropGhostPoolSeats."),
+      surplus,
+      /indexAccountsByCampaign/,
+      stop("surplus counts from members (D252).", "genericSurplusReturn.ts still walks every account."),
     );
     assert.match(
-      topUp,
-      /throwIfAborted/,
-      stop("campaign top-up honors abort (D251).", "campaignTopUp.ts lost throwIfAborted."),
+      stringify,
+      /joinYielding/,
+      stop("stringify joins in chunks (D252).", "stringifyYielding.ts lost joinYielding."),
     );
+    assert.match(
+      index,
+      /min40TopUp\.run\(\{ inventory, signal \}\)/,
+      stop("canon-ops passes the stage signal into min40 (D252).", "index.ts lost min40 signal."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D252\*\*/,
+      stop("CANON is dated D252.", "CANON.md header is before D252."),
+    );
+    assert.match(
+      decisions,
+      /## D252 — min40 pool pick must yield/,
+      stop("The ledger records D252.", "DECISIONS.md has no D252."),
+    );
+    assert.match(
+      decisions,
+      /^\| D252 \|/m,
+      stop("The status index lists D252.", "DECISIONS.md index has no D252 row."),
+    );
+  });
+});
+
+describe("owner intent — D251 campaign-check-first leftover", () => {
+  it("D251: first-check indexes members, yields, honors abort, caps enrich", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const abort = await readFile(
+      new URL("../lib/abortWork.ts", import.meta.url),
+      "utf8",
+    );
+    const enrich = await readFile(
+      new URL("../clients/smartdelivery.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
     assert.match(
       check,
       /indexAccountsByCampaign/,
@@ -15111,14 +15166,29 @@ describe("owner intent — D251 residual stall, abort, ghost seats", () => {
       stop("campaign-check caps enrich (D251).", "campaignCheck.ts lost CAMPAIGN_CHECK_ENRICH_BUDGET_MS."),
     );
     assert.match(
+      check,
+      /throwIfAborted/,
+      stop("campaign-check honors abort (D251).", "campaignCheck.ts lost throwIfAborted."),
+    );
+    assert.match(
+      abort,
+      /export function throwIfAborted/,
+      stop("abortWork throws when the stage signal fires (D251).", "abortWork.ts lost throwIfAborted."),
+    );
+    assert.match(
+      enrich,
+      /deadlineMs/,
+      stop("SmartDelivery enrich honors a deadline (D251).", "smartdelivery.ts lost enrich deadlineMs."),
+    );
+    assert.match(
       index,
-      /min40TopUp\.run\(\{ inventory, signal \}\)/,
-      stop("canon-ops passes the stage signal into min40 (D251).", "index.ts lost min40 signal."),
+      /campaignCheck\.run\(\{ mode: "first", inventory, signal \}\)/,
+      stop("health passes the stage signal into campaign-check-first (D251).", "index.ts lost campaign-check-first signal."),
     );
     assert.match(
       canon,
-      /Canon as of \*\*D251\*\*/,
-      stop("CANON is dated D251.", "CANON.md header is before D251."),
+      /caps SmartDelivery enrich at 90s/,
+      stop("CANON records the D251 first-check enrich cap.", "CANON.md lost the 90s enrich cap."),
     );
     assert.match(
       decisions,

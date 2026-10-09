@@ -4,10 +4,7 @@ import {
   type SmartleadAccountWithCampaigns,
 } from "../clients/smartlead.js";
 
-/**
- * One pass over the account book so later stages do not walk every
- * mailbox for every campaign (D250/D251).
- */
+/** One pass so later walks do not rescan every mailbox for every campaign. */
 export function indexAccountsByCampaign(
   accounts: SmartleadAccountWithCampaigns[],
 ): Map<number, SmartleadAccountWithCampaigns[]> {

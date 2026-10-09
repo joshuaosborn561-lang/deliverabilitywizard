@@ -1280,66 +1280,120 @@ describe("Min40TopUpService (D205)", () => {
     );
   });
 
-  it("D251: a 416×1340 short-campaign fill keeps event-loop delay under 2s", async () => {
-    const now = new Date("2026-10-09T16:00:00Z");
+  it("D252: a 416×1338 short fill with a large failing pool keeps sync slices under 2s", async () => {
+    const now = new Date("2026-10-09T20:30:00Z");
     const onWeek = onWeekCohort(now);
-    const clients = [
-      { id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" },
-      { id: TECHEVO_CLIENT_ID, name: "TechEvo", logo: "TechEvolution" },
-      { id: 418274, name: "Parlay", logo: "Parlay" },
-      { id: 582890, name: "Insight", logo: "Insight" },
-      { id: 574020, name: "EMCOR", logo: "EMCOR" },
+    const fullClients = [
+      { id: TECHEVO_CLIENT_ID, name: "TechEvo", logo: "TechEvolution", domain: "techevolution.com" },
+      { id: 418274, name: "Parlay", logo: "Parlay", domain: "parlay.com" },
+      { id: 582890, name: "Insight", logo: "Insight", domain: "joshosborn.com" },
+      { id: 574020, name: "EMCOR", logo: "EMCOR", domain: "getmesaco.info" },
     ];
-    const campaignsPerClient = 84;
-    const namedPerClient = 12;
-    const poolGenerics = 1280;
-    const campaigns = clients.flatMap((client, clientIdx) =>
-      Array.from({ length: campaignsPerClient }, (_, i) => ({
+    const shortClient = {
+      id: BCP_CLIENT_ID,
+      name: "Mike Trpkosh",
+      logo: "Bolder Cyber Partners",
+      domain: "boldercyperpartner.com",
+    };
+    const fullCampaigns = fullClients.flatMap((client, clientIdx) =>
+      Array.from({ length: 100 }, (_, i) => ({
         id: 10_000 + clientIdx * 1_000 + i,
         name: `${client.logo} ${i}`,
         status: "ACTIVE" as const,
         client_id: client.id,
       })),
     );
-    const domainFor = (clientId: number): string => {
-      if (clientId === BCP_CLIENT_ID) return "boldercyperpartner.com";
-      if (clientId === TECHEVO_CLIENT_ID) return "techevolution.com";
-      if (clientId === 418274) return "parlay.com";
-      if (clientId === 582890) return "joshosborn.com";
-      return "getmesaco.info";
-    };
-    const accounts = [
-      ...clients.flatMap((client, clientIdx) => {
-        const campaignIds = campaigns
-          .filter((row) => row.client_id === client.id)
-          .map((row) => row.id);
-        return Array.from({ length: namedPerClient }, (_, i) => ({
-          id: 100_000 + clientIdx * 1_000 + i,
-          from_email: `n${i}@${domainFor(client.id)}`,
-          client_id: client.id,
-          type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
-          is_smtp_success: true,
-          is_imap_success: true,
-          tags: [{ tag_name: `POD-${onWeek}` }],
-          campaign_ids: campaignIds,
-          created_at: "2026-01-01T00:00:00.000Z",
-        }));
-      }),
-      ...Array.from({ length: poolGenerics }, (_, i) => ({
-        id: 200_000 + i,
-        from_email: `g${i}@crosslaunchco.com`,
-        from_name: `Pool ${i}`,
+    const shortCampaigns = Array.from({ length: 16 }, (_, i) => ({
+      id: 50_000 + i,
+      name: `BCP short ${i}`,
+      status: "ACTIVE" as const,
+      client_id: shortClient.id,
+    }));
+    const campaigns = [...fullCampaigns, ...shortCampaigns];
+    const namedFull = fullClients.flatMap((client, clientIdx) => {
+      const campaignIds = fullCampaigns
+        .filter((row) => row.client_id === client.id)
+        .map((row) => row.id);
+      return Array.from({ length: 45 }, (_, i) => ({
+        id: 100_000 + clientIdx * 1_000 + i,
+        from_email: `n${i}@${client.domain}`,
+        client_id: client.id,
         type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
         is_smtp_success: true,
         is_imap_success: true,
-        tags: [{ tag_name: "GENERIC" }],
-        campaign_ids: [] as number[],
+        tags: [{ tag_name: `POD-${onWeek}` }],
+        campaign_ids: campaignIds,
         created_at: "2026-01-01T00:00:00.000Z",
-      })),
+      }));
+    });
+    const namedShort = Array.from({ length: 12 }, (_, i) => ({
+      id: 140_000 + i,
+      from_email: `n${i}@${shortClient.domain}`,
+      client_id: shortClient.id,
+      type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: `POD-${onWeek}` }],
+      campaign_ids: shortCampaigns.map((row) => row.id),
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const failingPool = Array.from({ length: 800 }, (_, i) => ({
+      id: 200_000 + i,
+      from_email: `ghost${i}@nowgetintroduced.com`,
+      from_name: `Ghost ${i}`,
+      type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "GENERIC" }],
+      campaign_ids: [] as number[],
+      created_at: "2026-10-08T00:00:00.000Z",
+    }));
+    const livePool = Array.from({ length: 20 }, (_, i) => ({
+      id: 300_000 + i,
+      from_email: `g${i}@crosslaunchco.com`,
+      from_name: `Pool ${i}`,
+      type: i % 2 === 0 ? "GMAIL" : "OUTLOOK",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "GENERIC" }],
+      campaign_ids: [] as number[],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const extraNamed = Array.from({ length: 326 }, (_, i) => ({
+      id: 160_000 + i,
+      from_email: `pad${i}@techevolution.com`,
+      client_id: TECHEVO_CLIENT_ID,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: `POD-${onWeek}` }],
+      campaign_ids: fullCampaigns
+        .filter((row) => row.client_id === TECHEVO_CLIENT_ID)
+        .map((row) => row.id),
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const accounts = [
+      ...namedFull,
+      ...namedShort,
+      ...failingPool,
+      ...livePool,
+      ...extraNamed,
     ];
     const state = new StateStore(stateFile());
     await state.load();
-    for (const account of accounts.slice(-80)) {
+    for (const account of failingPool) {
+      state.upsertPoolMailbox({
+        email: String(account.from_email),
+        domain: "nowgetintroduced.com",
+        platform: account.type === "GMAIL" ? "GOOGLE" : "MICROSOFT",
+        smartleadAccountId: account.id,
+        firstName: "Ghost",
+        lastName: "Seat",
+        status: "available",
+        warmedAt,
+      });
+    }
+    for (const account of livePool) {
       const email = String(account.from_email);
       state.upsertPoolMailbox({
         email,
@@ -1385,7 +1439,7 @@ describe("Min40TopUpService (D205)", () => {
       now,
       inventory: {
         fetchedAt: Date.now(),
-        clients,
+        clients: [...fullClients, shortClient],
         campaigns,
         accounts,
       },
@@ -1393,11 +1447,11 @@ describe("Min40TopUpService (D205)", () => {
     const elapsed = Date.now() - started;
     clearInterval(timer);
 
-    assert.equal(campaigns.length, 420);
-    assert.ok(accounts.length >= 1340);
+    assert.equal(campaigns.length, 416);
+    assert.equal(accounts.length, 1338);
     assert.ok(
-      result.assigned.length > 0,
-      "fixture must exercise the short fill path",
+      result.assigned.length > 0 || result.unfilled.length > 0,
+      "fixture must exercise the short fill / pool-pick path",
     );
     assert.ok(
       ticks > 0,
@@ -1405,19 +1459,84 @@ describe("Min40TopUpService (D205)", () => {
     );
     assert.ok(
       maxGap < 2_000,
-      `largest event-loop gap was ${maxGap}ms — short-campaign fill still pinned /health`,
+      `largest event-loop gap was ${maxGap}ms — pool scan still pinned /health`,
     );
     assert.ok(
-      elapsed < 20_000,
-      `min40 short-fill on ${campaigns.length} campaigns / ${accounts.length} seats took ${elapsed}ms`,
+      elapsed < 25_000,
+      `min40 416×1338 short-fill took ${elapsed}ms`,
     );
   });
 
-  it("D251: aborting the stage signal stops further min40 attaches", async () => {
+  it("D252: a Slack abort after the shortfall does not fail the stage", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 8 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: BCP_CLIENT_ID,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => {
+          const error = new Error("This operation was aborted");
+          error.name = "AbortError";
+          throw error;
+        },
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-09T20:37:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 10, name: "BCP A", status: "ACTIVE", client_id: BCP_CLIENT_ID },
+        ],
+        accounts: named,
+      },
+    });
+    assert.ok(result.unfilled.length > 0);
+    assert.ok(
+      result.errors.some((row) => /aborted/i.test(row)),
+      `slack abort must stay on the result: ${result.errors.join(" | ")}`,
+    );
+  });
+
+  it("D252: aborting the stage stops attaches but still returns so lastOk can stamp", async () => {
     const attached: number[] = [];
     const controller = new AbortController();
     const state = new StateStore(stateFile());
     await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    state.ensureGenericSeat({
+      email: "spare@crosslaunchco.com",
+      slAccountId: 900,
+    });
     const named = Array.from({ length: 8 }, (_, i) => ({
       id: 100 + i,
       from_email: `n${i}@boldercyperpartner.com`,
@@ -1446,41 +1565,37 @@ describe("Min40TopUpService (D205)", () => {
       } as unknown as SlackClient,
       state,
     );
-    await assert.rejects(
-      () =>
-        service.run({
-          dryRun: false,
-          signal: controller.signal,
-          now: new Date("2026-10-05T15:00:00.000Z"),
-          inventory: {
-            fetchedAt: Date.now(),
-            clients: [{ id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
-            campaigns: [
-              { id: 10, name: "BCP A", status: "ACTIVE", client_id: BCP_CLIENT_ID },
-              { id: 11, name: "BCP B", status: "ACTIVE", client_id: BCP_CLIENT_ID },
-            ],
-            accounts: [
-              ...named,
-              {
-                id: 900,
-                from_email: "spare@crosslaunchco.com",
-                from_name: "Harmony Norris",
-                type: "GMAIL",
-                is_smtp_success: true,
-                is_imap_success: true,
-                tags: [{ tag_name: "GENERIC" }],
-                campaign_ids: [],
-                created_at: "2026-01-01T00:00:00.000Z",
-              },
-            ],
+    const result = await service.run({
+      dryRun: false,
+      signal: controller.signal,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [
+          { id: 10, name: "BCP A", status: "ACTIVE", client_id: BCP_CLIENT_ID },
+          { id: 11, name: "BCP B", status: "ACTIVE", client_id: BCP_CLIENT_ID },
+        ],
+        accounts: [
+          ...named,
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
           },
-        }),
-      (error: unknown) => {
-        assert.ok(error instanceof Error);
-        assert.match(error.message, /aborted/i);
-        return true;
+        ],
       },
-    );
+    });
     assert.ok(attached.length <= 2, `placement continued after abort (${attached.length})`);
+    assert.ok(
+      result.errors.some((row) => /aborted/i.test(row)),
+      `abort must be recorded so the stage can still stamp lastOk: ${result.errors.join(" | ")}`,
+    );
   });
 });

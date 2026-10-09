@@ -35,4 +35,20 @@ describe("stringifyYielding (D249)", () => {
       "setInterval must have fired while stringifyYielding walked the graph",
     );
   });
+
+  it("D252: joining a wide object does not pin the event loop", async () => {
+    const wide: Record<string, string> = {};
+    for (let i = 0; i < 400; i += 1) {
+      wide[`k${i}`] = "x".repeat(200);
+    }
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+    timer.unref?.();
+    const body = await stringifyYielding(wide, { yieldEvery: 8 });
+    clearInterval(timer);
+    assert.equal(JSON.parse(body).k0.length, 200);
+    assert.ok(ticks > 0, "joinYielding must yield between chunks");
+  });
 });

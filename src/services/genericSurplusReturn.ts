@@ -29,7 +29,6 @@ import {
   surplusGenericReturns,
 } from "../lib/genericSurplusReturn.js";
 import { sleep } from "../lib/http.js";
-import { throwIfAborted } from "../lib/abortWork.js";
 import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { StateStore } from "../state/store.js";
@@ -59,7 +58,7 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
 }
 
 function staffableOnCampaign(
-  campaignId: number,
+  _campaignId: number,
   members: SmartleadAccountWithCampaigns[],
   state: Pick<StateStore, "getRestingInbox" | "isCopyCanary">,
 ): number {
@@ -153,7 +152,10 @@ export async function returnSurplusGenerics(input: {
   }
 
   for (const pick of picks) {
-    throwIfAborted(input.signal);
+    if (input.signal?.aborted) {
+      result.errors.push("aborted: stopped remaining surplus returns");
+      break;
+    }
     await yieldEventLoop();
     const account = accountByEmail.get(pick.email);
     if (!account || typeof account.id !== "number") continue;

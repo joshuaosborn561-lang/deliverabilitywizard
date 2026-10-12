@@ -144,4 +144,23 @@ describe("D225 surplus generic return picker", () => {
       ["extra-a@getintroduced.info"],
     );
   });
+
+  it("D256: TechEvo surplus is above floor 30, not 40", () => {
+    const seats = Array.from({ length: 4 }, (_, i) =>
+      seat(`g${i}@getintroduced.info`, {
+        assignedClientId: 521881,
+        assignedPod: "A",
+        assignedAt: `2026-10-0${i + 1}T00:00:00.000Z`,
+        reason: "pod_top_up",
+      }),
+    );
+    const picked = surplusGenericReturns({
+      seats,
+      namedStaffableByClientPod: new Map([[clientPodKey(521881, "A"), 28]]),
+      clientHasActiveCampaign: new Map([[521881, true]]),
+      minFloorByClient: { 521881: 30 },
+      now: WEEKDAY,
+    });
+    assert.equal(picked.length, 2, "28 named + 4 generics → return 2 above floor 30");
+  });
 });

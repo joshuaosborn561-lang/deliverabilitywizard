@@ -52,10 +52,11 @@ export function keepAssignedGenericForPodInventory(input: {
   return !idle.has(input.email.trim().toLowerCase());
 }
 
-/** How many more generics this POD still needs to reach 40. */
+/** How many more generics this POD still needs to reach its floor (default 40). */
 export function podInventoryNeed(
   namedStaffable: number,
   assignedGenerics: number,
+  floor: number = POD_INVENTORY_EACH,
 ): number {
   const named = Number.isFinite(namedStaffable)
     ? Math.max(0, namedStaffable)
@@ -63,5 +64,6 @@ export function podInventoryNeed(
   const assigned = Number.isFinite(assignedGenerics)
     ? Math.max(0, assignedGenerics)
     : 0;
-  return roundStaffableWeight(Math.max(0, POD_INVENTORY_EACH - named - assigned));
+  const target = Number.isFinite(floor) && floor >= 1 ? floor : POD_INVENTORY_EACH;
+  return roundStaffableWeight(Math.max(0, target - named - assigned));
 }

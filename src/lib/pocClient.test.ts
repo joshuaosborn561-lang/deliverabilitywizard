@@ -26,6 +26,12 @@ describe("pocClient (D81/D236)", () => {
     assert.equal(isPocClient("Deep Roots Capital"), true);
     assert.equal(isPocClient("Goliath Displacement"), true);
     assert.equal(isPocClient("Bolder Cyber Partners"), false);
+    assert.equal(isPocClient("PowerGRYD"), false);
+    assert.equal(
+      DEFAULT_POC_CLIENT_NAME_PATTERNS.some((p) => /power/.test(p)),
+      false,
+      "PowerGRYD is not on the POC name list (D237/D256)",
+    );
   });
 
   it("engagement is the name list minus Goliath and ended ids", () => {
@@ -51,11 +57,22 @@ describe("pocClient (D81/D236)", () => {
       }),
       false,
     );
+    assert.equal(
+      isPocEngagementClient({
+        clientId: 592842,
+        hay: "PowerGRYD",
+        name: "PowerGRYD",
+        logo: "PowerGRYD",
+      }),
+      false,
+      "PowerGRYD is a full named client, not a POC engagement (D237/D256)",
+    );
     assert.deepEqual(
       pocEngagementClientIds([
         { id: GOLIATH_CLIENT_ID, logo: "Goliath Cybersecurity" },
         { id: DEEP_ROOTS_CLIENT_ID, logo: "Deep Roots Capital" },
         { id: 542838, logo: "Bolder Cyber Partners" },
+        { id: 592842, logo: "PowerGRYD" },
       ]),
       [DEEP_ROOTS_CLIENT_ID],
     );

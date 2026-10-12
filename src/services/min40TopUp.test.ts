@@ -487,6 +487,72 @@ describe("Min40TopUpService (D205)", () => {
     assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
   });
 
+  it("D256: TechEvo floor is 30 and min40 returns surplus generics above it", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 30 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@techevolution.com`,
+      client_id: TECHEVO_CLIENT_ID,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: TECHEVO_CLIENT_ID, name: "TechEvo", logo: "TechEvolution" }],
+        campaigns: [{ id: 10, name: "TechEvo A", status: "ACTIVE", client_id: TECHEVO_CLIENT_ID }],
+        accounts: [
+          ...named,
+          {
+            id: 901,
+            from_email: "extra@getintroduced.info",
+            client_id: TECHEVO_CLIENT_ID,
+            signature: "Ada Pool\nTechEvolution",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+            campaign_ids: [10],
+          },
+        ],
+      },
+    });
+    assert.equal(result.assigned.length, 0, "TechEvo at 30 named must not take more generics");
+    assert.equal(result.returned.length, 1, "surplus above TechEvo floor 30 must return");
+    assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
+    assert.deepEqual(removed, [[10, [901]]]);
+  });
+
   it("D228: does not attach an off-week POD-B generic onto an A-week campaign", async () => {
     const attached: Array<[number, number[]]> = [];
     const state = new StateStore(stateFile());

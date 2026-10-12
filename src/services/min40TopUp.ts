@@ -46,6 +46,7 @@ import {
   accountIsPeelStaffable,
   hasHoldOrRetireTag,
 } from "../lib/clientStaffFloor.js";
+import { minFloorForClient } from "../lib/minFloorByClient.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
@@ -162,8 +163,10 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
  * generics stay assigned (client_id, POD tag, signature) and do not
  * link. Never retag named seats. Never retag a generic across PODs
  * (D230) — first assign of an untagged pool seat stamps that POD.
- * Never START/PAUSE. PowerGRYD uses its own seats; free-pool only via
- * the normal assign path (client 592842 + PG signature).
+ * Never START/PAUSE. D256 — fill to that client's min-floor
+ * (`MIN_FLOOR_BY_CLIENT`, default 40; TechEvo 30) and return
+ * surplus generics above it. PowerGRYD is a normal named
+ * client (not POC, not a no-generics special-case).
  * D254 — POC fills use the same one-client / on-week-POD lock:
  * refuse another client's seat and any seat whose locked POD is not
  * the on-week POD. Check the POD before linking, not after. Canary
@@ -333,7 +336,8 @@ export class Min40TopUpService {
         continue;
       }
 
-      const target = pocEngagement ? pocEngagementSeatTarget() : ON_WEEK_MIN_SENDERS;
+      const floor = minFloorForClient(clientId, this.config.minFloorByClient);
+      const target = pocEngagement ? pocEngagementSeatTarget() : floor;
       walked += 1;
       if (opts.signal?.aborted) {
         result.errors.push("aborted: stopped remaining campaign fills");
@@ -1006,7 +1010,7 @@ export class Min40TopUpService {
       const account = seat.account;
       const needed = espFillOrder(
         espCounts,
-        ON_WEEK_MIN_SENDERS,
+        input.target ?? minFloorForClient(input.clientId, this.config.minFloorByClient),
         Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
       );
       const slot = mailboxEspSlot(account);
@@ -1261,6 +1265,7 @@ export class Min40TopUpService {
       if (!clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)) {
         continue;
       }
+      const floor = minFloorForClient(clientId, this.config.minFloorByClient);
       const brand = input.brandByClientId.get(clientId) || String(clientId);
       const selected = new Set<string>();
       for (const pod of ["A", "B"] as const) {
@@ -1268,7 +1273,7 @@ export class Min40TopUpService {
         const assigned = synced.seats
           .filter((seat) => seat.assignedClientId === clientId && seat.assignedPod === pod)
           .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
-        let need = podInventoryNeed(named, assigned);
+        let need = podInventoryNeed(named, assigned, floor);
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
         let espN = 0;
         for (const seat of input.seats) {
@@ -1294,7 +1299,7 @@ export class Min40TopUpService {
           if (input.signal?.aborted) break;
           const platforms = espFillOrder(
             espCounts,
-            ON_WEEK_MIN_SENDERS,
+            floor,
             Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
           );
           const pool = await findReassignablePoolMailboxYielding(
@@ -1392,7 +1397,8 @@ export class Min40TopUpService {
   /**
    * D254 — every named client (including PowerGRYD) reports its
    * on-week POD shortfall. Zero on-week generics on a still-short
-   * POD is an alert, not a hands-off watch.
+   * POD is an alert, not a hands-off watch. Need uses that
+   * client's min-floor (D256).
    */
   private reportOnWeekPodShortfalls(input: {
     now: Date;
@@ -1416,7 +1422,8 @@ export class Min40TopUpService {
         (sum, seat) => sum + seatStaffableWeight(seat),
         0,
       );
-      const need = podInventoryNeed(named, assigned);
+      const floor = minFloorForClient(clientId, this.config.minFloorByClient);
+      const need = podInventoryNeed(named, assigned, floor);
       const client = input.clientsById.get(clientId);
       const clientName = clientDisplayName(client ?? { id: clientId });
       if (assigned < 1e-9 && need > 1e-9) {
@@ -1434,7 +1441,7 @@ export class Min40TopUpService {
         campaignId: first.id,
         name: `${clientName} on-week POD-${onWeek}`,
         shortBy: need,
-        floor: ON_WEEK_MIN_SENDERS,
+        floor,
         clientId,
         clientName,
       });

@@ -15547,3 +15547,84 @@ describe("owner intent — D255 Insight copy uses %signature%", () => {
     );
   });
 });
+
+describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", () => {
+  it("D256: no PowerGRYD never-generics rule; TechEvo min-floor 30; surplus above floor", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { isPocEngagementClient } = await import("../lib/pocClient.js");
+    const { minFloorForClient } = await import("../lib/minFloorByClient.js");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      isPocEngagementClient({
+        clientId: 592842,
+        hay: "PowerGRYD",
+        name: "PowerGRYD",
+      }),
+      false,
+      stop("PowerGRYD is not a POC engagement (D256).", "isPocEngagementClient treated 592842 as POC."),
+    );
+    assert.equal(
+      minFloorForClient(521881),
+      30,
+      stop("TechEvo floor is 30 (D256).", `minFloorForClient(521881) is ${minFloorForClient(521881)}.`),
+    );
+    assert.equal(
+      minFloorForClient(592842),
+      40,
+      stop("PowerGRYD floor stays 40 (D256).", `minFloorForClient(592842) is ${minFloorForClient(592842)}.`),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D256\*\*/,
+      stop("CANON is dated D256.", "CANON.md header is before D256."),
+    );
+    assert.doesNotMatch(
+      canon,
+      /min40 never assigns it generics/,
+      stop(
+        "CANON has no PowerGRYD never-generics rule (D256).",
+        "CANON.md still forbids PowerGRYD generics.",
+      ),
+    );
+    assert.match(
+      canon,
+      /MIN_FLOOR_BY_CLIENT/,
+      stop("CANON names MIN_FLOOR_BY_CLIENT (D256).", "CANON.md lost the per-client floor."),
+    );
+    assert.match(
+      decisions,
+      /## D256 — PowerGRYD is a named client; TechEvo floor 30/,
+      stop("The ledger records D256.", "DECISIONS.md has no D256."),
+    );
+    assert.match(
+      decisions,
+      /^\| D256 \|/m,
+      stop("The status index lists D256.", "DECISIONS.md index has no D256 row."),
+    );
+    assert.doesNotMatch(
+      min40,
+      /isPowerGrydClientId/,
+      stop(
+        "min40 does not special-case PowerGRYD assign (D256).",
+        "min40TopUp.ts still skips PowerGRYD generics.",
+      ),
+    );
+    assert.match(
+      min40,
+      /minFloorForClient/,
+      stop("min40 uses the per-client floor (D256).", "min40TopUp.ts lost minFloorForClient."),
+    );
+  });
+});

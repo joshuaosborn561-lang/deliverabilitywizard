@@ -186,6 +186,7 @@ export class PowerGrydWatchService {
     const previous = this.state.getPowerGrydSeatCount();
     let alerted = false;
     const todayYmd = chicagoWallClock(now, this.config.canonOpsTimezone).ymd;
+    // D254 — an empty on-week POD is not a hands-off drop.
     if (hasPodSplit && onWeekGenerics === 0) {
       const line = `PowerGRYD on-week POD-${onWeek} has 0 generics. This is not a hands-off drop — min40 must include that shortfall.`;
       console.warn(`[powergryd-watch] ${line}`);

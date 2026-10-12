@@ -371,6 +371,17 @@ describe("D196 on-week staff floor", () => {
       formatStaffFloorDetail(41, floor, 94),
       "staffable 41/40 (on-week staffable 40)",
     );
+    assert.equal(
+      staffFloorForCampaign(
+        { client_id: 521881, name: "TechEvo A" },
+        floors.eligible,
+        "TechEvo",
+        new Map([["id:521881", 20]]),
+        { minFloorByClient: { 521881: 30 } },
+      ),
+      30,
+      "D256: TechEvo page floor is 30",
+    );
   });
 
   it("A week floors at the larger ESP-odd pod (48), not half (47)", () => {

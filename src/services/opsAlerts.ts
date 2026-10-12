@@ -197,7 +197,6 @@ const FINDING_LABEL: Record<string, string> = {
   cross_client_membership: "generic or seat crossed clients",
   under_warmed: "inboxes still warming",
   missing_signature_tag: "signature hole",
-  missing_insight_close: "signature hole",
   mailbox_sig: "signature hole",
   insight_shared_staff: "Insight seat also on SalesGlider",
   mailbox_gap: "send gap too tight",

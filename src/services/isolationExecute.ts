@@ -23,11 +23,7 @@ import {
   retireAlreadySettled,
   signatureCampaignIdsOf,
 } from "../lib/isolationActions.js";
-import {
-  appendSignatureTag,
-  ensureInsightCloseOnSequences,
-  sequenceBodiesContainInsight,
-} from "../lib/signatureQa.js";
+import { appendSignatureTag } from "../lib/signatureQa.js";
 import {
   espMixFromAccountTypes,
   platformsMatchingEspMix,
@@ -592,22 +588,6 @@ export class IsolationExecuteService {
       const label = names.get(campaignId) ?? `#${campaignId}`;
       try {
         const sequences = await this.smartlead.getCampaignSequences(campaignId);
-        if (sequenceBodiesContainInsight(sequences)) {
-          const { sequences: next, changed } = ensureInsightCloseOnSequences(
-            sequences ?? [],
-          );
-          if (changed.length) {
-            await this.smartlead.updateCampaignSequences(campaignId, next);
-            done.push(
-              `*${label}*: wrote Josh Osborn / Insight close in the body (D178)`,
-            );
-          } else {
-            done.push(
-              `*${label}* already had Josh Osborn / Insight in the copy (D178)`,
-            );
-          }
-          continue;
-        }
         const { sequences: next, changed } = appendSignatureTag(sequences ?? []);
         if (!changed.length) {
           done.push(`*${label}* already had the tag everywhere`);

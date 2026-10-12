@@ -283,6 +283,18 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
     assert.equal(insightMailboxSignatureAllowed("   "), true);
     assert.equal(insightMailboxSignatureAllowed("Josh Osborn\nInsight"), true);
     assert.equal(
+      insightMailboxSignatureAllowed(
+        "Josh Osborn\nStrategic Account Executive\nInsight",
+      ),
+      true,
+    );
+    assert.equal(
+      insightMailboxSignatureAllowed(
+        "Josh Osborn<br>Strategic Account Executive<br>Insight",
+      ),
+      true,
+    );
+    assert.equal(
       insightMailboxSignatureAllowed("<div>Josh Osborn</div><div>Insight</div>"),
       true,
     );

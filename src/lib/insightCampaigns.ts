@@ -38,6 +38,9 @@ const INSIGHT_ID_SET = new Set(INSIGHT_CAMPAIGN_IDS);
 /** Empty mailbox signature — Smartlead then has nothing to append. */
 export const INSIGHT_MAILBOX_SIGNATURE_BLANK = "";
 
+/** Title line on the Insight mailbox signature (D255). */
+export const INSIGHT_MAILBOX_TITLE = "Strategic Account Executive";
+
 const INSIGHT_SECOND_BRANDS = ["SalesGlider", "SalesGlider Growth"];
 
 export function isInsightCampaignId(id: number | null | undefined): boolean {
@@ -85,9 +88,9 @@ export function campaignIsActive(
 
 /**
  * Named Insight campaign, or (when sequences are in hand) any campaign
- * whose copy contains the D178 `Insight` needle. Name-only does not
- * count — "Insight Pipeline A" without Insight in the body is still
- * a SalesGlider campaign (D178).
+ * whose copy contains the capital-I `Insight` needle. Name-only does
+ * not count — "Insight Pipeline A" without Insight in the body is
+ * still a SalesGlider campaign (D192).
  */
 export function isInsightCampaign(
   campaign: { id?: number | null },
@@ -203,12 +206,23 @@ export function canAttachMailboxToCampaign(
   return true;
 }
 
-/** Empty, whitespace, or the Josh Osborn / Insight two-line close. */
+/**
+ * Empty, whitespace, Josh Osborn / Insight, or the D255 three-line
+ * mailbox sign-off (Josh Osborn / Strategic Account Executive / Insight).
+ */
 export function insightMailboxSignatureAllowed(
   signature?: string | null,
 ): boolean {
   const lines = extractSignatureLines(signature);
   if (lines.length === 0) return true;
+  if (
+    lines.length === 3 &&
+    /^josh\s+osborn$/i.test(lines[0]!) &&
+    lines[1] === INSIGHT_MAILBOX_TITLE &&
+    lines[2] === INSIGHT_CLOSE_BRAND
+  ) {
+    return true;
+  }
   if (
     lines.length === 2 &&
     /^josh\s+osborn$/i.test(lines[0]!) &&

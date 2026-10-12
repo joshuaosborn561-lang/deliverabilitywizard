@@ -5,16 +5,10 @@ import { findForeignBrand } from "./clientBrand.js";
 import {
   appendSignatureTag,
   bodyContainsInsight,
-  bodyHasInsightClose,
-  ensureInsightClose,
-  ensureInsightCloseOnSequences,
   missingSignatureTag,
   sequenceBodiesContainInsight,
   sequencesForWrite,
-  sequencesNeedInsightClose,
   signatureHay,
-  stripSignaturePlaceholders,
-  stripSignatureTags,
 } from "./signatureQa.js";
 
 describe("signature QA (D74)", () => {
@@ -66,7 +60,7 @@ describe("signature QA (D74)", () => {
   });
 });
 
-describe("Insight-in-copy auto-signature exemption (D177 / D178)", () => {
+describe("Insight-in-copy classification (D192) and D255 %signature%", () => {
   it("matches the exact capital-I substring Insight in the body", () => {
     assert.equal(bodyContainsInsight("<div>Welcome to Insight</div>"), true);
     assert.equal(bodyContainsInsight("<div>insight lowercase</div>"), false);
@@ -101,67 +95,24 @@ describe("Insight-in-copy auto-signature exemption (D177 / D178)", () => {
     );
   });
 
-  it("strips %signature% and {{Signature}} from Insight copy", () => {
-    assert.equal(
-      stripSignaturePlaceholders("<div>Welcome to Insight</div><br><br>%signature%"),
-      "<div>Welcome to Insight</div>",
-    );
-    assert.equal(
-      stripSignaturePlaceholders("<div>Welcome to Insight</div><div>%signature%</div>"),
-      "<div>Welcome to Insight</div>",
-    );
-    assert.equal(
-      stripSignaturePlaceholders("<div>Welcome to Insight</div><div>{{Signature}}</div>"),
-      "<div>Welcome to Insight</div>",
-    );
-    const { sequences, changed } = stripSignatureTags([
-      {
-        seq_number: 1,
-        email_body: "<div>Welcome to Insight</div><br><br>%signature%",
-      },
+  it("D255: Insight copy gets %signature% and a leftover tag is not stripped", () => {
+    const missing = "<div>Welcome to Insight</div>";
+    const { sequences, changed } = appendSignatureTag([
+      { seq_number: 1, email_body: missing },
     ]);
     assert.deepEqual(changed, ["step 1"]);
-    assert.equal(sequences[0]!.email_body, "<div>Welcome to Insight</div>");
-    assert.equal(
-      sequences[0]!.email_body!.includes("%signature%"),
-      false,
-    );
-  });
+    assert.equal(sequences[0]!.email_body, `${missing}<br><br>%signature%`);
+    assert.equal(sequences[0]!.email_body!.includes("Josh Osborn"), false);
 
-  it("D178: writes Josh Osborn / Insight before P.S. and does not duplicate", () => {
-    const withPs = ensureInsightClose(
-      "<div>A note from Insight this week</div><br><br>P.S. Tickets are yours either way.",
-    );
-    assert.match(withPs, /Josh Osborn<br>Insight/);
-    assert.ok(withPs.indexOf("Josh Osborn") < withPs.indexOf("P.S."));
-    assert.equal(withPs.includes("%signature%"), false);
-    assert.equal(bodyHasInsightClose(withPs), true);
-
-    const already = "<div>A note from Insight</div><br><br>Josh Osborn<br>Insight<br><br>P.S. Later.";
-    assert.equal(ensureInsightClose(already), already);
-
-    const stripped = ensureInsightClose(
-      "<div>A note from Insight</div><br><br>Josh Osborn<br>Insight<br><br>%signature%",
-    );
-    assert.equal(stripped.includes("%signature%"), false);
-    assert.equal(bodyHasInsightClose(stripped), true);
-    assert.match(stripped, /Josh Osborn<br>Insight/);
-  });
-
-  it("D178: sequence helper writes the close and strips placeholders", () => {
-    const { sequences, changed } = ensureInsightCloseOnSequences([
-      {
-        seq_number: 1,
-        email_body:
-          "<div>Welcome to Insight</div><br><br>%signature%<br><br>P.S. Still on.",
-      },
+    const already =
+      "<div>Welcome to Insight</div><br><br>%signature%<br><br>P.S. Still on.";
+    const kept = appendSignatureTag([
+      { seq_number: 1, email_body: already },
     ]);
-    assert.deepEqual(changed, ["step 1"]);
-    const body = sequences[0]!.email_body ?? "";
-    assert.equal(body.includes("%signature%"), false);
-    assert.match(body, /Josh Osborn<br>Insight/);
-    assert.ok(body.indexOf("Josh Osborn") < body.indexOf("P.S."));
-    assert.equal(sequencesNeedInsightClose(sequences), false);
+    assert.deepEqual(kept.changed, []);
+    assert.equal(kept.sequences[0]!.email_body, already);
+    assert.equal(kept.sequences[0]!.email_body!.includes("%signature%"), true);
+    assert.equal(kept.sequences[0]!.email_body!.includes("Josh Osborn"), false);
   });
 });
 

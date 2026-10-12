@@ -1078,10 +1078,10 @@ describe("D138 — campaign-level min gap is converged, not assumed", () => {
   });
 });
 
-describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => {
+describe("D255 Insight-in-copy gets %signature% like every other client", () => {
   const salesGlider = { id: 345263, name: "SalesGlider", logo: "SalesGlider" };
 
-  it("writes Josh Osborn / Insight and does not append %signature%", async () => {
+  it("appends %signature% and does not write Josh Osborn / Insight into the body", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const wrote: string[] = [];
@@ -1111,21 +1111,15 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     );
 
     const result = await service.run({ mode: "first" });
-    assert.equal(wrote.length, 1, "Insight-in-copy must get the in-body close");
-    assert.equal(wrote[0]!.includes("%signature%"), false);
-    assert.match(wrote[0]!, /Josh Osborn<br>Insight/);
+    assert.equal(wrote.length, 1, "Insight-in-copy must get %signature%");
+    assert.match(wrote[0]!, /%signature%/);
+    assert.equal(wrote[0]!.includes("Josh Osborn"), false);
     assert.equal(
       (result.findings[0]?.findings ?? []).some((finding) =>
         finding.kind === "missing_signature_tag",
       ),
       false,
-    );
-    assert.equal(
-      (result.findings[0]?.findings ?? []).some((finding) =>
-        finding.kind === "missing_insight_close",
-      ),
-      false,
-      "same pass clears the Insight close finding",
+      "same pass clears the missing %signature% finding",
     );
     assert.equal(
       (state.getCampaignCheck(3921647)?.findings ?? []).some((finding) =>
@@ -1135,7 +1129,7 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     );
   });
 
-  it("strips %signature% and inserts the close before P.S.", async () => {
+  it("does not strip an existing %signature% from Insight copy", async () => {
     const state = new StateStore(stateFile());
     await state.load();
     const wrote: string[] = [];
@@ -1169,10 +1163,7 @@ describe("D178 Insight-in-copy writes Josh Osborn / Insight in the body", () => 
     );
 
     await service.run({ mode: "first" });
-    assert.equal(wrote.length, 1, "leftover Insight tag is replaced with the close");
-    assert.equal(wrote[0]!.includes("%signature%"), false);
-    assert.match(wrote[0]!, /Josh Osborn<br>Insight/);
-    assert.ok(wrote[0]!.indexOf("Josh Osborn") < wrote[0]!.indexOf("P.S."));
+    assert.equal(wrote.length, 0, "Insight copy that already has %signature% is left alone");
   });
 
   it("D184: blanks an exclusive Insight mailbox that still carries SalesGlider", async () => {

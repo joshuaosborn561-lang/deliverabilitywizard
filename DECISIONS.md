@@ -259,6 +259,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D251 | Live — min40 fill/abort/ghost covered by D252 | campaign-check-first indexes members, yields, honors abort, and caps SmartDelivery enrich at 90s |
 | D252 | Live | Residual :30 stall after D250: short-campaign pool pick must yield and skip already-rejected seats; Slack abort after the shortfall cannot fail the stage; lastOk stamps when the walk returns; ghost pool seats drop; stringify joins in chunks |
 | D253 | Live | Production image builds pull Node 22 bookworm-slim from `mirror.gcr.io/library/node`, not anonymous Docker Hub; runtime stays the official image; D247–D252 and 40/40 unchanged |
+| D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 
 ---
@@ -8759,6 +8760,55 @@ change staffing, holds, spend, or D247–D252.
 **Guards.** Dockerfile `FROM` is the mirror tag and must not
 resolve `docker.io/library/node`; CANON dated D253; D247–D252
 and 40/40 stay in the ledger.
+
+---
+
+## D254 — POC fill keeps the one-client / on-week-POD lock
+
+**Date.** 2026-10-12.
+
+**Decision.** min40 POC fills (Deep Roots and any other
+name-list engagement) use the same one-client / on-week-POD
+lock as a named-client fill. Refuse any seat owned by
+another client. Refuse any seat whose locked POD is not
+the on-week POD. Check the POD **before** linking, not
+after. The summary includes each named client's on-week
+POD shortfall — PowerGRYD 592842 included, even when that
+client still needs an Allow-generics tap. Alert when a
+client's on-week POD has zero generics and is still short
+of 40. powergryd-watch still never START / PAUSE / restaff,
+but an empty on-week POD is not a hands-off drop. The
+static named A/B split stays. Canary seats and
+client-named-domain seats are never generics.
+
+**Why.** On Monday 2026-10-12 Deep Roots (POC) grabbed 12
+PowerGRYD POD-A generics that had been rested for the week
+and rewrote their `client_id` to Deep Roots. `canTake`
+skipped `genericMayLinkToCampaigns` and `genericMayTakePod`
+when `pocEngagement` was set, so the POD lock ran after
+the link (or not at all). PowerGRYD's on-week POD shortfall
+never entered the min40 summary because it is not
+auto-allow, and the watch stayed hands-off while a whole
+POD sat empty.
+
+**Rejected.** Keep the POC skip so engagements can raid
+any rested generic. Retag a locked generic onto the
+on-week POD to make the steal legal. Use canary or
+client-named-domain seats as POC supply. Recompute the
+named A/B split. Auto-allow PowerGRYD without an Allow
+tap. Let powergryd-watch START / PAUSE / restaff.
+
+**Supersedes / amends.** Amends D230 / D236 / D237: the
+POC 60-seat no-POD fill no longer skips the one-client /
+on-week-POD lock; PowerGRYD remains a full client whose
+on-week shortfall is visible. Does not change the static
+named A/B split, canary lock, or Allow-generics for
+non-auto-allow clients.
+
+**Guards.** POC cannot take another client's off-week
+generic; CANON dated D254; min40 `genericMayFillNow` runs
+for POC too; PowerGRYD on-week shortfall is in the min40
+summary; empty on-week POD is not a hands-off watch drop.
 
 ---
 

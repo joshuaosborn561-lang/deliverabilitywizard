@@ -61,6 +61,50 @@ describe("PowerGrydWatchService (D205)", () => {
     assert.equal(slack.length, 1);
   });
 
+  it("D254: empty on-week POD is not a hands-off drop", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const slack: string[] = [];
+    const named = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      from_email: `pg-${i}@powergryd.com`,
+      client_id: 592842,
+      tags: [{ tag_name: "POD-B" }],
+      campaign_ids: [10],
+    }));
+    const inventory = {
+      fetchedAt: Date.now(),
+      clients: [{ id: 592842, name: "PowerGRYD", logo: "PowerGRYD" }],
+      campaigns: [{ id: 10, name: "PowerGRYD live", status: "ACTIVE", client_id: 592842 }],
+      accounts: [
+        ...named,
+        {
+          id: 90,
+          from_email: "resting@getintroduced.info",
+          client_id: 592842,
+          tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+          campaign_ids: [],
+        },
+      ],
+    };
+    const service = new PowerGrydWatchService(
+      loadConfig({ DRY_RUN: "false" }),
+      { send: async (text: string) => { slack.push(text); } } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      inventory,
+      now: new Date("2026-10-12T15:00:00.000Z"),
+    });
+    assert.equal(result.onWeekPod, "B");
+    assert.equal(result.onWeekGenerics, 0);
+    assert.equal(result.alerted, true);
+    assert.equal(slack.length, 1);
+    assert.match(slack[0]!, /on-week POD-B has 0 generics/);
+    assert.doesNotMatch(slack[0]!, /Hands-off/);
+  });
+
   it("does not call Smartlead writes", async () => {
     const src = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("./powerGrydWatch.ts", import.meta.url), "utf8"),

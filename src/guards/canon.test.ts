@@ -15236,6 +15236,144 @@ describe("owner intent — D253 production image must not pull Node from Docker 
   });
 });
 
+describe("owner intent — D254 POC fill keeps the one-client / on-week-POD lock", () => {
+  it("D254: POC fills refuse other-client off-week seats; PowerGRYD empty POD is not hands-off", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { genericEligibleForClientPod } = await import("../lib/genericAssign.js");
+    const { genericMayLinkToCampaigns } = await import("../lib/podInventory.js");
+    const { isPoolGenericSeat } = await import("../lib/clientInbox.js");
+    const { isClientNamedDomain } = await import("../lib/clientNamedDomain.js");
+    const { isLockedCanarySeat } = await import("../lib/canaryLock.js");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 597783,
+        targetPod: "B",
+        mailboxClientId: 592842,
+        assignedClientId: 592842,
+        tags: [{ tag_name: "POD-A" }],
+        assignedPod: "A",
+      }),
+      false,
+      stop(
+        "Another client's locked POD is not POC supply (D254).",
+        "genericEligibleForClientPod allowed a PowerGRYD POD-A seat onto Deep Roots.",
+      ),
+    );
+    assert.equal(
+      genericMayLinkToCampaigns({ tags: [{ tag_name: "POD-A" }] }, new Date("2026-10-12T15:00:00Z")),
+      false,
+      stop(
+        "Off-week POD-A must not link on a B week (D254).",
+        "genericMayLinkToCampaigns allowed a rested POD-A seat.",
+      ),
+    );
+    assert.equal(
+      isClientNamedDomain("powergrydnow.info"),
+      true,
+      stop("PowerGRYD hosts stay named (D254).", "isClientNamedDomain missed powergrydnow.info."),
+    );
+    assert.equal(
+      isPoolGenericSeat(
+        { tags: [{ tag_name: "GENERIC" }] },
+        "ada@powergrydnow.info",
+        { extraGenericMailboxes: [], extraGenericDomains: [], prewarmedDomains: [] },
+        { getPoolMailbox: () => undefined },
+      ),
+      false,
+      stop(
+        "Client-named-domain seats are never generics (D254).",
+        "isPoolGenericSeat captured a PowerGRYD named host.",
+      ),
+    );
+    assert.equal(
+      isLockedCanarySeat({ signature: "Ada Lovelace\nCanary" }, "ada@newcanary.test"),
+      true,
+      stop("Canary seats stay locked (D254).", "isLockedCanarySeat missed the signature backstop."),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const watch = await readFile(
+      new URL("../services/powerGrydWatch.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D(25[4-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D254+.", "CANON.md header is before D254."),
+    );
+    assert.match(
+      canon,
+      /POC fills still refuse another client's seat/,
+      stop("CANON names the D254 POC lock.", "CANON.md lost the POC other-client / POD lock."),
+    );
+    assert.match(
+      canon,
+      /does not stay hands-off when a whole POD is empty/,
+      stop("CANON names the D254 empty-POD watch.", "CANON.md lost the empty-POD watch rule."),
+    );
+    assert.match(
+      canon,
+      /static/,
+      stop("Named A/B split stays static (D254).", "CANON.md lost the static named split."),
+    );
+    assert.match(
+      decisions,
+      /## D254 — POC fill keeps the one-client \/ on-week-POD lock/,
+      stop("The ledger records D254.", "DECISIONS.md has no D254."),
+    );
+    assert.match(
+      decisions,
+      /^\| D254 \|/m,
+      stop("The status index lists D254.", "DECISIONS.md index has no D254 row."),
+    );
+    assert.match(
+      min40,
+      /genericMayFillNow/,
+      stop("min40 checks POD before linking (D254).", "min40TopUp.ts lost genericMayFillNow."),
+    );
+    assert.doesNotMatch(
+      min40,
+      /!input\.pocEngagement &&\s*\n\s*!genericMayLinkToCampaigns/,
+      stop(
+        "POC fills no longer skip the on-week POD check (D254).",
+        "min40TopUp.ts still skips genericMayLinkToCampaigns for POC.",
+      ),
+    );
+    assert.match(
+      min40,
+      /reportOnWeekPodShortfalls/,
+      stop(
+        "min40 reports on-week POD shortfall including PowerGRYD (D254).",
+        "min40TopUp.ts lost reportOnWeekPodShortfalls.",
+      ),
+    );
+    assert.match(
+      watch,
+      /This is not a hands-off drop/,
+      stop(
+        "PowerGRYD watch pages an empty on-week POD (D254).",
+        "powerGrydWatch.ts still treats an empty POD as hands-off.",
+      ),
+    );
+    assert.match(
+      watch,
+      /Never mutate memberships or status/,
+      stop("Watch stays alert-only (D254).", "powerGrydWatch.ts lost the no-mutate contract."),
+    );
+  });
+});
+
 describe("owner intent — D255 Insight copy uses %signature%", () => {
   it("D255: Insight sequences get %signature%; D178 close writer is gone", async () => {
     const { readFile } = await import("node:fs/promises");
@@ -15370,8 +15508,8 @@ describe("owner intent — D255 Insight copy uses %signature%", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D255\*\*/,
-      stop("CANON is dated D255.", "CANON.md header is before D255."),
+      /Canon as of \*\*D(25[5-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D255+.", "CANON.md header is before D255."),
     );
     assert.match(
       canon,

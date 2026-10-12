@@ -15,6 +15,7 @@ import { senderIsAttachBlocked } from "./attachBlock.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
 import { assignClientCohorts, onWeekCohort } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
+import { displayStaffedSenders } from "./displaySenderCount.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { POC_ENGAGEMENT_SEAT_TARGET } from "./pocClient.js";
 import { activeHoldUntilDate, tagNames } from "../services/warmupGate.js";
@@ -448,5 +449,5 @@ export function formatStaffFloorDetail(
         : floor === half
           ? "half this client's named inboxes (40/POD)"
           : `on-week staffable ${floor}`;
-  return `staffable ${serving}/${floor} (${label})`;
+  return `staffable ${displayStaffedSenders(serving)}/${floor} (${label})`;
 }

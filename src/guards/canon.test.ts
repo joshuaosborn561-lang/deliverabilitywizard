@@ -15587,8 +15587,8 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D256\*\*/,
-      stop("CANON is dated D256.", "CANON.md header is before D256."),
+      /Canon as of \*\*D(256|25[7-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D256+.", "CANON.md header is before D256."),
     );
     assert.doesNotMatch(
       canon,
@@ -15625,6 +15625,78 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
       min40,
       /minFloorForClient/,
       stop("min40 uses the per-client floor (D256).", "min40TopUp.ts lost minFloorForClient."),
+    );
+  });
+});
+
+describe("owner intent — D259 whole-sender Slack / human display", () => {
+  it("D259: shortfall ceils after 1e-6 scrub; assigned/staffable floor", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      displayShortfallSenders,
+      displayStaffedSenders,
+    } = await import("../lib/displaySenderCount.js");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      displayShortfallSenders(233.99999999999991),
+      234,
+      stop("EMCOR float-noise shortfall ceils to 234 (D259).", ""),
+    );
+    assert.equal(
+      displayShortfallSenders(51.5),
+      52,
+      stop("Insight 51.5 shortfall ceils to 52 (D259).", ""),
+    );
+    assert.equal(
+      displayStaffedSenders(21.500000000000014),
+      21,
+      stop("Assigned 21.5 floors to 21 (D259).", ""),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const slack = await readFile(
+      new URL("../lib/shortStaffedSlack.ts", import.meta.url),
+      "utf8",
+    );
+    const detail = await readFile(
+      new URL("../lib/canonStaffable.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D259\*\*/,
+      stop("CANON is dated D259.", "CANON.md header is before D259."),
+    );
+    assert.match(
+      canon,
+      /whole-sender display/,
+      stop("CANON names whole-sender display (D259).", "CANON.md lost D259."),
+    );
+    assert.match(
+      decisions,
+      /## D259 — Slack \/ human sender counts are whole senders/,
+      stop("The ledger records D259.", "DECISIONS.md has no D259."),
+    );
+    assert.match(
+      decisions,
+      /^\| D259 \|/m,
+      stop("The status index lists D259.", "DECISIONS.md index has no D259 row."),
+    );
+    assert.match(
+      slack,
+      /displayShortfallSenders/,
+      stop("Short-staffed Slack uses the D259 helper.", "shortStaffedSlack.ts lost displayShortfallSenders."),
+    );
+    assert.match(
+      detail,
+      /displayStaffedSenders/,
+      stop("CANON staffable detail floors (D259).", "canonStaffable.ts lost displayStaffedSenders."),
     );
   });
 });

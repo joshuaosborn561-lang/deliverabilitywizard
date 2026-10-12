@@ -262,6 +262,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 | D256 | Live | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 
 ---
 
@@ -8903,5 +8904,43 @@ min40 does not special-case `isPowerGrydClientId`;
 `minFloorForClient(521881) === 30`; surplus returns
 above that floor; empty-POD Slack stays; CANON dated
 D256.
+
+---
+
+## D259 — Slack / human sender counts are whole senders
+
+**Date.** 2026-10-12.
+
+**Decision.** Every Slack- or human-facing sender count
+shows a whole sender. The shortfall / short / need in
+min40 summaries, the Needs-you / short-staffed list, and
+CANON lines (e.g. "EMCOR is short 233.99999999999991",
+"Insight is short 51.5", "assigned 21.500000000000014")
+round after a 1e-6 float scrub: shortfalls `Math.ceil`,
+assigned / staffable / named `Math.floor`. Internal
+staffing math stays fractional — Azure / Entra seats
+still weigh 0.1 toward a POD's 40.
+
+**Why.** Azure 0.1 weights plus IEEE float noise printed
+fractional and near-integer junk on Slack and CANON copy.
+Humans read senders, not tenths. Ceil the hole so a 0.1
+or 51.5 short still asks for a whole seat; floor what is
+already on so 21.5 assigned does not read as 22.
+
+**Rejected.** Rounding the live staffable / need math
+itself (would hide Azure 0.1). Showing one decimal.
+`toFixed` without the 1e-6 scrub (leaves 234.0 or
+re-pages on 233.999…).
+
+**Supersedes / amends.** Amends D232 display only. Does
+not change weighted sums, min40 fill, surplus return, or
+the 40 / per-client floor. D257 (#305) and D258 (#306)
+are open on other branches and stay their own calls.
+
+**Guards.** `displayShortfallSenders(233.99999999999991)
+=== 234`; `displayShortfallSenders(51.5) === 52`;
+`displayStaffedSenders(21.500000000000014) === 21`;
+short-staffed Slack and `formatCanonStaffFloorDetail`
+use the helpers; CANON dated D259.
 
 ---

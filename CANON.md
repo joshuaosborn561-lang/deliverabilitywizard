@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D256** (2026-10-12). One page of current truth. When a new
+Canon as of **D259** (2026-10-12). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -163,6 +163,11 @@ Caps ramp manually (35 on Oct 12).
   swap return trigger, and the 24h TERRL substitute (only link
   a sub when weighted on-week staffable is under 40; prefer a
   non-Azure generic).
+  **D259 — whole-sender display:** Slack, the Needs-you /
+  short-staffed list, min40 summaries, and CANON finding copy
+  show whole senders. Shortfall / short / need: `Math.ceil`
+  after rounding to 1e-6. Assigned / staffable / named:
+  `Math.floor`. Internal math stays fractional (Azure 0.1).
   **D233 — Azure ESP slot:** Azure may only fill or replace
   Azure or Microsoft (M365/Outlook) slots, never Google slots,
   so the POD's ESP mix holds. When a Google seat leaves, only a Google seat replaces it. Same rule in min40, the 24h TERRL sub, named-warm swap, and pool assignment.
@@ -844,7 +849,7 @@ Short-staffed, stage-overdue, CANON-miss, bounce burst, canary
 registered, hold paused, copy-check no-fix, placement, and lead-expired
 posts go to `DELIVERABILITY_LOG_CHANNEL` (fallback: one daily thread in
 `#deliverability`). Short-staffed posts only on change, one line per
-client. Canary-registered posts once per fleet change, not every pass
+client, with whole-sender counts (D259). Canary-registered posts once per fleet change, not every pass
 or boot. The daily log thread, the canary-adopt announcement, and the
 pending-button "Still waiting" nudge are idempotent across restarts —
 one thread per CT day, the adopt line once, the nudge at most once per

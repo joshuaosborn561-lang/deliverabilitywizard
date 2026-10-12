@@ -36,6 +36,10 @@ import {
   deliverabilityChannelId,
   type DlvCardKind,
 } from "../lib/deliverabilitySlack.js";
+import {
+  displayShortfallSenders,
+  displayStaffedSenders,
+} from "../lib/displaySenderCount.js";
 
 export interface SlackCredentials {
   webhookUrl?: string;
@@ -550,7 +554,7 @@ export class SlackClient {
           .slice(0, 10)
           .map(
             (s) =>
-              `• ${s.name} — ${s.staffable} sending, ${s.shortBy} more needed (${s.status})`,
+              `• ${s.name} — ${displayStaffedSenders(s.staffable)} sending, ${displayShortfallSenders(s.shortBy)} more needed (${s.status})`,
           ),
       );
       if (shorts.length > 10) lines.push(`• …and ${shorts.length - 10} more`);

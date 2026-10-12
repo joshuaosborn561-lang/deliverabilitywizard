@@ -1,5 +1,6 @@
-import { apiRequest, sleep } from "../lib/http.js";
+import { apiRequest, sleep, type RequestOptions } from "../lib/http.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
+import { SmartleadLimiter } from "../lib/smartleadLimiter.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
 import { sequencesForWrite } from "../lib/signatureQa.js";
 import type {
@@ -49,8 +50,31 @@ export interface SmartleadClientRecord {
 export class SmartleadClient {
   private mutationQueue: MutationQueue | null = null;
   private isolationAccountIds = new Set<number>();
+  private readonly limiter: SmartleadLimiter;
 
-  constructor(private readonly apiKey: string) {}
+  constructor(
+    private readonly apiKey: string,
+    opts: { limiter?: SmartleadLimiter } = {},
+  ) {
+    this.limiter = opts.limiter ?? new SmartleadLimiter();
+  }
+
+  /** D257 — every Smartlead HTTP call (read or write) takes a limiter slot. */
+  private request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+    return this.limiter.schedule(() =>
+      this.request<T>(path, {
+        ...options,
+        onRateLimit: (retryAfterMs) => {
+          this.limiter.noteRateLimit(retryAfterMs);
+          options.onRateLimit?.(retryAfterMs);
+        },
+      }),
+    );
+  }
+
+  limiterSnapshot(): ReturnType<SmartleadLimiter["snapshot"]> {
+    return this.limiter.snapshot();
+  }
 
   /** D48 — isolation-domain mailbox IDs may never join a campaign. */
   setIsolationDenylist(accountIds: number[]): void {
@@ -78,7 +102,7 @@ export class SmartleadClient {
 
   listCampaigns(clientId?: number): Promise<SmartleadCampaign[]> {
     return this.mutate(() =>
-      apiRequest<SmartleadCampaign[]>(BASE_URL, this.apiKey, "campaigns/", {
+      this.request<SmartleadCampaign[]>("campaigns/", {
         query: clientId === undefined ? undefined : { client_id: clientId },
       }),
     );
@@ -114,10 +138,7 @@ export class SmartleadClient {
     // full_data across a large fleet regularly exceeds the default 60s HTTP
     // budget and used to surface as opaque "This operation was aborted".
     // Give the analytics scrape three minutes and one retry.
-    return apiRequest<unknown>(
-      BASE_URL,
-      this.apiKey,
-      "analytics/mailbox/name-wise-health-metrics",
+    return this.request<unknown>("analytics/mailbox/name-wise-health-metrics",
       {
         query: {
           start_date: startDate,
@@ -132,23 +153,17 @@ export class SmartleadClient {
 
   listClients(): Promise<SmartleadClientRecord[]> {
     return this.mutate(() =>
-      apiRequest<SmartleadClientRecord[]>(BASE_URL, this.apiKey, "client/"),
+      this.request<SmartleadClientRecord[]>("client/"),
     );
   }
 
   getCampaign(campaignId: number): Promise<SmartleadCampaign> {
-    return apiRequest<SmartleadCampaign>(
-      BASE_URL,
-      this.apiKey,
-      `campaigns/${campaignId}`,
+    return this.request<SmartleadCampaign>(`campaigns/${campaignId}`,
     );
   }
 
   getCampaignEmailAccounts(campaignId: number): Promise<SmartleadEmailAccount[]> {
-    return apiRequest<SmartleadEmailAccount[]>(
-      BASE_URL,
-      this.apiKey,
-      `campaigns/${campaignId}/email-accounts`,
+    return this.request<SmartleadEmailAccount[]>(`campaigns/${campaignId}/email-accounts`,
     );
   }
 
@@ -156,10 +171,7 @@ export class SmartleadClient {
     emailAccountId: number,
     options: { fetchCampaigns?: boolean } = {},
   ): Promise<SmartleadAccountWithCampaigns> {
-    return apiRequest<SmartleadAccountWithCampaigns>(
-      BASE_URL,
-      this.apiKey,
-      `email-accounts/${emailAccountId}`,
+    return this.request<SmartleadAccountWithCampaigns>(`email-accounts/${emailAccountId}`,
       {
         query: options.fetchCampaigns ? { fetch_campaigns: true } : undefined,
       },
@@ -178,19 +190,13 @@ export class SmartleadClient {
     startDate: string,
     endDate: string,
   ): Promise<SmartleadCampaignAnalytics> {
-    return apiRequest<SmartleadCampaignAnalytics>(
-      BASE_URL,
-      this.apiKey,
-      `campaigns/${campaignId}/analytics-by-date`,
+    return this.request<SmartleadCampaignAnalytics>(`campaigns/${campaignId}/analytics-by-date`,
       { query: { start_date: startDate, end_date: endDate } },
     );
   }
 
   getCampaignSequences(campaignId: number): Promise<SmartleadSequence[]> {
-    return apiRequest<SmartleadSequence[]>(
-      BASE_URL,
-      this.apiKey,
-      `campaigns/${campaignId}/sequences`,
+    return this.request<SmartleadSequence[]>(`campaigns/${campaignId}/sequences`,
     );
   }
 
@@ -203,7 +209,7 @@ export class SmartleadClient {
     sequences: SmartleadSequence[],
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/sequences`, {
+      this.request(`campaigns/${campaignId}/sequences`, {
         method: "POST",
         body: { sequences: sequencesForWrite(sequences) },
       }),
@@ -223,10 +229,7 @@ export class SmartleadClient {
     let offset = 0;
     const limit = EMAIL_ACCOUNTS_PAGE_LIMIT;
     for (let pageIndex = 0; pageIndex < EMAIL_ACCOUNTS_MAX_PAGES; pageIndex += 1) {
-      const page = await apiRequest<SmartleadAccountWithCampaigns[]>(
-        BASE_URL,
-        this.apiKey,
-        "email-accounts/",
+      const page = await this.request<SmartleadAccountWithCampaigns[]>("email-accounts/",
         {
           query: {
             offset,
@@ -255,7 +258,7 @@ export class SmartleadClient {
     emailAccountIds: number[],
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
+      this.request(`campaigns/${campaignId}/email-accounts`, {
         method: "DELETE",
         body: { email_account_ids: emailAccountIds },
       }),
@@ -285,7 +288,7 @@ export class SmartleadClient {
     success?: boolean;
   }> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+      this.request(`campaigns/${campaignId}/leads`, {
         method: "POST",
         body: {
           lead_list: leadList,
@@ -305,7 +308,7 @@ export class SmartleadClient {
     campaignId: number,
     query: { limit?: number; offset?: number } = {},
   ): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+    return this.request(`campaigns/${campaignId}/leads`, {
       query: {
         limit: query.limit ?? 1,
         offset: query.offset ?? 0,
@@ -325,7 +328,7 @@ export class SmartleadClient {
       return Promise.reject(error);
     }
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/email-accounts`, {
+      this.request(`campaigns/${campaignId}/email-accounts`, {
         method: "POST",
         body: { email_account_ids: emailAccountIds },
       }),
@@ -338,14 +341,14 @@ export class SmartleadClient {
     limit = 5,
     offset = 0,
   ): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`, {
+    return this.request(`campaigns/${campaignId}/statistics`, {
       query: { email_status: "bounced", limit, offset },
     });
   }
 
   /** D140 — resolve a lead id from its email (global lead lookup). */
   fetchLeadByEmail(email: string): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, "leads", {
+    return this.request("leads", {
       query: { email },
     });
   }
@@ -361,10 +364,7 @@ export class SmartleadClient {
     leadId: number | string,
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(
-        BASE_URL,
-        this.apiKey,
-        `campaigns/${campaignId}/leads/${leadId}`,
+      this.request(`campaigns/${campaignId}/leads/${leadId}`,
         { method: "DELETE" },
       ),
     );
@@ -383,7 +383,7 @@ export class SmartleadClient {
     lead: { email: string } & Record<string, unknown>,
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/leads`, {
+      this.request(`campaigns/${campaignId}/leads`, {
         method: "POST",
         body: {
           lead_list: [lead],
@@ -404,20 +404,14 @@ export class SmartleadClient {
    * an incident opened.
    */
   fetchCampaignSequences(campaignId: number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `campaigns/${campaignId}/sequences`,
+    return this.request(`campaigns/${campaignId}/sequences`,
       {},
     );
   }
 
   /** D140 — the per-lead thread; NDR replies carry the SMTP bounce reason. */
   getLeadMessageHistory(campaignId: number, leadId: number | string): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `campaigns/${campaignId}/leads/${leadId}/message-history`,
+    return this.request(`campaigns/${campaignId}/leads/${leadId}/message-history`,
       {},
     );
   }
@@ -426,7 +420,7 @@ export class SmartleadClient {
     campaignId: number,
     query: { limit?: number; offset?: number; email_status?: string } = {},
   ): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/statistics`, {
+    return this.request(`campaigns/${campaignId}/statistics`, {
       query: {
         limit: query.limit,
         offset: query.offset,
@@ -436,7 +430,7 @@ export class SmartleadClient {
   }
 
   getCampaignSettings(campaignId: number): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`);
+    return this.request(`campaigns/${campaignId}/settings`);
   }
 
   updateCampaignSettings(
@@ -444,7 +438,7 @@ export class SmartleadClient {
     settings: Record<string, unknown>,
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/settings`, {
+      this.request(`campaigns/${campaignId}/settings`, {
         method: "POST",
         body: settings,
       }),
@@ -460,7 +454,7 @@ export class SmartleadClient {
     startDate: string;
     endDate: string;
   }): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, "analytics/day-wise-overall-stats", {
+    return this.request("analytics/day-wise-overall-stats", {
       query: { start_date: options.startDate, end_date: options.endDate },
     });
   }
@@ -469,10 +463,7 @@ export class SmartleadClient {
     startDate: string;
     endDate: string;
   }): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      "analytics/day-wise-positive-reply-stats",
+    return this.request("analytics/day-wise-positive-reply-stats",
       { query: { start_date: options.startDate, end_date: options.endDate } },
     );
   }
@@ -481,17 +472,14 @@ export class SmartleadClient {
     startDate: string;
     endDate: string;
   }): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      "analytics/mailbox/domain-wise-health-metrics",
+    return this.request("analytics/mailbox/domain-wise-health-metrics",
       { query: { start_date: options.startDate, end_date: options.endDate } },
     );
   }
 
   deleteEmailAccount(emailAccountId: number): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `email-accounts/${emailAccountId}`, {
+      this.request(`email-accounts/${emailAccountId}`, {
         method: "DELETE",
       }),
     );
@@ -499,7 +487,7 @@ export class SmartleadClient {
 
   createCampaign(name: string): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, "campaigns/create", {
+      this.request("campaigns/create", {
         method: "POST",
         body: { name },
       }),
@@ -511,7 +499,7 @@ export class SmartleadClient {
     status: "START" | "PAUSED" | "STOPPED",
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}/status`, {
+      this.request(`campaigns/${campaignId}/status`, {
         method: "POST",
         body: { status },
       }),
@@ -520,7 +508,7 @@ export class SmartleadClient {
 
   deleteCampaign(campaignId: number): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(BASE_URL, this.apiKey, `campaigns/${campaignId}`, {
+      this.request(`campaigns/${campaignId}`, {
         method: "DELETE",
       }),
     );
@@ -537,10 +525,7 @@ export class SmartleadClient {
     status: string,
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(
-        BASE_URL,
-        this.apiKey,
-        `campaigns/${campaignId}/leads/${leadId}/status`,
+      this.request(`campaigns/${campaignId}/leads/${leadId}/status`,
         { method: "PATCH", body: { status } },
       ),
     );
@@ -559,10 +544,7 @@ export class SmartleadClient {
     maxEmailPerDay: number,
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(
-        BASE_URL,
-        this.apiKey,
-        `email-accounts/${emailAccountId}`,
+      this.request(`email-accounts/${emailAccountId}`,
         { method: "POST", body: { max_email_per_day: maxEmailPerDay } },
       ),
     );
@@ -578,10 +560,7 @@ export class SmartleadClient {
     },
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(
-        BASE_URL,
-        this.apiKey,
-        `email-accounts/${emailAccountId}/warmup`,
+      this.request(`email-accounts/${emailAccountId}/warmup`,
         { method: "POST", body: settings },
       ),
     );
@@ -603,10 +582,7 @@ export class SmartleadClient {
     },
   ): Promise<unknown> {
     return this.mutate(() =>
-      apiRequest(
-        BASE_URL,
-        this.apiKey,
-        `email-accounts/${emailAccountId}`,
+      this.request(`email-accounts/${emailAccountId}`,
         { method: "POST", body: fields },
       ),
     );
@@ -625,10 +601,7 @@ export class SmartleadClient {
     emailAccountId?: number;
   }> {
     return this.mutate(() =>
-      apiRequest(
-        BASE_URL,
-        this.apiKey,
-        `email-accounts/${emailAccountId}/reauth`,
+      this.request(`email-accounts/${emailAccountId}/reauth`,
         { method: "POST", body: {} },
       ),
     );
@@ -636,7 +609,7 @@ export class SmartleadClient {
 
   listTags(): Promise<Array<{ id: number; name: string; color?: string }>> {
     // D135/D142 — decoration-tier read: outlast a spent rate-limit window.
-    return apiRequest(BASE_URL, this.apiKey, "email-accounts/tags", {
+    return this.request("email-accounts/tags", {
       retries: 7,
     });
   }
@@ -645,7 +618,7 @@ export class SmartleadClient {
     name: string,
     color = "#FF8A65",
   ): Promise<{ ok?: boolean; data?: { id: number; name: string; color?: string } }> {
-    return apiRequest(BASE_URL, this.apiKey, "tags", {
+    return this.request("tags", {
       retries: 7,
       method: "POST",
       body: { name, color },
@@ -656,7 +629,7 @@ export class SmartleadClient {
    * Assign tags to email accounts (max 25 accounts per call).
    */
   assignTags(emailAccountIds: number[], tagIds: number[]): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, "email-accounts/tag-mapping", {
+    return this.request("email-accounts/tag-mapping", {
       retries: 7,
       method: "POST",
       body: { email_account_ids: emailAccountIds, tag_ids: tagIds },
@@ -665,7 +638,7 @@ export class SmartleadClient {
 
   /** Remove tag associations from email accounts (does not delete the tags). */
   removeTags(emailAccountIds: number[], tagIds: number[]): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, "email-accounts/tag-mapping", {
+    return this.request("email-accounts/tag-mapping", {
       retries: 7,
       method: "DELETE",
       body: { email_account_ids: emailAccountIds, tag_ids: tagIds },

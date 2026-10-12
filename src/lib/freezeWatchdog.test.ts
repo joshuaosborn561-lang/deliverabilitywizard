@@ -40,6 +40,37 @@ describe("D247 freeze watchdog", () => {
     assert.match(exitTick.exitReason ?? "", /event loop blocked/);
   });
 
+  it("D257: exits on repeated multi-second freezes", () => {
+    const first = freezeWatchdogTick({
+      now: 10_000,
+      lastBeatAt: 0,
+      intervalMs: 5_000,
+      locks: [],
+    });
+    assert.equal(first.recentFreezes.length, 1);
+    assert.equal(first.exitReason, undefined);
+
+    const second = freezeWatchdogTick({
+      now: 20_000,
+      lastBeatAt: 10_000,
+      intervalMs: 5_000,
+      recentFreezes: first.recentFreezes,
+      locks: [],
+    });
+    assert.equal(second.recentFreezes.length, 2);
+    assert.equal(second.exitReason, undefined);
+
+    const third = freezeWatchdogTick({
+      now: 30_000,
+      lastBeatAt: 20_000,
+      intervalMs: 5_000,
+      recentFreezes: second.recentFreezes,
+      locks: [],
+    });
+    assert.equal(third.recentFreezes.length, 3);
+    assert.match(third.exitReason ?? "", /delayed 3 times/);
+  });
+
   it("exits when a pass is stuck past twice its max (mock exit)", () => {
     const lock = new InFlightLock("health", HEALTH_LOCK_MAX_MS);
     const acquired = lock.acquire("inventory", 0);

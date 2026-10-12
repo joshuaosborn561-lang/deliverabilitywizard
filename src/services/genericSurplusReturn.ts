@@ -16,6 +16,7 @@ import {
   accountIsPeelStaffable,
   detachWouldBreakStaffableFloor,
 } from "../lib/clientStaffFloor.js";
+import { minFloorForClient } from "../lib/minFloorByClient.js";
 import { returnGenericToUntaggedPool } from "../lib/genericReturn.js";
 import { GENERIC_POOL_POWERGRYD_CLIENT_ID } from "../lib/genericPool.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
@@ -86,6 +87,7 @@ export async function returnSurplusGenerics(input: {
     | "prewarmedDomains"
     | "powerGrydClientId"
     | "pocClientNamePatterns"
+    | "minFloorByClient"
     | "dryRun"
   >;
   smartlead: Pick<
@@ -131,6 +133,7 @@ export async function returnSurplusGenerics(input: {
     liveClientIdsByEmail: synced.liveClientIdsByEmail,
     powerGrydClientId: powerId,
     pocEngagementClientIds: pocIds,
+    minFloorByClient: input.config.minFloorByClient,
     skipEmails: skip,
     now,
   });
@@ -177,6 +180,8 @@ export async function returnSurplusGenerics(input: {
         detachWouldBreakStaffableFloor(campaign, remaining, account, pick.email, {
           getRestingInbox: (key) => input.state.getRestingInbox(key),
           isCopyCanary: (key) => input.state.isCopyCanary(key),
+        }, {
+          floor: minFloorForClient(pick.clientId, input.config.minFloorByClient),
         })
       ) {
         blocked = true;

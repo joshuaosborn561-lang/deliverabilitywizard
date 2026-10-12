@@ -294,6 +294,7 @@ export class CampaignHealthService {
           clientInboxFloors.eligible,
           clientName,
           clientInboxFloors.onWeek,
+          { minFloorByClient: this.config.minFloorByClient },
         );
         return {
           campaignId: c.id,

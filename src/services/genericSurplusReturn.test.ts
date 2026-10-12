@@ -295,22 +295,22 @@ describe("returnSurplusGenerics (D225/D235)", () => {
       now: WEEKDAY,
       inventory: {
         fetchedAt: Date.now(),
-        clients: [{ id: 521881, name: "TechEvo", logo: "TechEvolution" }],
-        campaigns: [{ id: 2, name: "TechEvo B", status: "ACTIVE", client_id: 521881 }],
+        clients: [{ id: 542838, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 2, name: "BCP A", status: "ACTIVE", client_id: 542838 }],
         accounts: [
-          ...namedPodA(521881, [2], 40).map((row, i) =>
+          ...namedPodA(542838, [2], 40, 100, "boldercyperpartner.com").map((row, i) =>
             i < 38 ? row : { ...row, campaign_ids: [] },
           ),
           extraGeneric({
             id: 901,
             email: "needed@getintroduced.info",
-            clientId: 521881,
+            clientId: 542838,
             campaignIds: [2],
           }),
           extraGeneric({
             id: 902,
             email: "also-needed@getintroduced.info",
-            clientId: 521881,
+            clientId: 542838,
             campaignIds: [2],
           }),
         ],

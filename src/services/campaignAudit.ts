@@ -190,6 +190,7 @@ export class CampaignAuditService {
           clientInboxFloors.eligible,
           clientName,
           clientInboxFloors.onWeek,
+          { minFloorByClient: this.config.minFloorByClient },
         );
         return {
           id: c.id,

@@ -19,6 +19,7 @@ import {
 } from "./genericPool.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
 import type { EspSlotFamily } from "./mailboxType.js";
+import { minFloorForClient } from "./minFloorByClient.js";
 
 export const GENERIC_SURPLUS_RETURN_WEEKDAYS_ONLY = true;
 
@@ -58,6 +59,8 @@ export function surplusGenericReturns(input: {
   liveClientIdsByEmail?: ReadonlyMap<string, readonly number[]>;
   powerGrydClientId?: number;
   pocEngagementClientIds?: Iterable<number>;
+  /** D256 — per-client min-floor; surplus is above this, not a hard 40. */
+  minFloorByClient?: Readonly<Record<number, number>>;
   skipEmails?: Iterable<string>;
   now?: Date;
   weekdaysOnly?: boolean;
@@ -107,12 +110,14 @@ export function surplusGenericReturns(input: {
     const clientId = Number(clientRaw);
     const pod = podRaw as GenericAssignedPod;
     const named = input.namedStaffableByClientPod.get(key) ?? 0;
+    const floor = minFloorForClient(clientId, input.minFloorByClient);
     const picked =
       input.clientHasActiveCampaign?.get(clientId) === false
         ? rankGenericsOldestWorstFirst(seats)
         : pickWeightedGenericReturns(seats, {
             namedStaffable: named,
             preferEspSlot: input.preferEspSlot,
+            floor,
           });
     for (const seat of picked) {
       out.push({

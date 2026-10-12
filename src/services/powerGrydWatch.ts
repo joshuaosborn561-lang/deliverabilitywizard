@@ -8,11 +8,15 @@ import {
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
 import { POWERGRYD_CLIENT_ID } from "../lib/autoAllowGenerics.js";
+import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
+import { isGenericMailbox } from "../lib/clientInbox.js";
 import { clientDisplayName } from "../clients/smartlead.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { mailboxPodOf } from "../lib/podInventory.js";
 import { pocClientId } from "../lib/pocClient.js";
+import { onWeekCohort, type RestCohort } from "../lib/restCohort.js";
 import type { StateStore } from "../state/store.js";
 import { fetchInventory, type InventorySnapshot } from "./inventory.js";
 
@@ -25,6 +29,8 @@ export interface PowerGrydWatchResult {
   dedicatedSeats: number;
   previous: number | null;
   alerted: boolean;
+  onWeekPod?: RestCohort;
+  onWeekGenerics?: number;
 }
 
 export function isPowerGrydClientId(
@@ -89,6 +95,33 @@ export function countPowerGrydDedicatedSeats(input: {
 }
 
 /**
+ * D254 — generics (not named seats) currently assigned to PowerGRYD,
+ * counted by locked POD. An on-week POD at zero is an alert, not a
+ * hands-off drop.
+ */
+export function countPowerGrydGenericsByPod(input: {
+  accounts: SmartleadAccountWithCampaigns[];
+  state: StateStore;
+  config: Pick<
+    AppConfig,
+    "extraGenericMailboxes" | "extraGenericDomains" | "prewarmedDomains"
+  >;
+  clientId?: number;
+}): { A: number; B: number } {
+  const clientId = input.clientId ?? POWERGRYD_CLIENT_ID;
+  const counts = { A: 0, B: 0 };
+  for (const account of input.accounts) {
+    const email = accountEmail(account);
+    if (!email) continue;
+    if (account.client_id !== clientId) continue;
+    if (!isGenericMailbox(account, email, input.config, input.state)) continue;
+    const pod = mailboxPodOf(account);
+    if (pod === "A" || pod === "B") counts[pod] += 1;
+  }
+  return counts;
+}
+
+/**
  * D205 / D207 — PowerGRYD (592842) watch is alert-only for dedicated
  * seat-count drops. Never mutate memberships or status. Never START
  * or PAUSE. Restaff is min40-topup.
@@ -102,11 +135,13 @@ export class PowerGrydWatchService {
   ) {}
 
   async run(
-    opts: { dryRun?: boolean; inventory?: InventorySnapshot } = {},
+    opts: { dryRun?: boolean; inventory?: InventorySnapshot; now?: Date } = {},
   ): Promise<PowerGrydWatchResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const clientId = this.config.powerGrydClientId;
     const target = this.config.powerGrydSeatTarget;
+    const now = opts.now ?? new Date();
+    const onWeek = onWeekCohort(now);
     if (!this.config.enablePowerGrydWatch) {
       return {
         dryRun,
@@ -117,6 +152,8 @@ export class PowerGrydWatchService {
         dedicatedSeats: 0,
         previous: null,
         alerted: false,
+        onWeekPod: onWeek,
+        onWeekGenerics: 0,
       };
     }
 
@@ -125,17 +162,40 @@ export class PowerGrydWatchService {
       (this.smartlead
         ? await fetchInventory(this.smartlead)
         : { campaigns: [], accounts: [], clients: [], fetchedAt: Date.now() });
+    const accounts = inventory.accounts as SmartleadAccountWithCampaigns[];
     const { count } = countPowerGrydDedicatedSeats({
-      accounts: inventory.accounts as SmartleadAccountWithCampaigns[],
+      accounts,
       campaigns: inventory.campaigns,
       clients: inventory.clients,
       state: this.state,
       config: this.config,
       clientId,
     });
+    const byPod = countPowerGrydGenericsByPod({
+      accounts,
+      state: this.state,
+      config: this.config,
+      clientId,
+    });
+    const onWeekGenerics = byPod[onWeek];
+    const hasPodSplit = accounts.some((account) => {
+      if (account.client_id !== clientId) return false;
+      const pod = mailboxPodOf(account);
+      return pod === "A" || pod === "B";
+    });
     const previous = this.state.getPowerGrydSeatCount();
     let alerted = false;
-    if (previous != null && count < previous && count !== this.state.getPowerGrydAlertedCount()) {
+    const todayYmd = chicagoWallClock(now, this.config.canonOpsTimezone).ymd;
+    // D254 — an empty on-week POD is not a hands-off drop.
+    if (hasPodSplit && onWeekGenerics === 0) {
+      const line = `PowerGRYD on-week POD-${onWeek} has 0 generics. This is not a hands-off drop — min40 must include that shortfall.`;
+      console.warn(`[powergryd-watch] ${line}`);
+      if (!dryRun && this.state.getMin40ShortfallAlerted("powergryd-empty-pod") !== todayYmd) {
+        await this.slack.send(line, undefined, "short_staffed");
+        this.state.setMin40ShortfallAlerted("powergryd-empty-pod", todayYmd);
+      }
+      alerted = true;
+    } else if (previous != null && count < previous && count !== this.state.getPowerGrydAlertedCount()) {
       const line = `PowerGRYD dedicated seats dropped ${previous} → ${count} (target ${target}). Hands-off — I did not peel, restaff, START, or PAUSE anyone.`;
       console.warn(`[powergryd-watch] ${line}`);
       if (!dryRun) {
@@ -145,7 +205,7 @@ export class PowerGrydWatchService {
       alerted = true;
     } else {
       console.log(
-        `[powergryd-watch] dedicated=${count} previous=${previous ?? "none"} target=${target}`,
+        `[powergryd-watch] dedicated=${count} previous=${previous ?? "none"} target=${target} onWeek=${onWeek} generics=${onWeekGenerics}`,
       );
     }
     if (!dryRun) {
@@ -159,6 +219,8 @@ export class PowerGrydWatchService {
       dedicatedSeats: count,
       previous,
       alerted,
+      onWeekPod: onWeek,
+      onWeekGenerics,
     };
   }
 }

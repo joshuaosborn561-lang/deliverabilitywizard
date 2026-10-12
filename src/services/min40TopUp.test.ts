@@ -146,6 +146,7 @@ describe("Min40TopUpService (D205)", () => {
     assert.match(src, /Never retag named seats/);
     assert.match(src, /Never retag a generic across PODs/);
     assert.match(src, /genericEligibleForClientPod|genericMayTakePod/);
+    assert.match(src, /genericMayFillNow/);
   });
 
   it("D207: shares a client generic across that client's ACTIVE campaigns", async () => {
@@ -484,6 +485,72 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
     assert.deepEqual(removed, [[10, [901]]]);
     assert.deepEqual(writes, [{ id: 901, fields: { client_id: null, signature: "" } }]);
+  });
+
+  it("D256: TechEvo floor is 30 and min40 returns surplus generics above it", async () => {
+    const writes: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const named = Array.from({ length: 30 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@techevolution.com`,
+      client_id: TECHEVO_CLIENT_ID,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+      campaign_ids: [10],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          writes.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-05T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: TECHEVO_CLIENT_ID, name: "TechEvo", logo: "TechEvolution" }],
+        campaigns: [{ id: 10, name: "TechEvo A", status: "ACTIVE", client_id: TECHEVO_CLIENT_ID }],
+        accounts: [
+          ...named,
+          {
+            id: 901,
+            from_email: "extra@getintroduced.info",
+            client_id: TECHEVO_CLIENT_ID,
+            signature: "Ada Pool\nTechEvolution",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+            campaign_ids: [10],
+          },
+        ],
+      },
+    });
+    assert.equal(result.assigned.length, 0, "TechEvo at 30 named must not take more generics");
+    assert.equal(result.returned.length, 1, "surplus above TechEvo floor 30 must return");
+    assert.equal(result.returned[0]?.email, "extra@getintroduced.info");
+    assert.deepEqual(removed, [[10, [901]]]);
   });
 
   it("D228: does not attach an off-week POD-B generic onto an A-week campaign", async () => {
@@ -1515,6 +1582,172 @@ describe("Min40TopUpService (D205)", () => {
     assert.ok(
       result.errors.some((row) => /aborted/i.test(row)),
       `slack abort must stay on the result: ${result.errors.join(" | ")}`,
+    );
+  });
+
+  it("D254: a POC client must not take another client's off-week generic", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "pg-resting@getintroduced.info",
+      domain: "getintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 801,
+      firstName: "Pat",
+      lastName: "Pool",
+      status: "assigned",
+      assignedClientId: 592842,
+      assignedClientName: "PowerGRYD",
+      warmedAt,
+    });
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async (id: number, fields: Record<string, unknown>) => {
+          updates.push({ id, fields });
+        },
+        removeEmailAccountsFromCampaign: async () => undefined,
+        ensureTag: async (name: string) => ({
+          id: name === "POC" ? 531428 : 99,
+          name,
+        }),
+        assignTags: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-12T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [
+          { id: 597783, name: "Deep Roots", logo: "Deep Roots Capital" },
+          { id: 592842, name: "PowerGRYD", logo: "PowerGRYD" },
+        ],
+        campaigns: [
+          { id: 4084613, name: "Deep Roots A", status: "DRAFTED", client_id: 597783 },
+          { id: 50, name: "PG Lane A", status: "ACTIVE", client_id: 592842 },
+        ],
+        accounts: [
+          {
+            id: 1,
+            from_email: "one@crosslaunchco.com",
+            from_name: "Ada Lovelace",
+            client_id: 597783,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POC" }],
+            campaign_ids: [4084613],
+          },
+          {
+            id: 801,
+            from_email: "pg-resting@getintroduced.info",
+            from_name: "Pat Pool",
+            client_id: 592842,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.equal(
+      attached.some((row) => row[1].includes(801)),
+      false,
+      "Deep Roots must not link a PowerGRYD off-week POD-A generic",
+    );
+    assert.equal(
+      updates.some((row) => row.id === 801 && row.fields.client_id === 597783),
+      false,
+      "Deep Roots must not steal the PowerGRYD client_id",
+    );
+    assert.equal(
+      result.assigned.some((row) => row.email === "pg-resting@getintroduced.info"),
+      false,
+    );
+    assert.equal(state.getGenericSeat("pg-resting@getintroduced.info")?.assignedClientId, 592842);
+  });
+
+  it("D254: PowerGRYD on-week POD shortfall is in the min40 summary; zero generics alerts", async () => {
+    const slackCalls: string[] = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    const pgNamed = Array.from({ length: 8 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `pg${i}@powergryd.com`,
+      client_id: 592842,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-B" }],
+      campaign_ids: [50],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async (text: string) => {
+          slackCalls.push(text);
+        },
+        notifyIsolationAction: async () => undefined,
+        notifyGenericBackfillBatch: async () => {
+          slackCalls.push("Allow generics");
+        },
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-10-12T15:00:00.000Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 592842, name: "PowerGRYD", logo: "PowerGRYD" }],
+        campaigns: [{ id: 50, name: "PG Lane A", status: "ACTIVE", client_id: 592842 }],
+        accounts: [
+          ...pgNamed,
+          {
+            id: 801,
+            from_email: "off-week@getintroduced.info",
+            client_id: 592842,
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }, { tag_name: "POD-A" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.ok(
+      result.unfilled.some(
+        (row) => row.clientId === 592842 && row.shortBy > 0,
+      ),
+      "PowerGRYD on-week POD shortfall must land in the min40 summary",
+    );
+    assert.ok(
+      result.alerts.some((line) => /on-week POD-B has 0 generics/.test(line)),
+      `zero on-week generics must alert: ${result.alerts.join(" | ")}`,
+    );
+    assert.ok(
+      slackCalls.some((line) => /PowerGRYD/.test(line) && /0 generics|is short/.test(line)),
+      `short-staffed slack must name PowerGRYD: ${slackCalls.join(" | ")}`,
     );
   });
 

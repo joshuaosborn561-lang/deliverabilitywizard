@@ -5,6 +5,10 @@ import {
   parseClientIdList,
 } from "./lib/autoAllowGenerics.js";
 import {
+  DEFAULT_MIN_FLOOR_BY_CLIENT,
+  parseMinFloorByClient,
+} from "./lib/minFloorByClient.js";
+import {
   CANON_OPS_HOUR_END_DEFAULT,
   CANON_OPS_HOUR_START_DEFAULT,
   CANON_OPS_TIMEZONE_DEFAULT,
@@ -473,6 +477,14 @@ const ConfigSchema = z.object({
     .transform((s) =>
       parseClientIdList(s, DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS),
     ),
+  /**
+   * D256 — per-client min-floor override (`clientId:floor`, comma-
+   * separated). Default TechEvo 521881 → 30; everyone else 40.
+   */
+  minFloorByClient: z
+    .string()
+    .default("")
+    .transform((s) => parseMinFloorByClient(s, DEFAULT_MIN_FLOOR_BY_CLIENT)),
   powerGrydClientId: z.coerce.number().int().positive().default(POWERGRYD_CLIENT_ID),
   powerGrydSeatTarget: z.coerce.number().int().positive().default(40),
   slackBatchGenericBackfill: boolFromEnv(true),
@@ -719,6 +731,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     holdCampaignNamePatterns: env.HOLD_CAMPAIGN_NAME_PATTERNS ?? "",
     holdClientZeroActive: env.HOLD_CLIENT_ZERO_ACTIVE ?? "",
     autoAllowGenericClientIds: env.AUTO_ALLOW_GENERIC_CLIENT_IDS ?? "",
+    minFloorByClient: env.MIN_FLOOR_BY_CLIENT ?? "",
     powerGrydClientId: env.POWERGRYD_CLIENT_ID ?? String(POWERGRYD_CLIENT_ID),
     powerGrydSeatTarget: env.POWERGRYD_SEAT_TARGET ?? "40",
     slackBatchGenericBackfill: env.SLACK_BATCH_GENERIC_BACKFILL,

@@ -46,6 +46,7 @@ import {
   accountIsPeelStaffable,
   hasHoldOrRetireTag,
 } from "../lib/clientStaffFloor.js";
+import { minFloorForClient } from "../lib/minFloorByClient.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import {
@@ -162,8 +163,17 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
  * generics stay assigned (client_id, POD tag, signature) and do not
  * link. Never retag named seats. Never retag a generic across PODs
  * (D230) — first assign of an untagged pool seat stamps that POD.
- * Never START/PAUSE. PowerGRYD uses its own seats; free-pool only via
- * the normal assign path (client 592842 + PG signature).
+ * Never START/PAUSE. D256 — fill to that client's min-floor
+ * (`MIN_FLOOR_BY_CLIENT`, default 40; TechEvo 30) and return
+ * surplus generics above it. PowerGRYD is a normal named
+ * client (not POC, not a no-generics special-case).
+ * D254 — POC fills use the same one-client / on-week-POD lock:
+ * refuse another client's seat and any seat whose locked POD is not
+ * the on-week POD. Check the POD before linking, not after. Canary
+ * and client-named-domain seats are never generics. The named A/B
+ * split stays static. The summary includes each named client's
+ * on-week POD shortfall (PowerGRYD included) and pages when that
+ * POD has zero generics.
  */
 export class Min40TopUpService {
   constructor(
@@ -326,7 +336,8 @@ export class Min40TopUpService {
         continue;
       }
 
-      const target = pocEngagement ? pocEngagementSeatTarget() : ON_WEEK_MIN_SENDERS;
+      const floor = minFloorForClient(clientId, this.config.minFloorByClient);
+      const target = pocEngagement ? pocEngagementSeatTarget() : floor;
       walked += 1;
       if (opts.signal?.aborted) {
         result.errors.push("aborted: stopped remaining campaign fills");
@@ -426,6 +437,15 @@ export class Min40TopUpService {
         synced: seeded,
       });
     }
+
+    this.reportOnWeekPodShortfalls({
+      now,
+      namedStaffableByClientPod: seeded.namedStaffableByClientPod,
+      activeByClient,
+      clientsById,
+      pocIds,
+      result,
+    });
 
     await this.alertUnfilled(result, todayYmd, dryRun);
 
@@ -718,6 +738,21 @@ export class Min40TopUpService {
     });
   }
 
+  /**
+   * D254 — one-client + on-week-POD lock used by named and POC fills.
+   * Off-week locked PODs and another client's assignment are a hard no
+   * before any campaign link.
+   */
+  private genericMayFillNow(
+    account: SmartleadAccountWithCampaigns,
+    email: string,
+    clientId: number,
+    now: Date,
+  ): boolean {
+    if (!genericMayLinkToCampaigns(account, now)) return false;
+    return this.genericMayTakePod(account, email, clientId, onWeekCohort(now));
+  }
+
   private async stampGenericPod(
     account: SmartleadAccountWithCampaigns,
     email: string,
@@ -815,9 +850,22 @@ export class Min40TopUpService {
     dryRun: boolean;
     result: Min40TopUpResult;
     pocEngagement?: boolean;
+    now?: Date;
   }): Promise<boolean> {
     if (typeof input.account.id !== "number") return false;
     if (isLockedCanarySeat(input.account, input.email, this.state)) return false;
+    if (
+      input.now &&
+      isGenericMailbox(input.account, input.email, this.config, this.state) &&
+      !this.genericMayFillNow(
+        input.account,
+        input.email,
+        input.clientId,
+        input.now,
+      )
+    ) {
+      return false;
+    }
     if (isGabeVmReserved(input.account)) return false;
     if (
       isCallerFollowUpSupplyBlocked(
@@ -927,19 +975,15 @@ export class Min40TopUpService {
         continue;
       }
       if (seat.generic) {
-        if (!input.pocEngagement && !genericMayLinkToCampaigns(seat.account, input.now)) {
-          continue;
-        }
         if (!this.belongsToClient(seat.account, seat.email, input.clientId, input.campaignById)) {
           continue;
         }
         if (
-          input.pocEngagement ||
-          this.genericMayTakePod(
+          this.genericMayFillNow(
             seat.account,
             seat.email,
             input.clientId,
-            onWeekCohort(input.now),
+            input.now,
           )
         ) {
           existing.push(seat);
@@ -966,7 +1010,7 @@ export class Min40TopUpService {
       const account = seat.account;
       const needed = espFillOrder(
         espCounts,
-        ON_WEEK_MIN_SENDERS,
+        input.target ?? minFloorForClient(input.clientId, this.config.minFloorByClient),
         Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
       );
       const slot = mailboxEspSlot(account);
@@ -979,6 +1023,7 @@ export class Min40TopUpService {
         dryRun: input.dryRun,
         result: input.result,
         pocEngagement: input.pocEngagement,
+        now: input.now,
       });
       if (ok) {
         selected.add(email);
@@ -1005,12 +1050,6 @@ export class Min40TopUpService {
         if (!this.seatIsUsable(poolAccount, key, input.campaign, input.campaignById)) {
           return false;
         }
-        if (
-          !input.pocEngagement &&
-          !genericMayLinkToCampaigns(poolAccount, input.now)
-        ) {
-          return false;
-        }
         if (!isPoolGenericSeat(poolAccount, key, this.config, this.state)) {
           return false;
         }
@@ -1019,15 +1058,8 @@ export class Min40TopUpService {
           if (!input.pocEngagement || poolAccount.client_id !== input.clientId) {
             return false;
           }
-        } else if (
-          !input.pocEngagement &&
-          !this.genericMayTakePod(
-            poolAccount,
-            key,
-            input.clientId,
-            onWeekCohort(input.now),
-          )
-        ) {
+        }
+        if (!this.genericMayFillNow(poolAccount, key, input.clientId, input.now)) {
           return false;
         }
         if (
@@ -1068,6 +1100,11 @@ export class Min40TopUpService {
       const original = input.accountByEmail.get(pool.email.toLowerCase());
       if (!original) {
         this.state.removePoolMailbox(pool.email);
+        rejectedPreferNonAzure.add(pool.email.toLowerCase());
+        rejectedAny.add(pool.email.toLowerCase());
+        continue;
+      }
+      if (!this.genericMayFillNow(original, pool.email, input.clientId, input.now)) {
         rejectedPreferNonAzure.add(pool.email.toLowerCase());
         rejectedAny.add(pool.email.toLowerCase());
         continue;
@@ -1228,6 +1265,7 @@ export class Min40TopUpService {
       if (!clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)) {
         continue;
       }
+      const floor = minFloorForClient(clientId, this.config.minFloorByClient);
       const brand = input.brandByClientId.get(clientId) || String(clientId);
       const selected = new Set<string>();
       for (const pod of ["A", "B"] as const) {
@@ -1235,7 +1273,7 @@ export class Min40TopUpService {
         const assigned = synced.seats
           .filter((seat) => seat.assignedClientId === clientId && seat.assignedPod === pod)
           .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
-        let need = podInventoryNeed(named, assigned);
+        let need = podInventoryNeed(named, assigned, floor);
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
         let espN = 0;
         for (const seat of input.seats) {
@@ -1261,7 +1299,7 @@ export class Min40TopUpService {
           if (input.signal?.aborted) break;
           const platforms = espFillOrder(
             espCounts,
-            ON_WEEK_MIN_SENDERS,
+            floor,
             Math.round(POD_ESP_MIX_MIN_FRACTION * 100),
           );
           const pool = await findReassignablePoolMailboxYielding(
@@ -1356,6 +1394,60 @@ export class Min40TopUpService {
     }
   }
 
+  /**
+   * D254 — every named client (including PowerGRYD) reports its
+   * on-week POD shortfall. Zero on-week generics on a still-short
+   * POD is an alert, not a hands-off watch. Need uses that
+   * client's min-floor (D256).
+   */
+  private reportOnWeekPodShortfalls(input: {
+    now: Date;
+    namedStaffableByClientPod: Map<string, number>;
+    activeByClient: Map<number, SmartleadCampaign[]>;
+    clientsById: Map<number, SmartleadClientRecord>;
+    pocIds: number[];
+    result: Min40TopUpResult;
+  }): void {
+    const onWeek = onWeekCohort(input.now);
+    const seats = this.state.listGenericSeats();
+    for (const [clientId, campaigns] of input.activeByClient) {
+      if (input.pocIds.includes(clientId)) continue;
+      const named =
+        input.namedStaffableByClientPod.get(clientPodKey(clientId, onWeek)) ?? 0;
+      const assignedSeats = seats.filter(
+        (seat) =>
+          seat.assignedClientId === clientId && seat.assignedPod === onWeek,
+      );
+      const assigned = assignedSeats.reduce(
+        (sum, seat) => sum + seatStaffableWeight(seat),
+        0,
+      );
+      const floor = minFloorForClient(clientId, this.config.minFloorByClient);
+      const need = podInventoryNeed(named, assigned, floor);
+      const client = input.clientsById.get(clientId);
+      const clientName = clientDisplayName(client ?? { id: clientId });
+      if (assigned < 1e-9 && need > 1e-9) {
+        input.result.alerts.push(
+          `${clientName} on-week POD-${onWeek} has 0 generics (short ${need}).`,
+        );
+      }
+      if (need <= 1e-9) continue;
+      if (input.result.unfilled.some((row) => row.clientId === clientId)) {
+        continue;
+      }
+      const first = campaigns[0];
+      if (!first) continue;
+      input.result.unfilled.push({
+        campaignId: first.id,
+        name: `${clientName} on-week POD-${onWeek}`,
+        shortBy: need,
+        floor,
+        clientId,
+        clientName,
+      });
+    }
+  }
+
   private async alertUnfilled(
     result: Min40TopUpResult,
     todayYmd: string,
@@ -1364,20 +1456,25 @@ export class Min40TopUpService {
     if (!this.slack) return;
     const grouped = groupShortStaffedByClient(result.unfilled);
     const snapshot = shortStaffedSnapshot(grouped);
-    const text = shortStaffedLines(grouped);
+    const emptyPod = result.alerts
+      .filter((line) => /on-week POD-[AB] has 0 generics/.test(line))
+      .join("\n");
+    const staffed = shortStaffedLines(grouped);
+    const text = [staffed, emptyPod].filter(Boolean).join("\n") || null;
     if (!text) {
       if (this.state.getShortStaffedSnapshot()) {
         this.state.setShortStaffedSnapshot("");
       }
       return;
     }
-    if (this.state.getShortStaffedSnapshot() === snapshot) return;
+    const snapKey = `${snapshot}::${emptyPod}`;
+    if (this.state.getShortStaffedSnapshot() === snapKey) return;
     console.warn(`[min40-topup] ${text.replace(/\n/g, " | ")}`);
-    result.alerts.push(text);
+    if (!result.alerts.includes(text)) result.alerts.push(text);
     if (!dryRun) {
       try {
         await this.slack.send(text, undefined, "short_staffed");
-        this.state.setShortStaffedSnapshot(snapshot);
+        this.state.setShortStaffedSnapshot(snapKey);
         for (const row of result.unfilled) {
           this.state.setMin40ShortfallAlerted(`campaign:${row.campaignId}`, todayYmd);
         }

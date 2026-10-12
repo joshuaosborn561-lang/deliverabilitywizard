@@ -9,6 +9,7 @@ import type { AppConfig } from "../config.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign, SmartleadEmailAccount } from "../types/index.js";
 import { isGabeVmReserved, isLockedCanarySeat } from "./canaryLock.js";
+import { minFloorForClient } from "./minFloorByClient.js";
 import { isClientInbox } from "./clientInbox.js";
 import { senderIsAttachBlocked } from "./attachBlock.js";
 import { isRetiredSendingDomain } from "./domainControl.js";
@@ -34,6 +35,12 @@ export const ON_WEEK_MIN_SENDERS = 40;
 
 /** D203 — named-split inventory cylinder. Live send floor is per campaign (D207). */
 export const POD_INVENTORY_MIN_SENDERS = ON_WEEK_MIN_SENDERS;
+
+export {
+  DEFAULT_MIN_FLOOR_BY_CLIENT,
+  minFloorForClient,
+  parseMinFloorByClient,
+} from "./minFloorByClient.js";
 
 /**
  * Exclusive client-signed generics this POD may still take from the
@@ -178,11 +185,13 @@ export function detachWouldBreakOnWeekMin(
   campaign: { status?: string | null } | undefined,
   remainingBeforeDetach: number,
   seatWeight: number = 1,
+  floor: number = ON_WEEK_MIN_SENDERS,
 ): boolean {
   if (String(campaign?.status ?? "").toUpperCase() !== "ACTIVE") return false;
   const weight =
     Number.isFinite(seatWeight) && seatWeight > 0 ? seatWeight : 1;
-  return remainingBeforeDetach - weight < ON_WEEK_MIN_SENDERS - 1e-9;
+  const resolved = Number.isFinite(floor) && floor >= 1 ? floor : ON_WEEK_MIN_SENDERS;
+  return remainingBeforeDetach - weight < resolved - 1e-9;
 }
 
 export type StaffableFloorDetachOpts = {
@@ -192,6 +201,8 @@ export type StaffableFloorDetachOpts = {
    * Disconnected / SMTP-fail is already handled by accountIsPeelStaffable.
    */
   exempt?: boolean;
+  /** D256 — per-client min-floor (TechEvo 30). Default 40. */
+  floor?: number;
 };
 
 /** HOLD-UNTIL (unexpired) or a RETIRE tag — may peel below 40 (D207). */
@@ -230,6 +241,7 @@ export function detachWouldBreakStaffableFloor(
     campaign,
     remainingStaffable,
     mailboxStaffableWeight(account),
+    opts.floor,
   );
 }
 
@@ -408,12 +420,15 @@ export function staffFloorForCampaign(
   clientInboxCounts: Map<string, number>,
   _clientName?: string | null,
   onWeekCounts?: Map<string, number>,
-  opts?: { pocEngagement?: boolean },
+  opts?: {
+    pocEngagement?: boolean;
+    minFloorByClient?: Readonly<Record<number, number>>;
+  },
 ): number {
   void _clientName;
   if (opts?.pocEngagement) return POC_ENGAGEMENT_SEAT_TARGET;
   if (onWeekCounts) {
-    return ON_WEEK_MIN_SENDERS;
+    return minFloorForClient(campaign.client_id, opts?.minFloorByClient);
   }
   return clientInboxStaffFloor(clientInboxCounts.get(clientCountKey(campaign.client_id)) ?? 0);
 }
@@ -432,6 +447,6 @@ export function formatStaffFloorDetail(
         ? "on-week staffable 40"
         : floor === half
           ? "half this client's named inboxes (40/POD)"
-          : "on-week client pod";
+          : `on-week staffable ${floor}`;
   return `staffable ${serving}/${floor} (${label})`;
 }

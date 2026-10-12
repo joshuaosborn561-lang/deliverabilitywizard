@@ -5,8 +5,11 @@
  * Deep Roots (and later name-list matches except Goliath) are
  * engagement POCs: 60 seats, no PODs, survive DRAFTED, fill without
  * an Allow-generics card, release only when marked done.
+ * PowerGRYD 592842 is a full named client (D237 / D256) — never a
+ * POC engagement, even if a name pattern later matches it.
  */
 
+import { POWERGRYD_CLIENT_ID } from "./autoAllowGenerics.js";
 import { isCallerFollowUpCampaign } from "./callerFollowUp.js";
 import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 
@@ -118,6 +121,7 @@ export function isPocEngagementClient(input: {
   const id = input.clientId;
   if (typeof id !== "number" || !Number.isFinite(id) || id <= 0) return false;
   if (isGoliathClientId(id)) return false;
+  if (id === POWERGRYD_CLIENT_ID) return false;
   const ended = new Set(
     [...(input.endedIds ?? [])].filter((n) => Number.isFinite(n) && n > 0),
   );

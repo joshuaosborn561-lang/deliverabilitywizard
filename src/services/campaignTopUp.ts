@@ -276,6 +276,7 @@ export class CampaignTopUpService {
               })
             : "",
           clientInboxFloors.onWeek,
+          { minFloorByClient: this.config.minFloorByClient },
         ),
       ]),
     );

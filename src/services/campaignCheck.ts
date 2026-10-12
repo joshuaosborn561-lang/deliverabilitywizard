@@ -1399,7 +1399,7 @@ export class CampaignCheckService {
         input.clientInboxCounts,
         clientName,
         input.onWeekInboxCounts,
-        { pocEngagement },
+        { pocEngagement, minFloorByClient: this.config.minFloorByClient },
       );
       const staffableWeight = roundStaffableWeight(
         serving.reduce((sum, email) => {

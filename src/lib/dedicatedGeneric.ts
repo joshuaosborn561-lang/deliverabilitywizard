@@ -5,10 +5,13 @@ import { signatureHay } from "./signatureQa.js";
  * D198 / D199 — a generic mailbox dedicated to one named client.
  *
  * Marks (first match wins):
- *   1. pool-mailbox `assignedClientId`
- *   2. Smartlead mailbox `client_id` (the client tag)
- *   3. a `client:<id>` mailbox tag
- *   4. D199 — exclusive attach on one named client's campaigns
+ *   1. D257 — live Smartlead `client_id` when it and the pool
+ *      `assignedClientId` are different real named clients
+ *   2. pool-mailbox `assignedClientId` (wins over leftover /
+ *      marker / Goliath mailbox ids — D198)
+ *   3. Smartlead mailbox `client_id` when the pool has no named owner
+ *   4. a `client:<id>` mailbox tag
+ *   5. D199 — exclusive attach on one named client's campaigns
  *      *and* a signature (or from-name) carrying that client's brand
  *
  * The POC / Goliath owner is *not* a dedicated named-client assignment —
@@ -77,6 +80,38 @@ function clientIdFromTags(
 }
 
 /**
+ * D257 — live Smartlead `client_id` wins when it and the pool
+ * assignment are different real named clients. A leftover marker /
+ * Goliath / empty mailbox id still loses to a current pool
+ * assignment (D198).
+ */
+export function preferredGenericOwnerId(input: {
+  mailboxClientId?: number | null;
+  assignedClientId?: number | null;
+  isMarkerClientId?: (id: number | null | undefined) => boolean;
+  genericOwnerId?: number | null;
+}): number | null {
+  const isNamed = (id: number | null | undefined): id is number => {
+    if (!isRealNamedClientId(id, input.isMarkerClientId)) return false;
+    if (
+      typeof input.genericOwnerId === "number" &&
+      id === input.genericOwnerId
+    ) {
+      return false;
+    }
+    return true;
+  };
+  const mailbox = input.mailboxClientId;
+  const assigned = input.assignedClientId;
+  if (isNamed(mailbox) && isNamed(assigned) && mailbox !== assigned) {
+    return mailbox;
+  }
+  if (isNamed(assigned)) return assigned;
+  if (isNamed(mailbox)) return mailbox;
+  return null;
+}
+
+/**
  * Named client this generic is dedicated to, or null when it is still
  * rotating pool / POC-owned (D76).
  */
@@ -92,20 +127,22 @@ export function dedicatedGenericClientId(
       ? (id: number | null | undefined) => state.isMarkerClientId!(id)
       : undefined);
   const pool = state.getPoolMailbox(email.trim().toLowerCase());
-  const candidates = [
-    pool?.assignedClientId,
-    account.client_id,
-    clientIdFromTags(account, isMarker),
-  ];
-  for (const candidate of candidates) {
-    if (!isRealNamedClientId(candidate, isMarker)) continue;
-    if (
+  const preferred = preferredGenericOwnerId({
+    mailboxClientId: account.client_id,
+    assignedClientId: pool?.assignedClientId,
+    isMarkerClientId: isMarker,
+    genericOwnerId: opts.genericOwnerId,
+  });
+  if (preferred != null) return preferred;
+  const tagged = clientIdFromTags(account, isMarker);
+  if (
+    isRealNamedClientId(tagged, isMarker) &&
+    !(
       typeof opts.genericOwnerId === "number" &&
-      candidate === opts.genericOwnerId
-    ) {
-      continue;
-    }
-    return candidate;
+      tagged === opts.genericOwnerId
+    )
+  ) {
+    return tagged;
   }
   return dedicatedFromExclusiveClientSig(account, opts, isMarker);
 }

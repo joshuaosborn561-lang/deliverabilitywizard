@@ -632,4 +632,50 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       "only the 21-day warm named seat counts",
     );
   });
+
+  it("D257: realigns a stale PowerGRYD pool row to the live Smartlead client", async () => {
+    const { StateStore } = await import("../state/store.js");
+    const store = new StateStore(
+      `/tmp/sync-realign-${process.pid}-${Date.now()}.json`,
+    );
+    await store.load();
+    store.upsertPoolMailbox({
+      email: "andreaadams@myoutreachdesk.info",
+      domain: "myoutreachdesk.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 11,
+      firstName: "Andrea",
+      lastName: "Adams",
+      status: "assigned",
+      assignedClientId: 592842,
+      warmedAt: "2026-01-01T00:00:00Z",
+    });
+    const result = syncGenericSeatsFromInventory({
+      existing: [],
+      accounts: [
+        {
+          id: 11,
+          email: "andreaadams@myoutreachdesk.info",
+          type: "GMAIL",
+          client_id: 521881,
+          campaign_ids: [1001],
+          tags: [{ tag_name: "GENERIC" }],
+          is_smtp_success: true,
+          is_imap_success: true,
+        },
+      ],
+      campaigns: [{ id: 1001, client_id: 521881, status: "ACTIVE" }],
+      config: {
+        extraGenericMailboxes: [],
+        extraGenericDomains: [],
+        prewarmedDomains: [],
+      },
+      state: store,
+    });
+    assert.equal(result.seats[0]?.assignedClientId, 521881);
+    assert.equal(
+      store.getPoolMailbox("andreaadams@myoutreachdesk.info")?.assignedClientId,
+      521881,
+    );
+  });
 });

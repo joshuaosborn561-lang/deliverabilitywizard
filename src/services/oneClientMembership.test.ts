@@ -1007,4 +1007,74 @@ describe("OneClientMembershipService", () => {
     assert.deepEqual(updates, []);
     assert.ok(result.skipped.some((row) => row.includes("GABE-VM-RESERVED")));
   });
+
+  it("D257: a stale PowerGRYD pool row does not peel a live TechEvo seat", async () => {
+    const removed: Array<[number, number[]]> = [];
+    const state = new StateStore(
+      `/tmp/one-client-d257-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "andreaadams@myoutreachdesk.info",
+      domain: "myoutreachdesk.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 11,
+      firstName: "Andrea",
+      lastName: "Adams",
+      status: "assigned",
+      assignedClientId: 592842,
+      assignedClientName: "PowerGRYD",
+      warmedAt: "2026-01-01T00:00:00Z",
+    });
+    const service = serviceWith(
+      {
+        listCampaigns: async () => [
+          {
+            id: 1001,
+            name: "TechEvo NE",
+            status: "ACTIVE",
+            client_id: 521881,
+          },
+          {
+            id: 3001,
+            name: "PowerGRYD live",
+            status: "ACTIVE",
+            client_id: 592842,
+          },
+        ],
+        listAllEmailAccounts: async () => [
+          {
+            id: 11,
+            from_email: "andreaadams@myoutreachdesk.info",
+            from_name: "Andrea Adams",
+            signature: "Andrea Adams\nTechEvolution",
+            client_id: 521881,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [1001],
+          },
+          ...padAccounts(1001, 521881),
+        ],
+        listClients: async () => [
+          { id: 521881, name: "TechEvolution", logo: "TechEvolution" },
+          { id: 592842, name: "PowerGRYD", logo: "PowerGRYD" },
+          { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+        ],
+        removeEmailAccountsFromCampaign: async (
+          campaignId: number,
+          ids: number[],
+        ) => {
+          removed.push([campaignId, [...ids]]);
+        },
+      },
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.deepEqual(removed, []);
+    assert.equal(result.pulled.length, 0);
+    assert.equal(
+      state.getPoolMailbox("andreaadams@myoutreachdesk.info")?.assignedClientId,
+      521881,
+    );
+  });
 });

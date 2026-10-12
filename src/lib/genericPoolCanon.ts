@@ -10,6 +10,7 @@ import {
 import { isClientInbox, isGenericMailbox } from "./clientInbox.js";
 import { owesWarmup } from "../services/warmupGate.js";
 import { isRealNamedClientId } from "./dedicatedGeneric.js";
+import { realignStalePoolAssignment } from "./genericPoolRealign.js";
 import { assignClientCohorts } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
@@ -296,6 +297,7 @@ export interface GenericPoolSyncInput {
   state: Pick<StateStore, "getPoolMailbox" | "isCopyCanary"> & {
     isMarkerClientId?: StateStore["isMarkerClientId"];
     getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
+    upsertPoolMailbox?: StateStore["upsertPoolMailbox"];
   };
   now?: Date;
   powerGrydClientId?: number;
@@ -472,6 +474,9 @@ export function syncGenericSeatsFromInventory(
           ? existing.assignedAt
           : now.toISOString();
     const pool = input.state.getPoolMailbox(email);
+    if (mailboxClient != null) {
+      realignStalePoolAssignment(input.state, email, mailboxClient, now);
+    }
     const warmReadyAt =
       existing?.warmReadyAt ??
       (typeof pool?.availableAt === "string" ? pool.availableAt : null) ??

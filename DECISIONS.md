@@ -261,7 +261,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D253 | Live | Production image builds pull Node 22 bookworm-slim from `mirror.gcr.io/library/node`, not anonymous Docker Hub; runtime stays the official image; D247–D252 and 40/40 unchanged |
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
-| D256 | Live | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D256 | Live — empty-by-design / live-SL-wins staffing lock added by D257 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D257 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
 
 ---
 
@@ -8902,6 +8903,67 @@ client; surplus is above that floor.
 min40 does not special-case `isPowerGrydClientId`;
 `minFloorForClient(521881) === 30`; surplus returns
 above that floor; empty-POD Slack stays; CANON dated
-D256.
+D256 (header advanced by D257).
+
+---
+
+## D257 — live Smartlead client_id wins; PowerGRYD empty-by-design
+
+**Date.** 2026-10-12.
+
+**Decision.** Josh (prod 2026-10-12): five google generics
+(`andreaadams@myoutreachdesk.info`,
+`brendaramirez@outreachdeskpro.info` on TechEvo 521881;
+`brianbrown@usemeetconnect.info`,
+`charlesharris@usemeetconnect.info`,
+`christinaevans@getoutreachdesk.info` on Insight 582890)
+were thrashing onto PowerGRYD 592842 because wizard pool
+`assignedClientId` still said 592842 after they were
+pulled off that client. Dedicated-generic resolution
+must not let a stale pool assignment override a live
+Smartlead named `client_id`. Prefer the Smartlead id when
+both are real named clients and they disagree; realign
+the pool row to match. One-client must not peel a
+TechEvo / Insight seat because the pool still says
+PowerGRYD. While PowerGRYD branded named seats are still
+warming (empty-by-design), min40 and campaign top-up
+must not attach a generic whose live `client_id` or
+signature belongs to another named client onto a
+PowerGRYD ACTIVE campaign. This is not a never-generics
+rule (D256): PowerGRYD remains a full named client and
+may take PowerGRYD-branded or free-pool generics once
+branded named seats can send. Do not change bounce or
+campaign pause logic.
+
+**Why.** Canon QA peeled 40 PowerGRYD links at ~5:14pm CT
+2026-10-12. Those campaigns were sending PowerGRYD mail
+under TechEvo / Insight signatures. `resolveDedicatedGenericClientId`
+preferred pool `assignedClientId` over the mailbox
+`client_id`, so every health / canon-ops pass peeled the
+seats off TechEvo / Insight and min40 could re-link them
+onto PowerGRYD. PowerGRYD is supposed to stay empty of
+foreign-branded seats while its branded inventory warms.
+
+**Rejected.** Leaving the D198 "pool always wins" order
+in place. Treating a leftover Goliath / marker mailbox
+id as live ownership (pool still wins there). A permanent
+PowerGRYD never-generics skip (D256). Changing bounce or
+campaign pause writers.
+
+**Supersedes / amends.** Amends D198 mark order: live
+Smartlead named `client_id` wins when the pool names a
+different real client. Amends D256: empty-by-design
+blocks foreign-signature / foreign-client staffing of
+PowerGRYD while branded seats warm; it does not forbid
+PowerGRYD generics after those seats are staffable.
+Amends D207 / D230 / D254 attach: the one-client /
+same-client lock reads live Smartlead first.
+
+**Guards.** `preferredGenericOwnerId` / dedicated resolver
+prefer 521881 / 582890 over pool 592842; `genericEligibleForClientPod`
+refuses the stale-PG case; min40 / one-client regression
+`pool=PG + SL=TE/Insight + PG empty-by-design: seats stay,
+PG stays at 0 senders`; pool realign on sync; CANON dated
+D257.
 
 ---

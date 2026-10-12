@@ -15,6 +15,7 @@ import {
 import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import {
@@ -229,6 +230,13 @@ export class OneClientMembershipService {
             { genericOwnerId, brandByClientId },
           )
         : null;
+      if (
+        generic &&
+        typeof account.client_id === "number" &&
+        dedicatedClientId === account.client_id
+      ) {
+        realignStalePoolAssignment(this.state, email, account.client_id);
+      }
       // D160 — a leftover Generic/POC client_id is a billable pool label
       // we are draining, not an owner. Memberships still resolve through
       // the POC owner (Goliath). A generic with no client_id stays bare.

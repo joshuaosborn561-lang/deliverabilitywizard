@@ -1538,7 +1538,7 @@ describe("D255 Insight-in-copy gets %signature% like every other client", () => 
           {
             seq_number: 1,
             email_body:
-              "<div>Hey {{first_name}}, Microsoft shop with {{gateway_provider}} on top. Defender P2, which {{gateway_provider}} covers.</div><div>Josh Osborn</div><div>Insight</div>",
+              "<div>Hey {{first_name}}, Microsoft shop with {{gateway_provider}} on top. Defender P2, which {{gateway_provider}} covers.</div><div>%signature%</div>",
           },
         ],
         getCampaignLeads: async (_id: number, query: { limit?: number; offset?: number }) => {

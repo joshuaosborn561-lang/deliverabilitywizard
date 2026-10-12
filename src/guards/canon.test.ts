@@ -15688,6 +15688,14 @@ describe("owner intent — D257 stop event-loop freezes", () => {
       stop("every Smartlead HTTP call uses the limiter (D257).", "smartlead.ts lost limiter.schedule."),
     );
     assert.match(
+      smartlead,
+      /limiter\.schedule\(\(\) =>\s*apiRequest/,
+      stop(
+        "limiter calls apiRequest, not request() (D257).",
+        "smartlead.ts request() is recursive.",
+      ),
+    );
+    assert.match(
       limiter,
       /SMARTLEAD_CONCURRENCY/,
       stop("limiter has a concurrency cap (D257).", "smartleadLimiter.ts lost SMARTLEAD_CONCURRENCY."),

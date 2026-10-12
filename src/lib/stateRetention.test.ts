@@ -11,13 +11,14 @@ describe("D257 state retention prune", () => {
     await state.load();
     const now = Date.parse("2026-10-12T20:00:00.000Z");
     const old = new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString();
+    const ancient = new Date(now - 120 * 24 * 60 * 60 * 1000).toISOString();
     const recent = new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString();
 
     const snap = state.get();
     snap.alertedKeys.old = old;
     snap.alertedKeys.fresh = recent;
     snap.remediatedKeys.old = old;
-    snap.resurrectedLeads["1:old@x.com"] = old;
+    snap.resurrectedLeads["1:old@x.com"] = ancient;
     snap.resurrectedLeads["1:new@x.com"] = recent;
     snap.bounceSnapshots["1"] = { bounced: 1, sent: 10, at: old };
     snap.bounceSnapshots["2"] = { bounced: 0, sent: 4, at: recent };
@@ -54,8 +55,8 @@ describe("D257 state retention prune", () => {
     snap.isolation.runs.oldrun = {
       id: "oldrun",
       campaignId: 1,
-      startedAt: old,
-      updatedAt: old,
+      startedAt: ancient,
+      updatedAt: ancient,
       control: "CLEAN",
       verdict: "HEALTHY",
       campaignInSpam: false,
@@ -69,8 +70,8 @@ describe("D257 state retention prune", () => {
       proof: "old",
       detail: {},
       allowed: "owner",
-      requestedAt: old,
-      executedAt: old,
+      requestedAt: ancient,
+      executedAt: ancient,
     };
     snap.isolation.actions.live = {
       id: "live",

@@ -107,7 +107,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D89 | Live — signature-ask collapse superseded by D92/D97 |
 | D90 | Superseded by D141 — burst survives recency-gated; the lifetime-rate rule is retired |
 | D91 | Retired-record (no paused-campaign hunt) — live |
-| D92 | Live — copy containing `Insight` handled by D178 |
+| D92 | Live — Insight copy is standard `%signature%` again (D255 retired D178) |
 | D93 | Live |
 | D94 | Live |
 | D95 | Live |
@@ -191,8 +191,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D174 | Live — never-retire superseded by D181; buy-retry + Porkbun lock stay | Protected-client never-retire/never-burn (seeded Goliath / 548611) is gone; failed post-pull buys still retry themselves; Porkbun checks stay serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back |
-| D177 | Superseded by D178 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
-| D178 | Live — exclusive Insight mailbox blank retired by D192 | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; shared mailbox fields never rewritten |
+| D177 | Superseded by D178, then D255 | Sequence copy containing exact `Insight` never gets auto signature append; `%signature%` / `{{Signature}}` are stripped on the same pass |
+| D178 | Superseded by D255 — in-body Josh Osborn / Insight close retired; Insight copy uses `%signature%` | Insight-in-copy gets `Josh Osborn` / `Insight` written into the sequence body before P.S.; SalesGlider placeholders stripped; shared mailbox fields never rewritten |
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
@@ -259,6 +259,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D251 | Live — min40 fill/abort/ghost covered by D252 | campaign-check-first indexes members, yields, honors abort, and caps SmartDelivery enrich at 90s |
 | D252 | Live | Residual :30 stall after D250: short-campaign pool pick must yield and skip already-rejected seats; Slack abort after the shortfall cannot fail the stage; lastOk stamps when the walk returns; ghost pool seats drop; stringify joins in chunks |
 | D253 | Live | Production image builds pull Node 22 bookworm-slim from `mirror.gcr.io/library/node`, not anonymous Docker Hub; runtime stays the official image; D247–D252 and 40/40 unchanged |
+| D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 
 ---
 
@@ -8758,5 +8759,57 @@ change staffing, holds, spend, or D247–D252.
 **Guards.** Dockerfile `FROM` is the mirror tag and must not
 resolve `docker.io/library/node`; CANON dated D253; D247–D252
 and 40/40 stay in the ledger.
+
+---
+
+## D255 — Insight copy uses %signature%; D178 in-body close is retired
+
+**Date.** 2026-10-12.
+
+**Decision (Josh, 2026-10-12).** Insight copy must **not** contain
+a hardcoded `Josh Osborn` / `Insight` sign-off. The sign-off lives
+in the mailbox signature:
+
+`Josh Osborn`
+`Strategic Account Executive`
+`Insight`
+
+Sequence copy carries `%signature%` like every other client.
+`ensureInsightClose` / `ensureInsightCloseOnSequences` are
+deleted. Campaign-check and leftover `add_signature_tag` write
+the standard tag. No check strips `%signature%` / `{{Signature}}`
+from Insight copy.
+
+**Why.** D178 wrote the close into the body so shared SalesGlider
+mailboxes would not append SalesGlider under Insight copy. Insight
+is now its own client (582890) with its own mailbox signature.
+Hardcoding the sign-off in the body doubles it once `%signature%`
+expands.
+
+**The rule.**
+
+1. Insight sequences get D92 `%signature%` / `{{Signature}}`
+   when missing. A tag that is already there stays.
+2. Never write `Josh Osborn` / `Insight` into sequence copy.
+3. Never strip `%signature%` / `{{Signature}}` from Insight copy.
+4. The mailbox signature is `Josh Osborn` / `Strategic Account
+   Executive` / `Insight`. `desiredMailboxSignature` for
+   SalesGlider stays Name / SalesGlider. D184 exclusive-blank
+   staff stays retired.
+5. `missing_insight_close` is gone. A missing tag is
+   `missing_signature_tag` like every other client.
+
+**Supersedes / amends.** Supersedes D178 (in-body close).
+Supersedes D177 (strip-and-leave-empty) for good. Restores D92
+for Insight copy. Does not reverse D31, D74, D92 for other
+clients, D184/D192 Insight ≠ SG, or D184 exclusive-blank
+retirement.
+
+**Guards.** canon D255: `ensureInsightClose` /
+`ensureInsightCloseOnSequences` absent; campaign-check /
+isolation leftover call `appendSignatureTag` on Insight copy;
+campaign-audit flags missing `%signature%` on Insight; no
+Insight strip of the tag; CANON dated D255. Tests: Insight body
+gets `%signature%` and a leftover tag is not stripped.
 
 ---

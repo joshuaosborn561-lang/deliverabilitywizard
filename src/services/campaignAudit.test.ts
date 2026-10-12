@@ -171,7 +171,7 @@ describe("CampaignAuditService signature QA", () => {
     );
   });
 
-  it("D177: does not flag missing %signature% when copy contains Insight", async () => {
+  it("D255: flags missing %signature% when copy contains Insight", async () => {
     const state = new StateStore(
       `/tmp/campaign-audit-insight-${process.pid}-${Date.now()}.json`,
     );
@@ -215,14 +215,13 @@ describe("CampaignAuditService signature QA", () => {
     );
 
     const result = await service.run(50);
-    assert.equal(
+    assert.ok(
       result.signatureIssues.some(
         (issue) =>
           issue.campaignId === 3921647 &&
           issue.kind === "missing_signature_tag",
       ),
-      false,
-      "Insight-in-copy must not be a missing_signature_tag finding",
+      "Insight-in-copy missing %signature% is a finding (D255)",
     );
     assert.ok(
       result.signatureIssues.some(

@@ -8214,8 +8214,8 @@ describe("owner intent — D176 attach-blocked senders stay off", () => {
   });
 });
 
-describe("owner intent — D178 Insight close lives in the sequence body", () => {
-  it("D178: Insight-in-copy writes Josh Osborn / Insight in the body, never mailbox fields", async () => {
+describe("owner intent — D178 superseded by D255", () => {
+  it("D178: superseded by D255 — in-body Josh Osborn / Insight close is retired", async () => {
     const { readFile } = await import("node:fs/promises");
     const qa = await readFile(
       new URL("../lib/signatureQa.ts", import.meta.url),
@@ -8225,83 +8225,55 @@ describe("owner intent — D178 Insight close lives in the sequence body", () =>
       new URL("../services/campaignCheck.ts", import.meta.url),
       "utf8",
     );
-    const audit = await readFile(
-      new URL("../services/campaignAudit.ts", import.meta.url),
-      "utf8",
-    );
     const isolation = await readFile(
       new URL("../services/isolationExecute.ts", import.meta.url),
       "utf8",
     );
-    assert.match(
-      qa,
-      /sequenceBodiesContainInsight/,
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    assert.equal(
+      /ensureInsightCloseOnSequences/.test(qa),
+      false,
       stop(
-        "Insight close reads sequence copy (D178).",
-        "signatureQa.ts no longer exports sequenceBodiesContainInsight.",
+        "D178 close writer is deleted (D255).",
+        "signatureQa.ts still exports ensureInsightCloseOnSequences.",
       ),
     );
-    assert.match(
-      qa,
-      /INSIGHT_COPY_NEEDLE = "Insight"/,
+    assert.equal(
+      /ensureInsightClose\(/.test(qa),
+      false,
       stop(
-        "Insight close is the exact capital-I substring Insight (D178).",
-        "signatureQa.ts no longer defines INSIGHT_COPY_NEEDLE as Insight.",
+        "D178 close writer is deleted (D255).",
+        "signatureQa.ts still exports ensureInsightClose.",
       ),
     );
-    assert.match(
-      qa,
-      /includes\(INSIGHT_COPY_NEEDLE\)/,
+    assert.equal(
+      /ensureInsightCloseOnSequences/.test(check),
+      false,
       stop(
-        "Insight close is the exact capital-I substring Insight (D178).",
-        "signatureQa.ts no longer matches includes(INSIGHT_COPY_NEEDLE).",
+        "Campaign-check must not write the Insight close (D255).",
+        "campaignCheck.ts still calls ensureInsightCloseOnSequences.",
       ),
     );
-    assert.match(
-      qa,
-      /ensureInsightCloseOnSequences/,
+    assert.equal(
+      /ensureInsightCloseOnSequences/.test(isolation),
+      false,
       stop(
-        "Insight copy must write Josh Osborn / Insight into the body (D178).",
-        "signatureQa.ts no longer exports ensureInsightCloseOnSequences.",
-      ),
-    );
-    assert.match(
-      qa,
-      /INSIGHT_CLOSE_HTML = "Josh Osborn<br>Insight"/,
-      stop(
-        "The Insight close is Josh Osborn then Insight (D178).",
-        "signatureQa.ts no longer defines INSIGHT_CLOSE_HTML as Josh Osborn / Insight.",
-      ),
-    );
-    assert.match(
-      qa,
-      /PS_START/,
-      stop(
-        "The Insight close is inserted before P.S. lines (D178).",
-        "signatureQa.ts no longer detects P.S. for Insight close placement.",
-      ),
-    );
-    assert.match(
-      check,
-      /sequenceBodiesContainInsight/,
-      stop(
-        "Campaign-check must not re-append Insight-in-copy mailbox placeholders (D178).",
-        "campaignCheck.ts no longer consults sequenceBodiesContainInsight.",
-      ),
-    );
-    assert.match(
-      check,
-      /ensureInsightCloseOnSequences/,
-      stop(
-        "Campaign-check must write the Insight close into sequence copy (D178).",
-        "campaignCheck.ts no longer calls ensureInsightCloseOnSequences.",
+        "Leftover add_signature_tag must not write the Insight close (D255).",
+        "isolationExecute.ts still calls ensureInsightCloseOnSequences.",
       ),
     );
     assert.match(
       check,
       /skipMailbox/,
       stop(
-        "Campaign-check must skip D92 SalesGlider mailbox writes on Insight-in-copy (D178).",
+        "Campaign-check still skips SalesGlider mailbox writes on Insight (D178/D192).",
         "campaignCheck.ts no longer returns skipMailbox for Insight campaigns.",
       ),
     );
@@ -8309,7 +8281,7 @@ describe("owner intent — D178 Insight close lives in the sequence body", () =>
       check,
       /mailboxIsExclusiveInsightStaff/,
       stop(
-        "Shared SalesGlider mailboxes stay skipped; only exclusive Insight staff may be blanked (D178/D184).",
+        "Shared SalesGlider mailboxes stay skipped (D178/D184).",
         "campaignCheck.ts no longer gates Insight mailbox writes on exclusive staff.",
       ),
     );
@@ -8322,52 +8294,20 @@ describe("owner intent — D178 Insight close lives in the sequence body", () =>
       ),
     );
     assert.match(
-      audit,
-      /sequenceBodiesContainInsight/,
-      stop(
-        "Campaign-audit must not flag Insight-in-copy missing %signature% (D178).",
-        "campaignAudit.ts no longer consults sequenceBodiesContainInsight.",
-      ),
-    );
-    assert.match(
-      isolation,
-      /ensureInsightCloseOnSequences/,
-      stop(
-        "Leftover add_signature_tag must write Insight close in the body (D178).",
-        "isolationExecute.ts no longer calls ensureInsightCloseOnSequences.",
-      ),
-    );
-    const canon = await readFile(
-      new URL("../../CANON.md", import.meta.url),
-      "utf8",
-    );
-    assert.match(
-      canon,
-      /writes a plain close into the/,
-      stop(
-        "CANON states Insight-in-copy gets Josh Osborn / Insight in the body (D178).",
-        "CANON.md lost the D178 Insight-in-copy rule.",
-      ),
-    );
-    assert.match(
-      canon,
-      /Mailbox \/ email-account signature fields are \*\*never rewritten\*\*/,
-      stop(
-        "CANON forbids mailbox signature writes on the Insight path (D178).",
-        "CANON.md dropped the no-mailbox-write clause.",
-      ),
-    );
-    assert.match(
       canon,
       /D178/,
       stop(
-        "CANON still names the Insight-in-copy close (D178).",
+        "CANON still names D178 as retired (D255).",
         "CANON.md dropped D178 when a later decision landed.",
       ),
     );
-    const decisions = await readFile(
-      new URL("../../DECISIONS.md", import.meta.url),
-      "utf8",
+    assert.match(
+      canon,
+      /D178.*retired|retired \(D255\)|D255 retires D178/,
+      stop(
+        "CANON states D178 in-body close is retired (D255).",
+        "CANON.md still treats D178 as live.",
+      ),
     );
     assert.match(
       decisions,
@@ -8381,8 +8321,16 @@ describe("owner intent — D178 Insight close lives in the sequence body", () =>
       decisions,
       /## D178 — Insight close lives in the sequence body, never the mailbox/,
       stop(
-        "The Insight in-body close is in the ledger (D178).",
+        "The Insight in-body close stays in the ledger (D178).",
         "DECISIONS.md no longer has D178.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /^\| D178 \| Superseded by D255/m,
+      stop(
+        "The status index marks D178 superseded by D255.",
+        "DECISIONS.md index still lists D178 as live.",
       ),
     );
   });
@@ -15232,8 +15180,8 @@ describe("owner intent — D253 production image must not pull Node from Docker 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D253\*\*/,
-      stop("CANON is dated D253.", "CANON.md header is before D253."),
+      /D253/,
+      stop("CANON still names D253.", "CANON.md dropped D253 when a later decision landed."),
     );
     assert.match(
       canon,
@@ -15284,6 +15232,180 @@ describe("owner intent — D253 production image must not pull Node from Docker 
       decisions,
       /^\| D253 \|/m,
       stop("The status index lists D253.", "DECISIONS.md index has no D253 row."),
+    );
+  });
+});
+
+describe("owner intent — D255 Insight copy uses %signature%", () => {
+  it("D255: Insight sequences get %signature%; D178 close writer is gone", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const qa = await readFile(
+      new URL("../lib/signatureQa.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const audit = await readFile(
+      new URL("../services/campaignAudit.ts", import.meta.url),
+      "utf8",
+    );
+    const isolation = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const kinds = await readFile(
+      new URL("../lib/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const core = await readFile(
+      new URL("../lib/canonCompliance.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.equal(
+      /function ensureInsightClose/.test(qa),
+      false,
+      stop(
+        "ensureInsightClose is deleted (D255).",
+        "signatureQa.ts still defines ensureInsightClose.",
+      ),
+    );
+    assert.equal(
+      /function ensureInsightCloseOnSequences/.test(qa),
+      false,
+      stop(
+        "ensureInsightCloseOnSequences is deleted (D255).",
+        "signatureQa.ts still defines ensureInsightCloseOnSequences.",
+      ),
+    );
+    assert.equal(
+      /function stripSignatureTags/.test(qa),
+      false,
+      stop(
+        "Insight %signature% strip is deleted (D255).",
+        "signatureQa.ts still defines stripSignatureTags.",
+      ),
+    );
+    assert.match(
+      qa,
+      /export function appendSignatureTag/,
+      stop(
+        "Standard %signature% append stays (D255).",
+        "signatureQa.ts lost appendSignatureTag.",
+      ),
+    );
+    assert.match(
+      check,
+      /appendSignatureTag\(rows\)/,
+      stop(
+        "Campaign-check writes %signature% on Insight the same as everyone else (D255).",
+        "campaignCheck.ts no longer calls appendSignatureTag.",
+      ),
+    );
+    assert.equal(
+      /ensureInsightCloseOnSequences/.test(check),
+      false,
+      stop(
+        "Campaign-check must not write the Insight close (D255).",
+        "campaignCheck.ts still calls ensureInsightCloseOnSequences.",
+      ),
+    );
+    assert.equal(
+      /missing_insight_close/.test(kinds),
+      false,
+      stop(
+        "missing_insight_close is retired (D255).",
+        "campaignCheck kinds still list missing_insight_close.",
+      ),
+    );
+    assert.equal(
+      /missing_insight_close/.test(core),
+      false,
+      stop(
+        "missing_insight_close is not a Canon core kind (D255).",
+        "canonCompliance.ts still lists missing_insight_close.",
+      ),
+    );
+    assert.match(
+      audit,
+      /if \(missingSignatureTag\(row\.text\)\)/,
+      stop(
+        "Campaign-audit flags missing %signature% on Insight copy (D255).",
+        "campaignAudit.ts no longer flags missingSignatureTag unconditionally.",
+      ),
+    );
+    assert.equal(
+      /!insightInCopy && missingSignatureTag/.test(audit),
+      false,
+      stop(
+        "Campaign-audit must not skip Insight %signature% (D255).",
+        "campaignAudit.ts still skips missing_signature_tag when Insight is in copy.",
+      ),
+    );
+    assert.match(
+      isolation,
+      /appendSignatureTag\(sequences/,
+      stop(
+        "Leftover add_signature_tag appends %signature% on Insight (D255).",
+        "isolationExecute.ts no longer calls appendSignatureTag.",
+      ),
+    );
+    assert.equal(
+      /ensureInsightCloseOnSequences/.test(isolation),
+      false,
+      stop(
+        "Leftover add_signature_tag must not write the Insight close (D255).",
+        "isolationExecute.ts still calls ensureInsightCloseOnSequences.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D255\*\*/,
+      stop("CANON is dated D255.", "CANON.md header is before D255."),
+    );
+    assert.match(
+      canon,
+      /Insight sequences get/,
+      stop(
+        "CANON states Insight sequences get %signature% (D255).",
+        "CANON.md lost the D255 Insight %signature% rule.",
+      ),
+    );
+    assert.match(
+      canon,
+      /never strip `%signature%`/,
+      stop(
+        "CANON forbids stripping %signature% from Insight copy (D255).",
+        "CANON.md dropped the no-strip clause.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Strategic Account Executive/,
+      stop(
+        "CANON names the Insight mailbox title line (D255).",
+        "CANON.md lost Strategic Account Executive.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D255 — Insight copy uses %signature%; D178 in-body close is retired/,
+      stop("The ledger records D255.", "DECISIONS.md has no D255."),
+    );
+    assert.match(
+      decisions,
+      /^\| D255 \|/m,
+      stop("The status index lists D255.", "DECISIONS.md index has no D255 row."),
     );
   });
 });

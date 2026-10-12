@@ -23,7 +23,6 @@ import {
   clientBrandList,
   findForeignBrand,
   missingSignatureTag,
-  sequenceBodiesContainInsight,
   sequenceCopyHay,
 } from "../lib/signatureQa.js";
 import {
@@ -324,7 +323,6 @@ export class CampaignAuditService {
           error,
         );
       }
-      const insightInCopy = sequenceBodiesContainInsight(sequences);
       const insightCampaign = isInsightCampaign(campaign, sequences);
 
       for (const account of input.accounts) {
@@ -380,7 +378,7 @@ export class CampaignAuditService {
 
       if (!sequences) continue;
       for (const row of sequenceCopyHay(sequences)) {
-        if (!insightInCopy && missingSignatureTag(row.text)) {
+        if (missingSignatureTag(row.text)) {
           const detail = `${row.label} is missing %signature%`;
           issues.push({
             campaignId: campaign.id,

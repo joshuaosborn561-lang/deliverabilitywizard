@@ -211,7 +211,7 @@ describe("IsolationExecuteService", () => {
     assert.equal(sequences[0]!.sequence_variants[0]!.subject, "hey");
   });
 
-  it("D178: leftover Add %signature% writes Josh Osborn / Insight in the body", async () => {
+  it("D255: leftover Add %signature% appends the tag on Insight copy", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-insight-${process.pid}-${Date.now()}.json`,
     );
@@ -250,9 +250,9 @@ describe("IsolationExecuteService", () => {
       role: "operator",
     });
     assert.equal(result.ok, true);
-    assert.equal(wrote.length, 1, "Insight leftover must write the in-body close");
-    assert.equal(wrote[0]!.includes("%signature%"), false);
-    assert.match(wrote[0]!, /Josh Osborn<br>Insight/);
+    assert.equal(wrote.length, 1, "Insight leftover must get %signature%");
+    assert.match(wrote[0]!, /%signature%/);
+    assert.equal(wrote[0]!.includes("Josh Osborn"), false);
   });
 
   it("a bulk signature approve fixes every listed campaign in one tap (D87)", async () => {

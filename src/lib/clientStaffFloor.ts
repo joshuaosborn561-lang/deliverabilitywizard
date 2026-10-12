@@ -443,8 +443,10 @@ export function formatStaffFloorDetail(
   const label =
     floor === POC_ENGAGEMENT_SEAT_TARGET
       ? "POC engagement 60"
-      : floor === half
-        ? "half this client's named inboxes (40/POD)"
-        : `on-week staffable ${floor}`;
+      : floor === ON_WEEK_MIN_SENDERS
+        ? "on-week staffable 40"
+        : floor === half
+          ? "half this client's named inboxes (40/POD)"
+          : `on-week staffable ${floor}`;
   return `staffable ${serving}/${floor} (${label})`;
 }

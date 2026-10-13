@@ -1,7 +1,7 @@
 import type { PoolMailboxRecord } from "../state/store.js";
 
 /**
- * D257 — when live Smartlead `client_id` is a real named client and
+ * D258 — when live Smartlead `client_id` is a real named client and
  * the pool row still names a different client, rewrite the pool
  * assignment to match Smartlead. Does not clear a pool assignment
  * when the mailbox id is empty / leftover (D198).

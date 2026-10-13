@@ -261,8 +261,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D253 | Live | Production image builds pull Node 22 bookworm-slim from `mirror.gcr.io/library/node`, not anonymous Docker Hub; runtime stays the official image; D247–D252 and 40/40 unchanged |
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
-| D256 | Live — empty-by-design / live-SL-wins staffing lock added by D257 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
-| D257 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
+| D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D258 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
 
 ---
 
@@ -8903,11 +8903,11 @@ client; surplus is above that floor.
 min40 does not special-case `isPowerGrydClientId`;
 `minFloorForClient(521881) === 30`; surplus returns
 above that floor; empty-POD Slack stays; CANON dated
-D256 (header advanced by D257).
+D256 (header advanced by D258).
 
 ---
 
-## D257 — live Smartlead client_id wins; PowerGRYD empty-by-design
+## D258 — live Smartlead client_id wins; PowerGRYD empty-by-design
 
 **Date.** 2026-10-12.
 
@@ -8964,6 +8964,6 @@ prefer 521881 / 582890 over pool 592842; `genericEligibleForClientPod`
 refuses the stale-PG case; min40 / one-client regression
 `pool=PG + SL=TE/Insight + PG empty-by-design: seats stay,
 PG stays at 0 senders`; pool realign on sync; CANON dated
-D257.
+D258.
 
 ---

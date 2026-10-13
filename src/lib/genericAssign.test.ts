@@ -43,7 +43,7 @@ describe("D230 generic assign lock", () => {
     );
   });
 
-  it("D257: live Smartlead client_id wins when pool assignedClientId disagrees", () => {
+  it("D258: live Smartlead client_id wins when pool assignedClientId disagrees", () => {
     assert.equal(
       genericEligibleForClientPod({
         clientId: 592842,

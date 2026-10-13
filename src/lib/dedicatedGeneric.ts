@@ -5,7 +5,7 @@ import { signatureHay } from "./signatureQa.js";
  * D198 / D199 — a generic mailbox dedicated to one named client.
  *
  * Marks (first match wins):
- *   1. D257 — live Smartlead `client_id` when it and the pool
+ *   1. D258 — live Smartlead `client_id` when it and the pool
  *      `assignedClientId` are different real named clients
  *   2. pool-mailbox `assignedClientId` (wins over leftover /
  *      marker / Goliath mailbox ids — D198)
@@ -80,7 +80,7 @@ function clientIdFromTags(
 }
 
 /**
- * D257 — live Smartlead `client_id` wins when it and the pool
+ * D258 — live Smartlead `client_id` wins when it and the pool
  * assignment are different real named clients. A leftover marker /
  * Goliath / empty mailbox id still loses to a current pool
  * assignment (D198).

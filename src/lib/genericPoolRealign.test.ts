@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { StateStore } from "../state/store.js";
 import { realignStalePoolAssignment } from "./genericPoolRealign.js";
 
-describe("D257 realignStalePoolAssignment", () => {
+describe("D258 realignStalePoolAssignment", () => {
   it("rewrites a stale PowerGRYD pool row to the live Smartlead client", async () => {
     const state = new StateStore(
       `/tmp/pool-realign-${process.pid}-${Date.now()}.json`,

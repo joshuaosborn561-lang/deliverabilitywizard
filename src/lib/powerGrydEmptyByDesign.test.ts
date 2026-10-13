@@ -22,7 +22,7 @@ function warmingPgNamed(i: number): SmartleadAccountWithCampaigns {
   } as SmartleadAccountWithCampaigns;
 }
 
-describe("D257 PowerGRYD empty-by-design", () => {
+describe("D258 PowerGRYD empty-by-design", () => {
   it("is on when branded named seats are still warming", async () => {
     const state = new StateStore(
       `/tmp/pg-empty-${process.pid}-${Date.now()}.json`,

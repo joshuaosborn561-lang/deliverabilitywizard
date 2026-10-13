@@ -192,7 +192,7 @@ export class Min40TopUpService {
     private readonly state: StateStore,
   ) {}
 
-  /** D257 — PowerGRYD branded-warming empty-by-design for this pass. */
+  /** D258 — PowerGRYD branded-warming empty-by-design for this pass. */
   private powerGrydEmptyByDesign = false;
   private powerGrydBrand = "PowerGRYD";
   private allClientBrands: string[] = [];
@@ -577,7 +577,7 @@ export class Min40TopUpService {
         typeof seat.account.client_id === "number" ? seat.account.client_id : null;
       const addAssigned = (assigned: number | undefined | null): void => {
         if (typeof assigned !== "number") return;
-        // D257 — do not index a stale pool assignment against a live
+        // D258 — do not index a stale pool assignment against a live
         // Smartlead named client that disagrees.
         if (
           liveId != null &&
@@ -742,7 +742,7 @@ export class Min40TopUpService {
     campaignById: Map<number, SmartleadCampaign>,
   ): boolean {
     if (account.client_id === clientId) return true;
-    // D257 — live Smartlead named client_id wins over a stale pool row.
+    // D258 — live Smartlead named client_id wins over a stale pool row.
     if (
       typeof account.client_id === "number" &&
       isRealNamedClientId(account.client_id) &&
@@ -803,7 +803,7 @@ export class Min40TopUpService {
     return this.genericMayTakePod(account, email, clientId, onWeekCohort(now));
   }
 
-  /** D257 — hard block foreign-client / foreign-sig generics onto PowerGRYD. */
+  /** D258 — hard block foreign-client / foreign-sig generics onto PowerGRYD. */
   private powerGrydStaffingBlocked(
     account: SmartleadAccountWithCampaigns,
     email: string,

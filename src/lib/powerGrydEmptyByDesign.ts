@@ -26,7 +26,7 @@ import { isStaffableSender } from "./staffableSender.js";
 import { owesWarmup } from "../services/warmupGate.js";
 
 /**
- * D257 — PowerGRYD branded-warming / empty-by-design.
+ * D258 — PowerGRYD branded-warming / empty-by-design.
  *
  * ON when no named PowerGRYD seat is staffable yet (they are still
  * warming, or none exist). While ON, staffing must not put a

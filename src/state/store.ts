@@ -1320,7 +1320,7 @@ export class StateStore {
   }
 
   /**
-   * D257 — rewrite a stale pool assignedClientId to the live Smartlead
+   * D258 — rewrite a stale pool assignedClientId to the live Smartlead
    * client. No-op when the mailbox has no pool row or the ids match.
    */
   realignPoolAssignedClient(

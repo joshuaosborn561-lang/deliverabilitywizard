@@ -15629,8 +15629,8 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
   });
 });
 
-describe("owner intent — D257 live SL client_id wins; PowerGRYD empty-by-design", () => {
-  it("D257: stale pool PG cannot override TE/Insight; empty-by-design blocks foreign staffing", async () => {
+describe("owner intent — D258 live SL client_id wins; PowerGRYD empty-by-design", () => {
+  it("D258: stale pool PG cannot override TE/Insight; empty-by-design blocks foreign staffing", async () => {
     const { readFile } = await import("node:fs/promises");
     const {
       preferredGenericOwnerId,
@@ -15701,33 +15701,33 @@ describe("owner intent — D257 live SL client_id wins; PowerGRYD empty-by-desig
 
     assert.match(
       canon,
-      /Canon as of \*\*D257\*\*/,
-      stop("CANON is dated D257.", "CANON.md header is before D257."),
+      /Canon as of \*\*D258\*\*/,
+      stop("CANON is dated D258.", "CANON.md header is before D258."),
     );
     assert.match(
       canon,
       /empty-by-design/,
-      stop("CANON names empty-by-design (D257).", "CANON.md lost the PowerGRYD empty-by-design lock."),
+      stop("CANON names empty-by-design (D258).", "CANON.md lost the PowerGRYD empty-by-design lock."),
     );
     assert.match(
       dedicated,
       /preferredGenericOwnerId/,
-      stop("Resolver prefers live SL when pool disagrees (D257).", "dedicatedGeneric.ts lost preferredGenericOwnerId."),
+      stop("Resolver prefers live SL when pool disagrees (D258).", "dedicatedGeneric.ts lost preferredGenericOwnerId."),
     );
     assert.match(
       min40,
       /powerGrydStaffingBlocked|genericBlockedOnPowerGrydStaffing/,
-      stop("min40 hard-blocks foreign PG staffing (D257).", "min40TopUp.ts lost the empty-by-design block."),
+      stop("min40 hard-blocks foreign PG staffing (D258).", "min40TopUp.ts lost the empty-by-design block."),
     );
     assert.match(
       decisions,
-      /## D257 — live Smartlead client_id wins; PowerGRYD empty-by-design/,
-      stop("The ledger records D257.", "DECISIONS.md has no D257."),
+      /## D258 — live Smartlead client_id wins; PowerGRYD empty-by-design/,
+      stop("The ledger records D258.", "DECISIONS.md has no D258."),
     );
     assert.match(
       decisions,
-      /^\| D257 \|/m,
-      stop("The status index lists D257.", "DECISIONS.md index has no D257 row."),
+      /^\| D258 \|/m,
+      stop("The status index lists D258.", "DECISIONS.md index has no D258 row."),
     );
   });
 });

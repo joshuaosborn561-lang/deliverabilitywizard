@@ -1008,7 +1008,7 @@ describe("OneClientMembershipService", () => {
     assert.ok(result.skipped.some((row) => row.includes("GABE-VM-RESERVED")));
   });
 
-  it("D257: a stale PowerGRYD pool row does not peel a live TechEvo seat", async () => {
+  it("D258: a stale PowerGRYD pool row does not peel a live TechEvo seat", async () => {
     const removed: Array<[number, number[]]> = [];
     const state = new StateStore(
       `/tmp/one-client-d257-${process.pid}-${Date.now()}.json`,

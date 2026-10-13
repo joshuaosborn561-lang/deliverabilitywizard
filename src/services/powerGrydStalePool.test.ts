@@ -70,7 +70,7 @@ function padNamed(
   }));
 }
 
-describe("D257 stale PowerGRYD pool vs live TechEvo/Insight", () => {
+describe("D258 stale PowerGRYD pool vs live TechEvo/Insight", () => {
   it("pool=PG + SL=TE/Insight + PG empty-by-design: seats stay, PG stays at 0 senders", async () => {
     const state = new StateStore(
       `/tmp/pg-stale-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`,

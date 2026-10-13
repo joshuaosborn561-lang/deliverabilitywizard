@@ -633,7 +633,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     );
   });
 
-  it("D257: realigns a stale PowerGRYD pool row to the live Smartlead client", async () => {
+  it("D258: realigns a stale PowerGRYD pool row to the live Smartlead client", async () => {
     const { StateStore } = await import("../state/store.js");
     const store = new StateStore(
       `/tmp/sync-realign-${process.pid}-${Date.now()}.json`,

@@ -60,7 +60,7 @@ describe("dedicatedGenericClientId (D198)", () => {
     );
   });
 
-  it("D257: live Smartlead client_id wins when the pool assignment disagrees", () => {
+  it("D258: live Smartlead client_id wins when the pool assignment disagrees", () => {
     assert.equal(
       dedicatedGenericClientId(
         { client_id: 521881 },

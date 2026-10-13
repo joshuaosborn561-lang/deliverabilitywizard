@@ -12597,7 +12597,7 @@ describe("owner intent — D226 InboxKit sweep handoff, Slack only after delete"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[6-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[6-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D226 or later.", "CANON.md header lost D226+."),
     );
     assert.match(
@@ -14695,8 +14695,8 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("state.save writes compact JSON off the hot path (D247/D249).", "store.ts lost yielding compact stringify."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("state.save writes compact JSON off-thread (D247/D249/D257).", "store.ts lost off-thread stringify."),
     );
     assert.match(
       store,
@@ -14865,8 +14865,8 @@ describe("owner intent — D249 persist stamps, unblock the loop, catch up", () 
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("full dump is yielding compact JSON (D249).", "store.ts still one-shot stringifies state."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("full dump is off-thread compact JSON (D249/D257).", "store.ts still one-shot stringifies state."),
     );
     assert.match(
       resume,
@@ -14974,8 +14974,8 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("D249 yielding stringify stays (D250).", "store.ts lost stringifyYielding."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("D249/D257 off-thread stringify stays (D250).", "store.ts lost stringifyOffThread."),
     );
     assert.match(
       canon,
@@ -15587,8 +15587,8 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
 
     assert.match(
       canon,
-      /D256/,
-      stop("CANON still names D256.", "CANON.md dropped D256."),
+      /Canon as of \*\*D(25[6-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D256 or later.", "CANON.md header is before D256."),
     );
     assert.doesNotMatch(
       canon,

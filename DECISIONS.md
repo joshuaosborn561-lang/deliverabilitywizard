@@ -262,6 +262,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 | D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D257 | Live | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
 | D258 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
 
 ---
@@ -8965,5 +8966,64 @@ refuses the stale-PG case; min40 / one-client regression
 `pool=PG + SL=TE/Insight + PG empty-by-design: seats stay,
 PG stays at 0 senders`; pool realign on sync; CANON dated
 D258.
+
+---
+
+## D257 — Stop event-loop freezes: state dump, Smartlead limiter, freeze restart, scan-backfill logs
+
+**Date.** 2026-10-12.
+
+**Decision.** Production on Monday 2026-10-12 froze before a
+manual restart at 3:08pm CT. Railway logs showed main-thread
+freezes of 127–139s, about 41s, and a steady 3–5s. Stages
+(test-reconcile, pod-controls, client-rest, campaign-health,
+mailbox-gap, isolation-branch, min40-topup, mailbox-settings-full,
+campaign-check-first) hit their timeouts; the overdue count went
+to 20. `/data/state.json` was about 110MB and
+`[state] save compact-json` took 3.1s on its own. Smartlead 429s
+came from inventory, pod-controls, mailbox-settings, and
+copy-canary. scan-backfill logged nothing.
+
+Harden (outcomes unchanged):
+
+1. **State persistence.** Do not `JSON.stringify` / `JSON.parse`
+   the whole dump on the main thread. Load parses off-thread;
+   the full save prunes old ledgers and finding history
+   (retention cap), coalesces, may debounce per-stage
+   checkpoints, and stringifies off-thread. Sidecar stamps
+   stay immediate (D249). Log stringify duration; tests
+   measure it.
+2. **Shared Smartlead limiter.** Every Smartlead HTTP call
+   (read or write, every stage) takes a concurrency slot
+   (default 2) and a process-wide 429 backoff. Writes still
+   go through MutationQueue on top.
+3. **Freeze watchdog.** Still exits on a single freeze over
+   5 minutes or a pass past 2× max (D247). Also exits when
+   a multi-second freeze repeats (3× ≥3s inside 2 minutes)
+   so Railway restarts before every stage times out.
+4. **scan-backfill logs.** Start, end, and elapsed ms on
+   every run; `skip — no missing placement test` when it
+   does not fire.
+
+**Why.** The D249 yielding walk still spent seconds of CPU
+on a 110MB dump, and a 5-minute single-freeze bar let
+3–139s stalls starve the 15-minute chain. Parallel
+un-limited Smartlead reads 429'd the board. scan-backfill
+was silent so a miss looked like a no-op.
+
+**Rejected.** Delete the freeze watchdog. Pretty-print the
+dump. Raise every stage budget. Skip prune so history
+grows without bound. Leave reads outside the limiter.
+
+**Supersedes / amends.** Amends D167 / D247 / D249 (save
+path: prune + off-thread + debounce). Amends D247 (repeated
+multi-second freeze exit). Amends D89 / D247 (Smartlead
+reads join the limiter). Does not change staffing, holds,
+or spend.
+
+**Guards.** stringifyOffThread / parseFileOffThread;
+pruneStateLedgers retention; SmartleadClient.request uses
+the limiter; freezeWatchdogTick exits on 3× ≥3s; scan-backfill
+start/end logs; CANON dated D258 (D257 rules on the same page).
 
 ---

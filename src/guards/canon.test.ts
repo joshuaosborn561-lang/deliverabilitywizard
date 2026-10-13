@@ -12597,7 +12597,7 @@ describe("owner intent — D226 InboxKit sweep handoff, Slack only after delete"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[6-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
+      /Canon as of \*\*D(22[6-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
       stop("CANON is dated D226 or later.", "CANON.md header lost D226+."),
     );
     assert.match(

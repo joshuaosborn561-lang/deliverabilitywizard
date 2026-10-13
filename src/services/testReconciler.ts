@@ -11,6 +11,7 @@ import {
 } from "../clients/smartdelivery.js";
 import { sleep } from "../lib/http.js";
 import type { StateStore } from "../state/store.js";
+import type { SpamTestSummary } from "../types/index.js";
 
 import {
   campaignIdFromCanaryTestName,
@@ -39,6 +40,21 @@ export interface TestReconcileResult {
 export function isRetiredRecoveryTestName(name: string | undefined): boolean {
   const value = String(name ?? "");
   return /^(Held|Rest) recovery:/i.test(value);
+}
+
+/**
+ * D55/D114 — a Canary copy test is scheduled on a paused shell, so the
+ * enriched `campaign_id` is that shell. The live campaign in the test
+ * name is what "no longer ACTIVE" means. A paused shell is not a stop.
+ */
+export function reconcileCampaignLink(
+  test: Pick<SpamTestSummary, "test_name" | "campaign_id">,
+): string | undefined {
+  if (isCanaryCopyTestName(test.test_name)) {
+    const liveId = campaignIdFromCanaryTestName(test.test_name);
+    if (liveId != null) return String(liveId);
+  }
+  return campaignIdOf(test);
 }
 
 /**
@@ -115,11 +131,7 @@ export class TestReconciler {
       result.automatedTests += 1;
 
       const testId = testIdOf(test);
-      const campaignId =
-        campaignIdOf(test) ??
-        (isCanaryCopyTestName(test.test_name)
-          ? campaignIdFromCanaryTestName(test.test_name)?.toString()
-          : undefined);
+      const campaignId = reconcileCampaignLink(test);
       if (!testId) continue;
 
       if (!campaignId) {

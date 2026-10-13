@@ -116,6 +116,10 @@ import { MutationQueue } from "./lib/mutationQueue.js";
 import { SmartleadLimiter } from "./lib/smartleadLimiter.js";
 import { raceStep, stepTimeoutMs } from "./lib/stepTimeout.js";
 import {
+  runStampedStage,
+  STAGE_PASS_SUPERSEDED,
+} from "./lib/stageStamp.js";
+import {
   CANON_OPS_LOCK_MAX_MS,
   HEALTH_LOCK_MAX_MS,
   InFlightLock,
@@ -788,25 +792,29 @@ async function main(): Promise<void> {
       console.log(`[watchdog] stage ${name} skipped — ${why}`);
       return null;
     }
-    const ctx = passContext.getStore();
-    if (ctx && !ctx.lock.owns(ctx.token)) {
-      console.log(`[watchdog] stage ${name} skipped — pass superseded`);
-      return null;
-    }
-    if (ctx) ctx.lock.setStage(ctx.token, name);
-    try {
-      const out = await raceStep((signal) => fn(signal), stepTimeoutMs(name));
-      state.recordStageOk(name, Date.now() - startedAt, stageIdleReason(out));
-      await checkpointStage(name);
-      return out;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      state.recordStageError(name, message);
-      console.warn(`[watchdog] stage ${name} FAILED: ${message}`);
-      feedBugRemediator(`stage-${name}`, error);
-      await checkpointStage(name);
-      return null;
-    }
+    return runStampedStage({
+      name,
+      startedAt,
+      abandon: () => {
+        const ctx = passContext.getStore();
+        if (ctx && !ctx.lock.owns(ctx.token)) {
+          console.log(`[watchdog] stage ${name} skipped — ${STAGE_PASS_SUPERSEDED}`);
+          return STAGE_PASS_SUPERSEDED;
+        }
+        if (ctx) ctx.lock.setStage(ctx.token, name);
+        return null;
+      },
+      run: () => raceStep((signal) => fn(signal), stepTimeoutMs(name)),
+      idleReason: stageIdleReason,
+      recordOk: (stageName, durationMs, skipReason) =>
+        state.recordStageOk(stageName, durationMs, skipReason),
+      recordError: (stageName, message) => {
+        state.recordStageError(stageName, message);
+        console.warn(`[watchdog] stage ${stageName} FAILED: ${message}`);
+      },
+      checkpoint: checkpointStage,
+      onError: (error) => feedBugRemediator(`stage-${name}`, error),
+    });
   };
 
   const logCanonScoreboard = (): void => {
@@ -976,6 +984,8 @@ async function main(): Promise<void> {
           );
         } catch (error) {
           console.warn("[health] inventory reuse failed — skipping this pass", error);
+          state.recordStageOk("health-pass", Date.now() - passStart, "inventory-failed");
+          await checkpointStage("health-pass");
           await state.save();
           return { skipped: true as const, reason: "inventory-failed" };
         }
@@ -984,6 +994,8 @@ async function main(): Promise<void> {
       }
       if (!inventory) {
         console.warn("[health] inventory fetch failed — skipping this pass");
+        state.recordStageOk("health-pass", Date.now() - passStart, "inventory-failed");
+        await checkpointStage("health-pass");
         await state.save();
         return { skipped: true as const, reason: "inventory-failed" };
       }
@@ -1124,8 +1136,8 @@ async function main(): Promise<void> {
       // 6-hour monitor. Live % still never rotates (D51).
       let isolationBranchResult: unknown = null;
       if (config.enableIsolationBranch) {
-        isolationBranchResult = await stage("isolation-branch", () =>
-          isolationBranch.run(), { skipIfFreshMs, skipIfBeforeStage });
+        isolationBranchResult = await stage("isolation-branch", (signal) =>
+          isolationBranch.run({ signal }), { skipIfFreshMs, skipIfBeforeStage });
       }
 
       // D173/D174 — refresh mailbox ownership and retry a replacement
@@ -2800,6 +2812,13 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           state.latestIsolationRunForCampaign(campaignId),
         threshold: config.remediationInboxThreshold,
         lastOkAt: s.stageHealth?.["isolation-branch"]?.lastOkAt ?? null,
+        keepCampaignId: (() => {
+          const known = new Set(
+            state.listCampaignChecks().map((row) => row.campaignId),
+          );
+          if (!known.size) return undefined;
+          return (campaignId: number) => known.has(campaignId);
+        })(),
       }),
       inFlight: {
         health: healthLock.snapshot(),

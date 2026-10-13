@@ -40,6 +40,8 @@ import {
   sameEspInboxUgly,
   shouldRequeueIsolation,
 } from "../lib/placementSuspect.js";
+import { isAbortError, throwIfAborted } from "../lib/abortWork.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { isExcluded } from "./campaignTopUp.js";
 import type { CopyIsolationService } from "./copyIsolation.js";
 import type { IsolationRigService } from "./isolationRig.js";
@@ -75,7 +77,11 @@ export class IsolationBranchService {
     private readonly copyCanary?: CopyCanaryService,
   ) {}
 
-  async run(opts: { dryRun?: boolean; campaignId?: number } = {}): Promise<IsolationBranchResult> {
+  async run(opts: {
+    dryRun?: boolean;
+    campaignId?: number;
+    signal?: AbortSignal;
+  } = {}): Promise<IsolationBranchResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: IsolationBranchResult = {
       dryRun,
@@ -92,15 +98,27 @@ export class IsolationBranchService {
     let listedOk = false;
     if (!opts.campaignId) {
       try {
+        throwIfAborted(opts.signal);
         campaigns = await this.smartlead.listCampaigns();
         listedOk = true;
+        const pruned = this.state.pruneIsolationForGoneCampaigns(campaigns);
+        if (pruned) {
+          console.log(
+            `[isolation-branch] pruned ${pruned} score/suspect row(s) for deleted or finished campaigns (D261)`,
+          );
+        }
       } catch (error) {
+        if (isAbortError(error)) {
+          result.errors.push("aborted: stopped before placement queue");
+          await this.state.save();
+          return result;
+        }
         console.warn(
           "[isolation-branch] could not list campaigns for placement queue",
           error,
         );
       }
-      await this.queueUglyPlacementSuspects(campaigns);
+      await this.queueUglyPlacementSuspects(campaigns, opts.signal);
     }
 
     const statusById = new Map(
@@ -108,6 +126,7 @@ export class IsolationBranchService {
     );
     // D164: re-read INCONCLUSIVE (incl. PAUSED + evaluatedAt).
     // D165: leftover evaluate skips COMPLETED/STOPPED (dead, not sending).
+    // D261: deleted / missing from the live list are pruned, not evaluated.
     // PAUSED stays in the re-read set; Slack/re-queue stay ACTIVE-only.
     const due = opts.campaignId
       ? []
@@ -120,9 +139,17 @@ export class IsolationBranchService {
           isFinishedSendingStatus(statusById.get(row.campaignId)),
         )
       : [];
+    const skippedMissing = listedOk
+      ? due.filter((row) => !statusById.has(row.campaignId))
+      : [];
     if (skippedFinished.length) {
       console.log(
         `[isolation-branch] skip ${skippedFinished.length} COMPLETED/STOPPED leftover suspect(s) (D165)`,
+      );
+    }
+    if (skippedMissing.length) {
+      console.log(
+        `[isolation-branch] skip ${skippedMissing.length} deleted leftover suspect(s) (D261)`,
       );
     }
     const targets = opts.campaignId
@@ -130,11 +157,18 @@ export class IsolationBranchService {
       : due.filter(
           (row) =>
             !listedOk ||
-            !isFinishedSendingStatus(statusById.get(row.campaignId)),
+            (statusById.has(row.campaignId) &&
+              !isFinishedSendingStatus(statusById.get(row.campaignId))),
         );
 
     for (const target of targets) {
+      if (opts.signal?.aborted) {
+        result.errors.push("aborted: stopped remaining isolation evaluates");
+        break;
+      }
       try {
+        await yieldEventLoop();
+        throwIfAborted(opts.signal);
         const priorReason = this.state
           .listCopySuspects()
           .find((row) => row.campaignId === target.campaignId)?.reason;
@@ -142,6 +176,8 @@ export class IsolationBranchService {
           dryRun,
           campaignInSpam: true,
           contentBlock: /content_block/i.test(priorReason ?? ""),
+          persist: false,
+          signal: opts.signal,
         });
         result.evaluated += 1;
         if (run.verdict === "COPY") result.copy += 1;
@@ -162,6 +198,10 @@ export class IsolationBranchService {
             : prior?.evaluatedAt,
         });
       } catch (error) {
+        if (isAbortError(error)) {
+          result.errors.push("aborted: stopped remaining isolation evaluates");
+          break;
+        }
         result.errors.push(
           `#${target.campaignId}: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -236,8 +276,11 @@ export class IsolationBranchService {
       campaignInSpam?: boolean;
       silent?: boolean;
       contentBlock?: boolean;
+      persist?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): Promise<IsolationRunRecord> {
+    throwIfAborted(opts.signal);
     const campaign = await this.smartlead.getCampaign(campaignId);
     if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) {
       const skipped: IsolationRunRecord = {
@@ -389,7 +432,7 @@ export class IsolationBranchService {
       });
       this.state.setCanonMissAlert(campaignId, decided.verdict);
     }
-    await this.state.save();
+    if (opts.persist !== false) await this.state.save();
     return run;
   }
 
@@ -401,8 +444,9 @@ export class IsolationBranchService {
    */
   async queueUglyPlacementSuspects(
     campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>>,
+    signal?: AbortSignal,
   ): Promise<number> {
-
+    throwIfAborted(signal);
     const listedTests = normalizeTestList(
       await this.smartDelivery.listTests({}).catch(() => []),
     );
@@ -418,6 +462,8 @@ export class IsolationBranchService {
     const seen = new Set<number>();
 
     for (const test of tests) {
+      if (signal?.aborted) break;
+      await yieldEventLoop();
       const target = liveCampaignForPlacementTrigger({
         testName: test.test_name,
         testCampaignId: campaignIdOf(test),

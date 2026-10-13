@@ -16015,8 +16015,8 @@ describe("owner intent — D260 generic-family assigned seats stay generic", () 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D260\*\*/,
-      stop("CANON is dated D260.", "CANON.md header is before D260."),
+      /Canon as of \*\*D26[01]\*\*/,
+      stop("CANON is dated D260+.", "CANON.md header is before D260."),
     );
     assert.match(
       canon,
@@ -16050,6 +16050,113 @@ describe("owner intent — D260 generic-family assigned seats stay generic", () 
       stop(
         "Spend approval stays required (D260).",
         "retireReplacement.ts flipped requireSpendApproval.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D261 started stages must stamp", () => {
+  it("D261: stage() stamps every exit; isolation-branch aborts and prunes gone campaigns", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    const stamp = await readFile(new URL("../lib/stageStamp.ts", import.meta.url), "utf8");
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+
+    assert.match(
+      index,
+      /runStampedStage/,
+      stop("stage() goes through runStampedStage (D261).", "index.ts lost runStampedStage."),
+    );
+    assert.match(
+      index,
+      /STAGE_PASS_SUPERSEDED/,
+      stop("A superseded pass stamps (D261).", "index.ts still skips superseded silently."),
+    );
+    assert.match(
+      index,
+      /isolationBranch\.run\(\{\s*signal\s*\}\)/,
+      stop(
+        "isolation-branch receives the stage signal (D261).",
+        "index.ts still calls isolationBranch.run() without the signal.",
+      ),
+    );
+    assert.match(
+      index,
+      /keepCampaignId/,
+      stop(
+        "/health hides deleted campaign holes (D261).",
+        "index.ts placementIsolation lost keepCampaignId.",
+      ),
+    );
+    assert.match(
+      stamp,
+      /exited without stamp/,
+      stop("Silent exit has a stamp string (D261).", "stageStamp.ts lost exited without stamp."),
+    );
+    assert.match(
+      stamp,
+      /finalizeStageStamp/,
+      stop("finally stamps if nothing landed (D261).", "stageStamp.ts lost finalizeStageStamp."),
+    );
+    assert.match(
+      branch,
+      /persist:\s*false/,
+      stop(
+        "Batch evaluate does not dump state per campaign (D261).",
+        "isolationBranch.ts still saves on every evaluate during run().",
+      ),
+    );
+    assert.match(
+      branch,
+      /pruneIsolationForGoneCampaigns/,
+      stop(
+        "Deleted campaigns are pruned (D261).",
+        "isolationBranch.ts lost pruneIsolationForGoneCampaigns.",
+      ),
+    );
+    assert.match(
+      branch,
+      /throwIfAborted/,
+      stop("isolation-branch honors abort (D261).", "isolationBranch.ts lost throwIfAborted."),
+    );
+    assert.match(
+      store,
+      /pruneIsolationForGoneCampaigns/,
+      stop("Store prunes gone scores/suspects (D261).", "store.ts lost pruneIsolationForGoneCampaigns."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D261\*\*/,
+      stop("CANON is dated D261.", "CANON.md header is before D261."),
+    );
+    assert.match(
+      canon,
+      /exited without stamp/,
+      stop("CANON states a started stage cannot finish silent (D261).", "CANON.md lost the D261 MUST."),
+    );
+    assert.match(
+      decisions,
+      /## D261 — A started watchdog stage must stamp/,
+      stop("The ledger records D261.", "DECISIONS.md has no D261."),
+    );
+    assert.match(
+      decisions,
+      /^\| D261 \|/m,
+      stop("The status index lists D261.", "DECISIONS.md index has no D261 row."),
+    );
+    assert.doesNotMatch(
+      branch,
+      /updateCampaignStatus/,
+      stop(
+        "isolation-branch still does not write campaign status (D40/D261).",
+        "isolationBranch.ts gained updateCampaignStatus.",
       ),
     );
   });

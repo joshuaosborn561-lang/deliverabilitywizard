@@ -357,4 +357,35 @@ describe("placement isolation health (D159)", () => {
     assert.equal(snap.ugly, 1);
     assert.equal(snap.uglyWithoutIsolation.length, 1);
   });
+
+  it("D261: deleted / unknown campaigns are not isolation holes", () => {
+    const deleted = {
+      ...score,
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+    };
+    const holes = uglyWithoutIsolation({
+      scores: [score, deleted],
+      suspects: [],
+      latestRun: () => undefined,
+      threshold: 80,
+      keepCampaignId: (id) => id === live.id,
+    });
+    assert.deepEqual(
+      holes.map((row) => row.campaignId),
+      [live.id],
+    );
+    const snap = placementIsolationHealth({
+      scores: [score, deleted],
+      suspects: [],
+      latestRun: () => undefined,
+      threshold: 80,
+      lastOkAt: "2026-10-13T14:24:12.754Z",
+      keepCampaignId: (id) => id === live.id,
+    });
+    assert.equal(snap.scored, 1);
+    assert.equal(snap.ugly, 1);
+    assert.equal(snap.uglyWithoutIsolation.length, 1);
+    assert.equal(snap.uglyWithoutIsolation[0]?.campaignId, live.id);
+  });
 });

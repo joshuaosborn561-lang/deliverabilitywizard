@@ -164,7 +164,7 @@ describe("DomainLifecycleService", () => {
       slack as never,
     );
     const owner = {
-      domain: "trygoliathcybersecurity.info",
+      domain: "goliath.info",
       kind: "client" as const,
       clientId: 548611,
       clientName: "Goliath Cybersecurity (Dave Ackley)",
@@ -178,15 +178,15 @@ describe("DomainLifecycleService", () => {
     state.upsertDomainOwner(owner);
     await svc.afterReadings(
       [
-        { email: "a@trygoliathcybersecurity.info", placement: "SPAM", ranAt: "t1" },
-        { email: "b@trygoliathcybersecurity.info", placement: "SPAM", ranAt: "t1" },
-        { email: "c@trygoliathcybersecurity.info", placement: "SPAM", ranAt: "t1" },
+        { email: "a@goliath.info", placement: "SPAM", ranAt: "t1" },
+        { email: "b@goliath.info", placement: "SPAM", ranAt: "t1" },
+        { email: "c@goliath.info", placement: "SPAM", ranAt: "t1" },
       ],
       {
         accounts: [
-          { from_email: "a@trygoliathcybersecurity.info", client_id: 548611 },
-          { from_email: "b@trygoliathcybersecurity.info", client_id: 548611 },
-          { from_email: "c@trygoliathcybersecurity.info", client_id: 548611 },
+          { from_email: "a@goliath.info", client_id: 548611 },
+          { from_email: "b@goliath.info", client_id: 548611 },
+          { from_email: "c@goliath.info", client_id: 548611 },
         ] as never,
         clients: [
           { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
@@ -195,15 +195,15 @@ describe("DomainLifecycleService", () => {
     );
     await svc.afterReadings(
       [
-        { email: "a@trygoliathcybersecurity.info", placement: "SPAM", ranAt: "t2" },
-        { email: "b@trygoliathcybersecurity.info", placement: "SPAM", ranAt: "t2" },
-        { email: "c@trygoliathcybersecurity.info", placement: "SPAM", ranAt: "t2" },
+        { email: "a@goliath.info", placement: "SPAM", ranAt: "t2" },
+        { email: "b@goliath.info", placement: "SPAM", ranAt: "t2" },
+        { email: "c@goliath.info", placement: "SPAM", ranAt: "t2" },
       ],
       {
         accounts: [
-          { from_email: "a@trygoliathcybersecurity.info", client_id: 548611 },
-          { from_email: "b@trygoliathcybersecurity.info", client_id: 548611 },
-          { from_email: "c@trygoliathcybersecurity.info", client_id: 548611 },
+          { from_email: "a@goliath.info", client_id: 548611 },
+          { from_email: "b@goliath.info", client_id: 548611 },
+          { from_email: "c@goliath.info", client_id: 548611 },
         ] as never,
         clients: [
           { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
@@ -213,13 +213,13 @@ describe("DomainLifecycleService", () => {
     const actions = state.listIsolationActions();
     const retire = actions.find((row) => row.kind === "retire_domain");
     assert.ok(retire, "Goliath burned domain opens a normal Retire ask (D181)");
-    assert.match(retire?.title ?? "", /Retire trygoliathcybersecurity\.info/);
+    assert.match(retire?.title ?? "", /Retire goliath\.info/);
     assert.doesNotMatch(retire?.title ?? "", /not retiring/i);
     assert.doesNotMatch(retire?.proof ?? "", /protected client/i);
     assert.match(String(retire?.detail.parentDomain ?? ""), /goliath/);
     assert.doesNotMatch(String(retire?.detail.parentDomain ?? ""), /crosslaunchco/);
     assert.equal(
-      state.getDomainHistory("trygoliathcybersecurity.info")?.status,
+      state.getDomainHistory("goliath.info")?.status,
       "retire_pending",
     );
   });

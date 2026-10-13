@@ -613,9 +613,9 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     await state.load();
     const action = buildIsolationAction({
       kind: "retire_domain",
-      title: "Retire meetconnectnow.com",
+      title: "Retire goliath.info",
       proof: "proof",
-      detail: { domain: "meetconnectnow.com" },
+      detail: { domain: "goliath.info" },
     });
     state.upsertIsolationAction(action);
     const removed: Array<[number, number[]]> = [];
@@ -626,7 +626,7 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       listAllEmailAccounts: async () => [
         {
           id: 21,
-          from_email: "a@meetconnectnow.com",
+          from_email: "a@goliath.info",
           type: "GMAIL",
           client_id: 548611,
           campaign_ids: [10],
@@ -675,7 +675,7 @@ describe("D133/D134 — the taps act fleet-wide", () => {
     assert.equal(buyCalls.length, 1, "same tap buys the client-named replacement");
     assert.match(String(buyCalls[0]?.parentDomain ?? ""), /goliath/);
     assert.doesNotMatch(String(buyCalls[0]?.parentDomain ?? ""), /crosslaunchco/);
-    assert.ok(sent.some((text) => /Retired \*meetconnectnow\.com\*/i.test(text)));
+    assert.ok(sent.some((text) => /Retired \*goliath\.info\*/i.test(text)));
     assert.ok(!sent.some((text) => /Did not retire/i.test(text)));
     assert.ok(!sent.some((text) => /protected client/i.test(text)));
   });

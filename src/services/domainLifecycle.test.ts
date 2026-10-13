@@ -155,7 +155,7 @@ describe("DomainLifecycleService", () => {
     assert.doesNotMatch(parent, /crosslaunchco/);
   });
 
-  it("D181: a Goliath domain opens a normal retire ask, not cover-buy-only", async () => {
+  it("D181: a Goliath-named domain opens a normal retire ask, not cover-buy-only", async () => {
     const state = await store();
     const slack = new FakeSlack();
     const svc = new DomainLifecycleService(
@@ -164,29 +164,29 @@ describe("DomainLifecycleService", () => {
       slack as never,
     );
     const owner = {
-      domain: "nowoutreachdesk.com",
+      domain: "goliath.info",
       kind: "client" as const,
       clientId: 548611,
       clientName: "Goliath Cybersecurity (Dave Ackley)",
       mailboxCount: 3,
       uniqueClientIds: [548611],
-      planSaysGeneric: true,
-      conflict: true,
+      planSaysGeneric: false,
+      conflict: false,
       source: "mailboxes" as const,
       updatedAt: "t1",
     };
     state.upsertDomainOwner(owner);
     await svc.afterReadings(
       [
-        { email: "a@nowoutreachdesk.com", placement: "SPAM", ranAt: "t1" },
-        { email: "b@nowoutreachdesk.com", placement: "SPAM", ranAt: "t1" },
-        { email: "c@nowoutreachdesk.com", placement: "SPAM", ranAt: "t1" },
+        { email: "a@goliath.info", placement: "SPAM", ranAt: "t1" },
+        { email: "b@goliath.info", placement: "SPAM", ranAt: "t1" },
+        { email: "c@goliath.info", placement: "SPAM", ranAt: "t1" },
       ],
       {
         accounts: [
-          { from_email: "a@nowoutreachdesk.com", client_id: 548611 },
-          { from_email: "b@nowoutreachdesk.com", client_id: 548611 },
-          { from_email: "c@nowoutreachdesk.com", client_id: 548611 },
+          { from_email: "a@goliath.info", client_id: 548611 },
+          { from_email: "b@goliath.info", client_id: 548611 },
+          { from_email: "c@goliath.info", client_id: 548611 },
         ] as never,
         clients: [
           { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
@@ -195,15 +195,15 @@ describe("DomainLifecycleService", () => {
     );
     await svc.afterReadings(
       [
-        { email: "a@nowoutreachdesk.com", placement: "SPAM", ranAt: "t2" },
-        { email: "b@nowoutreachdesk.com", placement: "SPAM", ranAt: "t2" },
-        { email: "c@nowoutreachdesk.com", placement: "SPAM", ranAt: "t2" },
+        { email: "a@goliath.info", placement: "SPAM", ranAt: "t2" },
+        { email: "b@goliath.info", placement: "SPAM", ranAt: "t2" },
+        { email: "c@goliath.info", placement: "SPAM", ranAt: "t2" },
       ],
       {
         accounts: [
-          { from_email: "a@nowoutreachdesk.com", client_id: 548611 },
-          { from_email: "b@nowoutreachdesk.com", client_id: 548611 },
-          { from_email: "c@nowoutreachdesk.com", client_id: 548611 },
+          { from_email: "a@goliath.info", client_id: 548611 },
+          { from_email: "b@goliath.info", client_id: 548611 },
+          { from_email: "c@goliath.info", client_id: 548611 },
         ] as never,
         clients: [
           { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
@@ -213,14 +213,47 @@ describe("DomainLifecycleService", () => {
     const actions = state.listIsolationActions();
     const retire = actions.find((row) => row.kind === "retire_domain");
     assert.ok(retire, "Goliath burned domain opens a normal Retire ask (D181)");
-    assert.match(retire?.title ?? "", /Retire nowoutreachdesk\.com/);
+    assert.match(retire?.title ?? "", /Retire goliath\.info/);
     assert.doesNotMatch(retire?.title ?? "", /not retiring/i);
     assert.doesNotMatch(retire?.proof ?? "", /protected client/i);
     assert.match(String(retire?.detail.parentDomain ?? ""), /goliath/);
     assert.doesNotMatch(String(retire?.detail.parentDomain ?? ""), /crosslaunchco/);
     assert.equal(
-      state.getDomainHistory("nowoutreachdesk.com")?.status,
+      state.getDomainHistory("goliath.info")?.status,
       "retire_pending",
+    );
+  });
+
+  it("D260: a per-domain refusal does not abort later domains or skip save", async () => {
+    const state = await store();
+    const slack = new FakeSlack();
+    const svc = new DomainLifecycleService(
+      loadConfig({} as NodeJS.ProcessEnv),
+      state,
+      slack as never,
+    );
+    const result = await svc.afterReadings([
+      { email: "a@x.info", placement: "SPAM", ranAt: "t1" },
+      { email: "b@x.info", placement: "SPAM", ranAt: "t1" },
+      { email: "a@crosslaunchco.com", placement: "SPAM", ranAt: "t1" },
+      { email: "b@crosslaunchco.com", placement: "SPAM", ranAt: "t1" },
+      { email: "c@crosslaunchco.com", placement: "SPAM", ranAt: "t1" },
+    ]);
+    assert.equal(result.domains, 2);
+    const skipped = state.getDomainHistory("x.info");
+    assert.ok(skipped, "refusal is recorded on the throwing domain");
+    assert.match(
+      skipped?.lastReason ?? "",
+      /refusing a generic replacement|Cannot derive a client brand|D161/,
+    );
+    assert.equal(skipped?.skipCount, 1);
+    const actions = state.listIsolationActions();
+    assert.equal(actions.length, 1, "later domain still got a retire/cover ask");
+    assert.equal(actions[0]?.kind, "buy_domains");
+    assert.match(actions[0]?.title ?? "", /crosslaunchco\.com/);
+    assert.ok(
+      state.getDomainHistory("crosslaunchco.com"),
+      "later domain history was saved",
     );
   });
 

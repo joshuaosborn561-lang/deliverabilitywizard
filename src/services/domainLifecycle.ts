@@ -81,74 +81,94 @@ export class DomainLifecycleService {
 
     for (const [domain, group] of byDomain) {
       result.domains += 1;
-      const cycleAt =
-        group
-          .map((row) => row.ranAt)
-          .filter((at): at is string => Boolean(at))
-          .sort()
-          .at(-1) ?? new Date().toISOString();
-      const prev = this.store.getDomainHistory(domain);
-      if (prev?.status === "retired") continue;
-      if (domainAlreadyRetired(this.store, domain)) continue;
-      if (prev?.readings.some((point) => point.at === cycleAt)) continue;
+      try {
+        const cycleAt =
+          group
+            .map((row) => row.ranAt)
+            .filter((at): at is string => Boolean(at))
+            .sort()
+            .at(-1) ?? new Date().toISOString();
+        const prev = this.store.getDomainHistory(domain);
+        if (prev?.status === "retired") continue;
+        if (domainAlreadyRetired(this.store, domain)) continue;
+        if (prev?.readings.some((point) => point.at === cycleAt)) continue;
 
-      const verdict = judgeDomainCycle(
-        domain,
-        group,
-        this.config.extraGenericDomains,
-      );
-      const consecutiveFails = nextConsecutiveFails(
-        prev?.consecutiveFails ?? 0,
-        verdict.domainFailed,
-      );
-      const owner = ownerOfDomain(
-        domain,
-        this.store,
-        inventory?.accounts,
-        inventory?.clients,
-        this.config,
-      );
-      if (owner) this.store.upsertDomainOwner(owner);
-      const history: DomainControlHistoryRecord = {
-        domain,
-        fleet: verdict.fleet,
-        consecutiveFails,
-        status:
-          consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS
-            ? "retire_pending"
-            : consecutiveFails >= 1
-              ? "watch"
-              : "ok",
-        readings: [
-          ...(prev?.readings ?? []),
-          {
-            at: cycleAt,
-            domainFailed: verdict.domainFailed,
-            failingEmails: verdict.failingEmails,
-            testedEmails: verdict.testedEmails,
-          },
-        ].slice(-8),
-        lastReason: verdict.reason,
-      };
-      this.store.upsertDomainHistory(history);
-      if (!verdict.domainFailed) continue;
+        const verdict = judgeDomainCycle(
+          domain,
+          group,
+          this.config.extraGenericDomains,
+        );
+        const consecutiveFails = nextConsecutiveFails(
+          prev?.consecutiveFails ?? 0,
+          verdict.domainFailed,
+        );
+        const owner = ownerOfDomain(
+          domain,
+          this.store,
+          inventory?.accounts,
+          inventory?.clients,
+          this.config,
+        );
+        if (owner) this.store.upsertDomainOwner(owner);
+        const history: DomainControlHistoryRecord = {
+          domain,
+          fleet: verdict.fleet,
+          consecutiveFails,
+          status:
+            consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS
+              ? "retire_pending"
+              : consecutiveFails >= 1
+                ? "watch"
+                : "ok",
+          readings: [
+            ...(prev?.readings ?? []),
+            {
+              at: cycleAt,
+              domainFailed: verdict.domainFailed,
+              failingEmails: verdict.failingEmails,
+              testedEmails: verdict.testedEmails,
+            },
+          ].slice(-8),
+          lastReason: verdict.reason,
+          skipCount: prev?.skipCount,
+        };
+        this.store.upsertDomainHistory(history);
+        if (!verdict.domainFailed) continue;
 
-      const proof = domainProof(verdict, consecutiveFails);
-      const preferRetire =
-        consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS;
-      const asked = await requestRetireOrCover({
-        store: this.store,
-        slack: this.slack,
-        config: this.config,
-        domain,
-        preferRetire,
-        proof,
-        owner,
-        extraDetail: { failingEmails: verdict.failingEmails },
-      });
-      if (asked.covered) result.covered += 1;
-      else if (asked.opened?.kind === "retire_domain") result.retire += 1;
-      else if (asked.opened) result.buyAhead += 1;
+        const proof = domainProof(verdict, consecutiveFails);
+        const preferRetire =
+          consecutiveFails >= RETIRE_AFTER_CONSECUTIVE_FAILS;
+        const asked = await requestRetireOrCover({
+          store: this.store,
+          slack: this.slack,
+          config: this.config,
+          domain,
+          preferRetire,
+          proof,
+          owner,
+          extraDetail: { failingEmails: verdict.failingEmails },
+        });
+        if (asked.covered) result.covered += 1;
+        else if (asked.opened?.kind === "retire_domain") result.retire += 1;
+        else if (asked.opened) result.buyAhead += 1;
+      } catch (err) {
+        // D260 — a per-domain retire/cover refusal must not abort the
+        // rest of the stage or skip store.save(). Only infrastructure
+        // errors after this loop should fail domain-lifecycle.
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[domain-lifecycle] ${domain} skipped: ${message}`);
+        const prev = this.store.getDomainHistory(domain);
+        this.store.upsertDomainHistory({
+          domain,
+          fleet: prev?.fleet ?? false,
+          consecutiveFails: prev?.consecutiveFails ?? 0,
+          status: prev?.status ?? "ok",
+          readings: prev?.readings ?? [],
+          lastReason: message,
+          skipCount: (prev?.skipCount ?? 0) + 1,
+          retiredAt: prev?.retiredAt,
+        });
+      }
     }
     await this.store.save();
     return result;

@@ -14,7 +14,11 @@
 import { GENERIC_POOL_PLAN } from "../data/genericPoolPlan.js";
 import { isBcpOwnedDomain } from "./bcp.js";
 import { brandFromClientDisplayName } from "./clientBrand.js";
-import { isGenericPoolDomain } from "./clientInbox.js";
+import {
+  isGenericPoolDomain,
+  looksLikeGenericFamilyDomain,
+} from "./clientInbox.js";
+import { isClientNamedDomain } from "./clientNamedDomain.js";
 import type { DomainOwnerRecord } from "./domainOwnership.js";
 import {
   brandRootFromParent,
@@ -131,21 +135,27 @@ export type SendingDomainOwner = Pick<
  * replacements MAY be generic spins. Everything else is a client domain
  * (fail closed): BCP, a named-client brand, or an unknown domain.
  *
- * D173 — live mailbox ownership wins: a plan-listed domain staffed by
- * one real client is not generic, even when the pool plan lists it.
+ * D260 — generic-family hosts (outreachdesk / meetconnect including
+ * box- affixes, GENERIC-tagged seats) stay generic even when assigned
+ * to a client. D173 mailbox-wins still applies to domains that are
+ * not generic-family. A real client-named domain is never generic
+ * (D161/D243).
  */
 export function isGenericSendingDomain(
   domain: string,
   config: RetireReplacementConfig,
   owner?: SendingDomainOwner,
 ): boolean {
-  if (owner?.kind === "client" && owner.clientId) return false;
   const host = domain.trim().toLowerCase();
   if (!host) return false;
+  if (isClientNamedDomain(host) || isBcpOwnedDomain(host)) return false;
+  if (owner?.kind === "generic") return true;
+  if (looksLikeGenericFamilyDomain(host, config)) return true;
+  if (isGenericBrandName(host, genericBrandRoots(config))) return true;
   if (isGenericPoolDomain(host)) return true;
   if (config.extraGenericDomains.includes(host)) return true;
   if (config.prewarmedDomains.includes(host)) return true;
-  if (isGenericBrandName(host, genericBrandRoots(config))) return true;
+  if (owner?.kind === "client" && owner.clientId) return false;
   return false;
 }
 
@@ -156,6 +166,8 @@ export function isClientSendingDomain(
 ): boolean {
   const host = domain.trim().toLowerCase();
   if (!host) return false;
+  if (isClientNamedDomain(host) || isBcpOwnedDomain(host)) return true;
+  if (isGenericSendingDomain(host, config, owner)) return false;
   if (owner?.kind === "client" && owner.clientId) return true;
   return !isGenericSendingDomain(host, config, owner);
 }

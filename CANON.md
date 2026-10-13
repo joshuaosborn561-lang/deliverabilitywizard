@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D259** (2026-10-12). One page of current truth. When a new
+Canon as of **D260** (2026-10-13). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -619,12 +619,24 @@ Caps ramp manually (35 on Oct 12).
   domains (D161).   Cross-client
   top-up is a compensated **move**; same-client is additive. (The old
   recovery-swap system and its reservations are deleted, D130.)
-  **Ownership is who staffs the domain, not the pool plan** (D173): a
-  sending domain whose live mailboxes belong to one real Smartlead
-  client is that client's domain for retire eligibility, replacement
-  naming, and generic-cover — even when it appears on the generic
-  pool list. The plan is the fallback when mailboxes name no real
-  client. A plan-vs-mailbox conflict is logged; the mailboxes win.
+  **Ownership is who staffs the domain, not the pool plan** (D173),
+  **except generic-family / GENERIC-tagged assigned seats stay
+  generic** (D260): a sending domain whose live mailboxes belong to
+  one real Smartlead client is that client's domain for retire
+  eligibility, replacement naming, and generic-cover when it is
+  **not** a generic-family host. GENERIC-tagged seats and known
+  generic brand roots (outreachdesk / meetconnect including box-
+  affixes, pool plan including dropped hosts, EXTRA_GENERIC,
+  prewarmed) classify as generic even when `client_id` is the
+  assigned client. A real client-named domain
+  (techevolution*, boldercyper*, …) still refuses a generic
+  replacement (D161/D173). The plan is the fallback when mailboxes
+  name no real client. A plan-vs-mailbox conflict on a
+  **non-family** host is logged; the mailboxes win. **domain-lifecycle**
+  records a per-domain retire/cover refusal on that domain's
+  history (`lastReason` / `skipCount`) and keeps going — the stage
+  only fails on infrastructure errors, and `store.save()` still
+  runs (D260).
   **Goliath / client 548611 burned domains follow the normal Retire
   ask** (D181, reversing D174 never-retire): AS(42004) / known-good
   evidence opens `retire_domain` like any other client

@@ -171,4 +171,70 @@ describe("D161 — client-domain replace is client-named", () => {
       /refusing a generic replacement \(D161\)|Cannot derive a client brand/,
     );
   });
+
+  it("D260: boxoutreachdesk / meetconnectbox take the generic parent", () => {
+    const config = cfg();
+    const assigned = {
+      kind: "client" as const,
+      clientId: 574020,
+      clientName: "EMCOR",
+    };
+    for (const host of ["boxoutreachdesk.com", "meetconnectbox.com"]) {
+      assert.equal(
+        isGenericSendingDomain(host, config, assigned),
+        true,
+        host,
+      );
+      assert.equal(
+        isClientSendingDomain(host, config, assigned),
+        false,
+        host,
+      );
+      assert.equal(
+        replacementParentForRetiredDomain(host, config, {
+          kind: "buy_domains",
+          owner: assigned,
+        }),
+        config.isolationBuyParentDomain,
+        host,
+      );
+    }
+  });
+
+  it("D260: techevolutionusa.info still refuses a generic parent", () => {
+    const config = cfg();
+    const owner = {
+      kind: "client" as const,
+      clientId: 521881,
+      clientName: "TechEvolution",
+    };
+    assert.equal(
+      isGenericSendingDomain("techevolutionusa.info", config, owner),
+      false,
+    );
+    assert.equal(
+      isClientSendingDomain("techevolutionusa.info", config, owner),
+      true,
+    );
+    assert.equal(
+      isForbiddenGenericReplacement(
+        "techevolutionusa.info",
+        "crosslaunchcotry.info",
+        config,
+        owner,
+      ),
+      true,
+    );
+    const parent = replacementParentForRetiredDomain(
+      "techevolutionusa.info",
+      config,
+      {
+        kind: "buy_domains",
+        owner,
+        requestedParent: config.isolationBuyParentDomain,
+      },
+    );
+    assert.match(parent, /techevolution/);
+    assert.doesNotMatch(parent, /crosslaunchco/);
+  });
 });

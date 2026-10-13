@@ -8,12 +8,20 @@
 import type { SmartleadAccountWithCampaigns } from "../clients/smartlead.js";
 import type { SmartleadClientRecord } from "../clients/smartlead.js";
 import { clientDisplayName } from "../clients/smartlead.js";
-import { isGenericPoolDomain } from "./clientInbox.js";
+import { isBcpOwnedDomain } from "./bcp.js";
+import {
+  isGenericPoolDomain,
+  looksLikeGenericFamilyDomain,
+} from "./clientInbox.js";
+import { isClientNamedDomain } from "./clientNamedDomain.js";
+import { hasPoolMarkerTag } from "./markerClients.js";
 
 type AccountHostFields = Pick<
   SmartleadAccountWithCampaigns,
   "from_email" | "email" | "username" | "client_id"
->;
+> & {
+  tags?: Array<{ tag_name?: unknown; name?: unknown }>;
+};
 
 function accountHost(account: AccountHostFields): string {
   const email = String(
@@ -75,9 +83,7 @@ function isRealClientId(
  */
 export function resolveDomainOwner(
   domain: string,
-  accounts: Array<
-    Pick<SmartleadAccountWithCampaigns, "from_email" | "email" | "username" | "client_id">
-  >,
+  accounts: Array<AccountHostFields>,
   clients: SmartleadClientRecord[],
   config: DomainOwnerConfig,
   opts?: {
@@ -97,7 +103,38 @@ export function resolveDomainOwner(
   const uniqueClientIds = [...unique];
   const planGeneric =
     isGenericPoolDomain(host) || planSaysGenericDomain(host, config);
+  const familyGeneric = looksLikeGenericFamilyDomain(host, config) || planGeneric;
+  const taggedGeneric =
+    onDomain.length > 0 && onDomain.some((account) => hasPoolMarkerTag(account));
+  const clientNamed = isClientNamedDomain(host, clients) || isBcpOwnedDomain(host);
   const clientsById = new Map(clients.map((client) => [client.id, client]));
+
+  // D260 — generic-family / GENERIC-tagged seats stay generic even when
+  // assigned to a client. D173 mailbox-wins does not apply here.
+  // A real client-named domain still wins (D161/D243).
+  if ((familyGeneric || taggedGeneric) && !clientNamed) {
+    if (uniqueClientIds.length === 1) {
+      const clientId = uniqueClientIds[0]!;
+      const clientName = clientDisplayName(
+        clientsById.get(clientId) ?? { id: clientId },
+      );
+      console.warn(
+        `[domain-owner] ${host} is a generic-family / GENERIC-tagged domain assigned to client ${clientId} (${clientName}) — treating as generic (D260)`,
+      );
+    }
+    return {
+      domain: host,
+      kind: "generic",
+      clientId: null,
+      clientName: null,
+      mailboxCount: onDomain.length,
+      uniqueClientIds,
+      planSaysGeneric: planGeneric || familyGeneric,
+      conflict: false,
+      source: onDomain.length ? "mailboxes" : "plan",
+      updatedAt: now,
+    };
+  }
 
   if (uniqueClientIds.length === 1) {
     const clientId = uniqueClientIds[0]!;
@@ -157,9 +194,7 @@ export function resolveDomainOwner(
 }
 
 export function buildDomainOwnerCache(
-  accounts: Array<
-    Pick<SmartleadAccountWithCampaigns, "from_email" | "email" | "username" | "client_id">
-  >,
+  accounts: Array<AccountHostFields>,
   clients: SmartleadClientRecord[],
   config: DomainOwnerConfig,
   opts?: {

@@ -14695,8 +14695,8 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("state.save writes compact JSON off the hot path (D247/D249).", "store.ts lost yielding compact stringify."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("state.save writes compact JSON off-thread (D247/D249/D257).", "store.ts lost off-thread stringify."),
     );
     assert.match(
       store,
@@ -14865,8 +14865,8 @@ describe("owner intent — D249 persist stamps, unblock the loop, catch up", () 
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("full dump is yielding compact JSON (D249).", "store.ts still one-shot stringifies state."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("full dump is off-thread compact JSON (D249/D257).", "store.ts still one-shot stringifies state."),
     );
     assert.match(
       resume,
@@ -14974,8 +14974,8 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("D249 yielding stringify stays (D250).", "store.ts lost stringifyYielding."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("D249/D257 off-thread stringify stays (D250).", "store.ts lost stringifyOffThread."),
     );
     assert.match(
       canon,
@@ -15587,8 +15587,8 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D(256|25[7-9]|2[6-9][0-9])\*\*/,
-      stop("CANON is dated D256+.", "CANON.md header is before D256."),
+      /Canon as of \*\*D(25[6-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D256 or later.", "CANON.md header is before D256."),
     );
     assert.doesNotMatch(
       canon,
@@ -15625,6 +15625,238 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
       min40,
       /minFloorForClient/,
       stop("min40 uses the per-client floor (D256).", "min40TopUp.ts lost minFloorForClient."),
+    );
+  });
+});
+
+describe("owner intent — D257 stop event-loop freezes", () => {
+  it("D257: off-thread pruned save, Smartlead limiter, repeated-freeze exit, scan-backfill logs", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const smartlead = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    const limiter = await readFile(
+      new URL("../lib/smartleadLimiter.ts", import.meta.url),
+      "utf8",
+    );
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const scanner = await readFile(
+      new URL("../services/campaignScanner.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      store,
+      /stringifyOffThread\(this\.state\)/,
+      stop("full dump stringifies off-thread (D257).", "store.ts still stringifies state on the main thread."),
+    );
+    assert.match(
+      store,
+      /parseFileOffThread/,
+      stop("load parses off-thread (D257).", "store.ts still JSON.parse on the main thread."),
+    );
+    assert.match(
+      store,
+      /pruneStateLedgers/,
+      stop("save prunes ledgers (D257).", "store.ts lost pruneStateLedgers."),
+    );
+    assert.match(
+      store,
+      /debounceMs/,
+      stop("stage checkpoints may debounce (D257).", "store.ts lost save debounce."),
+    );
+    assert.doesNotMatch(
+      store,
+      /JSON\.stringify\(this\.state/,
+      stop("no one-shot JSON.stringify(this.state) (D257).", "store.ts stringifies this.state on the main thread."),
+    );
+    assert.match(
+      smartlead,
+      /this\.limiter\.schedule/,
+      stop("every Smartlead HTTP call uses the limiter (D257).", "smartlead.ts lost limiter.schedule."),
+    );
+    assert.match(
+      smartlead,
+      /limiter\.schedule\(\(\) =>\s*apiRequest/,
+      stop(
+        "limiter calls apiRequest, not request() (D257).",
+        "smartlead.ts request() is recursive.",
+      ),
+    );
+    assert.match(
+      limiter,
+      /SMARTLEAD_CONCURRENCY/,
+      stop("limiter has a concurrency cap (D257).", "smartleadLimiter.ts lost SMARTLEAD_CONCURRENCY."),
+    );
+    assert.match(
+      limiter,
+      /noteRateLimit/,
+      stop("limiter backs off on 429 (D257).", "smartleadLimiter.ts lost noteRateLimit."),
+    );
+    assert.match(
+      freeze,
+      /EVENT_LOOP_REPEAT_COUNT/,
+      stop("watchdog exits on repeated freezes (D257).", "freezeWatchdog.ts lost EVENT_LOOP_REPEAT_COUNT."),
+    );
+    assert.match(
+      scanner,
+      /\[scan-backfill\] start/,
+      stop("scan-backfill logs start (D257).", "campaignScanner.ts lost the start log."),
+    );
+    assert.match(
+      scanner,
+      /\[scan-backfill\] end/,
+      stop("scan-backfill logs end/timing (D257).", "campaignScanner.ts lost the end log."),
+    );
+    assert.match(
+      index,
+      /\[scan-backfill\] skip/,
+      stop("scan-backfill logs a skip (D257).", "index.ts lost the skip log."),
+    );
+    assert.match(
+      index,
+      /smartleadLimiter:/,
+      stop("/health exposes the Smartlead limiter (D257).", "index.ts /health lost smartleadLimiter."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D(25[7-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D257 or later.", "CANON.md header is before D257."),
+    );
+    assert.match(
+      canon,
+      /stringified \*\*off-thread\*\*/,
+      stop("CANON names off-thread save (D257).", "CANON.md lost the off-thread dump."),
+    );
+    assert.match(
+      canon,
+      /multi-second freeze repeats/,
+      stop("CANON names repeated-freeze restart (D257).", "CANON.md lost the repeated-freeze rule."),
+    );
+    assert.match(
+      decisions,
+      /## D257 — Stop event-loop freezes/,
+      stop("The ledger records D257.", "DECISIONS.md has no D257."),
+    );
+    assert.match(
+      decisions,
+      /^\| D257 \|/m,
+      stop("The status index lists D257.", "DECISIONS.md index has no D257 row."),
+    );
+  });
+});
+
+describe("owner intent — D258 live SL client_id wins; PowerGRYD empty-by-design", () => {
+  it("D258: stale pool PG cannot override TE/Insight; empty-by-design blocks foreign staffing", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      preferredGenericOwnerId,
+    } = await import("../lib/dedicatedGeneric.js");
+    const { genericEligibleForClientPod } = await import("../lib/genericAssign.js");
+    const { genericBlockedOnPowerGrydStaffing } = await import(
+      "../lib/powerGrydEmptyByDesign.js"
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+      }),
+      521881,
+      stop("Live TechEvo client_id wins over stale PG pool.", "preferredGenericOwnerId still preferred the pool."),
+    );
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: 582890,
+        assignedClientId: 592842,
+      }),
+      582890,
+      stop("Live Insight client_id wins over stale PG pool.", "preferredGenericOwnerId still preferred the pool."),
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 592842,
+        targetPod: "A",
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+      }),
+      false,
+      "genericEligibleForClientPod allowed a TechEvo seat onto PowerGRYD.",
+    );
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: {
+          client_id: 521881,
+          signature: "Andrea Adams\nTechEvolution",
+        },
+        email: "andreaadams@myoutreachdesk.info",
+        targetClientId: 592842,
+        emptyByDesign: true,
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+        powerGrydBrand: "PowerGRYD",
+        allBrands: ["PowerGRYD", "TechEvolution", "Insight"],
+      }),
+      true,
+      "empty-by-design must block a TechEvo-signed generic on PowerGRYD.",
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const dedicated = await readFile(
+      new URL("../lib/dedicatedGeneric.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D(25[8-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D258 or later.", "CANON.md header is before D258."),
+    );
+    assert.match(
+      canon,
+      /empty-by-design/,
+      stop("CANON names empty-by-design (D258).", "CANON.md lost the PowerGRYD empty-by-design lock."),
+    );
+    assert.match(
+      dedicated,
+      /preferredGenericOwnerId/,
+      stop("Resolver prefers live SL when pool disagrees (D258).", "dedicatedGeneric.ts lost preferredGenericOwnerId."),
+    );
+    assert.match(
+      min40,
+      /powerGrydStaffingBlocked|genericBlockedOnPowerGrydStaffing/,
+      stop("min40 hard-blocks foreign PG staffing (D258).", "min40TopUp.ts lost the empty-by-design block."),
+    );
+    assert.match(
+      decisions,
+      /## D258 — live Smartlead client_id wins; PowerGRYD empty-by-design/,
+      stop("The ledger records D258.", "DECISIONS.md has no D258."),
+    );
+    assert.match(
+      decisions,
+      /^\| D258 \|/m,
+      stop("The status index lists D258.", "DECISIONS.md index has no D258 row."),
     );
   });
 });

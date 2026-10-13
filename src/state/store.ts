@@ -1,6 +1,9 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { stringifyYielding } from "../lib/stringifyYielding.js";
+import { parseFileOffThread, stringifyOffThread } from "../lib/jsonOffThread.js";
+import { pruneStateLedgers } from "../lib/stateRetention.js";
+import { sleep } from "../lib/http.js";
+import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
 import {
   currentUtcMonth,
   emptyMonthlyUsage,
@@ -847,12 +850,11 @@ export class StateStore {
 
   async load(): Promise<AppState> {
     try {
-      const raw = await readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as AppState;
-      // D129 — keep a boot-time copy of the last good state so a bad write
-      // or a drain gone wrong can be rolled back from the same volume.
+      // D257 — parse off-thread; copy the file for the D129 boot backup
+      // without JSON.parse of the whole blob on the main thread.
+      const parsed = await parseFileOffThread<AppState>(this.filePath);
       try {
-        await writeFile(`${this.filePath}.boot-backup.json`, raw, "utf8");
+        await copyFile(this.filePath, `${this.filePath}.boot-backup.json`);
       } catch (backupError) {
         console.warn("[state] boot backup failed", backupError);
       }
@@ -973,6 +975,10 @@ export class StateStore {
       this.state = structuredClone(EMPTY_STATE);
     }
     await this.applyHotStamps();
+    const pruned = pruneStateLedgers(this.state);
+    if (pruned.dropped > 0) {
+      console.log(`[state] load prune dropped ${pruned.dropped} ledger/history rows`);
+    }
     this.loaded = true;
     return this.state;
   }
@@ -1316,6 +1322,18 @@ export class StateStore {
 
   upsertPoolMailbox(record: PoolMailboxRecord): void {
     this.state.poolMailboxes[record.email.toLowerCase()] = record;
+  }
+
+  /**
+   * D258 — rewrite a stale pool assignedClientId to the live Smartlead
+   * client. No-op when the mailbox has no pool row or the ids match.
+   */
+  realignPoolAssignedClient(
+    email: string,
+    liveClientId: number | null | undefined,
+    now = new Date(),
+  ): boolean {
+    return realignStalePoolAssignment(this, email, liveClientId, now);
   }
 
   /** D86 — drop a stale planned row (never one mapped to a Smartlead account). */
@@ -2723,11 +2741,13 @@ export class StateStore {
    * of the latest state instead of N pretty-printed dumps.
    * D249 — lastOk / Slack / cron stamps write to a tiny sidecar first so a
    * freeze-kill during the full dump cannot roll the watchdog back a day.
-   * The full dump walks the graph in slices (no one-shot JSON.stringify
-   * of this.state on the main thread).
+   * D257 — prune ledgers first; stringify/parse the dump off-thread; stage
+   * checkpoints may debounce so a health pass is one write, not one per stage.
    */
   private saveWanted = false;
   private saveCoalesce: Promise<void> | null = null;
+  /** D257 — last full-dump stringify wall time (worker, after prune). */
+  lastSaveMs = 0;
 
   private hotStamps(): Record<string, unknown> {
     return {
@@ -2836,7 +2856,7 @@ export class StateStore {
     await rename(tmp, target);
   }
 
-  async save(): Promise<void> {
+  async save(opts: { debounceMs?: number } = {}): Promise<void> {
     try {
       await this.saveHot();
     } catch (error) {
@@ -2844,16 +2864,20 @@ export class StateStore {
     }
     this.saveWanted = true;
     if (this.saveCoalesce) return this.saveCoalesce;
+    const debounceMs = Math.max(0, opts.debounceMs ?? 0);
     const write = async (): Promise<void> => {
+      if (debounceMs > 0) await sleep(debounceMs);
       while (this.saveWanted) {
         this.saveWanted = false;
+        const pruned = pruneStateLedgers(this.state);
         const dir = path.dirname(this.filePath);
         await mkdir(dir, { recursive: true });
         const tmp = `${this.filePath}.${process.pid}.${++this.saveSeq}.tmp`;
         const started = Date.now();
-        const body = await stringifyYielding(this.state);
+        const body = await stringifyOffThread(this.state);
+        this.lastSaveMs = Date.now() - started;
         console.log(
-          `[state] save compact-json ${Date.now() - started}ms ${body.length} bytes`,
+          `[state] save compact-json ${this.lastSaveMs}ms ${body.length} bytes pruned=${pruned.dropped}`,
         );
         if (this.onSaveSnapshot) await this.onSaveSnapshot();
         await writeFile(tmp, body, "utf8");

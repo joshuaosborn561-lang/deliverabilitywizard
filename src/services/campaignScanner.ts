@@ -202,7 +202,20 @@ export class CampaignScanner {
       createdTestIds: [],
     };
 
+    const started = Date.now();
     console.log(`[scan] Starting (${options.trigger})`);
+    console.log(`[scan-backfill] start trigger=${options.trigger}`);
+    const done = async (result: ScanResult): Promise<void> => {
+      await this.finish(result);
+      console.log(`[scan-backfill] end ${Date.now() - started}ms`, {
+        scanned: result.scanned,
+        eligible: result.eligible,
+        created: result.created,
+        skipped: result.skipped,
+        quotaBlocked: result.quotaBlocked,
+        errors: result.errors.length,
+      });
+    };
 
     try {
       await this.smartDelivery.assertAccessActive();
@@ -212,7 +225,7 @@ export class CampaignScanner {
       await this.slack.send(
         `:x: *Couldn't reach placement tests*\nWill retry. If this keeps happening, Josh needs to check the Smartlead connection.\n${message}`,
       );
-      await this.finish(result);
+      await done(result);
       return result;
     }
 
@@ -228,7 +241,7 @@ export class CampaignScanner {
       await this.slack.send(
         `:x: *Couldn't scan campaigns for placement tests*\nWill retry.\n${message}`,
       );
-      await this.finish(result);
+      await done(result);
       return result;
     }
 
@@ -331,7 +344,7 @@ export class CampaignScanner {
       console.log(
         `[scan] No eligible campaigns live=${live.length} candidates=${candidates.length} already-tested=${alreadyTested} skipped=${result.skipped}`,
       );
-      await this.finish(result);
+      await done(result);
       if (options.trigger === "manual") {
         await this.slack.notifyRunSummary(result);
       }
@@ -360,7 +373,7 @@ export class CampaignScanner {
           testsNeeded: p.batches.length,
         })),
       });
-      await this.finish(result);
+      await done(result);
       return result;
     }
 
@@ -529,7 +542,7 @@ export class CampaignScanner {
       }
     }
 
-    await this.finish(result);
+    await done(result);
     await this.slack.notifyRunSummary(result);
     return result;
   }
@@ -576,4 +589,5 @@ export class CampaignScanner {
       errors: result.errors.length,
     });
   }
+
 }

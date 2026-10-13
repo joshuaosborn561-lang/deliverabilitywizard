@@ -113,6 +113,7 @@ import { CursorAssistantService } from "./ops/cursorAssistant.js";
 import { createOpsRouter } from "./ops/router.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
+import { SmartleadLimiter } from "./lib/smartleadLimiter.js";
 import { raceStep, stepTimeoutMs } from "./lib/stepTimeout.js";
 import {
   CANON_OPS_LOCK_MAX_MS,
@@ -230,7 +231,9 @@ async function main(): Promise<void> {
     );
   }
 
-  const smartlead = new SmartleadClient(config.smartleadApiKey || "missing");
+  const smartlead = new SmartleadClient(config.smartleadApiKey || "missing", {
+    limiter: new SmartleadLimiter(),
+  });
   // D132 — one Smartlead account book shared by the health pass, the hourly
   // campaign check, the 6-hour audit, the /ops board, and the Slack taps.
   const inventoryBook = new InventoryBook(smartlead);
@@ -757,7 +760,7 @@ async function main(): Promise<void> {
     } catch (error) {
       console.warn(`[watchdog] stage ${name} checkpoint stamp save failed`, error);
     }
-    void state.save().catch((error) => {
+    void state.save({ debounceMs: 3_000 }).catch((error) => {
       console.warn(`[watchdog] stage ${name} full save failed`, error);
     });
   };
@@ -1039,7 +1042,28 @@ async function main(): Promise<void> {
             (record.findings ?? []).some((f) => f.startsWith("no_placement_test")),
           );
         if (missingTest) {
-          await stage("scan-backfill", () => runScan("canon-sweep"));
+          await stage("scan-backfill", async () => {
+            const started = Date.now();
+            console.log("[scan-backfill] start trigger=canon-sweep");
+            try {
+              const result = await runScan("canon-sweep");
+              console.log(
+                `[scan-backfill] end ${Date.now() - started}ms`,
+                result && typeof result === "object"
+                  ? result
+                  : { skipped: true },
+              );
+              return result;
+            } catch (error) {
+              console.warn(
+                `[scan-backfill] end ${Date.now() - started}ms failed`,
+                error,
+              );
+              throw error;
+            }
+          });
+        } else {
+          console.log("[scan-backfill] skip — no missing placement test");
         }
       }
 
@@ -2783,6 +2807,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         monitor: monitorLock.snapshot(),
       },
       mutationQueue: mutationQueue.snapshot(),
+      smartleadLimiter: smartlead.limiterSnapshot(),
     });
   });
 
@@ -3450,7 +3475,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       getLocks: () => [healthLock, canonOpsLock, monitorLock],
     });
     console.log(
-      "[boot] D247 freeze watchdog: event-loop delay >1s logged; blocked >5m or a pass past 2× max exits 1 (Railway restart-on-failure must be on)",
+      "[boot] D247/D257 freeze watchdog: event-loop delay >1s logged; blocked >5m, repeated multi-second freezes, or a pass past 2× max exits 1 (Railway restart-on-failure must be on)",
     );
     console.log(
       "[boot] D249 catch-up: weekday 6am–8pm CT Needs you / InboxKit / TERRL EOD once if today's stamp is missing (3m after listen, then each health tick)",

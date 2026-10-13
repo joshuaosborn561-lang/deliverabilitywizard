@@ -43,6 +43,29 @@ describe("D230 generic assign lock", () => {
     );
   });
 
+  it("D258: live Smartlead client_id wins when pool assignedClientId disagrees", () => {
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 592842,
+        targetPod: "A",
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+        tags: [{ tag_name: "GENERIC" }],
+      }),
+      false,
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 521881,
+        targetPod: "A",
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+        tags: [{ tag_name: "GENERIC" }],
+      }),
+      true,
+    );
+  });
+
   it("rejects another client's generic and the other POD", () => {
     assert.equal(
       genericEligibleForClientPod({

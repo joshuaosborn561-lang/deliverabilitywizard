@@ -5,6 +5,7 @@
  * Never move a tagged generic onto the other POD.
  */
 
+import { preferredGenericOwnerId } from "./dedicatedGeneric.js";
 import type { GenericAssignedPod, GenericSeatRecord } from "./genericPool.js";
 import { podFromMailboxTags } from "./genericPool.js";
 
@@ -42,7 +43,10 @@ export function genericEligibleForClientPod(input: {
   tags?: Array<{ tag_name?: unknown; name?: unknown }> | string[] | null;
   assignedPod?: GenericAssignedPod | null;
 }): boolean {
-  const owner = input.assignedClientId ?? input.mailboxClientId ?? null;
+  const owner = preferredGenericOwnerId({
+    mailboxClientId: input.mailboxClientId,
+    assignedClientId: input.assignedClientId,
+  });
   if (owner != null && owner !== input.clientId) return false;
   const pod = lockedGenericPod({
     tags: input.tags,

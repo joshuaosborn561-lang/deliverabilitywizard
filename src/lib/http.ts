@@ -19,6 +19,8 @@ export interface RequestOptions {
   retries?: number;
   /** Optional caller abort (D247 step timeout). */
   signal?: AbortSignal;
+  /** D257 — shared Smartlead limiter learns a 429 from any stage. */
+  onRateLimit?: (retryAfterMs?: number) => void;
 }
 
 function buildUrl(
@@ -52,6 +54,7 @@ export async function apiRequest<T>(
     timeoutMs = 60_000,
     retries = 4,
     signal,
+    onRateLimit,
   } = options;
   const url = buildUrl(baseUrl, path, apiKey, query);
 
@@ -87,6 +90,9 @@ export async function apiRequest<T>(
       }
 
       if (response.status === 429 || response.status >= 500) {
+        if (response.status === 429) {
+          onRateLimit?.(Math.min(30_000, 500 * 2 ** attempt));
+        }
         if (attempt < retries) {
           const backoff = Math.min(30_000, 500 * 2 ** attempt);
           await sleep(backoff);

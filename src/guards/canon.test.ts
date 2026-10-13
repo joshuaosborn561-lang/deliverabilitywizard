@@ -15587,8 +15587,8 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D256\*\*/,
-      stop("CANON is dated D256.", "CANON.md header is before D256."),
+      /Canon as of \*\*D(25[6-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D256 or later.", "CANON.md header is before D256."),
     );
     assert.doesNotMatch(
       canon,
@@ -15625,6 +15625,109 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
       min40,
       /minFloorForClient/,
       stop("min40 uses the per-client floor (D256).", "min40TopUp.ts lost minFloorForClient."),
+    );
+  });
+});
+
+describe("owner intent — D258 live SL client_id wins; PowerGRYD empty-by-design", () => {
+  it("D258: stale pool PG cannot override TE/Insight; empty-by-design blocks foreign staffing", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      preferredGenericOwnerId,
+    } = await import("../lib/dedicatedGeneric.js");
+    const { genericEligibleForClientPod } = await import("../lib/genericAssign.js");
+    const { genericBlockedOnPowerGrydStaffing } = await import(
+      "../lib/powerGrydEmptyByDesign.js"
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+      }),
+      521881,
+      stop("Live TechEvo client_id wins over stale PG pool.", "preferredGenericOwnerId still preferred the pool."),
+    );
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: 582890,
+        assignedClientId: 592842,
+      }),
+      582890,
+      stop("Live Insight client_id wins over stale PG pool.", "preferredGenericOwnerId still preferred the pool."),
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 592842,
+        targetPod: "A",
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+      }),
+      false,
+      "genericEligibleForClientPod allowed a TechEvo seat onto PowerGRYD.",
+    );
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: {
+          client_id: 521881,
+          signature: "Andrea Adams\nTechEvolution",
+        },
+        email: "andreaadams@myoutreachdesk.info",
+        targetClientId: 592842,
+        emptyByDesign: true,
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+        powerGrydBrand: "PowerGRYD",
+        allBrands: ["PowerGRYD", "TechEvolution", "Insight"],
+      }),
+      true,
+      "empty-by-design must block a TechEvo-signed generic on PowerGRYD.",
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const dedicated = await readFile(
+      new URL("../lib/dedicatedGeneric.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D258\*\*/,
+      stop("CANON is dated D258.", "CANON.md header is before D258."),
+    );
+    assert.match(
+      canon,
+      /empty-by-design/,
+      stop("CANON names empty-by-design (D258).", "CANON.md lost the PowerGRYD empty-by-design lock."),
+    );
+    assert.match(
+      dedicated,
+      /preferredGenericOwnerId/,
+      stop("Resolver prefers live SL when pool disagrees (D258).", "dedicatedGeneric.ts lost preferredGenericOwnerId."),
+    );
+    assert.match(
+      min40,
+      /powerGrydStaffingBlocked|genericBlockedOnPowerGrydStaffing/,
+      stop("min40 hard-blocks foreign PG staffing (D258).", "min40TopUp.ts lost the empty-by-design block."),
+    );
+    assert.match(
+      decisions,
+      /## D258 — live Smartlead client_id wins; PowerGRYD empty-by-design/,
+      stop("The ledger records D258.", "DECISIONS.md has no D258."),
+    );
+    assert.match(
+      decisions,
+      /^\| D258 \|/m,
+      stop("The status index lists D258.", "DECISIONS.md index has no D258 row."),
     );
   });
 });

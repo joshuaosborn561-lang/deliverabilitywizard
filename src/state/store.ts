@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stringifyYielding } from "../lib/stringifyYielding.js";
+import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
 import {
   currentUtcMonth,
   emptyMonthlyUsage,
@@ -1316,6 +1317,18 @@ export class StateStore {
 
   upsertPoolMailbox(record: PoolMailboxRecord): void {
     this.state.poolMailboxes[record.email.toLowerCase()] = record;
+  }
+
+  /**
+   * D258 — rewrite a stale pool assignedClientId to the live Smartlead
+   * client. No-op when the mailbox has no pool row or the ids match.
+   */
+  realignPoolAssignedClient(
+    email: string,
+    liveClientId: number | null | undefined,
+    now = new Date(),
+  ): boolean {
+    return realignStalePoolAssignment(this, email, liveClientId, now);
   }
 
   /** D86 — drop a stale planned row (never one mapped to a Smartlead account). */

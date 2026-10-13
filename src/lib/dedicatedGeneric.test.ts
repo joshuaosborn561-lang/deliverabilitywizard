@@ -6,6 +6,7 @@ import {
   exclusiveNamedClientId,
   isDedicatedToClient,
   isRealNamedClientId,
+  preferredGenericOwnerId,
   resolveDedicatedGenericClientId,
 } from "./dedicatedGeneric.js";
 
@@ -34,10 +35,10 @@ describe("dedicatedGenericClientId (D198)", () => {
     );
   });
 
-  it("prefers pool assignedClientId over a leftover mailbox client_id", () => {
+  it("prefers pool assignedClientId over a leftover Goliath / empty mailbox id", () => {
     assert.equal(
       dedicatedGenericClientId(
-        { client_id: 99 },
+        { client_id: 548611 },
         "ada@trygetintroduced.info",
         {
           getPoolMailbox: () => ({ assignedClientId: 77 }),
@@ -45,6 +46,51 @@ describe("dedicatedGenericClientId (D198)", () => {
         { genericOwnerId: 548611 },
       ),
       77,
+    );
+    assert.equal(
+      dedicatedGenericClientId(
+        { client_id: null },
+        "ada@trygetintroduced.info",
+        {
+          getPoolMailbox: () => ({ assignedClientId: 77 }),
+        },
+        { genericOwnerId: 548611 },
+      ),
+      77,
+    );
+  });
+
+  it("D258: live Smartlead client_id wins when the pool assignment disagrees", () => {
+    assert.equal(
+      dedicatedGenericClientId(
+        { client_id: 521881 },
+        "andreaadams@myoutreachdesk.info",
+        {
+          getPoolMailbox: () => ({ assignedClientId: 592842 }),
+        },
+        { genericOwnerId: 548611 },
+      ),
+      521881,
+    );
+    assert.equal(
+      resolveDedicatedGenericClientId(
+        { client_id: 582890 },
+        "brianbrown@usemeetconnect.info",
+        [{ clientId: 582890, shell: false }],
+        {
+          getPoolMailbox: () => ({ assignedClientId: 592842 }),
+        },
+        { genericOwnerId: 548611 },
+      ),
+      582890,
+    );
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+        genericOwnerId: 548611,
+      }),
+      521881,
     );
   });
 

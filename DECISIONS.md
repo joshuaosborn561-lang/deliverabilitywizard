@@ -187,7 +187,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
 | D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
-| D173 | Live | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover |
+| D173 | Live — generic-family / GENERIC-tagged assignment amended by D260 | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover — except generic-family / GENERIC-tagged assigned seats (D260) |
 | D174 | Live — never-retire superseded by D181; buy-retry + Porkbun lock stay | Protected-client never-retire/never-burn (seeded Goliath / 548611) is gone; failed post-pull buys still retry themselves; Porkbun checks stay serialized |
 | D175 | Live | InboxKit is one ESP per domain — isolation-buy never mixes Google and Microsoft on the same domain; skip the other platform and complete the stage |
 | D176 | Live | Attach-blocked (AS(42004) / sender_blocked / restricted / bounce-isolation unlink) senders stay off ACTIVE campaigns — restaff must not put them back |
@@ -262,6 +262,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 | D256 | Live | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
 
 ---
 
@@ -8903,5 +8904,67 @@ min40 does not special-case `isPowerGrydClientId`;
 `minFloorForClient(521881) === 30`; surplus returns
 above that floor; empty-POD Slack stays; CANON dated
 D256.
+
+---
+
+## D260 — Generic-family assigned seats stay generic; domain-lifecycle continues past a per-domain refusal
+
+**Date.** 2026-10-13.
+
+**Decision.** Two production holes on `main@08ab258`.
+
+1. `domain-lifecycle` walks `for (const [domain, group] of
+   byDomain)` and a D161/D173 refusal thrown from
+   `replacementParentForRetiredDomain` (via
+   `requestRetireOrCover`) aborts the rest of the loop and
+   skips `store.save()`. Catch per domain. Log the refusal,
+   record it on that domain's history (`lastReason` /
+   `skipCount`), keep going, and still save. The stage fails
+   only on infrastructure errors.
+
+2. Generic-family sending domains stay generic even when
+   assigned to a client. `boxoutreachdesk.com` and
+   `meetconnectbox.com` carry the GENERIC tag and a Smartlead
+   `client_id` (EMCOR 574020 here) because they are pool
+   seats assigned to fill that client's POD — they are not
+   client-named domains. Classify them as generic
+   (GENERIC-tagged seats, known generic brand roots like
+   outreachdesk / meetconnect including box- affixes, pool
+   plan including dropped hosts) and take the generic
+   replacement path (`isolationBuyParentDomain`). A real
+   client-named domain (`techevolutionusa.info`,
+   `boldercyperpartner*`, …) still refuses a generic parent
+   (D161/D173).
+
+**Why.** Prod 2026-10-13 06:23Z: domain-lifecycle overdue
+with 2 consecutive failures,
+`lastError: "Client domain boxoutreachdesk.com resolved to
+generic parent outreachdesk.info; refusing (D161/D173)."`.
+D173's mailbox-`client_id`-wins rule treated assigned
+generics as that client's domain. EMCOR's brand is too
+short to spin a client parent, so the ask threw and every
+domain after it got no retire/cover.
+
+**Rejected.** Auto-approving the replacement spend.
+Weakening D161/D173 so a client-named domain can take a
+generic parent. Changing campaign START/PAUSE/STOP.
+Deleting the D173 mailbox-wins path for unknown /
+non-family hosts.
+
+**Supersedes / amends.** Amends D173: mailbox `client_id`
+no longer makes a generic-family / GENERIC-tagged domain
+into a client domain. Does not supersede D161 — a real
+client-named domain still refuses a generic replacement.
+Does not change D4 / spend approval or D40 / campaign
+start-stop.
+
+**Guards.** canon D260: per-domain catch + `store.save()`
+in `domainLifecycle.ts`; `isGenericSendingDomain` /
+`resolveDomainOwner` treat boxoutreachdesk / meetconnectbox
+as generic; techevolutionusa.info still refuses a generic
+parent; `owner?.kind === "client"` stays for non-family
+hosts (D173). Tests: loop continues past `x.info` refusal;
+boxoutreachdesk / meetconnectbox → isolationBuyParentDomain;
+techevolutionusa.info → techevolution parent.
 
 ---

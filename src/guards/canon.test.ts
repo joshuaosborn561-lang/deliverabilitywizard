@@ -15587,8 +15587,8 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D256\*\*/,
-      stop("CANON is dated D256.", "CANON.md header is before D256."),
+      /D256/,
+      stop("CANON still names D256.", "CANON.md dropped D256."),
     );
     assert.doesNotMatch(
       canon,
@@ -15625,6 +15625,128 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
       min40,
       /minFloorForClient/,
       stop("min40 uses the per-client floor (D256).", "min40TopUp.ts lost minFloorForClient."),
+    );
+  });
+});
+
+describe("owner intent — D260 generic-family assigned seats stay generic", () => {
+  it("D260: domain-lifecycle continues past a per-domain refusal; generic-family stays generic", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const life = await readFile(
+      new URL("../services/domainLifecycle.ts", import.meta.url),
+      "utf8",
+    );
+    const replace = await readFile(
+      new URL("../lib/retireReplacement.ts", import.meta.url),
+      "utf8",
+    );
+    const owner = await readFile(
+      new URL("../lib/domainOwnership.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(
+      new URL("../../CANON.md", import.meta.url),
+      "utf8",
+    );
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      life,
+      /\[domain-lifecycle\].*skipped/,
+      stop(
+        "A per-domain retire/cover refusal is logged and skipped (D260).",
+        "domainLifecycle.ts lost the per-domain catch.",
+      ),
+    );
+    assert.match(
+      life,
+      /skipCount/,
+      stop(
+        "A per-domain refusal is recorded on that domain's history (D260).",
+        "domainLifecycle.ts does not increment skipCount.",
+      ),
+    );
+    assert.match(
+      life,
+      /await this\.store\.save\(\)/,
+      stop(
+        "domain-lifecycle still saves after a per-domain skip (D260).",
+        "domainLifecycle.ts lost store.save().",
+      ),
+    );
+    assert.match(
+      replace,
+      /looksLikeGenericFamilyDomain/,
+      stop(
+        "Generic-family hosts classify as generic even when assigned (D260).",
+        "isGenericSendingDomain no longer checks generic-family first.",
+      ),
+    );
+    assert.match(
+      replace,
+      /owner\?\.kind === "client"/,
+      stop(
+        "A non-family client-staffed domain is still not generic (D173/D260).",
+        "isGenericSendingDomain dropped the mailbox-owner check.",
+      ),
+    );
+    assert.match(
+      owner,
+      /treating as generic \(D260\)/,
+      stop(
+        "Assigned generic-family domains are logged as generic (D260).",
+        "domainOwnership.ts lost the D260 generic-family log.",
+      ),
+    );
+    assert.match(
+      owner,
+      /treating as client-owned \(D173\)/,
+      stop(
+        "Non-family mailbox ownership still wins (D173).",
+        "domainOwnership.ts lost the D173 conflict log.",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D260\*\*/,
+      stop("CANON is dated D260.", "CANON.md header is before D260."),
+    );
+    assert.match(
+      canon,
+      /except generic-family \/ GENERIC-tagged assigned seats stay/,
+      stop(
+        "CANON states generic-family assigned seats stay generic (D260).",
+        "CANON.md lost the D260 MUST.",
+      ),
+    );
+    assert.match(
+      canon,
+      /domain-lifecycle/,
+      stop(
+        "CANON names domain-lifecycle per-domain skip (D260).",
+        "CANON.md does not mention domain-lifecycle.",
+      ),
+    );
+    assert.match(
+      decisions,
+      /## D260 — Generic-family assigned seats stay generic/,
+      stop("The ledger records D260.", "DECISIONS.md has no D260."),
+    );
+    assert.match(
+      decisions,
+      /^\| D260 \|/m,
+      stop("The status index lists D260.", "DECISIONS.md index has no D260 row."),
+    );
+    assert.doesNotMatch(
+      replace,
+      /REQUIRE_SPEND_APPROVAL\s*=\s*false/,
+      stop(
+        "Spend approval stays required (D260).",
+        "retireReplacement.ts flipped requireSpendApproval.",
+      ),
     );
   });
 });

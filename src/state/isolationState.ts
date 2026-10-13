@@ -179,6 +179,8 @@ export interface DomainControlHistoryRecord {
     testedEmails: string[];
   }>;
   lastReason?: string;
+  /** D260 — per-domain retire/cover refusals that must not fail the stage. */
+  skipCount?: number;
   retiredAt?: string;
 }
 

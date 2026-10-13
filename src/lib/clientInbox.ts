@@ -54,6 +54,26 @@ export function isGenericPoolBrandDomain(domain: string | undefined): boolean {
 }
 
 /**
+ * D260 — generic-family sending domains (pool plan including dropped
+ * hosts, pool-brand tokens like outreachdesk / meetconnect including
+ * box- affixes, EXTRA_GENERIC, prewarmed). Assignment client_id does
+ * not make these client-named.
+ */
+export function looksLikeGenericFamilyDomain(
+  domain: string | undefined,
+  config?: { extraGenericDomains?: string[]; prewarmedDomains?: string[] },
+): boolean {
+  if (!domain) return false;
+  const host = domain.trim().toLowerCase();
+  if (!host) return false;
+  if (isGenericPoolDomain(host)) return true;
+  if (isGenericPoolBrandDomain(host)) return true;
+  if (config?.extraGenericDomains?.includes(host)) return true;
+  if (config?.prewarmedDomains?.includes(host)) return true;
+  return false;
+}
+
+/**
  * A client inbox belongs to a Smartlead client and is not a pool generic
  * or a pre-warmed fleet sender. Only these take the per-client A/B rest
  * (D43). Generics are the fleet-wide pool (D221), not A/B resters.

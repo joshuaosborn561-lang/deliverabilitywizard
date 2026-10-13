@@ -455,11 +455,11 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
     const state = await buyStore();
     const action = buildIsolationAction({
       kind: "buy_domains",
-      title: "Replacement for retired meetconnectapp.com",
+      title: "Replacement for retired trygoliathcybersecurity.info",
       proof: "proof",
       detail: {
-        domain: "meetconnectapp.com",
-        retiredDomain: "meetconnectapp.com",
+        domain: "trygoliathcybersecurity.info",
+        retiredDomain: "trygoliathcybersecurity.info",
         ownerKind: "client",
         ownerClientId: 548611,
         ownerClientName: "Goliath Cybersecurity",

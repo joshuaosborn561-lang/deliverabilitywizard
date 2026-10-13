@@ -15587,7 +15587,7 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D25[67]\*\*/,
+      /Canon as of \*\*D(25[6-9]|2[6-9][0-9])\*\*/,
       stop("CANON is dated D256 or later.", "CANON.md header is before D256."),
     );
     assert.doesNotMatch(

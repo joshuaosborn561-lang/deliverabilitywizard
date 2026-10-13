@@ -139,6 +139,7 @@ import { CopyCanaryService } from "./services/copyCanary.js";
 import { LeadRunoutService } from "./services/leadRunout.js";
 import { SendingInfraService } from "./services/sendingInfra.js";
 import { canonBoard, canonCompliantOverall, findingKind } from "./lib/canonCompliance.js";
+import { campaignCheckIsActive } from "./lib/campaignCheck.js";
 import { placementIsolationHealth } from "./lib/placementSuspect.js";
 import {
   STAGE_OVERDUE_WINDOWS_MS,
@@ -817,9 +818,23 @@ async function main(): Promise<void> {
     });
   };
 
+  const livingCampaignStatusById = (): Map<number, string> => {
+    const snap = inventoryBook.peek();
+    return new Map(
+      (snap?.campaigns ?? []).map((row) => [
+        row.id,
+        String(row.status ?? ""),
+      ]),
+    );
+  };
+
   const logCanonScoreboard = (): void => {
     const counts = new Map<string, number>();
+    const statusById = livingCampaignStatusById();
     for (const record of state.listCampaignChecks()) {
+      if (!campaignCheckIsActive(record, statusById.size ? statusById : undefined)) {
+        continue;
+      }
       for (const finding of record.findings ?? []) {
         const kind = finding.split(":")[0] ?? "unknown";
         counts.set(kind, (counts.get(kind) ?? 0) + 1);
@@ -2700,7 +2715,16 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     // curl instead of a Smartlead eyeball.
     const canonFindings: Record<string, number> = {};
     const canonFindingSamples: Record<string, string[]> = {};
-    for (const record of Object.values(s.campaignChecks ?? {})) {
+    const statusById = new Map(
+      (inventoryBook.peek()?.campaigns ?? []).map((row) => [
+        row.id,
+        String(row.status ?? ""),
+      ]),
+    );
+    const activeChecks = Object.values(s.campaignChecks ?? {}).filter((record) =>
+      campaignCheckIsActive(record, statusById.size ? statusById : undefined),
+    );
+    for (const record of activeChecks) {
       for (const finding of record.findings ?? []) {
         const kind = findingKind(finding);
         canonFindings[kind] = (canonFindings[kind] ?? 0) + 1;
@@ -2720,7 +2744,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         canonFindingSamples[kind] = samples;
       }
     }
-    const board = canonBoard(Object.values(s.campaignChecks ?? {}));
+    const board = canonBoard(activeChecks);
     const poolFindings = s.genericPoolFindings ?? [];
     const { stages, overdueStages: overdue } = stageHealthView(
       s.stageHealth ?? {},
@@ -2815,11 +2839,30 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         threshold: config.remediationInboxThreshold,
         lastOkAt: s.stageHealth?.["isolation-branch"]?.lastOkAt ?? null,
         keepCampaignId: (() => {
-          const known = new Set(
-            state.listCampaignChecks().map((row) => row.campaignId),
+          const snap = inventoryBook.peek();
+          if (snap?.campaigns.length) {
+            const living = new Set(
+              snap.campaigns
+                .filter((row) => {
+                  const status = String(row.status ?? "").toUpperCase();
+                  return status !== "COMPLETED" && status !== "STOPPED";
+                })
+                .map((row) => row.id),
+            );
+            return (campaignId: number) => living.has(campaignId);
+          }
+          const known = new Map(
+            state
+              .listCampaignChecks()
+              .map((row) => [row.campaignId, row.status] as const),
           );
           if (!known.size) return undefined;
-          return (campaignId: number) => known.has(campaignId);
+          return (campaignId: number) => {
+            if (!known.has(campaignId)) return false;
+            return !["COMPLETED", "STOPPED"].includes(
+              String(known.get(campaignId) ?? "").toUpperCase(),
+            );
+          };
         })(),
       }),
       inFlight: {

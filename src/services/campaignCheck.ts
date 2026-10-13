@@ -35,6 +35,7 @@ import {
   detachWouldBreakStaffableFloor,
   ON_WEEK_MIN_SENDERS,
   podEspMixHolds,
+  podEspMixMinSeats,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
@@ -335,6 +336,21 @@ export class CampaignCheckService {
     const sigFixed: Array<{ name: string; brand: string }> = [];
     const insightSigBlanked: string[] = [];
     const insightSharedUnlinked: string[] = [];
+    // D263 — deleted campaigns never appear as COMPLETED/STOPPED, so the
+    // terminal prune below never sees them. Drop leftover check rows
+    // whose id is missing from a successful live list.
+    if ((campaigns as SmartleadCampaign[]).length > 0) {
+      const liveIds = new Set(
+        (campaigns as SmartleadCampaign[]).map((row) => row.id),
+      );
+      for (const row of this.state.listCampaignChecks()) {
+        if (liveIds.has(row.campaignId)) continue;
+        this.state.removeCampaignCheck(row.campaignId);
+        console.log(
+          `[campaign-check] pruned deleted #${row.campaignId} ${row.name} (D263)`,
+        );
+      }
+    }
     for (const campaign of campaigns as SmartleadCampaign[]) {
       throwIfAborted(opts.signal);
       result.examined += 1;
@@ -356,6 +372,7 @@ export class CampaignCheckService {
         this.state.upsertCampaignCheck({
           campaignId: campaign.id,
           name,
+          status: campaign.status,
           firstSeenAt: now,
           firstCheckAt: null,
           firstPassedAt: null,
@@ -599,6 +616,7 @@ export class CampaignCheckService {
       const next: CampaignCheckRecord = {
         ...record,
         name,
+        status: campaign.status,
         lastKind: kind,
         findings: findings.map(formatFinding),
         sigAutoWrittenAt: sigApplied?.wroteTag
@@ -1447,9 +1465,13 @@ export class CampaignCheckService {
           const email = accountEmail(account);
           if (!email || !serving.includes(email.toLowerCase())) continue;
           const bucket = senderEspBucket(account);
-          if (bucket === "outlook") outlook += 1;
-          else if (bucket === "gmail") gmail += 1;
+          const weight = mailboxStaffableWeight(account);
+          if (bucket === "outlook") outlook += weight;
+          else if (bucket === "gmail") gmail += weight;
         }
+        outlook = roundStaffableWeight(outlook);
+        gmail = roundStaffableWeight(gmail);
+        const podSeats = roundStaffableWeight(outlook + gmail);
         const clientHasBothEsps =
           input.accounts.some(
             (row) =>
@@ -1467,12 +1489,13 @@ export class CampaignCheckService {
             outlook,
             gmail,
             clientHasBothEsps: true,
-            podSeats: Math.max(serving.length, ON_WEEK_MIN_SENDERS),
+            podSeats,
           })
         ) {
+          const floor = podEspMixMinSeats(podSeats);
           findings.push({
             kind: "esp_mix",
-            detail: `on-week staffable Outlook ${outlook} / Gmail ${gmail} (want ≥14 of each on a 40-seat POD)`,
+            detail: `on-week staffable Outlook ${outlook} / Gmail ${gmail} (want ≥${floor} of each on a ${podSeats}-seat POD)`,
           });
         }
       }

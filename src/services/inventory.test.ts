@@ -91,6 +91,7 @@ describe("InventoryBook — one account book, partial reads distrusted (D132)", 
     const cached = await book.get();
     assert.equal(cached, first);
     assert.equal(calls.count, 1);
+    assert.equal(book.peek(), first, "D262: peek returns the accepted book without fetching");
     nowMs += 16 * 60 * 1000;
     await book.get();
     assert.equal(calls.count, 2);

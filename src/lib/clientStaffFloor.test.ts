@@ -524,5 +524,26 @@ describe("D203 named-client 40/POD inventory", () => {
       true,
       "a one-ESP client is not required to invent the other",
     );
+    assert.equal(
+      podEspMixHolds({ outlook: 10, gmail: 10, clientHasBothEsps: true }),
+      true,
+      "D263: a 20-seat POD owes 7 each, not 14",
+    );
+    assert.equal(
+      podEspMixHolds({ outlook: 10, gmail: 10, clientHasBothEsps: true, podSeats: 20 }),
+      true,
+    );
+    assert.equal(
+      podEspMixHolds({
+        outlook: 20.2,
+        gmail: 18,
+        clientHasBothEsps: true,
+        podSeats: 38.2,
+      }),
+      true,
+      "D263: Azure 0.1 does not inflate the Outlook bucket past a real mix",
+    );
+    assert.equal(podEspMixMinSeats(20), 7);
+    assert.equal(podEspMixMinSeats(38.2), 13);
   });
 });

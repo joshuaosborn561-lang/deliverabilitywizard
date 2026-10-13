@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { loadConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SmartDeliveryClient } from "../clients/smartdelivery.js";
-import { firstCheckPassed } from "../lib/campaignCheck.js";
+import { campaignCheckIsActive, firstCheckPassed } from "../lib/campaignCheck.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { isPocClient } from "../lib/pocClient.js";
 import { StateStore } from "../state/store.js";
@@ -68,6 +68,30 @@ function delivery(tests: unknown[] = []): SmartDeliveryClient {
 }
 
 describe("campaign check first-pass helpers", () => {
+  it("D263: campaignCheckIsActive prefers the live book and hides deleted ids", () => {
+    const row = { campaignId: 3739316, status: "ACTIVE" as const };
+    const live = new Map<number, string>([
+      [4049065, "ACTIVE"],
+      [3847838, "STOPPED"],
+    ]);
+    assert.equal(campaignCheckIsActive({ campaignId: 4049065 }, live), true);
+    assert.equal(campaignCheckIsActive({ campaignId: 3847838 }, live), false);
+    assert.equal(
+      campaignCheckIsActive(row, live),
+      false,
+      "a deleted id is not ACTIVE even if the leftover row says so",
+    );
+    assert.equal(
+      campaignCheckIsActive({ campaignId: 1, status: "STOPPED" }),
+      false,
+    );
+    assert.equal(
+      campaignCheckIsActive({ campaignId: 1 }),
+      true,
+      "no live book and no stored status still shows until campaign-check stamps",
+    );
+  });
+
   it("D81: staffing and canary findings do not block the first check", () => {
     assert.equal(
       firstCheckPassed([
@@ -421,6 +445,105 @@ describe("CampaignCheckService", () => {
       undefined,
       "terminal campaigns must not keep stale findings on the scoreboard",
     );
+  });
+
+  it("D263: a campaign missing from the live list is pruned", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertCampaignCheck({
+      campaignId: 3739316,
+      name: "Cold Call Followup",
+      status: "ACTIVE",
+      firstSeenAt: "2026-08-20T00:00:00.000Z",
+      firstCheckAt: "2026-08-20T00:00:00.000Z",
+      firstPassedAt: null,
+      lastSweepAt: null,
+      lastKind: "first",
+      findings: ["esp_mix: leftover"],
+    });
+    const service = mkCheck(
+      loadConfig({}),
+      {
+        listCampaigns: async () => [
+          { id: 4049065, name: "Parlay living", status: "ACTIVE", client_id: 418274 },
+        ],
+        listAllEmailAccounts: async () => [],
+        listClients: async () => [{ id: 418274, name: "Parlay", logo: "Parlay" }],
+        getCampaignSequences: async () => [
+          { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+        ],
+      } as unknown as SmartleadClient,
+      delivery(),
+      state,
+    );
+    await service.run({ mode: "all" });
+    assert.equal(
+      state.getCampaignCheck(3739316),
+      undefined,
+      "deleted Cold Call Followup must leave campaignChecks",
+    );
+  });
+
+  it("D263: a 10/10 dual-ESP POD is not an esp_mix miss", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const outlook = Array.from({ length: 10 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `o${i}@parlay.test`,
+      from_name: `O ${i}`,
+      signature: "O\nParlay",
+      type: "OUTLOOK",
+      client_id: 418274,
+      campaign_ids: [4049065],
+      is_smtp_success: true,
+      is_imap_success: true,
+      message_per_day: 15,
+    }));
+    const gmail = Array.from({ length: 10 }, (_, i) => ({
+      id: 200 + i,
+      from_email: `g${i}@parlay.test`,
+      from_name: `G ${i}`,
+      signature: "G\nParlay",
+      type: "GMAIL",
+      client_id: 418274,
+      campaign_ids: [4049065],
+      is_smtp_success: true,
+      is_imap_success: true,
+      message_per_day: 30,
+    }));
+    const azure = {
+      id: 300,
+      from_email: "az@tidalstackco.com",
+      from_name: "Az",
+      signature: "Az\nParlay",
+      type: "AZURE",
+      client_id: 418274,
+      campaign_ids: [4049065],
+      is_smtp_success: true,
+      is_imap_success: true,
+      message_per_day: 2,
+      tags: [{ tag_name: "type:azure" }],
+    };
+    const sl = {
+      listCampaigns: async () => [
+        { id: 4049065, name: "Parlay living", status: "ACTIVE", client_id: 418274 },
+      ],
+      listAllEmailAccounts: async () => [...outlook, ...gmail, azure],
+      listClients: async () => [{ id: 418274, name: "Parlay", logo: "Parlay" }],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>Hi</div><div>%signature%</div>" },
+      ],
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
+    await service.run({ mode: "first" });
+    const hourly = await service.run({ mode: "hourly" });
+    const row = hourly.findings.find((item) => item.campaignId === 4049065);
+    assert.equal(
+      (row?.findings ?? []).some((finding) => finding.kind === "esp_mix"),
+      false,
+      "10 Outlook + 10 Gmail + 0.1 Azure must hold on the real POD size",
+    );
+    assert.equal(state.getCampaignCheck(4049065)?.status, "ACTIVE");
   });
 
   it("D85: a dead canary fleet is one fact, not a finding per campaign", async () => {

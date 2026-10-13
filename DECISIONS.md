@@ -262,11 +262,13 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 | D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
-| D257 | Live | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
+| D257 | Live — stringify path amended by D262 | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
 | D258 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
 | D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
-| D261 | Live | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
+| D261 | Live — prune persist / hole keep amended by D262 | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
+| D262 | Live | isolation-branch persists gone-campaign prune immediately, skips fresh scores, caps provider-split / evaluate work, and stringifies state with a yielding walk (never worker structuredClone); /health holes use the accepted inventory book |
+| D263 | Live | ESP-mix /health counts ACTIVE only; campaign-check prunes STOPPED/COMPLETED/deleted leftover findings; mix floor uses the real weighted POD size; Azure counts 0.1 |
 | D264 | Live | CALLER FOLLOW-UP (Gabe Calls) is fully exempt from typical sender top-up; sibling share / client-rest restore cannot land non-class seats; campaign-check peels strays (one Slack receipt) |
 
 ---
@@ -9196,6 +9198,122 @@ in `stage()`; isolation-branch passes the stage signal, uses
 placementIsolation by campaignChecks. Tests: silent exit
 stamps `exited without stamp`; superseded stamps; abort
 returns; deleted 3739316 is pruned not counted.
+
+---
+
+## D262 — isolation-branch must finish inside 10m; prune persists; stringify must not freeze
+
+**Date.** 2026-10-13.
+
+**Decision.** After D261 (`main@645eb18`) went live, isolation-branch
+still timed out at 10m every cycle (`lastOk` stuck 14:24Z / 9:24am
+CT). health-pass stuck since 14:54Z. `uglyWithoutIsolation` still
+listed deleted Cold Call Followup **#3739316**. Around 12:44pm CT
+the freeze watchdog exited after repeated 31–47s event-loop freezes
+during min40-topup + isolation-branch; Railway did not auto-restart
+(manual redeploy 3:18pm CT).
+
+1. After a successful `listCampaigns`, prune placement scores,
+   suspects, **and copy-canary rows** for deleted / COMPLETED /
+   STOPPED campaigns and **`store.save()` immediately**. A later
+   timeout or freeze-kill must not resurrect the hole.
+
+2. `/health` `keepCampaignId` uses the accepted inventory book
+   (living = not COMPLETED / STOPPED). campaignChecks leftover
+   rows are not a keep-set — a deleted id with a stale check
+   must not stay on `uglyWithoutIsolation`.
+
+3. `queueUglyPlacementSuspects` skips a campaign whose placement
+   score is still fresh (3h), caps new SmartDelivery provider-split
+   pulls per run, and honors abort. `evaluate` reuses that list /
+   a fresh score instead of `listTests` again. Evaluate is capped
+   per cycle; leftovers wait for the next sitting.
+
+4. `stringifyOffThread` is the D249 yielding walk. Do **not**
+   `structuredClone` the dump onto a worker via `workerData` —
+   that clone pinned the loop 31–47s and tripped D257
+   (`process.exit(1)`). Parse stays off-thread (worker reads the
+   file). Railway restart-on-failure must stay on (D247/D257).
+
+No campaign START / PAUSE. No spend.
+
+**Why.** D261 stopped per-evaluate saves and stamped the stage,
+but the prune lived only in memory until the end-of-run save,
+`/health` kept deleted ids that still had a campaignCheck row,
+and `queueUgly` + `campaignLooksSpam` still N+1'd SmartDelivery
+past the 10m race. The freeze was the stringify clone, not
+min40's yielding walk.
+
+**Rejected.** Widening the 10-minute budget. Turning
+isolation-branch off. Deleting the freeze watchdog. Changing
+campaign START / PAUSE.
+
+**Supersedes / amends.** Amends D261: prune persists immediately;
+hole keep is the inventory book, not campaignChecks. Amends
+D257: stringify yields; do not clone onto a worker. Does not
+change D158 / D164 / D165 queue gates, D40, or D4.
+
+**Guards.** canon D262: isolation-branch saves after prune;
+`PLACEMENT_SCORE_FRESH_MS` / provider-split / evaluate caps;
+`stringifyOffThread` calls `stringifyYielding` and does not
+pass `value` as workerData; InventoryBook `peek`; `/health`
+keepCampaignId reads `inventoryBook.peek()`. Tests: deleted
+3739316 prune persists; fresh scores skip providerSplits;
+yielding stringify ticks the event loop.
+
+---
+
+## D263 — ESP-mix is ACTIVE-only, real POD size, Azure 0.1
+
+**Date.** 2026-10-13.
+
+**Decision.** `/health` was flagging ~50 `esp_mix` campaigns,
+almost all Parlay, after D261. That was the check, not named
+inventory monoculture and not Azure skew. ACTIVE Parlay
+#4049065 was 21 M365 / 19 Gmail. The 50 samples were leftover
+STOPPED 3847xxx rows plus a denominator bug.
+
+1. `/health` `canonFindings` / `canonFindingSamples` / the canon
+   board count **ACTIVE campaigns only**. Inventory book status
+   wins; a stored check status is the fallback; an id missing
+   from a live book is not counted.
+
+2. Campaign-check **prunes** STOPPED / COMPLETED when they appear
+   on the live list (already D84) **and** drops stored rows whose
+   id is missing from a successful list (deleted). Persist
+   last-seen `status` on each check row.
+
+3. The mix floor is ~1/3 of **that POD's real weighted seat
+   count**. Do not use `max(n, 40)` — a 20-seat POD owes 7 per
+   ESP, not 14.
+
+4. Azure / Entra (`type:azure` / tidalstackco.com) counts **0.1**
+   toward the Outlook bucket (D232). M365 and Gmail stay 1.
+
+The mix rule itself is unchanged: when the client has both
+ESPs, neither may sit under ~1/3 of that POD. One-ESP clients
+are not required to invent the other. No campaign START / PAUSE.
+
+**Why.** STOPPED leftovers never left `campaignChecks` when
+Smartlead deleted the campaign, and `/health` counted every
+stored row. `podSeats = max(serving.length, 40)` made a
+short POD fail a 40-seat floor. Azure was +1 Outlook.
+
+**Rejected.** Changing the ~1/3 fraction. Exempting Parlay.
+Counting PAUSED as ACTIVE. Spending or restaffing from chat.
+
+**Supersedes / amends.** Amends D217 / D203: /health and the
+mix denominator. Amends D232: Azure 0.1 applies to the ESP-mix
+count, not only the 40-seat staffable sum. Does not change
+D40 or D4.
+
+**Guards.** canon D263: `/health` filters ACTIVE via
+`campaignCheckIsActive`; campaign-check removes ids missing
+from the live list; `podEspMixHolds` defaults to `outlook+gmail`
+not `max(n, 40)`; campaign-check adds `mailboxStaffableWeight`
+into the Outlook/Gmail buckets. Tests: STOPPED leftover is
+not a /health finding; 10/10 on a 20-seat POD holds; Azure
+0.1 does not flip a 21/19 mix.
 
 ---
 

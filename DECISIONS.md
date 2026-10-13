@@ -266,6 +266,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D258 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
 | D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
+| D261 | Live | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
 
 ---
 
@@ -9127,5 +9128,72 @@ parent; `owner?.kind === "client"` stays for non-family
 hosts (D173). Tests: loop continues past `x.info` refusal;
 boxoutreachdesk / meetconnectbox → isolationBuyParentDomain;
 techevolutionusa.info → techevolution parent.
+
+---
+
+## D261 — A started watchdog stage must stamp; isolation-branch cannot finish silent
+
+**Date.** 2026-10-13.
+
+**Decision.** Prod after the D260 deploy (`main@3006ab2`,
+Railway 87347f36, boot ~15:45Z): `isolation-branch`
+`lastOkAt` stuck at 14:24Z with `consecutiveFailures` 0 and
+`lastError` null, `health-pass` stuck at 14:54Z, and
+`inFlight.health.stage` showed `isolation-branch` for ~2
+minutes then went null without an ok or error stamp. The
+17:00 health slot did not run. `uglyWithoutIsolation` grew
+from empty to 16 canary-copy 0% rows (including deleted
+Cold Call Followup 3739316) and `scored` dropped ~155 → 106.
+
+1. `stage()` must stamp. Leftover / skip-if-fresh prefix
+   skips still do not (they never entered). A superseded
+   pass records `pass superseded`. Any other exit that
+   forgot to stamp records `exited without stamp`. Then
+   checkpoint. `isolation-branch` and `health-pass` therefore
+   show ok or a real error every health cycle.
+
+2. `isolation-branch.run` takes the stage AbortSignal, yields
+   between tests / evaluates, and **returns** on abort so
+   lastOk can stamp (D252 pattern). `evaluate` during a batch
+   run does **not** `store.save()` — one save at the end of
+   `run()`. Per-evaluate full dumps were structured-cloning
+   ~100MB state onto the off-thread worker; three ≥3s freezes
+   inside 2 minutes trip the D257 watchdog (`process.exit(1)`)
+   before `recordStageOk`, which is the silent-exit signature
+   (`inFlight` null, stamps unchanged).
+
+3. After a successful `listCampaigns`, prune placement scores
+   and copy suspects for campaigns missing from Smartlead or
+   COMPLETED / STOPPED. `/health` `uglyWithoutIsolation` /
+   `scored` hide ids that are not in `campaignChecks`.
+   PAUSED leftover evaluate stays (D164). New queue stays
+   ACTIVE-only (D158/D165). No campaign START / PAUSE.
+
+**Why.** The pre-deploy `timeout after 10m` on
+isolation-branch was already the same work running long.
+D260 itself did not change isolation-branch; the redeploy
+resumed the 15-minute chain into a sitting that died inside
+`run()` while `evaluate` saved the full dump per campaign.
+The freeze watchdog then exited. Deleted 3739316 stayed on
+the hole list because scores are never pruned when Smartlead
+no longer returns the campaign.
+
+**Rejected.** Turning isolation-branch off. Widening the
+10-minute step budget. Deleting the D257 freeze restart.
+Changing campaign START / PAUSE / STOP. Spending or
+bypassing warmup.
+
+**Supersedes / amends.** Amends D247 / D252 / D257: a started
+stage cannot leave lastOk untouched. Amends D159: the hole
+list is living campaigns only. Does not change D158 / D164 /
+D165 queue gates, D40 start-stop, or D4 spend.
+
+**Guards.** canon D261: `runStampedStage` / `finalizeStageStamp`
+in `stage()`; isolation-branch passes the stage signal, uses
+`persist: false` in the batch evaluate, calls
+`pruneIsolationForGoneCampaigns`; `/health` filters
+placementIsolation by campaignChecks. Tests: silent exit
+stamps `exited without stamp`; superseded stamps; abort
+returns; deleted 3739316 is pruned not counted.
 
 ---

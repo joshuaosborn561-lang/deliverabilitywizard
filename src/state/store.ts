@@ -2509,6 +2509,42 @@ export class StateStore {
     return Object.values(this.state.isolation.placementScores);
   }
 
+  dropPlacementScore(campaignId: number): void {
+    delete this.state.isolation.placementScores[String(campaignId)];
+  }
+
+  dropCopySuspect(campaignId: number): void {
+    delete this.state.isolation.copySuspects[String(campaignId)];
+  }
+
+  /**
+   * D261 — placement scores / suspects for campaigns gone from Smartlead
+   * (deleted) or finished (COMPLETED / STOPPED) are not isolation holes.
+   * PAUSED stays; leftover evaluate still re-reads those (D164).
+   */
+  pruneIsolationForGoneCampaigns(
+    campaigns: Array<{ id: number; status?: string | null }>,
+  ): number {
+    const keep = new Set<number>();
+    for (const row of campaigns) {
+      const status = String(row.status ?? "").toUpperCase();
+      if (status === "COMPLETED" || status === "STOPPED") continue;
+      keep.add(row.id);
+    }
+    let dropped = 0;
+    for (const score of this.listPlacementScores()) {
+      if (keep.has(score.campaignId)) continue;
+      this.dropPlacementScore(score.campaignId);
+      dropped += 1;
+    }
+    for (const suspect of this.listCopySuspects()) {
+      if (keep.has(suspect.campaignId)) continue;
+      this.dropCopySuspect(suspect.campaignId);
+      dropped += 1;
+    }
+    return dropped;
+  }
+
   setCopyCanaries(
     campaignId: number,
     emails: string[],

@@ -454,6 +454,50 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(second.evaluated, 0);
   });
 
+  it("D261: prunes a deleted campaign score instead of counting it as a hole", async () => {
+    const { branch, state } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 95,
+    });
+    state.recordPlacementScore({
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+      testId: "547425",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: "2026-10-08T00:00:00.000Z",
+    });
+    state.markCopySuspect({
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+      at: "2026-10-08T00:00:00.000Z",
+    });
+    await branch.run();
+    assert.equal(
+      state.listPlacementScores().some((row) => row.campaignId === 3739316),
+      false,
+    );
+    assert.equal(
+      state.listCopySuspects().some((row) => row.campaignId === 3739316),
+      false,
+    );
+  });
+
+  it("D261: aborting mid-run still returns so the watchdog can stamp", async () => {
+    const { branch, evaluated } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+    });
+    const controller = new AbortController();
+    controller.abort();
+    const result = await branch.run({ signal: controller.signal });
+    assert.ok(
+      result.errors.some((row) => /aborted/i.test(row)),
+      `abort must be recorded so lastOk can stamp: ${result.errors.join(" | ")}`,
+    );
+    assert.ok(evaluated.length <= 1, "abort must not keep evaluating");
+  });
+
   it("heals a missing copy-canary testId so unwarmed scoring can finish", async () => {
     const { branch, state, healed } = await buildBranch({
       knownGoodInbox: 95,

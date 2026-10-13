@@ -55,4 +55,59 @@ describe("isolation state", () => {
     assert.equal(reloaded.isCopyCanary("A@canary-g.info"), true);
     assert.equal(reloaded.isCopyCanary("other@pool.info"), false);
   });
+
+  it("D261: prunes placement scores and suspects for deleted or finished campaigns", async () => {
+    const path = `/tmp/dw-iso-prune-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(path);
+    await state.load();
+    state.recordPlacementScore({
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+      testId: "547425",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: "2026-10-08T00:00:00.000Z",
+    });
+    state.recordPlacementScore({
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      testId: "544718",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: "2026-10-13T14:00:00.000Z",
+    });
+    state.markCopySuspect({
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+      at: "2026-10-08T00:00:00.000Z",
+    });
+    state.markCopySuspect({
+      campaignId: 3763805,
+      campaignName: "BCP Logistics Over-1k",
+      at: "2026-08-24T12:00:00.000Z",
+    });
+    const dropped = state.pruneIsolationForGoneCampaigns([
+      { id: 3847794, status: "ACTIVE" },
+      { id: 3763805, status: "COMPLETED" },
+      { id: 3705889, status: "PAUSED" },
+    ]);
+    assert.ok(dropped >= 2);
+    assert.equal(
+      state.listPlacementScores().some((row) => row.campaignId === 3739316),
+      false,
+      "deleted Cold Call Followup must not stay on the hole list",
+    );
+    assert.equal(
+      state.listCopySuspects().some((row) => row.campaignId === 3739316),
+      false,
+    );
+    assert.equal(
+      state.listCopySuspects().some((row) => row.campaignId === 3763805),
+      false,
+      "COMPLETED leftover suspects are pruned",
+    );
+    assert.ok(
+      state.listPlacementScores().some((row) => row.campaignId === 3847794),
+    );
+  });
 });

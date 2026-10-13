@@ -125,10 +125,13 @@ export function uglyWithoutIsolation(opts: {
     | { teardownStarted?: boolean; verdict?: string }
     | undefined;
   threshold: number;
+  /** D261 — drop deleted / non-existent / non-ACTIVE leftover scores. */
+  keepCampaignId?: (campaignId: number) => boolean;
 }): UglyWithoutIsolationRow[] {
   const suspectById = new Map(opts.suspects.map((row) => [row.campaignId, row]));
   const out: UglyWithoutIsolationRow[] = [];
   for (const score of opts.scores) {
+    if (opts.keepCampaignId && !opts.keepCampaignId(score.campaignId)) continue;
     if (score.inboxPercent >= opts.threshold) continue;
     if (
       hasOpenIsolation({
@@ -163,6 +166,7 @@ export function placementIsolationHealth(opts: {
     | undefined;
   threshold: number;
   lastOkAt: string | null;
+  keepCampaignId?: (campaignId: number) => boolean;
 }): {
   lastOkAt: string | null;
   threshold: number;
@@ -170,12 +174,15 @@ export function placementIsolationHealth(opts: {
   ugly: number;
   uglyWithoutIsolation: UglyWithoutIsolationRow[];
 } {
-  const holes = uglyWithoutIsolation(opts);
+  const scores = opts.keepCampaignId
+    ? opts.scores.filter((row) => opts.keepCampaignId!(row.campaignId))
+    : opts.scores;
+  const holes = uglyWithoutIsolation({ ...opts, scores });
   return {
     lastOkAt: opts.lastOkAt,
     threshold: opts.threshold,
-    scored: opts.scores.length,
-    ugly: opts.scores.filter((row) => row.inboxPercent < opts.threshold).length,
+    scored: scores.length,
+    ugly: scores.filter((row) => row.inboxPercent < opts.threshold).length,
     uglyWithoutIsolation: holes,
   };
 }

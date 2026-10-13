@@ -2435,6 +2435,10 @@ export class StateStore {
     this.state.isolation.podControls[record.id] = record;
   }
 
+  removePodControl(id: string): void {
+    delete this.state.isolation.podControls[id];
+  }
+
   listPodControls(): PodControlRecord[] {
     return Object.values(this.state.isolation.podControls);
   }

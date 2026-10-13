@@ -15,7 +15,9 @@ import {
   testIdOf,
   type SmartDeliveryClient,
 } from "../clients/smartdelivery.js";
+import { isAbortError, throwIfAborted } from "../lib/abortWork.js";
 import { chunkArray, sleep } from "../lib/http.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { defaultControlTemplate } from "../lib/controlTemplate.js";
 import {
   POD_CONTROL_FOLDER_NAME,
@@ -53,8 +55,12 @@ export interface PodControlResult {
   sendersRead: number;
   kill: number;
   watch: number;
+  pruned: number;
   errors: string[];
 }
+
+/** Skip a living test whose last successful read is still inside this window. */
+export const POD_CONTROL_READ_FRESH_MS = 3 * 60 * 60 * 1000;
 
 export class PodControlService {
   constructor(
@@ -66,7 +72,9 @@ export class PodControlService {
     private readonly book: InventoryBook,
   ) {}
 
-  async run(opts: { dryRun?: boolean } = {}): Promise<PodControlResult> {
+  async run(
+    opts: { dryRun?: boolean; signal?: AbortSignal } = {},
+  ): Promise<PodControlResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: PodControlResult = {
       dryRun,
@@ -75,6 +83,7 @@ export class PodControlService {
       sendersRead: 0,
       kill: 0,
       watch: 0,
+      pruned: 0,
       errors: [],
     };
 
@@ -83,6 +92,24 @@ export class PodControlService {
       return result;
     }
 
+    try {
+      return await this.runInner(result, dryRun, opts.signal);
+    } catch (error) {
+      if (isAbortError(error)) {
+        result.errors.push("aborted: stopped remaining pod-control work");
+        await this.state.save().catch(() => undefined);
+        throw error;
+      }
+      throw error;
+    }
+  }
+
+  private async runInner(
+    result: PodControlResult,
+    dryRun: boolean,
+    signal?: AbortSignal,
+  ): Promise<PodControlResult> {
+    throwIfAborted(signal);
     const template = defaultControlTemplate();
     const isolation = this.state.getIsolation();
     if (
@@ -135,14 +162,15 @@ export class PodControlService {
       );
       return result;
     }
-    const providerIds = await this.resolveProviderIds();
+    const providerIds = await this.resolveProviderIds(signal);
     if (!providerIds.length) {
       result.errors.push(
         "no SmartDelivery provider_ids — cannot schedule pod controls",
       );
       return result;
     }
-    const existingByPod = await this.indexExistingControls(pods);
+    const existingByPod = await this.indexExistingControls(pods, signal);
+    result.pruned = this.pruneDeadPodControls(existingByPod);
 
     // D131 — coverage is per EMAIL across every living control, not per
     // chunk key. A pod whose membership grew (fresh import, replacement
@@ -171,6 +199,8 @@ export class PodControlService {
       if (!uncovered.length) continue;
       const chunks = chunkArray(uncovered, this.config.maxMailboxesPerTest);
       for (let offset = 0; offset < chunks.length; offset += 1) {
+        throwIfAborted(signal);
+        await yieldEventLoop();
         const chunk = chunks[offset]!;
         const index = maxIndex + 1 + offset;
         const key = `${pod.id}:${index}`;
@@ -200,8 +230,10 @@ export class PodControlService {
             createdAt: new Date().toISOString(),
           });
           result.testsCreated.push(created);
+          existingByPod.set(key, created);
           for (const email of chunk) covered.add(email.toLowerCase());
         } catch (error) {
+          if (isAbortError(error)) throw error;
           result.errors.push(
             `create ${pod.id} ${index + 1}: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -210,7 +242,7 @@ export class PodControlService {
       }
     }
 
-    await this.readExisting(result);
+    await this.readExisting(result, existingByPod, signal);
     this.state.patchIsolation({ lastPodControlAt: new Date().toISOString() });
     await this.state.save();
 
@@ -225,6 +257,7 @@ export class PodControlService {
       pods: result.pods,
       created: result.testsCreated.length,
       sendersRead: result.sendersRead,
+      pruned: result.pruned,
       kill: result.kill,
       watch: result.watch,
       errors: result.errors.length,
@@ -271,11 +304,28 @@ export class PodControlService {
     this.state.patchIsolation({ pods: records });
   }
 
+  private pruneDeadPodControls(living: Map<string, string>): number {
+    let pruned = 0;
+    for (const row of this.state.listPodControls()) {
+      if (living.has(row.id)) continue;
+      this.state.removePodControl(row.id);
+      pruned += 1;
+    }
+    if (pruned) {
+      console.log(
+        `[pod-controls] pruned ${pruned} dead stored test(s) — not coverage, not re-read`,
+      );
+    }
+    return pruned;
+  }
+
   private async indexExistingControls(
     pods: Pod[],
+    signal?: AbortSignal,
   ): Promise<Map<string, string>> {
     const out = new Map<string, string>();
     try {
+      throwIfAborted(signal);
       const tests = await this.smartDelivery.listTests();
       const living = new Set<string>();
       for (const test of tests) {
@@ -377,9 +427,20 @@ export class PodControlService {
     return String(created.id);
   }
 
-  private async readExisting(result: PodControlResult): Promise<void> {
+  private async readExisting(
+    result: PodControlResult,
+    living: Map<string, string>,
+    signal?: AbortSignal,
+  ): Promise<void> {
     const senderTypes = await this.senderTypeMap();
+    const now = Date.now();
     for (const row of this.state.listPodControls()) {
+      throwIfAborted(signal);
+      if (!living.has(row.id)) continue;
+      const lastRead = row.lastReadAt ? Date.parse(row.lastReadAt) : NaN;
+      if (Number.isFinite(lastRead) && now - lastRead < POD_CONTROL_READ_FRESH_MS) {
+        continue;
+      }
       try {
         const raw = await this.smartDelivery.getSenderAccountReport(row.spamTestId);
         const rates = parseSenderInboxRates(raw, row.spamTestId, {
@@ -421,10 +482,12 @@ export class PodControlService {
             .length,
         });
       } catch (error) {
+        if (isAbortError(error)) throw error;
         result.errors.push(
           `read ${row.spamTestId}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
+      await yieldEventLoop();
       await sleep(150);
     }
   }
@@ -432,7 +495,7 @@ export class PodControlService {
   private async senderTypeMap(): Promise<Map<string, string | undefined>> {
     const map = new Map<string, string | undefined>();
     try {
-      const accounts = await this.smartlead.listAllEmailAccounts();
+      const { accounts } = await this.book.get();
       for (const account of accounts) {
         const email = accountEmail(account)?.toLowerCase();
         if (email) map.set(email, account.type);
@@ -475,7 +538,7 @@ export class PodControlService {
     }
   }
 
-  private async resolveProviderIds(): Promise<number[]> {
+  private async resolveProviderIds(signal?: AbortSignal): Promise<number[]> {
     try {
       const resolved = await this.smartDelivery.resolveProviderIds(
         this.config.providerIds,
@@ -488,10 +551,15 @@ export class PodControlService {
       );
     }
     try {
+      throwIfAborted(signal);
       const tests = await this.smartDelivery.listTests();
+      let probed = 0;
       for (const test of tests) {
+        throwIfAborted(signal);
         const id = test.spam_test_id ?? test.id;
         if (id == null) continue;
+        probed += 1;
+        if (probed > 5) break;
         const details = await this.smartDelivery.getTestDetails(id);
         const raw =
           (details as { provider_id?: unknown; provider_ids?: unknown })
@@ -502,6 +570,7 @@ export class PodControlService {
         }
       }
     } catch (error) {
+      if (isAbortError(error)) throw error;
       console.warn(
         "[pod-controls] provider fallback failed:",
         error instanceof Error ? error.message : error,

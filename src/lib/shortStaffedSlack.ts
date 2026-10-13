@@ -1,6 +1,9 @@
 /**
  * D248 — short-staffed log lines only on change, one line per client.
+ * D259 — the short count is a whole sender (ceil after 1e-6 scrub).
  */
+
+import { displayShortfallSenders } from "./displaySenderCount.js";
 
 export interface ShortStaffedRow {
   clientKey: string;
@@ -44,7 +47,10 @@ export function groupShortStaffedByClient(
 
 export function shortStaffedSnapshot(rows: ShortStaffedRow[]): string {
   return rows
-    .map((row) => `${row.clientKey}:${row.shortBy}:${row.campaigns}`)
+    .map(
+      (row) =>
+        `${row.clientKey}:${displayShortfallSenders(row.shortBy)}:${row.campaigns}`,
+    )
     .join("|");
 }
 
@@ -53,7 +59,7 @@ export function shortStaffedLines(rows: ShortStaffedRow[]): string | null {
   return rows
     .map(
       (row) =>
-        `${row.clientName} is short ${row.shortBy} staffable across ${row.campaigns} campaign${row.campaigns === 1 ? "" : "s"}.`,
+        `${row.clientName} is short ${displayShortfallSenders(row.shortBy)} staffable across ${row.campaigns} campaign${row.campaigns === 1 ? "" : "s"}.`,
     )
     .join("\n");
 }

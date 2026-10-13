@@ -16,6 +16,7 @@ import {
   clientPodKey,
   seatStaffableWeight,
 } from "../lib/genericPool.js";
+import { displayShortfallSenders } from "../lib/displaySenderCount.js";
 import {
   classifyMailboxSendType,
   mailboxEspSlot,
@@ -444,7 +445,7 @@ export class Min40TopUpService {
         items: askItems.map((row) => ({
           campaignId: row.campaignId,
           campaignName: row.campaignName,
-          proof: `#${row.campaignId} ${row.campaignName} is ${row.shortBy} under the per-campaign 40. Tap Allow generics for client-signed fill (D207).`,
+          proof: `#${row.campaignId} ${row.campaignName} is ${displayShortfallSenders(row.shortBy)} under the per-campaign 40. Tap Allow generics for client-signed fill (D207).`,
         })),
       });
     }
@@ -1504,7 +1505,7 @@ export class Min40TopUpService {
       const clientName = clientDisplayName(client ?? { id: clientId });
       if (assigned < 1e-9 && need > 1e-9) {
         input.result.alerts.push(
-          `${clientName} on-week POD-${onWeek} has 0 generics (short ${need}).`,
+          `${clientName} on-week POD-${onWeek} has 0 generics (short ${displayShortfallSenders(need)}).`,
         );
       }
       if (need <= 1e-9) continue;

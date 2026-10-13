@@ -299,4 +299,168 @@ describe("pod controls", () => {
     );
     void third;
   });
+
+  it("prunes dead stored tests and does not re-read them", async () => {
+    const state = new StateStore(
+      `/tmp/dw-pod-prune-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPodControl({
+      id: "client:9:A:99",
+      podId: "client:9:A",
+      controlVersion: "stale",
+      spamTestId: "dead-99",
+      emails: ["gone@client.com"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const reported: string[] = [];
+    const listed: Array<{
+      id: string;
+      spam_test_id: string;
+      test_name: string;
+      status: string;
+      every_days: number;
+    }> = [];
+    const service = mkPods(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Acme", status: "ACTIVE", client_id: 9 },
+          { id: 99, name: "Pod control shell", status: "PAUSED" },
+        ],
+        listClients: async () => [{ id: 9, name: "Acme" }],
+        listAllEmailAccounts: async () => [
+          { id: 1, from_email: "a@client.com", client_id: 9, campaign_ids: [1] },
+        ],
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Quick check-in" },
+        ],
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateCampaignSequences: async () => undefined,
+        updateCampaignStatus: async () => undefined,
+      } as never,
+      {
+        listFolders: async () => [],
+        createFolder: async () => ({ id: 3 }),
+        listTests: async () => listed,
+        resolveProviderIds: async () => [2, 20, 21],
+        getTestDetails: async () => ({ provider_id: [2, 20, 21] }),
+        createAutomatedPlacement: async () => {
+          listed.push({
+            id: "live-1",
+            spam_test_id: "live-1",
+            test_name: "Pod control: Acme A",
+            status: "running",
+            every_days: 1,
+          });
+          return { id: "live-1" };
+        },
+        getSenderAccountReport: async (id: string) => {
+          reported.push(String(id));
+          return [];
+        },
+      } as never,
+      { notifyPodControls: async () => undefined } as never,
+      state,
+    );
+
+    const result = await service.run({ dryRun: false });
+    assert.ok(result.pruned >= 1, "dead stored row must be pruned");
+    assert.equal(
+      state.listPodControls().some((row) => row.spamTestId === "dead-99"),
+      false,
+      "dead stored test must leave state",
+    );
+    assert.equal(
+      reported.includes("dead-99"),
+      false,
+      "must not GET a dead test's sender report",
+    );
+  });
+
+  it("aborts mid-read, saves progress, and does not keep walking reports", async () => {
+    const state = new StateStore(
+      `/tmp/dw-pod-abort-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const emails = ["a@client.com", "b@client.com"];
+    state.upsertPodControl({
+      id: "client:9:A:0",
+      podId: "client:9:A",
+      controlVersion: "v",
+      spamTestId: "live-1",
+      emails: [emails[0]!],
+      createdAt: "2026-10-13T00:00:00.000Z",
+    });
+    state.upsertPodControl({
+      id: "client:9:A:1",
+      podId: "client:9:A",
+      controlVersion: "v",
+      spamTestId: "live-2",
+      emails: [emails[1]!],
+      createdAt: "2026-10-13T00:00:00.000Z",
+    });
+    const controller = new AbortController();
+    const reported: string[] = [];
+    const service = mkPods(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {
+        listCampaigns: async () => [
+          { id: 1, name: "Acme", status: "ACTIVE", client_id: 9 },
+          { id: 99, name: "Pod control shell", status: "PAUSED" },
+        ],
+        listClients: async () => [{ id: 9, name: "Acme" }],
+        listAllEmailAccounts: async () => [
+          { id: 1, from_email: "a@client.com", client_id: 9, campaign_ids: [1] },
+          { id: 2, from_email: "b@client.com", client_id: 9, campaign_ids: [1] },
+        ],
+        getCampaignSequences: async () => [
+          { id: 77, seq_number: 1, subject: "Quick check-in" },
+        ],
+        getCampaignEmailAccounts: async () => [],
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateCampaignSequences: async () => undefined,
+        updateCampaignStatus: async () => undefined,
+      } as never,
+      {
+        listFolders: async () => [{ id: 3, name: "Pod controls" }],
+        listTests: async () => [
+          {
+            id: "live-1",
+            spam_test_id: "live-1",
+            test_name: "Pod control: Acme A (1/2)",
+            status: "running",
+            every_days: 1,
+          },
+          {
+            id: "live-2",
+            spam_test_id: "live-2",
+            test_name: "Pod control: Acme A (2/2)",
+            status: "running",
+            every_days: 1,
+          },
+        ],
+        resolveProviderIds: async () => [2, 20, 21],
+        getTestDetails: async () => ({ provider_id: [2, 20, 21] }),
+        createAutomatedPlacement: async () => ({ id: "should-not-create" }),
+        getSenderAccountReport: async (id: string) => {
+          reported.push(String(id));
+          controller.abort();
+          return [];
+        },
+      } as never,
+      { notifyPodControls: async () => undefined } as never,
+      state,
+    );
+
+    await assert.rejects(
+      () => service.run({ dryRun: false, signal: controller.signal }),
+      (error: unknown) =>
+        error instanceof Error && /aborted/i.test(error.name + error.message),
+    );
+    assert.ok(reported.length <= 1, `abort must stop the report walk: ${reported.join(",")}`);
+  });
 });

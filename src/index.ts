@@ -1452,9 +1452,11 @@ async function main(): Promise<void> {
       }
       let podControlResult: unknown = null;
       if (config.enablePodControls) {
-        podControlResult = await stage("pod-controls", () => podControls.run(), {
-          skipIfFreshMs,
-        });
+        podControlResult = await stage(
+          "pod-controls",
+          (signal) => podControls.run({ signal }),
+          { skipIfFreshMs },
+        );
         await stage("domain-client-audit", () => domainClientAudit.run(), {
           skipIfFreshMs,
         });

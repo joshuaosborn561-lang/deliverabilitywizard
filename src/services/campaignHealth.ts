@@ -10,6 +10,10 @@ import {
 import type { SmartleadCampaign } from "../types/index.js";
 import { isCanonStaffable } from "../lib/canonStaffable.js";
 import {
+  displayShortfallSenders,
+  displayStaffedSenders,
+} from "../lib/displaySenderCount.js";
+import {
   countClientInboxFloors,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
@@ -195,7 +199,7 @@ export class CampaignHealthService {
     this.state.setLastStaffingShort(result.stillShort);
     for (const row of result.stillShort) {
       console.log(
-        `[health] short #${row.campaignId} ${row.name} — staffable ${row.staffable} short ${row.shortBy} (fill from same-client / BCP-owned inboxes, not pool generics)`,
+        `[health] short #${row.campaignId} ${row.name} — staffable ${displayStaffedSenders(row.staffable)} short ${displayShortfallSenders(row.shortBy)} (fill from same-client / BCP-owned inboxes, not pool generics)`,
       );
     }
 
@@ -209,14 +213,14 @@ export class CampaignHealthService {
     );
     for (const s of [...activeSnaps].sort((a, b) => b.needed - a.needed)) {
       console.log(
-        `[health]   #${s.campaignId} ${s.campaignName} — staffable ${s.staffable}/${s.floor} (membership ${s.membership})${s.needed ? ` short ${s.needed}` : ""}${s.pendingResume ? " pending-resume" : ""}`,
+        `[health]   #${s.campaignId} ${s.campaignName} — staffable ${displayStaffedSenders(s.staffable)}/${s.floor} (membership ${s.membership})${s.needed ? ` short ${displayShortfallSenders(s.needed)}` : ""}${s.pendingResume ? " pending-resume" : ""}`,
       );
     }
     for (const s of result.snapshots.filter(
       (row) => row.pendingResume && row.status !== "ACTIVE",
     )) {
       console.log(
-        `[health]   #${s.campaignId} ${s.campaignName} — PAUSED pending-resume staffable ${s.staffable}/${s.floor}`,
+        `[health]   #${s.campaignId} ${s.campaignName} — PAUSED pending-resume staffable ${displayStaffedSenders(s.staffable)}/${s.floor}`,
       );
     }
 
@@ -397,7 +401,7 @@ export class CampaignHealthService {
           staffable,
         });
         console.log(
-          `[health] Resumed #${pending.campaignId} ${name} (${staffable} staffable) — protective pause only`,
+          `[health] Resumed #${pending.campaignId} ${name} (${displayStaffedSenders(staffable)} staffable) — protective pause only`,
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

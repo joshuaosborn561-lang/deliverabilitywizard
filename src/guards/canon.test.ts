@@ -9709,7 +9709,7 @@ describe("owner intent — D217 Canon staffable matches the agent", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D(21[7-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(21[7-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON dated D217+.", "CANON.md header is not D217 or later."),
     );
     assert.match(
@@ -9848,7 +9848,7 @@ describe("owner intent — D197 on-week ACTIVE campaigns keep ≥40 senders", ()
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(19[789]|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop(
         "CANON still names the ≥40 floor generation.",
         "CANON.md header lost the ≥40 floor generation.",
@@ -9983,7 +9983,7 @@ describe("owner intent — D198 dedicated named-client generics are not Goliath"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(19[89]|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop(
         "CANON still names the dedicated-generic generation.",
         "CANON.md header was not bumped.",
@@ -10147,7 +10147,7 @@ describe("owner intent — D199 peel floor is staffable attached, not raw member
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(199|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(199|20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D199.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10290,7 +10290,7 @@ describe("owner intent — D200 exclusive-attach is pool generics only", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(20[0-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D200+.", "CANON.md header was not bumped."),
     );
     assert.match(
@@ -10475,7 +10475,7 @@ describe("owner intent — D203 named-client 40/POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[3-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(20[3-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D203 or later.", "CANON.md header lost the D203-era stamp."),
     );
     assert.match(
@@ -10701,7 +10701,7 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D(20[5-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(20[5-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D205 or later.", "CANON.md header was not bumped to D205+."),
     );
     assert.match(
@@ -10885,7 +10885,7 @@ describe("owner intent — D207 per-campaign 40 and same-client generic share", 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(20[7-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(20[7-9]|21[0-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D207+.", "CANON.md header lost the D207-era date."),
     );
     assert.match(
@@ -11165,7 +11165,7 @@ describe("owner intent — D210 SURBL never counts as a blacklist hit", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(210|21[1-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(210|21[1-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D210.", "CANON.md header lost D210+."),
     );
     assert.match(
@@ -11275,7 +11275,7 @@ describe("owner intent — D211 health-chain leftovers resume; mailbox-gap /run 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(211|21[2-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(211|21[2-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D211.", "CANON.md header lost D211+."),
     );
     assert.match(
@@ -11519,7 +11519,7 @@ describe("owner intent — D213 permanent tenant outbound-block hold", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(213|21[4-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(213|21[4-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D213.", "CANON.md header lost D213+."),
     );
     assert.match(
@@ -11608,7 +11608,7 @@ describe("owner intent — D214 health resume is chain inversion", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(214|21[5-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(214|21[5-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D214.", "CANON.md header lost D214+."),
     );
     assert.match(
@@ -11672,7 +11672,7 @@ describe("owner intent — D215 health-resume newest ignores inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(21[5-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(21[5-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D215+.", "CANON.md header lost the D215-era stamp."),
     );
     assert.match(
@@ -11753,7 +11753,7 @@ describe("owner intent — D218 TERRL holds persist past 7:15pm CT", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(21[8-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(21[8-9]|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON dated D218+.", "CANON.md header is not D218 or later."),
     );
     assert.match(
@@ -11885,7 +11885,7 @@ describe("owner intent — D219 mailbox type caps and TERRL 24h + substitute", (
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(219|22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(219|22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON dated D219+.", "CANON.md header is not D219 or later."),
     );
     assert.match(
@@ -12044,7 +12044,7 @@ describe("owner intent — D220 Cayden spend digest and complete fleet pages", (
 
     assert.match(
       canon,
-      /Canon as of \*\*D(22[0-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[0-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D220+.", "CANON.md header is not D220 or later."),
     );
     assert.match(
@@ -12164,7 +12164,7 @@ describe("owner intent — D221 fleet-wide generic pool", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(22[1-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[1-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D221+.", "CANON.md header is not D221 or later."),
     );
     assert.match(
@@ -12278,7 +12278,7 @@ describe("owner intent — D225 weekday surplus generic return", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(22[5-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[5-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D225 or later.", "CANON.md header lost D225+."),
     );
     assert.match(
@@ -12419,7 +12419,7 @@ describe("owner intent — D224 evidence-per-seat hold gate", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[4-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[4-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D224 or later.", "CANON.md header lost D224+."),
     );
     assert.match(
@@ -12489,7 +12489,7 @@ describe("owner intent — D222 Monday InboxKit lapsed-license sweep", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[2-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[2-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D222 or later.", "CANON.md header lost D222+."),
     );
     assert.match(
@@ -12597,7 +12597,7 @@ describe("owner intent — D226 InboxKit sweep handoff, Slack only after delete"
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[6-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[6-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D226 or later.", "CANON.md header lost D226+."),
     );
     assert.match(
@@ -12661,7 +12661,7 @@ describe("owner intent — D223 POD rotation skip + dual-POD flag", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[3-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[3-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D223 or later.", "CANON.md header lost D223+."),
     );
     assert.match(
@@ -12737,7 +12737,7 @@ describe("owner intent — D227 WARMUP-GATE-EXEMPT counts as 21+ warm", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[7-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[7-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D227 or later.", "CANON.md header lost D227+."),
     );
     assert.match(
@@ -12815,7 +12815,7 @@ describe("owner intent — D228 40/40 per-POD inventory", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(22[8-9]|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(22[8-9]|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D228 or later.", "CANON.md header lost D228+."),
     );
     assert.match(
@@ -12866,7 +12866,7 @@ describe("owner intent — D229 D193 POC-only generics retired", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(229|23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(229|23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D229.", "CANON.md header was not bumped to D229."),
     );
     assert.match(
@@ -12995,7 +12995,7 @@ describe("owner intent — D230 one client one POD named-warm return", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(23[0-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(23[0-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D230+.", "CANON.md header was not bumped to D230 or later."),
     );
     assert.match(
@@ -13128,7 +13128,7 @@ describe("owner intent — D231 sole generic table path", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(23[1-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(23[1-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D231+.", "CANON.md header was not bumped to D231 or later."),
     );
     assert.match(
@@ -13270,7 +13270,7 @@ describe("owner intent — D232 Azure staffable weight", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(23[2-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(23[2-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D232.", "CANON.md header was not bumped to D232."),
     );
     assert.match(
@@ -13387,7 +13387,7 @@ describe("owner intent — D233 Azure never fills a Google slot", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(23[3-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(23[3-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D233.", "CANON.md header was not bumped to D233."),
     );
     assert.match(
@@ -13475,7 +13475,7 @@ describe("owner intent — D234 already-tagged POD seats are immutable", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(23[4-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(23[4-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D234.", "CANON.md header was not bumped to D234."),
     );
     assert.match(
@@ -13558,7 +13558,7 @@ describe("owner intent — D235 generic client/POD only while staffed", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(23[7-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(23[7-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D237+.", "CANON.md header was not bumped to D237 or later."),
     );
     assert.match(
@@ -13668,7 +13668,7 @@ describe("owner intent — D236 POC engagement + D237 PowerGRYD full client", ()
 
     assert.match(
       canon,
-      /Canon as of \*\*D(23[7-9]|24[0-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(23[7-9]|24[0-9]|25[0-9])\*\*/,
       stop("CANON is dated D237+.", "CANON.md header was not bumped to D237 or later."),
     );
     assert.match(
@@ -13806,7 +13806,7 @@ describe("owner intent — D238 canary hard lock + D239 named staffable count", 
 
     assert.match(
       canon,
-      /Canon as of \*\*D(24[5-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
       stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
@@ -13968,7 +13968,7 @@ describe("owner intent — D243 client-named domains + later-of warmup", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(24[5-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
       stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
@@ -14074,7 +14074,7 @@ describe("owner intent — D241 GABE-VM-RESERVED write exemption", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(24[5-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
       stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
@@ -14223,7 +14223,7 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(24[5-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
       stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
@@ -14352,7 +14352,7 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
 
     assert.match(
       canon,
-      /Canon as of \*\*D(24[5-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
       stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
@@ -14425,7 +14425,7 @@ describe("owner intent — D240 canary fleet swap", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D(24[5-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/,
       stop("CANON is dated D245+.", "CANON.md header is before D245."),
     );
     assert.match(
@@ -14531,7 +14531,7 @@ describe("owner intent — D245 InboxKit sweep deletes on the cancel date, daily
       /isInboxKitLapsed\(/,
       stop("StateStore answers isInboxKitLapsed (D245).", "store.ts has no isInboxKitLapsed (canonStaffable gate is dead)."),
     );
-    assert.match(canon, /Canon as of \*\*D(24[5-9]|25[0-9]|26[0-9])\*\*/, stop("CANON is dated D245+.", "CANON.md header is before D245."));
+    assert.match(canon, /Canon as of \*\*D(24[5-9]|25[0-9])\*\*/, stop("CANON is dated D245+.", "CANON.md header is before D245."));
     assert.match(decisions, /## D245 /, stop("The ledger records D245.", "DECISIONS.md has no D245."));
     assert.match(decisions, /^\| D245 \|/m, stop("The status index lists D245.", "DECISIONS.md index has no D245 row."));
   });
@@ -14695,8 +14695,8 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("state.save writes compact JSON off the hot path (D247/D249).", "store.ts lost yielding compact stringify."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("state.save writes compact JSON off-thread (D247/D249/D257).", "store.ts lost off-thread stringify."),
     );
     assert.match(
       store,
@@ -14720,7 +14720,7 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(24[7-9]|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(24[7-9]|25[0-9])\*\*/,
       stop("CANON is dated D247+.", "CANON.md header is before D247."),
     );
     assert.match(
@@ -14814,7 +14814,7 @@ describe("owner intent — D248 safe Slack buttons and quiet #deliverability", (
     assert.equal(defaults.cronSpendDigest, "0 8 * * 1-5");
     assert.match(
       canon,
-      /Canon as of \*\*D(248|249|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(248|249|25[0-9])\*\*/,
       stop("CANON is dated D248+.", "CANON.md header was not bumped to D248."),
     );
     assert.match(
@@ -14865,8 +14865,8 @@ describe("owner intent — D249 persist stamps, unblock the loop, catch up", () 
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("full dump is yielding compact JSON (D249).", "store.ts still one-shot stringifies state."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("full dump is off-thread compact JSON (D249/D257).", "store.ts still one-shot stringifies state."),
     );
     assert.match(
       resume,
@@ -14900,7 +14900,7 @@ describe("owner intent — D249 persist stamps, unblock the loop, catch up", () 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D(249|25[0-9]|26[0-9])\*\*/,
+      /Canon as of \*\*D(249|25[0-9])\*\*/,
       stop("CANON is dated D249+.", "CANON.md header is before D249."),
     );
     assert.match(
@@ -14974,8 +14974,8 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       store,
-      /stringifyYielding\(this\.state\)/,
-      stop("D249 yielding stringify stays (D250).", "store.ts lost stringifyYielding."),
+      /stringifyOffThread\(this\.state\)/,
+      stop("D249/D257 off-thread stringify stays (D250).", "store.ts lost stringifyOffThread."),
     );
     assert.match(
       canon,
@@ -15587,8 +15587,8 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
 
     assert.match(
       canon,
-      /D256/,
-      stop("CANON still names D256.", "CANON.md dropped D256."),
+      /Canon as of \*\*D(25[6-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D256 or later.", "CANON.md header is before D256."),
     );
     assert.doesNotMatch(
       canon,
@@ -15625,6 +15625,310 @@ describe("owner intent — D256 PowerGRYD is a named client; TechEvo floor 30", 
       min40,
       /minFloorForClient/,
       stop("min40 uses the per-client floor (D256).", "min40TopUp.ts lost minFloorForClient."),
+    );
+  });
+});
+
+describe("owner intent — D257 stop event-loop freezes", () => {
+  it("D257: off-thread pruned save, Smartlead limiter, repeated-freeze exit, scan-backfill logs", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const store = await readFile(new URL("../state/store.ts", import.meta.url), "utf8");
+    const smartlead = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    const limiter = await readFile(
+      new URL("../lib/smartleadLimiter.ts", import.meta.url),
+      "utf8",
+    );
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const scanner = await readFile(
+      new URL("../services/campaignScanner.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      store,
+      /stringifyOffThread\(this\.state\)/,
+      stop("full dump stringifies off-thread (D257).", "store.ts still stringifies state on the main thread."),
+    );
+    assert.match(
+      store,
+      /parseFileOffThread/,
+      stop("load parses off-thread (D257).", "store.ts still JSON.parse on the main thread."),
+    );
+    assert.match(
+      store,
+      /pruneStateLedgers/,
+      stop("save prunes ledgers (D257).", "store.ts lost pruneStateLedgers."),
+    );
+    assert.match(
+      store,
+      /debounceMs/,
+      stop("stage checkpoints may debounce (D257).", "store.ts lost save debounce."),
+    );
+    assert.doesNotMatch(
+      store,
+      /JSON\.stringify\(this\.state/,
+      stop("no one-shot JSON.stringify(this.state) (D257).", "store.ts stringifies this.state on the main thread."),
+    );
+    assert.match(
+      smartlead,
+      /this\.limiter\.schedule/,
+      stop("every Smartlead HTTP call uses the limiter (D257).", "smartlead.ts lost limiter.schedule."),
+    );
+    assert.match(
+      smartlead,
+      /limiter\.schedule\(\(\) =>\s*apiRequest/,
+      stop(
+        "limiter calls apiRequest, not request() (D257).",
+        "smartlead.ts request() is recursive.",
+      ),
+    );
+    assert.match(
+      limiter,
+      /SMARTLEAD_CONCURRENCY/,
+      stop("limiter has a concurrency cap (D257).", "smartleadLimiter.ts lost SMARTLEAD_CONCURRENCY."),
+    );
+    assert.match(
+      limiter,
+      /noteRateLimit/,
+      stop("limiter backs off on 429 (D257).", "smartleadLimiter.ts lost noteRateLimit."),
+    );
+    assert.match(
+      freeze,
+      /EVENT_LOOP_REPEAT_COUNT/,
+      stop("watchdog exits on repeated freezes (D257).", "freezeWatchdog.ts lost EVENT_LOOP_REPEAT_COUNT."),
+    );
+    assert.match(
+      scanner,
+      /\[scan-backfill\] start/,
+      stop("scan-backfill logs start (D257).", "campaignScanner.ts lost the start log."),
+    );
+    assert.match(
+      scanner,
+      /\[scan-backfill\] end/,
+      stop("scan-backfill logs end/timing (D257).", "campaignScanner.ts lost the end log."),
+    );
+    assert.match(
+      index,
+      /\[scan-backfill\] skip/,
+      stop("scan-backfill logs a skip (D257).", "index.ts lost the skip log."),
+    );
+    assert.match(
+      index,
+      /smartleadLimiter:/,
+      stop("/health exposes the Smartlead limiter (D257).", "index.ts /health lost smartleadLimiter."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D(25[7-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D257 or later.", "CANON.md header is before D257."),
+    );
+    assert.match(
+      canon,
+      /stringified \*\*off-thread\*\*/,
+      stop("CANON names off-thread save (D257).", "CANON.md lost the off-thread dump."),
+    );
+    assert.match(
+      canon,
+      /multi-second freeze repeats/,
+      stop("CANON names repeated-freeze restart (D257).", "CANON.md lost the repeated-freeze rule."),
+    );
+    assert.match(
+      decisions,
+      /## D257 — Stop event-loop freezes/,
+      stop("The ledger records D257.", "DECISIONS.md has no D257."),
+    );
+    assert.match(
+      decisions,
+      /^\| D257 \|/m,
+      stop("The status index lists D257.", "DECISIONS.md index has no D257 row."),
+    );
+  });
+});
+
+describe("owner intent — D258 live SL client_id wins; PowerGRYD empty-by-design", () => {
+  it("D258: stale pool PG cannot override TE/Insight; empty-by-design blocks foreign staffing", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      preferredGenericOwnerId,
+    } = await import("../lib/dedicatedGeneric.js");
+    const { genericEligibleForClientPod } = await import("../lib/genericAssign.js");
+    const { genericBlockedOnPowerGrydStaffing } = await import(
+      "../lib/powerGrydEmptyByDesign.js"
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+      }),
+      521881,
+      stop("Live TechEvo client_id wins over stale PG pool.", "preferredGenericOwnerId still preferred the pool."),
+    );
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: 582890,
+        assignedClientId: 592842,
+      }),
+      582890,
+      stop("Live Insight client_id wins over stale PG pool.", "preferredGenericOwnerId still preferred the pool."),
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 592842,
+        targetPod: "A",
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+      }),
+      false,
+      "genericEligibleForClientPod allowed a TechEvo seat onto PowerGRYD.",
+    );
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: {
+          client_id: 521881,
+          signature: "Andrea Adams\nTechEvolution",
+        },
+        email: "andreaadams@myoutreachdesk.info",
+        targetClientId: 592842,
+        emptyByDesign: true,
+        mailboxClientId: 521881,
+        assignedClientId: 592842,
+        powerGrydBrand: "PowerGRYD",
+        allBrands: ["PowerGRYD", "TechEvolution", "Insight"],
+      }),
+      true,
+      "empty-by-design must block a TechEvo-signed generic on PowerGRYD.",
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const dedicated = await readFile(
+      new URL("../lib/dedicatedGeneric.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D(25[8-9]|2[6-9][0-9])\*\*/,
+      stop("CANON is dated D258 or later.", "CANON.md header is before D258."),
+    );
+    assert.match(
+      canon,
+      /empty-by-design/,
+      stop("CANON names empty-by-design (D258).", "CANON.md lost the PowerGRYD empty-by-design lock."),
+    );
+    assert.match(
+      dedicated,
+      /preferredGenericOwnerId/,
+      stop("Resolver prefers live SL when pool disagrees (D258).", "dedicatedGeneric.ts lost preferredGenericOwnerId."),
+    );
+    assert.match(
+      min40,
+      /powerGrydStaffingBlocked|genericBlockedOnPowerGrydStaffing/,
+      stop("min40 hard-blocks foreign PG staffing (D258).", "min40TopUp.ts lost the empty-by-design block."),
+    );
+    assert.match(
+      decisions,
+      /## D258 — live Smartlead client_id wins; PowerGRYD empty-by-design/,
+      stop("The ledger records D258.", "DECISIONS.md has no D258."),
+    );
+    assert.match(
+      decisions,
+      /^\| D258 \|/m,
+      stop("The status index lists D258.", "DECISIONS.md index has no D258 row."),
+    );
+  });
+});
+
+describe("owner intent — D259 whole-sender Slack / human display", () => {
+  it("D259: shortfall ceils after 1e-6 scrub; assigned/staffable floor", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const {
+      displayShortfallSenders,
+      displayStaffedSenders,
+    } = await import("../lib/displaySenderCount.js");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      displayShortfallSenders(233.99999999999991),
+      234,
+      stop("EMCOR float-noise shortfall ceils to 234 (D259).", ""),
+    );
+    assert.equal(
+      displayShortfallSenders(51.5),
+      52,
+      stop("Insight 51.5 shortfall ceils to 52 (D259).", ""),
+    );
+    assert.equal(
+      displayStaffedSenders(21.500000000000014),
+      21,
+      stop("Assigned 21.5 floors to 21 (D259).", ""),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const slack = await readFile(
+      new URL("../lib/shortStaffedSlack.ts", import.meta.url),
+      "utf8",
+    );
+    const detail = await readFile(
+      new URL("../lib/canonStaffable.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D(259|26[0-9])\*\*/,
+      stop("CANON is dated D259 or later.", "CANON.md header is before D259."),
+    );
+    assert.match(
+      canon,
+      /whole-sender display/,
+      stop("CANON names whole-sender display (D259).", "CANON.md lost D259."),
+    );
+    assert.match(
+      decisions,
+      /## D259 — Slack \/ human sender counts are whole senders/,
+      stop("The ledger records D259.", "DECISIONS.md has no D259."),
+    );
+    assert.match(
+      decisions,
+      /^\| D259 \|/m,
+      stop("The status index lists D259.", "DECISIONS.md index has no D259 row."),
+    );
+    assert.match(
+      slack,
+      /displayShortfallSenders/,
+      stop("Short-staffed Slack uses the D259 helper.", "shortStaffedSlack.ts lost displayShortfallSenders."),
+    );
+    assert.match(
+      detail,
+      /displayStaffedSenders/,
+      stop("CANON staffable detail floors (D259).", "canonStaffable.ts lost displayStaffedSenders."),
     );
   });
 });

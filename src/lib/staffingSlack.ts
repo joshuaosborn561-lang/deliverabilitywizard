@@ -1,7 +1,13 @@
 /**
  * D63 — health Slack about thin campaigns. Never blame a generic shortage
  * on a client-inbox-only campaign.
+ * D259 — staffable floors, shortfall ceils, after a 1e-6 float scrub.
  */
+
+import {
+  displayShortfallSenders,
+  displayStaffedSenders,
+} from "./displaySenderCount.js";
 
 /** @deprecated D64 — shorts go on the end-of-day brief, not a 12h cooldown. */
 export const STAFFING_SHORT_COOLDOWN_MS = 12 * 60 * 60 * 1000;
@@ -58,12 +64,12 @@ export function staffingSlackLines(input: {
   }
   for (const row of resumed) {
     lines.push(
-      `• ${row.name} — turned back on (${row.staffable} sending inboxes). This was a pause we took to protect it, not a pause someone made by hand.`,
+      `• ${row.name} — turned back on (${displayStaffedSenders(row.staffable)} sending inboxes). This was a pause we took to protect it, not a pause someone made by hand.`,
     );
   }
   for (const row of stillShort) {
     lines.push(
-      `• ${row.name} — ${row.staffable} sending, ${row.shortBy} of this client's inboxes that should be on are not (${row.status}).`,
+      `• ${row.name} — ${displayStaffedSenders(row.staffable)} sending, ${displayShortfallSenders(row.shortBy)} of this client's inboxes that should be on are not (${row.status}).`,
     );
   }
   if (pulled) {

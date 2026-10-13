@@ -10,9 +10,11 @@ import {
 import { isClientInbox, isGenericMailbox } from "./clientInbox.js";
 import { owesWarmup } from "../services/warmupGate.js";
 import { isRealNamedClientId } from "./dedicatedGeneric.js";
+import { realignStalePoolAssignment } from "./genericPoolRealign.js";
 import { assignClientCohorts } from "./restCohort.js";
 import { isStaffableSender } from "./staffableSender.js";
 import { rankGenericsOldestWorstFirst } from "./genericAssign.js";
+import { displayStaffedSenders } from "./displaySenderCount.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { isGabeFollowUpCampaign } from "./pocClient.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
@@ -242,7 +244,7 @@ export function validateGenericPool(input: {
       const why =
         hasActive === false
           ? `assigned to client ${clientId} POD ${pod} but that client has no ACTIVE campaign`
-          : `assigned to client ${clientId} POD ${pod} but is not needed to reach ${40} (named ${named}, assigned ${assignedWeight})`;
+          : `assigned to client ${clientId} POD ${pod} but is not needed to reach ${40} (named ${displayStaffedSenders(named)}, assigned ${displayStaffedSenders(assignedWeight)})`;
       markSurplus(seats, named, why, hasActive === false);
     }
 
@@ -296,6 +298,7 @@ export interface GenericPoolSyncInput {
   state: Pick<StateStore, "getPoolMailbox" | "isCopyCanary"> & {
     isMarkerClientId?: StateStore["isMarkerClientId"];
     getCopyCanaryFleet?: StateStore["getCopyCanaryFleet"];
+    upsertPoolMailbox?: StateStore["upsertPoolMailbox"];
   };
   now?: Date;
   powerGrydClientId?: number;
@@ -472,6 +475,9 @@ export function syncGenericSeatsFromInventory(
           ? existing.assignedAt
           : now.toISOString();
     const pool = input.state.getPoolMailbox(email);
+    if (mailboxClient != null) {
+      realignStalePoolAssignment(input.state, email, mailboxClient, now);
+    }
     const warmReadyAt =
       existing?.warmReadyAt ??
       (typeof pool?.availableAt === "string" ? pool.availableAt : null) ??

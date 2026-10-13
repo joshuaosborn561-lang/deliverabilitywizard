@@ -29,6 +29,10 @@ import {
   countClientInboxFloors,
   staffFloorForCampaign,
 } from "../lib/clientStaffFloor.js";
+import {
+  displayShortfallSenders,
+  displayStaffedSenders,
+} from "../lib/displaySenderCount.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import { isStaffableSender } from "../lib/staffableSender.js";
 import type { InventoryBook } from "./inventory.js";
@@ -239,7 +243,7 @@ export class CampaignAuditService {
     };
 
     console.log(
-      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their on-week client-pod floor (short ${result.totalShortfall} total); ${signatureIssues.length} signature QA miss(es)`,
+      `[campaign-audit] ${rows.length} active campaign(s); ${untested.length} without a placement test; ${understaffed.length} under their on-week client-pod floor (short ${displayShortfallSenders(result.totalShortfall)} total); ${signatureIssues.length} signature QA miss(es)`,
     );
     for (const r of rows) {
       const brands = r.domains
@@ -247,7 +251,7 @@ export class CampaignAuditService {
         .map((d) => `${d.domain}:${d.count}`)
         .join(" ");
       console.log(
-        `[campaign-audit]   #${r.id} ${r.name} — staffable ${r.staffable}/${r.floor} (membership ${r.senders})${r.shortBy ? ` short ${r.shortBy}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
+        `[campaign-audit]   #${r.id} ${r.name} — staffable ${displayStaffedSenders(r.staffable)}/${r.floor} (membership ${r.senders})${r.shortBy ? ` short ${displayShortfallSenders(r.shortBy)}` : ""}${r.hasTest ? "" : " NO-TEST"} [${brands}]`,
       );
     }
     const idle = [...idleByDomain.entries()].sort((a, b) => b[1] - a[1]);

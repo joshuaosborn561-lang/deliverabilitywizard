@@ -261,7 +261,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D253 | Live | Production image builds pull Node 22 bookworm-slim from `mirror.gcr.io/library/node`, not anonymous Docker Hub; runtime stays the official image; D247–D252 and 40/40 unchanged |
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
-| D256 | Live | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
+| D257 | Live | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
+| D258 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
+| D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
 
 ---
@@ -8903,7 +8906,165 @@ client; surplus is above that floor.
 min40 does not special-case `isPowerGrydClientId`;
 `minFloorForClient(521881) === 30`; surplus returns
 above that floor; empty-POD Slack stays; CANON dated
-D256.
+D256 (header advanced by D258).
+
+---
+
+## D258 — live Smartlead client_id wins; PowerGRYD empty-by-design
+
+**Date.** 2026-10-12.
+
+**Decision.** Josh (prod 2026-10-12): five google generics
+(`andreaadams@myoutreachdesk.info`,
+`brendaramirez@outreachdeskpro.info` on TechEvo 521881;
+`brianbrown@usemeetconnect.info`,
+`charlesharris@usemeetconnect.info`,
+`christinaevans@getoutreachdesk.info` on Insight 582890)
+were thrashing onto PowerGRYD 592842 because wizard pool
+`assignedClientId` still said 592842 after they were
+pulled off that client. Dedicated-generic resolution
+must not let a stale pool assignment override a live
+Smartlead named `client_id`. Prefer the Smartlead id when
+both are real named clients and they disagree; realign
+the pool row to match. One-client must not peel a
+TechEvo / Insight seat because the pool still says
+PowerGRYD. While PowerGRYD branded named seats are still
+warming (empty-by-design), min40 and campaign top-up
+must not attach a generic whose live `client_id` or
+signature belongs to another named client onto a
+PowerGRYD ACTIVE campaign. This is not a never-generics
+rule (D256): PowerGRYD remains a full named client and
+may take PowerGRYD-branded or free-pool generics once
+branded named seats can send. Do not change bounce or
+campaign pause logic.
+
+**Why.** Canon QA peeled 40 PowerGRYD links at ~5:14pm CT
+2026-10-12. Those campaigns were sending PowerGRYD mail
+under TechEvo / Insight signatures. `resolveDedicatedGenericClientId`
+preferred pool `assignedClientId` over the mailbox
+`client_id`, so every health / canon-ops pass peeled the
+seats off TechEvo / Insight and min40 could re-link them
+onto PowerGRYD. PowerGRYD is supposed to stay empty of
+foreign-branded seats while its branded inventory warms.
+
+**Rejected.** Leaving the D198 "pool always wins" order
+in place. Treating a leftover Goliath / marker mailbox
+id as live ownership (pool still wins there). A permanent
+PowerGRYD never-generics skip (D256). Changing bounce or
+campaign pause writers.
+
+**Supersedes / amends.** Amends D198 mark order: live
+Smartlead named `client_id` wins when the pool names a
+different real client. Amends D256: empty-by-design
+blocks foreign-signature / foreign-client staffing of
+PowerGRYD while branded seats warm; it does not forbid
+PowerGRYD generics after those seats are staffable.
+Amends D207 / D230 / D254 attach: the one-client /
+same-client lock reads live Smartlead first.
+
+**Guards.** `preferredGenericOwnerId` / dedicated resolver
+prefer 521881 / 582890 over pool 592842; `genericEligibleForClientPod`
+refuses the stale-PG case; min40 / one-client regression
+`pool=PG + SL=TE/Insight + PG empty-by-design: seats stay,
+PG stays at 0 senders`; pool realign on sync; CANON dated
+D258.
+
+---
+
+## D257 — Stop event-loop freezes: state dump, Smartlead limiter, freeze restart, scan-backfill logs
+
+**Date.** 2026-10-12.
+
+**Decision.** Production on Monday 2026-10-12 froze before a
+manual restart at 3:08pm CT. Railway logs showed main-thread
+freezes of 127–139s, about 41s, and a steady 3–5s. Stages
+(test-reconcile, pod-controls, client-rest, campaign-health,
+mailbox-gap, isolation-branch, min40-topup, mailbox-settings-full,
+campaign-check-first) hit their timeouts; the overdue count went
+to 20. `/data/state.json` was about 110MB and
+`[state] save compact-json` took 3.1s on its own. Smartlead 429s
+came from inventory, pod-controls, mailbox-settings, and
+copy-canary. scan-backfill logged nothing.
+
+Harden (outcomes unchanged):
+
+1. **State persistence.** Do not `JSON.stringify` / `JSON.parse`
+   the whole dump on the main thread. Load parses off-thread;
+   the full save prunes old ledgers and finding history
+   (retention cap), coalesces, may debounce per-stage
+   checkpoints, and stringifies off-thread. Sidecar stamps
+   stay immediate (D249). Log stringify duration; tests
+   measure it.
+2. **Shared Smartlead limiter.** Every Smartlead HTTP call
+   (read or write, every stage) takes a concurrency slot
+   (default 2) and a process-wide 429 backoff. Writes still
+   go through MutationQueue on top.
+3. **Freeze watchdog.** Still exits on a single freeze over
+   5 minutes or a pass past 2× max (D247). Also exits when
+   a multi-second freeze repeats (3× ≥3s inside 2 minutes)
+   so Railway restarts before every stage times out.
+4. **scan-backfill logs.** Start, end, and elapsed ms on
+   every run; `skip — no missing placement test` when it
+   does not fire.
+
+**Why.** The D249 yielding walk still spent seconds of CPU
+on a 110MB dump, and a 5-minute single-freeze bar let
+3–139s stalls starve the 15-minute chain. Parallel
+un-limited Smartlead reads 429'd the board. scan-backfill
+was silent so a miss looked like a no-op.
+
+**Rejected.** Delete the freeze watchdog. Pretty-print the
+dump. Raise every stage budget. Skip prune so history
+grows without bound. Leave reads outside the limiter.
+
+**Supersedes / amends.** Amends D167 / D247 / D249 (save
+path: prune + off-thread + debounce). Amends D247 (repeated
+multi-second freeze exit). Amends D89 / D247 (Smartlead
+reads join the limiter). Does not change staffing, holds,
+or spend.
+
+**Guards.** stringifyOffThread / parseFileOffThread;
+pruneStateLedgers retention; SmartleadClient.request uses
+the limiter; freezeWatchdogTick exits on 3× ≥3s; scan-backfill
+start/end logs; CANON dated D258 (D257 rules on the same page).
+
+---
+
+## D259 — Slack / human sender counts are whole senders
+
+**Date.** 2026-10-12.
+
+**Decision.** Every Slack- or human-facing sender count
+shows a whole sender. The shortfall / short / need in
+min40 summaries, the Needs-you / short-staffed list, and
+CANON lines (e.g. "EMCOR is short 233.99999999999991",
+"Insight is short 51.5", "assigned 21.500000000000014")
+round after a 1e-6 float scrub: shortfalls `Math.ceil`,
+assigned / staffable / named `Math.floor`. Internal
+staffing math stays fractional — Azure / Entra seats
+still weigh 0.1 toward a POD's 40.
+
+**Why.** Azure 0.1 weights plus IEEE float noise printed
+fractional and near-integer junk on Slack and CANON copy.
+Humans read senders, not tenths. Ceil the hole so a 0.1
+or 51.5 short still asks for a whole seat; floor what is
+already on so 21.5 assigned does not read as 22.
+
+**Rejected.** Rounding the live staffable / need math
+itself (would hide Azure 0.1). Showing one decimal.
+`toFixed` without the 1e-6 scrub (leaves 234.0 or
+re-pages on 233.999…).
+
+**Supersedes / amends.** Amends D232 display only. Does
+not change weighted sums, min40 fill, surplus return, or
+the 40 / per-client floor. D257 (#305) and D258 (#306)
+are open on other branches and stay their own calls.
+
+**Guards.** `displayShortfallSenders(233.99999999999991)
+=== 234`; `displayShortfallSenders(51.5) === 52`;
+`displayStaffedSenders(21.500000000000014) === 21`;
+short-staffed Slack and `formatCanonStaffFloorDetail`
+use the helpers; CANON dated D259.
 
 ---
 

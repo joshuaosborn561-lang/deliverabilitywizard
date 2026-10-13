@@ -16,6 +16,7 @@ import {
   clientPodKey,
   seatStaffableWeight,
 } from "../lib/genericPool.js";
+import { displayShortfallSenders } from "../lib/displaySenderCount.js";
 import {
   classifyMailboxSendType,
   mailboxEspSlot,
@@ -48,7 +49,16 @@ import {
 } from "../lib/clientStaffFloor.js";
 import { minFloorForClient } from "../lib/minFloorByClient.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
-import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
+import {
+  isRealNamedClientId,
+  resolveDedicatedGenericClientId,
+} from "../lib/dedicatedGeneric.js";
+import {
+  brandsFromClients,
+  genericBlockedOnPowerGrydStaffing,
+  isPowerGrydEmptyByDesign,
+  powerGrydBrandFromClients,
+} from "../lib/powerGrydEmptyByDesign.js";
 import {
   campaignHoldReason,
   holdPolicyFromConfig,
@@ -183,6 +193,11 @@ export class Min40TopUpService {
     private readonly state: StateStore,
   ) {}
 
+  /** D258 — PowerGRYD branded-warming empty-by-design for this pass. */
+  private powerGrydEmptyByDesign = false;
+  private powerGrydBrand = "PowerGRYD";
+  private allClientBrands: string[] = [];
+
   async run(
     opts: {
       dryRun?: boolean;
@@ -257,6 +272,22 @@ export class Min40TopUpService {
       brandByClientId.set(
         client.id,
         brandFromClientDisplayName(clientDisplayName(client)),
+      );
+    }
+    this.powerGrydEmptyByDesign = isPowerGrydEmptyByDesign({
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      config: this.config,
+      state: this.state,
+      clientId: this.config.powerGrydClientId,
+    });
+    this.powerGrydBrand = powerGrydBrandFromClients(
+      clients,
+      this.config.powerGrydClientId,
+    );
+    this.allClientBrands = brandsFromClients(clients);
+    if (this.powerGrydEmptyByDesign) {
+      console.log(
+        `[min40-topup] PowerGRYD empty-by-design (branded seats still warming) — refuse foreign-signature / foreign-client generics`,
       );
     }
     const seatIndex = await this.indexSeats(
@@ -414,7 +445,7 @@ export class Min40TopUpService {
         items: askItems.map((row) => ({
           campaignId: row.campaignId,
           campaignName: row.campaignName,
-          proof: `#${row.campaignId} ${row.campaignName} is ${row.shortBy} under the per-campaign 40. Tap Allow generics for client-signed fill (D207).`,
+          proof: `#${row.campaignId} ${row.campaignName} is ${displayShortfallSenders(row.shortBy)} under the per-campaign 40. Tap Allow generics for client-signed fill (D207).`,
         })),
       });
     }
@@ -542,13 +573,24 @@ export class Min40TopUpService {
         ids.add(seat.account.client_id);
       }
       const pool = this.state.getPoolMailbox(seat.email);
-      if (typeof pool?.assignedClientId === "number") {
-        ids.add(pool.assignedClientId);
-      }
       const table = this.state.getGenericSeat(seat.email);
-      if (typeof table?.assignedClientId === "number") {
-        ids.add(table.assignedClientId);
-      }
+      const liveId =
+        typeof seat.account.client_id === "number" ? seat.account.client_id : null;
+      const addAssigned = (assigned: number | undefined | null): void => {
+        if (typeof assigned !== "number") return;
+        // D258 — do not index a stale pool assignment against a live
+        // Smartlead named client that disagrees.
+        if (
+          liveId != null &&
+          isRealNamedClientId(liveId) &&
+          assigned !== liveId
+        ) {
+          return;
+        }
+        ids.add(assigned);
+      };
+      addAssigned(pool?.assignedClientId);
+      addAssigned(table?.assignedClientId);
       if (seat.generic) {
         const dedicated = resolveDedicatedGenericClientId(
           seat.account,
@@ -701,6 +743,14 @@ export class Min40TopUpService {
     campaignById: Map<number, SmartleadCampaign>,
   ): boolean {
     if (account.client_id === clientId) return true;
+    // D258 — live Smartlead named client_id wins over a stale pool row.
+    if (
+      typeof account.client_id === "number" &&
+      isRealNamedClientId(account.client_id) &&
+      account.client_id !== clientId
+    ) {
+      return false;
+    }
     const pool = this.state.getPoolMailbox(email.toLowerCase());
     if (pool?.assignedClientId === clientId) return true;
     const dedicated = resolveDedicatedGenericClientId(
@@ -750,7 +800,31 @@ export class Min40TopUpService {
     now: Date,
   ): boolean {
     if (!genericMayLinkToCampaigns(account, now)) return false;
+    if (this.powerGrydStaffingBlocked(account, email, clientId)) return false;
     return this.genericMayTakePod(account, email, clientId, onWeekCohort(now));
+  }
+
+  /** D258 — hard block foreign-client / foreign-sig generics onto PowerGRYD. */
+  private powerGrydStaffingBlocked(
+    account: SmartleadAccountWithCampaigns,
+    email: string,
+    clientId: number,
+  ): boolean {
+    const seat = this.state.getGenericSeat(email);
+    const pool = this.state.getPoolMailbox(email);
+    return genericBlockedOnPowerGrydStaffing({
+      account,
+      email,
+      targetClientId: clientId,
+      emptyByDesign: this.powerGrydEmptyByDesign,
+      powerGrydClientId: this.config.powerGrydClientId,
+      powerGrydBrand: this.powerGrydBrand,
+      allBrands: this.allClientBrands,
+      mailboxClientId:
+        typeof account.client_id === "number" ? account.client_id : null,
+      assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,
+      isMarkerClientId: (id) => this.state.isMarkerClientId(id),
+    });
   }
 
   private async stampGenericPod(
@@ -1317,6 +1391,9 @@ export class Min40TopUpService {
               const owner =
                 typeof account.client_id === "number" ? account.client_id : null;
               if (owner != null && owner !== clientId) return false;
+              if (this.powerGrydStaffingBlocked(account, email, clientId)) {
+                return false;
+              }
               if (hasPocReservationTag(account) && owner !== clientId) return false;
               if (lockedGenericPod({ tags: account.tags }) === pod) return false;
               if (!this.seatIsUsable(account, email, clientActive[0]!, input.campaignById)) {
@@ -1428,7 +1505,7 @@ export class Min40TopUpService {
       const clientName = clientDisplayName(client ?? { id: clientId });
       if (assigned < 1e-9 && need > 1e-9) {
         input.result.alerts.push(
-          `${clientName} on-week POD-${onWeek} has 0 generics (short ${need}).`,
+          `${clientName} on-week POD-${onWeek} has 0 generics (short ${displayShortfallSenders(need)}).`,
         );
       }
       if (need <= 1e-9) continue;

@@ -256,6 +256,37 @@ describe("D167 serialized save", () => {
     assert.equal(reloaded.getIsolationRemindPostedYmd(), "2026-10-09");
   });
 
+  it("D257: prune + off-thread save measures time and does not pin the loop", async () => {
+    const filePath = `/tmp/dw-state-save-ms-${process.pid}-${Date.now()}.json`;
+    const state = new StateStore(filePath);
+    await state.load();
+    const now = Date.now();
+    const snap = state.get();
+    for (let i = 0; i < 400; i += 1) {
+      snap.alertedKeys[`old-${i}`] = new Date(now - 40 * 24 * 60 * 60 * 1000).toISOString();
+      snap.alertedKeys[`fresh-${i}`] = new Date(now - 60_000).toISOString();
+    }
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 8);
+    timer.unref?.();
+    const t0 = Date.now();
+    await state.save();
+    const wall = Date.now() - t0;
+    clearInterval(timer);
+    assert.ok(state.lastSaveMs >= 0, "save must record stringify duration");
+    assert.ok(ticks > 0, "event loop must tick while the dump is off-thread");
+    assert.ok(
+      wall < 8_000,
+      `save of a pruned ledger took ${wall}ms (stringify ${state.lastSaveMs}ms)`,
+    );
+    const reloaded = new StateStore(filePath);
+    await reloaded.load();
+    assert.equal(reloaded.get().alertedKeys["old-0"], undefined);
+    assert.ok(reloaded.get().alertedKeys["fresh-0"]);
+  });
+
   it("D249: sidecar stamps win over a stale state.json", async () => {
     const filePath = `/tmp/dw-state-overlay-${process.pid}-${Date.now()}.json`;
     const stale = new StateStore(filePath);

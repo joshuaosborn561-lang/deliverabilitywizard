@@ -19,6 +19,7 @@
 
 import type { SmartleadEmailAccount } from "../types/index.js";
 import { hasHoldOrRetireTag, ON_WEEK_MIN_SENDERS } from "./clientStaffFloor.js";
+import { displayStaffedSenders } from "./displaySenderCount.js";
 import { normalizeSenderEspFamily } from "./esp.js";
 import { readMessagePerDay } from "./mailboxSendSettings.js";
 import { onWeekCohort, type RestCohort } from "./restCohort.js";
@@ -213,7 +214,7 @@ export function formatCanonStaffFloorDetail(input: {
     .filter(([, n]) => Number(n) > 0)
     .map(([reason, n]) => `${reason} ${n}`);
   const extra = bits.length ? `; ${bits.join(", ")}` : "";
-  return `on-week staffable ${input.staffable}/${floor} (linked ${input.linked}${extra})`;
+  return `on-week staffable ${displayStaffedSenders(input.staffable)}/${floor} (linked ${input.linked}${extra})`;
 }
 
 export function senderEspBucket(

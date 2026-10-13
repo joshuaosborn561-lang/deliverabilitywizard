@@ -46,6 +46,12 @@ import {
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import { genericEligibleForClientPod } from "../lib/genericAssign.js";
+import {
+  brandsFromClients,
+  genericBlockedOnPowerGrydStaffing,
+  isPowerGrydEmptyByDesign,
+  powerGrydBrandFromClients,
+} from "../lib/powerGrydEmptyByDesign.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "../lib/mailboxType.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
@@ -185,6 +191,17 @@ export class CampaignTopUpService {
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await fetchInventory(this.smartlead));
     const now = new Date();
+    const powerGrydEmptyByDesign = isPowerGrydEmptyByDesign({
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      config: this.config,
+      state: this.state,
+      clientId: this.config.powerGrydClientId,
+    });
+    const powerGrydBrand = powerGrydBrandFromClients(
+      clients,
+      this.config.powerGrydClientId,
+    );
+    const allClientBrands = brandsFromClients(clients);
     if (!dryRun) {
       const seeded = syncGenericSeatsFromInventory({
         existing: this.state.listGenericSeats(),
@@ -577,6 +594,10 @@ export class CampaignTopUpService {
                 (() => {
                   const seat = this.state.getGenericSeat(key);
                   if (!seat) return true;
+                  const assignedClientId =
+                    seat.assignedClientId ??
+                    this.state.getPoolMailbox(key)?.assignedClientId ??
+                    null;
                   if (
                     !genericEligibleForClientPod({
                       clientId: campaign.client_id,
@@ -585,12 +606,28 @@ export class CampaignTopUpService {
                         typeof poolAccount.client_id === "number"
                           ? poolAccount.client_id
                           : null,
-                      assignedClientId:
-                        seat.assignedClientId ??
-                        this.state.getPoolMailbox(key)?.assignedClientId ??
-                        null,
+                      assignedClientId,
                       tags: poolAccount.tags,
                       assignedPod: seat.assignedPod,
+                    })
+                  ) {
+                    return true;
+                  }
+                  if (
+                    genericBlockedOnPowerGrydStaffing({
+                      account: poolAccount,
+                      email: key,
+                      targetClientId: campaign.client_id,
+                      emptyByDesign: powerGrydEmptyByDesign,
+                      powerGrydClientId: this.config.powerGrydClientId,
+                      powerGrydBrand,
+                      allBrands: allClientBrands,
+                      mailboxClientId:
+                        typeof poolAccount.client_id === "number"
+                          ? poolAccount.client_id
+                          : null,
+                      assignedClientId,
+                      isMarkerClientId: (id) => this.state.isMarkerClientId(id),
                     })
                   ) {
                     return true;

@@ -269,7 +269,7 @@ describe("D167 serialized save", () => {
     let ticks = 0;
     const timer = setInterval(() => {
       ticks += 1;
-    }, 8);
+    }, 1);
     timer.unref?.();
     const t0 = Date.now();
     await state.save();

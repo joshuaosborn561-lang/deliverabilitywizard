@@ -318,8 +318,10 @@ async function loadPlacement(force = false, pass = 0) {
     return loadPlacement(true, pass + 1);
   }
   // The catalog walk is a couple of pages per request so a 429 does not wipe
-  // the offset. Keep going while live campaigns are still missing.
-  if (pass < 30 && data.complete === false && !data.stale) {
+  // the offset. Keep going while a live campaign's test is still deeper in
+  // the catalog. A stale score used to stop this, which left EMCOR's autos
+  // (hundreds of rows in) off the board.
+  if (pass < 40 && data.searching) {
     await new Promise((resolve) => setTimeout(resolve, 400));
     return loadPlacement(true, pass + 1);
   }

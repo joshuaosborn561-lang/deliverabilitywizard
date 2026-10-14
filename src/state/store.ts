@@ -840,6 +840,8 @@ export class StateStore {
   /** D167 — one disk write at a time so overlapping saves cannot clobber. */
   private saveTail: Promise<void> = Promise.resolve();
   private saveSeq = 0;
+  /** D267 — gone campaign ids persisted on the sidecar so a stale dump cannot resurrect them. */
+  private isolationGoneIds = new Set<number>();
   /**
    * Test-only: sit between stringify and rename so a concurrent mutation
    * can prove the mutex does not persist a stale snapshot.
@@ -2551,22 +2553,37 @@ export class StateStore {
       keep.add(row.id);
     }
     let dropped = 0;
+    const noteGone = (campaignId: number): void => {
+      this.isolationGoneIds.add(campaignId);
+    };
     for (const score of this.listPlacementScores()) {
       if (keep.has(score.campaignId)) continue;
       this.dropPlacementScore(score.campaignId);
+      noteGone(score.campaignId);
       dropped += 1;
     }
     for (const suspect of this.listCopySuspects()) {
       if (keep.has(suspect.campaignId)) continue;
       this.dropCopySuspect(suspect.campaignId);
+      noteGone(suspect.campaignId);
       dropped += 1;
     }
     for (const row of Object.values(this.state.isolation.copyCanaries)) {
       if (keep.has(row.campaignId)) continue;
       this.dropCopyCanary(row.campaignId);
+      noteGone(row.campaignId);
       dropped += 1;
     }
     return dropped;
+  }
+
+  /**
+   * D267 — flush the isolation hole list to the lastOk sidecar now.
+   * A later `save()` stringify or freeze-kill must not resurrect
+   * deleted scores/suspects/canary rows from a stale full dump.
+   */
+  async persistIsolationPrune(): Promise<void> {
+    await this.saveHot();
   }
 
   setCopyCanaries(
@@ -2827,6 +2844,15 @@ export class StateStore {
       inboxkitLicenseYmd: this.state.inboxkitLicenseHandoff?.ymd ?? null,
       inboxkitLicenseAt: this.state.inboxkitLicenseHandoff?.at ?? null,
       stageHealth: this.state.stageHealth,
+      // D267 — isolation prune / hole list must survive a freeze-kill
+      // that only flushes the sidecar (never the full dump).
+      isolationPrune: {
+        at: new Date().toISOString(),
+        goneIds: [...this.isolationGoneIds],
+        placementScores: this.state.isolation.placementScores,
+        copySuspects: this.state.isolation.copySuspects,
+        copyCanaries: this.state.isolation.copyCanaries,
+      },
     };
   }
 
@@ -2888,6 +2914,23 @@ export class StateStore {
         ...this.state.stageHealth,
         ...(raw.stageHealth as AppState["stageHealth"]),
       };
+    }
+    this.overlayIsolationPrune(raw.isolationPrune);
+  }
+
+  private overlayIsolationPrune(raw: unknown): void {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const prune = raw as { goneIds?: unknown };
+    const gone = Array.isArray(prune.goneIds)
+      ? prune.goneIds.filter((id): id is number => Number.isFinite(id) && id > 0)
+      : [];
+    for (const id of gone) this.isolationGoneIds.add(id);
+    // Only drop gone ids. Do not replace the maps — a sidecar written
+    // before isolation data existed would wipe living scores on load.
+    for (const id of this.isolationGoneIds) {
+      this.dropPlacementScore(id);
+      this.dropCopySuspect(id);
+      this.dropCopyCanary(id);
     }
   }
 

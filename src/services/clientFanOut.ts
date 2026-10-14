@@ -24,6 +24,7 @@ import {
 import { isGenericMailbox } from "../lib/clientInbox.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { sleep } from "../lib/http.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { isExcluded } from "./campaignTopUp.js";
 import { activeHoldUntilDate, owesWarmup, tagNames } from "./warmupGate.js";
 import {
@@ -45,6 +46,8 @@ import type { StateStore } from "../state/store.js";
  */
 
 const ADD_BATCH_SIZE = 40;
+/** D267 — 10 groups × ~1400 seats × many campaigns must not pin the loop. */
+export const FAN_OUT_YIELD_EVERY = 8;
 
 export interface FanOutAttachment {
   email: string;
@@ -119,7 +122,9 @@ export class ClientFanOutService {
     }
     result.groups = activeByGroup.size;
 
+    let walked = 0;
     for (const [groupKey, groupCampaigns] of activeByGroup) {
+      await yieldEventLoop();
       // A single-campaign group still fans out: a client inbox attached to
       // nothing (wiped, shell-stranded, freshly imported) must reach that
       // one live campaign. The old `length < 2` skip left whole clients at
@@ -163,6 +168,8 @@ export class ClientFanOutService {
       >();
 
       for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+        walked += 1;
+        if (walked % FAN_OUT_YIELD_EVERY === 0) await yieldEventLoop();
         const email = accountEmail(account);
         if (!email || !account.id) continue;
         if (isLockedCanarySeat(account, email, this.state)) {
@@ -507,7 +514,10 @@ export class ClientFanOutService {
     );
     if (!living.length) return;
 
+    let classWalked = 0;
     for (const account of input.accounts) {
+      classWalked += 1;
+      if (classWalked % FAN_OUT_YIELD_EVERY === 0) await yieldEventLoop();
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       const warmed = !owesWarmup(account, email, this.config, this.state);

@@ -18,6 +18,8 @@ import {
 import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
+import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
   clientBrandList,
@@ -131,7 +133,10 @@ export class CampaignAuditService {
     // without taking a sender off another campaign.
     const idleByDomain = new Map<string, number>();
 
+    let seatN = 0;
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      seatN += 1;
+      if (seatN % 64 === 0) await yieldEventLoop();
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;
       const domain = email.split("@")[1] ?? "";
@@ -309,8 +314,12 @@ export class CampaignAuditService {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
       return !isAnyShellCampaign(campaign);
     });
+    const membersByCampaign = indexAccountsByCampaign(input.accounts);
 
+    let auditN = 0;
     for (const campaign of live) {
+      auditN += 1;
+      if (auditN % 4 === 0) await yieldEventLoop();
       const campaignName = String(campaign.name ?? campaign.id);
       const expected =
         typeof campaign.client_id === "number"
@@ -330,8 +339,7 @@ export class CampaignAuditService {
       }
       const insightCampaign = isInsightCampaign(campaign, sequences);
 
-      for (const account of input.accounts) {
-        if (!campaignIdsOf(account).includes(campaign.id)) continue;
+      for (const account of membersByCampaign.get(campaign.id) ?? []) {
         const email = accountEmail(account);
         if (!email) continue;
         if (insightCampaign) {

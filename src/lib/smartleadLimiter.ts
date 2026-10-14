@@ -11,12 +11,21 @@ import { sleep } from "./http.js";
 export const SMARTLEAD_CONCURRENCY = 2;
 export const SMARTLEAD_MIN_GAP_MS = 150;
 export const SMARTLEAD_MAX_BACKOFF_MS = 30_000;
+/**
+ * Smartlead's account-wide cap is 200 requests / 1 minute (reads and
+ * writes, including SmartDelivery). Stay comfortably under it so a
+ * health pass + campaign-audit + isolation-branch cannot 429 the board.
+ */
+export const SMARTLEAD_MAX_PER_MIN = 150;
+export const SMARTLEAD_RATE_WINDOW_MS = 60_000;
 
 export interface SmartleadLimiterSnapshot {
   inflight: number;
   waiting: number;
   rateLimitStreak: number;
   pausedForMs: number;
+  requestsInWindow: number;
+  maxPerMin: number;
 }
 
 export class SmartleadLimiter {
@@ -25,20 +34,25 @@ export class SmartleadLimiter {
   private pausedUntil = 0;
   private lastStartAt = 0;
   private streak = 0;
+  private starts: number[] = [];
 
   constructor(
     private readonly concurrency = SMARTLEAD_CONCURRENCY,
     private readonly minGapMs = SMARTLEAD_MIN_GAP_MS,
     private readonly maxBackoffMs = SMARTLEAD_MAX_BACKOFF_MS,
+    private readonly maxPerMin = SMARTLEAD_MAX_PER_MIN,
+    private readonly rateWindowMs = SMARTLEAD_RATE_WINDOW_MS,
   ) {}
 
   async schedule<T>(fn: () => Promise<T>): Promise<T> {
     await this.acquire();
     try {
       await this.waitPause();
+      await this.waitRateWindow();
       const gap = this.lastStartAt + this.minGapMs - Date.now();
       if (gap > 0) await sleep(gap);
       this.lastStartAt = Date.now();
+      this.starts.push(this.lastStartAt);
       const value = await fn();
       this.noteSuccess();
       return value;
@@ -60,11 +74,14 @@ export class SmartleadLimiter {
   }
 
   snapshot(): SmartleadLimiterSnapshot {
+    this.pruneStarts(Date.now());
     return {
       inflight: this.inflight,
       waiting: this.waiters.length,
       rateLimitStreak: this.streak,
       pausedForMs: Math.max(0, this.pausedUntil - Date.now()),
+      requestsInWindow: this.starts.length,
+      maxPerMin: this.maxPerMin,
     };
   }
 
@@ -90,5 +107,24 @@ export class SmartleadLimiter {
   private async waitPause(): Promise<void> {
     const wait = this.pausedUntil - Date.now();
     if (wait > 0) await sleep(wait);
+  }
+
+  private pruneStarts(now: number): void {
+    const cutoff = now - this.rateWindowMs;
+    if (!this.starts.length || this.starts[0]! >= cutoff) return;
+    this.starts = this.starts.filter((at) => at >= cutoff);
+  }
+
+  /** D267 — account-wide 200/min; we cap at 150 including SmartDelivery. */
+  private async waitRateWindow(): Promise<void> {
+    if (this.maxPerMin <= 0) return;
+    for (;;) {
+      const now = Date.now();
+      this.pruneStarts(now);
+      if (this.starts.length < this.maxPerMin) return;
+      const wait = this.starts[0]! + this.rateWindowMs - now + 5;
+      if (wait <= 0) return;
+      await sleep(wait);
+    }
   }
 }

@@ -1,4 +1,5 @@
 import { apiRequest, ApiError, type RequestOptions } from "../lib/http.js";
+import type { SmartleadLimiter } from "../lib/smartleadLimiter.js";
 import {
   classifySeedEsp,
   mailFolderOf,
@@ -95,7 +96,30 @@ export interface CreateAutomatedPlacementInput
 }
 
 export class SmartDeliveryClient {
-  constructor(private readonly apiKey: string) {}
+  private readonly limiter?: SmartleadLimiter;
+
+  constructor(
+    private readonly apiKey: string,
+    opts: { limiter?: SmartleadLimiter } = {},
+  ) {
+    this.limiter = opts.limiter;
+  }
+
+  /** D267 — SmartDelivery shares the account-wide 200/min Smartlead cap. */
+  private request<T>(
+    path: string,
+    options: RequestOptions = {},
+  ): Promise<T> {
+    const go = () =>
+      apiRequest<T>(BASE_URL, this.apiKey, path, {
+        ...options,
+        onRateLimit: (retryAfterMs) => {
+          this.limiter?.noteRateLimit(retryAfterMs);
+          options.onRateLimit?.(retryAfterMs);
+        },
+      });
+    return this.limiter ? this.limiter.schedule(go) : go();
+  }
 
   /**
    * Probes SmartDelivery to confirm the account has been provisioned.
@@ -144,10 +168,7 @@ export class SmartDeliveryClient {
     request: Pick<RequestOptions, "retries"> = {},
   ): Promise<SpamTestSummary[]> {
     if (body.limit !== undefined || body.offset !== undefined) {
-      return apiRequest<SpamTestSummary[]>(
-        BASE_URL,
-        this.apiKey,
-        "spam-test/report",
+      return this.request("spam-test/report",
         { method: "POST", body, ...request },
       );
     }
@@ -156,10 +177,7 @@ export class SmartDeliveryClient {
     let offset = 0;
     const limit = DEFAULT_TEST_LIST_LIMIT;
     for (let page = 0; page < 50; page += 1) {
-      const raw = await apiRequest<unknown>(
-        BASE_URL,
-        this.apiKey,
-        "spam-test/report",
+      const raw = await this.request("spam-test/report",
         { method: "POST", body: { ...body, limit, offset }, ...request },
       );
       const rows = normalizeTestList(raw);
@@ -214,20 +232,13 @@ export class SmartDeliveryClient {
   }
 
   getTestDetails(spamTestId: string | number): Promise<Record<string, unknown>> {
-    return apiRequest<Record<string, unknown>>(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/${spamTestId}`,
-    );
+    return this.request<Record<string, unknown>>(`spam-test/${spamTestId}`);
   }
 
   createManualPlacement(
     input: CreateManualPlacementInput,
   ): Promise<CreatedPlacementTest> {
-    return apiRequest<CreatedPlacementTest>(
-      BASE_URL,
-      this.apiKey,
-      "spam-test/manual",
+    return this.request("spam-test/manual",
       { method: "POST", body: input },
     );
   }
@@ -239,10 +250,7 @@ export class SmartDeliveryClient {
   createAutomatedPlacement(
     input: CreateAutomatedPlacementInput,
   ): Promise<CreatedPlacementTest> {
-    return apiRequest<CreatedPlacementTest>(
-      BASE_URL,
-      this.apiKey,
-      "spam-test/schedule",
+    return this.request("spam-test/schedule",
       { method: "POST", body: input },
     );
   }
@@ -253,16 +261,13 @@ export class SmartDeliveryClient {
    * PUT /spam-test/{id}/stop
    */
   stopAutomatedTest(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/${spamTestId}/stop`,
+    return this.request(`spam-test/${spamTestId}/stop`,
       { method: "PUT", body: {} },
     );
   }
 
   getSeedProviders(): Promise<unknown> {
-    return apiRequest<unknown>(BASE_URL, this.apiKey, "spam-test/seed/providers");
+    return this.request("spam-test/seed/providers");
   }
 
   async resolveProviderIds(configured: number[]): Promise<number[]> {
@@ -277,117 +282,81 @@ export class SmartDeliveryClient {
     spamTestId: string | number,
     request: Pick<RequestOptions, "retries"> = {},
   ): Promise<{ status?: string; result?: ProviderwiseRow[]; overallTotalCount?: number }> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/providerwise`,
+    return this.request(`spam-test/report/${spamTestId}/providerwise`,
       { method: "POST", body: {}, ...request },
     );
   }
 
   getMailboxSummary(): Promise<MailboxSummaryRow[]> {
-    return apiRequest<MailboxSummaryRow[]>(
-      BASE_URL,
-      this.apiKey,
-      "spam-test/report/mailboxes-summary",
+    return this.request("spam-test/report/mailboxes-summary",
     );
   }
 
   getDomainBlacklist(spamTestId: string | number): Promise<BlacklistRow[] | Record<string, unknown>> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/domain-blacklist`,
+    return this.request(`spam-test/report/${spamTestId}/domain-blacklist`,
     );
   }
 
   getIpBlacklist(spamTestId: string | number): Promise<BlacklistRow[] | Record<string, unknown>> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/blacklist`,
+    return this.request(`spam-test/report/${spamTestId}/blacklist`,
     );
   }
 
   getSenderAccountReport(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/sender-account-wise`,
+    return this.request(`spam-test/report/${spamTestId}/sender-account-wise`,
     );
   }
 
   listFolders(): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, "spam-test/folder");
+    return this.request("spam-test/folder");
   }
 
   createFolder(name: string): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, "spam-test/folder", {
+    return this.request("spam-test/folder", {
       method: "POST",
       body: { name },
     });
   }
 
   deleteTests(spamTestIds: Array<string | number>): Promise<unknown> {
-    return apiRequest(BASE_URL, this.apiKey, "spam-test/delete", {
+    return this.request("spam-test/delete", {
       method: "POST",
       body: { spam_test_ids: spamTestIds },
     });
   }
 
   getSpamFilterDetails(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/spam-filter-details`,
+    return this.request(`spam-test/report/${spamTestId}/spam-filter-details`,
     );
   }
 
   getEmailContent(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/email-content`,
+    return this.request(`spam-test/report/${spamTestId}/email-content`,
     );
   }
 
   getGroupwiseReport(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/groupwise`,
+    return this.request(`spam-test/report/${spamTestId}/groupwise`,
     );
   }
 
   getDkimDetails(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/dkim-details`,
+    return this.request(`spam-test/report/${spamTestId}/dkim-details`,
     );
   }
 
   getSpfDetails(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/spf-details`,
+    return this.request(`spam-test/report/${spamTestId}/spf-details`,
     );
   }
 
   getRdnsDetails(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/rdns-details`,
+    return this.request(`spam-test/report/${spamTestId}/rdns-details`,
     );
   }
 
   getIpAnalytics(spamTestId: string | number): Promise<unknown> {
-    return apiRequest(
-      BASE_URL,
-      this.apiKey,
-      `spam-test/report/${spamTestId}/ip-analytics`,
+    return this.request(`spam-test/report/${spamTestId}/ip-analytics`,
     );
   }
 }

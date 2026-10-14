@@ -16288,10 +16288,10 @@ describe("owner intent — D262 isolation persist-prune and no clone-freeze", ()
 
     assert.match(
       branch,
-      /pruneIsolationForGoneCampaigns[\s\S]*await this\.state\.save\(\)/,
+      /pruneIsolationForGoneCampaigns[\s\S]*persistHot\(\)/,
       stop(
-        "Gone-campaign prune persists immediately (D262).",
-        "isolationBranch.ts no longer saves after prune.",
+        "Gone-campaign prune persists immediately (D262/D267).",
+        "isolationBranch.ts no longer persists after prune.",
       ),
     );
     assert.match(
@@ -16573,8 +16573,8 @@ describe("owner intent — D266 one-tap spend/retire cards", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D266\*\*/,
-      stop("CANON is dated D266.", "CANON.md header is not D266."),
+      /Canon as of \*\*D26[6-9]\*\*|Canon as of \*\*D2[7-9][0-9]\*\*/,
+      stop("CANON is dated D266+.", "CANON.md header is before D266."),
     );
     assert.match(
       canon,
@@ -16661,6 +16661,157 @@ describe("owner intent — D266 one-tap spend/retire cards", () => {
         "Card updates carry the tapper (D266).",
         "index.ts no longer passes resolvedBy: name.",
       ),
+    );
+  });
+});
+
+describe("owner intent — D267 freeze/isolation reliability", () => {
+  it("D267: yield staff loops; sidecar prune; isolation budget; 150/min; skipped-tick retry", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const fanout = await readFile(
+      new URL("../services/clientFanOut.ts", import.meta.url),
+      "utf8",
+    );
+    const topup = await readFile(
+      new URL("../services/campaignTopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const audit = await readFile(
+      new URL("../services/campaignAudit.ts", import.meta.url),
+      "utf8",
+    );
+    const limiter = await readFile(
+      new URL("../lib/smartleadLimiter.ts", import.meta.url),
+      "utf8",
+    );
+    const delivery = await readFile(
+      new URL("../clients/smartdelivery.ts", import.meta.url),
+      "utf8",
+    );
+    const retry = await readFile(
+      new URL("../lib/canonOpsRetry.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D267\*\*/,
+      stop("CANON is dated D267.", "CANON.md header is not D267."),
+    );
+    assert.match(
+      canon,
+      /persistIsolationPrune/,
+      stop("CANON names sidecar prune persist (D267).", "CANON.md lost persistIsolationPrune."),
+    );
+    assert.match(
+      canon,
+      /150\/min/,
+      stop("CANON names the 150/min limiter budget (D267).", "CANON.md lost 150/min."),
+    );
+    assert.match(
+      canon,
+      /retries after the blocking pass ends/,
+      stop("CANON names canon-ops skipped-tick retry (D267).", "CANON.md lost the retry rule."),
+    );
+    assert.match(
+      decisions,
+      /## D267 — /,
+      stop("The ledger records D267.", "DECISIONS.md has no D267 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D267 \|/m,
+      stop("The status index lists D267 (D127).", "DECISIONS.md status index has no D267 row."),
+    );
+    assert.match(
+      store,
+      /persistIsolationPrune/,
+      stop("Store persists isolation prune on the sidecar (D267).", "store.ts lost persistIsolationPrune."),
+    );
+    assert.match(
+      store,
+      /isolationPrune/,
+      stop("Sidecar carries isolationPrune gone ids (D267).", "store.ts lost isolationPrune."),
+    );
+    assert.match(
+      branch,
+      /ISOLATION_STEP_BUDGET_MS/,
+      stop("isolation-branch has an inner time budget (D267).", "isolationBranch.ts lost ISOLATION_STEP_BUDGET_MS."),
+    );
+    assert.match(
+      branch,
+      /ISOLATION_PROVIDER_SPLITS_CAP = 4/,
+      stop("Provider-split cap is 4 (D267).", "isolationBranch.ts did not shrink the cap."),
+    );
+    assert.match(
+      branch,
+      /ISOLATION_EVALUATE_CAP = 3/,
+      stop("Evaluate cap is 3 (D267).", "isolationBranch.ts did not shrink evaluate."),
+    );
+    assert.match(
+      fanout,
+      /yieldEventLoop/,
+      stop("fan-out yields the event loop (D267).", "clientFanOut.ts lost yieldEventLoop."),
+    );
+    assert.match(
+      topup,
+      /yieldEventLoop/,
+      stop("top-up yields the event loop (D267).", "campaignTopUp.ts lost yieldEventLoop."),
+    );
+    assert.match(
+      topup,
+      /indexAccountsByCampaign/,
+      stop("top-up indexes seats by campaign (D267).", "campaignTopUp.ts lost indexAccountsByCampaign."),
+    );
+    assert.match(
+      audit,
+      /yieldEventLoop/,
+      stop("campaign-audit yields (D267).", "campaignAudit.ts lost yieldEventLoop."),
+    );
+    assert.match(
+      limiter,
+      /SMARTLEAD_MAX_PER_MIN/,
+      stop("Limiter has a per-minute budget (D267).", "smartleadLimiter.ts lost SMARTLEAD_MAX_PER_MIN."),
+    );
+    assert.match(
+      delivery,
+      /this\.limiter \? this\.limiter\.schedule/,
+      stop("SmartDelivery goes through the shared limiter (D267).", "smartdelivery.ts lost limiter.schedule."),
+    );
+    assert.match(
+      retry,
+      /canonOpsSkipLog/,
+      stop("Skipped canon-ops ticks log a reason (D267).", "canonOpsRetry.ts lost canonOpsSkipLog."),
+    );
+    assert.match(
+      index,
+      /pendingCanonOpsRetry/,
+      stop("Health retries a skipped canon-ops tick (D267).", "index.ts lost pendingCanonOpsRetry."),
+    );
+    assert.match(
+      index,
+      /limiter: smartleadLimiter/,
+      stop("Smartlead and SmartDelivery share one limiter (D267).", "index.ts does not share smartleadLimiter."),
+    );
+    assert.doesNotMatch(
+      branch,
+      /updateCampaignStatus|campaigns\/.*\/status/,
+      stop("isolation-branch still does not write campaign status (D40/D267).", "isolationBranch.ts gained a status write."),
     );
   });
 });

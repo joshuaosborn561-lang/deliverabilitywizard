@@ -50,4 +50,25 @@ describe("D257 Smartlead limiter", () => {
     assert.ok(Date.now() - t0 >= 10);
     assert.equal(limiter.snapshot().rateLimitStreak, 0);
   });
+
+  it("D267: stays under the account-wide per-minute budget", async () => {
+    const limiter = new SmartleadLimiter(2, 0, 20, 2, 40);
+    const started: number[] = [];
+    const job = () =>
+      limiter.schedule(async () => {
+        started.push(Date.now());
+        return started.length;
+      });
+    await job();
+    await job();
+    const t0 = Date.now();
+    await job();
+    assert.ok(
+      Date.now() - t0 >= 30,
+      "a third call inside the window must wait for a slot",
+    );
+    assert.equal(started.length, 3);
+    assert.equal(limiter.snapshot().maxPerMin, 2);
+  });
 });
+

@@ -79,6 +79,12 @@ import { SpendDigestService } from "./services/spendDigest.js";
 import { InboxkitLicenseSweepService } from "./services/inboxkitLicenseSweep.js";
 import { canonOpsIdleReason, chicagoWallClock, weekendWriterIdleReason } from "./lib/canonOpsHours.js";
 import {
+  canonOpsShouldRetryAfterHealth,
+  canonOpsSkipLog,
+  canonOpsSkipReason,
+  canonOpsTickOverdue,
+} from "./lib/canonOpsRetry.js";
+import {
   isolationBlockActionShouldDecide,
   NEEDS_YOU_APPROVE_ACTION,
 } from "./lib/slackConfirmButtons.js";
@@ -236,8 +242,9 @@ async function main(): Promise<void> {
     );
   }
 
+  const smartleadLimiter = new SmartleadLimiter();
   const smartlead = new SmartleadClient(config.smartleadApiKey || "missing", {
-    limiter: new SmartleadLimiter(),
+    limiter: smartleadLimiter,
   });
   // D132 — one Smartlead account book shared by the health pass, the hourly
   // campaign check, the 6-hour audit, the /ops board, and the Slack taps.
@@ -248,6 +255,7 @@ async function main(): Promise<void> {
   smartlead.setMutationQueue(mutationQueue);
   const smartDelivery = new SmartDeliveryClient(
     config.smartDeliveryApiKey || "missing",
+    { limiter: smartleadLimiter },
   );
   const inboxkit = config.inboxkitApiKey
     ? new InboxKitClient(
@@ -1202,6 +1210,14 @@ async function main(): Promise<void> {
       void runWeekdayCatchUp().catch((error) => {
         console.warn("[catch-up] weekday jobs after health failed", error);
       });
+      if (pendingCanonOpsRetry) {
+        pendingCanonOpsRetry = false;
+        console.log("[canon-ops] retrying skipped tick after health pass (D267)");
+        void runCanonOps({ retry: true }).catch((error) => {
+          console.error("[canon-ops] Retry after health failed", error);
+          feedBugRemediator("canon-ops-retry", error);
+        });
+      }
 
       return {
         clientRest: rest.clientRest,
@@ -1240,11 +1256,26 @@ async function main(): Promise<void> {
     });
   };
 
+  let pendingCanonOpsRetry = false;
   const runCanonOps = async (
-    opts: { force?: boolean } = {},
+    opts: { force?: boolean; retry?: boolean } = {},
   ): Promise<unknown> => {
+    const skip = opts.force
+      ? undefined
+      : canonOpsSkipReason({
+          healthLive: !opts.retry && healthLock.isLive(),
+          alreadyRunning: Boolean(canonOpsInFlight && canonOpsLock.isLive()),
+        });
+    if (skip) {
+      console.log(canonOpsSkipLog(skip));
+      if (canonOpsShouldRetryAfterHealth(skip)) pendingCanonOpsRetry = true;
+      return { skipped: true as const, reason: skip };
+    }
     const began = beginPass(canonOpsLock, canonOpsInFlight, "canon-ops");
-    if (began.skipped) return { skipped: true as const, reason: "already-running" };
+    if (began.skipped) {
+      console.log(canonOpsSkipLog("already-running"));
+      return { skipped: true as const, reason: "already-running" };
+    }
     const token = began.token;
     const run = runWithPass(canonOpsLock, token, async () => {
       const idle = opts.force
@@ -1368,6 +1399,26 @@ async function main(): Promise<void> {
       ) {
         console.log(`[catch-up] terl-eod missed ${ymd} — running once`);
         await runTerlEod();
+      }
+      const min40LastOk = state.listStageHealth()["min40-topup"]?.lastOkAt ?? null;
+      const powerLastOk =
+        state.listStageHealth()["powergryd-watch"]?.lastOkAt ?? null;
+      if (
+        config.enableCanonOps &&
+        !canonOpsIdleReason({
+          timezone: config.canonOpsTimezone,
+          weekdayOnly: config.canonOpsWeekdayOnly,
+          hourStart: config.canonOpsHourStart,
+          hourEnd: config.canonOpsHourEnd,
+          now,
+        }) &&
+        (canonOpsTickOverdue({ lastOkAt: min40LastOk, now: now.getTime() }) ||
+          canonOpsTickOverdue({ lastOkAt: powerLastOk, now: now.getTime() }))
+      ) {
+        console.log(
+          "[catch-up] canon-ops tick missed — retrying after health/restart (D267)",
+        );
+        await runCanonOps({ retry: true });
       }
     })().finally(() => {
       catchUpInFlight = null;

@@ -805,4 +805,51 @@ describe("D139 — staffing never hands the gate its next pull", () => {
       "Mesa reserved seat must be skipped, not silently ignored",
     );
   });
+
+  it("D267: a large group × seat walk yields so the event loop can tick", async () => {
+    const campaigns = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      name: `Client C${i}`,
+      status: "ACTIVE",
+      client_id: 9,
+    }));
+    const accounts = Array.from({ length: 48 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `seat${i}@petersonroofs.com`,
+      created_at: "2026-06-01T00:00:00Z",
+      campaign_ids: [1],
+      client_id: 9,
+    }));
+    const service = new ClientFanOutService(
+      loadConfig({}),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        isCopyCanary: () => false,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+        listGenericBackfillApprovals: () => ({}),
+      } as unknown as StateStore,
+    );
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 4);
+    timer.unref?.();
+    await service.run({
+      dryRun: true,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 9, name: "Roofs by Peterson" }],
+        campaigns,
+        accounts,
+      },
+    });
+    clearInterval(timer);
+    assert.ok(ticks > 0, "fan-out must yield during the skip walk");
+  });
 });

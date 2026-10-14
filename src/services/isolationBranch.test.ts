@@ -527,6 +527,20 @@ describe("IsolationBranchService placement queue (D158)", () => {
     );
   });
 
+  it("D267: a spent step budget returns partial so lastOk can stamp", async () => {
+    const { branch, evaluated } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 0,
+    });
+    const result = await branch.run({ budgetMs: 0 });
+    assert.equal(result.partial, true, "over-budget must be a partial pass");
+    assert.ok(
+      (result.errors ?? []).some((row) => /budget/i.test(row)),
+      `budget stop must be recorded: ${result.errors.join(" | ")}`,
+    );
+    assert.ok(evaluated.length === 0, "budget 0 must not start evaluates");
+  });
+
   it("D261: aborting mid-run still returns so the watchdog can stamp", async () => {
     const { branch, evaluated } = await buildBranch({
       knownGoodInbox: 95,

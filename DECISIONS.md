@@ -262,16 +262,17 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 | D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
-| D257 | Live — stringify path amended by D262; exit path amended by D265 | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
+| D257 | Live — stringify path amended by D262; exit path amended by D265; rate budget / SmartDelivery amended by D267 | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
 | D258 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
 | D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
-| D261 | Live — prune persist / hole keep amended by D262 | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
-| D262 | Live | isolation-branch persists gone-campaign prune immediately, skips fresh scores, caps provider-split / evaluate work, and stringifies state with a yielding walk (never worker structuredClone); /health holes use the accepted inventory book |
+| D261 | Live — prune persist / hole keep amended by D262 / D267 | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
+| D262 | Live — prune persist / caps / lastOk amended by D267 | isolation-branch persists gone-campaign prune immediately, skips fresh scores, caps provider-split / evaluate work, and stringifies state with a yielding walk (never worker structuredClone); /health holes use the accepted inventory book |
 | D263 | Live | ESP-mix /health counts ACTIVE only; campaign-check prunes STOPPED/COMPLETED/deleted leftover findings; mix floor uses the real weighted POD size; Azure counts 0.1 |
 | D264 | Live | CALLER FOLLOW-UP (Gabe Calls) is fully exempt from typical sender top-up; sibling share / client-rest restore cannot land non-class seats; campaign-check peels strays (one Slack receipt) |
 | D265 | Live | Freeze watchdog must exit non-zero after flushing lastOk sidecar (never drain to 0); Railway restartPolicyType ALWAYS |
 | D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
+| D267 | Live | Freeze/restart reliability: top-up/fan-out/campaign-audit yield; isolation prune persists on the sidecar; isolation-branch stays inside its 10m budget and stamps lastOk on a partial pass; Smartlead limiter 150/min including SmartDelivery; canon-ops skipped ticks log a reason and retry |
 
 ---
 
@@ -9477,5 +9478,88 @@ finished, retire cancel schedules or queues Onboarding. Tests:
 Cayden name on the receipt; second tap does not buy; 429 retries
 then stays pending; client workspace id on buyMailboxes; stale
 pendingSpend consumed.
+
+---
+
+## D267 — Yield the staff loops; persist isolation prune; stay inside the step budget; 150/min; retry skipped canon-ops
+
+**Date.** 2026-10-14 (Josh via production freeze/restart loop).
+
+**Decision.** Production `main@c28227e` (D266) was in a freeze/restart
+loop and isolation-branch had not completed in ~28h. The freeze
+watchdog (D247/D257/D265) killed the process ~10 times after
+multi-second event-loop stalls inside health/top-up/fan-out/
+campaign-audit. isolation-branch timed out at 10m every sitting
+(`lastOk` stuck 2026-10-13T14:24Z), pruned the same 151 rows after
+every restart, and `/health` still listed five 0% canaries with no
+isolation. Smartlead returned account-wide 429s (`200 requests in 1
+min`). Canon-ops `*/30` America/Chicago ticks at 13:00 / 13:30 CT
+never started (min40 lastOk 15:32Z; powergryd-watch OVERDUE).
+
+1. **Yield the O(campaigns × accounts) walks.** Campaign top-up,
+   same-client fan-out, and campaign-audit index seats by campaign
+   and `yieldEventLoop` every few campaigns / 64 seats — the same
+   contract D250/D252/D262 already apply to min40 and stringify.
+   Fill / fan-out / audit outcomes are unchanged.
+
+2. **Isolation prune must actually persist.** `await state.save()`
+   after prune stringified the full dump and either ate the 10m
+   budget or died in a freeze-kill that only flushes `saveHot`.
+   Persist gone-campaign ids on the lastOk sidecar
+   (`persistIsolationPrune`) immediately; do not await the dump.
+   Load applies those ids so a stale `state.json` cannot resurrect
+   the hole list.
+
+3. **isolation-branch stays inside the 10m race.** Provider-split
+   cap 4, evaluate cap 3, inner budget 7 minutes. A spent budget
+   or abort returns a partial result so `stage()` stamps `lastOk`
+   instead of `timeout after 10m`. Leftovers wait for the next
+   sitting. Queue gates (D158/D164/D165) are unchanged.
+
+4. **One limiter, under 200/min, including SmartDelivery.**
+   Shared `SmartleadLimiter` now also wraps every SmartDelivery
+   HTTP call and holds a 150 requests / 60s sliding window
+   (Smartlead's account cap is 200/min). Concurrency 2 and 429
+   backoff stay (D257).
+
+5. **A skipped canon-ops tick logs why and retries.** Health pass
+   in flight → log `health-running` and retry when health ends.
+   Already running → log and do not pile on. A missed weekday
+   fire after a freeze-restart is caught up once inside the
+   window (D249 pattern). Idle-tick outside 08:00–18:00 CT
+   unchanged.
+
+No campaign START / PAUSE. No spend. No change to POD floors,
+21-day warmup, PowerGRYD empty-by-design, generics policy, or
+hold enforcement.
+
+**Why.** D262 persisted prune via `save()` and capped evaluate at
+8, but the dump never landed before a freeze-kill and eight
+evaluates plus listTests still blew 10 minutes. D250/D252 yielded
+min40; top-up / fan-out / campaign-audit still scanned 434 × 1425
+synchronously (120s / 102s / 20s event-loop delays). The limiter
+had no per-minute budget and SmartDelivery bypassed it. Canon-ops
+cron cannot fire while the loop is frozen, and a restart resets
+node-cron with no replay.
+
+**Rejected.** Widening the 10-minute isolation budget. Turning the
+freeze watchdog off. Changing campaign START / PAUSE. Spending or
+bypassing warmup / holds.
+
+**Supersedes / amends.** Amends D262: prune persists on the
+sidecar; smaller caps; lastOk on a partial pass. Amends D257:
+150/min + SmartDelivery. Amends D250/D252: the same yield
+contract on top-up / fan-out / campaign-audit. Amends D205/D249:
+canon-ops skipped-tick log + retry. Does not change D158 / D164 /
+D165 queue gates, D40, or D4.
+
+**Guards.** canon D267: `persistIsolationPrune` / sidecar
+`isolationPrune.goneIds`; `ISOLATION_STEP_BUDGET_MS` / caps 4 and
+3; fan-out / top-up / campaign-audit `yieldEventLoop`;
+`SMARTLEAD_MAX_PER_MIN` and SmartDelivery `limiter.schedule`;
+`canonOpsSkipLog` / retry after health. Tests: prune survives a
+stale dump; budget 0 returns partial; fan-out/top-up walks tick
+the event loop; skipped-tick reason + retry; limiter waits at the
+per-minute cap.
 
 ---

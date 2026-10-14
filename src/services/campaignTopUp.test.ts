@@ -1182,4 +1182,53 @@ describe("CampaignTopUpService safety", () => {
       console.warn = origWarn;
     }
   });
+
+  it("D267: staffable / peel walks yield so the event loop can tick", async () => {
+    const { StateStore } = await import("../state/store.js");
+    const state = new StateStore(
+      `/tmp/topup-yield-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const campaigns = Array.from({ length: 20 }, (_, i) => ({
+      id: 10 + i,
+      name: `Named ${i}`,
+      status: "ACTIVE" as const,
+      client_id: 521881,
+    }));
+    const accounts = Array.from({ length: 80 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@techevolution.com`,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      campaign_ids: [10 + (i % 20)],
+      client_id: 521881,
+    }));
+    const service = new CampaignTopUpService(
+      loadConfig({ ENABLE_CAMPAIGN_TOP_UP: "false" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+        updateEmailAccount: async () => undefined,
+      } as unknown as SmartleadClient,
+      fakeSlack(),
+      state,
+    );
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 4);
+    timer.unref?.();
+    await service.run({
+      dryRun: true,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 521881, name: "Tech Evolution" }],
+        campaigns,
+        accounts,
+      },
+    });
+    clearInterval(timer);
+    assert.ok(ticks > 0, "top-up must yield during inventory walks");
+  });
 });

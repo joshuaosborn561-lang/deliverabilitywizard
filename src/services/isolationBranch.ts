@@ -57,10 +57,14 @@ function isFinishedSendingStatus(
 
 /** Skip a provider-split fetch when the score is still this fresh. */
 export const PLACEMENT_SCORE_FRESH_MS = 3 * 60 * 60 * 1000;
-/** Hard cap on new SmartDelivery report pulls per isolation-branch run. */
-export const ISOLATION_PROVIDER_SPLITS_CAP = 12;
-/** Hard cap on evaluate() calls per isolation-branch run. */
-export const ISOLATION_EVALUATE_CAP = 8;
+/**
+ * D267 — keep the 10-minute stage race. Prod 2026-10-14: cap 12 / 8
+ * plus `await save()` after prune blew the budget every cycle.
+ */
+export const ISOLATION_PROVIDER_SPLITS_CAP = 4;
+export const ISOLATION_EVALUATE_CAP = 3;
+/** Leave ~3 minutes of slack before the D247 10-minute race. */
+export const ISOLATION_STEP_BUDGET_MS = 7 * 60 * 1000;
 
 export interface IsolationBranchResult {
   dryRun: boolean;
@@ -70,6 +74,9 @@ export interface IsolationBranchResult {
   inconclusive: number;
   teardowns: number;
   errors: string[];
+  /** D267 — leftover evaluates / pulls waiting for the next sitting. */
+  deferred?: number;
+  partial?: boolean;
 }
 
 export class IsolationBranchService {
@@ -90,6 +97,8 @@ export class IsolationBranchService {
     dryRun?: boolean;
     campaignId?: number;
     signal?: AbortSignal;
+    budgetMs?: number;
+    now?: () => number;
   } = {}): Promise<IsolationBranchResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: IsolationBranchResult = {
@@ -103,6 +112,18 @@ export class IsolationBranchService {
     };
     if (!this.config.enableIsolationBranch) return result;
 
+    const clock = opts.now ?? Date.now;
+    const budgetMs = opts.budgetMs ?? ISOLATION_STEP_BUDGET_MS;
+    const deadline = clock() + budgetMs;
+    const overBudget = (): boolean => clock() >= deadline;
+    const persistHot = async (): Promise<void> => {
+      try {
+        await this.state.persistIsolationPrune();
+      } catch (error) {
+        console.warn("[isolation-branch] sidecar prune persist failed", error);
+      }
+    };
+
     this.listedTestsThisRun = null;
     let campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>> = [];
     let listedOk = false;
@@ -114,16 +135,20 @@ export class IsolationBranchService {
         const pruned = this.state.pruneIsolationForGoneCampaigns(campaigns);
         if (pruned) {
           console.log(
-            `[isolation-branch] pruned ${pruned} score/suspect/canary row(s) for deleted or finished campaigns (D261/D262)`,
+            `[isolation-branch] pruned ${pruned} score/suspect/canary row(s) for deleted or finished campaigns (D261/D262/D267)`,
           );
-          // D262 — persist the prune now. A later 10m timeout or freeze
-          // kill must not resurrect deleted #3739316 on the hole list.
-          await this.state.save();
+          // D267 — sidecar first (fast). Do not await the full dump;
+          // stringify ate the 10m budget and freeze-kills discarded it.
+          await persistHot();
+          void this.state.save().catch((error) => {
+            console.warn("[isolation-branch] full save after prune failed", error);
+          });
         }
       } catch (error) {
         if (isAbortError(error)) {
           result.errors.push("aborted: stopped before placement queue");
-          await this.state.save();
+          result.partial = true;
+          await persistHot();
           return result;
         }
         console.warn(
@@ -131,11 +156,20 @@ export class IsolationBranchService {
           error,
         );
       }
+      if (overBudget() || opts.signal?.aborted) {
+        result.partial = true;
+        result.errors.push("budget: stopped before placement queue (D267)");
+        await persistHot();
+        return result;
+      }
       try {
-        await this.queueUglyPlacementSuspects(campaigns, opts.signal);
+        await this.queueUglyPlacementSuspects(campaigns, opts.signal, {
+          overBudget,
+        });
       } catch (error) {
         if (isAbortError(error)) {
           result.errors.push("aborted: stopped during placement queue");
+          result.partial = true;
         } else {
           throw error;
         }
@@ -185,14 +219,21 @@ export class IsolationBranchService {
       ? targets
       : targets.slice(0, ISOLATION_EVALUATE_CAP);
     if (!opts.campaignId && targets.length > evaluateTargets.length) {
+      result.deferred = (result.deferred ?? 0) + (targets.length - evaluateTargets.length);
       console.log(
-        `[isolation-branch] evaluate cap ${ISOLATION_EVALUATE_CAP}; ${targets.length - evaluateTargets.length} leftover(s) wait for the next cycle (D262)`,
+        `[isolation-branch] evaluate cap ${ISOLATION_EVALUATE_CAP}; ${targets.length - evaluateTargets.length} leftover(s) wait for the next cycle (D262/D267)`,
       );
     }
 
     for (const target of evaluateTargets) {
-      if (opts.signal?.aborted) {
-        result.errors.push("aborted: stopped remaining isolation evaluates");
+      if (opts.signal?.aborted || overBudget()) {
+        result.partial = true;
+        result.errors.push(
+          opts.signal?.aborted
+            ? "aborted: stopped remaining isolation evaluates"
+            : "budget: stopped remaining isolation evaluates (D267)",
+        );
+        result.deferred = (result.deferred ?? 0) + 1;
         break;
       }
       try {
@@ -228,6 +269,7 @@ export class IsolationBranchService {
         });
       } catch (error) {
         if (isAbortError(error)) {
+          result.partial = true;
           result.errors.push("aborted: stopped remaining isolation evaluates");
           break;
         }
@@ -236,7 +278,15 @@ export class IsolationBranchService {
         );
       }
     }
-    await this.state.save();
+    await persistHot();
+    void this.state.save().catch((error) => {
+      console.warn("[isolation-branch] end-of-run full save failed", error);
+    });
+    if (result.partial) {
+      console.log(
+        `[isolation-branch] partial pass stamped; deferred=${result.deferred ?? 0} (D267)`,
+      );
+    }
     return result;
   }
 
@@ -474,6 +524,7 @@ export class IsolationBranchService {
   async queueUglyPlacementSuspects(
     campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>>,
     signal?: AbortSignal,
+    opts: { overBudget?: () => boolean } = {},
   ): Promise<number> {
     throwIfAborted(signal);
     const listedTests = normalizeTestList(
@@ -494,7 +545,7 @@ export class IsolationBranchService {
     const now = Date.now();
 
     for (const test of tests) {
-      if (signal?.aborted) break;
+      if (signal?.aborted || opts.overBudget?.()) break;
       await yieldEventLoop();
       const target = liveCampaignForPlacementTrigger({
         testName: test.test_name,

@@ -116,4 +116,58 @@ describe("isolation state", () => {
       "D262: deleted campaigns drop their copy-canary row",
     );
   });
+
+  it("D267: prune persists via the sidecar even when the full dump is stale", async () => {
+    const path = `/tmp/dw-iso-prune-hot-${process.pid}-${Date.now()}.json`;
+    const stale = new StateStore(path);
+    await stale.load();
+    stale.recordPlacementScore({
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+      testId: "547425",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: "2026-10-08T00:00:00.000Z",
+    });
+    stale.recordPlacementScore({
+      campaignId: 3847794,
+      campaignName: "TechEvo SFL Startup Owners AirPods",
+      testId: "544718",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: "2026-10-13T14:00:00.000Z",
+    });
+    stale.markCopySuspect({
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+      at: "2026-10-08T00:00:00.000Z",
+    });
+    stale.setCopyCanaries(3739316, ["canary@g.test"], "547425");
+    await stale.save();
+
+    const live = new StateStore(path);
+    await live.load();
+    const dropped = live.pruneIsolationForGoneCampaigns([
+      { id: 3847794, status: "ACTIVE" },
+    ]);
+    assert.ok(dropped >= 2);
+    await live.persistIsolationPrune();
+
+    const reloaded = new StateStore(path);
+    await reloaded.load();
+    assert.equal(
+      reloaded.listPlacementScores().some((row) => row.campaignId === 3739316),
+      false,
+      "stale dump must not resurrect deleted #3739316 after sidecar prune",
+    );
+    assert.equal(
+      reloaded.listCopySuspects().some((row) => row.campaignId === 3739316),
+      false,
+    );
+    assert.equal(reloaded.getCopyCanaryTestId(3739316), undefined);
+    assert.ok(
+      reloaded.listPlacementScores().some((row) => row.campaignId === 3847794),
+      "living scores stay",
+    );
+  });
 });

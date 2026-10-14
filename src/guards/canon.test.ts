@@ -16489,7 +16489,7 @@ describe("owner intent — D265 freeze watchdog exits 1 after flush", () => {
     );
     assert.doesNotMatch(
       freeze,
-      /timer\.unref/,
+      /interval\.unref/,
       stop("Watchdog must not unref its interval (D265).", "freezeWatchdog.ts still unrefs the interval."),
     );
     assert.match(

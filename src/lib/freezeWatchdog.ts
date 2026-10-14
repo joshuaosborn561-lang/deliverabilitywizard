@@ -193,7 +193,7 @@ export function startFreezeWatchdog(deps: FreezeWatchdogDeps): { stop: () => voi
   let recentFreezes: number[] = [];
   let exiting = false;
 
-  const timer = setInterval(() => {
+  const interval = setInterval(() => {
     if (exiting) return;
     const locks = deps.getLocks().map((lock) => ({
       name: lock.name,
@@ -212,7 +212,7 @@ export function startFreezeWatchdog(deps: FreezeWatchdogDeps): { stop: () => voi
     if (tick.log) log(tick.log);
     if (tick.exitReason) {
       exiting = true;
-      clearInterval(timer);
+      clearInterval(interval);
       void requestFreezeExit({
         reason: tick.exitReason,
         flush: deps.flush,
@@ -225,10 +225,10 @@ export function startFreezeWatchdog(deps: FreezeWatchdogDeps): { stop: () => voi
       });
     }
   }, intervalMs);
-  // D265 — do not unref. An unref'd timer lets Node drain to exit 0 when
-  // other handles drop, and ON_FAILURE will not restart that process.
+  // D265 — do not unref the interval. An unref'd handle lets Node drain
+  // to exit 0 when other handles drop, and ON_FAILURE will not restart.
 
   return {
-    stop: () => clearInterval(timer),
+    stop: () => clearInterval(interval),
   };
 }

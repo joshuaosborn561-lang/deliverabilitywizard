@@ -271,6 +271,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D263 | Live | ESP-mix /health counts ACTIVE only; campaign-check prunes STOPPED/COMPLETED/deleted leftover findings; mix floor uses the real weighted POD size; Azure counts 0.1 |
 | D264 | Live | CALLER FOLLOW-UP (Gabe Calls) is fully exempt from typical sender top-up; sibling share / client-rest restore cannot land non-class seats; campaign-check peels strays (one Slack receipt) |
 | D265 | Live | Freeze watchdog must exit non-zero after flushing lastOk sidecar (never drain to 0); Railway restartPolicyType ALWAYS |
+| D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
 
 ---
 
@@ -9407,5 +9408,74 @@ Does not change the freeze *thresholds* (5m / 3× ≥3s / 2× lock).
 `flush: () => state.saveHot()`; `railway.toml` ALWAYS; CANON D265.
 Tests: order of exitCode / flush / exit; hung flush still 1;
 startFreezeWatchdog never exits 0.
+
+---
+
+## D266 — One-tap spend/retire cards: Done by tapper, prune, idempotent, retry, client workspace
+
+**Date.** 2026-10-14 (Josh standing go — audit of Approve/Retire Slack cards).
+
+**Decision.** The one-tap spend / retire cards Cayden and Josh tap
+were leaving the card unchanged, posting results as Josh, re-listing
+finished items in the morning digest, buying a duplicate on a
+repeat Approve, never retrying a transient error, buying cover into
+the generic-pool InboxKit workspace, leaving retired InboxKit seats
+active, and saying the mailbox order still needed finishing when it
+had already finished. Fix all of that:
+
+1. Update the tapped card in place to `Done by <tapper>` with the
+   result, or the error. Do not leave "Working on it" as the final
+   state and do not post the result as a new unlinked message only.
+2. Result posts and spend ledger rows use the actual tapper
+   (Cayden or Josh). Never hardcode Josh.
+3. Mark finished items done. Prune them from `pendingSpend`. Clean
+   out stale pendingSpend already satisfied (cover already bought,
+   domain already retired). The morning digest only lists what is
+   still waiting.
+4. Actions are idempotent per item. A repeat Approve / Retire on an
+   already-done item is a no-op — no second purchase.
+5. Transient HTTP 429 / fetch failed retries with bounded backoff.
+   If it still fails, the item stays pending with the error on the
+   card so the next digest or a re-tap can try again.
+6. Replacement / cover buys land in the client's InboxKit workspace.
+   The generic-pool workspace is only for generic/pool domains.
+7. After a retire unlink, schedule those InboxKit seats for
+   cancellation. If InboxKit cannot, queue the list for Onboarding
+   on the retire action (`retireSeatCancel`).
+8. Buy copy says "I will finish the mailbox order myself" only while
+   nameservers are still pending and no mailboxes have been ordered.
+
+No live buys, retires, or campaign changes from chat. This does not
+change who may tap (Cayden or Josh for retire/cover; Josh-only for
+canary / isolation domain / generics).
+
+**Why.** 2026-10-14 audit: the card never updated; every receipt
+said Josh approved when Cayden had tapped; finished covers came
+back in the next 8am digest; a second Approve bought another
+replacement; a 429 left the item looking dead with no retry; cover
+landed in DW Generic Pool; retired seats kept billing; the finish-
+myself line fired after the order was done.
+
+**Rejected.** Asking Josh before fixing the tap UX. Leaving
+pendingSpend as display-only filter without persisting the prune.
+Opening a new spend cycle after consume on the same item. Falling
+through a client buy to the generic pool. Immediate purge of
+retired seats (schedule / Onboarding queue instead).
+
+**Supersedes / amends.** Amends D195 / D248 card resolve copy
+(`Done by X` + result, not `Resolved by X: nothing to do`).
+Amends D220 / D248 digest: prune is persisted. Amends D150 / D161
+buy path: client InboxKit workspace. Amends D174 retry: Slack tap
+also retries immediately, then stays pending on residual transient
+failure. Does not change D4 / D190 who may tap, D179 already-
+retired no-op, or D175 one-ESP.
+
+**Guards.** canon D266: `doneByLine`, `pruneSatisfiedPendingSpend`,
+`withTransientRetry`, `pickReplacementWorkspace` refuses generic
+pool for a named client, `mailboxOrderFollowup` silent when
+finished, retire cancel schedules or queues Onboarding. Tests:
+Cayden name on the receipt; second tap does not buy; 429 retries
+then stays pending; client workspace id on buyMailboxes; stale
+pendingSpend consumed.
 
 ---

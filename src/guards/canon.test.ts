@@ -16451,6 +16451,7 @@ describe("owner intent — D263 ESP-mix ACTIVE-only real POD Azure 0.1", () => {
   });
 });
 
+
 describe("owner intent — D265 freeze watchdog exits 1 after flush", () => {
   it("D265: exitCode 1 then saveHot then process.exit(1); no unref; Railway ALWAYS", async () => {
     const { readFile } = await import("node:fs/promises");
@@ -16509,8 +16510,8 @@ describe("owner intent — D265 freeze watchdog exits 1 after flush", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D265\*\*/,
-      stop("CANON is dated D265.", "CANON.md header is not D265."),
+      /Canon as of \*\*D26[5-9]\*\*/,
+      stop("CANON is dated D265+.", "CANON.md header is before D265."),
     );
     assert.match(
       canon,
@@ -16531,6 +16532,135 @@ describe("owner intent — D265 freeze watchdog exits 1 after flush", () => {
       decisions,
       /^\| D265 \|/m,
       stop("The status index lists D265.", "DECISIONS.md index has no D265 row."),
+    );
+  });
+});
+
+describe("owner intent — D266 one-tap spend/retire cards", () => {
+  it("D266: Done by tapper, prune pendingSpend, retry, client workspace, retire-cancel", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const resolve = await readFile(
+      new URL("../lib/slackAskResolve.ts", import.meta.url),
+      "utf8",
+    );
+    const prune = await readFile(
+      new URL("../lib/pendingSpendPrune.ts", import.meta.url),
+      "utf8",
+    );
+    const retry = await readFile(
+      new URL("../lib/transientRetry.ts", import.meta.url),
+      "utf8",
+    );
+    const workspace = await readFile(
+      new URL("../lib/inboxkitWorkspace.ts", import.meta.url),
+      "utf8",
+    );
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const buy = await readFile(
+      new URL("../services/isolationBuy.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D266\*\*/,
+      stop("CANON is dated D266.", "CANON.md header is not D266."),
+    );
+    assert.match(
+      canon,
+      /Done by <tapper>/,
+      stop("CANON names Done by tapper (D266).", "CANON.md lost the in-place Done by rule."),
+    );
+    assert.match(
+      decisions,
+      /## D266 — /,
+      stop("The ledger records D266.", "DECISIONS.md has no D266 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D266 \|/m,
+      stop("The status index lists D266 (D127).", "DECISIONS.md status index has no D266 row."),
+    );
+    assert.match(
+      resolve,
+      /export function doneByLine/,
+      stop("Cards say Done by the tapper (D266).", "slackAskResolve.ts lost doneByLine."),
+    );
+    assert.doesNotMatch(
+      resolve,
+      /Resolved by \$\{who\}: nothing to do/,
+      stop(
+        "Resolved-by nothing-to-do copy is retired (D266).",
+        "slackAskResolve.ts still says Resolved by X: nothing to do.",
+      ),
+    );
+    assert.match(
+      prune,
+      /export function pruneSatisfiedPendingSpend/,
+      stop("Finished pendingSpend is pruned (D266).", "pendingSpendPrune.ts lost pruneSatisfiedPendingSpend."),
+    );
+    assert.match(
+      retry,
+      /export async function withTransientRetry/,
+      stop("Transient tap errors retry (D266).", "transientRetry.ts lost withTransientRetry."),
+    );
+    assert.match(
+      workspace,
+      /will not buy into the generic pool/,
+      stop(
+        "Client cover buys refuse the generic pool (D266).",
+        "inboxkitWorkspace.ts lost the generic-pool refusal.",
+      ),
+    );
+    assert.match(
+      exec,
+      /scheduleRetiredInboxkitSeats/,
+      stop(
+        "Retire schedules InboxKit seats for cancellation (D266).",
+        "isolationExecute.ts lost scheduleRetiredInboxkitSeats.",
+      ),
+    );
+    assert.match(
+      exec,
+      /queued_onboarding/,
+      stop(
+        "Failed InboxKit cancel queues Onboarding (D266).",
+        "isolationExecute.ts lost the Onboarding queue.",
+      ),
+    );
+    assert.match(
+      buy,
+      /findDomainAnywhere/,
+      stop(
+        "Replacement buys resolve the client workspace (D266).",
+        "isolationBuy.ts lost findDomainAnywhere.",
+      ),
+    );
+    assert.match(
+      index,
+      /replace_original: true/,
+      stop(
+        "The tapped card is updated in place (D266).",
+        "index.ts lost replace_original on the tapped card.",
+      ),
+    );
+    assert.match(
+      index,
+      /resolvedBy: name/,
+      stop(
+        "Card updates carry the tapper (D266).",
+        "index.ts no longer passes resolvedBy: name.",
+      ),
     );
   });
 });

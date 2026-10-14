@@ -625,6 +625,7 @@ async function main(): Promise<void> {
     isolationBuy,
     inventoryBook,
     copyCanaryBuy,
+    inboxkit,
   );
   const domainLifecycle = new DomainLifecycleService(
     config,
@@ -1922,6 +1923,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     summary?: string;
     detail?: string;
     resolvedBy?: string;
+    keepPending?: boolean;
   }): Promise<void> => {
     const action = opts.actionId
       ? state.getIsolationAction(opts.actionId)
@@ -1960,6 +1962,31 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
     } catch (error) {
       console.warn("[slack] strip resolved ask failed", error);
+    }
+  };
+
+  const updateTappedCard = async (opts: {
+    responseUrl?: string;
+    text: string;
+  }): Promise<void> => {
+    if (!opts.responseUrl) return;
+    try {
+      await fetch(opts.responseUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          replace_original: true,
+          text: opts.text,
+          blocks: [
+            {
+              type: "section",
+              text: { type: "mrkdwn", text: opts.text },
+            },
+          ],
+        }),
+      });
+    } catch (error) {
+      console.warn("[slack] tapped-card update failed", error);
     }
   };
 
@@ -2325,41 +2352,42 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
             return;
           }
           const clientKey = String(clicked.value ?? "");
-          res.status(200).json({
-            text: "Working on it — I will post here when it is done.",
-          });
+          res.status(200).send();
           const ids = isolationIdsForClient(
             collectPendingSpendItems(state),
             clientKey,
           );
           void (async () => {
             const messages: string[] = [];
+            let failed = false;
             for (const id of ids) {
               const result = await isolationExecute.decide(id, "approve", {
                 name,
                 role,
               });
               messages.push(result.message);
-              if (result.ok) {
-                const ask = state.getIsolationAction(id);
-                await stripResolvedAsk({
-                  actionId: id,
-                  kind: ask?.kind ?? "retire_domain",
-                  decision: "approve",
-                  resolvedBy: name,
-                  detail: result.message,
-                });
-              }
-            }
-            const text = messages.join("\n") || "Nothing pending for that client.";
-            if (payload.response_url) {
-              await fetch(payload.response_url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text }),
+              if (!result.ok) failed = true;
+              const ask = state.getIsolationAction(id);
+              await stripResolvedAsk({
+                actionId: id,
+                kind: ask?.kind ?? "retire_domain",
+                decision: "approve",
+                resolvedBy: name,
+                detail: result.message,
               });
-            } else {
+            }
+            const text =
+              messages.join("\n") ||
+              `Done by ${name}: nothing pending for that client.`;
+            await updateTappedCard({
+              responseUrl: payload.response_url,
+              text,
+            });
+            if (!payload.response_url) {
               await slack.notifyActionResult(text);
+            }
+            if (failed) {
+              console.warn("[slack-interactions] needs-you approve had errors");
             }
           })().catch((error) => {
             console.error("[slack-interactions] needs-you approve failed", error);
@@ -2368,9 +2396,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         }
 
         if (isDlvActionId(actionId)) {
-          res.status(200).json({
-            text: "Working on it — I will post here when it is done.",
-          });
+          res.status(200).send();
           const dlvValue = payload.actions?.[0]?.value;
           const dlvMeta = payload.message?.metadata?.event_payload ?? null;
           const dlvIsolationId =
@@ -2391,27 +2417,18 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           })
             .then(async (result) => {
               const text = result.message;
-              // D195 — strip the dlv card buttons via the tap's response_url
-              // (replace_original) once the one-tap resolves.
-              if (result.ok) {
-                await stripResolvedAsk({
-                  actionId: dlvIsolationId,
-                  kind: dlvKindForStrip(actionId),
-                  decision: dlvDecision,
-                  responseUrl: payload.response_url,
-                  detail: text,
-                });
-                return;
-              }
-              if (payload.response_url) {
-                await fetch(payload.response_url, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ text }),
-                });
-                return;
-              }
-              await slack.notifyActionResult(text);
+              await stripResolvedAsk({
+                actionId: dlvIsolationId,
+                kind: dlvKindForStrip(actionId),
+                decision: dlvDecision,
+                responseUrl: payload.response_url,
+                resolvedBy: name,
+                detail: text,
+              });
+              await updateTappedCard({
+                responseUrl: payload.response_url,
+                text,
+              });
             })
             .catch((error) => {
               console.error("[slack-interactions] dlv action failed", error);
@@ -2508,35 +2525,25 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           return;
         }
         // Slack requires an answer in 3s. Buying domains takes longer, so
-        // ack now and post the result to response_url / the channel.
-        res.status(200).json({
-          text: "Working on it — I will post here when it is done.",
-        });
+        // ack now and update the tapped card in place when it is done (D266).
+        res.status(200).send();
         const decideDecision = parsed.decision;
         void isolationExecute
           .decide(parsed.id, parsed.decision, { name, role })
           .then(async (result) => {
             const text = result.message;
-            if (result.ok) {
-              await stripResolvedAsk({
-                actionId: parsed.id,
-                kind: parsed.kind,
-                decision: decideDecision,
-                responseUrl: payload.response_url,
-                resolvedBy: name,
-                detail: text,
-              });
-              return;
-            }
-            if (payload.response_url) {
-              await fetch(payload.response_url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ text }),
-              });
-              return;
-            }
-            await slack.notifyActionResult(text);
+            await stripResolvedAsk({
+              actionId: parsed.id,
+              kind: parsed.kind,
+              decision: decideDecision,
+              responseUrl: payload.response_url,
+              resolvedBy: name,
+              detail: text,
+            });
+            await updateTappedCard({
+              responseUrl: payload.response_url,
+              text,
+            });
           })
           .catch((error) => {
             console.error("[slack-interactions] decide failed", error);

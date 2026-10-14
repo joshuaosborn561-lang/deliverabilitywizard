@@ -115,6 +115,8 @@ export function buildNeedsYouDigest(
     | "listSpendApprovals"
     | "getDomainHistory"
     | "upsertIsolationAction"
+    | "upsertSpendApproval"
+    | "listPoolMailboxes"
   >,
 ): {
   cayden: SpendDigestClientGroup[];

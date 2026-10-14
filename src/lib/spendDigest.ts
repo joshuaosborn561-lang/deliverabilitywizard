@@ -15,6 +15,7 @@ import {
   isBurnAskKind,
   retireAlreadySettled,
 } from "./isolationActions.js";
+import { pruneSatisfiedPendingSpend } from "./pendingSpendPrune.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { SpendApprovalRecord, StateStore } from "../state/store.js";
 
@@ -137,10 +138,13 @@ export function collectPendingSpendItems(
     | "listSpendApprovals"
     | "getDomainHistory"
     | "upsertIsolationAction"
+    | "upsertSpendApproval"
+    | "listPoolMailboxes"
   >,
 ): SpendDigestItem[] {
   dismissRetiredDomainAsks(store);
   healStaleBurnAsks(store);
+  pruneSatisfiedPendingSpend(store);
 
   const items: SpendDigestItem[] = [];
   const seen = new Set<string>();
@@ -240,6 +244,8 @@ export function buildCaydenSpendDigest(
     | "listSpendApprovals"
     | "getDomainHistory"
     | "upsertIsolationAction"
+    | "upsertSpendApproval"
+    | "listPoolMailboxes"
   >,
 ): { groups: SpendDigestClientGroup[]; text: string | null; items: number } {
   const items = collectPendingSpendItems(store);

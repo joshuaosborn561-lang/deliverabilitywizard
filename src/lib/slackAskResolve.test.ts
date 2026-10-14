@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   buildResolvedAskBlocks,
   resolveIsolationAskMessage,
+  doneByLine,
   resolvedAskLabel,
   resolvedByLine,
   type FetchLike,
@@ -49,7 +50,11 @@ describe("D195 — resolved ask blocks carry no actions", () => {
     assert.match(resolvedAskLabel("generic_backfill", "deny"), /generics stay off/i);
     assert.match(resolvedAskLabel("retire_domain", "approve"), /retired/i);
     assert.match(resolvedAskLabel("buy_domains", "approve"), /cover buy/i);
-    assert.equal(resolvedByLine("Cayden"), "Resolved by Cayden: nothing to do");
+    assert.equal(resolvedByLine("Cayden"), "Done by Cayden");
+    assert.equal(
+      doneByLine("Cayden", "retired burned.info"),
+      "Done by Cayden: retired burned.info",
+    );
   });
 });
 
@@ -168,7 +173,7 @@ describe("D195 — resolveIsolationAskMessage strip paths", () => {
     assert.equal(calls.length, 2);
     assert.equal(calls[0]?.body.ts, "1.1");
     assert.equal(calls[1]?.body.ts, "2.2");
-    assert.equal(calls[0]?.body.text, "Resolved by the wizard: nothing to do");
+    assert.equal(calls[0]?.body.text, "Done by the wizard");
     const blocks = calls[0]?.body.blocks as Array<{ type: string }>;
     assert.equal(blocks.some((b) => b.type === "actions"), false);
   });

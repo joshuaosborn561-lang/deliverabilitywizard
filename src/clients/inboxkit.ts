@@ -426,6 +426,36 @@ export class InboxKitClient {
   }
 
   /**
+   * Locate a domain across every InboxKit workspace, ignoring the
+   * constructor pin. Replacement buys and retire-cancels need the
+   * client's workspace, not the generic-pool default (D266).
+   */
+  async findDomainAnywhere(domain: string): Promise<{
+    workspaceId: string;
+    workspaceName?: string;
+    domain: InboxKitDomain;
+  } | null> {
+    const target = domain.toLowerCase();
+    const workspaces = await this.listWorkspaces();
+    for (const ws of workspaces) {
+      const wsId = ws.uid || ws.id;
+      if (!wsId) continue;
+      const domains = await this.listDomains(wsId, {
+        keyword: target,
+        limit: 50,
+      });
+      const match = domains.find((d) => {
+        const name = (d.name || d.domain || "").toLowerCase();
+        return name === target;
+      });
+      if (match) {
+        return { workspaceId: wsId, workspaceName: ws.name, domain: match };
+      }
+    }
+    return null;
+  }
+
+  /**
    * Locate a domain across all workspaces (or a single configured workspace).
    */
   async findDomain(domain: string): Promise<{

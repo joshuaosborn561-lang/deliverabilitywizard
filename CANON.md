@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D265** (2026-10-14). One page of current truth. When a new
+Canon as of **D266** (2026-10-14). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -865,18 +865,31 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    `if you're interested.` (never `if useful.`); company-identity openers
    become `so you know, we're {Brand}.` (no double period), not a
    brace-strip-only soften. The D171 lead-in is unchanged.
-**Buttons and the handler agree (D248).** Retire / Buy / Allow / Not now
+**Buttons and the handler agree (D248 / D266).** Retire / Buy / Allow / Not now
 are native Slack buttons — never a `url` plus `action_id`/`value` on the
 same button (Slack still fires `block_actions` for link buttons, which
 decided immediately and then showed the confirm page as "already done").
 Retire and Buy carry Slack's native `confirm` dialog; the handler decides
-only after that confirm, then updates the card in place. A leftover link
-button is ignored. A single tap cannot spend.
+only after that confirm, then updates the tapped card in place to
+`Done by <tapper>` with the result, or the error. A leftover link
+button is ignored. A single tap cannot spend. Result posts use the
+actual tapper (Cayden or Josh), never a hardcoded Josh. Finished items
+are marked done and pruned from `pendingSpend` so they do not return in
+the next morning's digest; leftover pendingSpend already satisfied
+(cover already bought, domain already retired) is consumed. A repeat
+Approve / Retire on an already-done item is a no-op — no second buy.
+Transient HTTP 429 / fetch failed retries with bounded backoff; if it
+still fails the item stays pending with the error on the card. Client
+replacement / cover buys land in that client's InboxKit workspace, not
+the generic-pool workspace. After a retire unlink, those InboxKit seats
+are scheduled for cancellation (or queued for Onboarding when InboxKit
+cannot). Buy copy says "I will finish the mailbox order myself" only
+while nameservers are still pending and no mailboxes have been ordered.
 **Every posted copy is stamped** (`slackMessages` plus legacy
 `slackChannel` + `slackTs`). On any resolution (human, wizard
 auto-dismiss, already-settled, buy superseded by retire) every copy is
-`chat.update`d to `Resolved by X: nothing to do` with no buttons (D195
-strip, D248 all copies). When an ask's details change, the existing card
+`chat.update`d to `Done by X` with the result and no buttons (D195
+strip, D248 all copies, D266 tapper + result). When an ask's details change, the existing card
 is updated in place; isolation-remind bumps or threads on that card and
 does not repost. **`#deliverability` is only cards that need a person.**
 Short-staffed, stage-overdue, CANON-miss, bounce burst, canary

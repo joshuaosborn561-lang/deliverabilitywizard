@@ -92,8 +92,8 @@ export function podEspMixHolds(input: {
   if (!input.clientHasBothEsps) return true;
   const outlook = Number.isFinite(input.outlook) ? Math.max(0, input.outlook) : 0;
   const gmail = Number.isFinite(input.gmail) ? Math.max(0, input.gmail) : 0;
-  const podSeats =
-    input.podSeats ?? Math.max(outlook + gmail, POD_INVENTORY_MIN_SENDERS);
+  // D263 — mix floor is ~1/3 of the real POD size, not max(n, 40).
+  const podSeats = input.podSeats ?? outlook + gmail;
   const floor = podEspMixMinSeats(podSeats);
   return outlook >= floor && gmail >= floor;
 }

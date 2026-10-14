@@ -76,10 +76,28 @@ export interface CampaignCheckRecord {
   lastSweepAt: string | null;
   lastKind: "first" | "hourly";
   findings: string[];
+  /** D263 — last-seen Smartlead status so /health can count ACTIVE only. */
+  status?: string | null;
   /** D95 — first auto-write already told Josh. Re-writes stay quiet. */
   sigAutoWrittenAt?: string | null;
   /** D180 — last merge-tag fill sample (lead total + custom tags seen). */
   mergeTagCheckedAt?: string | null;
   mergeTagLeadTotal?: number | null;
   mergeTagCustomKeys?: string[];
+}
+
+export function campaignCheckIsActive(
+  record: Pick<CampaignCheckRecord, "campaignId" | "status">,
+  statusById?: Map<number, string>,
+): boolean {
+  if (statusById?.has(record.campaignId)) {
+    return String(statusById.get(record.campaignId) ?? "").toUpperCase() === "ACTIVE";
+  }
+  if (statusById && statusById.size > 0) {
+    return false;
+  }
+  if (record.status != null && String(record.status) !== "") {
+    return String(record.status).toUpperCase() === "ACTIVE";
+  }
+  return true;
 }

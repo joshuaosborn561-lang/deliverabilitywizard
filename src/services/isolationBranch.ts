@@ -55,6 +55,13 @@ function isFinishedSendingStatus(
   return normalized === "COMPLETED" || normalized === "STOPPED";
 }
 
+/** Skip a provider-split fetch when the score is still this fresh. */
+export const PLACEMENT_SCORE_FRESH_MS = 3 * 60 * 60 * 1000;
+/** Hard cap on new SmartDelivery report pulls per isolation-branch run. */
+export const ISOLATION_PROVIDER_SPLITS_CAP = 12;
+/** Hard cap on evaluate() calls per isolation-branch run. */
+export const ISOLATION_EVALUATE_CAP = 8;
+
 export interface IsolationBranchResult {
   dryRun: boolean;
   evaluated: number;
@@ -66,6 +73,8 @@ export interface IsolationBranchResult {
 }
 
 export class IsolationBranchService {
+  private listedTestsThisRun: ReturnType<typeof normalizeTestList> | null = null;
+
   constructor(
     private readonly config: AppConfig,
     private readonly smartlead: SmartleadClient,
@@ -94,6 +103,7 @@ export class IsolationBranchService {
     };
     if (!this.config.enableIsolationBranch) return result;
 
+    this.listedTestsThisRun = null;
     let campaigns: Awaited<ReturnType<SmartleadClient["listCampaigns"]>> = [];
     let listedOk = false;
     if (!opts.campaignId) {
@@ -104,8 +114,11 @@ export class IsolationBranchService {
         const pruned = this.state.pruneIsolationForGoneCampaigns(campaigns);
         if (pruned) {
           console.log(
-            `[isolation-branch] pruned ${pruned} score/suspect row(s) for deleted or finished campaigns (D261)`,
+            `[isolation-branch] pruned ${pruned} score/suspect/canary row(s) for deleted or finished campaigns (D261/D262)`,
           );
+          // D262 — persist the prune now. A later 10m timeout or freeze
+          // kill must not resurrect deleted #3739316 on the hole list.
+          await this.state.save();
         }
       } catch (error) {
         if (isAbortError(error)) {
@@ -118,7 +131,15 @@ export class IsolationBranchService {
           error,
         );
       }
-      await this.queueUglyPlacementSuspects(campaigns, opts.signal);
+      try {
+        await this.queueUglyPlacementSuspects(campaigns, opts.signal);
+      } catch (error) {
+        if (isAbortError(error)) {
+          result.errors.push("aborted: stopped during placement queue");
+        } else {
+          throw error;
+        }
+      }
     }
 
     const statusById = new Map(
@@ -160,8 +181,16 @@ export class IsolationBranchService {
             (statusById.has(row.campaignId) &&
               !isFinishedSendingStatus(statusById.get(row.campaignId))),
         );
+    const evaluateTargets = opts.campaignId
+      ? targets
+      : targets.slice(0, ISOLATION_EVALUATE_CAP);
+    if (!opts.campaignId && targets.length > evaluateTargets.length) {
+      console.log(
+        `[isolation-branch] evaluate cap ${ISOLATION_EVALUATE_CAP}; ${targets.length - evaluateTargets.length} leftover(s) wait for the next cycle (D262)`,
+      );
+    }
 
-    for (const target of targets) {
+    for (const target of evaluateTargets) {
       if (opts.signal?.aborted) {
         result.errors.push("aborted: stopped remaining isolation evaluates");
         break;
@@ -450,6 +479,7 @@ export class IsolationBranchService {
     const listedTests = normalizeTestList(
       await this.smartDelivery.listTests({}).catch(() => []),
     );
+    this.listedTestsThisRun = listedTests;
     const tests = [
       ...listedTests,
       ...this.syntheticCopyCanaryTests(listedTests),
@@ -459,7 +489,9 @@ export class IsolationBranchService {
       return ac - bc;
     });
     let queued = 0;
+    let pulled = 0;
     const seen = new Set<number>();
+    const now = Date.now();
 
     for (const test of tests) {
       if (signal?.aborted) break;
@@ -489,6 +521,29 @@ export class IsolationBranchService {
         continue;
       }
       seen.add(target.campaignId);
+      const existingScore = this.state
+        .listPlacementScores()
+        .find((row) => row.campaignId === target.campaignId);
+      const scoreAgeMs = existingScore
+        ? now - Date.parse(existingScore.at)
+        : Number.POSITIVE_INFINITY;
+      // D262 — a fresh score is already on the hole / suspect list.
+      // Re-read happens in evaluate. Do not N+1 providerSplits again.
+      if (
+        existingScore &&
+        Number.isFinite(scoreAgeMs) &&
+        scoreAgeMs < PLACEMENT_SCORE_FRESH_MS
+      ) {
+        continue;
+      }
+      if (pulled >= ISOLATION_PROVIDER_SPLITS_CAP) {
+        console.log(
+          `[isolation-branch] provider-split cap ${ISOLATION_PROVIDER_SPLITS_CAP}; remaining tests wait (D262)`,
+        );
+        break;
+      }
+      pulled += 1;
+      throwIfAborted(signal);
       const splits = await this.providerSplits(tid);
       const inbox = minSameEspInbox(splits);
       if (inbox != null) {
@@ -579,7 +634,18 @@ export class IsolationBranchService {
   }
 
   private async campaignLooksSpam(campaignId: number): Promise<boolean> {
-    const tests = await this.smartDelivery.listTests({}).catch(() => []);
+    const fresh = this.state
+      .listPlacementScores()
+      .find((row) => row.campaignId === campaignId);
+    if (fresh) {
+      const age = Date.now() - Date.parse(fresh.at);
+      if (Number.isFinite(age) && age < PLACEMENT_SCORE_FRESH_MS) {
+        return fresh.inboxPercent < this.config.remediationInboxThreshold;
+      }
+    }
+    const tests =
+      this.listedTestsThisRun ??
+      (await this.smartDelivery.listTests({}).catch(() => []));
     const mine = tests.filter((test) => campaignIdOf(test) === String(campaignId));
     const latest = mine.sort((a, b) =>
       String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")),

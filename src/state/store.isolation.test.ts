@@ -86,6 +86,7 @@ describe("isolation state", () => {
       campaignName: "BCP Logistics Over-1k",
       at: "2026-08-24T12:00:00.000Z",
     });
+    state.setCopyCanaries(3739316, ["canary@g.test"], "547425");
     const dropped = state.pruneIsolationForGoneCampaigns([
       { id: 3847794, status: "ACTIVE" },
       { id: 3763805, status: "COMPLETED" },
@@ -108,6 +109,11 @@ describe("isolation state", () => {
     );
     assert.ok(
       state.listPlacementScores().some((row) => row.campaignId === 3847794),
+    );
+    assert.equal(
+      state.getCopyCanaryTestId(3739316),
+      undefined,
+      "D262: deleted campaigns drop their copy-canary row",
     );
   });
 });

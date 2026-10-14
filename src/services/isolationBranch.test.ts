@@ -35,9 +35,8 @@ async function buildBranch(opts: {
   canaryTestId?: string | null;
 }) {
   const campaign = opts.campaign ?? AIRPODS;
-  const state = new StateStore(
-    `/tmp/dw-iso-branch-${process.pid}-${Date.now()}-${Math.random()}.json`,
-  );
+  const statePath = `/tmp/dw-iso-branch-${process.pid}-${Date.now()}-${Math.random()}.json`;
+  const state = new StateStore(statePath);
   await state.load();
   state.upsertMailboxControl({
     email: "a@techevo.test",
@@ -80,6 +79,7 @@ async function buildBranch(opts: {
       { id: 1, from_email: "a@techevo.test" },
     ],
   };
+  const reportCalls: string[] = [];
   const smartDelivery = {
     listTests: async () => [
       {
@@ -88,10 +88,12 @@ async function buildBranch(opts: {
         campaign_id: 999001,
       },
     ],
-    getProviderwiseReport: async (testId: string) =>
-      testId === "known-good-1"
+    getProviderwiseReport: async (testId: string) => {
+      reportCalls.push(testId);
+      return testId === "known-good-1"
         ? providerReport(opts.knownGoodInbox)
-        : providerReport(opts.canaryInbox),
+        : providerReport(opts.canaryInbox);
+    },
     getIpBlacklist: async () => [],
     getDomainBlacklist: async () => [],
     getDkimDetails: async () => null,
@@ -172,6 +174,8 @@ async function buildBranch(opts: {
     placementPages,
     healed,
     campaign,
+    reportCalls,
+    statePath,
   };
 }
 
@@ -480,6 +484,46 @@ describe("IsolationBranchService placement queue (D158)", () => {
     assert.equal(
       state.listCopySuspects().some((row) => row.campaignId === 3739316),
       false,
+    );
+  });
+
+  it("D262: a fresh placement score skips another provider-split pull", async () => {
+    const { branch, reportCalls } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 95,
+    });
+    await branch.run();
+    const afterFirst = reportCalls.filter((id) => id.startsWith("canary-")).length;
+    assert.ok(afterFirst >= 1, "first cycle must score the canary");
+    reportCalls.length = 0;
+    await branch.run();
+    assert.equal(
+      reportCalls.filter((id) => id.startsWith("canary-")).length,
+      0,
+      "fresh score must not N+1 providerSplits on the next cycle",
+    );
+  });
+
+  it("D262: prune of deleted #3739316 survives a reload", async () => {
+    const { branch, state, statePath } = await buildBranch({
+      knownGoodInbox: 95,
+      canaryInbox: 95,
+    });
+    state.recordPlacementScore({
+      campaignId: 3739316,
+      campaignName: "Cold Call Followup",
+      testId: "547425",
+      source: "canary-copy",
+      inboxPercent: 0,
+      at: "2026-10-08T00:00:00.000Z",
+    });
+    await branch.run();
+    const reloaded = new StateStore(statePath);
+    await reloaded.load();
+    assert.equal(
+      reloaded.listPlacementScores().some((row) => row.campaignId === 3739316),
+      false,
+      "deleted Cold Call Followup must stay pruned after save",
     );
   });
 

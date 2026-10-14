@@ -111,6 +111,14 @@ export class InventoryBook {
     private readonly now: () => number = Date.now,
   ) {}
 
+  /**
+   * D262 — last accepted snapshot, or null before the first publish.
+   * `/health` reads this without fetching.
+   */
+  peek(): InventorySnapshot | null {
+    return this.accepted;
+  }
+
   /** The accepted snapshot if it is at most `maxAgeMs` old, else a fetch. */
   async get(maxAgeMs: number = this.freshMs): Promise<InventorySnapshot> {
     if (this.accepted && this.now() - this.accepted.fetchedAt <= maxAgeMs) {

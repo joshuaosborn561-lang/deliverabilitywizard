@@ -2521,10 +2521,15 @@ export class StateStore {
     delete this.state.isolation.copySuspects[String(campaignId)];
   }
 
+  dropCopyCanary(campaignId: number): void {
+    delete this.state.isolation.copyCanaries[String(campaignId)];
+  }
+
   /**
-   * D261 — placement scores / suspects for campaigns gone from Smartlead
-   * (deleted) or finished (COMPLETED / STOPPED) are not isolation holes.
-   * PAUSED stays; leftover evaluate still re-reads those (D164).
+   * D261 / D262 — placement scores / suspects / copy-canary rows for
+   * campaigns gone from Smartlead (deleted) or finished (COMPLETED /
+   * STOPPED) are not isolation holes. PAUSED stays; leftover evaluate
+   * still re-reads those (D164).
    */
   pruneIsolationForGoneCampaigns(
     campaigns: Array<{ id: number; status?: string | null }>,
@@ -2544,6 +2549,11 @@ export class StateStore {
     for (const suspect of this.listCopySuspects()) {
       if (keep.has(suspect.campaignId)) continue;
       this.dropCopySuspect(suspect.campaignId);
+      dropped += 1;
+    }
+    for (const row of Object.values(this.state.isolation.copyCanaries)) {
+      if (keep.has(row.campaignId)) continue;
+      this.dropCopyCanary(row.campaignId);
       dropped += 1;
     }
     return dropped;

@@ -16258,3 +16258,195 @@ describe("owner intent — D261 started stages must stamp", () => {
     );
   });
 });
+
+describe("owner intent — D262 isolation persist-prune and no clone-freeze", () => {
+  it("D262: prune saves immediately; stringify yields; /health keep uses inventory peek", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const branch = await readFile(
+      new URL("../services/isolationBranch.ts", import.meta.url),
+      "utf8",
+    );
+    const json = await readFile(
+      new URL("../lib/jsonOffThread.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const inventory = await readFile(
+      new URL("../services/inventory.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      branch,
+      /pruneIsolationForGoneCampaigns[\s\S]*await this\.state\.save\(\)/,
+      stop(
+        "Gone-campaign prune persists immediately (D262).",
+        "isolationBranch.ts no longer saves after prune.",
+      ),
+    );
+    assert.match(
+      branch,
+      /PLACEMENT_SCORE_FRESH_MS/,
+      stop("Fresh scores skip a re-pull (D262).", "isolationBranch.ts lost PLACEMENT_SCORE_FRESH_MS."),
+    );
+    assert.match(
+      branch,
+      /ISOLATION_PROVIDER_SPLITS_CAP/,
+      stop("Provider-split pulls are capped (D262).", "isolationBranch.ts lost ISOLATION_PROVIDER_SPLITS_CAP."),
+    );
+    assert.match(
+      branch,
+      /ISOLATION_EVALUATE_CAP/,
+      stop("Evaluate is capped per cycle (D262).", "isolationBranch.ts lost ISOLATION_EVALUATE_CAP."),
+    );
+    assert.match(
+      json,
+      /stringifyYielding\(value\)/,
+      stop("stringifyOffThread yields (D262).", "jsonOffThread.ts still clones state onto a worker."),
+    );
+    assert.doesNotMatch(
+      json,
+      /runWorker\(\{\s*op:\s*"stringify",\s*value/,
+      stop(
+        "stringify must not structuredClone onto a worker (D262).",
+        "jsonOffThread.ts still passes value as workerData.",
+      ),
+    );
+    assert.match(
+      store,
+      /dropCopyCanary/,
+      stop("Store drops copy-canary rows for gone campaigns (D262).", "store.ts lost dropCopyCanary."),
+    );
+    assert.match(
+      inventory,
+      /peek\(\): InventorySnapshot \| null/,
+      stop("InventoryBook peeks without fetching (D262).", "inventory.ts lost peek()."),
+    );
+    assert.match(
+      index,
+      /inventoryBook\.peek\(\)/,
+      stop(
+        "/health keepCampaignId reads the accepted book (D262).",
+        "index.ts keepCampaignId does not use inventoryBook.peek().",
+      ),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D26[3-9]\*\*/,
+      stop("CANON is dated D263+.", "CANON.md header is before D263."),
+    );
+    assert.match(
+      canon,
+      /never cloned onto a worker/,
+      stop("CANON forbids worker clone stringify (D262).", "CANON.md lost the D262 stringify MUST."),
+    );
+    assert.match(
+      decisions,
+      /## D262 — isolation-branch must finish inside 10m/,
+      stop("The ledger records D262.", "DECISIONS.md has no D262."),
+    );
+    assert.match(
+      decisions,
+      /^\| D262 \|/m,
+      stop("The status index lists D262.", "DECISIONS.md index has no D262 row."),
+    );
+  });
+});
+
+describe("owner intent — D263 ESP-mix ACTIVE-only real POD Azure 0.1", () => {
+  it("D263: /health counts ACTIVE; mix uses real weighted POD size", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const floor = await readFile(
+      new URL("../lib/clientStaffFloor.ts", import.meta.url),
+      "utf8",
+    );
+    const kinds = await readFile(
+      new URL("../lib/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      index,
+      /campaignCheckIsActive/,
+      stop("/health counts ACTIVE campaign findings (D263).", "index.ts lost campaignCheckIsActive."),
+    );
+    assert.match(
+      check,
+      /pruned deleted/,
+      stop(
+        "Campaign-check drops ids missing from the live list (D263).",
+        "campaignCheck.ts lost the deleted-row prune.",
+      ),
+    );
+    assert.match(
+      check,
+      /mailboxStaffableWeight\(account\)/,
+      stop(
+        "ESP mix counts Azure at 0.1 (D263).",
+        "campaignCheck.ts still +1s every Outlook seat.",
+      ),
+    );
+    assert.doesNotMatch(
+      check,
+      /podSeats:\s*Math\.max\(serving\.length,\s*ON_WEEK_MIN_SENDERS\)/,
+      stop(
+        "ESP mix uses the real POD size (D263).",
+        "campaignCheck.ts still pads podSeats with max(n, 40).",
+      ),
+    );
+    assert.match(
+      floor,
+      /input\.podSeats \?\? outlook \+ gmail/,
+      stop(
+        "podEspMixHolds defaults to the real POD size (D263).",
+        "clientStaffFloor.ts still defaults podSeats to max(n, 40).",
+      ),
+    );
+    assert.match(
+      kinds,
+      /campaignCheckIsActive/,
+      stop("ACTIVE filter is shared (D263).", "campaignCheck.ts lost campaignCheckIsActive."),
+    );
+    assert.match(
+      canon,
+      /real seat count/,
+      stop("CANON names the real-POD mix floor (D263).", "CANON.md lost the D263 mix MUST."),
+    );
+    assert.match(
+      canon,
+      /ACTIVE campaigns only/,
+      stop("CANON says /health counts ACTIVE only (D263).", "CANON.md lost the D263 ACTIVE MUST."),
+    );
+    assert.match(
+      decisions,
+      /## D263 — ESP-mix is ACTIVE-only/,
+      stop("The ledger records D263.", "DECISIONS.md has no D263."),
+    );
+    assert.match(
+      decisions,
+      /^\| D263 \|/m,
+      stop("The status index lists D263.", "DECISIONS.md index has no D263 row."),
+    );
+  });
+});

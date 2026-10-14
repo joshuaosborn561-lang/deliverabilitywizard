@@ -41,6 +41,7 @@ export async function stringifyYielding(
 ): Promise<string> {
   const yieldEvery = Math.max(1, opts.yieldEvery ?? STRINGIFY_YIELD_EVERY);
   let ops = 0;
+  await yieldEventLoop();
   const tick = async (): Promise<void> => {
     ops += 1;
     if (ops % yieldEvery === 0) await yieldEventLoop();

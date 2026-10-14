@@ -1,9 +1,9 @@
 /**
- * D257 — JSON.stringify / JSON.parse of `/data/state.json` run in a
- * worker thread so a 100MB+ dump cannot pin the event loop. The worker
- * reads a file itself (parse) or receives a structured-clone of the
- * already-pruned state (stringify). Fallback is the D249 yielding walk
- * / in-process parse if the worker cannot start.
+ * D257 / D262 — JSON.parse of `/data/state.json` runs in a worker
+ * thread (the worker reads the file itself). JSON.stringify of the
+ * dump must **not** go through `workerData`: structuredClone of a
+ * ~100MB state pinned the event loop 31–47s and the freeze watchdog
+ * exited (prod 2026-10-13). Stringify uses the D249 yielding walk.
  */
 
 import { Worker } from "node:worker_threads";
@@ -77,16 +77,9 @@ function runWorker(workerData: unknown): Promise<unknown> {
 }
 
 export async function stringifyOffThread(value: unknown): Promise<string> {
-  try {
-    const body = await runWorker({ op: "stringify", value });
-    if (typeof body !== "string") {
-      throw new Error("off-thread stringify did not return a string");
-    }
-    return body;
-  } catch (error) {
-    console.warn("[state] off-thread stringify failed; yielding fallback", error);
-    return stringifyYielding(value);
-  }
+  // D262 — never structuredClone the dump onto a worker. The clone
+  // ran on the main thread and froze the loop longer than stringify.
+  return stringifyYielding(value);
 }
 
 function asFsError(error: unknown): NodeJS.ErrnoException {

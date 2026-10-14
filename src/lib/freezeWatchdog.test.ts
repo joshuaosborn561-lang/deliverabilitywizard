@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import {
   EVENT_LOOP_EXIT_MS,
   EVENT_LOOP_LOG_MS,
+  FREEZE_EXIT_CODE,
   freezeWatchdogTick,
+  requestFreezeExit,
   startFreezeWatchdog,
 } from "./freezeWatchdog.js";
 import { HEALTH_LOCK_MAX_MS, InFlightLock } from "./inFlightLock.js";
@@ -84,9 +86,11 @@ describe("D247 freeze watchdog", () => {
       exit: (code) => {
         exits.push(code);
       },
+      setExitCode: () => undefined,
       log: (msg) => logs.push(msg),
       intervalMs: 10,
       getLocks: () => [lock],
+      scheduleHardKill: () => () => undefined,
     });
 
     return new Promise<void>((resolve, reject) => {
@@ -102,6 +106,116 @@ describe("D247 freeze watchdog", () => {
           try {
             assert.deepEqual(exits, [1]);
             assert.ok(logs.some((line) => /health pass stuck/.test(line)));
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        }
+      }, 5);
+    });
+  });
+});
+
+describe("D265 freeze-watchdog exit is non-zero after flush", () => {
+  it("stamps exitCode 1, flushes, then process.exit(1)", async () => {
+    const order: string[] = [];
+    await requestFreezeExit({
+      reason: "event loop blocked for 300s",
+      setExitCode: (code) => {
+        order.push(`exitCode=${code}`);
+      },
+      flush: () => {
+        order.push("flush");
+      },
+      exit: (code) => {
+        order.push(`exit=${code}`);
+      },
+      log: () => undefined,
+      scheduleHardKill: () => () => undefined,
+    });
+    assert.deepEqual(order, [
+      `exitCode=${FREEZE_EXIT_CODE}`,
+      "flush",
+      `exit=${FREEZE_EXIT_CODE}`,
+    ]);
+  });
+
+  it("still exits 1 when flush hangs past the budget", async () => {
+    const exits: number[] = [];
+    const logs: string[] = [];
+    await requestFreezeExit({
+      reason: "health pass stuck 90m",
+      setExitCode: () => undefined,
+      flush: () => new Promise(() => undefined),
+      exit: (code) => {
+        exits.push(code);
+      },
+      log: (msg) => logs.push(msg),
+      flushMs: 5,
+      wait: () => Promise.resolve(),
+      scheduleHardKill: () => () => undefined,
+    });
+    assert.deepEqual(exits, [1]);
+    assert.ok(logs.some((line) => /flush timed out/.test(line)));
+  });
+
+  it("still exits 1 when flush throws", async () => {
+    const exits: number[] = [];
+    const logs: string[] = [];
+    await requestFreezeExit({
+      reason: "repeated freezes",
+      setExitCode: () => undefined,
+      flush: () => {
+        throw new Error("disk full");
+      },
+      exit: (code) => {
+        exits.push(code);
+      },
+      log: (msg) => logs.push(msg),
+      scheduleHardKill: () => () => undefined,
+    });
+    assert.deepEqual(exits, [1]);
+    assert.ok(logs.some((line) => /flush failed \(disk full\)/.test(line)));
+  });
+
+  it("startFreezeWatchdog flushes saveHot then exits 1 (never 0)", () => {
+    const lock = new InFlightLock("health", HEALTH_LOCK_MAX_MS);
+    assert.ok(lock.acquire("inventory", 0));
+
+    const exits: number[] = [];
+    const flushed: string[] = [];
+    const codes: number[] = [];
+    const watchdog = startFreezeWatchdog({
+      now: () => HEALTH_LOCK_MAX_MS * 2 + 1,
+      exit: (code) => {
+        exits.push(code);
+      },
+      setExitCode: (code) => {
+        codes.push(code);
+      },
+      flush: () => {
+        flushed.push("saveHot");
+      },
+      log: () => undefined,
+      intervalMs: 10,
+      getLocks: () => [lock],
+      scheduleHardKill: () => () => undefined,
+    });
+
+    return new Promise<void>((resolve, reject) => {
+      const deadline = setTimeout(() => {
+        watchdog.stop();
+        reject(new Error("watchdog did not flush-then-exit"));
+      }, 200);
+      const check = setInterval(() => {
+        if (exits.length) {
+          clearInterval(check);
+          clearTimeout(deadline);
+          watchdog.stop();
+          try {
+            assert.deepEqual(codes, [1]);
+            assert.deepEqual(flushed, ["saveHot"]);
+            assert.deepEqual(exits, [1]);
             resolve();
           } catch (error) {
             reject(error);

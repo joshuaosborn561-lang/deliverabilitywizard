@@ -252,7 +252,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D244 | Live | CALLER FOLLOW-UP attach is tag-then-owned no more: only bridge gabriel@ seats sit on 4085158/9/60 now; owned gabe@ only own-client after 21 warm days; reserved tag never skips those checks; Gabe Calls excluded from fan-out/min40 staffing; reserved seats never get POD-A/POD-B and pod-tags strips existing ones |
 | D245 | Live | InboxKit license sweep runs every weekday 8:16am CT and deletes on the cancel date: real IK rows (`username` + `domain_name`), past scheduled cancel = lapsed even if Smartlead still logs in or is disconnected, stale `active` renewal_date is not lapsed; seat end dates persisted; min40 / POC fill and canon staffable skip lapsed or ending-within-7-days seats |
 | D246 | Live | Insight SEG standing hold lifted; weekday pulse unpauses bounce holds; hold-enforcement / locked standing prefs no longer keep Insight SEG PAUSED |
-| D247 | Live — save path amended by D249 | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
+| D247 | Live — save path amended by D249; exit path amended by D265 | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
 | D248 | Live — D220 cadence / copy amended | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
 | D249 | Live — min40 walk amended by D250 | Unblock the event loop and persist stamps: sidecar lastOk / Slack / cron stamps, yielding compact JSON (no one-shot stringify of the full state), D215 sitting dies at 45m, campaign-check-first 8m inspect budget, Slack log/canary/remind idempotent across restarts, weekday 6am–8pm CT catch-up for Needs you / InboxKit / TERRL EOD |
 | D250 | Live — fill/pool/slack path amended by D252; first-check walk amended by D251 | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
@@ -262,7 +262,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D254 | Live | POC min40 fills refuse another client's seat and any seat whose locked POD is not on-week (check before link); min40 summary includes PowerGRYD on-week POD shortfall and pages zero on-week generics; powergryd-watch does not stay hands-off when a whole POD is empty; named A/B split stays static; canary and client-named-domain seats are never generics |
 | D255 | Live | Insight copy must not contain a hardcoded Josh Osborn / Insight sign-off; `%signature%` like every other client; mailbox sig is Josh Osborn / Strategic Account Executive / Insight; D178 close writer deleted |
 | D256 | Live — empty-by-design / live-SL-wins staffing lock added by D258 | PowerGRYD 592842 is a normal named client (not POC, not a no-generics exception); D254 POC lock and empty-POD Slack stay; `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 → 30, else 40); min40 returns surplus generics above that floor |
-| D257 | Live — stringify path amended by D262 | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
+| D257 | Live — stringify path amended by D262; exit path amended by D265 | Event-loop freezes: off-thread pruned/debounced state dump; shared Smartlead limiter (concurrency + 429 backoff); freeze watchdog exits on repeated multi-second freezes; scan-backfill start/end/timing logs |
 | D258 | Live | Live Smartlead `client_id` wins dedicated-generic resolution when pool `assignedClientId` disagrees; realign the pool row; PowerGRYD empty-by-design (branded seats warming) hard-blocks foreign-signature / foreign-client generics on PG ACTIVE campaigns; one-client does not peel TE/Insight seats for a stale PG pool row |
 | D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
@@ -270,7 +270,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D262 | Live | isolation-branch persists gone-campaign prune immediately, skips fresh scores, caps provider-split / evaluate work, and stringifies state with a yielding walk (never worker structuredClone); /health holes use the accepted inventory book |
 | D263 | Live | ESP-mix /health counts ACTIVE only; campaign-check prunes STOPPED/COMPLETED/deleted leftover findings; mix floor uses the real weighted POD size; Azure counts 0.1 |
 | D264 | Live | CALLER FOLLOW-UP (Gabe Calls) is fully exempt from typical sender top-up; sibling share / client-rest restore cannot land non-class seats; campaign-check peels strays (one Slack receipt) |
-| D265 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
+| D265 | Live | Freeze watchdog must exit non-zero after flushing lastOk sidecar (never drain to 0); Railway restartPolicyType ALWAYS |
+| D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
 
 ---
 
@@ -9362,7 +9363,55 @@ peeled Slack copy; min40 still skips 4085158/4085160.
 
 ---
 
-## D265 — One-tap spend/retire cards: Done by tapper, prune, idempotent, retry, client workspace
+## D265 — Freeze watchdog exits 1 after flush; Railway ALWAYS
+
+**Date.** 2026-10-14 (Josh).
+
+**Decision.** Railway did not auto-restart after either freeze-watchdog
+exit (2026-10-13 ~12:44pm CT and overnight 2026-10-14, 502 until a
+manual redeploy) even with `restartPolicyType = ON_FAILURE`. The
+watchdog already *asked* for `process.exit(1)`, but two holes let
+ON_FAILURE no-op:
+
+1. `timer.unref()` on the 5s interval. When other handles drop, Node
+   drains and exits **0**. ON_FAILURE ignores 0.
+2. A hung-but-alive process (event loop frozen, `/health` 502) never
+   exits. ON_FAILURE and ALWAYS both ignore a still-running replica.
+   If `process.exit(1)` itself hangs on workers / stdio, same outcome.
+
+Fix:
+
+1. Do **not** unref the watchdog interval. It keeps the process
+   alive and cannot drain to 0.
+2. On a freeze: set `process.exitCode = 1` first, flush **only**
+   `saveHot()` (the lastOk sidecar — never the full dump that
+   re-froze the loop), then `process.exit(1)`. A hung flush still
+   exits 1 after 5s; a hung `process.exit` is SIGKILL'd at 8s.
+3. `railway.toml` `restartPolicyType = ALWAYS` (maxRetries 10) so
+   an unexpected exit 0 still comes back. A hung-but-alive 502 is
+   still not a restart — the watchdog must actually exit.
+
+**Why.** Two freeze kills left the service 502 until someone
+redeployed by hand. Restart-on-failure is useless if the process
+exits 0 or never exits.
+
+**Rejected.** Flushing the full `state.save()` on the way out (that
+is the freeze). Leaving ON_FAILURE and hoping the dashboard
+overrides toml. Spending, START/PAUSE, or bypassing warmup.
+
+**Supersedes / amends.** Amends D247 / D257 exit path: non-zero
+after sidecar flush, interval stays referenced, Railway ALWAYS.
+Does not change the freeze *thresholds* (5m / 3× ≥3s / 2× lock).
+
+**Guards.** `requestFreezeExit` stamps exitCode 1 then flush then
+`exit(1)`; no `timer.unref` on the interval; boot passes
+`flush: () => state.saveHot()`; `railway.toml` ALWAYS; CANON D265.
+Tests: order of exitCode / flush / exit; hung flush still 1;
+startFreezeWatchdog never exits 0.
+
+---
+
+## D266 — One-tap spend/retire cards: Done by tapper, prune, idempotent, retry, client workspace
 
 **Date.** 2026-10-14 (Josh standing go — audit of Approve/Retire Slack cards).
 
@@ -9421,7 +9470,7 @@ also retries immediately, then stays pending on residual transient
 failure. Does not change D4 / D190 who may tap, D179 already-
 retired no-op, or D175 one-ESP.
 
-**Guards.** canon D265: `doneByLine`, `pruneSatisfiedPendingSpend`,
+**Guards.** canon D266: `doneByLine`, `pruneSatisfiedPendingSpend`,
 `withTransientRetry`, `pickReplacementWorkspace` refuses generic
 pool for a named client, `mailboxOrderFollowup` silent when
 finished, retire cancel schedules or queues Onboarding. Tests:

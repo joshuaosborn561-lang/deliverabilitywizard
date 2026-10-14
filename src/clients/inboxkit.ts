@@ -428,7 +428,7 @@ export class InboxKitClient {
   /**
    * Locate a domain across every InboxKit workspace, ignoring the
    * constructor pin. Replacement buys and retire-cancels need the
-   * client's workspace, not the generic-pool default (D265).
+   * client's workspace, not the generic-pool default (D266).
    */
   async findDomainAnywhere(domain: string): Promise<{
     workspaceId: string;

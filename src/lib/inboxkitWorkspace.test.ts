@@ -7,7 +7,7 @@ import {
 
 const GENERIC = "81e7f800-4203-4892-a40d-18648b89b90c";
 
-describe("D265 — client InboxKit workspace + mailbox wording", () => {
+describe("D266 — client InboxKit workspace + mailbox wording", () => {
   it("a client cover buy uses the client's workspace, never the generic pool", () => {
     const pick = pickReplacementWorkspace({
       ownerKind: "client",

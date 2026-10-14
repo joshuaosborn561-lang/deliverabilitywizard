@@ -1,5 +1,5 @@
 /**
- * D265 — replacement / cover buys go into the client's InboxKit
+ * D266 — replacement / cover buys go into the client's InboxKit
  * workspace, never the generic-pool workspace, unless the burned
  * domain itself is generic/pool.
  */

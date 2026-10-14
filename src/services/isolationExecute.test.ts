@@ -983,7 +983,7 @@ describe("D137 — the isolation-domain buy arms the rig", () => {
   });
 });
 
-describe("D265 — one-tap spend/retire cards", () => {
+describe("D266 — one-tap spend/retire cards", () => {
   it("result posts use the tapper's name, not Josh, and skip finished-mailbox wording", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-d265-name-${process.pid}-${Date.now()}.json`,

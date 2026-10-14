@@ -582,7 +582,7 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
     );
   });
 
-  it("D265: a client replacement buy posts to the client's InboxKit workspace", async () => {
+  it("D266: a client replacement buy posts to the client's InboxKit workspace", async () => {
     const state = await buyStore();
     const action = awaitingAction(["MICROSOFT", "MICROSOFT", "MICROSOFT"]);
     action.detail.ownerKind = "client";

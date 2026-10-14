@@ -1,5 +1,5 @@
 /**
- * D265 — finished / already-satisfied spend rows must leave pendingSpend
+ * D266 — finished / already-satisfied spend rows must leave pendingSpend
  * and stay out of the next morning's digest. Isolation asks that are
  * already retired or already covered are marked executed; leftover
  * pending spendApprovals for those domains are consumed.
@@ -28,13 +28,13 @@ function isolationSatisfied(
   const host = domainOf(action.detail);
   if (!host) return undefined;
   if (action.kind === "retire_domain" && domainAlreadyRetired(store, host)) {
-    return "Already retired — stale Retire ask closed (D265).";
+    return "Already retired — stale Retire ask closed (D266).";
   }
   if (action.kind === "buy_domains" && retireAlreadySettled(store, host)) {
-    return "Cover already bought or domain already retired — stale Buy ask closed (D265).";
+    return "Cover already bought or domain already retired — stale Buy ask closed (D266).";
   }
   if (action.kind === "buy_domains" && domainRetireReplacementSpent(store, host)) {
-    return "Replacement already spent — stale Buy ask closed (D265).";
+    return "Replacement already spent — stale Buy ask closed (D266).";
   }
   if (
     isBurnAskKind(action.kind) &&
@@ -43,7 +43,7 @@ function isolationSatisfied(
         (action.detail.domains as unknown[]).length > 0 &&
         action.detail.phase !== "awaiting_purchase"))
   ) {
-    return "Buy already finished — pending stamp closed (D265).";
+    return "Buy already finished — pending stamp closed (D266).";
   }
   return undefined;
 }
@@ -59,10 +59,10 @@ function spendSatisfied(
   const host = domainOf(record.detail);
   if (!host) return undefined;
   if (domainAlreadyRetired(store, host) || retireAlreadySettled(store, host)) {
-    return "Domain already retired or cover already bought (D265).";
+    return "Domain already retired or cover already bought (D266).";
   }
   if (domainRetireReplacementSpent(store, host)) {
-    return "Replacement already spent (D265).";
+    return "Replacement already spent (D266).";
   }
   const actionId = String(record.detail.actionId ?? "");
   if (actionId) {
@@ -77,14 +77,14 @@ function spendSatisfied(
           Array.isArray(action.detail.domains) &&
           (action.detail.domains as unknown[]).length > 0))
     ) {
-      return "Parent ask already finished (D265).";
+      return "Parent ask already finished (D266).";
     }
   }
   const poolHas = store
     .listPoolMailboxes()
     .some((row) => row.domain.toLowerCase() === host);
   if (poolHas && record.kind === "inboxkit_mailbox_purchase") {
-    return "Mailboxes already exist on that domain (D265).";
+    return "Mailboxes already exist on that domain (D266).";
   }
   return undefined;
 }

@@ -28,13 +28,13 @@ export type FetchLike = (
   },
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
-/** D248 / D265 — settled copy names the tapper. */
+/** D248 / D266 — settled copy names the tapper. */
 export function resolvedByLine(resolvedBy: string): string {
   const who = resolvedBy.trim() || "the wizard";
   return `Done by ${who}`;
 }
 
-/** D265 — card / result line with the tapper and the outcome (or error). */
+/** D266 — card / result line with the tapper and the outcome (or error). */
 export function doneByLine(resolvedBy: string, result?: string): string {
   const who = resolvedBy.trim() || "the wizard";
   const detail = result?.trim();

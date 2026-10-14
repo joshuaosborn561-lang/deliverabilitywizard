@@ -765,7 +765,7 @@ export class IsolationExecuteService {
   }
 
   /**
-   * D265 — after a retire unlink, schedule those InboxKit seats for
+   * D266 — after a retire unlink, schedule those InboxKit seats for
    * cancellation. On failure, queue the list on the action for Onboarding.
    */
   private async scheduleRetiredInboxkitSeats(

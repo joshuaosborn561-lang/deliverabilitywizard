@@ -16451,9 +16451,95 @@ describe("owner intent — D263 ESP-mix ACTIVE-only real POD Azure 0.1", () => {
   });
 });
 
-describe("owner intent — D265 one-tap spend/retire cards", () => {
-  it("D265: Done by tapper, prune pendingSpend, retry, client workspace, retire-cancel", async () => {
+
+describe("owner intent — D265 freeze watchdog exits 1 after flush", () => {
+  it("D265: exitCode 1 then saveHot then process.exit(1); no unref; Railway ALWAYS", async () => {
     const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const railway = await readFile(new URL("../../railway.toml", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      freeze,
+      /export async function requestFreezeExit/,
+      stop("Watchdog has a flush-then-exit helper (D265).", "freezeWatchdog.ts lost requestFreezeExit."),
+    );
+    assert.match(
+      freeze,
+      /process\.exitCode = code/,
+      stop("Watchdog stamps exitCode 1 first (D265).", "freezeWatchdog.ts lost process.exitCode."),
+    );
+    assert.match(
+      freeze,
+      /FREEZE_EXIT_CODE/,
+      stop("Watchdog exits non-zero (D265).", "freezeWatchdog.ts lost FREEZE_EXIT_CODE."),
+    );
+    assert.match(
+      freeze,
+      /do not unref/,
+      stop("Watchdog interval stays referenced (D265).", "freezeWatchdog.ts lost the no-unref rule."),
+    );
+    assert.doesNotMatch(
+      freeze,
+      /interval\.unref/,
+      stop("Watchdog must not unref its interval (D265).", "freezeWatchdog.ts still unrefs the interval."),
+    );
+    assert.match(
+      index,
+      /flush:\s*\(\)\s*=>\s*state\.saveHot\(\)/,
+      stop("Boot flushes lastOk sidecar on freeze exit (D265).", "index.ts lost flush: state.saveHot()."),
+    );
+    assert.match(
+      railway,
+      /restartPolicyType\s*=\s*"ALWAYS"/,
+      stop("Railway ALWAYS restarts on any exit (D265).", "railway.toml is not ALWAYS."),
+    );
+    assert.doesNotMatch(
+      railway,
+      /restartPolicyType\s*=\s*"ON_FAILURE"/,
+      stop("ON_FAILURE is retired for freeze exits (D265).", "railway.toml still says ON_FAILURE."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D26[5-9]\*\*/,
+      stop("CANON is dated D265+.", "CANON.md header is before D265."),
+    );
+    assert.match(
+      canon,
+      /process\.exitCode = 1/,
+      stop("CANON names the non-zero stamp (D265).", "CANON.md lost process.exitCode = 1."),
+    );
+    assert.match(
+      canon,
+      /restartPolicyType` is ALWAYS/,
+      stop("CANON names Railway ALWAYS (D265).", "CANON.md lost ALWAYS."),
+    );
+    assert.match(
+      decisions,
+      /## D265 — Freeze watchdog exits 1 after flush/,
+      stop("The ledger records D265.", "DECISIONS.md has no D265."),
+    );
+    assert.match(
+      decisions,
+      /^\| D265 \|/m,
+      stop("The status index lists D265.", "DECISIONS.md index has no D265 row."),
+    );
+  });
+});
+
+describe("owner intent — D266 one-tap spend/retire cards", () => {
+  it("D266: Done by tapper, prune pendingSpend, retry, client workspace, retire-cancel", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     const decisions = await readFile(
       new URL("../../DECISIONS.md", import.meta.url),
@@ -16487,52 +16573,52 @@ describe("owner intent — D265 one-tap spend/retire cards", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D265\*\*/,
-      stop("CANON is dated D265.", "CANON.md header is not D265."),
+      /Canon as of \*\*D266\*\*/,
+      stop("CANON is dated D266.", "CANON.md header is not D266."),
     );
     assert.match(
       canon,
       /Done by <tapper>/,
-      stop("CANON names Done by tapper (D265).", "CANON.md lost the in-place Done by rule."),
+      stop("CANON names Done by tapper (D266).", "CANON.md lost the in-place Done by rule."),
     );
     assert.match(
       decisions,
-      /## D265 — /,
-      stop("The ledger records D265.", "DECISIONS.md has no D265 entry."),
+      /## D266 — /,
+      stop("The ledger records D266.", "DECISIONS.md has no D266 entry."),
     );
     assert.match(
       decisions,
-      /^\| D265 \|/m,
-      stop("The status index lists D265 (D127).", "DECISIONS.md status index has no D265 row."),
+      /^\| D266 \|/m,
+      stop("The status index lists D266 (D127).", "DECISIONS.md status index has no D266 row."),
     );
     assert.match(
       resolve,
       /export function doneByLine/,
-      stop("Cards say Done by the tapper (D265).", "slackAskResolve.ts lost doneByLine."),
+      stop("Cards say Done by the tapper (D266).", "slackAskResolve.ts lost doneByLine."),
     );
     assert.doesNotMatch(
       resolve,
       /Resolved by \$\{who\}: nothing to do/,
       stop(
-        "Resolved-by nothing-to-do copy is retired (D265).",
+        "Resolved-by nothing-to-do copy is retired (D266).",
         "slackAskResolve.ts still says Resolved by X: nothing to do.",
       ),
     );
     assert.match(
       prune,
       /export function pruneSatisfiedPendingSpend/,
-      stop("Finished pendingSpend is pruned (D265).", "pendingSpendPrune.ts lost pruneSatisfiedPendingSpend."),
+      stop("Finished pendingSpend is pruned (D266).", "pendingSpendPrune.ts lost pruneSatisfiedPendingSpend."),
     );
     assert.match(
       retry,
       /export async function withTransientRetry/,
-      stop("Transient tap errors retry (D265).", "transientRetry.ts lost withTransientRetry."),
+      stop("Transient tap errors retry (D266).", "transientRetry.ts lost withTransientRetry."),
     );
     assert.match(
       workspace,
       /will not buy into the generic pool/,
       stop(
-        "Client cover buys refuse the generic pool (D265).",
+        "Client cover buys refuse the generic pool (D266).",
         "inboxkitWorkspace.ts lost the generic-pool refusal.",
       ),
     );
@@ -16540,7 +16626,7 @@ describe("owner intent — D265 one-tap spend/retire cards", () => {
       exec,
       /scheduleRetiredInboxkitSeats/,
       stop(
-        "Retire schedules InboxKit seats for cancellation (D265).",
+        "Retire schedules InboxKit seats for cancellation (D266).",
         "isolationExecute.ts lost scheduleRetiredInboxkitSeats.",
       ),
     );
@@ -16548,7 +16634,7 @@ describe("owner intent — D265 one-tap spend/retire cards", () => {
       exec,
       /queued_onboarding/,
       stop(
-        "Failed InboxKit cancel queues Onboarding (D265).",
+        "Failed InboxKit cancel queues Onboarding (D266).",
         "isolationExecute.ts lost the Onboarding queue.",
       ),
     );
@@ -16556,7 +16642,7 @@ describe("owner intent — D265 one-tap spend/retire cards", () => {
       buy,
       /findDomainAnywhere/,
       stop(
-        "Replacement buys resolve the client workspace (D265).",
+        "Replacement buys resolve the client workspace (D266).",
         "isolationBuy.ts lost findDomainAnywhere.",
       ),
     );
@@ -16564,7 +16650,7 @@ describe("owner intent — D265 one-tap spend/retire cards", () => {
       index,
       /replace_original: true/,
       stop(
-        "The tapped card is updated in place (D265).",
+        "The tapped card is updated in place (D266).",
         "index.ts lost replace_original on the tapped card.",
       ),
     );
@@ -16572,7 +16658,7 @@ describe("owner intent — D265 one-tap spend/retire cards", () => {
       index,
       /resolvedBy: name/,
       stop(
-        "Card updates carry the tapper (D265).",
+        "Card updates carry the tapper (D266).",
         "index.ts no longer passes resolvedBy: name.",
       ),
     );

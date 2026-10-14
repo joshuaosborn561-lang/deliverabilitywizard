@@ -5,7 +5,7 @@ import {
   withTransientRetry,
 } from "./transientRetry.js";
 
-describe("D265 — bounded tap retry", () => {
+describe("D266 — bounded tap retry", () => {
   it("retries HTTP 429 / fetch failed and then succeeds", async () => {
     let n = 0;
     const value = await withTransientRetry(

@@ -15,7 +15,7 @@ function tempStore(): StateStore {
   );
 }
 
-describe("D265 — prune finished pendingSpend", () => {
+describe("D266 — prune finished pendingSpend", () => {
   it("marks a leftover pending cover spend consumed when the cover is already bought", () => {
     const store = tempStore();
     const bought = buildIsolationAction({

@@ -1,5 +1,5 @@
 /**
- * D265 — bounded retry with backoff for Slack one-tap spend / retire.
+ * D266 — bounded retry with backoff for Slack one-tap spend / retire.
  * Transient only: HTTP 429, 5xx, fetch failed, timeout, reset.
  * Permanent errors throw on the first attempt.
  */

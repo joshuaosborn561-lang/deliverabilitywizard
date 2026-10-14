@@ -1,8 +1,11 @@
 /**
- * D247 / D257 — if the event loop stays blocked or a pass lock is stuck
- * past twice its max, `process.exit(1)` so Railway restarts the service.
+ * D247 / D257 / D265 — if the event loop stays blocked or a pass lock is
+ * stuck past twice its max, set `process.exitCode = 1`, flush the lastOk
+ * sidecar, then `process.exit(1)` so Railway restarts the service.
  * D257 also exits on repeated multi-second freezes (not only a single
- * freeze over 5 minutes). Restart-on-failure must be on in Railway.
+ * freeze over 5 minutes). D265: never unref the interval (Node must not
+ * drain to exit 0), never flush the full state dump, and Railway
+ * restartPolicyType is ALWAYS so an unexpected 0 still comes back.
  */
 
 import type { InFlightLock } from "./inFlightLock.js";
@@ -13,6 +16,9 @@ export const EVENT_LOOP_REPEAT_MS = 3_000;
 export const EVENT_LOOP_REPEAT_COUNT = 3;
 export const EVENT_LOOP_REPEAT_WINDOW_MS = 2 * 60 * 1000;
 export const FREEZE_WATCHDOG_INTERVAL_MS = 5_000;
+export const FREEZE_EXIT_CODE = 1;
+export const FREEZE_EXIT_FLUSH_MS = 5_000;
+export const FREEZE_EXIT_HARD_MS = 8_000;
 
 export interface FreezeTickInput {
   now: number;
@@ -85,11 +91,96 @@ export function freezeWatchdogTick(input: FreezeTickInput): FreezeTickResult {
   };
 }
 
+export interface FreezeExitDeps {
+  reason: string;
+  flush?: () => Promise<void> | void;
+  exit?: (code: number) => void;
+  log?: (msg: string) => void;
+  setExitCode?: (code: number) => void;
+  flushMs?: number;
+  hardKillMs?: number;
+  wait?: (ms: number) => Promise<void>;
+  scheduleHardKill?: (ms: number, fn: () => void) => () => void;
+}
+
+/**
+ * D265 — stamp a non-zero exit code first so a later drain cannot look
+ * like success, flush only the lastOk sidecar (never the full dump),
+ * then `process.exit(1)`. A hung flush still exits 1; a hung exit is
+ * SIGKILL'd.
+ */
+export async function requestFreezeExit(deps: FreezeExitDeps): Promise<void> {
+  const exit = deps.exit ?? ((code: number) => process.exit(code));
+  const log = deps.log ?? ((msg: string) => console.warn(msg));
+  const setExitCode =
+    deps.setExitCode ??
+    ((code: number) => {
+      process.exitCode = code;
+    });
+  const flushMs = deps.flushMs ?? FREEZE_EXIT_FLUSH_MS;
+  const hardKillMs = deps.hardKillMs ?? FREEZE_EXIT_HARD_MS;
+  const wait =
+    deps.wait ??
+    ((ms: number) =>
+      new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, ms);
+        timer.unref?.();
+      }));
+  const scheduleHardKill =
+    deps.scheduleHardKill ??
+    ((ms: number, fn: () => void) => {
+      const timer = setTimeout(fn, ms);
+      return () => clearTimeout(timer);
+    });
+
+  setExitCode(FREEZE_EXIT_CODE);
+  log(
+    `[watchdog] freeze — ${deps.reason}; flushing stamps then process.exit(${FREEZE_EXIT_CODE}) so Railway restarts`,
+  );
+
+  const cancelHardKill = scheduleHardKill(hardKillMs, () => {
+    log(`[watchdog] process.exit hung after ${hardKillMs}ms; SIGKILL`);
+    try {
+      process.kill(process.pid, "SIGKILL");
+    } catch {
+      exit(FREEZE_EXIT_CODE);
+    }
+  });
+
+  if (deps.flush) {
+    try {
+      let timedOut = false;
+      await Promise.race([
+        Promise.resolve().then(() => deps.flush!()),
+        wait(flushMs).then(() => {
+          timedOut = true;
+        }),
+      ]);
+      if (timedOut) {
+        log(
+          `[watchdog] flush timed out after ${flushMs}ms; exiting ${FREEZE_EXIT_CODE}`,
+        );
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      log(`[watchdog] flush failed (${detail}); exiting ${FREEZE_EXIT_CODE}`);
+    }
+  }
+
+  cancelHardKill();
+  exit(FREEZE_EXIT_CODE);
+}
+
 export interface FreezeWatchdogDeps {
   now?: () => number;
   exit?: (code: number) => void;
   log?: (msg: string) => void;
   intervalMs?: number;
+  flush?: () => Promise<void> | void;
+  flushMs?: number;
+  setExitCode?: (code: number) => void;
+  wait?: (ms: number) => Promise<void>;
+  scheduleHardKill?: (ms: number, fn: () => void) => () => void;
   getLocks: () => InFlightLock[];
 }
 
@@ -100,8 +191,10 @@ export function startFreezeWatchdog(deps: FreezeWatchdogDeps): { stop: () => voi
   const intervalMs = deps.intervalMs ?? FREEZE_WATCHDOG_INTERVAL_MS;
   let lastBeatAt = now();
   let recentFreezes: number[] = [];
+  let exiting = false;
 
-  const timer = setInterval(() => {
+  const interval = setInterval(() => {
+    if (exiting) return;
     const locks = deps.getLocks().map((lock) => ({
       name: lock.name,
       since: lock.since,
@@ -118,13 +211,24 @@ export function startFreezeWatchdog(deps: FreezeWatchdogDeps): { stop: () => voi
     recentFreezes = tick.recentFreezes;
     if (tick.log) log(tick.log);
     if (tick.exitReason) {
-      log(`[watchdog] freeze — ${tick.exitReason}; exiting so Railway restarts`);
-      exit(1);
+      exiting = true;
+      clearInterval(interval);
+      void requestFreezeExit({
+        reason: tick.exitReason,
+        flush: deps.flush,
+        exit,
+        log,
+        setExitCode: deps.setExitCode,
+        flushMs: deps.flushMs,
+        wait: deps.wait,
+        scheduleHardKill: deps.scheduleHardKill,
+      });
     }
   }, intervalMs);
-  timer.unref?.();
+  // D265 — do not unref the interval. An unref'd handle lets Node drain
+  // to exit 0 when other handles drop, and ON_FAILURE will not restart.
 
   return {
-    stop: () => clearInterval(timer),
+    stop: () => clearInterval(interval),
   };
 }

@@ -2525,7 +2525,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
           return;
         }
         // Slack requires an answer in 3s. Buying domains takes longer, so
-        // ack now and update the tapped card in place when it is done (D265).
+        // ack now and update the tapped card in place when it is done (D266).
         res.status(200).send();
         const decideDecision = parsed.decision;
         void isolationExecute
@@ -3544,9 +3544,10 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     console.log(`[boot] State file: ${config.stateFilePath}`);
     startFreezeWatchdog({
       getLocks: () => [healthLock, canonOpsLock, monitorLock],
+      flush: () => state.saveHot(),
     });
     console.log(
-      "[boot] D247/D257 freeze watchdog: event-loop delay >1s logged; blocked >5m, repeated multi-second freezes, or a pass past 2× max exits 1 (Railway restart-on-failure must be on)",
+      "[boot] D247/D257/D265 freeze watchdog: event-loop delay >1s logged; blocked >5m, repeated multi-second freezes, or a pass past 2× max sets exitCode=1, flushes lastOk sidecar, then process.exit(1) (Railway restartPolicyType ALWAYS)",
     );
     console.log(
       "[boot] D249 catch-up: weekday 6am–8pm CT Needs you / InboxKit / TERRL EOD once if today's stamp is missing (3m after listen, then each health tick)",

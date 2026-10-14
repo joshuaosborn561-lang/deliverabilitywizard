@@ -16288,7 +16288,7 @@ describe("owner intent — D262 isolation persist-prune and no clone-freeze", ()
 
     assert.match(
       branch,
-      /pruneIsolationForGoneCampaigns[\s\S]*persistIsolationPrune/,
+      /pruneIsolationForGoneCampaigns[\s\S]*persistHot\(\)/,
       stop(
         "Gone-campaign prune persists immediately (D262/D267).",
         "isolationBranch.ts no longer persists after prune.",

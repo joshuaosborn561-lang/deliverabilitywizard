@@ -40,9 +40,10 @@ function mkExec(
     ConstructorParameters<typeof IsolationExecuteService>[3],
     ConstructorParameters<typeof IsolationExecuteService>[4],
     ConstructorParameters<typeof IsolationExecuteService>[6]?,
+    ConstructorParameters<typeof IsolationExecuteService>[7]?,
   ]
 ): IsolationExecuteService {
-  const [config, sl, slack, state, buy, canaryBuy] = args;
+  const [config, sl, slack, state, buy, canaryBuy, inboxkit] = args;
   return new IsolationExecuteService(
     config,
     sl,
@@ -51,6 +52,7 @@ function mkExec(
     buy,
     bookOf(sl),
     canaryBuy,
+    inboxkit,
   );
 }
 
@@ -978,5 +980,201 @@ describe("D137 — the isolation-domain buy arms the rig", () => {
     assert.equal(state.getGenericBackfillApproval(12)?.approvedBy, "Josh");
     assert.equal(sent.some((t) => /Approval recorded/.test(t)), false);
     assert.deepEqual(reactions, ["white_check_mark"]);
+  });
+});
+
+describe("D265 — one-tap spend/retire cards", () => {
+  it("result posts use the tapper's name, not Josh, and skip finished-mailbox wording", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-d265-name-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover for burned.info",
+      proof: "cover",
+      detail: { domain: "burned.info", quantity: 1 },
+    });
+    state.upsertIsolationAction(action);
+    const sent: string[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async (text: string) => void sent.push(text) } as never,
+      state,
+      {
+        run: async () => ({
+          domains: ["fresh.info"],
+          mailboxesOrdered: 3,
+          awaitingNameservers: false,
+        }),
+      } as never,
+    );
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(outcome.ok, true);
+    assert.match(outcome.message, /Done by Cayden/);
+    assert.match(sent.join("\n"), /Cayden approved/);
+    assert.doesNotMatch(sent.join("\n"), /Josh approved/);
+    assert.doesNotMatch(
+      sent.join("\n"),
+      /I will finish the mailbox order myself/,
+    );
+  });
+
+  it("a second Approve on an already-done buy does not buy again", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-d265-idem-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover",
+      proof: "cover",
+      detail: { domain: "alreadybought.info", domains: ["cover.info"] },
+    });
+    state.upsertIsolationAction({
+      ...action,
+      status: "executed",
+      decidedBy: "Cayden",
+      executedAt: "2026-10-14T12:00:00.000Z",
+    });
+    let buys = 0;
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async () => {
+          buys += 1;
+          return {
+            domains: ["should-not.info"],
+            mailboxesOrdered: 3,
+            awaitingNameservers: false,
+          };
+        },
+      } as never,
+    );
+    const again = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(again.ok, true);
+    assert.match(again.message, /Already done/);
+    assert.equal(buys, 0);
+  });
+
+  it("retries a transient 429 then keeps the item pending when it still fails", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-d265-retry-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "buy_domains",
+      title: "Buy cover for flaky.info",
+      proof: "cover",
+      detail: { domain: "flaky.info" },
+    });
+    state.upsertIsolationAction(action);
+    let attempts = 0;
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      {} as never,
+      { send: async () => undefined } as never,
+      state,
+      {
+        run: async () => {
+          attempts += 1;
+          throw new Error("HTTP 429");
+        },
+      } as never,
+    );
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.message, /Done by Cayden/);
+    assert.match(outcome.message, /429/);
+    assert.ok(attempts >= 3, `expected bounded retry, got ${attempts}`);
+    assert.equal(state.getIsolationAction(action.id)?.status, "pending");
+    assert.match(state.getIsolationAction(action.id)?.error ?? "", /429/);
+  });
+
+  it("after a retire unlink, InboxKit seats are scheduled for cancellation", async () => {
+    const state = new StateStore(
+      `/tmp/dw-iso-d265-cancel-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    const action = buildIsolationAction({
+      kind: "retire_domain",
+      title: "Retire burned.info",
+      proof: "proof",
+      detail: { domain: "burned.info" },
+    });
+    state.upsertIsolationAction(action);
+    const cancelled: string[][] = [];
+    const sl = {
+      listCampaigns: async () => [
+        { id: 10, name: "Live", status: "ACTIVE" },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 21,
+          from_email: "a@burned.info",
+          type: "OUTLOOK",
+          campaign_ids: [10],
+        },
+      ],
+      listClients: async () => [],
+      removeEmailAccountsFromCampaign: async () => undefined,
+    };
+    const inboxkit = {
+      findDomainAnywhere: async () => ({
+        workspaceId: "ws-client",
+        workspaceName: "BCP",
+        domain: { name: "burned.info" },
+      }),
+      listMailboxes: async () => [
+        { uid: "ik-1", email: "a@burned.info", domain_name: "burned.info" },
+      ],
+      cancelMailboxes: async (uids: string[]) => {
+        cancelled.push(uids);
+      },
+    };
+    const sent: string[] = [];
+    const svc = mkExec(
+      loadConfig({} as NodeJS.ProcessEnv),
+      sl as never,
+      { send: async (text: string) => void sent.push(text) } as never,
+      state,
+      {
+        run: async () => ({
+          domains: ["fresh.info"],
+          mailboxesOrdered: 2,
+          awaitingNameservers: false,
+        }),
+      } as never,
+      undefined,
+      inboxkit as never,
+    );
+    const outcome = await svc.decide(action.id, "approve", {
+      name: "Cayden",
+      role: "operator",
+    });
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(cancelled, [["ik-1"]]);
+    assert.equal(
+      state.getInboxkitSeatEnd("a@burned.info")?.status,
+      "scheduled_for_cancellation",
+    );
+    assert.match(sent.join("\n"), /Scheduled 1 InboxKit seat/);
+    assert.doesNotMatch(
+      sent.join("\n"),
+      /I will finish the mailbox order myself/,
+    );
   });
 });

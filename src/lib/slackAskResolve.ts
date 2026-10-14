@@ -28,10 +28,17 @@ export type FetchLike = (
   },
 ) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
-/** D248 — every settled copy becomes this one-liner with no buttons. */
+/** D248 / D265 — settled copy names the tapper. */
 export function resolvedByLine(resolvedBy: string): string {
   const who = resolvedBy.trim() || "the wizard";
-  return `Resolved by ${who}: nothing to do`;
+  return `Done by ${who}`;
+}
+
+/** D265 — card / result line with the tapper and the outcome (or error). */
+export function doneByLine(resolvedBy: string, result?: string): string {
+  const who = resolvedBy.trim() || "the wizard";
+  const detail = result?.trim();
+  return detail ? `Done by ${who}: ${detail}` : `Done by ${who}`;
 }
 
 /** Canned resolved-summary line by ask kind + decision (D195). */
@@ -135,12 +142,12 @@ export async function resolveIsolationAskMessage(
     ((url, init) =>
       fetchWithTimeout(url, init))) as FetchLike;
   const resolvedLabel = input.resolvedBy
-    ? resolvedByLine(input.resolvedBy)
+    ? doneByLine(input.resolvedBy, input.detail)
     : resolvedAskLabel(input.kind, input.decision);
   const blocks = buildResolvedAskBlocks({
-    summary: input.resolvedBy ? resolvedLabel : input.summary,
+    summary: input.summary,
     resolvedLabel,
-    detail: input.resolvedBy ? undefined : input.detail,
+    detail: input.detail,
   });
   const text = input.resolvedBy
     ? resolvedLabel
@@ -227,7 +234,7 @@ export async function clearAskCopies(input: {
     detailRecord: input.detail,
     botToken: input.botToken,
     resolvedBy: input.resolvedBy,
-    summary: resolvedByLine(input.resolvedBy),
+    summary: doneByLine(input.resolvedBy),
     kind: "retire_domain",
     decision: "deny",
     fetchImpl: input.fetchImpl,

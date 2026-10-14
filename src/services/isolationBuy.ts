@@ -25,6 +25,10 @@ import {
   replacementParentForRetiredDomain,
 } from "../lib/retireReplacement.js";
 import { ownerFromActionDetail } from "../lib/retireAsk.js";
+import {
+  pickReplacementWorkspace,
+  type ReplacementWorkspacePick,
+} from "../lib/inboxkitWorkspace.js";
 import type { SpendGateway, SpendRequest } from "../lib/spendGateway.js";
 import type { IsolationActionRecord } from "../state/isolationState.js";
 import type { StateStore } from "../state/store.js";
@@ -180,7 +184,7 @@ export class IsolationBuyService {
 
   async run(action: IsolationActionRecord): Promise<IsolationBuyResult> {
     const quantity = Math.max(1, Number(action.detail.quantity ?? 1));
-    const decidedBy = action.decidedBy ?? "Josh";
+    const decidedBy = action.decidedBy?.trim() || "unknown";
     const existing = purchasedDomainsOf(action);
     if (!existing.length) {
       this.store.upsertIsolationAction({
@@ -260,7 +264,7 @@ export class IsolationBuyService {
       const domains = purchasedDomainsOf(action);
       const mailboxes = await this.orderMailboxes(
         domains,
-        action.decidedBy ?? "Josh",
+        action.decidedBy?.trim() || "unknown",
         action,
       );
       if (!mailboxes.awaitingNameservers) {
@@ -336,6 +340,10 @@ export class IsolationBuyService {
       owned,
       owner,
     );
+    const workspace = await this.resolveWorkspace(action);
+    if (!workspace.generic && !workspace.workspaceId && !this.config.dryRun) {
+      throw new Error(workspace.reason);
+    }
     const bought: string[] = [];
     for (const spin of candidates) {
       if (bought.length >= quantity) break;
@@ -356,7 +364,11 @@ export class IsolationBuyService {
         scope: "generic_pool" as const,
         kind: "porkbun_domain",
         description: `Replacement sending domain ${spin.domain} after a known-good inbox test fail.`,
-        detail: { domain: spin.domain, actionId: action.id },
+        detail: {
+          domain: spin.domain,
+          actionId: action.id,
+          workspaceId: workspace.workspaceId,
+        },
       };
       if (this.config.dryRun) {
         bought.push(spin.domain);
@@ -365,7 +377,10 @@ export class IsolationBuyService {
       const decision = await this.spend.recordOwnerApproved(spendReq, decidedBy);
       await this.porkbun.createDomain(spin.domain, { costCents: cents });
       await this.spend.consume(decision, spendReq);
-      const connected = await this.inboxkit.connectNameservers([spin.domain]);
+      const connected = await this.inboxkit.connectNameservers(
+        [spin.domain],
+        workspace.workspaceId,
+      );
       const nameservers = connected[0]?.nameservers ?? [];
       if (nameservers.length) {
         await this.porkbun.updateNameservers(spin.domain, nameservers);
@@ -396,8 +411,14 @@ export class IsolationBuyService {
     if (!this.inboxkit) {
       throw new Error("InboxKit is not configured, so I cannot buy mailboxes.");
     }
+    const workspace = await this.resolveWorkspace(action);
+    if (!workspace.generic && !workspace.workspaceId && !this.config.dryRun) {
+      throw new Error(workspace.reason);
+    }
     const workspaceId =
-      this.config.genericPoolWorkspaceId || this.config.inboxkitWorkspaceId;
+      workspace.workspaceId ||
+      this.config.genericPoolWorkspaceId ||
+      this.config.inboxkitWorkspaceId;
     const perDomain = this.config.isolationMailboxesPerBuyDomain;
     if (this.config.dryRun) {
       return {
@@ -468,6 +489,7 @@ export class IsolationBuyService {
             count,
             decidedBy,
             action.id,
+            workspaceId,
           );
         }
         continue;
@@ -489,6 +511,7 @@ export class IsolationBuyService {
             plannedCount,
             decidedBy,
             action.id,
+            workspaceId,
           );
           continue;
         }
@@ -504,6 +527,7 @@ export class IsolationBuyService {
           platform,
           plannedCount,
           action.id,
+          workspaceId,
         );
         const decision = await this.spend.recordOwnerApproved(
           spendReq,
@@ -607,18 +631,71 @@ export class IsolationBuyService {
    * has an approved (or already-consumed) spend row. Consume the planned
    * key when it is still approved; never open a new spend cycle.
    */
+  async resolveWorkspace(
+    action: IsolationActionRecord,
+  ): Promise<ReplacementWorkspacePick> {
+    const owner = ownerFromActionDetail(action.detail);
+    const sourceDomain = String(
+      action.detail.retiredDomain ?? action.detail.domain ?? "",
+    ).toLowerCase();
+    const stamped = String(action.detail.workspaceId ?? "").trim();
+    let source:
+      | { workspaceId: string; workspaceName?: string }
+      | null = stamped
+      ? { workspaceId: stamped }
+      : null;
+    if (
+      !source &&
+      this.inboxkit &&
+      sourceDomain &&
+      typeof this.inboxkit.findDomainAnywhere === "function"
+    ) {
+      source = await this.inboxkit.findDomainAnywhere(sourceDomain);
+    }
+    const workspaces =
+      this.inboxkit && typeof this.inboxkit.listWorkspaces === "function"
+        ? await this.inboxkit.listWorkspaces().catch(() => [])
+        : [];
+    const pick = pickReplacementWorkspace({
+      ownerKind: owner?.kind ?? String(action.detail.ownerKind ?? ""),
+      ownerClientName:
+        owner?.clientName ??
+        (typeof action.detail.ownerClientName === "string"
+          ? action.detail.ownerClientName
+          : undefined),
+      sourceDomainWorkspaceId: source?.workspaceId,
+      sourceDomainWorkspaceName: source?.workspaceName,
+      workspaces,
+      genericPoolWorkspaceId: this.config.genericPoolWorkspaceId,
+    });
+    const current = this.store.getIsolationAction(action.id);
+    if (current && pick.workspaceId) {
+      this.store.upsertIsolationAction({
+        ...current,
+        detail: {
+          ...current.detail,
+          workspaceId: pick.workspaceId,
+          workspaceName: pick.workspaceName,
+        },
+      });
+    }
+    return pick;
+  }
+
   private async consumePlannedMailboxSpend(
     domain: string,
     platform: PoolPlatform,
     plannedCount: number,
     decidedBy: string,
     actionId: string,
+    workspaceId?: string,
   ): Promise<void> {
     const spendReq = isolationMailboxSpendRequest(
       domain,
       platform,
       plannedCount,
       actionId,
+      workspaceId,
     );
     const existing =
       this.store.getLatestSpendApprovalForRequest(spendReq.key) ??
@@ -659,13 +736,14 @@ function isolationMailboxSpendRequest(
   platform: PoolPlatform,
   count: number,
   actionId: string,
+  workspaceId?: string,
 ): SpendRequest {
   return {
     key: isolationMailboxSpendKey(domain, platform, count),
     scope: "generic_pool",
     kind: "inboxkit_mailbox_purchase",
     description: `Mailboxes on replacement domain ${domain} (${platform}).`,
-    detail: { domain, platform, count, actionId },
+    detail: { domain, platform, count, actionId, workspaceId },
   };
 }
 

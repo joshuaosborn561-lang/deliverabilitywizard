@@ -1203,6 +1203,16 @@ export class StateStore {
     this.state.inboxkitSeatEnds = { ...ends };
   }
 
+  /** D265 — retire tap marks seats ending so staffing skips them. */
+  upsertInboxkitSeatEnd(email: string, end: InboxkitSeatEnd): void {
+    const key = email.trim().toLowerCase();
+    if (!key) return;
+    this.state.inboxkitSeatEnds = {
+      ...this.state.inboxkitSeatEnds,
+      [key]: end,
+    };
+  }
+
   getInboxkitSeatEnd(email: string): InboxkitSeatEnd | undefined {
     return this.state.inboxkitSeatEnds?.[email.trim().toLowerCase()];
   }

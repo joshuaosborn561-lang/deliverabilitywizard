@@ -581,4 +581,51 @@ describe("IsolationBuyService.resume — InboxKit inventory reconcile", () => {
       false,
     );
   });
+
+  it("D265: a client replacement buy posts to the client's InboxKit workspace", async () => {
+    const state = await buyStore();
+    const action = awaitingAction(["MICROSOFT", "MICROSOFT", "MICROSOFT"]);
+    action.detail.ownerKind = "client";
+    action.detail.ownerClientName = "BCP";
+    action.detail.ownerClientId = 542838;
+    state.upsertIsolationAction(action);
+    const workspaces: string[] = [];
+    const inboxkit = {
+      listDomains: async () => [
+        { name: domain, nameserver_match_status: "matched" },
+      ],
+      listMailboxes: async () => [],
+      listWorkspaces: async () => [
+        { uid: "ws-generic", name: "DW Generic Pool" },
+        { uid: "ws-bcp", name: "Bolder Cyper Partner" },
+      ],
+      findDomainAnywhere: async () => ({
+        workspaceId: "ws-bcp",
+        workspaceName: "Bolder Cyper Partner",
+        domain: { name: domain },
+      }),
+      buyMailboxes: async (
+        _batch: unknown,
+        opts?: { workspaceId?: string },
+      ) => {
+        workspaces.push(String(opts?.workspaceId ?? ""));
+      },
+    };
+    const spend = trackingSpend();
+    const svc = new IsolationBuyService(
+      liveConfig({ GENERIC_POOL_WORKSPACE_ID: "ws-generic" }),
+      inboxkit as never,
+      null,
+      state,
+      spend.gateway,
+    );
+    const finished = await svc.resume();
+    assert.equal(finished, 1);
+    assert.ok(workspaces.length > 0);
+    assert.ok(
+      workspaces.every((id) => id === "ws-bcp"),
+      `expected client workspace, got ${workspaces.join(",")}`,
+    );
+    assert.equal(state.getIsolationAction(action.id)?.detail.workspaceId, "ws-bcp");
+  });
 });

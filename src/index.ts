@@ -1949,7 +1949,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
     if (kind === "buy_domains") return "Buy replacements";
     if (kind === "retire_domain") return "Retire this domain";
     if (kind === "swap_copy") return "Edit the copy";
-    if (kind === "generic_backfill") return "Allow generics";
     if (kind === "add_signature_tag") return "Add %signature%";
     return kind;
   };
@@ -1958,7 +1957,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
   const dlvKindForStrip = (actionId: string): string => {
     if (actionId.includes("copy")) return "swap_copy";
     if (actionId.includes("retire")) return "retire_domain";
-    if (actionId.includes("generics")) return "generic_backfill";
     return "standing";
   };
 
@@ -2856,8 +2854,6 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       enableInboxkitLicenseSweep: config.enableInboxkitLicenseSweep,
       cronInboxkitLicenseSweep: config.cronInboxkitLicenseSweep,
       inboxkitLicenseHandoff: s.inboxkitLicenseHandoff ?? null,
-      autoAllowGenericClientIds: config.autoAllowGenericClientIds,
-      slackBatchGenericBackfill: config.slackBatchGenericBackfill,
       slackFoldApprovalRecorded: config.slackFoldApprovalRecorded,
       campaignCheckCount: Object.keys(s.campaignChecks ?? {}).length,
       enableCampaignBounceAutostop: config.enableCampaignBounceAutostop,
@@ -3553,7 +3549,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       `[boot] Mailbox settings: ${config.enforceMailboxSettings ? `ENFORCED (Outlook 15/day, Gmail/SMTP ${config.messagePerDay}/day warmups-not-included, ${config.mailboxMinTimeGapMins}m min gap every health pass; signatures/warmup every 6h)` : "not enforced"}`,
     );
     console.log(
-      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (on-week client-pod floor; generics on POC ${config.pocClientNamePatterns.join("/") || "nobody"} or Slack approve${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
+      `[boot] Campaign top-up: ${config.enableCampaignTopUp ? `ENABLED via health (on-week client-pod floor; floor-only generic top-up; POC extras on ${config.pocClientNamePatterns.join("/") || "nobody"}${config.topUpExcludeCampaigns.length ? `; excluding ${config.topUpExcludeCampaigns.join(", ")}` : ""})` : "disabled"}`,
     );
     console.log(
       `[boot] Pool provisioner: ${config.enablePoolProvisioner ? `ENABLED (${config.cronPoolProvision})` : "disabled"} phase=${state.get().poolProvision.phase}`,

@@ -25,7 +25,9 @@ export function hasGenericBackfillApproval(
  * (`client_id` + POD) must not be stripped from non-POC clients.
  * Leftover D134 Slack / retire-tap approvals are a historical
  * record, not attach permission — they do not dump the rotating
- * pool onto a named lane past the shortfall.
+ * pool onto a named lane past the shortfall. D268 deleted the
+ * Allow-generics card; min40 fills every named client to the
+ * floor with no Slack gate.
  */
 export function campaignMayTakeGenerics(
   campaign: { id: number; name?: string | null },

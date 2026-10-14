@@ -171,14 +171,7 @@ function samePending(
     );
   }
   if (next.kind === "generic_backfill") {
-    const existingIds = signatureCampaignIdsOf(existing);
-    const nextIds = signatureCampaignIdsOf(next);
-    return (
-      nextIds.some((id) => existingIds.includes(id)) &&
-      (existing.status === "pending" ||
-        existing.status === "approved" ||
-        existing.status === "executed")
-    );
+    return false;
   }
   if (next.kind === "buy_isolation_domain") {
     // D137 — the rig asks once, ever: any prior answer (including a deny)

@@ -59,12 +59,6 @@ import {
   isCallerFollowUpCampaign,
   isCallerFollowUpSender,
 } from "../lib/callerFollowUp.js";
-import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
-import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
-import {
-  requestGenericBackfillAsks,
-  type GenericBackfillAskItem,
-} from "../lib/genericBackfillBatch.js";
 import { sleep } from "../lib/http.js";
 import { throwIfAborted } from "../lib/abortWork.js";
 import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
@@ -228,8 +222,6 @@ export class CampaignCheckService {
     const budgetMs =
       opts.budgetMs ??
       (mode === "first" ? CAMPAIGN_CHECK_FIRST_BUDGET_MS : undefined);
-    const genericAsks: GenericBackfillAskItem[] = [];
-
     // D132 — a check without a handed-down snapshot reads the shared book.
     throwIfAborted(opts.signal);
     const { campaigns, accounts, clients } =
@@ -656,23 +648,6 @@ export class CampaignCheckService {
       if (!findings.length) {
         console.log(`[campaign-check] ${kind} #${campaign.id} ${name} — clean`);
       }
-      const taggedClient = clients.find((client) => client.id === campaign.client_id);
-      await this.maybeAskGenericBackfill(
-        campaign,
-        name,
-        clientDisplayName(taggedClient),
-        findings,
-        genericAsks,
-      );
-    }
-
-    if (genericAsks.length && this.slack) {
-      await requestGenericBackfillAsks({
-        store: this.state,
-        slack: this.slack,
-        batch: this.config.slackBatchGenericBackfill,
-        items: genericAsks,
-      });
     }
 
     if (sigFixed.length && this.slack) {
@@ -718,37 +693,6 @@ export class CampaignCheckService {
       `[campaign-check] mode=${mode} examined=${result.examined} firstSeen=${result.firstSeen} firstChecked=${result.firstChecked} firstPassed=${result.firstPassed} swept=${result.swept} blocked=${result.blocked.length} deferred=${result.deferred}`,
     );
     return result;
-  }
-
-  private async maybeAskGenericBackfill(
-    campaign: SmartleadCampaign,
-    name: string,
-    clientName: string,
-    findings: CampaignFinding[],
-    asks: GenericBackfillAskItem[],
-  ): Promise<void> {
-    if (!this.slack) return;
-    if (!findings.some((finding) => finding.kind === "generic_unapproved")) return;
-    const clientId =
-      typeof campaign.client_id === "number" ? campaign.client_id : null;
-    if (clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)) {
-      return;
-    }
-    if (
-      isPocEngagementClient({
-        clientId,
-        hay: clientName,
-        patterns: this.config.pocClientNamePatterns,
-        endedIds: this.state.listEndedPocClientIds(),
-      })
-    ) {
-      return;
-    }
-    asks.push({
-      campaignId: campaign.id,
-      campaignName: name,
-      proof: `Pool generics are attached to #${campaign.id} ${name}. Floor stays the on-week client pod (D193/D196/D205). Tap Allow generics if they should stay.`,
-    });
   }
 
   /**
@@ -1130,12 +1074,6 @@ export class CampaignCheckService {
       typeof campaign.client_id === "number"
         ? input.brandByClientId.get(campaign.client_id) ?? ""
         : "";
-    const mayTakeGenerics = campaignMayTakeGenerics(
-      campaign,
-      clientName,
-      this.config.pocClientNamePatterns,
-      this.state.listGenericBackfillApprovals(),
-    );
     const pocOwner = input.clients.find((client) =>
       isPocClient(clientDisplayName(client), this.config.pocClientNamePatterns),
     );
@@ -1246,16 +1184,6 @@ export class CampaignCheckService {
             },
           )
         : null;
-      if (
-        generic &&
-        !mayTakeGenerics &&
-        dedicatedClientId !== campaign.client_id
-      ) {
-        findings.push({
-          kind: "generic_unapproved",
-          detail: `${email} is a generic — needs Josh Slack approve (POC clients are pre-allowed)`,
-        });
-      }
       const owner = ownerClientId(account.client_id, memberships, {
         generic,
         genericOwnerId: generic ? (pocOwner?.id ?? null) : null,

@@ -296,13 +296,13 @@ export class ClientFanOutService {
           }
           if (generic && !campaignAllowsGenerics(campaign)) {
             // D229 — assigned same-client generics may share (D207/D221).
-            // Rotating unassigned extras still need POC / Slack.
+            // Rotating unassigned extras stay POC-only (D268).
             const assignedSameClient =
               typeof account.client_id === "number" &&
               account.client_id === campaign.client_id;
             if (!assignedSameClient) {
               result.skipped.push(
-                `${email}: generics need POC or Slack approve on #${campaign.id}`,
+                `${email}: rotating extras stay POC-only on #${campaign.id} (D268)`,
               );
               continue;
             }

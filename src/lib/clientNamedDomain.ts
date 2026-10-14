@@ -14,7 +14,7 @@ import {
   PARLAY_CLIENT_ID,
   POWERGRYD_CLIENT_ID,
   TECHEVO_CLIENT_ID,
-} from "./autoAllowGenerics.js";
+} from "./namedClientIds.js";
 import { assignClientCohorts, type RestCohort } from "./restCohort.js";
 import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 import { INSIGHT_CLIENT_ID, SALESGLIDER_CLIENT_ID } from "./insightCampaigns.js";

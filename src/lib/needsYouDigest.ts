@@ -20,7 +20,6 @@ import {
 export const JOSH_ONLY_KINDS = new Set([
   "buy_canary_fleet",
   "buy_isolation_domain",
-  "generic_backfill",
 ]);
 
 export function isJoshOnlyAsk(kind: string): boolean {

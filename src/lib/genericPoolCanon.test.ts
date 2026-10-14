@@ -5,7 +5,7 @@ import {
   POD_INVENTORY_MIN_SENDERS,
   podGenericTopUpCap,
 } from "./clientStaffFloor.js";
-import { POWERGRYD_CLIENT_ID } from "./autoAllowGenerics.js";
+import { POWERGRYD_CLIENT_ID } from "./namedClientIds.js";
 import { CANON_CORE_KINDS } from "./canonCompliance.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,

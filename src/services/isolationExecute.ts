@@ -305,7 +305,7 @@ export class IsolationExecuteService {
       return this.buyIsolationDomain(approved, actor);
     }
     if (approved.kind === "generic_backfill") {
-      return this.approveGenericBackfill(approved, actor);
+      return `${actor} — Allow-generics is retired (D268). Generics top up to the floor only; I did not Allow and I did not attach.`;
     }
     return this.buyDomains(approved, actor);
   }
@@ -398,20 +398,6 @@ export class IsolationExecuteService {
       source: `retire:${domain}`,
     });
     persistRetiredDomainHistory(this.state, domain);
-    // D134 — the tap that cut senders is also the approval for generics to
-    // cover those campaigns: sending volume must not drop while the
-    // replacement domains warm. Approving is allowing, never forcing — the
-    // half-floor and the generic rest clock still govern.
-    let backfilled = 0;
-    for (const campaignId of cutCampaignIds) {
-      if (this.state.getGenericBackfillApproval(campaignId)) continue;
-      this.state.approveGenericBackfill({
-        campaignId,
-        approvedAt: new Date().toISOString(),
-        approvedBy: `retire:${domain}`,
-      });
-      backfilled += 1;
-    }
 
     // D150 — same tap also buys the replacement domain with ESP-matched
     // mailboxes. Josh's retire approve is the spend approval; do not open a
@@ -500,7 +486,7 @@ export class IsolationExecuteService {
       `${actor} approved — retired *${domain}*.`,
       `Pulled ${onDomain.length} inbox${onDomain.length === 1 ? "" : "es"} off live campaigns (${removed} membership${removed === 1 ? "" : "s"}).`,
       cutCampaignIds.size
-        ? `Generics may cover the ${cutCampaignIds.size} campaign(s) that lost senders until the replacements finish their 21 days (D134)${backfilled < cutCampaignIds.size ? " — some already had approval" : ""}.`
+        ? `Health will thin-top those ${cutCampaignIds.size} campaign(s) to the floor from the generic pool (D268) until the replacements finish their 21 days.`
         : undefined,
       buySummary,
       cancelNote,
@@ -721,46 +707,6 @@ export class IsolationExecuteService {
         `Could not write ${failed.length} campaign(s): ${failed.join("; ")}. Tap again to retry — already-tagged steps are skipped.`,
       );
     }
-    return summary;
-  }
-
-  private async approveGenericBackfill(
-    action: IsolationActionRecord,
-    actor: string,
-  ): Promise<string> {
-    const ids = signatureCampaignIdsOf(action);
-    if (!ids.length) {
-      throw new Error("Missing campaign");
-    }
-    const approvedAt = new Date().toISOString();
-    for (const campaignId of ids) {
-      this.state.approveGenericBackfill({
-        campaignId,
-        approvedAt,
-        approvedBy: actor,
-      });
-    }
-    const names = Array.isArray(action.detail.campaignNames)
-      ? (action.detail.campaignNames as unknown[])
-          .map((n) => String(n))
-          .filter(Boolean)
-      : [String(action.detail.campaignName ?? ids[0])];
-    const label = names.length > 1
-      ? `${names.length} campaigns`
-      : `*${names[0]}*`;
-    const summary = `${actor} approved — recorded for ${label} (D193 — not rotating-pool attach permission). Named-client inventory floor is 40/POD via named + exclusive client-signed generics (D203).`;
-    if (this.config.slackFoldApprovalRecorded) {
-      const channel = String(action.detail.slackChannel ?? "");
-      const ts = String(action.detail.slackTs ?? "");
-      if (channel && ts) {
-        await this.slack.addReaction(channel, ts, "white_check_mark");
-      }
-      console.log(
-        `[isolation] generic_backfill recorded for ${ids.join(",")} (folded, D205)`,
-      );
-      return summary;
-    }
-    await this.announce("generic_backfill", summary);
     return summary;
   }
 

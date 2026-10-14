@@ -51,11 +51,6 @@ export function resolvedAskLabel(
       ? ":white_check_mark: Resolved — edit applied."
       : ":white_check_mark: Resolved — not now.";
   }
-  if (kind === "generic_backfill") {
-    return decision === "approve"
-      ? ":white_check_mark: Resolved — generics allowed."
-      : ":white_check_mark: Resolved — generics stay off (not now).";
-  }
   if (kind === "retire_domain") {
     return decision === "approve"
       ? ":white_check_mark: Resolved — retired; replacement queued."

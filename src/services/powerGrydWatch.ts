@@ -7,7 +7,7 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { POWERGRYD_CLIENT_ID } from "../lib/autoAllowGenerics.js";
+import { POWERGRYD_CLIENT_ID } from "../lib/namedClientIds.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import { isGenericMailbox } from "../lib/clientInbox.js";

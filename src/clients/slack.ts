@@ -1291,9 +1291,7 @@ export class SlackClient {
           ? "Buy replacements"
           : details.kind === "buy_canary_fleet"
             ? "Buy canary fleet"
-            : details.kind === "generic_backfill"
-              ? "Allow generics"
-              : "Retire this domain";
+            : "Retire this domain";
     const findPhrase = details.element?.trim() ?? "";
     const suggested = details.suggestedSwap ?? "";
     const text =
@@ -1313,9 +1311,7 @@ export class SlackClient {
               ? "Cayden: tap Buy replacements. Slack will ask you to confirm before anything is bought. Goliath replacements are getgoliath* / goliathcybersecurity* style — never a crosslaunchco / pool spin. Josh can tap too. This does not START campaigns (Goliath stays PAUSED through Oct 15)."
               : details.kind === "buy_canary_fleet"
                 ? "Cayden cannot approve a purchase. Josh: tap Buy canary fleet. Slack will ask you to confirm. That buys two domains, three inboxes each (one Google, one Outlook). Warmup stays off. They send campaign copy in placement tests and stay off live campaigns. Nothing is bought until you confirm."
-                : details.kind === "generic_backfill"
-                  ? "Josh: tap Allow generics to let pool generics backfill this campaign. Cayden cannot approve this."
-                  : details.kind === "add_signature_tag"
+                : details.kind === "add_signature_tag"
                     ? "Josh or Cayden: tap Add %signature%. I will append the tag to the steps that are missing it and change nothing else. The campaign stays blocked until the tag exists."
                     : details.kind === "retire_domain"
                       ? "Cayden: tap Retire this domain. Slack will ask you to confirm before anything is pulled or bought. Before you confirm, mark this domain a bad outbound sender. Confirming pulls every inbox on that domain, buys a replacement domain with matching Google/Outlook mix (client-named when the burned domain is a client domain — never a generic/pool spin, D161/D173), and lets generics cover the campaigns until those warm (D150). Goliath / client 548611 follows the same Retire path (D181). The Oct 15 Goliath campaign hold is separate and unchanged. Josh can tap too."
@@ -1389,30 +1385,6 @@ export class SlackClient {
       });
     }
     return this.send(text, blocks, kind);
-  }
-
-  /**
-   * D205 — one Allow-generics card for a burst of campaigns instead of
-   * one card per campaign. Same buttons as notifyIsolationAction.
-   */
-  async notifyGenericBackfillBatch(details: {
-    campaigns: Array<{ id: number; name: string }>;
-    actionId: string;
-  }): Promise<{ channel?: string; ts?: string } | undefined> {
-    const lines = details.campaigns
-      .slice(0, 20)
-      .map((c) => `• #${c.id} ${c.name}`);
-    const extra =
-      details.campaigns.length > 20
-        ? `\n• …and ${details.campaigns.length - 20} more`
-        : "";
-    return this.notifyIsolationAction({
-      title: `Allow generics on ${details.campaigns.length} campaigns`,
-      proof: `${lines.join("\n")}${extra}\n\nFloor stays the on-week client pod (D193/D196/D205). One tap covers the burst.`,
-      actionId: details.actionId,
-      kind: "generic_backfill",
-      who: "Josh",
-    });
   }
 
   /**

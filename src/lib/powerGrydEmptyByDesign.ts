@@ -8,7 +8,7 @@ import {
   clientDisplayName,
 } from "../clients/smartlead.js";
 import type { StateStore } from "../state/store.js";
-import { POWERGRYD_CLIENT_ID } from "./autoAllowGenerics.js";
+import { POWERGRYD_CLIENT_ID } from "./namedClientIds.js";
 import {
   brandFromClientDisplayName,
   clientBrandList,

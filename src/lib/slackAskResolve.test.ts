@@ -47,7 +47,6 @@ describe("D195 — resolved ask blocks carry no actions", () => {
   it("labels each kind/decision", () => {
     assert.match(resolvedAskLabel("swap_copy", "approve"), /edit applied/i);
     assert.match(resolvedAskLabel("swap_copy", "deny"), /not now/i);
-    assert.match(resolvedAskLabel("generic_backfill", "deny"), /generics stay off/i);
     assert.match(resolvedAskLabel("retire_domain", "approve"), /retired/i);
     assert.match(resolvedAskLabel("buy_domains", "approve"), /cover buy/i);
     assert.equal(resolvedByLine("Cayden"), "Done by Cayden");

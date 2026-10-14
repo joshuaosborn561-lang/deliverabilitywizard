@@ -24,7 +24,7 @@ export function canDecideIsolationAction(
   role: IsolationActorRole | "owner" | "operator",
 ): boolean {
   // Copy edits plus burned-domain Retire / replacement Buy (D190).
-  // Canary fleet, isolation-domain buy, and generic backfill stay Josh-only.
+  // Canary fleet and isolation-domain buy stay Josh-only.
   if (
     kind === "swap_copy" ||
     kind === "add_signature_tag" ||

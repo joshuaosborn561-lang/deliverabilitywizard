@@ -4,12 +4,12 @@
  * but is not a 60-seat no-POD engagement (D223 / Oct 15 hold).
  * Deep Roots (and later name-list matches except Goliath) are
  * engagement POCs: 60 seats, no PODs, survive DRAFTED, fill without
- * an Allow-generics card, release only when marked done.
+ * a Slack gate, release only when marked done.
  * PowerGRYD 592842 is a full named client (D237 / D256) — never a
  * POC engagement, even if a name pattern later matches it.
  */
 
-import { POWERGRYD_CLIENT_ID } from "./autoAllowGenerics.js";
+import { POWERGRYD_CLIENT_ID } from "./namedClientIds.js";
 import { isCallerFollowUpCampaign } from "./callerFollowUp.js";
 import { GOLIATH_CLIENT_ID } from "./holdPolicy.js";
 

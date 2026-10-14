@@ -14447,8 +14447,8 @@ describe("owner intent — D264 CALLER FOLLOW-UP exempt from sender top-up", () 
 
     assert.match(
       canon,
-      /Canon as of \*\*D264\*\*/,
-      stop("CANON is dated D264.", "CANON.md header is not D264."),
+      /Canon as of \*\*D26[4-9]\*\*/,
+      stop("CANON is dated D264+.", "CANON.md header is before D264."),
     );
     assert.match(
       canon,
@@ -16447,6 +16447,90 @@ describe("owner intent — D263 ESP-mix ACTIVE-only real POD Azure 0.1", () => {
       decisions,
       /^\| D263 \|/m,
       stop("The status index lists D263.", "DECISIONS.md index has no D263 row."),
+    );
+  });
+});
+
+describe("owner intent — D265 freeze watchdog exits 1 after flush", () => {
+  it("D265: exitCode 1 then saveHot then process.exit(1); no unref; Railway ALWAYS", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const railway = await readFile(new URL("../../railway.toml", import.meta.url), "utf8");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      freeze,
+      /export async function requestFreezeExit/,
+      stop("Watchdog has a flush-then-exit helper (D265).", "freezeWatchdog.ts lost requestFreezeExit."),
+    );
+    assert.match(
+      freeze,
+      /process\.exitCode = code/,
+      stop("Watchdog stamps exitCode 1 first (D265).", "freezeWatchdog.ts lost process.exitCode."),
+    );
+    assert.match(
+      freeze,
+      /FREEZE_EXIT_CODE/,
+      stop("Watchdog exits non-zero (D265).", "freezeWatchdog.ts lost FREEZE_EXIT_CODE."),
+    );
+    assert.match(
+      freeze,
+      /do not unref/,
+      stop("Watchdog interval stays referenced (D265).", "freezeWatchdog.ts lost the no-unref rule."),
+    );
+    assert.doesNotMatch(
+      freeze,
+      /interval\.unref/,
+      stop("Watchdog must not unref its interval (D265).", "freezeWatchdog.ts still unrefs the interval."),
+    );
+    assert.match(
+      index,
+      /flush:\s*\(\)\s*=>\s*state\.saveHot\(\)/,
+      stop("Boot flushes lastOk sidecar on freeze exit (D265).", "index.ts lost flush: state.saveHot()."),
+    );
+    assert.match(
+      railway,
+      /restartPolicyType\s*=\s*"ALWAYS"/,
+      stop("Railway ALWAYS restarts on any exit (D265).", "railway.toml is not ALWAYS."),
+    );
+    assert.doesNotMatch(
+      railway,
+      /restartPolicyType\s*=\s*"ON_FAILURE"/,
+      stop("ON_FAILURE is retired for freeze exits (D265).", "railway.toml still says ON_FAILURE."),
+    );
+    assert.match(
+      canon,
+      /Canon as of \*\*D265\*\*/,
+      stop("CANON is dated D265.", "CANON.md header is not D265."),
+    );
+    assert.match(
+      canon,
+      /process\.exitCode = 1/,
+      stop("CANON names the non-zero stamp (D265).", "CANON.md lost process.exitCode = 1."),
+    );
+    assert.match(
+      canon,
+      /restartPolicyType` is ALWAYS/,
+      stop("CANON names Railway ALWAYS (D265).", "CANON.md lost ALWAYS."),
+    );
+    assert.match(
+      decisions,
+      /## D265 — Freeze watchdog exits 1 after flush/,
+      stop("The ledger records D265.", "DECISIONS.md has no D265."),
+    );
+    assert.match(
+      decisions,
+      /^\| D265 \|/m,
+      stop("The status index lists D265.", "DECISIONS.md index has no D265 row."),
     );
   });
 });

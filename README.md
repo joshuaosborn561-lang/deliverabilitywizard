@@ -115,4 +115,6 @@ merges when a scheduled job needs to actually run. The only Smartlead work
 at boot is canary attach at 90 s — health, pool, and campaign-audit wait
 for their crons (boot-kicking them raced attach and 429'd the board).
 
-`railway.toml` pins **one replica**. Do not scale without a shared lock.
+`railway.toml` pins **one replica** and `restartPolicyType = "ALWAYS"`
+so a freeze-watchdog exit (0 or 1) comes back. Do not scale without a
+shared lock.

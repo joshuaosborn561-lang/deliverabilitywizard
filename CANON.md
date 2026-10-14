@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D261** (2026-10-13). One page of current truth. When a new
+Canon as of **D264** (2026-10-14). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -48,8 +48,13 @@ one-client-per-sender exception. Every stage respects:
    Never fan class boxes out or use them as top-up / generic /
    POC supply. min40 **and fan-out staffing** skip the class,
    including Deep Roots 4085160 POC fill — class attach is a
-   dedicated path, not named-client top-up. Reserved seats
-   never receive POD-A/POD-B; pod-tags strips any that landed.
+   dedicated path, not named-client top-up (D264:
+   `callerFollowUpExemptFromSenderTopUp`). Sibling share,
+   client-rest restore lists, and TERRL substitute also skip
+   them; a non-class seat that lands is **peeled** by
+   campaign-check (one Slack receipt), not left linked.
+   Reserved seats never receive POD-A/POD-B; pod-tags strips
+   any that landed.
 4. Exempt from the A/B POD rest cycle and the generic send clock.
    They send every weekday.
 5. Exempt from the half-client staffing floor and the 30/30 ESP

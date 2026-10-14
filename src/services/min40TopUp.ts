@@ -714,7 +714,21 @@ export class Min40TopUpService {
     ) {
       return false;
     }
-    if (isCallerFollowUpSupplyBlocked(account, email, callerFollowUpPolicyFromConfig(this.config))) {
+    const classPolicy = callerFollowUpPolicyFromConfig(this.config);
+    if (isCallerFollowUpSupplyBlocked(account, email, classPolicy)) {
+      return false;
+    }
+    // D264 — sibling share / POD fill must not land non-class seats on
+    // Gabe Calls even if the campaign list is wrong.
+    if (
+      !callerFollowUpMayAttach({
+        email,
+        account,
+        campaign,
+        warmed: true,
+        policy: classPolicy,
+      }).ok
+    ) {
       return false;
     }
     if (activeHoldUntilDate(tagNames(account))) return false;

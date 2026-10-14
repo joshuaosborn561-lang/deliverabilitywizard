@@ -556,16 +556,41 @@ export function callerFollowUpHumanActionAlert(input: {
   ].join("\n");
 }
 
-/** One Slack page for every non-class seat on a CALLER FOLLOW-UP campaign. */
+/**
+ * D264 — CALLER FOLLOW-UP campaigns are not named-client top-up
+ * targets. min40, campaignTopUp, fan-out staffing, client-rest
+ * restore lists, TERRL substitute, and sibling share all skip them.
+ */
+export function callerFollowUpExemptFromSenderTopUp(
+  campaign:
+    | {
+        id?: number | null;
+        name?: string | null;
+      }
+    | null
+    | undefined,
+  policy: CallerFollowUpPolicy = DEFAULT_CALLER_FOLLOWUP_POLICY,
+): boolean {
+  return isCallerFollowUpCampaign(campaign, policy);
+}
+
+/** One Slack receipt after peeling non-class seats off a CALLER FOLLOW-UP campaign. */
 export function callerFollowUpStrayAttachAlert(input: {
   campaignId: number;
   campaignName?: string;
   emails: readonly string[];
+  peeled?: boolean;
 }): string {
   const sorted = normalizeStrayEmails(input.emails);
   const where = `*${input.campaignName ?? "Gabe Calls"}* (#${input.campaignId})`;
   const noun = sorted.length === 1 ? "mailbox" : "mailboxes";
   const list = sorted.map((email) => `• \`${email}\``).join("\n");
+  if (input.peeled) {
+    return [
+      `:broom: CALLER FOLLOW-UP — peeled ${sorted.length} non-class ${noun} from ${where} (D242/D264). Only class senders stay.`,
+      list,
+    ].join("\n");
+  }
   return [
     `:rotating_light: CALLER FOLLOW-UP needs Josh — ${sorted.length} non-class ${noun} on ${where}. Automation will not peel.`,
     list,

@@ -39,6 +39,7 @@ import {
   callerFollowUpSkipsRestCycle,
   callerFollowUpSkipsRunwayAndTopUpAlerts,
   callerFollowUpSkipsStaffingFloor,
+  callerFollowUpExemptFromSenderTopUp,
   callerFollowUpStrayAttachAlert,
   callerFollowUpStrayAttachAlertKey,
   isCallerFollowUpBridgeSender,
@@ -391,6 +392,20 @@ describe("CALLER FOLLOW-UP class (D242)", () => {
       }),
       "caller-followup:unlink:gabriel@sorrelquotaio.co:4085160",
     );
+    assert.equal(
+      callerFollowUpExemptFromSenderTopUp({
+        id: 4085158,
+        name: "Gabe Calls | SalesGlider",
+      }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpExemptFromSenderTopUp({
+        id: 1,
+        name: "SG Specialty Owners",
+      }),
+      false,
+    );
     const stray = callerFollowUpStrayAttachAlert({
       campaignId: 4085158,
       campaignName: "Gabe Calls | SalesGlider",
@@ -399,9 +414,9 @@ describe("CALLER FOLLOW-UP class (D242)", () => {
         "josborn@salesgliderhq.org",
         "joshua.osborn@salesgliderhq.org",
       ],
+      peeled: true,
     });
-    assert.match(stray, /2 non-class mailboxes on \*Gabe Calls \| SalesGlider\* \(#4085158\)/);
-    assert.match(stray, /will not peel/);
+    assert.match(stray, /peeled 2 non-class mailboxes from \*Gabe Calls \| SalesGlider\* \(#4085158\)/);
     assert.match(stray, /josborn@salesgliderhq\.org/);
     assert.match(stray, /joshua\.osborn@salesgliderhq\.org/);
     assert.equal(

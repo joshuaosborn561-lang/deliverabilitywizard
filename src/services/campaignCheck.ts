@@ -1130,26 +1130,46 @@ export class CampaignCheckService {
       );
     const classPolicy = callerFollowUpPolicyFromConfig(this.config);
     if (isCallerFollowUpCampaign(campaign, classPolicy)) {
-      const strayEmails: string[] = [];
+      const strays: Array<{ account: (typeof attached)[number]; email: string }> =
+        [];
       for (const account of attached) {
         if (isCallerFollowUpSender(account, classPolicy)) continue;
         const email = accountEmail(account);
-        if (!email) continue;
-        strayEmails.push(email);
+        if (!email || typeof account.id !== "number") continue;
+        strays.push({ account, email });
       }
-      if (strayEmails.length && this.slack) {
-        const key = callerFollowUpStrayAttachAlertKey(campaign.id, strayEmails);
-        if (!this.state.hasAlert(key)) {
-          await this.slack.send(
-            callerFollowUpStrayAttachAlert({
-              campaignId: campaign.id,
-              campaignName: String(campaign.name ?? campaign.id),
-              emails: strayEmails,
-            }),
-            undefined,
-            "ops_alert",
-          );
-          this.state.markAlert(key);
+      if (strays.length) {
+        const peeled: string[] = [];
+        for (const row of strays) {
+          try {
+            await this.smartlead.removeEmailAccountsFromCampaign(campaign.id, [
+              row.account.id as number,
+            ]);
+            dropMembership(row.account, campaign.id);
+            peeled.push(row.email);
+            await sleep(WRITE_GAP_MS);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[campaign-check] CALLER FOLLOW-UP peel failed ${row.email} #${campaign.id}: ${message}`,
+            );
+          }
+        }
+        if (peeled.length && this.slack) {
+          const key = callerFollowUpStrayAttachAlertKey(campaign.id, peeled);
+          if (!this.state.hasAlert(key)) {
+            await this.slack.send(
+              callerFollowUpStrayAttachAlert({
+                campaignId: campaign.id,
+                campaignName: String(campaign.name ?? campaign.id),
+                emails: peeled,
+                peeled: true,
+              }),
+              undefined,
+              "ops_alert",
+            );
+            this.state.markAlert(key);
+          }
         }
       }
     }

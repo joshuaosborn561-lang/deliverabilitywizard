@@ -16,6 +16,7 @@ import { mailboxPodOf } from "../lib/podInventory.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { isGabeVmReserved } from "../lib/canaryLock.js";
 import {
+  callerFollowUpExemptFromSenderTopUp,
   callerFollowUpMayAttach,
   callerFollowUpPolicyFromConfig,
 } from "../lib/callerFollowUp.js";
@@ -219,10 +220,13 @@ export class ClientRestService {
     const campaignClientById = new Map(
       (campaigns as SmartleadCampaign[]).map((c) => [c.id, c.client_id]),
     );
+    const classPolicy = callerFollowUpPolicyFromConfig(this.config);
     const activeByClient = new Map<number, SmartleadCampaign[]>();
     for (const campaign of campaigns as SmartleadCampaign[]) {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
       if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
+      // D264 — Gabe Calls is not an on-week restore / multi-link target.
+      if (callerFollowUpExemptFromSenderTopUp(campaign, classPolicy)) continue;
       const clientId = campaign.client_id;
       if (typeof clientId !== "number") continue;
       const list = activeByClient.get(clientId) ?? [];

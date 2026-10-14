@@ -14245,6 +14245,22 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.match(config, /CALLER_FOLLOWUP_NAME_PREFIX/);
     assert.match(config, /CALLER_FOLLOWUP_SENDER_TAG/);
     assert.match(check, /callerFollowUpSkipsCanonMinGap/);
+    assert.match(
+      check,
+      /callerFollowUpStrayAttachAlert/,
+      stop(
+        "Stray seats on Gabe Calls page once per campaign (D242).",
+        "campaignCheck.ts lost callerFollowUpStrayAttachAlert — do not re-spam one Slack per seat.",
+      ),
+    );
+    assert.match(
+      check,
+      /callerFollowUpStrayAttachAlertKey/,
+      stop(
+        "Stray-attach Slack is campaign-deduped (D242).",
+        "campaignCheck.ts lost callerFollowUpStrayAttachAlertKey.",
+      ),
+    );
     assert.match(fanout, /callerFollowUpMayAttach/);
     assert.match(min40, /isCallerFollowUpCampaign/);
     assert.match(runout, /callerFollowUpSkipsRunwayAndTopUpAlerts/);

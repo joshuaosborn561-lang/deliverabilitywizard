@@ -51,9 +51,10 @@ import {
   callerFollowUpAlertKey,
   callerFollowUpBridgeRemovalAlert,
   callerFollowUpBridgeShouldBeRemoved,
-  callerFollowUpHumanActionAlert,
   callerFollowUpPolicyFromConfig,
   callerFollowUpSkipsCanonMinGap,
+  callerFollowUpStrayAttachAlert,
+  callerFollowUpStrayAttachAlertKey,
   isCallerFollowUpCampaign,
   isCallerFollowUpSender,
 } from "../lib/callerFollowUp.js";
@@ -1129,29 +1130,27 @@ export class CampaignCheckService {
       );
     const classPolicy = callerFollowUpPolicyFromConfig(this.config);
     if (isCallerFollowUpCampaign(campaign, classPolicy)) {
+      const strayEmails: string[] = [];
       for (const account of attached) {
         if (isCallerFollowUpSender(account, classPolicy)) continue;
         const email = accountEmail(account);
         if (!email) continue;
-        const key = callerFollowUpAlertKey({
-          action: "stray-attach",
-          email,
-          campaignId: campaign.id,
-        });
-        if (this.state.hasAlert(key)) continue;
-        if (!this.slack) continue;
-        await this.slack.send(
-          callerFollowUpHumanActionAlert({
-            action: "unlink",
-            email,
-            campaignId: campaign.id,
-            campaignName: String(campaign.name ?? campaign.id),
-            reason: "non-class mailbox on a CALLER FOLLOW-UP campaign — will not peel",
-          }),
-          undefined,
-          "ops_alert",
-        );
-        this.state.markAlert(key);
+        strayEmails.push(email);
+      }
+      if (strayEmails.length && this.slack) {
+        const key = callerFollowUpStrayAttachAlertKey(campaign.id, strayEmails);
+        if (!this.state.hasAlert(key)) {
+          await this.slack.send(
+            callerFollowUpStrayAttachAlert({
+              campaignId: campaign.id,
+              campaignName: String(campaign.name ?? campaign.id),
+              emails: strayEmails,
+            }),
+            undefined,
+            "ops_alert",
+          );
+          this.state.markAlert(key);
+        }
       }
     }
     const serving: string[] = [];

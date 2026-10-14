@@ -556,12 +556,55 @@ export function callerFollowUpHumanActionAlert(input: {
   ].join("\n");
 }
 
+/** One Slack page for every non-class seat on a CALLER FOLLOW-UP campaign. */
+export function callerFollowUpStrayAttachAlert(input: {
+  campaignId: number;
+  campaignName?: string;
+  emails: readonly string[];
+}): string {
+  const sorted = normalizeStrayEmails(input.emails);
+  const where = `*${input.campaignName ?? "Gabe Calls"}* (#${input.campaignId})`;
+  const noun = sorted.length === 1 ? "mailbox" : "mailboxes";
+  const list = sorted.map((email) => `• \`${email}\``).join("\n");
+  return [
+    `:rotating_light: CALLER FOLLOW-UP needs Josh — ${sorted.length} non-class ${noun} on ${where}. Automation will not peel.`,
+    list,
+    "Warmup stays on. Placement / bounce / blacklist still monitor. Do not unlink, kill, START, or PAUSE from here (D242).",
+  ].join("\n");
+}
+
 export function callerFollowUpAlertKey(input: {
   action: string;
   email?: string;
   campaignId?: number;
 }): string {
   return `caller-followup:${input.action}:${input.email ?? "campaign"}:${input.campaignId ?? 0}`;
+}
+
+/** Campaign-scoped dedupe so stray-attach pages once, not once per seat. */
+export function callerFollowUpStrayAttachAlertKey(
+  campaignId: number,
+  emails: readonly string[] = [],
+): string {
+  const sorted = normalizeStrayEmails(emails);
+  // Fingerprint the seat set so a later new stray still pages once.
+  const fingerprint = sorted.join(",") || "none";
+  return `caller-followup:stray-attach:${campaignId}:${fingerprint}`;
+}
+
+function normalizeStrayEmails(emails: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of emails) {
+    const email = String(raw ?? "")
+      .trim()
+      .toLowerCase();
+    if (!email || seen.has(email)) continue;
+    seen.add(email);
+    out.push(email);
+  }
+  out.sort();
+  return out;
 }
 
 export function callerFollowUpBridgeShouldBeRemoved(now: Date = new Date()): boolean {

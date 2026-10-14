@@ -11,7 +11,6 @@ import {
 import {
   DLV_APPLY_COPY,
   DLV_DENY_COPY,
-  DLV_GENERICS_NOT_NOW,
   DLV_KEEP_PAUSED,
   DLV_LEAVE_ACTIVE,
   DLV_RETIRE_APPROVE,
@@ -157,16 +156,7 @@ describe("D194 deliverability Slack one-taps", () => {
     ).elements.map((el) => el.action_id);
     assert.deepEqual(standingIds, [DLV_LEAVE_ACTIVE, DLV_KEEP_PAUSED]);
 
-    const generics = buildDeliverabilityDecisionCard({
-      kind: "generics",
-      campaignId: 2,
-      campaignName: "TechEvo",
-      reason: "Allow-generics gate.",
-    });
-    const genIds = (
-      generics.blocks[1] as { elements: Array<{ action_id: string }> }
-    ).elements.map((el) => el.action_id);
-    assert.deepEqual(genIds, [DLV_GENERICS_NOT_NOW]);
+    assert.equal(isDlvActionId("dlv_generics_not_now"), false);
   });
 
   it("button value round-trips campaign metadata", () => {
@@ -200,7 +190,7 @@ describe("D194 deliverability Slack one-taps", () => {
   it("Josh-only gates refuse Cayden; retire accepts Cayden", () => {
     assert.equal(canTapDlvAction(DLV_APPLY_COPY, "owner"), true);
     assert.equal(canTapDlvAction(DLV_APPLY_COPY, "operator"), false);
-    assert.equal(canTapDlvAction(DLV_GENERICS_NOT_NOW, "operator"), false);
+    assert.equal(isDlvActionId("dlv_generics_not_now"), false);
     assert.equal(canTapDlvAction(DLV_RETIRE_APPROVE, "operator"), true);
     assert.equal(canTapDlvAction(DLV_LEAVE_ACTIVE, "operator"), true);
     assert.equal(isDlvActionId("isolation_approve"), false);
@@ -417,41 +407,19 @@ describe("D194 deliverability Slack one-taps", () => {
     );
   });
 
-  it("dlv_generics_not_now is Josh-only and never Allows", async () => {
+  it("leftover dlv_generics_not_now is not a Deliverability one-tap", async () => {
     const state = freshState();
     await state.load();
-    state.upsertIsolationAction(
-      pendingAction("generic_backfill", "generic_backfill-1"),
-    );
-    const cayden = await handleDeliverabilitySlackAction({
-      actionId: DLV_GENERICS_NOT_NOW,
-      value: encodeDlvButtonValue({
-        campaignId: 2,
-        isolationActionId: "generic_backfill-1",
-      }),
-      actor: { name: "Cayden", role: "operator" },
-      state,
-    });
-    assert.equal(cayden.ok, false);
-
-    const decisions: string[] = [];
-    const josh = await handleDeliverabilitySlackAction({
-      actionId: DLV_GENERICS_NOT_NOW,
+    const leftover = await handleDeliverabilitySlackAction({
+      actionId: "dlv_generics_not_now",
       value: encodeDlvButtonValue({
         campaignId: 2,
         isolationActionId: "generic_backfill-1",
       }),
       actor: { name: "Josh", role: "owner" },
       state,
-      isolationExecute: {
-        decide: async (_id, decision) => {
-          decisions.push(decision);
-          return { ok: true, message: "Okay — I left it alone." };
-        },
-      },
     });
-    assert.deepEqual(decisions, ["deny"]);
-    assert.equal(josh.ok, true);
-    assert.doesNotMatch(josh.message, /Allow/);
+    assert.equal(leftover.ok, false);
+    assert.match(leftover.message, /not a Deliverability one-tap/);
   });
 });

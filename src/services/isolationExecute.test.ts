@@ -524,13 +524,12 @@ describe("D133/D134 — the taps act fleet-wide", () => {
       [10, 10],
       "only ACTIVE memberships are pulled",
     );
-    const approval = state.getGenericBackfillApproval(10);
-    assert.equal(approval?.approvedBy, "retire:burned.info");
     assert.equal(
-      state.getGenericBackfillApproval(11),
+      state.getGenericBackfillApproval(10),
       undefined,
-      "a paused campaign gets no approval",
+      "D268 — retire must not write Allow-generics approval",
     );
+    assert.equal(state.getGenericBackfillApproval(11), undefined);
     assert.equal(buyCalls.length, 1, "D150: retire also buys the replacement");
     const detail = buyCalls[0] as {
       platforms?: string[];
@@ -936,7 +935,7 @@ describe("D137 — the isolation-domain buy arms the rig", () => {
     assert.equal(state.getIsolationAction(action.id)?.status, "executed");
   });
 
-  it("D205: folds Approval recorded and stamps every campaign in a batch", async () => {
+  it("D268: leftover Allow-generics tap is retired and does not record approval", async () => {
     const state = new StateStore(
       `/tmp/dw-iso-exec-fold-${process.pid}-${Date.now()}.json`,
     );
@@ -956,16 +955,12 @@ describe("D137 — the isolation-domain buy arms the rig", () => {
     });
     state.upsertIsolationAction(action);
     const sent: string[] = [];
-    const reactions: string[] = [];
     const svc = mkExec(
       loadConfig({} as NodeJS.ProcessEnv),
       {} as never,
       {
         send: async (text: string) => {
           sent.push(text);
-        },
-        addReaction: async (_channel: string, _ts: string, name: string) => {
-          reactions.push(name);
         },
       } as never,
       state,
@@ -976,10 +971,10 @@ describe("D137 — the isolation-domain buy arms the rig", () => {
       role: "owner",
     });
     assert.equal(outcome.ok, true);
-    assert.equal(state.getGenericBackfillApproval(11)?.approvedBy, "Josh");
-    assert.equal(state.getGenericBackfillApproval(12)?.approvedBy, "Josh");
-    assert.equal(sent.some((t) => /Approval recorded/.test(t)), false);
-    assert.deepEqual(reactions, ["white_check_mark"]);
+    assert.match(outcome.message, /retired \(D268\)/);
+    assert.equal(state.getGenericBackfillApproval(11), undefined);
+    assert.equal(state.getGenericBackfillApproval(12), undefined);
+    assert.equal(sent.some((t) => /Allow generics/.test(t)), false);
   });
 });
 

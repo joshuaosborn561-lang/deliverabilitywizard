@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS,
-  POWERGRYD_CLIENT_ID,
-  parseClientIdList,
-} from "./lib/autoAllowGenerics.js";
+import { POWERGRYD_CLIENT_ID } from "./lib/namedClientIds.js";
 import {
   DEFAULT_MIN_FLOOR_BY_CLIENT,
   parseMinFloorByClient,
@@ -471,12 +467,6 @@ const ConfigSchema = z.object({
     .string()
     .default("")
     .transform((s) => parseClientUntilList(s, DEFAULT_HOLD_CLIENT_ZERO_ACTIVE)),
-  autoAllowGenericClientIds: z
-    .string()
-    .default("")
-    .transform((s) =>
-      parseClientIdList(s, DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS),
-    ),
   /**
    * D256 — per-client min-floor override (`clientId:floor`, comma-
    * separated). Default TechEvo 521881 → 30; everyone else 40.
@@ -487,7 +477,6 @@ const ConfigSchema = z.object({
     .transform((s) => parseMinFloorByClient(s, DEFAULT_MIN_FLOOR_BY_CLIENT)),
   powerGrydClientId: z.coerce.number().int().positive().default(POWERGRYD_CLIENT_ID),
   powerGrydSeatTarget: z.coerce.number().int().positive().default(40),
-  slackBatchGenericBackfill: boolFromEnv(true),
   slackFoldApprovalRecorded: boolFromEnv(true),
   cronScan: z.string().default("0 9 * * 1,4"),
   cronMonitor: z.string().default("0 */6 * * *"),
@@ -730,11 +719,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     holdCampaignIds: env.HOLD_CAMPAIGN_IDS ?? "",
     holdCampaignNamePatterns: env.HOLD_CAMPAIGN_NAME_PATTERNS ?? "",
     holdClientZeroActive: env.HOLD_CLIENT_ZERO_ACTIVE ?? "",
-    autoAllowGenericClientIds: env.AUTO_ALLOW_GENERIC_CLIENT_IDS ?? "",
     minFloorByClient: env.MIN_FLOOR_BY_CLIENT ?? "",
     powerGrydClientId: env.POWERGRYD_CLIENT_ID ?? String(POWERGRYD_CLIENT_ID),
     powerGrydSeatTarget: env.POWERGRYD_SEAT_TARGET ?? "40",
-    slackBatchGenericBackfill: env.SLACK_BATCH_GENERIC_BACKFILL,
     slackFoldApprovalRecorded: env.SLACK_FOLD_APPROVAL_RECORDED,
     cronScan: env.CRON_SCAN ?? "0 9 * * 1,4",
     cronMonitor: env.CRON_MONITOR ?? "0 */6 * * *",

@@ -43,10 +43,10 @@ describe("D248 — Needs you digest lumps Cayden spend per client", () => {
     );
     store.upsertIsolationAction(
       buildIsolationAction({
-        kind: "generic_backfill",
-        title: "Allow generics on 2 campaigns",
-        proof: "floor",
-        detail: { campaignIds: [1, 2] },
+        kind: "buy_canary_fleet",
+        title: "Buy canary fleet",
+        proof: "fleet",
+        detail: {},
       }),
     );
 
@@ -55,7 +55,8 @@ describe("D248 — Needs you digest lumps Cayden spend per client", () => {
     assert.match(digest.text!, /Needs you/);
     assert.match(digest.text!, /TechEvo/);
     assert.match(digest.text!, /Josh only/);
-    assert.match(digest.text!, /Allow generics/);
+    assert.match(digest.text!, /Buy canary fleet/);
+    assert.doesNotMatch(digest.text!, /Allow generics/);
     assert.equal(digest.cayden.length, 1);
     assert.equal(digest.cayden[0]?.items.length, 2);
 

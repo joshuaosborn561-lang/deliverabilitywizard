@@ -1708,11 +1708,11 @@ describe("owner intent — D71 Slack is deliverability flags plus EOD", () => {
       ),
     );
     assert.equal(
-      slackAllowed("generic_backfill"),
-      true,
+      slackAllowed("generic_backfill" as never),
+      false,
       stop(
-        "Josh Slack-approves generic backfill (D81).",
-        "generic_backfill is not a Slack allow kind.",
+        "Allow-generics Slack is retired (D268).",
+        "generic_backfill is still a Slack allow kind.",
       ),
     );
     assert.equal(
@@ -4771,20 +4771,12 @@ describe("owner intent — D133/D134 the taps act fleet-wide", () => {
         "isolationExecute.ts picks a single sequence again.",
       ),
     );
-    assert.match(
+    assert.doesNotMatch(
       exec,
       /approveGenericBackfill/,
       stop(
-        "A retire tap doubles as the generic-backfill approval for the campaigns it cut (D134).",
-        "isolationExecute.ts retires without covering the volume.",
-      ),
-    );
-    assert.match(
-      exec,
-      /retire:\$\{domain\}/,
-      stop(
-        "Backfill approvals record which retire granted them (D134).",
-        "isolationExecute.ts lost the retire provenance on approvals.",
+        "A retire tap must not write Allow-generics approval (D268).",
+        "isolationExecute.ts still writes approveGenericBackfill.",
       ),
     );
     assert.match(
@@ -9212,7 +9204,6 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
       DLV_RETIRE_DENY,
       DLV_LEAVE_ACTIVE,
       DLV_KEEP_PAUSED,
-      DLV_GENERICS_NOT_NOW,
       WATCHDOG_SLACK_CHANNEL_NAME,
       lockedStandingPrefReason,
     } = await import("../lib/deliverabilitySlack.js");
@@ -9235,7 +9226,6 @@ describe("owner intent — D194 Deliverability Slack one-taps", () => {
     assert.equal(DLV_RETIRE_DENY, "dlv_retire_deny");
     assert.equal(DLV_LEAVE_ACTIVE, "dlv_leave_active");
     assert.equal(DLV_KEEP_PAUSED, "dlv_keep_paused");
-    assert.equal(DLV_GENERICS_NOT_NOW, "dlv_generics_not_now");
     assert.match(
       lockedStandingPrefReason({ campaignName: "Goliath MDR", clientId: 548611 }) ??
         "",
@@ -10557,10 +10547,7 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
   it("D205: four /health stages, auto-allow min-40, hold PAUSE, quiet Slack", async () => {
     const { readFile } = await import("node:fs/promises");
     const { STAGE_OVERDUE_WINDOWS_MS } = await import("../lib/stageWindows.js");
-    const {
-      DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS,
-      POWERGRYD_CLIENT_ID,
-    } = await import("../lib/autoAllowGenerics.js");
+    const { POWERGRYD_CLIENT_ID } = await import("../lib/namedClientIds.js");
     const {
       DEFAULT_HOLD_CAMPAIGN_IDS,
       GOLIATH_CLIENT_ID,
@@ -10619,35 +10606,24 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
     assert.equal(defaults.enableMin40TopUp, true);
     assert.equal(defaults.enablePowerGrydWatch, true);
     assert.equal(defaults.enableGenericCleanup, true);
-    assert.equal(defaults.slackBatchGenericBackfill, true);
     assert.equal(defaults.slackFoldApprovalRecorded, true);
     assert.equal(defaults.cronCanonOps, "*/30 * * * *");
     assert.equal(defaults.canonOpsTimezone, "America/Chicago");
-    assert.ok(defaults.autoAllowGenericClientIds.includes(542838));
-    assert.ok(defaults.autoAllowGenericClientIds.includes(521881));
-    assert.ok(defaults.autoAllowGenericClientIds.includes(418274));
-    assert.ok(defaults.autoAllowGenericClientIds.includes(582890));
-    assert.ok(defaults.autoAllowGenericClientIds.includes(574020));
     assert.equal(defaults.powerGrydClientId, POWERGRYD_CLIENT_ID);
+    assert.equal(
+      "autoAllowGenericClientIds" in defaults,
+      false,
+      stop(
+        "Auto-allow generics is retired (D268).",
+        "config still has autoAllowGenericClientIds.",
+      ),
+    );
     assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3847837));
     assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3969268));
     assert.ok(DEFAULT_HOLD_CAMPAIGN_IDS.includes(3739316));
     assert.equal(GOLIATH_CLIENT_ID, 548611);
     assert.equal(GOLIATH_HOLD_UNTIL_YMD_DEFAULT, "2026-10-15");
-    assert.ok(DEFAULT_AUTO_ALLOW_GENERIC_CLIENT_IDS.includes(542838));
 
-    const exec = await readFile(
-      new URL("../services/isolationExecute.ts", import.meta.url),
-      "utf8",
-    );
-    assert.match(
-      exec,
-      /slackFoldApprovalRecorded/,
-      stop(
-        "Approval recorded is folded into the original card (D205).",
-        "isolationExecute.ts no longer checks slackFoldApprovalRecorded.",
-      ),
-    );
     const unpause = await readFile(
       new URL("../services/unpauseAfterSigQa.ts", import.meta.url),
       "utf8",
@@ -10723,19 +10699,6 @@ describe("owner intent — D205 wizard-owned canon ops", () => {
       canon,
       /generic-cleanup/,
       stop("CANON names generic-cleanup (D205).", "CANON.md lost the generic-cleanup stage."),
-    );
-    assert.match(
-      canon,
-      /Approval recorded/,
-      stop(
-        "CANON forbids a separate Approval recorded message (D205).",
-        "CANON.md Slack contract lost the fold rule.",
-      ),
-    );
-    assert.match(
-      canon,
-      /batched card/,
-      stop("CANON batches generic_backfill asks (D205).", "CANON.md lost the batched-card rule."),
     );
 
     const decisions = await readFile(
@@ -16710,8 +16673,8 @@ describe("owner intent — D267 freeze/isolation reliability", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D267\*\*/,
-      stop("CANON is dated D267.", "CANON.md header is not D267."),
+      /Canon as of \*\*D(26[7-9]|27[0-9])\*\*/,
+      stop("CANON is dated D267 or later.", "CANON.md header lost the D267-era stamp."),
     );
     assert.match(
       canon,
@@ -16812,6 +16775,171 @@ describe("owner intent — D267 freeze/isolation reliability", () => {
       branch,
       /updateCampaignStatus|campaigns\/.*\/status/,
       stop("isolation-branch still does not write campaign status (D40/D267).", "isolationBranch.ts gained a status write."),
+    );
+  });
+});
+
+describe("owner intent — D268 Allow-generics retired", () => {
+  it("D268: no Allow card or auto-allow; generics stop at the floor", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { slackAllowed, slackKindForIsolationAction } = await import(
+      "../lib/slackAllow.js"
+    );
+    const { DEFAULT_MIN_FLOOR, minFloorForClient } = await import(
+      "../lib/minFloorByClient.js"
+    );
+    const { TECHEVO_CLIENT_ID } = await import("../lib/namedClientIds.js");
+    const { podInventoryNeed } = await import("../lib/podInventory.js");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const slack = await readFile(
+      new URL("../clients/slack.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const check = await readFile(
+      new URL("../services/campaignCheck.ts", import.meta.url),
+      "utf8",
+    );
+    const exec = await readFile(
+      new URL("../services/isolationExecute.ts", import.meta.url),
+      "utf8",
+    );
+    const isolation = await readFile(
+      new URL("../state/isolationState.ts", import.meta.url),
+      "utf8",
+    );
+    const dlv = await readFile(
+      new URL("../lib/deliverabilitySlack.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const configSrc = await readFile(
+      new URL("../config.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D(268|269|27[0-9])\*\*/,
+      stop("CANON is dated D268 or later.", "CANON.md header lost the D268-era stamp."),
+    );
+    assert.match(
+      canon,
+      /There is no Allow-generics card/,
+      stop("CANON retires the Allow-generics card (D268).", "CANON.md still names an Allow-generics card."),
+    );
+    assert.match(
+      canon,
+      /Never add generics past that client's floor/,
+      stop("CANON says generics stop at the floor (D268).", "CANON.md lost the floor-only rule."),
+    );
+    assert.match(
+      canon,
+      /Never add them when named seats already cover the POD/,
+      stop("CANON forbids generics on a covered POD (D268).", "CANON.md lost the named-cover rule."),
+    );
+    assert.match(
+      decisions,
+      /## D268 — Allow-generics is retired/,
+      stop("The ledger records D268.", "DECISIONS.md has no D268 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D268 \|/m,
+      stop("The status index lists D268 (D127).", "DECISIONS.md status index has no D268 row."),
+    );
+    assert.equal(
+      slackAllowed("generic_backfill" as never),
+      false,
+      stop("Allow-generics Slack is retired (D268).", "generic_backfill is still a Slack allow kind."),
+    );
+    assert.equal(
+      slackKindForIsolationAction("generic_backfill"),
+      null,
+      stop("generic_backfill posts no Slack card (D268).", "generic_backfill still maps to a Slack kind."),
+    );
+    assert.equal(DEFAULT_MIN_FLOOR, 40);
+    assert.equal(minFloorForClient(TECHEVO_CLIENT_ID), 30);
+    assert.equal(podInventoryNeed(40, 0, 40), 0);
+    assert.equal(podInventoryNeed(30, 0, 30), 0);
+    assert.equal(podInventoryNeed(20, 0, 40), 20);
+    for (const [src, name] of [
+      [slack, "slack.ts"],
+      [min40, "min40TopUp.ts"],
+      [check, "campaignCheck.ts"],
+      [exec, "isolationExecute.ts"],
+      [dlv, "deliverabilitySlack.ts"],
+      [index, "index.ts"],
+      [configSrc, "config.ts"],
+    ] as const) {
+      assert.doesNotMatch(
+        src,
+        /Allow generics/,
+        stop("There is no Allow-generics card (D268).", `${name} still has an Allow generics card.`),
+      );
+      assert.doesNotMatch(
+        src,
+        /notifyGenericBackfillBatch|requestGenericBackfillAsks|clientAutoAllowsGenerics|autoAllowGenericClientIds|DLV_GENERICS_NOT_NOW/,
+        stop("Allow-generics handlers are deleted (D268).", `${name} still has an Allow-generics path.`),
+      );
+    }
+    assert.match(
+      isolation,
+      /dropPendingAllowGenerics/,
+      stop("Pending Allow-generics state is dropped on load (D268).", "isolationState.ts lost dropPendingAllowGenerics."),
+    );
+    assert.match(
+      exec,
+      /Allow-generics is retired \(D268\)/,
+      stop("A leftover Allow tap is retired (D268).", "isolationExecute.ts no longer retires leftover generic_backfill."),
+    );
+    assert.doesNotMatch(
+      exec,
+      /approveGenericBackfill/,
+      stop("A retire tap must not write Allow-generics approval (D268).", "isolationExecute.ts still writes approveGenericBackfill."),
+    );
+    assert.match(
+      min40,
+      /thin floor-only top-up/,
+      stop("min40 stops at the floor (D268).", "min40TopUp.ts lost the floor-only rule."),
+    );
+    assert.match(
+      min40,
+      /Never add them when named/,
+      stop("min40 skips a covered POD (D268).", "min40TopUp.ts lost the named-cover rule."),
+    );
+    assert.match(
+      min40,
+      /if \(pod !== onWeek\) continue/,
+      stop("New generics only top up the on-week POD (D268).", "fillShortPods still fills the off-week cylinder."),
+    );
+    assert.match(
+      canon,
+      /Never assign new generics to the off-week cylinder/,
+      stop("CANON forbids off-week generic assigns (D268).", "CANON.md still fills the off-week cylinder with new generics."),
+    );
+    assert.match(
+      min40,
+      /Never retag named seats/,
+      stop("Named A/B stays static (D268/D234).", "min40TopUp.ts lost the never-retag named seats rule."),
+    );
+    assert.match(
+      min40,
+      /isLockedCanarySeat/,
+      stop("Canaries stay locked (D268).", "min40TopUp.ts no longer skips locked canaries."),
+    );
+    assert.match(
+      min40,
+      /isCallerFollowUpCampaign/,
+      stop("Gabe Calls stay excluded from top-up (D268/D264).", "min40TopUp.ts no longer skips CALLER FOLLOW-UP."),
     );
   });
 });

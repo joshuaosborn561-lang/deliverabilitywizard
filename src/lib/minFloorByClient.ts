@@ -4,7 +4,7 @@
  * `clientId:floor` (comma-separated; `=` also accepted).
  */
 
-import { TECHEVO_CLIENT_ID } from "./autoAllowGenerics.js";
+import { TECHEVO_CLIENT_ID } from "./namedClientIds.js";
 
 export const DEFAULT_MIN_FLOOR = 40;
 

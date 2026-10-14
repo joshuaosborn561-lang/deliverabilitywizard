@@ -104,7 +104,7 @@ export interface TopUpResult {
   skipped: string[];
   /** Senders removed from a campaign they were not branded for. */
   released: Array<{ campaignId: number; email: string }>;
-  /** Generics taken off every campaign that is not POC or Slack-approved. */
+  /** Generics taken off every campaign that is not a POC engagement (D268). */
   pulledGenerics: Array<{ campaignId: number; email: string }>;
   errors: string[];
 }
@@ -1093,7 +1093,7 @@ export class CampaignTopUpService {
 
     if (input.result.pulledGenerics.length) {
       console.log(
-        `[top-up] pulled ${input.result.pulledGenerics.length} generic membership(s) off campaigns that are not POC or Slack-approved`,
+        `[top-up] pulled ${input.result.pulledGenerics.length} generic membership(s) off campaigns that are not POC engagements`,
       );
     }
   }

@@ -12,7 +12,6 @@ export const SLACK_ALLOW_KINDS = [
   "copy_word",
   "eod_summary",
   "action_result",
-  "generic_backfill",
   "ops_alert",
 ] as const;
 
@@ -24,7 +23,6 @@ export function slackAllowed(kind?: SlackAllowKind | null): boolean {
     kind === "copy_word" ||
     kind === "eod_summary" ||
     kind === "action_result" ||
-    kind === "generic_backfill" ||
     kind === "ops_alert"
   );
 }
@@ -50,6 +48,5 @@ export function slackKindForIsolationAction(
   ) {
     return "burned_domain";
   }
-  if (kind === "generic_backfill") return "generic_backfill";
   return null;
 }

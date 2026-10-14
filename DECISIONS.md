@@ -213,7 +213,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D199 | Live — same-client generic multi-link by D207/D209; 40/POD inventory by D203; live floor per ACTIVE campaign (D207); rest-record is not peel-exempt (D209) | Peel floor is staffable attached ≥40, not raw membership; exclusive + client-sig generics are dedicated; client-rest / one-client / generic-rest / top-up / Insight unlink; pod-cover does not unlink live |
 | D200 | Superseded by D207 — same-client generics may multi-link like named seats; exclusive-attach / exclusiveExtras peel is retired; cross-client peel stays | Exclusive-attach / no-multi-link applies to pool generics only; same-client named seats (techevolution* / TechEvo 521881) may sit on every campaign of that client; still peel pool multi-link, foreign-client tag, and rotating undedicated pool shares |
 | D203 | Live — live send floor is per ACTIVE campaign (D207); 40-A + 40-B inventory, static named split, ~1/3 ESP mix, never-retag stay | Named-client POD A/B is a static even split of named senders only; each POD owes 40 staffable seats at client inventory (40-A + 40-B) and a ~1/3 Outlook/Gmail mix floor when both ESPs exist; exclusive client-signed generics are thin per-POD top-up when named half is short; do not retag named seats or over-disperse the free pool |
-| D205 | Live — Insight SEG removed from hold defaults by D246; min40 shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; auto-allow exclusive min-40 fill without a card; batch Allow-generics asks; fold Approval recorded into the original card; the only live-campaign PAUSED write besides shells |
+| D205 | Live — Insight SEG removed from hold defaults by D246; min40 shares same-client generics (D207); PowerGRYD restaff-as-special-case retired by D237; watch still never START/PAUSE; auto-allow / Allow-generics Slack retired by D268 | Wizard-owned canon-ops stages (hold-enforcement / min40-topup / powergryd-watch / generic-cleanup) on a weekday Chicago 30-minute cron; the only live-campaign PAUSED write besides shells |
 | D207 | Live — rest-record peel loophole closed by D209 | MIN 40 is per ACTIVE campaign; same-client generics may multi-link; no PAUSED/STOPPED detach (D169 retired); min40 share-then-assign; detachWouldBreakStaffableFloor on every ACTIVE remove except disconnected / cross-client / HOLD-RETIRE / under-warmed; PowerGRYD restaff with own seats; daily under-40 Slack |
 | D209 | Live | Same-client multi-link is never a peel reason; a rest record on a still-attached seat does not shrink the 40 floor or exempt the peel; client-rest only marks resting after a successful detach; CultureFits / Vasco GENERIC seats that already staff a named client are normal pool seats, not dirt |
 | D210 | Live | SURBL (any `*.surbl.org` zone) never counts as a blacklist hit — info-only; no teardown, retire, or alert |
@@ -273,6 +273,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D265 | Live | Freeze watchdog must exit non-zero after flushing lastOk sidecar (never drain to 0); Railway restartPolicyType ALWAYS |
 | D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
 | D267 | Live | Freeze/restart reliability: top-up/fan-out/campaign-audit yield; isolation prune persists on the sidecar; isolation-branch stays inside its 10m budget and stamps lastOk on a partial pass; Smartlead limiter 150/min including SmartDelivery; canon-ops skipped ticks log a reason and retry |
+| D268 | Live | Allow-generics is gone. Generics are a thin on-week floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. Never new generics onto the off-week cylinder. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
 
 ---
 
@@ -9561,5 +9562,64 @@ D165 queue gates, D40, or D4.
 stale dump; budget 0 returns partial; fan-out/top-up walks tick
 the event loop; skipped-tick reason + retry; limiter waits at the
 per-minute cap.
+
+---
+
+## D268 — Allow-generics is retired; generics are floor-only top-up
+
+**Date.** 2026-10-14 (Josh).
+
+**Decision.** The Allow-generics flow is gone. Slack Allow-generics
+cards, the endpoints and handlers behind them, the auto-Allow
+loop, and pending allow-generics state are deleted. Tables now
+handle staffing. Generics are a thin top-up so each on-week POD
+reaches its floor (40, TechEvo 30) and nothing else.
+
+1. **No Slack card.** `slackAllowed("generic_backfill")` is false.
+   `notifyIsolationAction` drops leftover `generic_backfill` (the
+   kind maps to null). Deliverability one-taps have no generics
+   button. A leftover tap returns retired (D268) and does not
+   attach or write approval. Pending `generic_backfill` isolation
+   actions are dropped on state load (`dropPendingAllowGenerics`).
+
+2. **No auto-allow list.** `autoAllowGenerics` /
+   `autoAllowGenericClientIds` / `genericBackfillBatch` /
+   `requestGenericBackfillAsks` are deleted. Every named client
+   (including former non-auto-allow clients and PowerGRYD) gets
+   the same min40 fill.
+
+3. **Floor-only, on-week only.** min40 fills the on-week POD to
+   that client's floor and stops. Never add generics past the
+   floor. Never add them when named seats already cover the POD.
+   Never assign new generics to the off-week cylinder — named A/B
+   tables staff that half. TechEvo 521881 is 30; everyone else is
+   40. Already-assigned off-week generics stay assigned and do
+   not link.
+
+4. **Unchanged.** Static named A/B split. Locked canaries. Gabe
+   Calls / CALLER FOLLOW-UP exclusions. POC engagement auto-fill
+   to 60. Surplus return above the floor. 21-day warmup. Holds.
+   No campaign START / PAUSE. No spend.
+
+**Why.** Josh (2026-10-14): Allow-generics was letting generics
+keep coming on, and it is no longer needed now that the tables
+handle staffing.
+
+**Rejected.** Keeping a Slack Allow card for non-auto clients.
+Adding generics past the floor as extras. Adding generics to a
+POD whose named seats already cover it. Filling the off-week
+cylinder with new generics. Changing A/B, canaries, or Gabe
+Calls.
+
+**Supersedes / amends.** Supersedes D205 auto-allow / batch Allow
+generics Slack. Supersedes D134 retire-as-Allow write. Amends
+D203 / D221 / D256: the fill is automatic for every named client
+and stops at the floor. Does not change D40, D4, D242/D264 Gabe
+Calls, or the static named A/B split (D43/D234).
+
+**Guards.** canon D268: no Allow-generics card / autoAllow /
+`notifyGenericBackfill`; `dropPendingAllowGenerics`; leftover tap
+retired; min40 floor-stop; named-at-floor takes no generics;
+TechEvo 30. Tests: `allowGenericsRemoved`; min40 floor-stop.
 
 ---

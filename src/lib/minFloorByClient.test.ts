@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { TECHEVO_CLIENT_ID } from "./autoAllowGenerics.js";
+import { TECHEVO_CLIENT_ID } from "./namedClientIds.js";
 import {
   DEFAULT_MIN_FLOOR,
   DEFAULT_MIN_FLOOR_BY_CLIENT,

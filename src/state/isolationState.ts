@@ -272,6 +272,18 @@ export function normalizeIsolationState(
     lastRigBaselineAt: raw?.lastRigBaselineAt ?? null,
     domainHistory: raw?.domainHistory ?? {},
     domainOwners: raw?.domainOwners ?? {},
-    actions: raw?.actions ?? {},
+    actions: dropPendingAllowGenerics(raw?.actions ?? {}),
   };
+}
+
+/** D268 — leftover Allow-generics isolation asks are not pending state. */
+export function dropPendingAllowGenerics(
+  actions: Record<string, IsolationActionRecord>,
+): Record<string, IsolationActionRecord> {
+  const out: Record<string, IsolationActionRecord> = {};
+  for (const [id, row] of Object.entries(actions)) {
+    if (row?.kind === "generic_backfill") continue;
+    out[id] = row;
+  }
+  return out;
 }

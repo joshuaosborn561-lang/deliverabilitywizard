@@ -24,7 +24,6 @@ export const DLV_RETIRE_APPROVE = "dlv_retire_approve";
 export const DLV_RETIRE_DENY = "dlv_retire_deny";
 export const DLV_LEAVE_ACTIVE = "dlv_leave_active";
 export const DLV_KEEP_PAUSED = "dlv_keep_paused";
-export const DLV_GENERICS_NOT_NOW = "dlv_generics_not_now";
 
 export const DLV_ACTION_IDS = [
   DLV_APPLY_COPY,
@@ -33,12 +32,11 @@ export const DLV_ACTION_IDS = [
   DLV_RETIRE_DENY,
   DLV_LEAVE_ACTIVE,
   DLV_KEEP_PAUSED,
-  DLV_GENERICS_NOT_NOW,
 ] as const;
 
 export type DlvActionId = (typeof DLV_ACTION_IDS)[number];
 
-export type DlvCardKind = "apply_copy" | "retire" | "standing" | "generics";
+export type DlvCardKind = "apply_copy" | "retire" | "standing";
 
 export type CampaignStandingPrefValue = "leave_active" | "keep_paused";
 
@@ -272,13 +270,10 @@ function buttonsForKind(
       button("Not now", DLV_RETIRE_DENY, value),
     ];
   }
-  if (kind === "standing") {
-    return [
-      button("Leave ACTIVE", DLV_LEAVE_ACTIVE, value, "primary"),
-      button("Keep PAUSED", DLV_KEEP_PAUSED, value),
-    ];
-  }
-  return [button("Not now", DLV_GENERICS_NOT_NOW, value)];
+  return [
+    button("Leave ACTIVE", DLV_LEAVE_ACTIVE, value, "primary"),
+    button("Keep PAUSED", DLV_KEEP_PAUSED, value),
+  ];
 }
 
 function button(
@@ -303,7 +298,6 @@ export function canTapDlvAction(
   if (actionId === DLV_APPLY_COPY || actionId === DLV_DENY_COPY) {
     return role === "owner";
   }
-  if (actionId === DLV_GENERICS_NOT_NOW) return role === "owner";
   if (
     actionId === DLV_RETIRE_APPROVE ||
     actionId === DLV_RETIRE_DENY ||
@@ -335,9 +329,6 @@ export async function handleDeliverabilitySlackAction(input: {
     return { ok: false, message: "That button is not a Deliverability one-tap." };
   }
   if (!canTapDlvAction(input.actionId, input.actor.role)) {
-    if (input.actionId === DLV_GENERICS_NOT_NOW) {
-      return { ok: false, message: "Only Josh can answer the Allow-generics gate." };
-    }
     if (input.actionId === DLV_APPLY_COPY || input.actionId === DLV_DENY_COPY) {
       return { ok: false, message: "Only Josh can Apply or leave live copy." };
     }
@@ -384,24 +375,6 @@ export async function handleDeliverabilitySlackAction(input: {
         pref === "leave_active"
           ? `Recorded standing pref: leave #${parsed.campaignId} ACTIVE. I did not START or PAUSE anyone.`
           : `Recorded standing pref: keep #${parsed.campaignId} PAUSED. I did not START or PAUSE anyone.`,
-    };
-  }
-
-  if (input.actionId === DLV_GENERICS_NOT_NOW) {
-    const viaExisting = await maybeDecideIsolation({
-      pending,
-      expectedKinds: ["generic_backfill"],
-      decision: "deny",
-      actor: input.actor,
-      isolationExecute: input.isolationExecute,
-    });
-    recordDecision(input, parsed, now, "generics_not_now", viaExisting.note);
-    await input.state.save();
-    return {
-      ok: true,
-      message:
-        viaExisting.message ??
-        "Not now — generics stay off. I did not Allow.",
     };
   }
 

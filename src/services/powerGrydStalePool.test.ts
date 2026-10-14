@@ -148,7 +148,6 @@ describe("D258 stale PowerGRYD pool vs live TechEvo/Insight", () => {
 
     const config = loadConfig({
       DRY_RUN: "false",
-      AUTO_ALLOW_GENERIC_CLIENT_IDS: "521881,582890,592842,542838,418274,574020",
     });
     const smartlead = {
       addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
@@ -164,7 +163,6 @@ describe("D258 stale PowerGRYD pool vs live TechEvo/Insight", () => {
     const slack = {
       send: async () => undefined,
       notifyIsolationAction: async () => undefined,
-      notifyGenericBackfillBatch: async () => undefined,
     } as unknown as SlackClient;
 
     const oneClient = new OneClientMembershipService(config, smartlead, state);

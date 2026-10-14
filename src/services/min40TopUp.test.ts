@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { loadConfig } from "../config.js";
 import type { SmartleadClient } from "../clients/smartlead.js";
 import type { SlackClient } from "../clients/slack.js";
-import { BCP_CLIENT_ID, TECHEVO_CLIENT_ID } from "../lib/autoAllowGenerics.js";
+import { BCP_CLIENT_ID, TECHEVO_CLIENT_ID } from "../lib/namedClientIds.js";
 import { onWeekCohort } from "../lib/restCohort.js";
 import { StateStore } from "../state/store.js";
 import { Min40TopUpService } from "./min40TopUp.js";
@@ -15,7 +15,7 @@ function stateFile(): string {
 const warmedAt = "2026-01-01T00:00:00Z";
 
 describe("Min40TopUpService (D205)", () => {
-  it("auto-allows BCP and attaches exclusive warmed generics without a Slack card", async () => {
+  it("fills BCP to the floor from pool generics with no Allow-generics card", async () => {
     const attached: Array<[number, number[]]> = [];
     const updates: Array<{ id: number; fields: Record<string, unknown> }> = [];
     const slackCalls: string[] = [];
@@ -56,7 +56,6 @@ describe("Min40TopUpService (D205)", () => {
           slackCalls.push(text);
         },
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -92,14 +91,25 @@ describe("Min40TopUpService (D205)", () => {
     assert.equal(result.asked.length, 0);
     assert.ok(
       slackCalls.every((line) => /is short \d+ staffable/.test(line)),
-      "auto-allow must not open an Allow-generics card; under-40 ops_alert is ok",
+      "floor fill must not open an Allow-generics card; under-40 ops_alert is ok",
     );
   });
 
-  it("queues a Slack ask for a named client that is not auto-allow", async () => {
-    const batches: Array<{ campaigns: Array<{ id: number }> }> = [];
+  it("D268: fills a named client with no allow-list and posts no Allow card", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const slackCalls: string[] = [];
     const state = new StateStore(stateFile());
     await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
     const named = Array.from({ length: 10 }, (_, i) => ({
       id: 100 + i,
       from_email: `n${i}@other.com`,
@@ -111,12 +121,19 @@ describe("Min40TopUpService (D205)", () => {
     }));
     const service = new Min40TopUpService(
       loadConfig({ DRY_RUN: "false" }),
-      {} as unknown as SmartleadClient,
       {
-        notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async (details: { campaigns: Array<{ id: number }> }) => {
-          batches.push(details);
-          return { channel: "C1", ts: "1.2" };
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async (text: string) => {
+          slackCalls.push(text);
+        },
+        notifyIsolationAction: async () => {
+          slackCalls.push("Allow generics");
         },
       } as unknown as SlackClient,
       state,
@@ -128,14 +145,186 @@ describe("Min40TopUpService (D205)", () => {
         fetchedAt: Date.now(),
         clients: [{ id: 999001, name: "Other Co", logo: "Other Co" }],
         campaigns: [{ id: 44, name: "Other live", status: "ACTIVE", client_id: 999001 }],
-        accounts: named,
+        accounts: [
+          ...named,
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
       },
     });
+    assert.equal(attached.length, 1);
+    assert.deepEqual(attached[0], [44, [900]]);
+    assert.equal(result.asked.length, 0);
+    assert.equal(
+      state.listIsolationActions().filter((row) => row.kind === "generic_backfill").length,
+      0,
+    );
+    assert.equal(
+      slackCalls.some((line) => /Allow generics/i.test(line)),
+      false,
+    );
+  });
+
+  it("D268: never adds generics when named seats already cover the POD floor", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const now = new Date("2026-09-29T15:00:00Z");
+    const onWeek = onWeekCohort(now);
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    const named = Array.from({ length: 40 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: BCP_CLIENT_ID,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: `POD-${onWeek}` }],
+      campaign_ids: [10],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined, notifyIsolationAction: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: BCP_CLIENT_ID, name: "Mike Trpkosh", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 10, name: "BCP Live", status: "ACTIVE", client_id: BCP_CLIENT_ID }],
+        accounts: [
+          ...named,
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+          },
+        ],
+      },
+    });
+    assert.equal(attached.length, 0);
     assert.equal(result.assigned.length, 0);
-    assert.equal(result.asked.length, 1);
-    assert.equal(batches.length, 0);
-    const pending = state.listIsolationActions().filter((row) => row.kind === "generic_backfill");
-    assert.equal(pending.length, 1);
+    assert.equal(result.asked.length, 0);
+  });
+
+  it("D268: TechEvo named-at-30 does not take generics; a 20-named POD stops at 40", async () => {
+    const attached: number[] = [];
+    const now = new Date("2026-10-05T15:00:00.000Z");
+    const onWeek = onWeekCohort(now);
+    const state = new StateStore(stateFile());
+    await state.load();
+    for (let i = 0; i < 25; i++) {
+      state.upsertPoolMailbox({
+        email: `spare${i}@crosslaunchco.com`,
+        domain: "crosslaunchco.com",
+        platform: "GOOGLE",
+        smartleadAccountId: 900 + i,
+        firstName: "Pool",
+        lastName: `Seat${i}`,
+        status: "available",
+        warmedAt,
+      });
+    }
+    const teNamed = Array.from({ length: 30 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `te${i}@techevolution.com`,
+      client_id: TECHEVO_CLIENT_ID,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: `POD-${onWeek}` }],
+      campaign_ids: [20],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const otherNamed = Array.from({ length: 20 }, (_, i) => ({
+      id: 400 + i,
+      from_email: `o${i}@other.com`,
+      client_id: 999001,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: `POD-${onWeek}` }],
+      campaign_ids: [44],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const pool = Array.from({ length: 25 }, (_, i) => ({
+      id: 900 + i,
+      from_email: `spare${i}@crosslaunchco.com`,
+      from_name: `Pool Seat${i}`,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "GENERIC" }],
+      campaign_ids: [],
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          if (id === 44) attached.push(...ids);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined, notifyIsolationAction: async () => undefined } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now,
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [
+          { id: TECHEVO_CLIENT_ID, name: "TechEvo", logo: "TechEvolution" },
+          { id: 999001, name: "Other Co", logo: "Other Co" },
+        ],
+        campaigns: [
+          { id: 20, name: "TechEvo A", status: "ACTIVE", client_id: TECHEVO_CLIENT_ID },
+          { id: 44, name: "Other live", status: "ACTIVE", client_id: 999001 },
+        ],
+        accounts: [...teNamed, ...otherNamed, ...pool],
+      },
+    });
+    assert.equal(
+      result.assigned.some((row) => row.clientId === TECHEVO_CLIENT_ID),
+      false,
+      "TechEvo named already at 30 must not take generics",
+    );
+    assert.ok(attached.length > 0, "short Other Co POD must take a thin top-up");
+    assert.ok(attached.length <= 20, `top-up must stop at the 40 floor, got ${attached.length}`);
+    assert.equal(result.asked.length, 0);
   });
 
   it("never retags named seats or a generic across PODs", async () => {
@@ -174,7 +363,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -215,7 +403,7 @@ describe("Min40TopUpService (D205)", () => {
     assert.ok(result.assigned.some((row) => row.email === "shared@crosslaunchco.com"));
   });
 
-  it("D207/D237: never attaches a foreign-client seat; PowerGRYD asks Allow as a full client", async () => {
+  it("D207/D237/D268: never attaches a foreign-client seat; PowerGRYD fills with no Allow card", async () => {
     const attached: Array<[number, number[]]> = [];
     const slackCalls: string[] = [];
     const state = new StateStore(stateFile());
@@ -242,8 +430,7 @@ describe("Min40TopUpService (D205)", () => {
         send: async (text: string) => {
           slackCalls.push(text);
         },
-        notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => {
+        notifyIsolationAction: async () => {
           slackCalls.push("Allow generics");
         },
       } as unknown as SlackClient,
@@ -291,14 +478,15 @@ describe("Min40TopUpService (D205)", () => {
       false,
       "BCP named seat must not land on PowerGRYD",
     );
-    assert.equal(
-      attached.length,
-      0,
-      "PowerGRYD is not auto-allow — min40 does not fill without Allow (D237)",
+    assert.ok(
+      attached.some((row) => row[0] === 51 && row[1].includes(801)),
+      "same-client PowerGRYD generic must share onto the other ACTIVE",
     );
-    assert.ok(result.asked.some((row) => row.campaignId === 50));
-    assert.ok(result.asked.some((row) => row.campaignId === 51));
-    assert.ok(slackCalls.some((line) => /Allow generics/.test(line)));
+    assert.equal(result.asked.length, 0);
+    assert.equal(
+      slackCalls.some((line) => /Allow generics/.test(line)),
+      false,
+    );
   });
 
   it("D207: does not staff a PAUSED campaign and alerts once per under-40 ACTIVE", async () => {
@@ -329,7 +517,6 @@ describe("Min40TopUpService (D205)", () => {
           slackCalls.push(text);
         },
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -397,7 +584,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -453,7 +639,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -520,7 +705,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -579,7 +763,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -638,7 +821,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -736,7 +918,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -833,7 +1014,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -903,7 +1083,6 @@ describe("Min40TopUpService (D205)", () => {
           slackCalls.push(text);
         },
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1028,7 +1207,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1105,7 +1283,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1189,7 +1366,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1281,7 +1457,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1384,7 +1559,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1568,7 +1742,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1646,7 +1819,6 @@ describe("Min40TopUpService (D205)", () => {
           throw error;
         },
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1705,7 +1877,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );
@@ -1791,9 +1962,6 @@ describe("Min40TopUpService (D205)", () => {
           slackCalls.push(text);
         },
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => {
-          slackCalls.push("Allow generics");
-        },
       } as unknown as SlackClient,
       state,
     );
@@ -1878,7 +2046,6 @@ describe("Min40TopUpService (D205)", () => {
       {
         send: async () => undefined,
         notifyIsolationAction: async () => undefined,
-        notifyGenericBackfillBatch: async () => undefined,
       } as unknown as SlackClient,
       state,
     );

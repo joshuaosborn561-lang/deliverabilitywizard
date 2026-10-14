@@ -9,7 +9,6 @@ import {
   type SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
-import { clientAutoAllowsGenerics } from "../lib/autoAllowGenerics.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   GENERIC_ASSIGN_REASON_POC_ENGAGEMENT,
@@ -63,7 +62,6 @@ import {
   campaignHoldReason,
   holdPolicyFromConfig,
 } from "../lib/holdPolicy.js";
-import { requestGenericBackfillAsks } from "../lib/genericBackfillBatch.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isRetiredSendingDomain } from "../lib/domainControl.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
@@ -184,6 +182,11 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
  * split stays static. The summary includes each named client's
  * on-week POD shortfall (PowerGRYD included) and pages when that
  * POD has zero generics.
+ * D268 — no Allow-generics Slack card and no auto-allow list. Every
+ * named client gets the same thin floor-only top-up of the on-week
+ * POD. Never add generics past the floor. Never add them when named
+ * seats already cover that POD. Never assign new generics to the
+ * off-week cylinder.
  */
 export class Min40TopUpService {
   constructor(
@@ -333,8 +336,6 @@ export class Min40TopUpService {
     }
     const activeByClient = livingByClient;
 
-    const askItems: Array<{ campaignId: number; campaignName: string; shortBy: number }> =
-      [];
     let walked = 0;
 
     for (const campaign of campaigns as SmartleadCampaign[]) {
@@ -386,23 +387,6 @@ export class Min40TopUpService {
       const shortBy = roundStaffableWeight(Math.max(0, target - staffable));
       if (shortBy <= 0) continue;
 
-      const auto =
-        pocEngagement ||
-        clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds);
-      if (!auto) {
-        askItems.push({
-          campaignId: campaign.id,
-          campaignName: String(campaign.name ?? campaign.id),
-          shortBy,
-        });
-        result.asked.push({
-          campaignId: campaign.id,
-          name: String(campaign.name ?? campaign.id),
-          shortBy,
-        });
-        continue;
-      }
-
       const placed = await this.fillCampaign({
         campaign,
         clientId,
@@ -435,19 +419,6 @@ export class Min40TopUpService {
           clientName,
         });
       }
-    }
-
-    if (askItems.length && this.slack) {
-      await requestGenericBackfillAsks({
-        store: this.state,
-        slack: this.slack,
-        batch: this.config.slackBatchGenericBackfill,
-        items: askItems.map((row) => ({
-          campaignId: row.campaignId,
-          campaignName: row.campaignName,
-          proof: `#${row.campaignId} ${row.campaignName} is ${displayShortfallSenders(row.shortBy)} under the per-campaign 40. Tap Allow generics for client-signed fill (D207).`,
-        })),
-      });
     }
 
     if (!opts.signal?.aborted) {
@@ -1350,17 +1321,38 @@ export class Min40TopUpService {
         break;
       }
       if (input.pocIds.includes(clientId)) continue;
-      if (!clientAutoAllowsGenerics(clientId, this.config.autoAllowGenericClientIds)) {
-        continue;
-      }
       const floor = minFloorForClient(clientId, this.config.minFloorByClient);
       const brand = input.brandByClientId.get(clientId) || String(clientId);
       const selected = new Set<string>();
+      // D268 — new generics only top up the on-week POD. Named A/B
+      // tables staff the off-week cylinder; do not keep assigning
+      // pool seats there.
       for (const pod of ["A", "B"] as const) {
+        if (pod !== onWeek) continue;
         const named = synced.namedStaffableByClientPod.get(clientPodKey(clientId, pod)) ?? 0;
-        const assigned = synced.seats
-          .filter((seat) => seat.assignedClientId === clientId && seat.assignedPod === pod)
-          .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
+        // Live table + this-run attaches — the start-of-pass snapshot
+        // does not include fillCampaign's just-placed generics, and
+        // using it would add past the floor (D268).
+        const assignedEmails = new Set<string>();
+        for (const seat of this.state.listGenericSeats()) {
+          if (seat.assignedClientId === clientId && seat.assignedPod === pod) {
+            assignedEmails.add(seat.email.toLowerCase());
+          }
+        }
+        if (pod === onWeek) {
+          for (const row of input.result.assigned) {
+            if (row.clientId === clientId) {
+              assignedEmails.add(row.email.toLowerCase());
+            }
+          }
+        }
+        let assigned = 0;
+        for (const email of assignedEmails) {
+          const seat = this.state.getGenericSeat(email);
+          assigned = roundStaffableWeight(
+            assigned + (seat ? seatStaffableWeight(seat) : 1),
+          );
+        }
         let need = podInventoryNeed(named, assigned, floor);
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
         let espN = 0;

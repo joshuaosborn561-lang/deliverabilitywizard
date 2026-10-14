@@ -107,7 +107,7 @@ describe("campaign check first-pass helpers", () => {
       false,
     );
     assert.equal(
-      firstCheckPassed([{ kind: "generic_unapproved", detail: "generic" }]),
+      firstCheckPassed([{ kind: "cross_client_membership", detail: "foreign" }]),
       false,
     );
     assert.equal(

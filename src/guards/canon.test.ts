@@ -16525,7 +16525,7 @@ describe("owner intent — D265 one-tap spend/retire cards", () => {
     );
     assert.match(
       retry,
-      /export function withTransientRetry/,
+      /export async function withTransientRetry/,
       stop("Transient tap errors retry (D265).", "transientRetry.ts lost withTransientRetry."),
     );
     assert.match(

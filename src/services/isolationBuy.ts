@@ -199,10 +199,11 @@ export class IsolationBuyService {
         : await this.purchaseDomains(quantity, decidedBy, action);
 
     const mailboxes = await this.orderMailboxes(domains, decidedBy, action);
+    const after = this.store.getIsolationAction(action.id) ?? action;
     this.store.upsertIsolationAction({
-      ...this.store.getIsolationAction(action.id)!,
+      ...after,
       detail: {
-        ...action.detail,
+        ...after.detail,
         domains,
         phase: mailboxes.awaitingNameservers
           ? AWAITING_MAILBOXES
@@ -228,13 +229,14 @@ export class IsolationBuyService {
       if (needsPurchaseRetry(action)) {
         try {
           const result = await this.run(action);
+          const after = this.store.getIsolationAction(action.id) ?? action;
           this.store.upsertIsolationAction({
-            ...this.store.getIsolationAction(action.id)!,
+            ...after,
             status: "executed",
             executedAt: new Date().toISOString(),
             error: undefined,
             detail: {
-              ...action.detail,
+              ...after.detail,
               domains: result.domains,
               phase: result.awaitingNameservers
                 ? AWAITING_MAILBOXES
@@ -247,12 +249,13 @@ export class IsolationBuyService {
           if (!result.awaitingNameservers) finished += 1;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
+          const after = this.store.getIsolationAction(action.id) ?? action;
           this.store.upsertIsolationAction({
-            ...this.store.getIsolationAction(action.id)!,
+            ...after,
             status: "approved",
             error: message,
             detail: {
-              ...action.detail,
+              ...after.detail,
               phase: AWAITING_PURCHASE,
               retryReason: message,
             },
@@ -268,10 +271,11 @@ export class IsolationBuyService {
         action,
       );
       if (!mailboxes.awaitingNameservers) {
+        const after = this.store.getIsolationAction(action.id) ?? action;
         this.store.upsertIsolationAction({
-          ...action,
+          ...after,
           detail: {
-            ...action.detail,
+            ...after.detail,
             phase: "complete",
             ...(mailboxes.espSkipReason
               ? { espSkipReason: mailboxes.espSkipReason }

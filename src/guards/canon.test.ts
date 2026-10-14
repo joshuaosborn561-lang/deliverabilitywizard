@@ -16913,8 +16913,18 @@ describe("owner intent — D268 Allow-generics retired", () => {
     );
     assert.match(
       min40,
-      /Never add them when named seats already/,
+      /Never add them when named/,
       stop("min40 skips a covered POD (D268).", "min40TopUp.ts lost the named-cover rule."),
+    );
+    assert.match(
+      min40,
+      /if \(pod !== onWeek\) continue/,
+      stop("New generics only top up the on-week POD (D268).", "fillShortPods still fills the off-week cylinder."),
+    );
+    assert.match(
+      canon,
+      /Never assign new generics to the off-week cylinder/,
+      stop("CANON forbids off-week generic assigns (D268).", "CANON.md still fills the off-week cylinder with new generics."),
     );
     assert.match(
       min40,

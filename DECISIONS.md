@@ -273,7 +273,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D265 | Live | Freeze watchdog must exit non-zero after flushing lastOk sidecar (never drain to 0); Railway restartPolicyType ALWAYS |
 | D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
 | D267 | Live | Freeze/restart reliability: top-up/fan-out/campaign-audit yield; isolation prune persists on the sidecar; isolation-branch stays inside its 10m budget and stamps lastOk on a partial pass; Smartlead limiter 150/min including SmartDelivery; canon-ops skipped ticks log a reason and retry |
-| D268 | Live | Allow-generics is gone. Generics are a thin floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
+| D268 | Live | Allow-generics is gone. Generics are a thin on-week floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. Never new generics onto the off-week cylinder. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
 
 ---
 
@@ -9588,10 +9588,13 @@ reaches its floor (40, TechEvo 30) and nothing else.
    (including former non-auto-allow clients and PowerGRYD) gets
    the same min40 fill.
 
-3. **Floor-only.** min40 fills to that client's floor and stops.
-   Never add generics past the floor. Never add them when named
-   seats already cover the POD. TechEvo 521881 is 30; everyone
-   else is 40.
+3. **Floor-only, on-week only.** min40 fills the on-week POD to
+   that client's floor and stops. Never add generics past the
+   floor. Never add them when named seats already cover the POD.
+   Never assign new generics to the off-week cylinder — named A/B
+   tables staff that half. TechEvo 521881 is 30; everyone else is
+   40. Already-assigned off-week generics stay assigned and do
+   not link.
 
 4. **Unchanged.** Static named A/B split. Locked canaries. Gabe
    Calls / CALLER FOLLOW-UP exclusions. POC engagement auto-fill
@@ -9604,8 +9607,9 @@ handle staffing.
 
 **Rejected.** Keeping a Slack Allow card for non-auto clients.
 Adding generics past the floor as extras. Adding generics to a
-POD whose named seats already cover it. Changing A/B, canaries,
-or Gabe Calls.
+POD whose named seats already cover it. Filling the off-week
+cylinder with new generics. Changing A/B, canaries, or Gabe
+Calls.
 
 **Supersedes / amends.** Supersedes D205 auto-allow / batch Allow
 generics Slack. Supersedes D134 retire-as-Allow write. Amends

@@ -183,9 +183,10 @@ function campaignIsActive(campaign: { status?: string | null } | undefined): boo
  * on-week POD shortfall (PowerGRYD included) and pages when that
  * POD has zero generics.
  * D268 — no Allow-generics Slack card and no auto-allow list. Every
- * named client gets the same thin floor-only top-up. Never add
- * generics past the floor. Never add them when named seats already
- * cover that POD.
+ * named client gets the same thin floor-only top-up of the on-week
+ * POD. Never add generics past the floor. Never add them when named
+ * seats already cover that POD. Never assign new generics to the
+ * off-week cylinder.
  */
 export class Min40TopUpService {
   constructor(
@@ -1323,11 +1324,35 @@ export class Min40TopUpService {
       const floor = minFloorForClient(clientId, this.config.minFloorByClient);
       const brand = input.brandByClientId.get(clientId) || String(clientId);
       const selected = new Set<string>();
+      // D268 — new generics only top up the on-week POD. Named A/B
+      // tables staff the off-week cylinder; do not keep assigning
+      // pool seats there.
       for (const pod of ["A", "B"] as const) {
+        if (pod !== onWeek) continue;
         const named = synced.namedStaffableByClientPod.get(clientPodKey(clientId, pod)) ?? 0;
-        const assigned = synced.seats
-          .filter((seat) => seat.assignedClientId === clientId && seat.assignedPod === pod)
-          .reduce((sum, seat) => sum + seatStaffableWeight(seat), 0);
+        // Live table + this-run attaches — the start-of-pass snapshot
+        // does not include fillCampaign's just-placed generics, and
+        // using it would add past the floor (D268).
+        const assignedEmails = new Set<string>();
+        for (const seat of this.state.listGenericSeats()) {
+          if (seat.assignedClientId === clientId && seat.assignedPod === pod) {
+            assignedEmails.add(seat.email.toLowerCase());
+          }
+        }
+        if (pod === onWeek) {
+          for (const row of input.result.assigned) {
+            if (row.clientId === clientId) {
+              assignedEmails.add(row.email.toLowerCase());
+            }
+          }
+        }
+        let assigned = 0;
+        for (const email of assignedEmails) {
+          const seat = this.state.getGenericSeat(email);
+          assigned = roundStaffableWeight(
+            assigned + (seat ? seatStaffableWeight(seat) : 1),
+          );
+        }
         let need = podInventoryNeed(named, assigned, floor);
         const espCounts = { GOOGLE: 0, MICROSOFT: 0 };
         let espN = 0;

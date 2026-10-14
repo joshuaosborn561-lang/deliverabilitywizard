@@ -247,7 +247,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D239 | Live | generic_idle named staffable count matches CANON: 21-day gate, exclude GABE-VM-RESERVED and canary |
 | D240 | Live | Canary fleet swap: living fleet is size 10, adopted by CANARY tag and/or CANARY_FLEET_EMAILS; contaminated 6-seat getcrosslaunchco.info / crosslaunchcoget.info fleet is released and is no longer a D238 canary; empty replacement fleet is one fleet-level notice |
 | D241 | Live — write exemption folded into D242 CALLER FOLLOW-UP class | GABE-VM-RESERVED seats are exempt from every mutating stage (never unlink / link / retag / rewrite); min40 POC fill skips campaigns named Gabe and campaigns whose linked seats are GABE-VM-RESERVED, not just 4074266 |
-| D242 | Live — attach tightened by D244 | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
+| D242 | Live — attach tightened by D244; stray peel / top-up exempt hardened by D264 | CALLER FOLLOW-UP campaign class: config-driven ids or `Gabe Calls |` prefix plus CALLER_FOLLOWUP sender tag (GABE-VM-RESERVED); empty signature; no rename; exclusive attach; rest/clock/floor/ESP/schedule/runway exempt; Slack before kill; never START/PAUSE; owned gabe@ attach when warm; bridge off by Nov 3 |
 | D243 | Live | Client-named domains are that client's named seats (never GENERIC / pool); warmup clock is later of purchase and Smartlead import; Goliath leftovers are named 548611; Culture Fits 418275 stays a D192 exception |
 | D244 | Live | CALLER FOLLOW-UP attach is tag-then-owned no more: only bridge gabriel@ seats sit on 4085158/9/60 now; owned gabe@ only own-client after 21 warm days; reserved tag never skips those checks; Gabe Calls excluded from fan-out/min40 staffing; reserved seats never get POD-A/POD-B and pod-tags strips existing ones |
 | D245 | Live | InboxKit license sweep runs every weekday 8:16am CT and deletes on the cancel date: real IK rows (`username` + `domain_name`), past scheduled cancel = lapsed even if Smartlead still logs in or is disconnected, stale `active` renewal_date is not lapsed; seat end dates persisted; min40 / POC fill and canon staffable skip lapsed or ending-within-7-days seats |
@@ -267,6 +267,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D259 | Live | Slack / human-facing sender counts are whole senders; shortfall ceils after a 1e-6 scrub, assigned/staffable floor; internal Azure 0.1 math stays |
 | D260 | Live | Generic-family / GENERIC-tagged sending domains stay generic even when assigned to a client; domain-lifecycle continues past a per-domain retire/cover refusal |
 | D261 | Live | A watchdog stage that starts must stamp ok or a real error; isolation-branch honors abort, saves once per run, and prunes deleted/finished campaigns off the hole list |
+| D264 | Live | CALLER FOLLOW-UP (Gabe Calls) is fully exempt from typical sender top-up; sibling share / client-rest restore cannot land non-class seats; campaign-check peels strays (one Slack receipt) |
 
 ---
 
@@ -9195,5 +9196,49 @@ in `stage()`; isolation-branch passes the stage signal, uses
 placementIsolation by campaignChecks. Tests: silent exit
 stamps `exited without stamp`; superseded stamps; abort
 returns; deleted 3739316 is pruned not counted.
+
+---
+
+## D264 — CALLER FOLLOW-UP exempt from typical sender top-up; peel strays
+
+**Date.** 2026-10-14 (Josh via Cayden).
+
+**Decision.** Gabe Calls / CALLER FOLLOW-UP campaigns are not
+named-client sender top-up targets. Confirm and harden:
+
+1. min40, campaignTopUp, fan-out staffing, client-rest on-week
+   restore lists, and TERRL substitute already skip the class
+   (D242/D244). Keep that. `callerFollowUpExemptFromSenderTopUp`
+   names the rule.
+2. min40 sibling / POD share must call `callerFollowUpMayAttach`
+   before linking — a wrong `clientActive` list must not put
+   Josh / generic seats onto `#4085158` again.
+3. client-rest `activeByClient` excludes CALLER FOLLOW-UP
+   explicitly (not only via `isExcluded`).
+4. campaign-check **peels** non-class seats off Gabe Calls and
+   posts **one** Slack receipt per campaign + seat set. It does
+   not page Josh per mailbox and leave contaminants linked.
+   Class / bridge / owned senders stay untouched (D242 rule 8).
+
+**Why.** 2026-10-11–13 `#deliverability` flooded with
+"CALLER FOLLOW-UP needs Josh — will not unlink" for ~37 Josh
+SalesGlider seats on ACTIVE `#4085158`. D242 rule 3 already
+says only class boxes sit there; the page-and-leave path let
+strays stay and re-alert on every crash. Manual unlink cleared
+them; this stops restaff and self-heals strays.
+
+**Rejected.** Counting Gabe Calls toward the SalesGlider 40
+floor. Auto-START/PAUSE. Unlinking bridge gabriel@ seats.
+Changing owned gabe@ warmup attach (D244).
+
+**Supersedes / amends.** Amends D242 stray handling: non-class
+seats are peeled, not paged-and-left. Amends D244 defense for
+sibling share / client-rest. Does not change D242 rules 1–2,
+4–10 for class senders.
+
+**Guards.** `callerFollowUpExemptFromSenderTopUp`;
+`seatIsUsable` + mayAttach; client-rest skip; campaign-check
+`peeled: true` receipt; CANON D264. Tests: exempt helper;
+peeled Slack copy; min40 still skips 4085158/4085160.
 
 ---

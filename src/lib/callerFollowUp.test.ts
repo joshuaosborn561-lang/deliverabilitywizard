@@ -39,6 +39,9 @@ import {
   callerFollowUpSkipsRestCycle,
   callerFollowUpSkipsRunwayAndTopUpAlerts,
   callerFollowUpSkipsStaffingFloor,
+  callerFollowUpExemptFromSenderTopUp,
+  callerFollowUpStrayAttachAlert,
+  callerFollowUpStrayAttachAlertKey,
   isCallerFollowUpBridgeSender,
   isCallerFollowUpCampaign,
   isCallerFollowUpCanonGapValue,
@@ -388,6 +391,50 @@ describe("CALLER FOLLOW-UP class (D242)", () => {
         campaignId: 4085160,
       }),
       "caller-followup:unlink:gabriel@sorrelquotaio.co:4085160",
+    );
+    assert.equal(
+      callerFollowUpExemptFromSenderTopUp({
+        id: 4085158,
+        name: "Gabe Calls | SalesGlider",
+      }),
+      true,
+    );
+    assert.equal(
+      callerFollowUpExemptFromSenderTopUp({
+        id: 1,
+        name: "SG Specialty Owners",
+      }),
+      false,
+    );
+    const stray = callerFollowUpStrayAttachAlert({
+      campaignId: 4085158,
+      campaignName: "Gabe Calls | SalesGlider",
+      emails: [
+        "joshua.osborn@salesgliderhq.org",
+        "josborn@salesgliderhq.org",
+        "joshua.osborn@salesgliderhq.org",
+      ],
+      peeled: true,
+    });
+    assert.match(stray, /peeled 2 non-class mailboxes from \*Gabe Calls \| SalesGlider\* \(#4085158\)/);
+    assert.match(stray, /josborn@salesgliderhq\.org/);
+    assert.match(stray, /joshua\.osborn@salesgliderhq\.org/);
+    assert.equal(
+      callerFollowUpStrayAttachAlertKey(4085158, [
+        "joshua.osborn@salesgliderhq.org",
+        "josborn@salesgliderhq.org",
+      ]),
+      "caller-followup:stray-attach:4085158:josborn@salesgliderhq.org,joshua.osborn@salesgliderhq.org",
+    );
+    assert.equal(
+      callerFollowUpStrayAttachAlertKey(4085158, [
+        "josborn@salesgliderhq.org",
+        "joshua.osborn@salesgliderhq.org",
+      ]),
+      callerFollowUpStrayAttachAlertKey(4085158, [
+        "joshua.osborn@salesgliderhq.org",
+        "josborn@salesgliderhq.org",
+      ]),
     );
   });
 

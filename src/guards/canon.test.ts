@@ -14245,6 +14245,30 @@ describe("owner intent — D242 CALLER FOLLOW-UP campaign class", () => {
     assert.match(config, /CALLER_FOLLOWUP_NAME_PREFIX/);
     assert.match(config, /CALLER_FOLLOWUP_SENDER_TAG/);
     assert.match(check, /callerFollowUpSkipsCanonMinGap/);
+    assert.match(
+      check,
+      /callerFollowUpStrayAttachAlert/,
+      stop(
+        "Stray seats on Gabe Calls page once per campaign (D242).",
+        "campaignCheck.ts lost callerFollowUpStrayAttachAlert — do not re-spam one Slack per seat.",
+      ),
+    );
+    assert.match(
+      check,
+      /callerFollowUpStrayAttachAlertKey/,
+      stop(
+        "Stray-attach Slack is campaign-deduped (D242).",
+        "campaignCheck.ts lost callerFollowUpStrayAttachAlertKey.",
+      ),
+    );
+    assert.match(
+      check,
+      /peeled: true/,
+      stop(
+        "Non-class seats on Gabe Calls are peeled (D264).",
+        "campaignCheck.ts no longer peels stray CALLER FOLLOW-UP seats.",
+      ),
+    );
     assert.match(fanout, /callerFollowUpMayAttach/);
     assert.match(min40, /isCallerFollowUpCampaign/);
     assert.match(runout, /callerFollowUpSkipsRunwayAndTopUpAlerts/);
@@ -14392,6 +14416,79 @@ describe("owner intent — D244 CALLER FOLLOW-UP attach is bridge / own-campaign
       podTags,
       /stripReserved/,
       stop("pod-tags strips POD tags from reserved seats (D244).", "podTags.ts lost reserved POD cleanup."),
+    );
+  });
+});
+
+describe("owner intent — D264 CALLER FOLLOW-UP exempt from sender top-up", () => {
+  it("D264: exempt helper, sibling mayAttach, client-rest skip, peel receipt, CANON", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { callerFollowUpExemptFromSenderTopUp } = await import(
+      "../lib/callerFollowUp.js"
+    );
+    assert.equal(
+      callerFollowUpExemptFromSenderTopUp({
+        id: 4085158,
+        name: "Gabe Calls | SalesGlider",
+      }),
+      true,
+      stop(
+        "Gabe Calls is exempt from sender top-up (D264).",
+        "callerFollowUpExemptFromSenderTopUp missed 4085158.",
+      ),
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const helper = await readFile(new URL("../lib/callerFollowUp.ts", import.meta.url), "utf8");
+    const min40 = await readFile(new URL("../services/min40TopUp.ts", import.meta.url), "utf8");
+    const rest = await readFile(new URL("../services/clientRest.ts", import.meta.url), "utf8");
+    const check = await readFile(new URL("../services/campaignCheck.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D264\*\*/,
+      stop("CANON is dated D264.", "CANON.md header is not D264."),
+    );
+    assert.match(
+      canon,
+      /callerFollowUpExemptFromSenderTopUp/,
+      stop("CANON names the D264 exempt helper.", "CANON.md lost callerFollowUpExemptFromSenderTopUp."),
+    );
+    assert.match(
+      decisions,
+      /## D264 — /,
+      stop("The ledger records D264.", "DECISIONS.md has no D264 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D264 \|/m,
+      stop("The status index lists D264 (D127).", "DECISIONS.md status index has no D264 row."),
+    );
+    assert.match(helper, /callerFollowUpExemptFromSenderTopUp/);
+    assert.match(
+      min40,
+      /callerFollowUpMayAttach/,
+      stop(
+        "min40 sibling share consults mayAttach (D264).",
+        "min40TopUp.ts seatIsUsable lost callerFollowUpMayAttach.",
+      ),
+    );
+    assert.match(
+      rest,
+      /callerFollowUpExemptFromSenderTopUp/,
+      stop(
+        "client-rest skips Gabe Calls restore targets (D264).",
+        "clientRest.ts lost callerFollowUpExemptFromSenderTopUp.",
+      ),
+    );
+    assert.match(
+      check,
+      /peeled: true/,
+      stop(
+        "campaign-check peels non-class Gabe Calls seats (D264).",
+        "campaignCheck.ts lost peeled: true receipt.",
+      ),
     );
   });
 });
@@ -16015,7 +16112,7 @@ describe("owner intent — D260 generic-family assigned seats stay generic", () 
     );
     assert.match(
       canon,
-      /Canon as of \*\*D26[01]\*\*/,
+      /Canon as of \*\*D26[0-9]\*\*/,
       stop("CANON is dated D260+.", "CANON.md header is before D260."),
     );
     assert.match(
@@ -16133,8 +16230,8 @@ describe("owner intent — D261 started stages must stamp", () => {
     );
     assert.match(
       canon,
-      /Canon as of \*\*D261\*\*/,
-      stop("CANON is dated D261.", "CANON.md header is before D261."),
+      /Canon as of \*\*D26[1-9]\*\*/,
+      stop("CANON is dated D261+.", "CANON.md header is before D261."),
     );
     assert.match(
       canon,

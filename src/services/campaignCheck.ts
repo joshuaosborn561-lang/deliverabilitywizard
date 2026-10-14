@@ -51,9 +51,10 @@ import {
   callerFollowUpAlertKey,
   callerFollowUpBridgeRemovalAlert,
   callerFollowUpBridgeShouldBeRemoved,
-  callerFollowUpHumanActionAlert,
   callerFollowUpPolicyFromConfig,
   callerFollowUpSkipsCanonMinGap,
+  callerFollowUpStrayAttachAlert,
+  callerFollowUpStrayAttachAlertKey,
   isCallerFollowUpCampaign,
   isCallerFollowUpSender,
 } from "../lib/callerFollowUp.js";
@@ -1129,29 +1130,47 @@ export class CampaignCheckService {
       );
     const classPolicy = callerFollowUpPolicyFromConfig(this.config);
     if (isCallerFollowUpCampaign(campaign, classPolicy)) {
+      const strays: Array<{ account: (typeof attached)[number]; email: string }> =
+        [];
       for (const account of attached) {
         if (isCallerFollowUpSender(account, classPolicy)) continue;
         const email = accountEmail(account);
-        if (!email) continue;
-        const key = callerFollowUpAlertKey({
-          action: "stray-attach",
-          email,
-          campaignId: campaign.id,
-        });
-        if (this.state.hasAlert(key)) continue;
-        if (!this.slack) continue;
-        await this.slack.send(
-          callerFollowUpHumanActionAlert({
-            action: "unlink",
-            email,
-            campaignId: campaign.id,
-            campaignName: String(campaign.name ?? campaign.id),
-            reason: "non-class mailbox on a CALLER FOLLOW-UP campaign — will not peel",
-          }),
-          undefined,
-          "ops_alert",
-        );
-        this.state.markAlert(key);
+        if (!email || typeof account.id !== "number") continue;
+        strays.push({ account, email });
+      }
+      if (strays.length) {
+        const peeled: string[] = [];
+        for (const row of strays) {
+          try {
+            await this.smartlead.removeEmailAccountsFromCampaign(campaign.id, [
+              row.account.id as number,
+            ]);
+            dropMembership(row.account, campaign.id);
+            peeled.push(row.email);
+            await sleep(WRITE_GAP_MS);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(
+              `[campaign-check] CALLER FOLLOW-UP peel failed ${row.email} #${campaign.id}: ${message}`,
+            );
+          }
+        }
+        if (peeled.length && this.slack) {
+          const key = callerFollowUpStrayAttachAlertKey(campaign.id, peeled);
+          if (!this.state.hasAlert(key)) {
+            await this.slack.send(
+              callerFollowUpStrayAttachAlert({
+                campaignId: campaign.id,
+                campaignName: String(campaign.name ?? campaign.id),
+                emails: peeled,
+                peeled: true,
+              }),
+              undefined,
+              "ops_alert",
+            );
+            this.state.markAlert(key);
+          }
+        }
       }
     }
     const serving: string[] = [];

@@ -41,6 +41,12 @@ export function classifyFailure(
     /timed?\s*out|timeout|operation was aborted|\baborterror\b|\btimeouterror\b/i.test(
       lower,
     ) ||
+    // Undici / Node fetch transport blips (often TypeError: fetch failed).
+    // Must run before the type_error rule or isolation-buy-resume relaunches
+    // the remediator on every transient network hiccup.
+    /\bfetch failed\b|enotfound|econnrefused|eai_again|und_err_|other side closed/i.test(
+      lower,
+    ) ||
     // Upstream 5xx / Cloudflare gateway timeouts (502–504, 520–524, …).
     // Already retried by apiRequest; not a code bug the remediator can fix.
     /\bhttp\s*5\d\d\b/i.test(lower)

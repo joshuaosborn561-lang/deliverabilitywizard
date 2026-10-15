@@ -4,12 +4,20 @@ const TIMEOUT_NOISE =
 /** Cloudflare/origin gateway timeouts and other upstream 5xx. */
 const UPSTREAM_5XX_NOISE = /\bHTTP\s*5\d\d\b/i;
 
+/** Undici / Node fetch transport failures (often `TypeError: fetch failed`). */
+const FETCH_FAILED_NOISE =
+  /\bfetch failed\b|enotfound|econnrefused|eai_again|und_err_|other side closed/i;
+
 function isTimeoutNoise(message: string): boolean {
   return TIMEOUT_NOISE.test(message);
 }
 
 function isUpstream5xxNoise(message: string): boolean {
   return UPSTREAM_5XX_NOISE.test(message);
+}
+
+function isFetchFailedNoise(message: string): boolean {
+  return FETCH_FAILED_NOISE.test(message);
 }
 
 function isHttpRateLimitNoise(message: string): boolean {
@@ -30,7 +38,8 @@ export function isRateLimitNoise(message: string): boolean {
   return (
     isHttpRateLimitNoise(message) ||
     isTimeoutNoise(message) ||
-    isUpstream5xxNoise(message)
+    isUpstream5xxNoise(message) ||
+    isFetchFailedNoise(message)
   );
 }
 
@@ -172,6 +181,10 @@ export function humanizeAlertError(message: string): string {
   }
   if (timedOut) {
     return "A Smartlead request timed out. We'll retry automatically.";
+  }
+
+  if (isFetchFailedNoise(raw)) {
+    return "A network request failed on the way to Smartlead/InboxKit. We'll retry automatically.";
   }
 
   if (rateLimited && listAccounts) {

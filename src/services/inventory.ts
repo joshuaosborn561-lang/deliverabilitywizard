@@ -4,6 +4,7 @@ import type {
   SmartleadClientRecord,
 } from "../clients/smartlead.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import { slimInventoryAccounts } from "../lib/accountMembership.js";
 
 /**
  * D84 — one Smartlead inventory fetch per health pass.
@@ -57,9 +58,11 @@ export async function fetchInventory(
           ? smartlead.listClients().catch(() => [] as SmartleadClientRecord[])
           : Promise.resolve([] as SmartleadClientRecord[]),
       ]);
+      const slimAccounts = accounts as SmartleadAccountWithCampaigns[];
+      await slimInventoryAccounts(slimAccounts);
       return {
         campaigns: campaigns as SmartleadCampaign[],
-        accounts: accounts as SmartleadAccountWithCampaigns[],
+        accounts: slimAccounts,
         clients,
         fetchedAt: Date.now(),
       };

@@ -1,4 +1,6 @@
+import { parseSlimEmailAccountsJson } from "../lib/accountMembership.js";
 import { apiRequest, sleep, type RequestOptions } from "../lib/http.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
 import { SmartleadLimiter } from "../lib/smartleadLimiter.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
@@ -236,6 +238,8 @@ export class SmartleadClient {
             limit,
             ...(options.fetchCampaigns ? { fetch_campaigns: true } : {}),
           },
+          // D269 — fat fetch_campaigns pages parse+slim off-thread.
+          parseJson: options.fetchCampaigns ? parseSlimEmailAccountsJson : undefined,
         },
       );
       if (!Array.isArray(page)) {
@@ -246,6 +250,7 @@ export class SmartleadClient {
       if (page.length === 0) return out;
       out.push(...page);
       offset += page.length;
+      await yieldEventLoop();
       await sleep(400);
     }
     throw new IncompleteEmailAccountListError(

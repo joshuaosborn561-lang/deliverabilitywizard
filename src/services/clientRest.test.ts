@@ -2173,3 +2173,53 @@ describe("ClientRestService", () => {
     }
   });
 });
+
+describe("D269 client-rest yields the classify walk", () => {
+  it("a large account book lets the event loop tick", async () => {
+    const accounts = Array.from({ length: 160 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `n${i}@boldercyperpartner.com`,
+      client_id: 542838,
+      campaign_ids: [1],
+      created_at: WARMED,
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: "POD-A" }],
+    }));
+    const service = new ClientRestService(
+      loadConfig({ ENABLE_CLIENT_REST: "true", DRY_RUN: "true" }),
+      {
+        addEmailAccountsToCampaign: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      { send: async () => undefined } as unknown as SlackClient,
+      {
+        getPoolMailbox: () => undefined,
+        isCopyCanary: () => false,
+        getRestingInbox: () => undefined,
+        getDomainHistory: () => undefined,
+        listEndedPocClientIds: () => [],
+      } as unknown as StateStore,
+    );
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+    timer.unref?.();
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    await service.run({
+      dryRun: true,
+      now: new Date("2026-10-15T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 542838, name: "BCP", logo: "Bolder Cyber Partners" }],
+        campaigns: [{ id: 1, name: "BCP", status: "ACTIVE", client_id: 542838 }],
+        accounts,
+      },
+    });
+    clearInterval(timer);
+    assert.ok(ticks > 0, "client-rest must yield during classify");
+  });
+});

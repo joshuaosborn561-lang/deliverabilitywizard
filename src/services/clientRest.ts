@@ -23,6 +23,7 @@ import {
 import { pocClientId, pocEngagementClientIds } from "../lib/pocClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import {
   assignClientCohorts,
   isOffWeek,
@@ -257,7 +258,10 @@ export class ClientRestService {
       Array<{ email: string; type?: string | null }>
     >();
 
+    let classified = 0;
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      classified += 1;
+      if (classified % 16 === 0) await yieldEventLoop();
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (isGabeVmReserved(account)) {

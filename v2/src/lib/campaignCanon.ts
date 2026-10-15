@@ -41,16 +41,16 @@ export function trackingIsOff(settings: readonly string[] | null | undefined): b
 }
 
 export function espMatchingViolation(campaign: SlimCampaign): string | null {
-  if (campaign.enableAiEspMatching === true) return null;
+  if (campaign.enableAiEspMatching !== false) return null;
   return "enable_ai_esp_matching is off (want Gmail→Gmail, Outlook→Outlook)";
 }
 
 export function plainTextSettingsViolation(campaign: SlimCampaign): string | null {
   const reasons: string[] = [];
-  if (campaign.sendAsPlainText !== true) {
+  if (campaign.sendAsPlainText === false) {
     reasons.push("send_as_plain_text is off");
   }
-  if (!trackingIsOff(campaign.trackSettings)) {
+  if (campaign.trackSettings != null && !trackingIsOff(campaign.trackSettings)) {
     reasons.push("open or link tracking is on");
   }
   return reasons.length ? reasons.join("; ") : null;
@@ -80,19 +80,23 @@ export function sendWindowViolation(campaign: SlimCampaign): string | null {
   if (isCallerFollowUpCampaign(campaign)) return null;
   const want = STANDING_SEND_WINDOW;
   const reasons: string[] = [];
-  if ((campaign.timezone ?? "") !== want.timezone) {
-    reasons.push(`timezone ${campaign.timezone ?? "(missing)"} want ${want.timezone}`);
+  if (campaign.timezone != null && campaign.timezone !== "" && campaign.timezone !== want.timezone) {
+    reasons.push(`timezone ${campaign.timezone} want ${want.timezone}`);
   }
-  if (!sameDays(campaign.daysOfTheWeek, want.daysOfTheWeek)) {
+  if (
+    campaign.daysOfTheWeek != null &&
+    campaign.daysOfTheWeek.length > 0 &&
+    !sameDays(campaign.daysOfTheWeek, want.daysOfTheWeek)
+  ) {
     reasons.push(
-      `days ${JSON.stringify(campaign.daysOfTheWeek ?? [])} want Mon–Thu`,
+      `days ${JSON.stringify(campaign.daysOfTheWeek)} want Mon–Thu`,
     );
   }
-  if (normHour(campaign.startHour) !== want.startHour) {
-    reasons.push(`start ${campaign.startHour ?? "(missing)"} want ${want.startHour}`);
+  if (campaign.startHour != null && campaign.startHour !== "" && normHour(campaign.startHour) !== want.startHour) {
+    reasons.push(`start ${campaign.startHour} want ${want.startHour}`);
   }
-  if (normHour(campaign.endHour) !== want.endHour) {
-    reasons.push(`end ${campaign.endHour ?? "(missing)"} want ${want.endHour}`);
+  if (campaign.endHour != null && campaign.endHour !== "" && normHour(campaign.endHour) !== want.endHour) {
+    reasons.push(`end ${campaign.endHour} want ${want.endHour}`);
   }
   if (
     campaign.minTimeBtwnEmails != null &&

@@ -16,9 +16,8 @@ export function isActiveSendingStatus(status: string | undefined | null): boolea
   return String(status ?? "").toUpperCase() === "ACTIVE";
 }
 
-export function filterFleetSenderRows(
+export function filterReleasedSenderRows(
   senders: Array<{ email: string; inbox?: boolean; provider?: string }>,
-  fleetEmails: readonly string[],
 ): {
   kept: Array<{ email: string; inbox?: boolean; provider?: string }>;
   releasedIgnored: number;
@@ -31,12 +30,25 @@ export function filterFleetSenderRows(
       releasedIgnored += 1;
       continue;
     }
-    if (!isCopyCanaryFleetEmail(email, fleetEmails) && fleetEmails.length > 0) {
-      continue;
-    }
     kept.push(row);
   }
   return { kept, releasedIgnored };
+}
+
+/** Living-fleet filter for warmed Auto: tests. Copy-canary scoring uses filterReleasedSenderRows. */
+export function filterFleetSenderRows(
+  senders: Array<{ email: string; inbox?: boolean; provider?: string }>,
+  fleetEmails: readonly string[],
+): {
+  kept: Array<{ email: string; inbox?: boolean; provider?: string }>;
+  releasedIgnored: number;
+} {
+  const { kept: notReleased, releasedIgnored } = filterReleasedSenderRows(senders);
+  if (fleetEmails.length === 0) return { kept: notReleased, releasedIgnored };
+  return {
+    kept: notReleased.filter((row) => isCopyCanaryFleetEmail(row.email, fleetEmails)),
+    releasedIgnored,
+  };
 }
 
 export function sameEspSplits(
@@ -75,7 +87,8 @@ export function scoreInputsForTest(opts: {
 } | null {
   const raw = opts.test.senders ?? [];
   if (opts.source === "canary-copy") {
-    const { kept, releasedIgnored } = filterFleetSenderRows(raw, opts.fleetEmails);
+    // D280: unwarmed copy-canary results count even when senders are not living-fleet emails.
+    const { kept, releasedIgnored } = filterReleasedSenderRows(raw);
     if (kept.length) {
       const inbox = minSameEspInbox(sameEspSplits(kept));
       if (inbox == null) return null;

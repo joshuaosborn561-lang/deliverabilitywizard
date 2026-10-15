@@ -12,6 +12,7 @@ import { isPocEngagementClient, shouldStaffPocCampaign } from "./lib/poc.js";
 import { inStaffingHours } from "./lib/quietHours.js";
 import { formatSecretScrubLog, safeErrorText } from "./lib/redact.js";
 import { countIntendedKind, countKind, formatStageOkLog } from "./lib/stageLog.js";
+import { formatSkipLog, TICK_INTERVAL_MS, tickSkipReason } from "./lib/tickGate.js";
 import { hasTag, isActiveStatus } from "./lib/staffable.js";
 import { SmartleadReader } from "./clients/smartlead.js";
 import { SmartDeliveryReader } from "./clients/smartdelivery.js";
@@ -29,6 +30,7 @@ const store: V2Store = config.databaseUrl
   ? new PostgresStore(config.databaseUrl)
   : new MemoryStore();
 const gate = new WriteGate(config, store);
+const boot = { starting: true };
 
 if (writesAllowed(config)) {
   console.warn(
@@ -40,8 +42,20 @@ if (writesAllowed(config)) {
   );
 }
 
+const runHttp = true;
+const runStaff = config.role === "staff" || config.role === "all";
+const runIsolation = config.role === "isolation" || config.role === "all";
+
+if (runHttp) {
+  const app = createApi({ config, store, boot });
+  app.listen(config.port, () => {
+    console.log(`[v2] api listening :${config.port} role=${config.role}`);
+  });
+}
+
 await store.migrate();
 console.log(formatSecretScrubLog(await store.countUnredactedSecretRows()));
+boot.starting = false;
 
 const limiter = new SharedSmartleadLimiter(store);
 const smartlead = config.smartleadApiKey
@@ -95,14 +109,22 @@ function fleetFromBook(accounts: { email: string; tags: string[] }[]): string[] 
   return livingFleetEmails(tagged, config.canaryFleetEmails);
 }
 
+const inFlight = { staff: false, isolation: false, inboxkit: false };
+
 async function staffPass(): Promise<void> {
   const stage = "staff";
+  const skip = tickSkipReason({
+    inFlight: inFlight.staff,
+    quietHours: !inStaffingHours(),
+    missingKey: smartlead ? null : "smartlead",
+  });
+  if (skip) {
+    console.log(formatSkipLog(stage, skip));
+    if (skip !== "in_flight") await store.stampOk(stage, new Date(), skip);
+    return;
+  }
+  inFlight.staff = true;
   try {
-    if (!inStaffingHours()) {
-      await store.stampOk(stage);
-      console.log("[v2] staff skip — quiet hours (weekdays 6am–8pm CT)");
-      return;
-    }
     const loaded = await loadOrRefreshInventory(store, fetchBook);
     const book = loaded.book;
     if (!loaded.refreshed) {
@@ -126,6 +148,9 @@ async function staffPass(): Promise<void> {
         understaffed: countKind(result.findings, "understaffed"),
         esp_mix: countKind(result.findings, "esp_mix"),
         generic_idle: countKind(result.findings, "generic_idle"),
+        esp_matching: countKind(result.findings, "esp_matching"),
+        plain_text: countKind(result.findings, "plain_text"),
+        send_window: countKind(result.findings, "send_window"),
         intended: result.intended.length,
         attach: countIntendedKind(result.intended, "attach"),
       }),
@@ -133,23 +158,31 @@ async function staffPass(): Promise<void> {
   } catch (error) {
     await store.stampError(stage, safeErrorText(error));
     console.error("[v2] staff failed", safeErrorText(error));
+  } finally {
+    inFlight.staff = false;
   }
 }
 
 async function isolationPass(): Promise<void> {
   const stage = "isolation";
+  const skip = tickSkipReason({
+    inFlight: inFlight.isolation,
+    quietHours: !inStaffingHours(),
+    missingKey: smartDelivery ? null : "smartdelivery",
+  });
+  if (skip) {
+    console.log(formatSkipLog(stage, skip));
+    if (skip !== "in_flight") await store.stampOk(stage, new Date(), skip);
+    return;
+  }
+  inFlight.isolation = true;
   try {
-    if (!inStaffingHours()) {
-      await store.stampOk(stage);
-      console.log("[v2] isolation skip — quiet hours (weekdays 6am–8pm CT)");
-      return;
-    }
-    if (!smartDelivery) throw new Error("SMARTDELIVERY_API_KEY missing");
-    const book = (await store.loadInventory()) ?? (await fetchBook());
-    const listed = await smartDelivery.listTests();
+    const loaded = await loadOrRefreshInventory(store, fetchBook);
+    const book = loaded.book;
+    const listed = await smartDelivery!.listTests();
     const ranked = prioritizeTestsToHydrate(listed, book.campaigns);
-    const withSenders = await smartDelivery.hydrateSenders(ranked);
-    const tests = await smartDelivery.hydrateProviderSplits(withSenders);
+    const withSenders = await smartDelivery!.hydrateSenders(ranked);
+    const tests = await smartDelivery!.hydrateProviderSplits(withSenders);
     const result = await runIsolationTick({
       book,
       tests,
@@ -175,24 +208,27 @@ async function isolationPass(): Promise<void> {
   } catch (error) {
     await store.stampError(stage, safeErrorText(error));
     console.error("[v2] isolation failed", safeErrorText(error));
+  } finally {
+    inFlight.isolation = false;
   }
 }
 
 async function inboxkitPass(): Promise<void> {
   const stage = "inboxkit";
+  const skip = tickSkipReason({
+    inFlight: inFlight.inboxkit,
+    quietHours: !inStaffingHours(),
+    missingKey: inboxkit ? null : "inboxkit",
+  });
+  if (skip) {
+    console.log(formatSkipLog(stage, skip));
+    if (skip !== "in_flight") await store.stampOk(stage, new Date(), skip);
+    return;
+  }
+  inFlight.inboxkit = true;
   try {
-    if (!inStaffingHours()) {
-      await store.stampOk(stage);
-      console.log("[v2] inboxkit skip — quiet hours (weekdays 6am–8pm CT)");
-      return;
-    }
-    if (!inboxkit) {
-      await store.stampOk(stage);
-      console.log(formatStageOkLog("inboxkit", { intendedDeletes: 0, skipped: "no_key" }));
-      return;
-    }
     const book = await store.loadInventory();
-    const seats = await inboxkit.listMailboxes();
+    const seats = await inboxkit!.listMailboxes();
     const result = await runInboxkitSweep({
       seats,
       accounts: book?.accounts ?? [],
@@ -203,6 +239,8 @@ async function inboxkitPass(): Promise<void> {
   } catch (error) {
     await store.stampError(stage, safeErrorText(error));
     console.error("[v2] inboxkit failed", safeErrorText(error));
+  } finally {
+    inFlight.inboxkit = false;
   }
 }
 
@@ -215,25 +253,24 @@ const ISOLATION_FINDING_KINDS = new Set([
   "below_launch_bar",
 ]);
 
-const runHttp = config.role === "api" || config.role === "all";
-const runStaff = config.role === "staff" || config.role === "all";
-const runIsolation = config.role === "isolation" || config.role === "all";
-
-if (runHttp) {
-  const app = createApi({ config, store });
-  app.listen(config.port, () => {
-    console.log(`[v2] api listening :${config.port} role=${config.role}`);
-  });
-}
-
-if (runStaff) {
+function scheduleTicks(name: string, pass: () => Promise<void>): void {
   cron.schedule(
     "*/15 * * * *",
     () => {
-      void staffPass();
+      void pass();
     },
     { timezone: "America/Chicago" },
   );
+  setInterval(() => {
+    void pass();
+  }, TICK_INTERVAL_MS);
+  console.log(`[v2] ${name} scheduler registered cron=*/15 interval_ms=${TICK_INTERVAL_MS}`);
+}
+
+if (runStaff) {
+  const purged = await store.purgePendingIntents("attach");
+  console.log(`[v2] staff boot purged pending attach=${purged}`);
+  scheduleTicks("staff", staffPass);
   cron.schedule(
     "16 8 * * 1-5",
     () => {
@@ -241,16 +278,14 @@ if (runStaff) {
     },
     { timezone: "America/Chicago" },
   );
+  console.log("[v2] staff boot tick");
+  await staffPass();
 }
 
 if (runIsolation) {
-  cron.schedule(
-    "*/15 * * * *",
-    () => {
-      void isolationPass();
-    },
-    { timezone: "America/Chicago" },
-  );
+  scheduleTicks("isolation", isolationPass);
+  console.log("[v2] isolation boot tick");
+  void isolationPass();
 }
 
 process.on("SIGTERM", () => process.exit(0));

@@ -33,6 +33,23 @@ describe("/health never echoes secrets or upstream URLs", () => {
     assert.match(String(body.stageHealth?.isolation?.lastError ?? ""), /\/api\/spam-tests/);
   });
 
+  it("returns 200 starting=true while migrate is in flight", async () => {
+    const startingStore = new MemoryStore();
+    const startingApp = createApi({
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      store: startingStore,
+      boot: { starting: true },
+    });
+    const startingServer = startingApp.listen(0);
+    const startingPort = (startingServer.address() as AddressInfo).port;
+    const res = await fetch(`http://127.0.0.1:${startingPort}/health`);
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { ok?: boolean; starting?: boolean };
+    assert.equal(body.ok, true);
+    assert.equal(body.starting, true);
+    startingServer.close();
+  });
+
   it("stampOk clears last_error and overdue", async () => {
     await store.stampError("staff", "GET /email-accounts → 429");
     let res = await fetch(`http://127.0.0.1:${port}/health`);

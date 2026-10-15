@@ -285,6 +285,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D277 | Live | Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC |
 | D278 | Live | v2 shares the old wizard Smartlead key: 20/min concurrency 1, 429 retry, 30-minute inventory |
 | D279 | Live | v2 shadow scoring matches old-wizard findings; attaches are floor deficit + pending dedupe; stampOk clears last_error/overdue; one ok log line per stage |
+| D280 | Live | v2 staff/isolation boot-tick + skip-reason logs; all roles bind /health; idempotent placement_scores unique; unwarmed copy-canary counts; per-campaign settings; purge pre-D279 pending attaches |
 
 ---
 
@@ -10135,6 +10136,62 @@ scoring/staffing/health-stamp contract on top.
 WriteGate pending dedupe; stampOk clears last_error; stage ok log.
 Tests cover deficit+dedupe, generic_idle, the five 0% ids,
 below_launch_bar, stampOk/overdue, fetch_campaigns.
+
+---
+
+## D280 — v2 workers must tick after a restart and score what is actually true
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** D279 shadow deploy (5:46pm CT) left staff lastOk at
+22:35Z and isolation consecutiveFailures=5 (`ON CONFLICT`). The
+6:00 and 6:15 CT runs never fired. `/health` showed exactly 81
+`understaffed` / `esp_matching` / `plain_text` / `send_window`
+(every ACTIVE campaign), 0 scored, and ~10k pending attaches.
+v2 must:
+
+1. Bind `/health` on **every** role so Railway cannot recycle
+   staff/isolation for a closed `$PORT`. Run one tick at boot.
+   Keep `*/15` cron **and** a 15-minute interval backup. Log
+   every skip with `reason=` (quiet hours, in-flight, missing
+   key). `/health` is 200 with `starting: true` during migrate.
+2. Apply an **idempotent** unique on `placement_scores
+   (campaign_id, source)` as its own ALTER/index — not a
+   multi-statement `schema.sql` blob a pooler can skip.
+3. Score unwarmed **copy-canary** sender rows even when they are
+   not living-fleet emails (released list still ignored). The
+   five 0% campaigns (#3847940, #3921850, #3921852, #3921869,
+   #4037540) must score.
+4. Evaluate ESP matching, plain text, and send window **per
+   campaign** from live Smartlead fields (`scheduler_cron_value.
+   tz/days/startHour/endHour`). Unknown/unread settings are not
+   a miss. Persist those fields on the inventory cache.
+   `/compare` always includes `below_launch_bar` and
+   `missing_signature_tag`.
+5. Purge pre-D279 pending `attach` intents on staff boot. fillFloor
+   still caps at the real deficit (40, TechEvo 30).
+
+**Why.** Staff/isolation did not listen on `$PORT`, so the
+healthcheck restarted them before cron. The composite PK ALTER
+never landed on the existing table. Copy-canary scoring dropped
+every non-fleet sender. Cached inventory stripped campaign
+settings, so every ACTIVE looked off. Stale pending attaches
+from empty `campaign_ids` piled up to ~10k.
+
+**Rejected.** Leaving workers without HTTP and hoping the
+healthcheck is disabled. Treating missing settings as off.
+Re-intending the 10k attaches. Scoring copy-canary fleet-only.
+
+**Supersedes / amends.** D279 scoring/staffing contract stays;
+this is the restart + live-field + copy-canary contract on top.
+D278 limiter/cache stays.
+
+**Guards.** `ensurePlacementScoresUnique`; `purgePendingIntents`;
+`formatSkipLog` / `tickSkipReason`; `filterReleasedSenderRows` for
+copy-canary; `COMPARE_ALWAYS_KINDS`; scheduler_cron_value parser;
+unknown settings not flagged. Tests cover the five 0% copy-canary
+ids, live dump ESP/plain/window counts, skip reasons, attach
+purge+deficit.
 
 ---
 

@@ -7047,6 +7047,44 @@ describe("owner intent — D278 v2 must not starve the old wizard Smartlead key"
   });
 });
 
+describe("owner intent — D280 v2 workers tick after restart and score live fields", () => {
+  it("D280: CANON names boot-tick, copy-canary, per-campaign findings, attach purge", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D280\*\*/,
+      stop("CANON is dated D280.", "CANON.md header is not D280."),
+    );
+    assert.match(
+      canon,
+      /Bind `\/health` on \*\*every\*\* role|bind `\/health` on every role/,
+      stop("CANON names every-role /health (D280).", "CANON.md lost the worker healthbind."),
+    );
+    assert.match(
+      canon,
+      /unwarmed copy-canary/,
+      stop("CANON names unwarmed copy-canary scoring (D280).", "CANON.md lost copy-canary."),
+    );
+    assert.match(
+      canon,
+      /unknown\/unread settings are not a miss/,
+      stop("CANON says unknown settings are not a miss (D280).", "CANON.md lost the unknown-settings rule."),
+    );
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      decisions,
+      /## D280 — v2 workers must tick after a restart and score what is actually true/,
+      stop("The D280 restart contract is in the ledger.", "DECISIONS.md no longer has D280."),
+    );
+    assert.match(
+      decisions,
+      /^\| D280 \|/m,
+      stop("The status index lists D280 (D127).", "DECISIONS.md index has no D280 row."),
+    );
+  });
+});
+
 describe("owner intent — D172 real-client attach is not starved by GENERIC tagging", () => {
   it("D172: reserved attach budget; budget-exhausted advisory; D143 not gated on writesLeft", async () => {
     const { readFile } = await import("node:fs/promises");

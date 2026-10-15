@@ -24,21 +24,18 @@ Create **three** Railway services from this GitHub repo. For each:
 - Root directory / watch path: **`v2`**
 - Builder: Nixpacks (`v2/railway.toml`)
 - Start: `npm run start`
-- Healthcheck: `/health` (api; staff/isolation can use the same — they
-  do not listen unless `ROLE=api` or `ROLE=all`)
+- Healthcheck: `/health` on **every** service (all roles bind `$PORT`)
 - Restart policy: ALWAYS
 
 | Service | `ROLE` | Needs `/health` listener? |
 |---|---|---|
 | `wizard-v2-api` | `api` | yes (port `$PORT`) |
-| `wizard-v2-staff` | `staff` | no — set healthcheck off or run `ROLE=all` only for a cheap single-box trial |
-| `wizard-v2-isolation` | `isolation` | no |
+| `wizard-v2-staff` | `staff` | yes — `/health` 200 even while migrate is starting |
+| `wizard-v2-isolation` | `isolation` | yes |
 
-Staff and isolation do not bind HTTP. Either:
-
-- disable their Railway healthcheck, or
-- run a **trial** as one service with `ROLE=all` (api + both crons in
-  one process — fine for shadow week, not the production split).
+Staff and isolation bind HTTP so a Railway healthcheck cannot restart
+them before the first tick. Boot runs one tick immediately; cron `*/15`
+plus a 15-minute `setInterval` backup. Every skip logs `reason=`.
 
 ## 3. Shared variables (all three)
 

@@ -33,10 +33,33 @@ export interface ComparisonReport {
   notes: string[];
 }
 
+export const COMPARE_ALWAYS_KINDS = [
+  "understaffed",
+  "esp_mix",
+  "generic_idle",
+  "below_launch_bar",
+  "missing_signature_tag",
+  "esp_matching",
+  "plain_text",
+  "send_window",
+  "ugly_without_isolation",
+] as const;
+
 export function countKinds(findings: Finding[]): Record<string, number> {
   const out: Record<string, number> = {};
   for (const f of findings) {
     out[f.kind] = (out[f.kind] ?? 0) + 1;
+  }
+  return out;
+}
+
+export function zeroFillKinds(
+  counts: Record<string, number>,
+  keys: readonly string[] = COMPARE_ALWAYS_KINDS,
+): Record<string, number> {
+  const out = { ...counts };
+  for (const key of keys) {
+    if (out[key] == null) out[key] = 0;
   }
   return out;
 }
@@ -62,16 +85,20 @@ export function buildComparison(opts: {
   qaRuns?: QaRun[];
   now?: Date;
 }): ComparisonReport {
-  const v2Counts = countKinds(opts.findings);
-  const oldCounts = opts.old?.canonFindings ?? {};
+  const v2Counts = zeroFillKinds(countKinds(opts.findings));
+  const oldCounts = zeroFillKinds(opts.old?.canonFindings ?? {});
   const oldUgly = opts.old?.placementIsolation?.uglyWithoutIsolation ?? [];
   const oldUglyIds = oldUgly.map((r) => r.campaignId);
   const v2Ugly = opts.findings.filter((f) => f.kind === "ugly_without_isolation");
   const v2UglyIds = v2Ugly.map((f) => f.campaignId).filter((n): n is number => n != null);
   const intended = countIntended(opts.intended);
 
-  const findingsOnlyInOld = Object.keys(oldCounts).filter((k) => (v2Counts[k] ?? 0) === 0);
-  const findingsOnlyInV2 = Object.keys(v2Counts).filter((k) => (oldCounts[k] ?? 0) === 0);
+  const findingsOnlyInOld = Object.keys(oldCounts).filter(
+    (k) => (oldCounts[k] ?? 0) > 0 && (v2Counts[k] ?? 0) === 0,
+  );
+  const findingsOnlyInV2 = Object.keys(v2Counts).filter(
+    (k) => (v2Counts[k] ?? 0) > 0 && (oldCounts[k] ?? 0) === 0,
+  );
 
   const notes: string[] = [];
   if ((v2Counts.isolation_deadline ?? 0) > 0) {
@@ -82,7 +109,7 @@ export function buildComparison(opts: {
   }
   if (oldUglyIds.length && v2UglyIds.length === 0) {
     notes.push(
-      "Old wizard still lists 0% uglyWithoutIsolation; v2 scored fleet-only and did not flag those campaigns.",
+      `Old wizard still lists 0% uglyWithoutIsolation; v2 has not scored copy-canary for ${oldUglyIds.join(",")}.`,
     );
   }
 

@@ -214,6 +214,7 @@ export interface StageStamp {
   lastError?: string;
   consecutiveFailures: number;
   inFlightSince?: string;
+  lastSkipReason?: string;
 }
 
 export interface OldWizardHealth {

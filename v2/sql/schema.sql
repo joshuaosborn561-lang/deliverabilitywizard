@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS stage_health (
   last_error TEXT,
   consecutive_failures INTEGER NOT NULL DEFAULT 0,
   in_flight_since TIMESTAMPTZ,
+  last_skip_reason TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS inventory_campaigns (
   status TEXT,
   client_id INTEGER,
   min_time_btwn_emails INTEGER,
+  canon_settings JSONB,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -88,9 +90,8 @@ CREATE TABLE IF NOT EXISTS placement_scores (
   failure_class TEXT,
   PRIMARY KEY (campaign_id, source)
 );
--- DBs created with campaign_id-only PK: ON CONFLICT (campaign_id, source) 500s the isolation tick.
-ALTER TABLE placement_scores DROP CONSTRAINT IF EXISTS placement_scores_pkey;
-ALTER TABLE placement_scores ADD PRIMARY KEY (campaign_id, source);
+-- Existing DBs may still have campaign_id-only PK. migrate() applies an
+-- idempotent unique index on (campaign_id, source) as separate statements.
 
 CREATE TABLE IF NOT EXISTS isolation_suspects (
   campaign_id INTEGER PRIMARY KEY,
@@ -164,9 +165,10 @@ CREATE TABLE IF NOT EXISTS comparison_reports (
   report JSONB NOT NULL
 );
 
--- Existing DBs created with campaign_id-only PK: widen to (campaign_id, source).
 ALTER TABLE placement_scores ADD COLUMN IF NOT EXISTS canary_kind TEXT;
 ALTER TABLE placement_scores ADD COLUMN IF NOT EXISTS failure_class TEXT;
+ALTER TABLE inventory_campaigns ADD COLUMN IF NOT EXISTS canon_settings JSONB;
+ALTER TABLE stage_health ADD COLUMN IF NOT EXISTS last_skip_reason TEXT;
 
 -- D273: only g_to_g / ms_to_ms are scored. g_to_ms / ms_to_g stay as unused columns.
 CREATE TABLE IF NOT EXISTS esp_inbox_rates (

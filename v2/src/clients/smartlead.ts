@@ -102,18 +102,34 @@ function asNumberArray(value: unknown): number[] | null {
   return value.map((v) => Number(v)).filter((n) => Number.isFinite(n));
 }
 
-function nestedSchedule(r: Record<string, unknown>): Record<string, unknown> {
-  const schedule = r.schedule ?? r.scheduler_cron_value;
-  return schedule && typeof schedule === "object" ? (schedule as Record<string, unknown>) : {};
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
-function normalizeCampaign(r: Record<string, unknown>): SlimCampaign {
+function nestedSchedule(r: Record<string, unknown>): Record<string, unknown> {
+  const cron = asObject(r.scheduler_cron_value);
+  const schedule = asObject(r.schedule);
+  return { ...cron, ...schedule };
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (value == null || value === "") continue;
+    return String(value);
+  }
+  return null;
+}
+
+export function normalizeCampaign(r: Record<string, unknown>): SlimCampaign {
   const schedule = nestedSchedule(r);
   const track = asStringArray(r.track_settings) ?? asStringArray(r.trackSettings);
   const days =
     asNumberArray(r.days_of_the_week) ??
     asNumberArray(schedule.days_of_the_week) ??
-    asNumberArray(schedule.daysOfTheWeek);
+    asNumberArray(schedule.daysOfTheWeek) ??
+    asNumberArray(schedule.days);
   return {
     id: Number(r.id),
     name: String(r.name ?? ""),
@@ -127,20 +143,10 @@ function normalizeCampaign(r: Record<string, unknown>): SlimCampaign {
       r.enable_ai_esp_matching == null ? null : Boolean(r.enable_ai_esp_matching),
     sendAsPlainText: r.send_as_plain_text == null ? null : Boolean(r.send_as_plain_text),
     trackSettings: track,
-    timezone: r.timezone != null ? String(r.timezone) : schedule.timezone != null ? String(schedule.timezone) : null,
+    timezone: firstString(r.timezone, schedule.timezone, schedule.tz),
     daysOfTheWeek: days,
-    startHour:
-      r.start_hour != null
-        ? String(r.start_hour)
-        : schedule.start_hour != null
-          ? String(schedule.start_hour)
-          : null,
-    endHour:
-      r.end_hour != null
-        ? String(r.end_hour)
-        : schedule.end_hour != null
-          ? String(schedule.end_hour)
-          : null,
+    startHour: firstString(r.start_hour, schedule.start_hour, schedule.startHour),
+    endHour: firstString(r.end_hour, schedule.end_hour, schedule.endHour),
     maxLeadsPerDay:
       r.max_leads_per_day == null && schedule.max_leads_per_day == null
         ? null

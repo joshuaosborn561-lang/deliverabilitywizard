@@ -30,10 +30,11 @@ function campaign(partial: Partial<SlimCampaign> = {}): SlimCampaign {
 }
 
 describe("D274 ESP matching", () => {
-  it("flags enable_ai_esp_matching off or missing", () => {
+  it("flags enable_ai_esp_matching only when known off, not when unread", () => {
     assert.equal(espMatchingViolation(campaign()), null);
     assert.match(String(espMatchingViolation(campaign({ enableAiEspMatching: false }))), /esp_matching/i);
-    assert.ok(espMatchingViolation(campaign({ enableAiEspMatching: undefined })));
+    assert.equal(espMatchingViolation(campaign({ enableAiEspMatching: undefined })), null);
+    assert.equal(espMatchingViolation(campaign({ enableAiEspMatching: null })), null);
   });
 });
 
@@ -43,19 +44,31 @@ describe("D275 plain text + tracking off", () => {
     assert.equal(trackingIsOff(["DONT_TRACK_EMAIL_OPEN"]), false);
   });
 
-  it("flags HTML bodies and tracking on", () => {
+  it("flags HTML bodies and tracking on; unread settings are not a miss", () => {
     assert.equal(looksLikeHtml("Hi {{first_name}}"), false);
     assert.equal(looksLikeHtml("<div>Hi</div>"), true);
     assert.ok(plainTextSettingsViolation(campaign({ sendAsPlainText: false })));
+    assert.equal(plainTextSettingsViolation(campaign({ sendAsPlainText: undefined, trackSettings: undefined })), null);
     assert.ok(htmlBodyViolation([{ campaignId: 1, body: "<p>Hello</p>" }]));
   });
 });
 
 describe("D182 send window", () => {
-  it("intends the standing Mon–Thu 08:00–19:00 ET window", () => {
+  it("intends the standing Mon–Thu 08:00–19:00 ET window; missing fields are not a miss", () => {
     assert.equal(sendWindowViolation(campaign()), null);
     assert.ok(sendWindowViolation(campaign({ daysOfTheWeek: [1, 2, 3, 4, 5] })));
     assert.ok(sendWindowViolation(campaign({ timezone: "America/Chicago" })));
+    assert.equal(
+      sendWindowViolation(
+        campaign({
+          timezone: undefined,
+          daysOfTheWeek: undefined,
+          startHour: undefined,
+          endHour: undefined,
+        }),
+      ),
+      null,
+    );
     assert.equal(
       sendWindowViolation(campaign({ id: 4085158, name: "Gabe Calls | SalesGlider" })),
       null,

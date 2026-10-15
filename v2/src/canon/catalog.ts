@@ -261,6 +261,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 277, title: "word-hunt substitutes never AirPods/tickets/TJ/free POC", job: 4, status: "implemented", note: "isBannedCopySwap; supersedes keep-the-gift-noun for those phrases" },
   { d: 278, title: "v2 Smartlead courtesy cap 20/min", job: "process", status: "implemented", note: "Postgres-shared 20/min concurrency 1; 429 backoff+retry; staff inventory every 30m with page delays" },
   { d: 279, title: "v2 shadow finds old-wizard holes; floor-deficit attaches; stampOk clears overdue", job: "process", status: "implemented", note: "membership hydrate; fillFloor short-pending; pending dedupe; placement_scores (campaign_id, source); stage ok log" },
+  { d: 280, title: "v2 workers boot-tick; copy-canary scores; per-campaign findings; purge stale attaches", job: "process", status: "implemented", note: "all roles bind /health; skip reasons logged; idempotent placement_scores unique; unwarmed copy-canary counts; unknown settings not flagged; pending attach purge on staff boot" },
 ];
 
 export function catalogByD(d: number): CanonRule | undefined {

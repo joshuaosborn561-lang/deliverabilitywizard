@@ -10,11 +10,25 @@ import { isActiveStatus } from "./lib/staffable.js";
 import type { V2Store } from "./store.js";
 import type { OldWizardHealth } from "./types.js";
 
-export function createApi(opts: { config: AppConfig; store: V2Store }): Express {
+export function createApi(opts: {
+  config: AppConfig;
+  store: V2Store;
+  boot?: { starting: boolean };
+}): Express {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", async (_req: Request, res: Response) => {
+    if (opts.boot?.starting) {
+      res.json({
+        ok: true,
+        role: opts.config.role,
+        starting: true,
+        shadow: opts.config.shadow,
+        writeEnabled: opts.config.writeEnabled,
+      });
+      return;
+    }
     try {
       const findings = await opts.store.listFindings();
       const stamps = await opts.store.listStamps();

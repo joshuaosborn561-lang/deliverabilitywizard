@@ -54,6 +54,68 @@ describe("staff tick", () => {
     assert.ok(result.intended.some((a) => a.kind === "detach" && a.shadowed));
   });
 
+  it("does not flag unread ESP/plain/window settings as a blanket miss", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const result = await runStaffTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: [
+          {
+            id: 100,
+            name: "Acme Outreach",
+            status: "ACTIVE",
+            clientId: 10,
+          },
+        ],
+        accounts: [],
+      },
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.equal(result.findings.filter((f) => f.kind === "esp_matching").length, 0);
+    assert.equal(result.findings.filter((f) => f.kind === "plain_text").length, 0);
+    assert.equal(result.findings.filter((f) => f.kind === "send_window").length, 0);
+  });
+
+  it("does not flag live-shaped ACTIVE campaigns that already match canon settings", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const result = await runStaffTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: [
+          {
+            id: 3847940,
+            name: "SG MSP Engagers",
+            status: "ACTIVE",
+            clientId: 1,
+            enableAiEspMatching: true,
+            sendAsPlainText: true,
+            trackSettings: ["DONT_EMAIL_OPEN", "DONT_LINK_CLICK"],
+            timezone: "America/New_York",
+            daysOfTheWeek: [1, 2, 3, 4],
+            startHour: "08:00",
+            endHour: "19:00",
+            minTimeBtwnEmails: 10,
+          },
+        ],
+        accounts: [],
+      },
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.equal(result.findings.filter((f) => f.kind === "esp_matching").length, 0);
+    assert.equal(result.findings.filter((f) => f.kind === "plain_text").length, 0);
+    assert.equal(result.findings.filter((f) => f.kind === "send_window").length, 0);
+  });
+
   it("intends ESP matching, plain text, and send-window fixes on ACTIVE campaigns", async () => {
     const store = new MemoryStore();
     const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
@@ -164,6 +226,59 @@ describe("staff tick", () => {
       runQa: false,
     });
     assert.ok(!result.intended.some((a) => a.kind === "attach" && a.email === "off@pool.info"));
+  });
+
+  it("purges stale pending attaches so the next tick caps at the real deficit", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    for (let i = 0; i < 200; i += 1) {
+      store.intended.push({
+        kind: "attach",
+        campaignId: 300,
+        accountId: 1000 + i,
+        email: `old${i}@pool.info`,
+        payload: { reason: "min40_floor" },
+        executed: false,
+        shadowed: true,
+        writeEnabled: false,
+      });
+    }
+    const purged = await store.purgePendingIntents("attach");
+    assert.equal(purged, 200);
+    const { onWeekPod } = await import("../lib/staffable.js");
+    const week = onWeekPod();
+    const pod = week === "A" ? "POD-A" : "POD-B";
+    const members = Array.from({ length: 5 }, (_, i) =>
+      account({
+        id: i + 1,
+        email: `n${i}@techevolution.info`,
+        clientId: 521881,
+        campaignIds: [300],
+        tags: [pod, "type:google"],
+      }),
+    );
+    const spares = Array.from({ length: 40 }, (_, i) =>
+      account({
+        id: 100 + i,
+        email: `spare${i}@techevolution.info`,
+        clientId: 521881,
+        campaignIds: [],
+        tags: [pod, "type:google"],
+      }),
+    );
+    const result = await runStaffTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: [{ id: 300, name: "TechEvo | Owners", status: "ACTIVE", clientId: 521881 }],
+        accounts: [...members, ...spares],
+      },
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.equal(result.intended.filter((a) => a.kind === "attach").length, 25);
   });
 
   it("intends only the deficit to the floor and does not re-log an identical pending attach", async () => {

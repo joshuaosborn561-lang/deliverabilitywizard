@@ -8,6 +8,60 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+describe("campaign list reads scheduler_cron_value", () => {
+  it("maps live Smartlead fields: tz/days/startHour and tracking aliases", async () => {
+    globalThis.fetch = (async () => {
+      return new Response(
+        JSON.stringify([
+          {
+            id: 4131393,
+            name: "Nutter | Board | Outline | All",
+            status: "ACTIVE",
+            client_id: 1,
+            enable_ai_esp_matching: true,
+            send_as_plain_text: true,
+            track_settings: ["DONT_EMAIL_OPEN", "DONT_LINK_CLICK"],
+            scheduler_cron_value: {
+              tz: "America/Chicago",
+              days: [1, 2, 3, 4],
+              endHour: "18:00",
+              startHour: "09:00",
+            },
+          },
+          {
+            id: 3847940,
+            name: "SG MSP Engagers",
+            status: "ACTIVE",
+            enable_ai_esp_matching: true,
+            send_as_plain_text: true,
+            track_settings: ["DONT_EMAIL_OPEN", "DONT_LINK_CLICK"],
+            scheduler_cron_value: {
+              tz: "America/New_York",
+              days: [1, 2, 3, 4],
+              endHour: "19:00",
+              startHour: "08:00",
+            },
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    const campaigns = await new SmartleadReader("LIVESECRET", (fn) => fn(), 0).listCampaigns();
+    const nutter = campaigns.find((c) => c.id === 4131393);
+    const sg = campaigns.find((c) => c.id === 3847940);
+    assert.equal(nutter?.enableAiEspMatching, true);
+    assert.equal(nutter?.sendAsPlainText, true);
+    assert.deepEqual(nutter?.trackSettings, ["DONT_EMAIL_OPEN", "DONT_LINK_CLICK"]);
+    assert.equal(nutter?.timezone, "America/Chicago");
+    assert.deepEqual(nutter?.daysOfTheWeek, [1, 2, 3, 4]);
+    assert.equal(nutter?.startHour, "09:00");
+    assert.equal(nutter?.endHour, "18:00");
+    assert.equal(sg?.timezone, "America/New_York");
+    assert.equal(sg?.startHour, "08:00");
+    assert.equal(sg?.endHour, "19:00");
+  });
+});
+
 describe("staff email-account inventory paging", () => {
   it("requests fetch_campaigns=true and coerces string campaign_ids to numbers", async () => {
     const keys: string[] = [];

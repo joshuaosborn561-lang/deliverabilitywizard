@@ -44,13 +44,14 @@ export interface V2Store {
     campaignId: number,
     reason?: string,
   ): Promise<number>;
+  purgePendingIntents(kind: IntendedAction["kind"]): Promise<number>;
   upsertScore(score: PlacementScore): Promise<void>;
   listScores(): Promise<PlacementScore[]>;
   upsertSuspect(row: IsolationSuspect): Promise<void>;
   listSuspects(): Promise<IsolationSuspect[]>;
   insertRun(run: IsolationRun): Promise<void>;
   latestRun(campaignId: number): Promise<IsolationRun | undefined>;
-  stampOk(stage: string, at?: Date): Promise<void>;
+  stampOk(stage: string, at?: Date, skipReason?: string | null): Promise<void>;
   stampError(stage: string, error: string, at?: Date): Promise<void>;
   listStamps(): Promise<StageStamp[]>;
   upsertGeneric(seat: GenericSeat): Promise<void>;
@@ -142,6 +143,12 @@ export class MemoryStore implements V2Store {
         (reason == null || payloadReason(a.payload) === reason),
     ).length;
   }
+  async purgePendingIntents(kind: IntendedAction["kind"]): Promise<number> {
+    const keep = this.intended.filter((a) => a.executed || a.kind !== kind);
+    const n = this.intended.length - keep.length;
+    this.intended = keep;
+    return n;
+  }
   async upsertScore(score: PlacementScore): Promise<void> {
     this.scores = this.scores.filter(
       (s) => !(s.campaignId === score.campaignId && s.source === score.source),
@@ -164,13 +171,14 @@ export class MemoryStore implements V2Store {
   async latestRun(campaignId: number): Promise<IsolationRun | undefined> {
     return [...this.runs].reverse().find((r) => r.campaignId === campaignId);
   }
-  async stampOk(stage: string, at = new Date()): Promise<void> {
+  async stampOk(stage: string, at = new Date(), skipReason: string | null = null): Promise<void> {
     this.stamps.set(stage, {
       stage,
       lastOkAt: at.toISOString(),
       lastError: undefined,
       lastErrorAt: undefined,
       consecutiveFailures: 0,
+      lastSkipReason: skipReason ?? undefined,
     });
   }
   async stampError(stage: string, error: string, at = new Date()): Promise<void> {
@@ -297,8 +305,54 @@ export class PostgresStore implements V2Store {
   async migrate(): Promise<void> {
     const sqlPath = join(process.cwd(), "sql/schema.sql");
     const sql = await readFile(sqlPath, "utf8");
-    await this.pool.query(sql);
+    for (const stmt of splitSqlStatements(sql)) {
+      try {
+        await this.pool.query(stmt);
+      } catch (error) {
+        const text = safeErrorText(error);
+        if (/placement_scores/i.test(stmt) && /primary key|unique/i.test(text)) {
+          console.error("[v2] migrate placement_scores constraint", text);
+          continue;
+        }
+        throw error;
+      }
+    }
+    await this.ensurePlacementScoresUnique();
+    await this.pool.query(
+      "ALTER TABLE inventory_campaigns ADD COLUMN IF NOT EXISTS canon_settings JSONB",
+    );
+    await this.pool.query(
+      "ALTER TABLE stage_health ADD COLUMN IF NOT EXISTS last_skip_reason TEXT",
+    );
     await this.scrubSecretRows();
+  }
+
+  /**
+   * D280 — existing DBs kept a campaign_id-only PK, so ON CONFLICT
+   * (campaign_id, source) 500s. Drop the old key, delete duplicate pairs,
+   * then add a unique index the upsert can use. Each step is its own query
+   * so a pooler cannot skip the ALTER.
+   */
+  async ensurePlacementScoresUnique(): Promise<void> {
+    await this.pool.query(`
+      DELETE FROM placement_scores a
+      USING placement_scores b
+      WHERE a.ctid < b.ctid
+        AND a.campaign_id = b.campaign_id
+        AND a.source = b.source
+    `);
+    await this.pool.query("ALTER TABLE placement_scores DROP CONSTRAINT IF EXISTS placement_scores_pkey");
+    try {
+      await this.pool.query(
+        "ALTER TABLE placement_scores ADD CONSTRAINT placement_scores_pkey PRIMARY KEY (campaign_id, source)",
+      );
+    } catch (error) {
+      console.error("[v2] placement_scores pkey", safeErrorText(error));
+    }
+    await this.pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS placement_scores_campaign_source_uidx
+      ON placement_scores (campaign_id, source)
+    `);
   }
 
   /** One-shot: wipe leaked api_key / token values from existing error rows. */
@@ -362,15 +416,16 @@ export class PostgresStore implements V2Store {
       const accounts = dedupeById(book.accounts);
       for (const c of campaigns) {
         await client.query(
-          `INSERT INTO inventory_campaigns (id, name, status, client_id, min_time_btwn_emails, updated_at)
-           VALUES ($1,$2,$3,$4,$5,NOW())
+          `INSERT INTO inventory_campaigns (id, name, status, client_id, min_time_btwn_emails, canon_settings, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,NOW())
            ON CONFLICT (id) DO UPDATE SET
              name = EXCLUDED.name,
              status = EXCLUDED.status,
              client_id = EXCLUDED.client_id,
              min_time_btwn_emails = EXCLUDED.min_time_btwn_emails,
+             canon_settings = EXCLUDED.canon_settings,
              updated_at = NOW()`,
-          [c.id, c.name, c.status, c.clientId, c.minTimeBtwnEmails ?? null],
+          [c.id, c.name, c.status, c.clientId, c.minTimeBtwnEmails ?? null, campaignSettings(c)],
         );
       }
       for (const a of accounts) {
@@ -545,6 +600,14 @@ export class PostgresStore implements V2Store {
     return Number(r.rows[0]?.n ?? 0);
   }
 
+  async purgePendingIntents(kind: IntendedAction["kind"]): Promise<number> {
+    const r = await this.pool.query(
+      "DELETE FROM intended_actions WHERE executed = false AND kind = $1",
+      [kind],
+    );
+    return r.rowCount ?? 0;
+  }
+
   async listIntended(since?: Date): Promise<IntendedAction[]> {
     const r = since
       ? await this.pool.query("SELECT * FROM intended_actions WHERE at >= $1 ORDER BY at DESC", [
@@ -674,18 +737,19 @@ export class PostgresStore implements V2Store {
     };
   }
 
-  async stampOk(stage: string, at = new Date()): Promise<void> {
+  async stampOk(stage: string, at = new Date(), skipReason: string | null = null): Promise<void> {
     await this.pool.query(
-      `INSERT INTO stage_health (stage, last_ok_at, last_error, last_error_at, consecutive_failures, updated_at)
-       VALUES ($1,$2,NULL,NULL,0,NOW())
+      `INSERT INTO stage_health (stage, last_ok_at, last_error, last_error_at, consecutive_failures, last_skip_reason, updated_at)
+       VALUES ($1,$2,NULL,NULL,0,$3,NOW())
        ON CONFLICT (stage) DO UPDATE SET
          last_ok_at = EXCLUDED.last_ok_at,
          last_error = NULL,
          last_error_at = NULL,
          consecutive_failures = 0,
+         last_skip_reason = EXCLUDED.last_skip_reason,
          in_flight_since = NULL,
          updated_at = NOW()`,
-      [stage, at],
+      [stage, at, skipReason],
     );
   }
 
@@ -710,6 +774,7 @@ export class PostgresStore implements V2Store {
       lastError: row.last_error ? safeErrorText(row.last_error) : undefined,
       consecutiveFailures: row.consecutive_failures,
       inFlightSince: row.in_flight_since ? row.in_flight_since.toISOString() : undefined,
+      lastSkipReason: row.last_skip_reason ?? undefined,
     }));
   }
 
@@ -990,14 +1055,53 @@ export class PostgresStore implements V2Store {
   }
 }
 
+function campaignSettings(c: SlimCampaign): Record<string, unknown> {
+  return {
+    enableAiEspMatching: c.enableAiEspMatching ?? null,
+    sendAsPlainText: c.sendAsPlainText ?? null,
+    trackSettings: c.trackSettings ?? null,
+    timezone: c.timezone ?? null,
+    daysOfTheWeek: c.daysOfTheWeek ?? null,
+    startHour: c.startHour ?? null,
+    endHour: c.endHour ?? null,
+    maxLeadsPerDay: c.maxLeadsPerDay ?? null,
+  };
+}
+
 function rowToCampaign(row: pg.QueryResultRow): SlimCampaign {
+  const settings = (row.canon_settings ?? {}) as Record<string, unknown>;
   return {
     id: row.id,
     name: row.name,
     status: row.status,
     clientId: row.client_id,
     minTimeBtwnEmails: row.min_time_btwn_emails,
+    enableAiEspMatching:
+      settings.enableAiEspMatching == null ? null : Boolean(settings.enableAiEspMatching),
+    sendAsPlainText: settings.sendAsPlainText == null ? null : Boolean(settings.sendAsPlainText),
+    trackSettings: Array.isArray(settings.trackSettings)
+      ? settings.trackSettings.map((v) => String(v))
+      : null,
+    timezone: settings.timezone == null ? null : String(settings.timezone),
+    daysOfTheWeek: Array.isArray(settings.daysOfTheWeek)
+      ? settings.daysOfTheWeek.map((v) => Number(v)).filter((n) => Number.isFinite(n))
+      : null,
+    startHour: settings.startHour == null ? null : String(settings.startHour),
+    endHour: settings.endHour == null ? null : String(settings.endHour),
+    maxLeadsPerDay:
+      settings.maxLeadsPerDay == null ? null : Number(settings.maxLeadsPerDay),
   };
+}
+
+function splitSqlStatements(sql: string): string[] {
+  const stripped = sql
+    .split("\n")
+    .map((line) => (line.trimStart().startsWith("--") ? "" : line))
+    .join("\n");
+  return stripped
+    .split(";")
+    .map((stmt) => stmt.trim())
+    .filter((stmt) => stmt.length > 0);
 }
 
 function rowToAccount(row: pg.QueryResultRow): SlimAccount {

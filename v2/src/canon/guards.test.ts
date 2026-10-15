@@ -182,6 +182,11 @@ describe("ported canon that Josh said v2 was missing", () => {
     assert.match(srcBlob, /formatStageOkLog/, stop("D279", "stage ok log missing"));
     assert.match(srcBlob, /countPendingIntents/, stop("D279", "pending attach deficit missing"));
     assert.match(srcBlob, /below_launch_bar/, stop("D279", "below_launch_bar missing"));
+    assert.match(srcBlob, /ensurePlacementScoresUnique/, stop("D280", "idempotent placement_scores unique missing"));
+    assert.match(srcBlob, /purgePendingIntents/, stop("D280", "pending attach purge missing"));
+    assert.match(srcBlob, /formatSkipLog/, stop("D280", "skip-reason log missing"));
+    assert.match(srcBlob, /filterReleasedSenderRows/, stop("D280", "copy-canary must score non-fleet senders"));
+    assert.match(srcBlob, /COMPARE_ALWAYS_KINDS/, stop("D280", "/compare must always include below_launch_bar + missing_signature_tag"));
   });
 });
 

@@ -1,5 +1,6 @@
 import { parseSlimEmailAccountsFromFile } from "../lib/accountMembership.js";
 import { apiRequest, sleep, type RequestOptions } from "../lib/http.js";
+import { parseFileOffThread } from "../lib/jsonOffThread.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
 import {
@@ -114,6 +115,8 @@ export class SmartleadClient {
     return this.mutate(() =>
       this.request<SmartleadCampaign[]>("campaigns/", {
         query: clientId === undefined ? undefined : { client_id: clientId },
+        // D271 — campaigns[] with sequences can be multi-MB; stream + parse off-thread.
+        parseJsonFile: (filePath) => parseFileOffThread(filePath),
       }),
     );
   }
@@ -157,6 +160,7 @@ export class SmartleadClient {
         },
         timeoutMs: 180_000,
         retries: 1,
+        parseJsonFile: (filePath) => parseFileOffThread(filePath),
       },
     );
   }
@@ -250,7 +254,7 @@ export class SmartleadClient {
           // Never response.text() a fat fetch_campaigns body.
           parseJsonFile: options.fetchCampaigns
             ? parseSlimEmailAccountsFromFile
-            : undefined,
+            : (filePath) => parseFileOffThread(filePath),
         },
       );
       if (!Array.isArray(page)) {

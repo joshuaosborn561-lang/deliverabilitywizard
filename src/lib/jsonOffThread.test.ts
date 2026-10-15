@@ -37,4 +37,24 @@ describe("D257 off-thread JSON", () => {
     assert.equal(parsed.ok, true);
     assert.equal(parsed.n, 7);
   });
+
+  it("D271: parses a fat file in yielded key/slice chunks", async () => {
+    const value: Record<string, { n: number; blob: string }> = {};
+    for (let i = 0; i < 80; i += 1) {
+      value[`k${i}`] = { n: i, blob: "y".repeat(4_000) };
+    }
+    const filePath = `/tmp/dw-json-fat-${process.pid}-${Date.now()}.json`;
+    await writeFile(filePath, JSON.stringify(value), "utf8");
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 5);
+    timer.unref?.();
+    const parsed = await parseFileOffThread<typeof value>(filePath);
+    clearInterval(timer);
+    assert.equal(parsed.k0?.n, 0);
+    assert.equal(parsed.k79?.n, 79);
+    assert.equal(parsed.k79?.blob.length, 4_000);
+    assert.ok(ticks > 0, "chunked parse must let the event loop tick");
+  });
 });

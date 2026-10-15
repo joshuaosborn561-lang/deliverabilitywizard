@@ -139,6 +139,7 @@ import {
   InFlightLock,
   MONITOR_LOCK_MAX_MS,
 } from "./lib/inFlightLock.js";
+import { startEventLoopAttribution } from "./lib/eventLoopAttribution.js";
 import { startFreezeWatchdog } from "./lib/freezeWatchdog.js";
 import { PodControlService } from "./services/podControls.js";
 import { IsolationRigService } from "./services/isolationRig.js";
@@ -198,6 +199,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  startEventLoopAttribution();
   const state = new StateStore(config.stateFilePath);
   await state.load();
   // D130 — the hold/swap rotation system is retired (kill-only, D51/D59).
@@ -3645,7 +3647,7 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       flush: () => state.saveHot(),
     });
     console.log(
-      "[boot] D247/D257/D265 freeze watchdog: event-loop delay >1s logged; blocked >5m, repeated multi-second freezes, or a pass past 2× max sets exitCode=1, flushes lastOk sidecar, then process.exit(1) (Railway restartPolicyType ALWAYS)",
+      "[boot] D247/D257/D265/D271 freeze watchdog: event-loop delay >1s logged with stage/op/stack attribution; blocked >5m, repeated multi-second freezes, or a pass past 2× max sets exitCode=1, flushes lastOk sidecar, then process.exit(1) (Railway restartPolicyType ALWAYS). Thresholds are not widened.",
     );
     console.log(
       "[boot] D249 catch-up: weekday 6am–8pm CT Needs you / InboxKit / TERRL EOD once if today's stamp is missing (3m after listen, then each health tick)",

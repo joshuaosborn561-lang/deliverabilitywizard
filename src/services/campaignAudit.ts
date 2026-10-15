@@ -314,7 +314,7 @@ export class CampaignAuditService {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
       return !isAnyShellCampaign(campaign);
     });
-    const membersByCampaign = indexAccountsByCampaign(input.accounts);
+    const membersByCampaign = await indexAccountsByCampaign(input.accounts);
 
     let auditN = 0;
     for (const campaign of live) {

@@ -351,7 +351,7 @@ export class CampaignTopUpService {
     // one on a campaign is reassignable only while that campaign keeps a
     // surplus above the floor.
     const campaignsByEmail = new Map<string, number[]>();
-    const accountsByCampaign = indexAccountsByCampaign(
+    const accountsByCampaign = await indexAccountsByCampaign(
       accounts as SmartleadAccountWithCampaigns[],
     );
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {

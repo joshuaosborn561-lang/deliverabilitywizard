@@ -1,6 +1,8 @@
 import { createWriteStream } from "node:fs";
 import { once } from "node:events";
-import { unlink, writeFile } from "node:fs/promises";
+import { readFile, unlink, writeFile } from "node:fs/promises";
+import { runWithStallScopeAsync } from "./eventLoopAttribution.js";
+import { parseFileOffThread } from "./jsonOffThread.js";
 import { yieldEventLoop } from "./stringifyYielding.js";
 
 export class ApiError extends Error {
@@ -59,6 +61,10 @@ function buildUrl(
 
 /** Yield the event loop after this many streamed bytes (D270). */
 export const STREAM_BODY_YIELD_BYTES = 256_000;
+/** D271 — never Buffer.from / write a multi-MB fetch chunk in one slice. */
+export const STREAM_BODY_SLICE_BYTES = 64_000;
+/** D271 — OK bodies this large parse off-thread even without parseJsonFile. */
+export const FAT_JSON_PARSE_BYTES = 256_000;
 
 export async function streamResponseToFile(
   response: Response,
@@ -84,13 +90,18 @@ export async function streamResponseToFile(
       const { done, value } = await reader.read();
       if (done) break;
       if (!value?.byteLength) continue;
-      const chunk = Buffer.from(value);
-      if (!file.write(chunk)) await once(file, "drain");
-      written += chunk.byteLength;
-      sinceYield += chunk.byteLength;
-      if (sinceYield >= yieldEvery) {
-        sinceYield = 0;
-        await yieldEventLoop();
+      // D271 — undici can hand the whole 10–50MB page as one read().
+      // Slice it so Buffer.from + write cannot pin the loop 18–25s.
+      for (let offset = 0; offset < value.byteLength; offset += STREAM_BODY_SLICE_BYTES) {
+        const end = Math.min(offset + STREAM_BODY_SLICE_BYTES, value.byteLength);
+        const chunk = Buffer.from(value.subarray(offset, end));
+        if (!file.write(chunk)) await once(file, "drain");
+        written += chunk.byteLength;
+        sinceYield += chunk.byteLength;
+        if (sinceYield >= yieldEvery) {
+          sinceYield = 0;
+          await yieldEventLoop();
+        }
       }
     }
     file.end();
@@ -115,21 +126,28 @@ async function parseOkBody(
     signal?: AbortSignal;
   },
 ): Promise<unknown> {
-  if (options.parseJsonFile) {
-    const tmp = tmpBodyPath();
-    try {
-      await streamResponseToFile(response, tmp, { signal: options.signal });
-      return await options.parseJsonFile(tmp);
-    } finally {
-      await unlink(tmp).catch(() => undefined);
-    }
-  }
-  const text = await response.text();
-  if (!text) return null;
+  // D271 — always stream OK Smartlead bodies. content-length is often
+  // missing; response.text() of a fat page is the leftover 18–25s stall.
+  const tmp = tmpBodyPath();
   try {
-    return options.parseJson ? await options.parseJson(text) : JSON.parse(text);
-  } catch {
-    return text;
+    const size = await runWithStallScopeAsync("fs.streamResponseToFile", () =>
+      streamResponseToFile(response, tmp, { signal: options.signal }),
+    );
+    if (options.parseJsonFile) {
+      return await options.parseJsonFile(tmp);
+    }
+    if (size >= FAT_JSON_PARSE_BYTES && !options.parseJson) {
+      return await parseFileOffThread(tmp);
+    }
+    const text = await readFile(tmp, "utf8");
+    if (!text) return null;
+    try {
+      return options.parseJson ? await options.parseJson(text) : JSON.parse(text);
+    } catch {
+      return text;
+    }
+  } finally {
+    await unlink(tmp).catch(() => undefined);
   }
 }
 

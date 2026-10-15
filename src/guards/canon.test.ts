@@ -14755,7 +14755,7 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       store,
-      /stringifyOffThread\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("state.save writes compact JSON off-thread (D247/D249/D257).", "store.ts lost off-thread stringify."),
     );
     assert.match(
@@ -14925,7 +14925,7 @@ describe("owner intent — D249 persist stamps, unblock the loop, catch up", () 
     );
     assert.match(
       store,
-      /stringifyOffThread\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("full dump is off-thread compact JSON (D249/D257).", "store.ts still one-shot stringifies state."),
     );
     assert.match(
@@ -15034,7 +15034,7 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       store,
-      /stringifyOffThread\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("D249/D257 off-thread stringify stays (D250).", "store.ts lost stringifyOffThread."),
     );
     assert.match(
@@ -15719,7 +15719,7 @@ describe("owner intent — D257 stop event-loop freezes", () => {
 
     assert.match(
       store,
-      /stringifyOffThread\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("full dump stringifies off-thread (D257).", "store.ts still stringifies state on the main thread."),
     );
     assert.match(
@@ -17116,8 +17116,8 @@ describe("owner intent — D270 freeze/restart follow-up", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D270\*\*/,
-      stop("CANON is dated D270.", "CANON.md header lost the D270 stamp."),
+      /Canon as of \*\*D(270|27[1-9])\*\*/,
+      stop("CANON is dated D270 or later.", "CANON.md header lost the D270-era stamp."),
     );
     assert.match(
       canon,
@@ -17228,6 +17228,136 @@ describe("owner intent — D270 freeze/restart follow-up", () => {
       health,
       /inventory: inventory \?\? undefined/,
       stop("campaign-health passes the book to copy-canary (D270).", "campaignHealth.ts still refetches canary inventory."),
+    );
+  });
+});
+
+describe("owner intent — D271 stall attribution and leftover hotspots", () => {
+  it("D271: name stalls; stream slices; state dump to disk; yield the account index", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const attr = await readFile(
+      new URL("../lib/eventLoopAttribution.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const json = await readFile(
+      new URL("../lib/jsonOffThread.ts", import.meta.url),
+      "utf8",
+    );
+    const walk = await readFile(
+      new URL("../lib/stringifyYielding.ts", import.meta.url),
+      "utf8",
+    );
+    const http = await readFile(new URL("../lib/http.ts", import.meta.url), "utf8");
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const sl = await readFile(new URL("../clients/smartlead.ts", import.meta.url), "utf8");
+    const seats = await readFile(
+      new URL("../lib/accountCampaignIndex.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D271\*\*/,
+      stop("CANON is dated D271.", "CANON.md header lost the D271 stamp."),
+    );
+    assert.match(
+      canon,
+      /sampled stack \/ async-hooks \/ perf_hooks attribution/,
+      stop("CANON names stall attribution (D271).", "CANON.md lost attribution."),
+    );
+    assert.match(
+      decisions,
+      /## D271 — /,
+      stop("The ledger records D271.", "DECISIONS.md has no D271 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D271 \|/m,
+      stop("The status index lists D271 (D127).", "DECISIONS.md status index has no D271 row."),
+    );
+    assert.match(
+      attr,
+      /formatStallAttribution/,
+      stop("Attribution helper exists (D271).", "eventLoopAttribution.ts lost formatStallAttribution."),
+    );
+    assert.match(
+      attr,
+      /createHook/,
+      stop("Attribution samples async_hooks (D271).", "eventLoopAttribution.ts lost createHook."),
+    );
+    assert.match(
+      attr,
+      /monitorEventLoopDelay/,
+      stop("Attribution reads perf_hooks delay (D271).", "eventLoopAttribution.ts lost monitorEventLoopDelay."),
+    );
+    assert.match(
+      freeze,
+      /freezeDelayLogLine|formatStallAttribution/,
+      stop("Watchdog delay logs carry attribution (D271).", "freezeWatchdog.ts lost the attribution log."),
+    );
+    assert.match(
+      freeze,
+      /EVENT_LOOP_REPEAT_COUNT/,
+      stop("Watchdog thresholds stay (D271).", "freezeWatchdog.ts lost EVENT_LOOP_REPEAT_COUNT."),
+    );
+    assert.match(
+      index,
+      /startEventLoopAttribution/,
+      stop("Boot starts stall attribution (D271).", "index.ts lost startEventLoopAttribution."),
+    );
+    assert.match(
+      store,
+      /stringifyOffThreadToFile\(this\.state/,
+      stop("State dump writes to disk without joining (D271).", "store.ts lost stringifyOffThreadToFile."),
+    );
+    assert.match(
+      json,
+      /parseFileChunked/,
+      stop("Load parses in yielded chunks (D271).", "jsonOffThread.ts lost parseFileChunked."),
+    );
+    assert.match(
+      json,
+      /stringifyYieldingToFile/,
+      stop("Off-thread stringify writes to a file (D271).", "jsonOffThread.ts lost stringifyYieldingToFile."),
+    );
+    assert.match(
+      walk,
+      /stringifyYieldingToFile/,
+      stop("Yielding walk can write a file (D271).", "stringifyYielding.ts lost stringifyYieldingToFile."),
+    );
+    assert.match(
+      http,
+      /STREAM_BODY_SLICE_BYTES/,
+      stop("HTTP slices fat stream chunks (D271).", "http.ts lost STREAM_BODY_SLICE_BYTES."),
+    );
+    assert.match(
+      seats,
+      /yieldEventLoop/,
+      stop("Account index yields (D271).", "accountCampaignIndex.ts lost yieldEventLoop."),
+    );
+    assert.match(
+      sl,
+      /parseJsonFile: \(filePath\) => parseFileOffThread\(filePath\)/,
+      stop("listCampaigns parses off-thread (D271).", "smartlead.ts lost campaigns parseJsonFile."),
+    );
+    assert.doesNotMatch(
+      freeze,
+      /EVENT_LOOP_REPEAT_MS = 5_000/,
+      stop("Do not hide stalls by widening the repeat threshold (D271).", "freezeWatchdog.ts loosened EVENT_LOOP_REPEAT_MS."),
     );
   });
 });

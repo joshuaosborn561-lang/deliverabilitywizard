@@ -1,14 +1,22 @@
 /**
- * D247 / D257 / D265 — if the event loop stays blocked or a pass lock is
+ * D247 / D257 / D265 / D271 — if the event loop stays blocked or a pass lock is
  * stuck past twice its max, set `process.exitCode = 1`, flush the lastOk
  * sidecar, then `process.exit(1)` so Railway restarts the service.
  * D257 also exits on repeated multi-second freezes (not only a single
  * freeze over 5 minutes). D265: never unref the interval (Node must not
  * drain to exit 0), never flush the full state dump, and Railway
  * restartPolicyType is ALWAYS so an unexpected 0 still comes back.
+ * D271: every delay log names the in-flight stage plus a sampled stack
+ * / async-hooks / perf_hooks attribution. Thresholds are not widened.
  */
 
+import { executionAsyncId } from "node:async_hooks";
 import type { InFlightLock } from "./inFlightLock.js";
+import {
+  freezeDelayLogLine,
+  markWatchdogAsyncId,
+  type StallLockStage,
+} from "./eventLoopAttribution.js";
 
 export const EVENT_LOOP_LOG_MS = 1_000;
 export const EVENT_LOOP_EXIT_MS = 5 * 60 * 1000;
@@ -30,7 +38,14 @@ export interface FreezeTickInput {
   eventLoopRepeatCount?: number;
   eventLoopRepeatWindowMs?: number;
   recentFreezes?: number[];
-  locks: Array<{ name: string; since: number | null; maxMs: number }>;
+  locks: Array<{
+    name: string;
+    stage?: string | null;
+    since: number | null;
+    maxMs: number;
+  }>;
+  /** D271 — already-formatted stage/op/stack line; built by the interval. */
+  attribution?: string;
 }
 
 export interface FreezeTickResult {
@@ -55,7 +70,9 @@ export function freezeWatchdogTick(input: FreezeTickInput): FreezeTickResult {
   let exitReason: string | undefined;
 
   if (delay >= logMs) {
-    log = `[watchdog] event-loop delay ${delay}ms`;
+    log = input.attribution
+      ? `[watchdog] event-loop delay ${delay}ms ${input.attribution}`
+      : freezeDelayLogLine(delay, input.locks as StallLockStage[]);
   }
   if (gap >= exitMs) {
     exitReason = `event loop blocked for ${Math.round(gap / 1000)}s`;
@@ -194,9 +211,11 @@ export function startFreezeWatchdog(deps: FreezeWatchdogDeps): { stop: () => voi
   let exiting = false;
 
   const interval = setInterval(() => {
+    markWatchdogAsyncId(executionAsyncId());
     if (exiting) return;
     const locks = deps.getLocks().map((lock) => ({
       name: lock.name,
+      stage: lock.stage,
       since: lock.since,
       maxMs: lock.maxMs,
     }));

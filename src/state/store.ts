@@ -842,6 +842,8 @@ export class StateStore {
   private saveSeq = 0;
   /** D267 — gone campaign ids persisted on the sidecar so a stale dump cannot resurrect them. */
   private isolationGoneIds = new Set<number>();
+  /** D269 — ghost pool emails persisted on the sidecar so min40 does not re-drop them after a freeze-kill. */
+  private poolGoneEmails = new Set<string>();
   /**
    * Test-only: sit between stringify and rename so a concurrent mutation
    * can prove the mutex does not persist a stale snapshot.
@@ -1351,6 +1353,30 @@ export class StateStore {
   /** D86 — drop a stale planned row (never one mapped to a Smartlead account). */
   removePoolMailbox(email: string): void {
     delete this.state.poolMailboxes[email.toLowerCase()];
+  }
+
+  /** D269 — remember a ghost so a stale dump cannot resurrect it. */
+  recordPoolGhost(email: string): void {
+    const key = email.trim().toLowerCase();
+    if (key) this.poolGoneEmails.add(key);
+  }
+
+  /** D269 — a seat that is back in Smartlead inventory is not a ghost. */
+  forgetPoolGhost(email: string): void {
+    this.poolGoneEmails.delete(email.trim().toLowerCase());
+  }
+
+  listPoolGhostEmails(): string[] {
+    return [...this.poolGoneEmails];
+  }
+
+  /**
+   * D269 — flush ghost-pool drops to the lastOk sidecar now.
+   * A freeze-kill that only calls saveHot must not put the 422
+   * seats back on the next min40 start.
+   */
+  async persistPoolPrune(): Promise<void> {
+    await this.saveHot();
   }
 
   getPoolMailbox(email: string): PoolMailboxRecord | undefined {
@@ -2853,6 +2879,12 @@ export class StateStore {
         copySuspects: this.state.isolation.copySuspects,
         copyCanaries: this.state.isolation.copyCanaries,
       },
+      // D269 — ghost pool emails must survive a freeze-kill that
+      // only flushes the sidecar (never the full dump).
+      poolPrune: {
+        at: new Date().toISOString(),
+        goneEmails: [...this.poolGoneEmails],
+      },
     };
   }
 
@@ -2916,6 +2948,7 @@ export class StateStore {
       };
     }
     this.overlayIsolationPrune(raw.isolationPrune);
+    this.overlayPoolPrune(raw.poolPrune);
   }
 
   private overlayIsolationPrune(raw: unknown): void {
@@ -2931,6 +2964,21 @@ export class StateStore {
       this.dropPlacementScore(id);
       this.dropCopySuspect(id);
       this.dropCopyCanary(id);
+    }
+  }
+
+  private overlayPoolPrune(raw: unknown): void {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+    const prune = raw as { goneEmails?: unknown };
+    const gone = Array.isArray(prune.goneEmails)
+      ? prune.goneEmails
+          .filter((email): email is string => typeof email === "string")
+          .map((email) => email.trim().toLowerCase())
+          .filter(Boolean)
+      : [];
+    for (const email of gone) this.poolGoneEmails.add(email);
+    for (const email of this.poolGoneEmails) {
+      delete this.state.poolMailboxes[email];
     }
   }
 

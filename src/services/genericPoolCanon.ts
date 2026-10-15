@@ -69,7 +69,7 @@ export class GenericPoolCanonService {
       clients: opts.inventory.clients,
     });
     const existing = this.state.listGenericSeats();
-    const synced = syncGenericSeatsFromInventory({
+    const synced = await syncGenericSeatsFromInventory({
       existing,
       accounts: opts.inventory.accounts,
       campaigns: opts.inventory.campaigns,

@@ -94,7 +94,7 @@ export class GenericCleanupService {
       endedIds,
     );
     const powerId = this.config.powerGrydClientId;
-    const synced = syncGenericSeatsFromInventory({
+    const synced = await syncGenericSeatsFromInventory({
       existing: this.state.listGenericSeats(),
       accounts: accounts as GenericPoolSyncAccount[],
       campaigns: campaigns as SmartleadCampaign[],

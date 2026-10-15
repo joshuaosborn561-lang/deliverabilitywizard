@@ -21,6 +21,11 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** D257 — shared Smartlead limiter learns a 429 from any stage. */
   onRateLimit?: (retryAfterMs?: number) => void;
+  /**
+   * D269 — replace JSON.parse for fat responses (email-accounts pages
+   * with fetch_campaigns). Must not structuredClone the raw graph.
+   */
+  parseJson?: (text: string) => Promise<unknown> | unknown;
 }
 
 function buildUrl(
@@ -55,6 +60,7 @@ export async function apiRequest<T>(
     retries = 4,
     signal,
     onRateLimit,
+    parseJson,
   } = options;
   const url = buildUrl(baseUrl, path, apiKey, query);
 
@@ -83,7 +89,7 @@ export async function apiRequest<T>(
       let parsed: unknown = null;
       if (text) {
         try {
-          parsed = JSON.parse(text);
+          parsed = parseJson ? await parseJson(text) : JSON.parse(text);
         } catch {
           parsed = text;
         }

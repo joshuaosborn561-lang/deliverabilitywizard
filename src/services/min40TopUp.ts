@@ -235,7 +235,7 @@ export class Min40TopUpService {
       this.config.pocClientNamePatterns,
       endedIds,
     );
-    const seeded = syncGenericSeatsFromInventory({
+    const seeded = await syncGenericSeatsFromInventory({
       existing: this.state.listGenericSeats(),
       accounts,
       campaigns,
@@ -268,6 +268,9 @@ export class Min40TopUpService {
       console.warn(
         `[min40-topup] dropped ${ghosts.length} ghost pool seat(s) missing from Smartlead inventory`,
       );
+      if (!dryRun) {
+        await this.state.persistPoolPrune();
+      }
     }
     const poolMailboxes = this.state.listPoolMailboxes();
     const brandByClientId = new Map<number, string>();
@@ -1300,7 +1303,7 @@ export class Min40TopUpService {
   }): Promise<void> {
     const synced =
       input.synced ??
-      syncGenericSeatsFromInventory({
+      (await syncGenericSeatsFromInventory({
         existing: this.state.listGenericSeats(),
         accounts: input.accounts,
         campaigns: input.campaigns,
@@ -1309,7 +1312,7 @@ export class Min40TopUpService {
         now: input.now,
         powerGrydClientId: this.config.powerGrydClientId,
         pocEngagementClientIds: input.pocIds,
-      });
+      }));
     if (!input.dryRun && !input.synced) {
       this.state.replaceGenericSeats(synced.seats);
     }

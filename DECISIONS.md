@@ -274,6 +274,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
 | D267 | Live | Freeze/restart reliability: top-up/fan-out/campaign-audit yield; isolation prune persists on the sidecar; isolation-branch stays inside its 10m budget and stamps lastOk on a partial pass; Smartlead limiter 150/min including SmartDelivery; canon-ops skipped ticks log a reason and retry |
 | D268 | Live | Allow-generics is gone. Generics are a thin on-week floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. Never new generics onto the off-week cylinder. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
+| D269 | Live | Freeze/restart loop after D267/D268: ghost-pool drops persist on the lastOk sidecar; fat fetch_campaigns inventory pages slim to campaign_ids (off-thread when large); min40 prefix / generic-seat sync / client-rest yield so a 40–50s stall cannot trip the freeze watchdog |
 
 ---
 
@@ -9621,5 +9622,74 @@ Calls, or the static named A/B split (D43/D234).
 `notifyGenericBackfill`; `dropPendingAllowGenerics`; leftover tap
 retired; min40 floor-stop; named-at-floor takes no generics;
 TechEvo 30. Tests: `allowGenericsRemoved`; min40 floor-stop.
+
+---
+
+## D269 — Persist ghost-pool drops; slim fat inventory pages; yield the health/min40 start
+
+**Date.** 2026-10-15 (Josh via production freeze/restart loop after D268).
+
+**Decision.** Production `main@f207273` (D268 #317) was still in the
+freeze/restart loop D267 (#316) was supposed to stop. From the
+2026-10-14 ~6:35pm CT deploy through ~10:22am CT Oct 15 the freeze
+watchdog restarted the process ~38 times (2–3× per hour):
+`event loop delayed 3 times ≥3000ms within 120s`, stalls up to ~50s
+at health-pass and min40-topup start. `/health` stayed 200 because
+each restart is ~1s. Longer stages (generic-cleanup,
+mailbox-type-tags, campaign-audit, isolation-*) could not finish.
+Every min40 run logged `dropped 422 ghost pool seat(s)` again.
+
+1. **Ghost-pool prune must persist.** `dropGhostPoolSeats` only
+   mutated memory. A freeze-kill flushes `saveHot` and never the
+   full dump, so the stale `state.json` resurrected the same ~422
+   available/assigned pool rows (same pattern D262/D267 fixed for
+   isolation-branch). Persist gone emails on the lastOk sidecar
+   (`persistPoolPrune` / `poolPrune.goneEmails`) immediately; load
+   applies them. A seat that is back in Smartlead inventory is
+   forgotten so the sidecar cannot delete a living row.
+
+2. **Fat `fetch_campaigns` pages must not parse on the main thread.**
+   GET /email-accounts with `fetch_campaigns=true` embeds a
+   `campaigns[]` object per mailbox. A 100-row page can be tens of
+   MB; `JSON.parse` of that at inventory start is the 40–50s stall
+   (D262's structuredClone of ~100MB was 31–47s). Slim each page to
+   `campaign_ids` and drop `campaigns[]`. Bodies over 256KB
+   parse+slim in a worker that posts only the thin page — never
+   structuredClone the raw graph onto the main thread.
+
+3. **The health/min40 start walks yield.** `syncGenericSeatsFromInventory`
+   is async and `yieldEventLoop`s every 32 seats. client-rest
+   classifies the same way. min40 / campaign top-up persist the
+   ghost drop after it lands. Fill / rest / attach outcomes are
+   unchanged.
+
+No campaign START / PAUSE. No spend. No change to POD floors,
+21-day warmup, PowerGRYD empty-by-design, generics policy, or
+hold enforcement. The freeze watchdog stays (D247/D257/D265).
+
+**Why.** D267 persisted isolation prune and yielded top-up / fan-out
+/ campaign-audit. Ghost-pool cleanup and the inventory JSON at the
+start of health-pass / min40 were still a freeze-kill loop: the
+same 422 seats came back every restart, and three ≥3s stalls
+inside two minutes exited the process.
+
+**Rejected.** Widening the freeze-watchdog thresholds. Turning the
+freeze watchdog off. Changing campaign START / PAUSE. Spending or
+bypassing warmup / holds. Fetching inventory without campaign
+membership.
+
+**Supersedes / amends.** Amends D252: ghost drops persist on the
+sidecar, not only in memory. Amends D267: the same sidecar contract
+covers pool ghosts; inventory pages slim; client-rest and generic-seat
+sync yield. Amends D257/D262: fat email-account JSON is not
+parsed/cloned on the main thread. Does not change D40, D4, D158 /
+D164 / D165, or D268 floor-only generics.
+
+**Guards.** canon D269: `persistPoolPrune` / sidecar `poolPrune.goneEmails`;
+`parseSlimEmailAccountsJson` / `slimAccountMemberships`;
+`syncGenericSeatsFromInventory` yields; client-rest yields; min40
+persists after drop. Tests: prune survives a stale dump; slim
+keeps ids and drops `campaigns[]`; fat page parse ticks the loop;
+client-rest classify ticks the loop.
 
 ---

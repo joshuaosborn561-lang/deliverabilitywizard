@@ -16943,3 +16943,128 @@ describe("owner intent — D268 Allow-generics retired", () => {
     );
   });
 });
+
+describe("owner intent — D269 ghost-pool persist and health/min40 start", () => {
+  it("D269: persist pool prune; slim fat inventory pages; yield the start walks", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const min40 = await readFile(
+      new URL("../services/min40TopUp.ts", import.meta.url),
+      "utf8",
+    );
+    const rest = await readFile(
+      new URL("../services/clientRest.ts", import.meta.url),
+      "utf8",
+    );
+    const sync = await readFile(
+      new URL("../lib/genericPoolCanon.ts", import.meta.url),
+      "utf8",
+    );
+    const slim = await readFile(
+      new URL("../lib/accountMembership.ts", import.meta.url),
+      "utf8",
+    );
+    const sl = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    const json = await readFile(
+      new URL("../lib/jsonOffThread.ts", import.meta.url),
+      "utf8",
+    );
+    const reconcile = await readFile(
+      new URL("../lib/poolInventoryReconcile.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D269\*\*/,
+      stop("CANON is dated D269.", "CANON.md header lost the D269 stamp."),
+    );
+    assert.match(
+      canon,
+      /persistPoolPrune/,
+      stop("CANON names sidecar pool prune persist (D269).", "CANON.md lost persistPoolPrune."),
+    );
+    assert.match(
+      canon,
+      /poolPrune\.goneEmails/,
+      stop("CANON names sidecar poolPrune gone emails (D269).", "CANON.md lost poolPrune.goneEmails."),
+    );
+    assert.match(
+      decisions,
+      /## D269 — /,
+      stop("The ledger records D269.", "DECISIONS.md has no D269 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D269 \|/m,
+      stop("The status index lists D269 (D127).", "DECISIONS.md status index has no D269 row."),
+    );
+    assert.match(
+      store,
+      /persistPoolPrune/,
+      stop("Store persists ghost-pool prune on the sidecar (D269).", "store.ts lost persistPoolPrune."),
+    );
+    assert.match(
+      store,
+      /poolPrune/,
+      stop("Sidecar carries poolPrune gone emails (D269).", "store.ts lost poolPrune."),
+    );
+    assert.match(
+      reconcile,
+      /recordPoolGhost/,
+      stop("Ghost drop records gone emails (D269).", "poolInventoryReconcile.ts lost recordPoolGhost."),
+    );
+    assert.match(
+      min40,
+      /persistPoolPrune/,
+      stop("min40 persists ghost-pool drops (D269).", "min40TopUp.ts lost persistPoolPrune."),
+    );
+    assert.match(
+      slim,
+      /parseSlimEmailAccountsJson/,
+      stop("Fat email-account pages slim off-thread (D269).", "accountMembership.ts lost parseSlimEmailAccountsJson."),
+    );
+    assert.match(
+      slim,
+      /delete account\.campaigns/,
+      stop("Slim drops embedded campaigns[] (D269).", "accountMembership.ts no longer deletes campaigns."),
+    );
+    assert.match(
+      sl,
+      /parseSlimEmailAccountsJson/,
+      stop("Smartlead uses the slim parser for fetch_campaigns pages (D269).", "smartlead.ts lost parseSlimEmailAccountsJson."),
+    );
+    assert.match(
+      json,
+      /parseSlimEmailAccountsFile/,
+      stop("Worker slims email-account pages before postMessage (D269).", "jsonOffThread.ts lost parseSlimEmailAccountsFile."),
+    );
+    assert.match(
+      sync,
+      /GENERIC_SYNC_YIELD_EVERY/,
+      stop("Generic-seat sync yields (D269).", "genericPoolCanon.ts lost GENERIC_SYNC_YIELD_EVERY."),
+    );
+    assert.match(
+      rest,
+      /yieldEventLoop/,
+      stop("client-rest yields the classify walk (D269).", "clientRest.ts lost yieldEventLoop."),
+    );
+    assert.doesNotMatch(
+      min40,
+      /updateCampaignStatus|campaigns\/.*\/status/,
+      stop("min40 still does not write campaign status (D40/D269).", "min40TopUp.ts gained a status write."),
+    );
+  });
+});

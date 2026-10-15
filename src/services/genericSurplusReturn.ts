@@ -115,7 +115,7 @@ export async function returnSurplusGenerics(input: {
     input.state.listActiveTerlSubstitutions(),
     now,
   );
-  const synced = syncGenericSeatsFromInventory({
+  const synced = await syncGenericSeatsFromInventory({
     existing: input.state.listGenericSeats(),
     accounts: input.inventory.accounts as GenericPoolSyncAccount[],
     campaigns: input.inventory.campaigns,

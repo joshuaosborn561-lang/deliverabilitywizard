@@ -18,6 +18,7 @@ import { displayStaffedSenders } from "./displaySenderCount.js";
 import { mailboxStaffableWeight, roundStaffableWeight } from "./mailboxType.js";
 import { isGabeFollowUpCampaign } from "./pocClient.js";
 import { pickWeightedGenericReturns } from "./namedWarmSwap.js";
+import { yieldEventLoop } from "./stringifyYielding.js";
 import {
   GENERIC_ASSIGN_REASON_POD_TOP_UP,
   GENERIC_ASSIGN_REASON_POC_ENGAGEMENT,
@@ -342,14 +343,19 @@ function assignedReason(
   return GENERIC_ASSIGN_REASON_POD_TOP_UP;
 }
 
+/** D269 — yield inside the inventory seed so min40/health start cannot pin the loop. */
+export const GENERIC_SYNC_YIELD_EVERY = 32;
+
 /**
  * Rebuild the generics table from the shared Smartlead inventory.
  * Assignment is whoever currently has the seat (client_id / campaigns);
  * the validator then decides whether that assignment is still needed.
+ * D269 — yields so a 1400-seat seed at min40 / health start cannot
+ * pin the event loop for seconds.
  */
-export function syncGenericSeatsFromInventory(
+export async function syncGenericSeatsFromInventory(
   input: GenericPoolSyncInput,
-): GenericPoolSyncResult {
+): Promise<GenericPoolSyncResult> {
   const now = input.now ?? new Date();
   const powerId = input.powerGrydClientId ?? GENERIC_POOL_POWERGRYD_CLIENT_ID;
   const pocIds = new Set(
@@ -392,7 +398,10 @@ export function syncGenericSeatsFromInventory(
   const nextSeats: GenericSeatRecord[] = [];
   const accountByEmail = new Map<string, (typeof input.accounts)[number]>();
 
+  let seeded = 0;
   for (const account of input.accounts) {
+    seeded += 1;
+    if (seeded % GENERIC_SYNC_YIELD_EVERY === 0) await yieldEventLoop();
     const email = accountEmail(account);
     if (!email) continue;
     accountByEmail.set(email, account);

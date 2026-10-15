@@ -208,7 +208,7 @@ export class CampaignTopUpService {
     );
     const allClientBrands = brandsFromClients(clients);
     if (!dryRun) {
-      const seeded = syncGenericSeatsFromInventory({
+      const seeded = await syncGenericSeatsFromInventory({
         existing: this.state.listGenericSeats(),
         accounts,
         campaigns,
@@ -254,6 +254,9 @@ export class CampaignTopUpService {
         console.warn(
           `[top-up] dropped ${ghosts.length} ghost pool seat(s) missing from Smartlead inventory`,
         );
+        if (!dryRun) {
+          await this.state.persistPoolPrune();
+        }
       }
     }
     await yieldEventLoop();

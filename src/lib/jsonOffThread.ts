@@ -24,6 +24,27 @@ try {
     });
   } else if (job.op === "parseText") {
     parentPort.postMessage({ ok: true, value: JSON.parse(job.text) });
+  } else if (job.op === "parseSlimEmailAccountsFile") {
+    const page = JSON.parse(readFileSync(job.filePath, "utf8"));
+    if (!Array.isArray(page)) {
+      parentPort.postMessage({ ok: true, value: [] });
+    } else {
+      const slim = page.map((account) => {
+        if (!account || typeof account !== "object") return account;
+        let ids = Array.isArray(account.campaign_ids)
+          ? account.campaign_ids.filter((n) => typeof n === "number" && Number.isFinite(n))
+          : [];
+        if (!ids.length && Array.isArray(account.campaigns)) {
+          ids = account.campaigns
+            .map((row) => (row && typeof row === "object" ? (row.id ?? row.campaign_id) : null))
+            .filter((n) => typeof n === "number" && Number.isFinite(n));
+        }
+        const next = Object.assign({}, account, { campaign_ids: ids });
+        delete next.campaigns;
+        return next;
+      });
+      parentPort.postMessage({ ok: true, value: slim });
+    }
   } else {
     parentPort.postMessage({ ok: false, error: "unknown op" });
   }
@@ -107,5 +128,20 @@ export async function parseTextOffThread<T>(text: string): Promise<T> {
   } catch (error) {
     console.warn("[state] off-thread parseText failed; in-process fallback", error);
     return JSON.parse(text) as T;
+  }
+}
+
+/** D269 — worker reads the file, slims campaigns[], posts the thin page. */
+export async function parseSlimEmailAccountsFile<T = unknown>(
+  filePath: string,
+): Promise<T> {
+  try {
+    return (await runWorker({ op: "parseSlimEmailAccountsFile", filePath })) as T;
+  } catch (error) {
+    const mapped = asFsError(error);
+    if (mapped.code === "ENOENT") throw mapped;
+    console.warn("[state] off-thread slim email-accounts parse failed; in-process fallback", error);
+    const raw = await readFile(filePath, "utf8");
+    return JSON.parse(raw) as T;
   }
 }

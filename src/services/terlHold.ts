@@ -141,7 +141,7 @@ export class TerlHoldService {
 
     const { accounts, campaigns, clients = [] } = input.inventory;
     if (!dryRun) {
-      const seeded = syncGenericSeatsFromInventory({
+      const seeded = await syncGenericSeatsFromInventory({
         existing: this.state.listGenericSeats(),
         accounts,
         campaigns,

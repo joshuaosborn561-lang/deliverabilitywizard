@@ -408,8 +408,8 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     isCopyCanary: () => false,
   };
 
-  it("writes one row per generic and leaves named seats off the table", () => {
-    const result = syncGenericSeatsFromInventory({
+  it("writes one row per generic and leaves named seats off the table", async () => {
+    const result = await syncGenericSeatsFromInventory({
       existing: [],
       accounts: [
         {
@@ -468,8 +468,8 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     );
   });
 
-  it("keeps an existing TERRL substitute reason across a same-client resync", () => {
-    const result = syncGenericSeatsFromInventory({
+  it("keeps an existing TERRL substitute reason across a same-client resync", async () => {
+    const result = await syncGenericSeatsFromInventory({
       existing: [
         seat("swap@getintroduced.info", {
           slAccountId: 9,
@@ -499,7 +499,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     assert.equal(result.seats[0]!.assignedAt, "2026-10-02T00:00:00.000Z");
   });
 
-  it("D227: WARMUP-GATE-EXEMPT tidalstack named seats count as staffable", () => {
+  it("D227: WARMUP-GATE-EXEMPT tidalstack named seats count as staffable", async () => {
     const blocked = {
       is_smtp_success: true as const,
       is_imap_success: true as const,
@@ -509,7 +509,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       },
       created_at: "2026-09-29T00:00:00.000Z",
     };
-    const cold = syncGenericSeatsFromInventory({
+    const cold = await syncGenericSeatsFromInventory({
       existing: [],
       accounts: [
         {
@@ -532,7 +532,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       "warmup-blocked without the exempt tag is not named staffable",
     );
 
-    const warm = syncGenericSeatsFromInventory({
+    const warm = await syncGenericSeatsFromInventory({
       existing: [],
       accounts: [
         {
@@ -560,8 +560,8 @@ describe("D221 syncGenericSeatsFromInventory", () => {
     );
   });
 
-  it("D238/D239: canary, GABE-VM-RESERVED, and under-21 named seats are not named staffable", () => {
-    const result = syncGenericSeatsFromInventory({
+  it("D238/D239: canary, GABE-VM-RESERVED, and under-21 named seats are not named staffable", async () => {
+    const result = await syncGenericSeatsFromInventory({
       existing: [],
       accounts: [
         {
@@ -650,7 +650,7 @@ describe("D221 syncGenericSeatsFromInventory", () => {
       assignedClientId: 592842,
       warmedAt: "2026-01-01T00:00:00Z",
     });
-    const result = syncGenericSeatsFromInventory({
+    const result = await syncGenericSeatsFromInventory({
       existing: [],
       accounts: [
         {

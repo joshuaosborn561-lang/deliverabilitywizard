@@ -75,4 +75,27 @@ describe("stringifyYielding (D249)", () => {
     assert.ok(bytes > 0);
     assert.ok(ticks > 0, "file stringify must yield while flushing");
   });
+
+  it("D272: time-slices even when yieldEvery would not fire", async () => {
+    const wide: Record<string, string> = {};
+    for (let i = 0; i < 800; i += 1) {
+      wide[`k${i}`] = "y".repeat(800);
+    }
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+    timer.unref?.();
+    const body = await stringifyYielding(wide, {
+      yieldEvery: 1_000_000,
+      sliceMs: 4,
+      flushBytes: 8_000,
+    });
+    clearInterval(timer);
+    assert.equal(JSON.parse(body).k0.length, 800);
+    assert.ok(
+      ticks > 0,
+      "time-sliced stringify must let setInterval fire without a count-based yield",
+    );
+  });
 });

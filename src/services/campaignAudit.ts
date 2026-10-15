@@ -19,7 +19,8 @@ import { mailboxSignatureMismatch } from "../lib/mailboxSignature.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
 import { indexAccountsByCampaign } from "../lib/accountCampaignIndex.js";
-import { yieldEventLoop } from "../lib/stringifyYielding.js";
+import { pauseWhileHealthLive } from "../lib/healthCpuPause.js";
+import { createTimeSlicer, yieldEventLoop } from "../lib/stringifyYielding.js";
 import { testedCampaignCoverage } from "../lib/placementCoverage.js";
 import {
   clientBrandList,
@@ -113,9 +114,12 @@ export class CampaignAuditService {
     private readonly book: InventoryBook,
   ) {}
 
-  async run(): Promise<CampaignAuditResult> {
+  async run(opts: { pauseWhile?: () => boolean } = {}): Promise<CampaignAuditResult> {
     // D132 — the audit reads the shared account book instead of refetching
     // the whole fleet; its own triple-fetch was a steady 429 source.
+    // D272 — when health is live, pause this walk so stringify / inventory
+    // / one-client are not competing with campaign-audit CPU (hunch).
+    await pauseWhileHealthLive(opts.pauseWhile);
     const { campaigns, accounts, clients } = await this.book.get();
     const brandByClientId = new Map<number, string>();
     for (const client of clients) {
@@ -134,9 +138,15 @@ export class CampaignAuditService {
     const idleByDomain = new Map<string, number>();
 
     let seatN = 0;
+    const seatSlice = createTimeSlicer();
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       seatN += 1;
-      if (seatN % 64 === 0) await yieldEventLoop();
+      if (seatN % 64 === 0) {
+        await yieldEventLoop();
+        await pauseWhileHealthLive(opts.pauseWhile);
+      } else {
+        await seatSlice();
+      }
       const email = accountEmail(account)?.toLowerCase();
       if (!email) continue;
       const domain = email.split("@")[1] ?? "";
@@ -237,6 +247,7 @@ export class CampaignAuditService {
       accounts: accounts as SmartleadAccountWithCampaigns[],
       brandByClientId,
       allBrands,
+      pauseWhile: opts.pauseWhile,
     });
     const result: CampaignAuditResult = {
       campaigns: rows,
@@ -305,6 +316,7 @@ export class CampaignAuditService {
     accounts: SmartleadAccountWithCampaigns[];
     brandByClientId: Map<number, string>;
     allBrands: string[];
+    pauseWhile?: () => boolean;
   }): Promise<SignatureQaIssue[]> {
     const issues: SignatureQaIssue[] = [];
     const campaignById = new Map(
@@ -314,12 +326,17 @@ export class CampaignAuditService {
       if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") return false;
       return !isAnyShellCampaign(campaign);
     });
-    const membersByCampaign = await indexAccountsByCampaign(input.accounts);
+    const membersByCampaign = await indexAccountsByCampaign(input.accounts, {
+      pauseWhile: input.pauseWhile,
+    });
 
     let auditN = 0;
     for (const campaign of live) {
       auditN += 1;
-      if (auditN % 4 === 0) await yieldEventLoop();
+      if (auditN % 4 === 0) {
+        await yieldEventLoop();
+        await pauseWhileHealthLive(input.pauseWhile);
+      }
       const campaignName = String(campaign.name ?? campaign.id);
       const expected =
         typeof campaign.client_id === "number"

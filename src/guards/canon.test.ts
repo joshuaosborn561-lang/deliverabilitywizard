@@ -17271,8 +17271,8 @@ describe("owner intent — D271 stall attribution and leftover hotspots", () => 
 
     assert.match(
       canon,
-      /Canon as of \*\*D271\*\*/,
-      stop("CANON is dated D271.", "CANON.md header lost the D271 stamp."),
+      /Canon as of \*\*D(271|27[2-9])\*\*/,
+      stop("CANON is dated D271 or later.", "CANON.md header lost the D271-era stamp."),
     );
     assert.match(
       canon,
@@ -17361,3 +17361,117 @@ describe("owner intent — D271 stall attribution and leftover hotspots", () => 
     );
   });
 });
+
+describe("owner intent — D272 stringify actually yields; chunked index; audit vs health", () => {
+  it("D272: time-slice stringify; saveHot to disk; inner index yield; pause audit CPU; do not widen watchdog", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const freeze = await readFile(
+      new URL("../lib/freezeWatchdog.ts", import.meta.url),
+      "utf8",
+    );
+    const walk = await readFile(
+      new URL("../lib/stringifyYielding.ts", import.meta.url),
+      "utf8",
+    );
+    const store = await readFile(
+      new URL("../state/store.ts", import.meta.url),
+      "utf8",
+    );
+    const seats = await readFile(
+      new URL("../lib/accountCampaignIndex.ts", import.meta.url),
+      "utf8",
+    );
+    const pause = await readFile(
+      new URL("../lib/healthCpuPause.ts", import.meta.url),
+      "utf8",
+    );
+    const audit = await readFile(
+      new URL("../services/campaignAudit.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D272\*\*/,
+      stop("CANON is dated D272.", "CANON.md header lost the D272 stamp."),
+    );
+    assert.match(
+      canon,
+      /time-sliced/,
+      stop("CANON names time-sliced stringify (D272).", "CANON.md lost time-sliced stringify."),
+    );
+    assert.match(
+      decisions,
+      /## D272 — /,
+      stop("The ledger records D272.", "DECISIONS.md has no D272 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D272 \|/m,
+      stop("The status index lists D272 (D127).", "DECISIONS.md status index has no D272 row."),
+    );
+    assert.match(
+      walk,
+      /STRINGIFY_SLICE_MS/,
+      stop("Stringify time-slices (D272).", "stringifyYielding.ts lost STRINGIFY_SLICE_MS."),
+    );
+    assert.match(
+      walk,
+      /setTimeout\(resolve, 0\)/,
+      stop("Yield returns to the timer phase (D272).", "stringifyYielding.ts never setTimeouts for the watchdog."),
+    );
+    assert.match(
+      walk,
+      /lastTimerYieldAt/,
+      stop("Yields to timers on a time budget (D272).", "stringifyYielding.ts lost lastTimerYieldAt."),
+    );
+    assert.match(
+      store,
+      /stringifyOffThreadToFile\(this\.hotStamps\(\)/,
+      stop("saveHot writes flushed slices (D272).", "store.ts saveHot still joins stringifyYielding."),
+    );
+    assert.match(
+      seats,
+      /INDEX_IDS_YIELD_EVERY/,
+      stop("Account index yields on inner ids (D272).", "accountCampaignIndex.ts lost INDEX_IDS_YIELD_EVERY."),
+    );
+    assert.match(
+      pause,
+      /pauseWhileHealthLive/,
+      stop("Health-CPU pause helper exists (D272).", "healthCpuPause.ts lost pauseWhileHealthLive."),
+    );
+    assert.match(
+      audit,
+      /pauseWhile/,
+      stop("campaign-audit accepts pauseWhile (D272).", "campaignAudit.ts lost pauseWhile."),
+    );
+    assert.match(
+      index,
+      /pauseWhile:\s*\(\)\s*=>\s*healthLock\.isLive\(\)/,
+      stop("Monitor campaign-audit pauses while health is live (D272).", "index.ts lost campaign-audit pauseWhile."),
+    );
+    assert.match(
+      freeze,
+      /EVENT_LOOP_REPEAT_COUNT/,
+      stop("Watchdog thresholds stay (D272).", "freezeWatchdog.ts lost EVENT_LOOP_REPEAT_COUNT."),
+    );
+    assert.doesNotMatch(
+      freeze,
+      /EVENT_LOOP_REPEAT_MS = 5_000/,
+      stop("Do not hide stalls by widening the repeat threshold (D272).", "freezeWatchdog.ts loosened EVENT_LOOP_REPEAT_MS."),
+    );
+    assert.doesNotMatch(
+      freeze,
+      /EVENT_LOOP_EXIT_MS = 10/,
+      stop("Do not hide stalls by widening the 5m exit (D272).", "freezeWatchdog.ts loosened EVENT_LOOP_EXIT_MS."),
+    );
+  });
+});
+

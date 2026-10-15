@@ -1,8 +1,7 @@
-import { copyFile, mkdir, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rename } from "node:fs/promises";
 import path from "node:path";
 import {
   parseFileOffThread,
-  stringifyOffThread,
   stringifyOffThreadToFile,
 } from "../lib/jsonOffThread.js";
 import { runWithStallScopeAsync } from "../lib/eventLoopAttribution.js";
@@ -3002,14 +3001,17 @@ export class StateStore {
     }
   }
 
-  /** D249 — persist lastOk / Slack / cron stamps without the full dump. */
+  /** D249 / D272 — persist lastOk / Slack / cron stamps without the full dump. */
   async saveHot(): Promise<void> {
     const dir = path.dirname(this.filePath);
     await mkdir(dir, { recursive: true });
     const target = this.stampsFilePath();
     const tmp = `${target}.${process.pid}.${++this.saveSeq}.tmp`;
-    const body = await stringifyOffThread(this.hotStamps());
-    await writeFile(tmp, body, "utf8");
+    // D272 — production tagged `json.stringify:yielding` 10–18s on this
+    // path. Write flushed slices; never join the sidecar into one string.
+    await stringifyOffThreadToFile(this.hotStamps(), tmp, {
+      op: "json.stringify:hot",
+    });
     await rename(tmp, target);
   }
 

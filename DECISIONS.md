@@ -276,7 +276,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D268 | Live | Allow-generics is gone. Generics are a thin on-week floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. Never new generics onto the off-week cylinder. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
 | D269 | Live — inventory parse / pass isolation amended by D270 | Freeze/restart loop after D267/D268: ghost-pool drops persist on the lastOk sidecar; fat fetch_campaigns inventory pages slim to campaign_ids (off-thread when large); min40 prefix / generic-seat sync / client-rest yield so a 40–50s stall cannot trip the freeze watchdog |
 | D270 | Live — stream/parse/stringify amended by D271 | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
-| D271 | Live | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
+| D271 | Live — stringify/index yield amended by D272 | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
+| D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
 
 ---
 
@@ -9855,4 +9856,76 @@ stage/op/stack; ToFile matches JSON.stringify and ticks; fat parse
 ticks; one-chunk stream ticks; watchdog log keeps thresholds.
 
 ---
+
+## D272 — Stringify must actually yield; chunk the index; pause campaign-audit CPU during health
+
+**Date.** 2026-10-15 (Josh via production freeze/restart after D271 #320).
+
+**Decision.** Production `main@69f35b9` (D271 #320) still freeze-restarted.
+`process.exit(1)` at 2:00:55pm CT on Oct 15. D271 stall attribution in
+the two minutes before the exit named:
+
+- `scan:indexAccountsByCampaign` 14.9s
+- `json.stringify:yielding` 18.7s and 10.9s (`health:inventory`
+  overlapping `monitor:campaign-audit`)
+- 13.3s (`health:one-client` plus campaign-audit)
+
+The yielding stringify was not yielding, and the account index still
+blocked. Both got worst when campaign-audit overlapped the health
+cycle. Separately, campaign-audit has not finished OK since Oct 14
+8:16pm (freeze-kills before `lastOk`).
+
+1. **Stringify is incremental on a time budget.** `yieldEventLoop` uses
+   `setTimeout(0)` so the freeze watchdog's `setInterval` can tick (a
+   `setImmediate` chain starves timers). Walks emit flushed slices and
+   never `+=` the blob. `saveHot` writes via `stringifyOffThreadToFile`
+   (same path as `/data/state.json`), tagged `json.stringify:hot`.
+   Count-based yield-every-8 stays as a floor; the 8ms time slicer is
+   what stops a 10–18s pin.
+
+2. **`indexAccountsByCampaign` yields on inner campaign ids.** D271
+   yielded every 32 *accounts*. A leftover fat `campaigns[]` page still
+   walked thousands of ids without a tick. Yield every 32 ids, time-slice
+   the rest, iterate membership without mapping `campaigns[]` into a new
+   array.
+
+3. **Campaign-audit pauses CPU while health is live (a hunch).** D270
+   skips only a *new* monitor tick. A sitting already in campaign-audit
+   still overlapped health stringify / inventory / one-client. The audit
+   cooperatively `pauseWhileHealthLive` at yield points. Health itself
+   never waits on this (deadlock). This is not a substitute for (1) and
+   (2).
+
+No campaign START / PAUSE. No spend. No change to POD floors,
+21-day warmup, PowerGRYD empty-by-design, generics policy, or
+hold enforcement. The freeze watchdog stays (D247/D257/D265);
+thresholds are not widened. Success is no freeze-watchdog exit for
+2 hours or more in production.
+
+**Why.** D271 named the stalls and streamed the full dump, then
+production proved `json.stringify:yielding` (the sidecar join) and
+`scan:indexAccountsByCampaign` (per-account yield, not per-id) still
+pinned 10–18s, worst when campaign-audit overlapped health.
+
+**Rejected.** Widening the freeze-watchdog thresholds. Turning the
+freeze watchdog off. Changing campaign START / PAUSE. Spending or
+bypassing warmup / holds. Making health's own yields wait on
+campaign-audit.
+
+**Supersedes / amends.** Amends D271: stringify time-slices and
+`saveHot` writes to disk; the account index yields on ids.
+Amends D270: campaign-audit CPU yields to a live health sitting,
+not only a new monitor tick. Amends D252: join is flushed slices
+assembled with `Array.join`, not `out +=`. Does not change D40, D4,
+D158 / D164 / D165, or D268.
+
+**Guards.** canon D272: `STRINGIFY_SLICE_MS` / `setTimeout` yield;
+`stringifyOffThreadToFile(this.hotStamps()`; `INDEX_IDS_YIELD_EVERY`;
+`pauseWhileHealthLive`; campaign-audit `pauseWhile`; watchdog
+thresholds unchanged. Tests: time-sliced stringify ticks without
+count-based yield; fat `campaigns[]` index ticks; pause waits then
+continues.
+
+---
+
 

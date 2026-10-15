@@ -171,13 +171,34 @@ describe("ported canon that Josh said v2 was missing", () => {
 });
 
 describe("shadow is structural, not a comment", () => {
-  it("clients never POST/PUT/PATCH/DELETE", () => {
-    const clients = srcFiles.filter((f) => f.includes("/clients/"));
+  it("clients never mutate via PUT/PATCH/DELETE; SmartDelivery list is POST spam-test/report", () => {
+    const clients = srcFiles.filter(
+      (f) => f.includes("/clients/") && !f.endsWith("/http.ts"),
+    );
     const blob = clients.map((f) => readFileSync(f, "utf8")).join("\n");
     assert.doesNotMatch(
       blob,
-      /method:\s*["'](POST|PUT|PATCH|DELETE)["']/,
-      stop("SHADOW", "a v2 client issues a write HTTP method"),
+      /method:\s*["'](PUT|PATCH|DELETE)["']/,
+      stop("SHADOW", "a v2 client issues a mutating HTTP method"),
+    );
+    const sd = readFileSync(
+      fileURLToPath(new URL("../clients/smartdelivery.ts", import.meta.url)),
+      "utf8",
+    );
+    assert.match(
+      sd,
+      /spam-test\/report/,
+      stop("SmartDelivery list", "listTests must POST /api/v1/spam-test/report"),
+    );
+    assert.doesNotMatch(
+      sd,
+      /\/api\/spam-tests|spam-tests\?api_key/,
+      stop("SmartDelivery list", "the unversioned collection path 404s — use spam-test/report"),
+    );
+    assert.doesNotMatch(
+      sd,
+      /spam-test\/(manual|schedule|delete)/,
+      stop("SHADOW", "smartdelivery reader must not create/schedule/delete tests"),
     );
   });
 });

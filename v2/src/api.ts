@@ -4,6 +4,7 @@ import type { AppConfig } from "./config.js";
 import { writesAllowed } from "./config.js";
 import { ISOLATION_DEADLINE_MS } from "./canon/constants.js";
 import { isolationOverdue, uglyWithoutIsolation } from "./lib/isolation.js";
+import { safeErrorText } from "./lib/redact.js";
 import { isActiveStatus } from "./lib/staffable.js";
 import type { V2Store } from "./store.js";
 import type { OldWizardHealth } from "./types.js";
@@ -50,12 +51,17 @@ export function createApi(opts: { config: AppConfig; store: V2Store }): Express 
           isolationDeadlineMs: ISOLATION_DEADLINE_MS,
           overdueUgly: overdueHoles.length,
         },
-        stageHealth: Object.fromEntries(stamps.map((s) => [s.stage, s])),
+        stageHealth: Object.fromEntries(
+          stamps.map((s) => [
+            s.stage,
+            { ...s, lastError: s.lastError ? safeErrorText(s.lastError) : s.lastError },
+          ]),
+        ),
         overdueStages: overdueStages.map((s) => s.stage),
         inventoryFetchedAt: book?.fetchedAt ?? null,
       });
     } catch (error) {
-      res.status(500).json({ ok: false, error: String(error) });
+      res.status(500).json({ ok: false, error: safeErrorText(error) });
     }
   });
 
@@ -84,7 +90,7 @@ export function createApi(opts: { config: AppConfig; store: V2Store }): Express 
       await opts.store.saveComparison(report);
       res.json(report);
     } catch (error) {
-      res.status(502).json({ ok: false, error: String(error) });
+      res.status(502).json({ ok: false, error: safeErrorText(error) });
     }
   });
 
@@ -97,7 +103,7 @@ export function createApi(opts: { config: AppConfig; store: V2Store }): Express 
         }),
       );
     } catch (error) {
-      res.status(500).json({ ok: false, error: String(error) });
+      res.status(500).json({ ok: false, error: safeErrorText(error) });
     }
   });
 

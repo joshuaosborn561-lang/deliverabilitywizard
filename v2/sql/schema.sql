@@ -221,3 +221,24 @@ CREATE TABLE IF NOT EXISTS smartlead_limiter (
   paused_until TIMESTAMPTZ
 );
 INSERT INTO smartlead_limiter (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+-- Scrub leaked api_key / token query params from stored error text.
+-- JS migrate() also rewrites rows through safeErrorText (path-only, no host).
+UPDATE stage_health
+SET last_error = regexp_replace(
+  last_error,
+  '([?&](api[_-]?key|access[_-]?token|refresh[_-]?token|token|key|secret|password|authorization|auth)=)[^&[:space:]]+',
+  '\1REDACTED',
+  'gi'
+)
+WHERE last_error IS NOT NULL
+  AND last_error ~* '(api[_-]?key|access[_-]?token|token|secret|password)=';
+
+UPDATE findings
+SET detail = regexp_replace(
+  detail,
+  '([?&](api[_-]?key|access[_-]?token|refresh[_-]?token|token|key|secret|password|authorization|auth)=)[^&[:space:]]+',
+  '\1REDACTED',
+  'gi'
+)
+WHERE detail ~* '(api[_-]?key|access[_-]?token|token|secret|password)=';

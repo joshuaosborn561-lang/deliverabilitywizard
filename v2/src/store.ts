@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
+import { dedupeById } from "./lib/inventory.js";
+import { redactSecrets, safeErrorText } from "./lib/redact.js";
 import type {
   EspInboxDay,
   Finding,
@@ -83,7 +85,11 @@ export class MemoryStore implements V2Store {
     return true;
   }
   async saveInventory(book: InventoryBook): Promise<void> {
-    this.inventory = structuredClone(book);
+    this.inventory = structuredClone({
+      ...book,
+      campaigns: dedupeById(book.campaigns),
+      accounts: dedupeById(book.accounts),
+    });
   }
   async loadInventory(): Promise<InventoryBook | null> {
     return this.inventory ? structuredClone(this.inventory) : null;
@@ -142,12 +148,15 @@ export class MemoryStore implements V2Store {
       stage,
       lastOkAt: prev?.lastOkAt,
       lastErrorAt: at.toISOString(),
-      lastError: error,
+      lastError: safeErrorText(error),
       consecutiveFailures: (prev?.consecutiveFailures ?? 0) + 1,
     });
   }
   async listStamps(): Promise<StageStamp[]> {
-    return [...this.stamps.values()];
+    return [...this.stamps.values()].map((s) => ({
+      ...s,
+      lastError: s.lastError ? safeErrorText(s.lastError) : s.lastError,
+    }));
   }
   async upsertGeneric(seat: GenericSeat): Promise<void> {
     this.generics = this.generics.filter((g) => g.accountId !== seat.accountId);
@@ -245,6 +254,53 @@ export class PostgresStore implements V2Store {
     const sqlPath = join(process.cwd(), "sql/schema.sql");
     const sql = await readFile(sqlPath, "utf8");
     await this.pool.query(sql);
+    await this.scrubSecretRows();
+  }
+
+  /** One-shot: wipe leaked api_key / token values from existing error rows. */
+  async scrubSecretRows(): Promise<void> {
+    const textCols: Array<[string, string]> = [
+      ["stage_health", "last_error"],
+      ["findings", "detail"],
+      ["qa_runs", "detail"],
+      ["isolation_runs", "reason"],
+    ];
+    for (const [table, col] of textCols) {
+      const r = await this.pool.query(
+        `SELECT ctid, ${col} AS val FROM ${table} WHERE ${col} IS NOT NULL`,
+      );
+      for (const row of r.rows) {
+        const next = safeErrorText(row.val);
+        if (next !== row.val) {
+          await this.pool.query(`UPDATE ${table} SET ${col} = $1 WHERE ctid = $2`, [
+            next,
+            row.ctid,
+          ]);
+        }
+      }
+    }
+    const jsonCols: Array<[string, string]> = [
+      ["intended_actions", "payload"],
+      ["spend_asks", "payload"],
+    ];
+    for (const [table, col] of jsonCols) {
+      const r = await this.pool.query(
+        `SELECT ctid, ${col}::text AS val FROM ${table} WHERE ${col} IS NOT NULL`,
+      );
+      for (const row of r.rows) {
+        const next = redactSecrets(String(row.val ?? ""));
+        if (next !== row.val) {
+          try {
+            await this.pool.query(`UPDATE ${table} SET ${col} = $1::jsonb WHERE ctid = $2`, [
+              next,
+              row.ctid,
+            ]);
+          } catch {
+            /* leave the row if redact broke JSON */
+          }
+        }
+      }
+    }
   }
 
   async ping(): Promise<boolean> {
@@ -258,19 +314,41 @@ export class PostgresStore implements V2Store {
       await client.query("BEGIN");
       await client.query("DELETE FROM inventory_campaigns");
       await client.query("DELETE FROM inventory_accounts");
-      for (const c of book.campaigns) {
+      const campaigns = dedupeById(book.campaigns);
+      const accounts = dedupeById(book.accounts);
+      for (const c of campaigns) {
         await client.query(
           `INSERT INTO inventory_campaigns (id, name, status, client_id, min_time_btwn_emails, updated_at)
-           VALUES ($1,$2,$3,$4,$5,NOW())`,
+           VALUES ($1,$2,$3,$4,$5,NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             name = EXCLUDED.name,
+             status = EXCLUDED.status,
+             client_id = EXCLUDED.client_id,
+             min_time_btwn_emails = EXCLUDED.min_time_btwn_emails,
+             updated_at = NOW()`,
           [c.id, c.name, c.status, c.clientId, c.minTimeBtwnEmails ?? null],
         );
       }
-      for (const a of book.accounts) {
+      for (const a of accounts) {
         await client.query(
           `INSERT INTO inventory_accounts
             (id, email, from_name, client_id, campaign_ids, tags, smtp_ok, imap_ok,
              message_per_day, warmup_blocked, created_at, warmup_started_at, signature, updated_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())
+           ON CONFLICT (id) DO UPDATE SET
+             email = EXCLUDED.email,
+             from_name = EXCLUDED.from_name,
+             client_id = EXCLUDED.client_id,
+             campaign_ids = EXCLUDED.campaign_ids,
+             tags = EXCLUDED.tags,
+             smtp_ok = EXCLUDED.smtp_ok,
+             imap_ok = EXCLUDED.imap_ok,
+             message_per_day = EXCLUDED.message_per_day,
+             warmup_blocked = EXCLUDED.warmup_blocked,
+             created_at = EXCLUDED.created_at,
+             warmup_started_at = EXCLUDED.warmup_started_at,
+             signature = EXCLUDED.signature,
+             updated_at = NOW()`,
           [
             a.id,
             a.email,
@@ -293,7 +371,7 @@ export class PostgresStore implements V2Store {
          VALUES (1, $1, $2, $3)
          ON CONFLICT (id) DO UPDATE SET fetched_at = EXCLUDED.fetched_at,
            campaign_count = EXCLUDED.campaign_count, account_count = EXCLUDED.account_count`,
-        [book.fetchedAt, book.campaigns.length, book.accounts.length],
+        [book.fetchedAt, campaigns.length, accounts.length],
       );
       await client.query("COMMIT");
     } catch (error) {
@@ -325,7 +403,7 @@ export class PostgresStore implements V2Store {
         await client.query(
           `INSERT INTO findings (kind, campaign_id, account_id, email, detail, at)
            VALUES ($1,$2,$3,$4,$5,NOW())`,
-          [row.kind, row.campaignId ?? null, row.accountId ?? null, row.email ?? null, row.detail],
+          [row.kind, row.campaignId ?? null, row.accountId ?? null, row.email ?? null, redactSecrets(row.detail)],
         );
       }
       await client.query("COMMIT");
@@ -521,7 +599,7 @@ export class PostgresStore implements V2Store {
          last_error = EXCLUDED.last_error,
          consecutive_failures = stage_health.consecutive_failures + 1,
          in_flight_since = NULL, updated_at = NOW()`,
-      [stage, at, error],
+      [stage, at, safeErrorText(error)],
     );
   }
 
@@ -531,7 +609,7 @@ export class PostgresStore implements V2Store {
       stage: row.stage,
       lastOkAt: row.last_ok_at ? row.last_ok_at.toISOString() : undefined,
       lastErrorAt: row.last_error_at ? row.last_error_at.toISOString() : undefined,
-      lastError: row.last_error ?? undefined,
+      lastError: row.last_error ? safeErrorText(row.last_error) : undefined,
       consecutiveFailures: row.consecutive_failures,
       inFlightSince: row.in_flight_since ? row.in_flight_since.toISOString() : undefined,
     }));

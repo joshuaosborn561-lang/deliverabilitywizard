@@ -1,4 +1,5 @@
 import { getJson, type ScheduleFn } from "./http.js";
+import { dedupeById } from "../lib/inventory.js";
 import type { SlimAccount, SlimCampaign } from "../types.js";
 
 const BASE = "https://server.smartlead.ai/api/v1";
@@ -19,7 +20,7 @@ export class SmartleadReader {
   async listCampaigns(): Promise<SlimCampaign[]> {
     const raw = await this.schedule(() => getJson<unknown>(this.url("campaigns")));
     const rows = Array.isArray(raw) ? raw : [];
-    return rows.map((row) => normalizeCampaign(row as Record<string, unknown>));
+    return dedupeById(rows.map((row) => normalizeCampaign(row as Record<string, unknown>)));
   }
 
   async listAccounts(): Promise<SlimAccount[]> {
@@ -37,7 +38,7 @@ export class SmartleadReader {
       for (const row of rows) out.push(normalizeAccount(row as Record<string, unknown>));
       if (rows.length < 100) break;
     }
-    return out;
+    return dedupeById(out);
   }
 }
 

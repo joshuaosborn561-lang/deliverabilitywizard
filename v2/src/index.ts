@@ -11,6 +11,7 @@ import { runIsolationTick } from "./jobs/isolation.js";
 import { runStaffTick } from "./jobs/staff.js";
 import { SharedSmartleadLimiter } from "./lib/limiter.js";
 import { inStaffingHours } from "./lib/quietHours.js";
+import { safeErrorText } from "./lib/redact.js";
 import { WriteGate } from "./shadow.js";
 import { MemoryStore, PostgresStore, type V2Store } from "./store.js";
 
@@ -86,8 +87,8 @@ async function staffPass(): Promise<void> {
       `[v2] staff ok findings=${result.findings.length} intended=${result.intended.length}`,
     );
   } catch (error) {
-    await store.stampError(stage, String(error));
-    console.error("[v2] staff failed", error);
+    await store.stampError(stage, safeErrorText(error));
+    console.error("[v2] staff failed", safeErrorText(error));
   }
 }
 
@@ -101,7 +102,8 @@ async function isolationPass(): Promise<void> {
     }
     if (!smartDelivery) throw new Error("SMARTDELIVERY_API_KEY missing");
     const book = (await store.loadInventory()) ?? (await fetchBook());
-    const tests = await smartDelivery.listTests();
+    const listed = await smartDelivery.listTests();
+    const tests = await smartDelivery.hydrateSenders(listed);
     const result = await runIsolationTick({
       book,
       tests,
@@ -117,8 +119,8 @@ async function isolationPass(): Promise<void> {
       `[v2] isolation ok scored=${result.scored} queued=${result.queued} evaluated=${result.evaluated} overdue=${result.overdue}`,
     );
   } catch (error) {
-    await store.stampError(stage, String(error));
-    console.error("[v2] isolation failed", error);
+    await store.stampError(stage, safeErrorText(error));
+    console.error("[v2] isolation failed", safeErrorText(error));
   }
 }
 
@@ -144,8 +146,8 @@ async function inboxkitPass(): Promise<void> {
     await store.stampOk(stage);
     console.log(`[v2] inboxkit sweep intendedDeletes=${result.deleted}`);
   } catch (error) {
-    await store.stampError(stage, String(error));
-    console.error("[v2] inboxkit failed", error);
+    await store.stampError(stage, safeErrorText(error));
+    console.error("[v2] inboxkit failed", safeErrorText(error));
   }
 }
 

@@ -4,9 +4,27 @@
  * each firing in parallel and 429'ing the board. Every Smartlead HTTP
  * call (read or write) takes a concurrency slot; a 429 pauses the
  * whole limiter so later stages back off together.
+ * D270 — a live health pass takes an exclusive lane so monitor /
+ * campaign-audit cannot keep both slots and starve inventory.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { sleep } from "./http.js";
+
+export type SmartleadLane = "health" | "normal";
+
+const laneStore = new AsyncLocalStorage<SmartleadLane>();
+
+export function runInSmartleadLane<T>(
+  lane: SmartleadLane,
+  fn: () => T,
+): T {
+  return laneStore.run(lane, fn);
+}
+
+export function smartleadLane(): SmartleadLane {
+  return laneStore.getStore() ?? "normal";
+}
 
 export const SMARTLEAD_CONCURRENCY = 2;
 export const SMARTLEAD_MIN_GAP_MS = 150;
@@ -26,11 +44,15 @@ export interface SmartleadLimiterSnapshot {
   pausedForMs: number;
   requestsInWindow: number;
   maxPerMin: number;
+  exclusiveHealth: boolean;
 }
 
 export class SmartleadLimiter {
   private inflight = 0;
   private waiters: Array<() => void> = [];
+  private healthWaiters: Array<() => void> = [];
+  private backgroundWaiters: Array<() => void> = [];
+  private exclusiveHealth = false;
   private pausedUntil = 0;
   private lastStartAt = 0;
   private streak = 0;
@@ -44,8 +66,18 @@ export class SmartleadLimiter {
     private readonly rateWindowMs = SMARTLEAD_RATE_WINDOW_MS,
   ) {}
 
-  async schedule<T>(fn: () => Promise<T>): Promise<T> {
-    await this.acquire();
+  setExclusiveHealth(on: boolean): void {
+    this.exclusiveHealth = on;
+    if (on) return;
+    const pending = this.backgroundWaiters.splice(0);
+    for (const wake of pending) wake();
+  }
+
+  async schedule<T>(
+    fn: () => Promise<T>,
+    opts: { lane?: SmartleadLane } = {},
+  ): Promise<T> {
+    await this.acquire(opts.lane ?? "normal");
     try {
       await this.waitPause();
       await this.waitRateWindow();
@@ -82,26 +114,48 @@ export class SmartleadLimiter {
       pausedForMs: Math.max(0, this.pausedUntil - Date.now()),
       requestsInWindow: this.starts.length,
       maxPerMin: this.maxPerMin,
+      exclusiveHealth: this.exclusiveHealth,
     };
   }
 
-  private async acquire(): Promise<void> {
-    if (this.inflight < this.concurrency) {
-      this.inflight += 1;
+  private async acquire(lane: SmartleadLane): Promise<void> {
+    for (;;) {
+      if (this.exclusiveHealth && lane !== "health") {
+        await new Promise<void>((resolve) => {
+          this.backgroundWaiters.push(resolve);
+        });
+        continue;
+      }
+      if (this.inflight < this.concurrency) {
+        this.inflight += 1;
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        if (lane === "health") this.healthWaiters.push(resolve);
+        else this.waiters.push(resolve);
+      });
       return;
     }
-    await new Promise<void>((resolve) => {
-      this.waiters.push(resolve);
-    });
   }
 
   private release(): void {
-    const next = this.waiters.shift();
+    if (this.exclusiveHealth) {
+      const health = this.healthWaiters.shift();
+      if (health) {
+        health();
+        return;
+      }
+      this.inflight = Math.max(0, this.inflight - 1);
+      return;
+    }
+    const next = this.healthWaiters.shift() ?? this.waiters.shift();
     if (next) {
       next();
       return;
     }
     this.inflight = Math.max(0, this.inflight - 1);
+    const background = this.backgroundWaiters.shift();
+    background?.();
   }
 
   private async waitPause(): Promise<void> {

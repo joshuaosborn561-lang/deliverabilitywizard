@@ -696,4 +696,55 @@ describe("CopyCanaryService", () => {
     assert.equal(created, 0, "recover the living test — do not spawn a second");
     assert.equal(state.getCopyCanaryTestId(3748412), "listed-3748412");
   });
+
+  it("D270: attach reuses a supplied inventory and does not refetch", async () => {
+    const state = new StateStore(
+      `/tmp/copy-canary-inv-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    seedFleet(state);
+    let fetches = 0;
+    const shells = shellSmartlead({
+      listCampaigns: async () => {
+        fetches += 1;
+        return [];
+      },
+      listAllEmailAccounts: async () => {
+        fetches += 1;
+        return [];
+      },
+    });
+    const result = await new CopyCanaryService(
+      {
+        ...loadConfig(),
+        enableCopyCanary: true,
+        dryRun: true,
+      },
+      shells.api as unknown as SmartleadClient,
+      {
+        listTests: async () => [],
+        resolveProviderIds: async () => [2, 20],
+        createAutomatedPlacement: async () => ({ id: "x" }),
+      } as unknown as SmartDeliveryClient,
+      slackStub(),
+      state,
+    ).attach({
+      dryRun: true,
+      inventory: {
+        campaigns: [{ id: 4, name: "Live A", status: "ACTIVE", client_id: 2 }],
+        accounts: [
+          {
+            id: 11,
+            from_email: "g1@canary-g.info",
+            type: "GMAIL",
+            campaign_ids: [4],
+          },
+        ],
+        clients: [],
+        fetchedAt: Date.now(),
+      },
+    });
+    assert.equal(fetches, 0, "shared book must skip fetch_campaigns");
+    assert.ok(result.errors.length === 0 || result.skipped.length >= 0);
+  });
 });

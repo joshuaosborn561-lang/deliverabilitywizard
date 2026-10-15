@@ -85,6 +85,11 @@ import {
   canonOpsTickOverdue,
 } from "./lib/canonOpsRetry.js";
 import {
+  monitorShouldRetryAfterHealth,
+  monitorSkipLog,
+  monitorSkipReason,
+} from "./lib/monitorPassRetry.js";
+import {
   isolationBlockActionShouldDecide,
   NEEDS_YOU_APPROVE_ACTION,
 } from "./lib/slackConfirmButtons.js";
@@ -119,7 +124,10 @@ import { CursorAssistantService } from "./ops/cursorAssistant.js";
 import { createOpsRouter } from "./ops/router.js";
 import { BugRemediator } from "./services/bugRemediator.js";
 import { MutationQueue } from "./lib/mutationQueue.js";
-import { SmartleadLimiter } from "./lib/smartleadLimiter.js";
+import {
+  runInSmartleadLane,
+  SmartleadLimiter,
+} from "./lib/smartleadLimiter.js";
 import { raceStep, stepTimeoutMs } from "./lib/stepTimeout.js";
 import {
   runStampedStage,
@@ -163,6 +171,7 @@ import {
   HEALTH_CYCLE_MS,
   firstInterruptedHealthStage,
   healthNeedsResume,
+  shouldRefreshInventory,
   shouldSkipHealthStage,
   type HealthLoopStage,
 } from "./lib/healthResume.js";
@@ -962,7 +971,8 @@ async function main(): Promise<void> {
     const began = beginPass(healthLock, healthInFlight, "health");
     if (began.skipped) return { skipped: true as const, reason: "already-running" };
     const token = began.token;
-    const run = runWithPass(healthLock, token, async () => {
+    smartlead.setExclusiveHealth(true);
+    const run = runInSmartleadLane("health", () => runWithPass(healthLock, token, async () => {
       const passStart = Date.now();
 
       // D211/D214/D215 — leftover health-loop stages resume after a
@@ -992,7 +1002,12 @@ async function main(): Promise<void> {
       let inventory: InventorySnapshot | null = null;
       const inventoryLastOk =
         state.listStageHealth().inventory?.lastOkAt ?? null;
+      const mustRefreshInventory = shouldRefreshInventory({
+        bookEmpty: inventoryBook.peek() == null,
+        lastOkAt: inventoryLastOk,
+      });
       if (
+        !mustRefreshInventory &&
         shouldSkipHealthStage("inventory", inventoryLastOk, {
           skipIfFreshMs,
           skipIfBeforeStage,
@@ -1014,7 +1029,20 @@ async function main(): Promise<void> {
           return { skipped: true as const, reason: "inventory-failed" };
         }
       } else {
+        if (mustRefreshInventory && skipIfBeforeStage) {
+          console.log(
+            "[health] D270 — leftover prefix will not hide a stale or empty inventory book",
+          );
+        }
         inventory = await stage("inventory", () => inventoryBook.fetchFresh());
+        if (!inventory) {
+          inventory = inventoryBook.peek();
+          if (inventory) {
+            console.warn(
+              "[health] inventory stage failed — continuing on the accepted book (D132/D270)",
+            );
+          }
+        }
       }
       if (!inventory) {
         console.warn("[health] inventory fetch failed — skipping this pass");
@@ -1218,7 +1246,6 @@ async function main(): Promise<void> {
           feedBugRemediator("canon-ops-retry", error);
         });
       }
-
       return {
         clientRest: rest.clientRest,
         genericRest: rest.genericRest,
@@ -1230,16 +1257,24 @@ async function main(): Promise<void> {
         mailboxSettings: mailboxSettingsResult,
         isolationBranch: isolationBranchResult,
       };
-    });
+    }));
     healthInFlight = run.finally(() => {
+      smartlead.setExclusiveHealth(false);
       if (releasePass(healthLock, token)) healthInFlight = null;
     });
     const result = await run;
-    // D167 — leftover 6h stages resume on this tick, not the next cron
-    // and not at boot (D122). Fire-and-forget so /run?mode=health and the
-    // 15-minute cron do not sit on campaign-audit. skip-if-fresh makes a
-    // completed cycle a no-op.
+    // D167 / D270 — leftover 6h stages resume after health (never at
+    // boot). A monitor cron that skipped because health was live also
+    // retries here, after the exclusive limiter lane is released.
     kickMonitorResume();
+    if (pendingMonitorRetry && !monitorLock.isLive()) {
+      pendingMonitorRetry = false;
+      console.log("[monitor] retrying skipped tick after health pass (D270)");
+      void runMonitor({ remediate: true }).catch((error) => {
+        console.error("[monitor] Retry after health failed", error);
+        feedBugRemediator("monitor-retry", error);
+      });
+    }
     return result;
   };
 
@@ -1257,6 +1292,7 @@ async function main(): Promise<void> {
   };
 
   let pendingCanonOpsRetry = false;
+  let pendingMonitorRetry = false;
   const runCanonOps = async (
     opts: { force?: boolean; retry?: boolean } = {},
   ): Promise<unknown> => {
@@ -1449,6 +1485,17 @@ async function main(): Promise<void> {
     opts: { remediate?: boolean; resume?: boolean; joshLive?: boolean } = {},
   ) => {
     assertRuntimeSecrets(config);
+    const skip = opts.joshLive
+      ? undefined
+      : monitorSkipReason({
+          healthLive: healthLock.isLive(),
+          alreadyRunning: Boolean(monitorInFlight && monitorLock.isLive()),
+        });
+    if (skip) {
+      console.log(monitorSkipLog(skip));
+      if (monitorShouldRetryAfterHealth(skip)) pendingMonitorRetry = true;
+      return { skipped: true as const, reason: skip };
+    }
     const began = beginPass(monitorLock, monitorInFlight, "monitor");
     if (began.skipped) return { skipped: true as const, reason: "already-running" };
     const token = began.token;
@@ -1831,7 +1878,9 @@ async function main(): Promise<void> {
     // D89 — attach campaign-copy tests here, not only inside health. A
     // 429'd inventory stage used to leave a ready fleet with no tests.
     if (state.getCopyCanaryFleet()?.emails.length) {
-      const attach = await copyCanary.attach();
+      const attach = await copyCanary.attach({
+        inventory: inventoryBook.peek() ?? undefined,
+      });
       console.log(
         `[copy-canary] attach tests=${attach.testsEnsured} errors=${attach.errors.length} skipped=${attach.skipped.join(";") || "none"}`,
       );
@@ -3205,7 +3254,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
         assertRuntimeSecrets(config);
         const result = await copyCanaryBuy.adoptRegisteredFleet();
         if (result.ready || result.adopted.length) {
-          const attach = await copyCanary.attach();
+          const attach = await copyCanary.attach({
+        inventory: inventoryBook.peek() ?? undefined,
+      });
           res.json({
             ok: true,
             mode: "adopt-canary-fleet",

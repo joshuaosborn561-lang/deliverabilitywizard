@@ -274,7 +274,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D266 | Live | One-tap spend/retire cards update in place to Done by the tapper; pendingSpend is pruned; actions are idempotent; transient errors retry then stay pending; client cover buys use the client InboxKit workspace; retired seats are scheduled for cancellation |
 | D267 | Live | Freeze/restart reliability: top-up/fan-out/campaign-audit yield; isolation prune persists on the sidecar; isolation-branch stays inside its 10m budget and stamps lastOk on a partial pass; Smartlead limiter 150/min including SmartDelivery; canon-ops skipped ticks log a reason and retry |
 | D268 | Live | Allow-generics is gone. Generics are a thin on-week floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. Never new generics onto the off-week cylinder. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
-| D269 | Live | Freeze/restart loop after D267/D268: ghost-pool drops persist on the lastOk sidecar; fat fetch_campaigns inventory pages slim to campaign_ids (off-thread when large); min40 prefix / generic-seat sync / client-rest yield so a 40–50s stall cannot trip the freeze watchdog |
+| D269 | Live — inventory parse / pass isolation amended by D270 | Freeze/restart loop after D267/D268: ghost-pool drops persist on the lastOk sidecar; fat fetch_campaigns inventory pages slim to campaign_ids (off-thread when large); min40 prefix / generic-seat sync / client-rest yield so a 40–50s stall cannot trip the freeze watchdog |
+| D270 | Live | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
 
 ---
 
@@ -9693,3 +9694,101 @@ keeps ids and drops `campaigns[]`; fat page parse ticks the loop;
 client-rest classify ticks the loop.
 
 ---
+
+## D270 — Stream fat inventory; isolate health from monitor; do not hide a stale book
+
+**Date.** 2026-10-15 (Josh via production freeze/restart loop after D269).
+
+**Decision.** Production `main@8be3ae7` (D269 #318, live ~11:03am CT)
+did not stop the freeze/restart loop. After deploy:
+
+- The freeze watchdog still exited (~11:21am CT) after 16–25s
+  event-loop stalls (three ≥3s inside two minutes).
+- Stalls continued through ~12:00 CT.
+- A health sitting finished ~11:51 CT / 16:51Z after 21+ minutes.
+- Inventory lastOk stayed `2026-10-15T16:00:44Z` (pre-deploy) with
+  `HTTP 429`; client-rest stayed `16:00:59Z` (`timeout after 10m`).
+- `/health` at 17:16Z showed health `inFlight` on inventory since
+  17:15Z **and** monitor `inFlight` on campaign-audit since 16:51Z.
+
+Verified causes (not hunches):
+
+1. **D269 still buffered the fat page on the main thread.**
+   `apiRequest` called `response.text()` then `writeFile` of that
+   string before the worker. A 100-row `fetch_campaigns` page is
+   tens of MB; materializing it is the remaining 16–25s stall
+   (D269 cut 40–50s parse, not the buffer). 429 bodies also went
+   through `parseJson`.
+
+2. **Leftover resume hid inventory and then aborted the pass.**
+   D215 prefix-skip of inventory after a freeze-kill left lastOk
+   at the pre-deploy stamp. The skip path called
+   `inventoryBook.get()`, which after restart has an empty book
+   and silently refetched fat pages *without* the inventory stage
+   stamp. When leftover sitting died (45m) the full chain ran
+   inventory, hit the 5m timeout / 429, returned null, and
+   skipped client-rest for the rest of the sitting. D132 already
+   says a failed read serves the last accepted book — the pass
+   did not.
+
+3. **Monitor raced health for both limiter slots.** D267 serialized
+   canon-ops behind health. Monitor resume still started the moment
+   health finished, then the next 15m health cron overlapped a
+   10m test-reconcile / campaign-audit sitting. Live evidence:
+   health inventory + monitor campaign-audit concurrent,
+   `smartleadLimiter.inflight=2`, inventory `HTTP 429`.
+   `copyCanary.attach` also refetched `fetch_campaigns` during
+   campaign-health even when the shared book was already in hand.
+
+Fixes:
+
+1. Stream OK Smartlead bodies to a temp file in yielded chunks;
+   slim from disk. Error / 429 bodies stay small `JSON.parse`.
+   Inventory lists campaigns, then accounts, then clients — no
+   `Promise.all` burst into concurrency 2.
+
+2. Leftover prefix skip cannot hide inventory when the book is
+   empty or lastOk is older than the 15-minute cycle. An inventory
+   stage timeout / 429 continues on `inventoryBook.peek()` so
+   client-rest and the rest of the chain still run.
+
+3. A live health pass sets an exclusive limiter lane (AsyncLocal
+   Storage). Monitor / background Smartlead and SmartDelivery
+   calls wait. A monitor tick that cannot start because health
+   is live logs `health-running` and retries after health
+   (D267 canon-ops pattern). `copyCanary.attach` reuses the
+   shared inventory when the caller has it.
+
+No campaign START / PAUSE. No spend. No change to POD floors,
+21-day warmup, PowerGRYD empty-by-design, generics policy, or
+hold enforcement. The freeze watchdog stays (D247/D257/D265);
+thresholds are not widened.
+
+**Why.** D269 persisted ghost-pool drops and slimed pages off-thread
+but still froze the loop while reading the fat body, then leftover
+resume plus overlapping monitor 429'd inventory so client-rest
+never ran. Restarting on 16–25s stalls recreated the same sitting.
+
+**Rejected.** Widening the 3× ≥3s freeze-watchdog thresholds.
+Turning the freeze watchdog off. Changing campaign START / PAUSE.
+Spending or bypassing warmup / holds. Fetching inventory without
+campaign membership.
+
+**Supersedes / amends.** Amends D269: fat pages stream to disk;
+429 bodies are not slim-parsed. Amends D215 / D132: leftover skip
+does not hide a stale or empty book; a failed inventory stage
+serves the accepted book and continues. Amends D267: monitor
+gets the same health-running skip + retry; the limiter has an
+exclusive health lane. Amends D257: SmartDelivery inherits the
+lane. Does not change D40, D4, D158 / D164 / D165, or D268.
+
+**Guards.** canon D270: `parseJsonFile` / `streamResponseToFile`;
+`setExclusiveHealth` / `runInSmartleadLane`; `shouldRefreshInventory`;
+`monitorSkipLog` / retry after health; inventory sequential fetch;
+inventory peek fallback; copy-canary attach accepts inventory.
+Tests: 429 does not call parseJsonFile; exclusive lane holds
+background; empty/stale book refreshes; monitor skips when health
+is live; fetchInventory does not overlap campaigns and accounts.
+
+---
+

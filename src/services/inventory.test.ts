@@ -204,3 +204,26 @@ describe("InventoryBook — one account book, partial reads distrusted (D132)", 
     assert.equal(calls, 1);
   });
 });
+
+describe("D270 sequential inventory fetch", () => {
+  it("does not start email-accounts until campaigns returns", async () => {
+    let accountsStarted = false;
+    let campaignsDone = false;
+    const snapshot = await fetchInventory({
+      listCampaigns: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        campaignsDone = true;
+        return [{ id: 1, name: "Live", status: "ACTIVE" }];
+      },
+      listAllEmailAccounts: async () => {
+        accountsStarted = true;
+        assert.equal(campaignsDone, true, "accounts must wait for campaigns");
+        return [];
+      },
+      listClients: async () => [],
+    });
+    assert.equal(accountsStarted, true);
+    assert.equal(snapshot.campaigns[0]?.id, 1);
+  });
+});
+

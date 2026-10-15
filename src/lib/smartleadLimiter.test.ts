@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { ApiError } from "./http.js";
-import { SmartleadLimiter } from "./smartleadLimiter.js";
+import {
+  runInSmartleadLane,
+  SmartleadLimiter,
+} from "./smartleadLimiter.js";
 
 describe("D257 Smartlead limiter", () => {
   it("caps concurrency and backs off every waiter after a 429", async () => {
@@ -69,6 +72,30 @@ describe("D257 Smartlead limiter", () => {
     );
     assert.equal(started.length, 3);
     assert.equal(limiter.snapshot().maxPerMin, 2);
+  });
+
+  it("D270: exclusive health lane holds background until health ends", async () => {
+    const limiter = new SmartleadLimiter(1, 0, 20);
+    const order: string[] = [];
+    limiter.setExclusiveHealth(true);
+    const background = limiter.schedule(async () => {
+      order.push("background");
+      return "bg";
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(order, []);
+    assert.equal(limiter.snapshot().exclusiveHealth, true);
+    const health = runInSmartleadLane("health", () =>
+      limiter.schedule(async () => {
+        order.push("health");
+        return "h";
+      }, { lane: "health" }),
+    );
+    await health;
+    assert.deepEqual(order, ["health"]);
+    limiter.setExclusiveHealth(false);
+    await background;
+    assert.deepEqual(order, ["health", "background"]);
   });
 });
 

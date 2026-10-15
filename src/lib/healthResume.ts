@@ -172,6 +172,27 @@ export function shouldSkipHealthStage(
  *
  * An all-stale monotonic board is a normal 15-minute tick — full chain.
  */
+/**
+ * D270 — leftover prefix skip must not hide inventory after a
+ * freeze-restart (empty in-memory book) or when the lastOk is older
+ * than the 15-minute cycle. Production after D269 skipped the
+ * inventory *stage* while `inventoryBook.get()` silently refetched
+ * fat pages and never stamped lastOk.
+ */
+export function shouldRefreshInventory(opts: {
+  bookEmpty: boolean;
+  lastOkAt: string | null | undefined;
+  now?: number;
+  freshMs?: number;
+}): boolean {
+  if (opts.bookEmpty) return true;
+  return !isMonitorStageFresh(
+    opts.lastOkAt,
+    opts.now ?? Date.now(),
+    opts.freshMs ?? HEALTH_CYCLE_MS,
+  );
+}
+
 export function healthNeedsResume(
   stageHealth: Record<string, { lastOkAt: string | null } | undefined>,
   now = Date.now(),

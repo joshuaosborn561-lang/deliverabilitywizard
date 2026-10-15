@@ -6,6 +6,7 @@ import {
   HEALTH_TAIL_STAGES,
   firstInterruptedHealthStage,
   healthNeedsResume,
+  shouldRefreshInventory,
   shouldSkipHealthStage,
   staleHealthStages,
   staleHealthTail,
@@ -243,6 +244,37 @@ describe("D211 health resume", () => {
       }),
       false,
       "warmup-gate must run when the leftover sitting is stale",
+    );
+  });
+
+  it("D270: leftover skip cannot hide an empty or stale inventory book", () => {
+    const now = Date.parse("2026-10-15T17:15:00.000Z");
+    assert.equal(
+      shouldRefreshInventory({
+        bookEmpty: true,
+        lastOkAt: "2026-10-15T16:50:00.000Z",
+        now,
+      }),
+      true,
+      "a restart with an empty book must refetch",
+    );
+    assert.equal(
+      shouldRefreshInventory({
+        bookEmpty: false,
+        lastOkAt: "2026-10-15T16:00:44.000Z",
+        now,
+      }),
+      true,
+      "a pre-deploy inventory stamp is not inside the 15m cycle",
+    );
+    assert.equal(
+      shouldRefreshInventory({
+        bookEmpty: false,
+        lastOkAt: "2026-10-15T17:10:00.000Z",
+        now,
+      }),
+      false,
+      "a fresh book with a fresh stamp may skip",
     );
   });
 

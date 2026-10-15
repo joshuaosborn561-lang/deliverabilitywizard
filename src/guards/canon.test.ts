@@ -16988,8 +16988,8 @@ describe("owner intent — D269 ghost-pool persist and health/min40 start", () =
 
     assert.match(
       canon,
-      /Canon as of \*\*D269\*\*/,
-      stop("CANON is dated D269.", "CANON.md header lost the D269 stamp."),
+      /Canon as of \*\*D(269|27[0-9])\*\*/,
+      stop("CANON is dated D269 or later.", "CANON.md header lost the D269-era stamp."),
     );
     assert.match(
       canon,
@@ -17043,8 +17043,8 @@ describe("owner intent — D269 ghost-pool persist and health/min40 start", () =
     );
     assert.match(
       sl,
-      /parseSlimEmailAccountsJson/,
-      stop("Smartlead uses the slim parser for fetch_campaigns pages (D269).", "smartlead.ts lost parseSlimEmailAccountsJson."),
+      /parseSlimEmailAccountsFromFile|parseSlimEmailAccountsJson/,
+      stop("Smartlead uses the slim parser for fetch_campaigns pages (D269/D270).", "smartlead.ts lost the slim email-accounts parser."),
     );
     assert.match(
       json,
@@ -17065,6 +17065,169 @@ describe("owner intent — D269 ghost-pool persist and health/min40 start", () =
       min40,
       /updateCampaignStatus|campaigns\/.*\/status/,
       stop("min40 still does not write campaign status (D40/D269).", "min40TopUp.ts gained a status write."),
+    );
+  });
+});
+
+describe("owner intent — D270 freeze/restart follow-up", () => {
+  it("D270: stream fat bodies; exclusive health lane; do not hide inventory", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const stop = (want: string, got: string) => `${want} ${got}`;
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(
+      new URL("../../DECISIONS.md", import.meta.url),
+      "utf8",
+    );
+    const http = await readFile(new URL("../lib/http.ts", import.meta.url), "utf8");
+    const slim = await readFile(
+      new URL("../lib/accountMembership.ts", import.meta.url),
+      "utf8",
+    );
+    const sl = await readFile(new URL("../clients/smartlead.ts", import.meta.url), "utf8");
+    const limiter = await readFile(
+      new URL("../lib/smartleadLimiter.ts", import.meta.url),
+      "utf8",
+    );
+    const inventory = await readFile(
+      new URL("../services/inventory.ts", import.meta.url),
+      "utf8",
+    );
+    const resume = await readFile(
+      new URL("../lib/healthResume.ts", import.meta.url),
+      "utf8",
+    );
+    const monitor = await readFile(
+      new URL("../lib/monitorPassRetry.ts", import.meta.url),
+      "utf8",
+    );
+    const index = await readFile(new URL("../index.ts", import.meta.url), "utf8");
+    const canary = await readFile(
+      new URL("../services/copyCanary.ts", import.meta.url),
+      "utf8",
+    );
+    const health = await readFile(
+      new URL("../services/campaignHealth.ts", import.meta.url),
+      "utf8",
+    );
+    const delivery = await readFile(
+      new URL("../clients/smartdelivery.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D270\*\*/,
+      stop("CANON is dated D270.", "CANON.md header lost the D270 stamp."),
+    );
+    assert.match(
+      canon,
+      /exclusive limiter lane/,
+      stop("CANON names the exclusive health lane (D270).", "CANON.md lost exclusive limiter lane."),
+    );
+    assert.match(
+      canon,
+      /health-running/,
+      stop("CANON names monitor health-running retry (D270).", "CANON.md lost health-running."),
+    );
+    assert.match(
+      decisions,
+      /## D270 — /,
+      stop("The ledger records D270.", "DECISIONS.md has no D270 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D270 \|/m,
+      stop("The status index lists D270 (D127).", "DECISIONS.md status index has no D270 row."),
+    );
+    assert.match(
+      http,
+      /parseJsonFile/,
+      stop("HTTP streams OK bodies for file parsers (D270).", "http.ts lost parseJsonFile."),
+    );
+    assert.match(
+      http,
+      /streamResponseToFile/,
+      stop("HTTP streams fat bodies to disk (D270).", "http.ts lost streamResponseToFile."),
+    );
+    assert.match(
+      slim,
+      /parseSlimEmailAccountsFromFile/,
+      stop("Slim parse reads from disk (D270).", "accountMembership.ts lost parseSlimEmailAccountsFromFile."),
+    );
+    assert.match(
+      sl,
+      /parseJsonFile: options\.fetchCampaigns/,
+      stop("Smartlead streams fetch_campaigns pages (D270).", "smartlead.ts still uses parseJson for fetch_campaigns."),
+    );
+    assert.match(
+      limiter,
+      /setExclusiveHealth/,
+      stop("Limiter has an exclusive health lane (D270).", "smartleadLimiter.ts lost setExclusiveHealth."),
+    );
+    assert.match(
+      limiter,
+      /runInSmartleadLane/,
+      stop("Health lane is ALS-scoped (D270).", "smartleadLimiter.ts lost runInSmartleadLane."),
+    );
+    assert.match(
+      delivery,
+      /smartleadLane\(\)/,
+      stop("SmartDelivery inherits the health lane (D270).", "smartdelivery.ts lost smartleadLane."),
+    );
+    assert.match(
+      inventory,
+      /listCampaigns\(\);\s*\n\s*const accounts = await smartlead\.listAllEmailAccounts/,
+      stop("Inventory fetches sequentially (D270).", "inventory.ts still Promise.all bursts the book."),
+    );
+    assert.doesNotMatch(
+      inventory,
+      /Promise\.all\(\[\s*smartlead\.listCampaigns/,
+      stop("Inventory no longer Promise.alls the book (D270).", "inventory.ts still bursts campaigns+accounts."),
+    );
+    assert.match(
+      resume,
+      /shouldRefreshInventory/,
+      stop("Leftover skip cannot hide inventory (D270).", "healthResume.ts lost shouldRefreshInventory."),
+    );
+    assert.match(
+      index,
+      /shouldRefreshInventory/,
+      stop("Health consults shouldRefreshInventory (D270).", "index.ts lost shouldRefreshInventory."),
+    );
+    assert.match(
+      index,
+      /inventoryBook\.peek\(\)/,
+      stop("Failed inventory continues on the accepted book (D270).", "index.ts lost peek fallback."),
+    );
+    assert.match(
+      index,
+      /setExclusiveHealth\(true\)/,
+      stop("Health takes the exclusive lane (D270).", "index.ts lost setExclusiveHealth(true)."),
+    );
+    assert.match(
+      index,
+      /runInSmartleadLane\("health"/,
+      stop("Health runs in the health lane (D270).", "index.ts lost runInSmartleadLane."),
+    );
+    assert.match(
+      monitor,
+      /monitorSkipLog/,
+      stop("Monitor skipped ticks log a reason (D270).", "monitorPassRetry.ts lost monitorSkipLog."),
+    );
+    assert.match(
+      index,
+      /pendingMonitorRetry/,
+      stop("Monitor retries after health (D270).", "index.ts lost pendingMonitorRetry."),
+    );
+    assert.match(
+      canary,
+      /inventory\?: InventorySnapshot/,
+      stop("copy-canary attach accepts the shared book (D270).", "copyCanary.ts lost inventory opt."),
+    );
+    assert.match(
+      health,
+      /inventory: inventory \?\? undefined/,
+      stop("campaign-health passes the book to copy-canary (D270).", "campaignHealth.ts still refetches canary inventory."),
     );
   });
 });

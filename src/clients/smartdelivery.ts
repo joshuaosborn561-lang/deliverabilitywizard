@@ -1,5 +1,8 @@
 import { apiRequest, ApiError, type RequestOptions } from "../lib/http.js";
-import type { SmartleadLimiter } from "../lib/smartleadLimiter.js";
+import {
+  smartleadLane,
+  type SmartleadLimiter,
+} from "../lib/smartleadLimiter.js";
 import {
   classifySeedEsp,
   mailFolderOf,
@@ -118,7 +121,9 @@ export class SmartDeliveryClient {
           options.onRateLimit?.(retryAfterMs);
         },
       });
-    return this.limiter ? this.limiter.schedule(go) : go();
+    return this.limiter
+      ? this.limiter.schedule(go, { lane: smartleadLane() })
+      : go();
   }
 
   /**

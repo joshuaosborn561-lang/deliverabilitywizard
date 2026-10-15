@@ -164,6 +164,7 @@ export class CampaignHealthService {
       try {
         const canary: CopyCanaryAttachResult = await this.copyCanary.attach({
           dryRun,
+          inventory: inventory ?? undefined,
         });
         result.copyCanaryAttached = canary.attached.length;
         result.errors.push(...canary.errors.slice(0, 20));

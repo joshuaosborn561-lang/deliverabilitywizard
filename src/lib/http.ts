@@ -1,3 +1,8 @@
+import { createWriteStream } from "node:fs";
+import { once } from "node:events";
+import { unlink, writeFile } from "node:fs/promises";
+import { yieldEventLoop } from "./stringifyYielding.js";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -26,6 +31,13 @@ export interface RequestOptions {
    * with fetch_campaigns). Must not structuredClone the raw graph.
    */
   parseJson?: (text: string) => Promise<unknown> | unknown;
+  /**
+   * D270 — parse an OK body from a temp file. The response is streamed
+   * to disk in chunks so `response.text()` cannot pin the event loop
+   * on a 10–50MB fetch_campaigns page. Error / 429 bodies stay small
+   * and use JSON.parse.
+   */
+  parseJsonFile?: (filePath: string) => Promise<unknown> | unknown;
 }
 
 function buildUrl(
@@ -45,6 +57,92 @@ function buildUrl(
   return url.toString();
 }
 
+/** Yield the event loop after this many streamed bytes (D270). */
+export const STREAM_BODY_YIELD_BYTES = 256_000;
+
+export async function streamResponseToFile(
+  response: Response,
+  filePath: string,
+  opts: { signal?: AbortSignal; yieldEveryBytes?: number } = {},
+): Promise<number> {
+  const yieldEvery = opts.yieldEveryBytes ?? STREAM_BODY_YIELD_BYTES;
+  const body = response.body;
+  if (!body) {
+    const text = await response.text();
+    await writeFile(filePath, text, "utf8");
+    return Buffer.byteLength(text);
+  }
+  const file = createWriteStream(filePath);
+  const reader = body.getReader();
+  let written = 0;
+  let sinceYield = 0;
+  try {
+    for (;;) {
+      if (opts.signal?.aborted) {
+        throw Object.assign(new Error("aborted"), { name: "AbortError" });
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      const chunk = Buffer.from(value);
+      if (!file.write(chunk)) await once(file, "drain");
+      written += chunk.byteLength;
+      sinceYield += chunk.byteLength;
+      if (sinceYield >= yieldEvery) {
+        sinceYield = 0;
+        await yieldEventLoop();
+      }
+    }
+    file.end();
+    await once(file, "finish");
+    return written;
+  } catch (error) {
+    file.destroy();
+    await unlink(filePath).catch(() => undefined);
+    throw error;
+  }
+}
+
+function tmpBodyPath(): string {
+  return `/tmp/sl-body-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`;
+}
+
+async function parseOkBody(
+  response: Response,
+  options: {
+    parseJson?: RequestOptions["parseJson"];
+    parseJsonFile?: RequestOptions["parseJsonFile"];
+    signal?: AbortSignal;
+  },
+): Promise<unknown> {
+  if (options.parseJsonFile) {
+    const tmp = tmpBodyPath();
+    try {
+      await streamResponseToFile(response, tmp, { signal: options.signal });
+      return await options.parseJsonFile(tmp);
+    } finally {
+      await unlink(tmp).catch(() => undefined);
+    }
+  }
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return options.parseJson ? await options.parseJson(text) : JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+async function parseErrorBody(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 export async function apiRequest<T>(
   baseUrl: string,
   apiKey: string,
@@ -61,6 +159,7 @@ export async function apiRequest<T>(
     signal,
     onRateLimit,
     parseJson,
+    parseJsonFile,
   } = options;
   const url = buildUrl(baseUrl, path, apiKey, query);
 
@@ -85,17 +184,16 @@ export async function apiRequest<T>(
         signal: controller.signal,
       });
 
-      const text = await response.text();
-      let parsed: unknown = null;
-      if (text) {
-        try {
-          parsed = parseJson ? await parseJson(text) : JSON.parse(text);
-        } catch {
-          parsed = text;
-        }
-      }
+      const transient = response.status === 429 || response.status >= 500;
+      const parsed = transient || !response.ok
+        ? await parseErrorBody(response)
+        : await parseOkBody(response, {
+            parseJson,
+            parseJsonFile,
+            signal: controller.signal,
+          });
 
-      if (response.status === 429 || response.status >= 500) {
+      if (transient) {
         if (response.status === 429) {
           onRateLimit?.(Math.min(30_000, 500 * 2 ** attempt));
         }

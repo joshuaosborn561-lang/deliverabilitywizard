@@ -26,10 +26,14 @@ describe("D247 freeze watchdog", () => {
       now: 10_000,
       lastBeatAt: 0,
       intervalMs: 5_000,
-      locks: [],
+      locks: [{ name: "health", stage: "inventory", since: 1, maxMs: 1 }],
+      attribution: "stage=health:inventory op=json.parseFile async=PROMISE stack=at parseFile",
     });
     assert.equal(logTick.eventLoopDelayMs, 5_000);
     assert.match(logTick.log ?? "", /event-loop delay 5000ms/);
+    assert.match(logTick.log ?? "", /stage=health:inventory/);
+    assert.match(logTick.log ?? "", /op=json.parseFile/);
+    assert.match(logTick.log ?? "", /stack=at parseFile/);
     assert.equal(logTick.exitReason, undefined);
 
     const exitTick = freezeWatchdogTick({

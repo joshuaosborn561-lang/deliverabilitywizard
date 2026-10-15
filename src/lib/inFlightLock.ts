@@ -52,6 +52,11 @@ export class InFlightLock {
     return this.sinceMs;
   }
 
+  /** D271 — living stage name for freeze-watchdog stall attribution. */
+  get stage(): string | null {
+    return this.held ? this.stageName : null;
+  }
+
   ageMs(now = Date.now()): number | null {
     return this.sinceMs === null ? null : now - this.sinceMs;
   }

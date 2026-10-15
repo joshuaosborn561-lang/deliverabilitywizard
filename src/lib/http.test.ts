@@ -60,6 +60,44 @@ describe("D270 fat-body streaming", () => {
     );
     assert.equal(slimCalls, 1, "429 must not go through parseJsonFile");
   });
+
+  it("D271: slices a single fat stream chunk so the loop can tick", async () => {
+    const fat = JSON.stringify({
+      rows: Array.from({ length: 40 }, (_, i) => ({
+        id: i,
+        blob: "z".repeat(8_000),
+      })),
+    });
+    globalThis.fetch = (async () => {
+      const encoded = new TextEncoder().encode(fat);
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoded);
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 5);
+    timer.unref?.();
+    const parsed = await apiRequest<{ rows: { id: number }[] }>(
+      "https://example.test/",
+      "key",
+      "fat",
+      { retries: 0 },
+    );
+    clearInterval(timer);
+    assert.equal(parsed.rows.length, 40);
+    assert.equal(parsed.rows[0]?.id, 0);
+    assert.ok(ticks > 0, "sliced stream write must yield");
+  });
 });
 
 describe("apiRequest timeouts", () => {

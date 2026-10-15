@@ -226,7 +226,7 @@ export class CampaignCheckService {
     throwIfAborted(opts.signal);
     const { campaigns, accounts, clients } =
       opts.inventory ?? (await this.book.get());
-    const accountsByCampaign = indexAccountsByCampaign(
+    const accountsByCampaign = await indexAccountsByCampaign(
       accounts as SmartleadAccountWithCampaigns[],
     );
     const brandByClientId = new Map<number, string>();

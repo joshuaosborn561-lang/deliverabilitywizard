@@ -275,7 +275,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D267 | Live | Freeze/restart reliability: top-up/fan-out/campaign-audit yield; isolation prune persists on the sidecar; isolation-branch stays inside its 10m budget and stamps lastOk on a partial pass; Smartlead limiter 150/min including SmartDelivery; canon-ops skipped ticks log a reason and retry |
 | D268 | Live | Allow-generics is gone. Generics are a thin on-week floor-only top-up (40, TechEvo 30). Never past the floor. Never onto a POD whose named seats already cover it. Never new generics onto the off-week cylinder. No Slack card, no auto-allow list, no pending allow-generics state. Named A/B split, canaries, and Gabe Calls exclusions stay. |
 | D269 | Live — inventory parse / pass isolation amended by D270 | Freeze/restart loop after D267/D268: ghost-pool drops persist on the lastOk sidecar; fat fetch_campaigns inventory pages slim to campaign_ids (off-thread when large); min40 prefix / generic-seat sync / client-rest yield so a 40–50s stall cannot trip the freeze watchdog |
-| D270 | Live | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
+| D270 | Live — stream/parse/stringify amended by D271 | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
+| D271 | Live | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
 
 ---
 
@@ -9789,6 +9790,69 @@ inventory peek fallback; copy-canary attach accepts inventory.
 Tests: 429 does not call parseJsonFile; exclusive lane holds
 background; empty/stale book refreshes; monitor skips when health
 is live; fetchInventory does not overlap campaigns and accounts.
+
+---
+
+## D271 — Name every stall; move leftover JSON/fs/scans off the loop
+
+**Date.** 2026-10-15 (Josh via production freeze/restart after D270).
+
+**Decision.** Production `main@6bf5e52` (D270 #319) still freeze-restarted
+at 12:51pm CT on Oct 15 after 18–25s event-loop stalls. D267 (#316),
+D269 (#318) and D270 (#319) treated symptoms; the watchdog still logged
+only `event-loop delay Nms`, so the next fix was another guess.
+Railway MCP/CLI were unreachable from this session (invalid token);
+the leftover hotspots are the ones D270 left on the main thread at
+the same 16–25s magnitude.
+
+1. **Every stall names its culprit.** Freeze-watchdog delay logs include
+   the in-flight lock stage (`health:inventory`), the current named op
+   (`json.parseFile`, `json.stringify:state`, `fs.streamResponseToFile`,
+   `scan:indexAccountsByCampaign`), the last `async_hooks` resource,
+   `perf_hooks` event-loop delay max / ELU, and a sampled stack from
+   `before()` of the callback that blocked. Named ops that run ≥1s
+   log on their own. Watchdog thresholds stay (1s log, 5m exit, 3× ≥3s
+   in 2 minutes).
+
+2. **`/data/state.json` must not join or clone on this thread.** Full
+   dumps write as they walk (`stringifyYieldingToFile`) so a 100MB
+   concat cannot pin 18–25s. Load parses in a worker and pulls
+   keys / array slices with yields — one `postMessage` of the graph
+   is the D262 structuredClone stall. Sidecar stamps stringify via
+   the yielding walk. Fat-parse fallbacks do not `JSON.parse` on main.
+
+3. **Stream slices; parse fat Smartlead JSON off-thread.** Undici can
+   hand a whole fetch_campaigns page as one `read()`. Write 64KB
+   slices and yield. Every OK Smartlead body streams to disk.
+   `listCampaigns`, mailbox health-metrics, and non-`fetch_campaigns`
+   account pages parse off-thread. `indexAccountsByCampaign` yields.
+
+No campaign START / PAUSE. No spend. No change to POD floors,
+21-day warmup, PowerGRYD empty-by-design, generics policy, or
+hold enforcement. The freeze watchdog stays (D247/D257/D265);
+thresholds are not widened.
+
+**Why.** D270 streamed `fetch_campaigns` pages but still
+`Buffer.from`'d a whole chunk, `JSON.parse`'d other fat lists,
+joined the state dump, and cloned the parsed dump onto the main
+thread. Three unnamed 18–25s stalls inside two minutes still exit.
+
+**Rejected.** Widening the freeze-watchdog thresholds. Turning the
+freeze watchdog off. Changing campaign START / PAUSE. Spending or
+bypassing warmup / holds.
+
+**Supersedes / amends.** Amends D270: every OK body streams in slices;
+campaigns / health-metrics parse off-thread. Amends D262/D257/D249:
+stringify writes to disk without joining; load is chunked, not one
+clone. Amends D247: delay logs carry stage + stack attribution.
+Does not change D40, D4, D158 / D164 / D165, or D268.
+
+**Guards.** canon D271: `formatStallAttribution` / `startEventLoopAttribution`;
+delay log includes `stage=` and `stack=`; `stringifyOffThreadToFile`;
+`parseFileChunked`; `STREAM_BODY_SLICE_BYTES`; `indexAccountsByCampaign`
+yields; listCampaigns `parseJsonFile`. Tests: attribution line names
+stage/op/stack; ToFile matches JSON.stringify and ticks; fat parse
+ticks; one-chunk stream ticks; watchdog log keeps thresholds.
 
 ---
 

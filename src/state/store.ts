@@ -1,6 +1,11 @@
-import { copyFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { parseFileOffThread, stringifyOffThread } from "../lib/jsonOffThread.js";
+import {
+  parseFileOffThread,
+  stringifyOffThread,
+  stringifyOffThreadToFile,
+} from "../lib/jsonOffThread.js";
+import { runWithStallScopeAsync } from "../lib/eventLoopAttribution.js";
 import { pruneStateLedgers } from "../lib/stateRetention.js";
 import { sleep } from "../lib/http.js";
 import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
@@ -2984,8 +2989,9 @@ export class StateStore {
 
   private async applyHotStamps(): Promise<void> {
     try {
-      const raw = await readFile(this.stampsFilePath(), "utf8");
-      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const parsed = await parseFileOffThread<Record<string, unknown>>(
+        this.stampsFilePath(),
+      );
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
       this.overlayHotStamps(parsed);
     } catch (error) {
@@ -3002,7 +3008,7 @@ export class StateStore {
     await mkdir(dir, { recursive: true });
     const target = this.stampsFilePath();
     const tmp = `${target}.${process.pid}.${++this.saveSeq}.tmp`;
-    const body = JSON.stringify(this.hotStamps());
+    const body = await stringifyOffThread(this.hotStamps());
     await writeFile(tmp, body, "utf8");
     await rename(tmp, target);
   }
@@ -3020,18 +3026,19 @@ export class StateStore {
       if (debounceMs > 0) await sleep(debounceMs);
       while (this.saveWanted) {
         this.saveWanted = false;
-        const pruned = pruneStateLedgers(this.state);
+        const pruned = await runWithStallScopeAsync("scan:pruneStateLedgers", async () =>
+          pruneStateLedgers(this.state),
+        );
         const dir = path.dirname(this.filePath);
         await mkdir(dir, { recursive: true });
         const tmp = `${this.filePath}.${process.pid}.${++this.saveSeq}.tmp`;
         const started = Date.now();
-        const body = await stringifyOffThread(this.state);
+        const bytes = await stringifyOffThreadToFile(this.state, tmp);
         this.lastSaveMs = Date.now() - started;
         console.log(
-          `[state] save compact-json ${this.lastSaveMs}ms ${body.length} bytes pruned=${pruned.dropped}`,
+          `[state] save compact-json ${this.lastSaveMs}ms ${bytes} bytes pruned=${pruned.dropped}`,
         );
         if (this.onSaveSnapshot) await this.onSaveSnapshot();
-        await writeFile(tmp, body, "utf8");
         await rename(tmp, this.filePath);
         try {
           await this.saveHot();

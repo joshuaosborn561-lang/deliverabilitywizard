@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { readFile, unlink } from "node:fs/promises";
 import { describe, it } from "node:test";
-import { stringifyYielding } from "./stringifyYielding.js";
+import { stringifyYielding, stringifyYieldingToFile } from "./stringifyYielding.js";
 
 describe("stringifyYielding (D249)", () => {
   it("matches JSON.stringify for nested objects and skips undefined", async () => {
@@ -50,5 +51,28 @@ describe("stringifyYielding (D249)", () => {
     clearInterval(timer);
     assert.equal(JSON.parse(body).k0.length, 200);
     assert.ok(ticks > 0, "joinYielding must yield between chunks");
+  });
+
+  it("D271: stringifyYieldingToFile matches JSON.stringify and yields", async () => {
+    const wide: Record<string, string> = {};
+    for (let i = 0; i < 200; i += 1) {
+      wide[`k${i}`] = "x".repeat(400);
+    }
+    const filePath = `/tmp/dw-stringify-${process.pid}-${Date.now()}.json`;
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+    timer.unref?.();
+    const bytes = await stringifyYieldingToFile(wide, filePath, {
+      yieldEvery: 4,
+      flushBytes: 8_000,
+    });
+    clearInterval(timer);
+    const body = await readFile(filePath, "utf8");
+    await unlink(filePath).catch(() => undefined);
+    assert.equal(body, JSON.stringify(wide));
+    assert.ok(bytes > 0);
+    assert.ok(ticks > 0, "file stringify must yield while flushing");
   });
 });

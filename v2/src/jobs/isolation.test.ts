@@ -110,6 +110,38 @@ describe("isolation worker", () => {
     assert.ok(result.intended.some((a) => a.kind === "isolate"));
   });
 
+  it("scores the five 0% campaigns from unwarmed copy-canary tests", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const uglyIds = [3847940, 3921850, 3921852, 3921869, 4037540];
+    const result = await runIsolationTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: uglyIds.map((id) => ({
+          id,
+          name: `Campaign ${id}`,
+          status: "ACTIVE",
+          clientId: 1,
+        })),
+        accounts: [],
+      },
+      tests: uglyIds.map((id) => ({
+        id: String(id === 3847940 ? 548304 : id),
+        name: `Canary copy: #${id}`,
+        senders: [{ email: "unwarmed@copy.test", inbox: false, provider: "gmail" }],
+      })),
+      fleetEmails: ["living@canary.test"],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.equal(result.scored, 5);
+    const scores = await store.listScores();
+    assert.equal(scores.filter((s) => s.source === "canary-copy" && s.inboxPercent === 0).length, 5);
+    assert.ok(result.intended.some((a) => a.kind === "isolate"));
+  });
+
   it("scores the five 0% campaigns by campaignId and flags below_launch_bar + ugly", async () => {
     const store = new MemoryStore();
     const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
@@ -125,26 +157,19 @@ describe("isolation worker", () => {
         })),
         accounts: [],
       },
-      tests: [
-        ...uglyIds.map((id) => ({
-          id: `copy-${id}`,
-          name: `Canary copy: #${id}`,
-          senders: [{ email: "unwarmed@copy.test", inbox: false, provider: "gmail" }],
-        })),
-        ...uglyIds.map((id) => ({
-          id: `t-${id}`,
-          name: `Warmed seeds ${id}`,
-          campaignId: String(id),
-          senders: [{ email: "warm@client.info", inbox: false, provider: "gmail" }],
-        })),
-      ],
+      tests: uglyIds.map((id) => ({
+        id: `t-${id}`,
+        name: `Warmed seeds ${id}`,
+        campaignId: String(id),
+        senders: [{ email: "warm@client.info", inbox: false, provider: "gmail" }],
+      })),
       fleetEmails: ["living@canary.test"],
       gate,
       store,
       config: loadConfig({} as NodeJS.ProcessEnv),
       runQa: false,
     });
-    assert.equal(result.scored, 10);
+    assert.equal(result.scored, 5);
     for (const id of uglyIds) {
       assert.ok(
         result.findings.some((f) => f.kind === "below_launch_bar" && f.campaignId === id),
@@ -156,8 +181,7 @@ describe("isolation worker", () => {
       );
     }
     const scores = await store.listScores();
-    assert.equal(scores.filter((s) => s.inboxPercent === 0).length, 10);
-    assert.equal(scores.filter((s) => s.source === "canary-copy").length, 5);
+    assert.equal(scores.filter((s) => s.inboxPercent === 0).length, 5);
   });
 
   it("scores a 0% live test from providerwise splits when senders are missing", async () => {

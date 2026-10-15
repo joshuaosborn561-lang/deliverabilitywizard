@@ -11,6 +11,13 @@ fleet size. The five consecutive freeze PRs treated symptoms. D272 is
 already live and the machine is still overlapping itself, timing out,
 and leaving 0%-inbox campaigns without isolation.
 
+A read-only triage on **2026-10-15** showed the 0% flags themselves
+are also a canary bug: all five trace to a **released** sender
+(`aminarodriguez@getcrosslaunchco.info`) that is never checked against
+the living fleet, plus an on-ramp that lists 800+ tests, scores 4,
+skips fresh 0% scores as if they were queued, and has **no 30-minute
+deadline in code**.
+
 ---
 
 ## Verdict
@@ -77,7 +84,9 @@ run (live `/health.placementIsolation.uglyWithoutIsolation`):
 
 That is **~29–31 hours** of 0% inbox without isolation, against a
 canon target of **one 15-minute health cycle** (D159) and Josh’s
-**30-minute** SLA.
+**30-minute** SLA. Oct 15 triage: every row is a **canary-copy**
+score driven by one **non-fleet** Gmail sender (see A8). There is
+still no 30-minute deadline in code.
 
 `#deliverability` posted a stage-overdue page **about every hour on
 Oct 15** (00:02, 01:00, 02:02, 03:01, 04:01, 05:02, 05:54, 06:52,
@@ -234,12 +243,14 @@ then became a **restart loop** instead of a backstop.
 Josh: “a lot needs to be stripped out.” The patches did the
 opposite.
 
-### A7. Isolation 0% for 30 hours is the same root, not a separate bug
+### A7. Isolation 0% for 30 hours is process starvation **and** a broken on-ramp
 
 Canon: score → suspect → evaluate on the **15-minute health sweep**
 (D159), isolate any 0%-inbox campaign within ~30 minutes.
 
-What actually happens:
+The freeze loop explains why the stage often never runs. Oct 15
+triage showed that **even when it runs, the on-ramp does not isolate**
+(A8). Process starvation still matters:
 
 1. Isolation-branch is **near the tail** of `runHealth` (after rest,
    one-client, campaign-check-first, warmup-gate, campaign-health,
@@ -259,7 +270,96 @@ What actually happens:
 
 #3847940 / #3921850 were first paged **2026-10-14 10:25 CDT** and
 were still on `/health` **~29 hours later**. That is ~116 missed
-15-minute cycles, not a cap delay.
+15-minute cycles, not a cap delay. **There is no 30-minute isolation
+deadline in code** — only a 15-minute cron hope, a 10-minute stage
+timeout, a 7-minute inner budget, and a **3-hour** “fresh score”
+skip that prevents re-queue.
+
+### A8. Canary + on-ramp bugs (read-only triage, 2026-10-15)
+
+These are independent of the freeze. They make a 0% flag, then fail
+to isolate it.
+
+**1. Released-fleet sender is scored as “the canary.”** All five
+`uglyWithoutIsolation` rows traced to
+`aminarodriguez@getcrosslaunchco.info` landing in **spam at Gmail**.
+That address is on the **released / contaminated** 2026-10-05 list
+(`CONTAMINATED_CANARY_LOCAL_PARTS` × `getcrosslaunchco.info` /
+`crosslaunchcoget.info` in `src/lib/copyCanaryFleet.ts`). Adopt
+refuses it. **Scoring does not.** `queueUglyPlacementSuspects`
+calls `providerSplits` → `minSameEspInbox` on the **whole test**,
+with no filter against `isCopyCanaryFleetEmail` /
+`isReleasedCanaryEmail`. One leftover Gmail sender at 0% becomes a
+campaign-level 0% canary-copy flag. `copyCanary.readSplit` does
+filter sender rows by fleet email **after** the flag already fired.
+
+**2. `listTests` failure is treated as “no tests,” and the 800+
+list is walked to score 4.** In `isolationBranch.ts`:
+
+```ts
+await this.smartDelivery.listTests({}).catch(() => []);
+```
+
+A 429 / timeout becomes an empty list: no scores, no queue, lastOk
+can still stamp. The same function then sorts **every** listed test
+(triage: **800+**) and only pulls
+`ISOLATION_PROVIDER_SPLITS_CAP = 4` provider-split reports per
+pass. The rest wait. Combined with the 3-hour skip (below), a
+campaign can sit in the 800 unseen for hours after it was already
+scored 0%.
+
+**3. A score younger than 3 hours is skipped as if it were queued.
+Nothing is queued.** `PLACEMENT_SCORE_FRESH_MS = 3 * 60 * 60 * 1000`
+(`isolationBranch.ts`). Comment: “a fresh score is already on the
+hole / suspect list. Re-read happens in evaluate.” False:
+
+- `recordPlacementScore` is not `markCopySuspect`.
+- `/health` `uglyWithoutIsolation` is exactly “score under bar,
+  **no** unevaluated suspect, **no** COPY/INFRA run.”
+- Evaluate only walks **existing** suspects. A 0% score with no
+  suspect is skipped for 3 hours, then maybe pulled again if it
+  wins one of the 4 slots.
+
+Freeze-restarts make this worse: scores survive in `state.json`,
+suspects do not, then the 3-hour skip blocks the re-queue the
+sidecar was supposed to enable.
+
+**4. Warmed-canary lookup matches `campaign_id`; Smartlead’s test
+list has none.** `copyCanary.readSplit` picks the warmed (live
+sender) test with:
+
+```ts
+campaignIdOf(test) === String(campaignId) && !isCanaryCopyTestName(...)
+```
+
+`campaignIdOf` is `test.campaign_id` (`smartdelivery.ts`). The list
+payload does not carry it, so the filter is always empty →
+`warmedTested = 0`. Isolation then cannot tell “unwarmed copy fails,
+warmed senders succeed” (copy) from “both fail” (infra). Match the
+scanner name instead: **`Auto: <campaign name>`** (optional
+` (i/n)` suffix) — `opsReporting.ts` already knows that pattern.
+`campaignLooksSpam` in isolation-branch uses the same
+`campaignIdOf` miss.
+
+**5. No 30-minute isolation deadline exists.** Canon / Josh SLA is
+“0% inbox isolated within 30 minutes.” Code has: 15-minute health
+cadence, 10-minute `raceStep`, 7-minute inner budget, 3-hour fresh
+skip, 4 pulls / 3 evaluates. There is no
+`ISOLATION_DEADLINE_MS`, no `/health` hole that flips overdue at
+30 minutes of `uglyWithoutIsolation`, no job that must evaluate
+every 0% row before that clock.
+
+**6. Duplicate canary tests pile up** — **6 or more** for #3847940.
+`ensureCopyTest` creates a new SmartDelivery test when the listed
+set has no living `Canary copy: #<id>` match. It does not stop the
+extras. Incomplete `listTests`, freeze mid-attach, and boot + 6h
+attach all spawn another. Scoring then picks among duplicates
+(including ones still carrying released senders).
+
+Together: a **false 0%** (released Gmail sender) on a **duplicate
+canary test**, listed among **800** tests, **scored 4 per pass**,
+**held 3 hours without a suspect**, **never evaluated** because
+warmed lookup is empty and the stage times out — for **29+ hours**.
 
 ---
 
@@ -320,7 +420,7 @@ Health 15m window unless noted.
 | reconnect | health | 330 | SMTP/IMAP re-auth | NICE |
 | mailbox-gap | health | 405 | Caps + 10m gap | **CORE** (send hygiene) |
 | mailbox-settings-full | health 6h | same 405 | Full sig/warmup converge | NICE (gap already every 15m) |
-| isolation-branch | health tail | 876 | **10m timeout, 7m inner, 4/3 caps**; lastOk 3.5h stale | **CORE** (job 4) — **must be its own worker** |
+| isolation-branch | health tail | 876 | **10m timeout, 7m inner, 4/3 caps**; lists 800+ tests, scores 4; lastOk 3.5h stale; **no 30m deadline** | **CORE** (job 4) — **must be its own worker**; rewrite on-ramp (A8) |
 | isolation-buy-resume | health + monitor | isolationBuy 788 | Retry post-pull buy | CORE (job 7 path) |
 | generic-pool-canon | health, not watchdog | 201 | Table validate | CORE findings; cheap |
 | hold-enforcement | canon-ops | 124 | Only live PAUSE besides shells | CORE (standing holds) |
@@ -455,13 +555,30 @@ for (7), and `/health`.
            └──────── HTTP stays up if staff or isolation dies
 ```
 
+### Isolation on-ramp (must rewrite, not lift-and-shift)
+
+The isolation worker is not `isolationBranch.run` in another process.
+The Oct 15 triage bugs have to die in the new design:
+
+| Today (A8) | Target |
+|---|---|
+| Score every sender on the test, including `aminarodriguez@getcrosslaunchco.info` | Score **only** emails on the living canary fleet registry. Drop released / contaminated senders (`isReleasedCanaryEmail`). A non-fleet Gmail spam hit is not a campaign 0% flag. |
+| `listTests({}).catch(() => [])` | Failed list is an **error** (no lastOk). Retry; do not pretend the board is empty. |
+| Pull 800+ tests, read 4 provider-splits | Keep a **priority queue** of ACTIVE campaigns (0% / no score first). Do not walk the whole catalog every sitting. Cap is a backlog, not a skip of already-ugly rows. |
+| `PLACEMENT_SCORE_FRESH_MS` 3h skip “already queued” | Fresh 0% **without** a suspect is a **queue**, not a skip. Evaluate, don’t wait for a 3h timer. |
+| Warmed lookup `campaignIdOf(test)` (always empty) | Match live placement tests by name **`Auto: <campaign name>`** (optional ` (i/n)`). Same for `campaignLooksSpam`. |
+| No 30-minute deadline | `uglyWithoutIsolation` older than **30 minutes** is a hard overdue on `/health` and an isolation-worker page. The worker must evaluate every such row before that clock. |
+| `ensureCopyTest` spawns extras (6+ on #3847940) | **One** living `Canary copy: #<id>` per campaign. Reuse or stop-and-replace; never create a second while any match is listed. Strip released senders off existing tests. |
+
+Warmed canaries still test **senders**; unwarmed fleet still tests **copy**. Both readings must be real before COPY vs INFRA.
+
 ### Process split (the actual fix)
 
 | Process | Owns | Must not own |
 |---|---|---|
 | **api** | Express, `/health`, Slack taps, spend execute, InboxKit delete trigger | Inventory walks, stringify, placement pulls |
 | **staff** | Inventory book, rest, one-client, min40+peel, warmup-gate, campaign-check, mailbox-gap, license sweep | Isolation evaluate, SmartDelivery report pagination, campaign-audit |
-| **isolation** | Score ugly ACTIVE campaigns, queue, evaluate, copy-canary attach, word hunt, known-good | min40, rest, fan-out |
+| **isolation** | Score **fleet-only** senders, queue every 0% within 30m, evaluate, copy-canary attach (one test per campaign), word hunt, known-good | min40, rest, fan-out |
 
 If **staff** freeze-kills, **isolation still runs** (Josh’s QA
 requirement). `/health` is served by **api** from Postgres, so a
@@ -572,12 +689,22 @@ the restart loop.
 
 New Railway service, same image, `ROLE=isolation`:
 
-- Own 15-minute cron: list tests → score same-ESP → mark suspect →
-  evaluate (priority: 0% first, no 4/3 cap as the only throttle).
-- Copy-canary attach on this worker, not boot-only / 6h.
+- Own 15-minute cron with a **30-minute hard deadline** on
+  `uglyWithoutIsolation`.
+- Score **fleet-registry senders only**; ignore released
+  `getcrosslaunchco.info` / `crosslaunchcoget.info` seats.
+- Failed `listTests` is a stage error, not `[]`.
+- Priority queue: already-0% and never-scored first. Do not skip a
+  0% score because it is “fresh.” Do not spend the sitting listing
+  800 tests to pull 4.
+- Warmed live tests matched by `Auto: <campaign name>`, not
+  `campaign_id`.
+- One canary-copy test per campaign; stop duplicates (including the
+  6+ on #3847940); attach on this worker, not boot-only / 6h.
 - Postgres **or** a dedicated `isolation.sqlite` on volume first if
   Postgres isn’t ready — but **not** the giant `state.json`.
-- Api `/health` reads isolation lastOk from that store.
+- Api `/health` reads isolation lastOk from that store and pages
+  when a 0% hole is older than 30 minutes.
 
 Staff process **stops running** `isolation-branch` in `runHealth`.
 Health sitting can die; ugly campaigns still isolate.
@@ -639,7 +766,11 @@ Success, all required:
 - No freeze-watchdog `process.exit` for **24h**
 - Isolation-branch (worker) lastOk **≤20 minutes**
 - `uglyWithoutIsolation` **empty** for ACTIVE senders, or queued
-  `<30 min` from first 0% score
+  **and evaluated** `<30 min` from first 0% score (deadline in code)
+- 0% Gmail on a **released** sender does not flag the campaign
+- Warmed-canary `warmedTested > 0` on campaigns that have an
+  `Auto: <name>` test
+- One canary-copy test per ACTIVE campaign (no 6× pile-up)
 - Health `/health` **200** even when staff is restarting
 - `canonCompliant` judged on the seven jobs only (esp_mix /
   understaffed still real; campaign-audit holes gone)
@@ -653,7 +784,7 @@ Success, all required:
 | 1. 40/POD, static A/B, generics to floor | client-rest + min40 + top-up + fan-out + cleanup | **staff:** rest + min40 (cleanup folded) |
 | 2. Exclusive seats + 33% ESP | one-client + esp_mix in campaign-check | **staff:** one-client + check |
 | 3. Warmup then peel | warmup-gate + min40 named-warm swap | **staff:** gate + min40 swap |
-| 4. Canaries + 30m isolation + word hunt | health tail + 6h monitor + DeliveryWatch | **isolation worker only** |
+| 4. Canaries + 30m isolation + word hunt | health tail + 6h monitor + DeliveryWatch; fleet never checked on score; no 30m clock | **isolation worker only**, fleet-filtered scores, `Auto:` warmed match, 30m deadline, one test per campaign |
 | 5. Copy / sig / merge-tag QA | campaign-check-first (20m timeout) | **staff:** check, own budget, not blocking isolation |
 | 6. Lapsed delete | 08:16 CT sweep | **staff or api weekday job** |
 | 7. Spend to Josh/Cayden | Slack + isolationExecute + digest | **api** (never on staff CPU) |
@@ -676,8 +807,14 @@ Success, all required:
 
 - Production `GET /health` 2026-10-15 ~20:18 UTC, deploy `cd89be1`
 - `#deliverability` overdue + 0% pages 2026-10-14–15 (bot U0BS2EUFJEA)
+- Read-only canary triage 2026-10-15: five 0% rows →
+  `aminarodriguez@getcrosslaunchco.info`; `queueUglyPlacementSuspects`
+  `.catch(() => [])` + 4-of-800 pulls; 3h fresh-score skip; warmed
+  lookup via `campaignIdOf`; no 30m deadline; 6+ canary tests on
+  #3847940
 - PRs #316 (D267), #318 (D269), #319 (D270), #320 (D271), #321 (D272)
 - `CANON.md` D272, `src/index.ts`, `src/state/store.ts`,
-  `src/lib/{freezeWatchdog,stepTimeout,smartleadLimiter,stringifyYielding,stageWindows,stateRetention}.ts`
+  `src/services/{isolationBranch,copyCanary}.ts`,
+  `src/lib/{copyCanaryFleet,placementSuspect,freezeWatchdog,stepTimeout,smartleadLimiter,stringifyYielding,stageWindows,stateRetention}.ts`
 - Repo: 62,266 production TS lines, 53 services, 35 `stage("` calls,
   14 `cron.schedule` sites

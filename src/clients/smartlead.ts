@@ -1,8 +1,11 @@
-import { parseSlimEmailAccountsJson } from "../lib/accountMembership.js";
+import { parseSlimEmailAccountsFromFile } from "../lib/accountMembership.js";
 import { apiRequest, sleep, type RequestOptions } from "../lib/http.js";
 import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import type { MutationQueue } from "../lib/mutationQueue.js";
-import { SmartleadLimiter } from "../lib/smartleadLimiter.js";
+import {
+  SmartleadLimiter,
+  smartleadLane,
+} from "../lib/smartleadLimiter.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
 import { sequencesForWrite } from "../lib/signatureQa.js";
 import type {
@@ -71,7 +74,12 @@ export class SmartleadClient {
           options.onRateLimit?.(retryAfterMs);
         },
       }),
+      { lane: smartleadLane() },
     );
+  }
+
+  setExclusiveHealth(on: boolean): void {
+    this.limiter.setExclusiveHealth(on);
   }
 
   limiterSnapshot(): ReturnType<SmartleadLimiter["snapshot"]> {
@@ -238,8 +246,11 @@ export class SmartleadClient {
             limit,
             ...(options.fetchCampaigns ? { fetch_campaigns: true } : {}),
           },
-          // D269 — fat fetch_campaigns pages parse+slim off-thread.
-          parseJson: options.fetchCampaigns ? parseSlimEmailAccountsJson : undefined,
+          // D270 — stream the page to disk, then slim off-thread.
+          // Never response.text() a fat fetch_campaigns body.
+          parseJsonFile: options.fetchCampaigns
+            ? parseSlimEmailAccountsFromFile
+            : undefined,
         },
       );
       if (!Array.isArray(page)) {

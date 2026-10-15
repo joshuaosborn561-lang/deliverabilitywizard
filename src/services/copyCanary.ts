@@ -61,6 +61,7 @@ import {
 } from "./campaignScanner.js";
 import type { PoolMailboxRecord, StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
+import type { InventorySnapshot } from "./inventory.js";
 
 export interface CopyCanaryAttachResult {
   dryRun: boolean;
@@ -86,7 +87,10 @@ export class CopyCanaryService {
     private readonly state: StateStore,
   ) {}
 
-  async attach(opts: { dryRun?: boolean } = {}): Promise<CopyCanaryAttachResult> {
+  async attach(opts: {
+    dryRun?: boolean;
+    inventory?: InventorySnapshot;
+  } = {}): Promise<CopyCanaryAttachResult> {
     const dryRun = opts.dryRun ?? this.config.dryRun;
     const result: CopyCanaryAttachResult = {
       dryRun,
@@ -139,10 +143,15 @@ export class CopyCanaryService {
     let campaigns: SmartleadCampaign[] = [];
     let accounts: SmartleadAccountWithCampaigns[] = [];
     try {
-      [campaigns, accounts] = await Promise.all([
-        this.smartlead.listCampaigns(),
-        this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
-      ]);
+      if (opts.inventory) {
+        campaigns = opts.inventory.campaigns;
+        accounts = opts.inventory.accounts;
+      } else {
+        [campaigns, accounts] = await Promise.all([
+          this.smartlead.listCampaigns(),
+          this.smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
+        ]);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       result.errors.push(`inventory: ${message}`);

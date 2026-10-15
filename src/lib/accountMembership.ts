@@ -52,6 +52,21 @@ export async function slimInventoryAccounts(
 }
 
 /**
+ * D270 — parse a page that is already on disk. The HTTP layer streams
+ * fat fetch_campaigns bodies here so the main thread never holds the
+ * raw JSON string.
+ */
+export async function parseSlimEmailAccountsFromFile(
+  filePath: string,
+): Promise<SmartleadAccountWithCampaigns[]> {
+  try {
+    return slimEmailAccountsPage(await parseSlimEmailAccountsFile(filePath));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Parse one GET /email-accounts page. Fat pages go through a worker that
  * slims before postMessage so the main thread never structuredClones the
  * embedded campaign objects (D262 clone stall).
@@ -70,7 +85,7 @@ export async function parseSlimEmailAccountsJson(
   const tmp = `/tmp/sl-accounts-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`;
   await writeFile(tmp, text, "utf8");
   try {
-    return slimEmailAccountsPage(await parseSlimEmailAccountsFile(tmp));
+    return await parseSlimEmailAccountsFromFile(tmp);
   } finally {
     await unlink(tmp).catch(() => undefined);
   }

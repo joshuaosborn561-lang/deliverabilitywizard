@@ -51,13 +51,17 @@ export async function fetchInventory(
   let lastError: unknown;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const [campaigns, accounts, clients] = await Promise.all([
-        smartlead.listCampaigns(),
-        smartlead.listAllEmailAccounts({ fetchCampaigns: true }),
+      // D270 — sequential, not Promise.all. Bursting campaigns + fat
+      // email-accounts + clients into the concurrency-2 limiter is how
+      // health + monitor 429 the board at inventory start.
+      const campaigns = await smartlead.listCampaigns();
+      const accounts = await smartlead.listAllEmailAccounts({
+        fetchCampaigns: true,
+      });
+      const clients =
         typeof smartlead.listClients === "function"
-          ? smartlead.listClients().catch(() => [] as SmartleadClientRecord[])
-          : Promise.resolve([] as SmartleadClientRecord[]),
-      ]);
+          ? await smartlead.listClients().catch(() => [] as SmartleadClientRecord[])
+          : ([] as SmartleadClientRecord[]);
       const slimAccounts = accounts as SmartleadAccountWithCampaigns[];
       await slimInventoryAccounts(slimAccounts);
       return {

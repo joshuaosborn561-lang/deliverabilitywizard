@@ -8,6 +8,60 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+describe("D270 fat-body streaming", () => {
+  it("streams an OK body to parseJsonFile and does not slim-parse 429s", async () => {
+    const files: string[] = [];
+    let slimCalls = 0;
+    let okCalls = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("rate-limited")) {
+        return new Response(JSON.stringify({ message: "rate limited" }), {
+          status: 429,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      okCalls += 1;
+      const page = Array.from({ length: 8 }, (_, i) => ({
+        id: i + 1,
+        from_email: `seat${i}@crosslaunchco.com`,
+        campaigns: [{ id: 9, name: `C${i} ${"x".repeat(40)}` }],
+      }));
+      return new Response(JSON.stringify(page), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const parsed = await apiRequest("https://example.test/", "key", "ok", {
+      parseJsonFile: async (filePath) => {
+        slimCalls += 1;
+        files.push(filePath);
+        const { readFile } = await import("node:fs/promises");
+        return JSON.parse(await readFile(filePath, "utf8"));
+      },
+      retries: 0,
+    });
+    assert.equal(okCalls, 1);
+    assert.equal(slimCalls, 1);
+    assert.ok(Array.isArray(parsed));
+    assert.equal((parsed as { id: number }[])[0]?.id, 1);
+
+    await assert.rejects(
+      () =>
+        apiRequest("https://example.test/", "key", "rate-limited", {
+          parseJsonFile: async () => {
+            slimCalls += 1;
+            return [];
+          },
+          retries: 0,
+        }),
+      /rate limited/,
+    );
+    assert.equal(slimCalls, 1, "429 must not go through parseJsonFile");
+  });
+});
+
 describe("apiRequest timeouts", () => {
   it("rewrites AbortError into a clear TimeoutError after the budget", async () => {
     globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {

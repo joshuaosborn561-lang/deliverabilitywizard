@@ -20,4 +20,22 @@ describe("D271 account campaign index yields", () => {
     assert.equal(byCampaign.get(100)?.length, 1);
     assert.ok(ticks > 0, "indexAccountsByCampaign must yield");
   });
+
+  it("D272: yields inside fat campaigns[] not only every 32 accounts", async () => {
+    const accounts = Array.from({ length: 40 }, (_, i) => ({
+      id: i + 1,
+      from_email: `seat${i}@crosslaunchco.com`,
+      campaigns: Array.from({ length: 120 }, (_, j) => ({ id: j + 1 })),
+    }));
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+    }, 1);
+    timer.unref?.();
+    const byCampaign = await indexAccountsByCampaign(accounts);
+    clearInterval(timer);
+    assert.equal(byCampaign.get(1)?.length, 40);
+    assert.equal(byCampaign.get(120)?.length, 40);
+    assert.ok(ticks > 0, "inner campaign-id walk must yield");
+  });
 });

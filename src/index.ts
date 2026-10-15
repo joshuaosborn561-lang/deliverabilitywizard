@@ -1471,7 +1471,9 @@ async function main(): Promise<void> {
     opsCheckInFlight = (async () => {
       const monitorResult = await monitor.run();
       const dnsResult = await dnsAudit.run({ alert: false });
-      const campaignResult = await campaignAudit.run();
+      const campaignResult = await campaignAudit.run({
+        pauseWhile: () => healthLock.isLive(),
+      });
       return {
         monitor: monitorResult,
         dns: dnsResult,
@@ -1550,8 +1552,12 @@ async function main(): Promise<void> {
       });
       // Campaign-level audit (read-only). Staffing mutations live on the
       // faster CRON_HEALTH loop so thin campaigns do not wait six hours.
-      const campaignAuditResult: unknown = await stage("campaign-audit", () =>
-        campaignAudit.run(), { skipIfFreshMs });
+      const campaignAuditResult: unknown = await stage("campaign-audit", async () => {
+        // D272 — D270 skipped only a *new* monitor tick. A sitting already
+        // in campaign-audit still overlapped health CPU. Pause this walk
+        // while health is live (hunch; stringify/index are the proven stalls).
+        return campaignAudit.run({ pauseWhile: () => healthLock.isLive() });
+      }, { skipIfFreshMs });
       // D52 — remaining leads. Campaign audit watches senders, not this number.
       let leadRunoutResult: unknown = null;
       if (config.enableLeadRunout) {
@@ -2764,7 +2770,8 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       runtime: {
         deliverability: runOpsDeliverability,
         dns: () => dnsAudit.run({ alert: false }),
-        campaigns: () => campaignAudit.run(),
+        campaigns: () =>
+          campaignAudit.run({ pauseWhile: () => healthLock.isLive() }),
         reconnect: runReconnect,
         placements: (force) => placementResults.get(force),
         fleet: (force) => fleetSummary.get(force),
@@ -3080,7 +3087,9 @@ button{background:#38bdf8;color:#0f172a;border:0;border-radius:8px;padding:.7rem
       }
       if (mode === "campaign-audit" || mode === "audit-campaigns") {
         assertRuntimeSecrets(config);
-        const result = await campaignAudit.run();
+        const result = await campaignAudit.run({
+          pauseWhile: () => healthLock.isLive(),
+        });
         res.json({ ok: true, mode: "campaign-audit", result });
         return;
       }

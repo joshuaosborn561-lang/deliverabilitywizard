@@ -3,8 +3,10 @@
  * thread (the worker reads the file itself). JSON.stringify of the
  * dump must **not** go through `workerData`: structuredClone of a
  * ~100MB state pinned the event loop 31–47s and the freeze watchdog
- * exited (prod 2026-10-13). Stringify uses the D249 yielding walk, and
- * D271 writes the dump to disk as it walks so the join cannot stall.
+ * exited (prod 2026-10-13). Stringify uses the D249 yielding walk.
+ * D271 writes the dump to disk as it walks; D272 time-slices that walk
+ * (`setTimeout(0)`, not a `setImmediate` chain) so the freeze watchdog
+ * can tick, and `saveHot` writes the sidecar the same way.
  *
  * D271 — posting the parsed graph back via one `postMessage` is the
  * same structuredClone stall on load. The worker hands keys / array
@@ -276,12 +278,13 @@ export async function stringifyOffThread(value: unknown): Promise<string> {
   );
 }
 
-/** D271 — write `/data/state.json` without joining the blob on this thread. */
+/** D271 / D272 — write JSON without joining the blob on this thread. */
 export async function stringifyOffThreadToFile(
   value: unknown,
   filePath: string,
+  opts: { op?: string } = {},
 ): Promise<number> {
-  return runWithStallScopeAsync("json.stringify:state", () =>
+  return runWithStallScopeAsync(opts.op ?? "json.stringify:state", () =>
     stringifyYieldingToFile(value, filePath),
   );
 }

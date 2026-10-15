@@ -261,7 +261,7 @@ export class ClientRestService {
     let classified = 0;
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
       classified += 1;
-      if (classified % 32 === 0) await yieldEventLoop();
+      if (classified % 16 === 0) await yieldEventLoop();
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (isGabeVmReserved(account)) {

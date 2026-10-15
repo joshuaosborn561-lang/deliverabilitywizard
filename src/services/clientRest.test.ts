@@ -2176,7 +2176,7 @@ describe("ClientRestService", () => {
 
 describe("D269 client-rest yields the classify walk", () => {
   it("a large account book lets the event loop tick", async () => {
-    const accounts = Array.from({ length: 96 }, (_, i) => ({
+    const accounts = Array.from({ length: 160 }, (_, i) => ({
       id: 100 + i,
       from_email: `n${i}@boldercyperpartner.com`,
       client_id: 542838,
@@ -2204,8 +2204,11 @@ describe("D269 client-rest yields the classify walk", () => {
     let ticks = 0;
     const timer = setInterval(() => {
       ticks += 1;
-    }, 4);
+    }, 1);
     timer.unref?.();
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
     await service.run({
       dryRun: true,
       now: new Date("2026-10-15T15:00:00Z"),

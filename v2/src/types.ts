@@ -20,7 +20,9 @@ export type ActionKind =
   | "tag"
   | "word_hunt"
   | "mpd_write"
-  | "hold";
+  | "hold"
+  | "settings_write"
+  | "schedule_write";
 
 export type CanaryKind = "warmed" | "unwarmed";
 export type FailureClass = "sender" | "copy" | "none";
@@ -57,6 +59,14 @@ export interface SlimCampaign {
   status: string;
   clientId: number | null;
   minTimeBtwnEmails?: number | null;
+  enableAiEspMatching?: boolean | null;
+  sendAsPlainText?: boolean | null;
+  trackSettings?: string[] | null;
+  timezone?: string | null;
+  daysOfTheWeek?: number[] | null;
+  startHour?: string | null;
+  endHour?: string | null;
+  maxLeadsPerDay?: number | null;
 }
 
 export interface SlimAccount {
@@ -100,8 +110,6 @@ export interface EspInboxDay {
   campaignName?: string;
   day: string;
   gToG: number | null;
-  gToMs: number | null;
-  msToG: number | null;
   msToMs: number | null;
   testId?: string;
   source?: "canary-copy" | "live-placement";

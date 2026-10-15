@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS comparison_reports (
 ALTER TABLE placement_scores ADD COLUMN IF NOT EXISTS canary_kind TEXT;
 ALTER TABLE placement_scores ADD COLUMN IF NOT EXISTS failure_class TEXT;
 
+-- D273: only g_to_g / ms_to_ms are scored. g_to_ms / ms_to_g stay as unused columns.
 CREATE TABLE IF NOT EXISTS esp_inbox_rates (
   campaign_id INTEGER NOT NULL,
   day DATE NOT NULL,

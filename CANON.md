@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D272** (2026-10-15). One page of current truth. When a new
+Canon as of **D277** (2026-10-15). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -263,12 +263,25 @@ Caps ramp manually (35 on Oct 12).
   08:00–19:00 America/New_York**. No Friday, no weekends. Smartlead
   is a single window — do not invent Friday. `min_time_btw_emails`
   stays 10 and `max_leads_per_day` stays 10000. The build skill
-  writes this on setup.   Custom non-standard windows (Cold Call
-  Followup-style afternoon) are left alone — there is no schedule-window converge, so a hand-set afternoon campaign is
-  not overwritten back to the standing window. **CALLER FOLLOW-UP
-  (D242)** is Mon–Fri 07:00–20:00 America/Chicago,
-  `min_time_btw_emails` 3 — never converge that class back to
-  Mon–Thu or the 10-minute canon gap.
+  writes this on setup. Campaign-check **flags** a mismatch and
+  intends a `schedule_write` back to that window (shadow logs it;
+  CALLER FOLLOW-UP is exempt). Custom Cold Call Followup-style
+  afternoon windows in the old wizard still have no schedule-window converge,
+  so a hand-set afternoon campaign is not overwritten there. **CALLER FOLLOW-UP (D242)** is Mon–Fri 07:00–20:00
+  America/Chicago, `min_time_btw_emails` 3 — never converge that
+  class back to Mon–Thu or the 10-minute canon gap.
+- **ESP matching** (D274): Gmail senders to Gmail recipients,
+  Outlook to Outlook. Every ACTIVE campaign's Smartlead
+  `enable_ai_esp_matching` must be on. Off (or missing) is an
+  `esp_matching` finding and an intended settings write.
+- **Plain text only** (D275): no HTML bodies. `send_as_plain_text`
+  on; open and link tracking off (`DONT_TRACK_EMAIL_OPEN` /
+  `DONT_TRACK_LINK_CLICK`). Check every ACTIVE and new campaign;
+  intend sequence / settings fixes (`plain_text` / `html_body`).
+- **Quiet hours** (D276): no scheduled job and no Slack post
+  outside weekdays **6am–8pm America/Chicago**. Overnight and
+  weekend work waits. Amends D248's Slack-only quiet hours so
+  the 15-minute staff and isolation ticks skip the window too.
 - **Sequence delays** (D186): step 1 stays `delay_in_days: 0`.
   Step 2 must be **2 days** on every client campaign that has
   a second email. Canary shells, pod-control shells, the
@@ -676,7 +689,10 @@ Caps ramp manually (35 on Oct 12).
 - 80% same-ESP live / 85% launch (promo tab = miss) are **readings** — the
   launch bar blocks QA-unpause of a new campaign (D46/D106), the live number
   never rotates (D32/D51). Never use the blended all-ESP score for anything
-  (D32). A live or canary-copy same-ESP reading under 80% on an ACTIVE
+  (D32). Inbox-rate metrics stored per campaign per day are
+  **ESP-matched only: Gmail→Gmail and Outlook→Outlook** (D273).
+  Cross-ESP pairs (G→MS, MS→G) are not scored or shown on `/metrics`
+  or `/compare`. A live or canary-copy same-ESP reading under 80% on an ACTIVE
   campaign **queues isolation** (copy suspect → COPY word hunt / INFRA
   sender-domain path), and so does a dominant bounce `content_block`
   (D158). The score→suspect→evaluate pass runs on the **15-minute
@@ -794,17 +810,21 @@ Caps ramp manually (35 on Oct 12).
 - The hunt runs autonomously; Slack fires **once** when it has the word:
   receipts, the **exact phrase being replaced**, a **substitute edit that
   keeps the line’s job** — a job classifier (spam-token / gift-or-experience
-  offer / CTA / generic) so an AirPods, tickets, or jet-ski opener keeps
-  that offer and is never replaced with “Quick note —” or a school-district
+  offer / CTA / generic) so a jet-ski or golf opener keeps that offer
+  and is never replaced with “Quick note —” or a school-district
   pen-test (D152/D168; blank delete only for pure spam tokens).
-  `{{Local_Sports_Team}}` / sports-ticket openers stay an offer even when
-  the hunt slice truncates before “tickets”; company-identity openers
-  (“we’re TechEvolution”) keep the company name with a light soften —
-  they are not the gift/offer template; gift-or-experience-offer
-  REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}`
-  (or equivalent 2–3 way spintax including I'd like to offer) and keep
-  the offer noun — not bare `Happy to send` / `Happy to offer` only
-  (D171); default substitutes use `...` never an em dash (D170). Pending
+  **REPLACE WITH never names AirPods, tickets, TJ, or free POC**
+  (D277) — those phrases stay classified as gift-bait so the hunt
+  still fires, but the substitute is headphones / a local game outing
+  / nothing banned. `{{Local_Sports_Team}}` / sports-ticket openers
+  stay an offer even when the hunt slice truncates before “tickets”;
+  company-identity openers (“we’re TechEvolution”) keep the company
+  name with a light soften — they are not the gift/offer template;
+  gift-or-experience-offer REPLACE WITH defaults lead with
+  `{I'd like to offer|Happy to offer}` (or equivalent 2–3 way
+  spintax including I'd like to offer) — not bare `Happy to send` /
+  `Happy to offer` only (D171); default substitutes use `...` never
+  an em dash (D170). Pending
   `swap_copy` asks are **recomputed** (`suggestedCopySwap` + `copySwapProof`)
   on remind and before first notify so a pre-D168 frozen “Quick note —”
   cannot be re-paged; a still-banned default is never Slacked (D170).
@@ -858,13 +878,14 @@ healthy sending is broken (D71, D149, D163, D47 plain English):
    pending asks are healed in place and stay silent.
 2. **Isolated spam word** — *REMOVE this exact text:* and *REPLACE WITH:*
    in fenced blocks under the campaign name (D170), a substitute that
-   keeps the line’s job (offer openers keep the gift/tickets/experience
-   and lead with `{I'd like to offer|Happy to offer}` —
-   D152/D168/D170/D171; remind refreshes a stale pending swap before Slack),
+   keeps the line’s job (experiential openers keep jet-ski / golf and
+   lead with `{I'd like to offer|Happy to offer}` —
+   D152/D168/D170/D171; remind refreshes a stale pending swap before Slack).
+   **Never suggest AirPods, tickets, TJ, or free POC** (D277).
    *Use suggested edit* / *Write my own edit* (D153). **Soft-gift voice
-   (D195):** the REPLACE endings read as a gift, not a hedge — AirPods
-   `if you would like, on me.`, an experience `outing on me.`, tickets
-   `if you're interested.` (never `if useful.`); company-identity openers
+   (D195):** the REPLACE endings read as a gift, not a hedge —
+   headphones `if you would like, on me.`, an experience `outing on me.`,
+   a local game `if you're interested.` (never `if useful.`); company-identity openers
    become `so you know, we're {Brand}.` (no double period), not a
    brace-strip-only soften. The D171 lead-in is unchanged.
 **Buttons and the handler agree (D248 / D266).** Retire / Buy / Not now
@@ -1029,6 +1050,9 @@ or skip a teardown from a partial or failed list (D220).
   an add-on from this path (D53).
 
 ## Surfaces
+
+`/metrics` and `/compare` show ESP-matched inbox rates (G→G, MS→MS)
+only (D273), plus the QA run ledger.
 
 `/health` is public: `inFlight.{health,canonOps,monitor}.{since,stage}`
 and `mutationQueue.{depth,oldestWaitMs,rateLimitStreak}` (D247),

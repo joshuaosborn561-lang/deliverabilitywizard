@@ -4901,12 +4901,20 @@ describe("owner intent — D151 word hunt rides a paused shell", () => {
     const swap = suggestedCopySwap(
       "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
     );
+    assert.doesNotMatch(
+      swap,
+      /air\s*pods?|\btickets?\b|\bTJ\b|free\s+(?:poc|proof of concept)/i,
+      stop(
+        "REPLACE WITH never names AirPods, tickets, TJ, or free POC (D277).",
+        `suggestedCopySwap returned ${swap}`,
+      ),
+    );
     assert.match(
       swap,
-      /Air\s*Pods/i,
+      /headphones|I'd like to offer/i,
       stop(
-        "Gift-bait openers get a substitute that keeps the offer (D152/D168).",
-        "suggestedCopySwap dropped AirPods intent.",
+        "Gift-bait openers get a substitute that keeps the offer job (D152/D168/D277).",
+        "suggestedCopySwap dropped the offer job.",
       ),
     );
     assert.match(
@@ -6284,16 +6292,16 @@ describe("owner intent — D168 word-hunt suggested edit keeps the offer", () =>
       },
       {
         line: "I've got Red Sox tickets if you want them.",
-        offer: /tickets|Red Sox/i,
+        offer: /outing|I'd like to offer/i,
       },
       {
         line: "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
-        offer: /tickets/i,
+        offer: /outing|I'd like to offer/i,
       },
       {
         line:
           "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
-        offer: /Air\s*Pods/i,
+        offer: /headphones/i,
       },
     ];
     for (const row of cases) {
@@ -6310,7 +6318,15 @@ describe("owner intent — D168 word-hunt suggested edit keeps the offer", () =>
         swap,
         row.offer,
         stop(
-          "The suggested edit keeps the offer keyword (D168).",
+          "The suggested edit keeps the offer job (D168/D277).",
+          `${row.line} → ${swap}`,
+        ),
+      );
+      assert.doesNotMatch(
+        swap,
+        /air\s*pods?|\btickets?\b|\bTJ\b|free\s+(?:poc|proof of concept)/i,
+        stop(
+          "REPLACE WITH never names AirPods, tickets, TJ, or free POC (D277).",
           `${row.line} → ${swap}`,
         ),
       );
@@ -6610,11 +6626,19 @@ describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
     const airpods = suggestedCopySwap(
       "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
     );
+    assert.doesNotMatch(
+      airpods,
+      /air\s*pods?/i,
+      stop(
+        "REPLACE WITH never names AirPods (D277).",
+        `suggestedCopySwap returned ${airpods}`,
+      ),
+    );
     assert.match(
       airpods,
-      /Air\s*Pods/i,
+      /headphones/i,
       stop(
-        "AirPods substitutes still keep the offer (D170).",
+        "AirPods openers still keep an offer substitute (D170/D277).",
         `suggestedCopySwap returned ${airpods}`,
       ),
     );
@@ -6657,9 +6681,17 @@ describe("owner intent — D170 remind refreshes stale word-hunt swaps", () => {
         },
       }),
     );
+    assert.doesNotMatch(
+      String(refreshed.detail.swap),
+      /air\s*pods?/i,
+      stop(
+        "refreshCopySwapAction must not reintroduce AirPods (D277).",
+        `refresh returned ${String(refreshed.detail.swap)}`,
+      ),
+    );
     assert.match(
       String(refreshed.detail.swap),
-      /Air\s*Pods/i,
+      /headphones|I'd like to offer/i,
       stop(
         "refreshCopySwapAction rewrites a frozen Quick note AirPods swap (D170).",
         `refresh returned ${String(refreshed.detail.swap)}`,
@@ -6716,8 +6748,8 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
     const cases: Array<{ line: string; offer: RegExp; rest: RegExp }> = [
       {
         line: "{I've got|I have} a pair of Air Pods for you.",
-        offer: /Air\s*Pods/i,
-        rest: /a pair of AirPods if you would like, on me/,
+        offer: /headphones/i,
+        rest: /a pair of headphones if you would like, on me/,
       },
       {
         line: "I've got a jet ski you can take out this weekend.",
@@ -6726,8 +6758,8 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
       },
       {
         line: "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
-        offer: /Local_Sports_Team/,
-        rest: /\{\{Local_Sports_Team\}\} tickets if you're interested/,
+        offer: /outing/,
+        rest: /a local game outing if you're interested/,
       },
     ];
     for (const row of cases) {
@@ -6855,6 +6887,129 @@ describe("owner intent — D171 gift/offer REPLACE WITH leads with I'd like to o
         "The offer lead-in rule is in the ledger (D171).",
         "DECISIONS.md no longer has D171.",
       ),
+    );
+  });
+});
+
+describe("owner intent — D273 ESP-matched inbox rates only", () => {
+  it("D273: CANON stores G→G / MS→MS and drops cross-ESP pairs", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /ESP-matched only: Gmail→Gmail and Outlook→Outlook/,
+      stop("CANON names ESP-matched rates (D273).", "CANON.md lost D273."),
+    );
+    assert.match(
+      canon,
+      /Cross-ESP pairs \(G→MS, MS→G\) are not scored/,
+      stop("CANON drops cross-ESP pairs (D273).", "CANON.md lost the G→MS drop."),
+    );
+    assert.match(
+      decisions,
+      /## D273 — Inbox-rate metrics are ESP-matched only \(G→G, MS→MS\)/,
+      stop("The D273 rate-board rule is in the ledger.", "DECISIONS.md no longer has D273."),
+    );
+  });
+});
+
+describe("owner intent — D274 campaign ESP matching", () => {
+  it("D274: CANON requires enable_ai_esp_matching on ACTIVE campaigns", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /enable_ai_esp_matching/,
+      stop("CANON names the Smartlead ESP-matching toggle (D274).", "CANON.md lost D274."),
+    );
+    assert.match(
+      canon,
+      /Gmail senders to Gmail recipients/,
+      stop("CANON states Gmail→Gmail / Outlook→Outlook (D274).", "CANON.md lost ESP matching."),
+    );
+    assert.match(
+      decisions,
+      /## D274 — Campaign ESP matching: Gmail→Gmail, Outlook→Outlook/,
+      stop("The D274 ESP-matching rule is in the ledger.", "DECISIONS.md no longer has D274."),
+    );
+  });
+});
+
+describe("owner intent — D275 plain text only", () => {
+  it("D275: CANON requires plain text and tracking off", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /no HTML bodies/,
+      stop("CANON bans HTML bodies (D275).", "CANON.md lost D275."),
+    );
+    assert.match(
+      canon,
+      /DONT_TRACK_EMAIL_OPEN/,
+      stop("CANON names tracking-off (D275).", "CANON.md lost DONT_TRACK_EMAIL_OPEN."),
+    );
+    assert.match(
+      decisions,
+      /## D275 — Plain text only; open and link tracking off/,
+      stop("The D275 plain-text rule is in the ledger.", "DECISIONS.md no longer has D275."),
+    );
+  });
+});
+
+describe("owner intent — D276 quiet hours weekdays 6am–8pm CT", () => {
+  it("D276: CANON blocks scheduled jobs and Slack outside staffing hours", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /no scheduled job and no Slack post/,
+      stop("CANON names job + Slack quiet hours (D276).", "CANON.md lost D276."),
+    );
+    assert.match(
+      canon,
+      /6am–8pm America\/Chicago/,
+      stop("CANON states 6am–8pm CT (D276).", "CANON.md lost the quiet-hours window."),
+    );
+    assert.match(
+      decisions,
+      /## D276 — Quiet hours: weekdays 6am–8pm CT for jobs and Slack/,
+      stop("The D276 quiet-hours rule is in the ledger.", "DECISIONS.md no longer has D276."),
+    );
+  });
+});
+
+describe("owner intent — D277 word-hunt substitutes never AirPods/tickets/TJ/free POC", () => {
+  it("D277: REPLACE WITH never names the banned nouns; classifier still fires", async () => {
+    const { suggestedCopySwap, classifyLineJob, isBannedCopySwap } = await import(
+      "../lib/isolationActions.js"
+    );
+    const air = "{I've got|I have} a pair of Air Pods for you.";
+    assert.equal(classifyLineJob(air), "gift-or-experience-offer");
+    const airSwap = suggestedCopySwap(air);
+    assert.doesNotMatch(airSwap, /air\s*pods?|\btickets?\b|\bTJ\b|free\s+(?:poc|proof of concept)/i);
+    assert.match(airSwap, /\{I'd like to offer\|/);
+    assert.equal(isBannedCopySwap(airSwap), false);
+    assert.equal(isBannedCopySwap("a pair of AirPods if you would like, on me."), true);
+    assert.equal(isBannedCopySwap("Red Sox tickets if you're interested."), true);
+    assert.equal(isBannedCopySwap("free POC for TJ"), true);
+
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /never names AirPods, tickets, TJ, or free POC/,
+      stop("CANON names the D277 substitute ban.", "CANON.md lost D277."),
+    );
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      decisions,
+      /## D277 — Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC/,
+      stop("The D277 ban is in the ledger.", "DECISIONS.md no longer has D277."),
     );
   });
 });
@@ -17399,8 +17554,8 @@ describe("owner intent — D272 stringify actually yields; chunked index; audit 
 
     assert.match(
       canon,
-      /Canon as of \*\*D272\*\*/,
-      stop("CANON is dated D272.", "CANON.md header lost the D272 stamp."),
+      /Canon as of \*\*D(272|27[3-9])\*\*/,
+      stop("CANON is dated D272 or later.", "CANON.md header lost the D272-era stamp."),
     );
     assert.match(
       canon,

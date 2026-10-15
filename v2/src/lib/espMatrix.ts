@@ -2,7 +2,7 @@ import { AZURE_ENTRA_DOMAINS } from "../canon/constants.js";
 import type { EspInboxDay } from "../types.js";
 
 export type EspSide = "G" | "MS";
-export type EspLane = "G_G" | "G_MS" | "MS_G" | "MS_MS";
+export type EspLane = "G_G" | "MS_MS";
 
 export interface EspSenderRow {
   email: string;
@@ -23,38 +23,31 @@ export function seedEsp(provider: string | undefined): EspSide {
   return "MS";
 }
 
-export function laneOf(sender: EspSide, seed: EspSide): EspLane {
-  return `${sender}_${seed}` as EspLane;
-}
-
 function rate(inbox: number, total: number): number | null {
   if (total <= 0) return null;
   return (inbox / total) * 100;
 }
 
-/** G→G, G→MS, MS→G, MS→MS inbox % from a Smartlead/SmartDelivery placement test. */
+/** D273 — ESP-matched inbox rates only: G→G and MS→MS. Cross-ESP pairs are dropped. */
 export function espInboxMatrix(senders: EspSenderRow[]): {
   G_G: number | null;
-  G_MS: number | null;
-  MS_G: number | null;
   MS_MS: number | null;
 } {
   const buckets: Record<EspLane, { inbox: number; total: number }> = {
     G_G: { inbox: 0, total: 0 },
-    G_MS: { inbox: 0, total: 0 },
-    MS_G: { inbox: 0, total: 0 },
     MS_MS: { inbox: 0, total: 0 },
   };
   for (const row of senders) {
     if (!row.email) continue;
-    const lane = laneOf(senderEsp(row.email), seedEsp(row.provider));
+    const sender = senderEsp(row.email);
+    const seed = seedEsp(row.provider);
+    if (sender !== seed) continue;
+    const lane: EspLane = sender === "G" ? "G_G" : "MS_MS";
     buckets[lane].total += 1;
     if (row.inbox) buckets[lane].inbox += 1;
   }
   return {
     G_G: rate(buckets.G_G.inbox, buckets.G_G.total),
-    G_MS: rate(buckets.G_MS.inbox, buckets.G_MS.total),
-    MS_G: rate(buckets.MS_G.inbox, buckets.MS_G.total),
     MS_MS: rate(buckets.MS_MS.inbox, buckets.MS_MS.total),
   };
 }
@@ -73,8 +66,6 @@ export function toEspInboxDay(opts: {
     campaignName: opts.campaignName,
     day: opts.day,
     gToG: m.G_G,
-    gToMs: m.G_MS,
-    msToG: m.MS_G,
     msToMs: m.MS_MS,
     testId: opts.testId,
     source: opts.source,

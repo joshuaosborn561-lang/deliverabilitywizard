@@ -52,7 +52,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D29 | Superseded by D91 |
 | D30 | Live |
 | D31 | Live — extended by D125 |
-| D32 | Live |
+| D32 | Live — rate board narrowed to G→G / MS→MS by D273 |
 | D33–D34 | Burned numbers — no entry exists |
 | D35 | Live |
 | D36 | Superseded by D93/D96 |
@@ -182,10 +182,10 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D165 | Live | Isolation INCONCLUSIVE Slack pages and D164 re-queue are ACTIVE-only — COMPLETED / STOPPED / PAUSED stay quiet |
 | D166 | Live | pod-cover ticks every health pass so lastOkAt cannot freeze; /health names overdue stages |
 | D167 | Live | A mid-chain monitor SIGTERM cannot leave 6h stages overdue until the next cron — checkpoint lastOk immediately, serialize state.save, resume leftovers on the next health tick (not at boot, D122) |
-| D168 | Live — pending-ask refresh + classifier harden added by D170 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
+| D168 | Live — pending-ask refresh + classifier harden added by D170; REPLACE WITH nouns for AirPods/tickets superseded by D277 | Word-hunt suggested edit classifies the line's job and keeps offer intent — never "Quick note —" or school-district pen-test on an AirPods / tickets / jet-ski opener |
 | D169 | Superseded by D207 — PAUSED/STOPPED keep their senders; leftoverPausedOrStopped hygiene is retired | A/B rest detaches off-week from PAUSED and STOPPED, not only ACTIVE — paused/stopped campaigns cannot trap client inboxes out of the ACTIVE pool |
 | D170 | Live — offer REPLACE WITH lead-in locked by D171 | Pending swap_copy Slack reminds recompute suggestedCopySwap (never re-page frozen Quick note / pen-test); Local_Sports_Team is an offer even when truncated; identity openers keep the company name; defaults use ... not an em dash |
-| D171 | Live | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
+| D171 | Live — keep-the-gift-noun for AirPods/tickets superseded by D277 | Gift/offer word-hunt REPLACE WITH defaults lead with `{I'd like to offer|Happy to offer}` (keep the offer noun); identity openers stay a light soften, not this template |
 | D172 | Live | Domain-client attach has a reserved write budget so GENERIC tagging cannot starve D142; a confident match that could not write this pass says so, never "none resolve to a client" |
 | D173 | Live — generic-family / GENERIC-tagged assignment amended by D260 | Sending-domain owner is who staffs it (mailbox client_id); the generic pool plan is the fallback. A plan-listed domain with one real client's mailboxes is that client's domain for retire / replace / cover — except generic-family / GENERIC-tagged assigned seats (D260) |
 | D174 | Live — never-retire superseded by D181; buy-retry + Porkbun lock stay | Protected-client never-retire/never-burn (seeded Goliath / 548611) is gone; failed post-pull buys still retry themselves; Porkbun checks stay serialized |
@@ -196,7 +196,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D179 | Live | A known-retired domain never opens a fresh actionable Retire ask or a second replacement buy when old / recurrent 5.1.8 evidence reappears; confirm is a fail-safe no-op |
 | D180 | Live | Merge tags / custom fields cannot silently send blank — campaign-check samples sequences vs lead `custom_fields` (multi-offset, ~80% fill) and cheap sent-body holes; `merge_tag_blank` is a core CANON finding and Slack miss; never auto-edits live copy or remaps leads |
 | D181 | Live — Cayden Retire/Buy CTA and strike Slack silence added by D190 | Goliath / Smartlead client 548611 burned domains follow the normal Retire ask — D174 never-retire / never-burn / cover-only convert is reversed |
-| D182 | Live | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
+| D182 | Live — v2 intends a schedule_write on mismatch; old wizard still does not overwrite custom windows | Standing send window is Monday–Thursday 08:00–19:00 America/New_York — no Friday; gap 10 and max_leads 10000 unchanged; custom afternoon windows are not overwritten |
 | D183 | Live | Outlook / Microsoft Smartlead senders converge to 15 campaign emails/day; Gmail/SMTP stay at MESSAGE_PER_DAY=30 |
 | D184 | Superseded by D192 — exclusive-blank Insight staff inside 345263 is obsolete; never revive | Insight campaigns staff only seats not on ACTIVE SalesGlider; exclusive Insight may be empty-signed; NEVER blank ACTIVE SG staff; QA flags shared staff or SalesGlider-in-sig; no salesglider* fleet-empty |
 | D186 | Live | Client campaign sequence step 2 waits 2 days (`seq_delay_details.delay_in_days = 2`); step 1 stays 0; shells / 1-step skipped; campaign-check flags `step2_delay` and auto-fixes via `sequencesForWrite`; step 3+ not converged |
@@ -253,7 +253,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D245 | Live | InboxKit license sweep runs every weekday 8:16am CT and deletes on the cancel date: real IK rows (`username` + `domain_name`), past scheduled cancel = lapsed even if Smartlead still logs in or is disconnected, stale `active` renewal_date is not lapsed; seat end dates persisted; min40 / POC fill and canon staffable skip lapsed or ending-within-7-days seats |
 | D246 | Live | Insight SEG standing hold lifted; weekday pulse unpauses bounce holds; hold-enforcement / locked standing prefs no longer keep Insight SEG PAUSED |
 | D247 | Live — save path amended by D249; exit path amended by D265 | Stuck-pass hardening: per-step timeouts, expiring in-flight locks with ownership tokens, MutationQueue 6m timeout, freeze watchdog exit, compact coalesced state.save, Slack/InboxKit 30s fetch timeout, warmup-gate-monitor |
-| D248 | Live — D220 cadence / copy amended | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
+| D248 | Live — D220 cadence / copy amended; job quiet hours expanded by D276 | Safe Slack buttons (native confirm, never url+action) and a quiet `#deliverability`: persist every card ts and resolve all copies; update in place; informational posts to `DELIVERABILITY_LOG_CHANNEL` (or a daily thread); canary-registered once per change; weekday 8am CT Needs you post (merged 7:16 spend digest; Cayden spend one approve per client; quiet hours 8pm–6am CT + weekends) |
 | D249 | Live — min40 walk amended by D250 | Unblock the event loop and persist stamps: sidecar lastOk / Slack / cron stamps, yielding compact JSON (no one-shot stringify of the full state), D215 sitting dies at 45m, campaign-check-first 8m inspect budget, Slack log/canary/remind idempotent across restarts, weekday 6am–8pm CT catch-up for Needs you / InboxKit / TERRL EOD |
 | D250 | Live — fill/pool/slack path amended by D252; first-check walk amended by D251 | min40-topup indexes seats by campaign and yields so a ~1000-seat × 366-campaign staffable count cannot pin the event loop after hold-enforcement; D247 freeze watchdog and D249 sidecar/stringify stay |
 | D251 | Live — min40 fill/abort/ghost covered by D252 | campaign-check-first indexes members, yields, honors abort, and caps SmartDelivery enrich at 90s |
@@ -278,6 +278,11 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D270 | Live — stream/parse/stringify amended by D271 | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
 | D271 | Live — stringify/index yield amended by D272 | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
 | D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
+| D273 | Live | Inbox-rate metrics are ESP-matched only (G→G, MS→MS); drop cross-ESP pairs |
+| D274 | Live | Campaign ESP matching on: Gmail→Gmail, Outlook→Outlook; flag `enable_ai_esp_matching` off as an intended settings write |
+| D275 | Live | Plain text only: no HTML bodies; open and link tracking off; check every ACTIVE and new campaign |
+| D276 | Live | No scheduled job or Slack post outside weekdays 6am–8pm America/Chicago |
+| D277 | Live | Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC |
 
 ---
 
@@ -9925,6 +9930,134 @@ D158 / D164 / D165, or D268.
 thresholds unchanged. Tests: time-sliced stringify ticks without
 count-based yield; fat `campaigns[]` index ticks; pause waits then
 continues.
+
+---
+
+## D273 — Inbox-rate metrics are ESP-matched only (G→G, MS→MS)
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** Placement inbox-rate metrics stored per campaign per
+day are Gmail→Gmail and Outlook/Microsoft→Outlook/Microsoft only.
+Drop the cross-ESP pairs (G→MS, MS→G). Same-ESP scoring for
+isolation (D32) is unchanged; this is the rate board on `/metrics`
+and `/compare`.
+
+**Why.** Cross-ESP seeds are not how we send. Gmail copy to an
+Outlook seed (or the reverse) is noise, not a reading we act on.
+
+**Rejected.** Keeping a 2×2 matrix "for completeness." Blended
+all-ESP scores (already banned by D32).
+
+**Supersedes / amends.** Amends D32 for the stored rate board:
+matched lanes only.
+
+**Guards.** v2 `espInboxMatrix` returns `G_G` / `MS_MS` only;
+`EspInboxDay` has no `gToMs` / `msToG`. Tests: a mixed sender/seed
+set stores G→G and MS→MS and drops the cross pairs.
+
+---
+
+## D274 — Campaign ESP matching: Gmail→Gmail, Outlook→Outlook
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** Every ACTIVE campaign must have Smartlead
+`enable_ai_esp_matching` on so Gmail senders hit Gmail recipients
+and Outlook senders hit Outlook recipients. Check each active
+campaign's setting. Off (or missing) is an `esp_matching` finding
+and an intended settings write. Shadow logs it; no live write
+until cutover.
+
+**Why.** Unmatched ESP is how copy-canaries and live placement
+disagree with how the campaign actually sends.
+
+**Rejected.** Inferring matching from placement seeds. Leaving the
+Smartlead toggle to the build skill only.
+
+**Guards.** v2 `espMatchingViolation`; staff tick intends
+`settings_write`. Tests: an ACTIVE campaign with the flag off logs
+the intended fix and does not execute it in shadow.
+
+---
+
+## D275 — Plain text only; open and link tracking off
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** Campaigns send plain text. No HTML bodies.
+`send_as_plain_text` is on. Open and link tracking are off
+(`DONT_TRACK_EMAIL_OPEN` / `DONT_TRACK_LINK_CLICK`; GET aliases
+`DONT_EMAIL_OPEN` / `DONT_LINK_CLICK` count as off). Check every
+ACTIVE and new campaign. Violations are `plain_text` /
+`html_body` findings and intended settings / sequence writes.
+
+**Why.** HTML and tracking pixels are spam-folder tells. The build
+skill already writes this; living campaigns drifted.
+
+**Rejected.** Allowing a branded HTML wrapper. Tracking "just opens."
+
+**Guards.** v2 `plainTextSettingsViolation` / `looksLikeHtml`;
+staff tick intends the fix. Tests: HTML body + tracking on logs
+intended writes, not executes, in shadow.
+
+---
+
+## D276 — Quiet hours: weekdays 6am–8pm CT for jobs and Slack
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** No scheduled job and no Slack post outside weekdays
+6:00–20:00 America/Chicago. The 15-minute staff and isolation
+ticks skip nights and weekends (stamp lastOk so they are not
+OVERDUE). Slack intends are `quiet_hours` blocked even at
+cutover. InboxKit 8:16am CT already sits inside the window.
+Manual `/run` is not a scheduled job.
+
+**Why.** Overnight Slack and overnight Smartlead walks are how
+the freeze watchdog and the human channel both light up at 2am.
+
+**Rejected.** Keeping 24/7 15-minute ticks with Slack deferred
+only. Widening canon-ops 08:00–18:00 to this window (canon-ops
+stay as D205).
+
+**Supersedes / amends.** Amends D248: quiet hours now cover
+scheduled jobs, not only human cards. D249 catch-up window is
+the same clock.
+
+**Guards.** v2 `inStaffingHours` / `isQuietHours`; cron timezone
+America/Chicago; WriteGate slack + quiet_hours. Tests: Thursday
+10am allowed; Thursday 10pm and Saturday blocked.
+
+---
+
+## D277 — Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** Word-hunt REPLACE WITH must never name AirPods,
+tickets, TJ, or free POC. Remove those substitutes. The hunt
+still *classifies* gift-bait openers (AirPods / tickets stay
+`gift-or-experience-offer`) so COPY still fires, but the
+suggested edit is headphones / a local game outing / an allowed
+experiential noun (jet-ski, golf, tee time). Quick note /
+school-district pen-test stay banned (D168/D170). The D171
+`{I'd like to offer|Happy to offer}` lead-in stays.
+
+**Why.** Those four phrases are how copy-canaries go to 0% and
+how leftover Culture Fits / POC bait re-enters the board.
+
+**Rejected.** Keeping the gift noun in REPLACE WITH for AirPods
+and tickets (D168/D171). Blank-deleting every gift-bait opener.
+
+**Supersedes / amends.** Amends D152 / D168 / D171 / D195: the
+classifier and lead-in stay; those four nouns are gone from
+substitutes.
+
+**Guards.** `isBannedCopySwap` flags AirPods / tickets / TJ /
+free POC; `offerSubstitute` never emits them. Tests: AirPods and
+tickets openers swap without those words; jet-ski still keeps
+jet ski.
 
 ---
 

@@ -1,14 +1,12 @@
 import type { AppConfig } from "../config.js";
 import {
-  CALLER_FOLLOWUP_CAMPAIGN_IDS,
   CALLER_FOLLOWUP_MIN_TIME_BTW_EMAILS,
-  CALLER_FOLLOWUP_NAME_PREFIX,
   CALLER_FOLLOWUP_SENDER_TAG,
   INSIGHT_CLIENT_ID,
   MIN_TIME_BTW_EMAILS,
+  POC_TAG,
   SALESGLIDER_CLIENT_ID,
   STEP2_DELAY_DAYS,
-  minFloorForClient,
 } from "../canon/constants.js";
 import { isCopyCanaryFleetEmail } from "../lib/fleet.js";
 import { mailboxSignatureMismatch } from "../lib/signature.js";
@@ -25,6 +23,21 @@ import {
   understaffed,
   weightedStaffableOnCampaign,
 } from "../lib/staffable.js";
+import {
+  isCallerFollowUpCampaign,
+  isGabeFollowUpCampaign,
+  isPocEngagementClient,
+  seatTargetForCampaign,
+  shouldStaffPocCampaign,
+} from "../lib/poc.js";
+import {
+  espMatchingViolation,
+  htmlBodyViolation,
+  plainTextSettingsPayload,
+  plainTextSettingsViolation,
+  sendWindowViolation,
+  standingSchedulePayload,
+} from "../lib/campaignCanon.js";
 import type { WriteGate } from "../shadow.js";
 import type { V2Store } from "../store.js";
 import { runReconnectTick } from "../lib/reconnect.js";
@@ -83,24 +96,36 @@ export async function runStaffTick(opts: {
   intended.push(...terl.intended);
 
   for (const campaign of opts.book.campaigns) {
-    if (isCallerFollowUpCampaign(campaign)) continue;
-    if (!isActiveStatus(campaign.status)) continue;
+    if (isCallerFollowUpCampaign(campaign) || isGabeFollowUpCampaign(campaign)) continue;
+    const poc = isPocEngagementClient({
+      clientId: campaign.clientId,
+      name: campaign.name,
+    });
+    if (poc && !shouldStaffPocCampaign(campaign)) continue;
+    if (!poc && !isActiveStatus(campaign.status)) continue;
 
     const members = opts.book.accounts.filter((a) => a.campaignIds.includes(campaign.id));
     const brand = clients.get(campaign.clientId ?? -1) ?? campaign.name.split("|")[0]?.trim();
+    const floor = seatTargetForCampaign(campaign);
 
     const short = understaffed(campaign, opts.book.accounts, {
       fleetEmails: opts.fleetEmails,
       now: now.getTime(),
+      floor,
+      ignorePodWeek: poc,
+      living: poc ? true : isActiveStatus(campaign.status),
     });
     if (short != null) {
       findings.push({
         kind: "understaffed",
         campaignId: campaign.id,
-        detail: `${campaign.name} on-week staffable short ${short} (floor ${minFloorForClient(campaign.clientId)})`,
+        detail: `${campaign.name} ${poc ? "POC" : "on-week"} staffable short ${short} (floor ${floor})`,
       });
     }
-    if (espMixBroken(campaign, opts.book.accounts, { fleetEmails: opts.fleetEmails, now: now.getTime() })) {
+    if (
+      !poc &&
+      espMixBroken(campaign, opts.book.accounts, { fleetEmails: opts.fleetEmails, now: now.getTime() })
+    ) {
       findings.push({
         kind: "esp_mix",
         campaignId: campaign.id,
@@ -118,6 +143,22 @@ export async function runStaffTick(opts: {
         campaignId: campaign.id,
         detail: `min_time_btwn_emails is ${campaign.minTimeBtwnEmails}, want ${MIN_TIME_BTW_EMAILS}`,
       });
+    }
+
+    const checkSettings = poc ? isActiveStatus(campaign.status) || campaign.status.toUpperCase() === "START" : true;
+    if (checkSettings || isActiveStatus(campaign.status) || campaign.status.toUpperCase() === "DRAFTED") {
+      const livingForSettings =
+        isActiveStatus(campaign.status) ||
+        ["DRAFT", "DRAFTED", "START"].includes(campaign.status.toUpperCase());
+      if (livingForSettings) {
+        await intendCampaignCanon({
+          campaign,
+          sequences: (opts.sequences ?? []).filter((s) => s.campaignId === campaign.id),
+          gate: opts.gate,
+          findings,
+          intended,
+        });
+      }
     }
 
     for (const account of members) {
@@ -181,8 +222,8 @@ export async function runStaffTick(opts: {
         const staffable = weightedStaffableOnCampaign(campaign, opts.book.accounts, {
           fleetEmails: opts.fleetEmails,
           now: now.getTime(),
+          ignorePodWeek: poc,
         });
-        const floor = minFloorForClient(campaign.clientId);
         if (staffable - 1 + 1e-6 >= floor) {
           intended.push(
             (
@@ -227,26 +268,27 @@ export async function runStaffTick(opts: {
         );
       }
 
-      const pod = podOf(account);
-      if (pod && pod !== week && isStaffableSender(account, { fleetEmails: opts.fleetEmails })) {
-        const after = weightedStaffableOnCampaign(campaign, opts.book.accounts, {
-          fleetEmails: opts.fleetEmails,
-          now: now.getTime(),
-        });
-        const floor = minFloorForClient(campaign.clientId);
-        if (after - 1 + 1e-6 >= floor) {
-          intended.push(
-            (
-              await opts.gate.intend({
-                kind: "detach",
-                campaignId: campaign.id,
-                accountId: account.id,
-                email: account.email,
-                payload: { reason: "off_week_rest", pod, week },
-                run: async () => undefined,
-              })
-            ).action,
-          );
+      if (!poc) {
+        const pod = podOf(account);
+        if (pod && pod !== week && isStaffableSender(account, { fleetEmails: opts.fleetEmails })) {
+          const after = weightedStaffableOnCampaign(campaign, opts.book.accounts, {
+            fleetEmails: opts.fleetEmails,
+            now: now.getTime(),
+          });
+          if (after - 1 + 1e-6 >= floor) {
+            intended.push(
+              (
+                await opts.gate.intend({
+                  kind: "detach",
+                  campaignId: campaign.id,
+                  accountId: account.id,
+                  email: account.email,
+                  payload: { reason: "off_week_rest", pod, week },
+                  run: async () => undefined,
+                })
+              ).action,
+            );
+          }
         }
       }
     }
@@ -260,6 +302,8 @@ export async function runStaffTick(opts: {
       week,
       now: now.getTime(),
       skipIds: heldIds,
+      poc,
+      floor,
     });
   }
 
@@ -281,9 +325,79 @@ export async function runStaffTick(opts: {
   return { findings, intended };
 }
 
-function isCallerFollowUpCampaign(campaign: SlimCampaign): boolean {
-  if ((CALLER_FOLLOWUP_CAMPAIGN_IDS as readonly number[]).includes(campaign.id)) return true;
-  return campaign.name.startsWith(CALLER_FOLLOWUP_NAME_PREFIX);
+async function intendCampaignCanon(opts: {
+  campaign: SlimCampaign;
+  sequences: SequenceSample[];
+  gate: WriteGate;
+  findings: Finding[];
+  intended: IntendedAction[];
+}): Promise<void> {
+  const { campaign } = opts;
+  const esp = espMatchingViolation(campaign);
+  if (esp) {
+    opts.findings.push({ kind: "esp_matching", campaignId: campaign.id, detail: esp });
+    opts.intended.push(
+      (
+        await opts.gate.intend({
+          kind: "settings_write",
+          campaignId: campaign.id,
+          payload: {
+            reason: "esp_matching",
+            enable_ai_esp_matching: true,
+            ...plainTextSettingsPayload(),
+          },
+          run: async () => undefined,
+        })
+      ).action,
+    );
+  }
+
+  const plain = plainTextSettingsViolation(campaign);
+  if (plain) {
+    opts.findings.push({ kind: "plain_text", campaignId: campaign.id, detail: plain });
+    if (!esp) {
+      opts.intended.push(
+        (
+          await opts.gate.intend({
+            kind: "settings_write",
+            campaignId: campaign.id,
+            payload: { reason: "plain_text", ...plainTextSettingsPayload() },
+            run: async () => undefined,
+          })
+        ).action,
+      );
+    }
+  }
+
+  const html = htmlBodyViolation(opts.sequences);
+  if (html) {
+    opts.findings.push({ kind: "html_body", campaignId: campaign.id, detail: html });
+    opts.intended.push(
+      (
+        await opts.gate.intend({
+          kind: "sequence_write",
+          campaignId: campaign.id,
+          payload: { reason: "plain_text_html", stripHtml: true },
+          run: async () => undefined,
+        })
+      ).action,
+    );
+  }
+
+  const window = sendWindowViolation(campaign);
+  if (window) {
+    opts.findings.push({ kind: "send_window", campaignId: campaign.id, detail: window });
+    opts.intended.push(
+      (
+        await opts.gate.intend({
+          kind: "schedule_write",
+          campaignId: campaign.id,
+          payload: { reason: "send_window", schedule: standingSchedulePayload() },
+          run: async () => undefined,
+        })
+      ).action,
+    );
+  }
 }
 
 function foreignClient(account: SlimAccount, campaign: SlimCampaign): boolean {
@@ -318,13 +432,17 @@ async function fillFloor(opts: {
   week: "A" | "B";
   now: number;
   skipIds?: Set<number>;
+  poc: boolean;
+  floor: number;
 }): Promise<void> {
   const short = understaffed(opts.campaign, opts.book.accounts, {
     fleetEmails: opts.fleetEmails,
     now: opts.now,
+    floor: opts.floor,
+    ignorePodWeek: opts.poc,
+    living: true,
   });
   if (short == null) return;
-  const floor = minFloorForClient(opts.campaign.clientId);
   let need = short;
   const used = new Set(
     opts.book.accounts.filter((a) => a.campaignIds.includes(opts.campaign.id)).map((a) => a.id),
@@ -335,7 +453,11 @@ async function fillFloor(opts: {
     if (isCopyCanaryFleetEmail(account.email, opts.fleetEmails)) return false;
     if (isCallerReserved(account.tags)) return false;
     if (!isStaffableSender(account, { fleetEmails: opts.fleetEmails, now: opts.now })) return false;
-    if (account.clientId != null && opts.campaign.clientId != null && account.clientId !== opts.campaign.clientId) {
+    if (
+      account.clientId != null &&
+      opts.campaign.clientId != null &&
+      account.clientId !== opts.campaign.clientId
+    ) {
       return false;
     }
     const pod = podOf(account);
@@ -353,7 +475,9 @@ async function fillFloor(opts: {
       campaignId: opts.campaign.id,
       accountId: account.id,
       email: account.email,
-      payload: { reason: "min40_floor", floor, week: opts.week },
+      payload: opts.poc
+        ? { reason: "poc_fill", floor: opts.floor, tag: POC_TAG, noPod: true }
+        : { reason: "min40_floor", floor: opts.floor, week: opts.week },
       run: async () => undefined,
     });
     opts.intended.push(result.action);

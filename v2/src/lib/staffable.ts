@@ -155,7 +155,12 @@ export function isStaffableSender(
 export function weightedStaffableOnCampaign(
   campaign: SlimCampaign,
   accounts: SlimAccount[],
-  opts: { fleetEmails?: readonly string[]; now?: number; onWeek?: "A" | "B" } = {},
+  opts: {
+    fleetEmails?: readonly string[];
+    now?: number;
+    onWeek?: "A" | "B";
+    ignorePodWeek?: boolean;
+  } = {},
 ): number {
   const week = opts.onWeek ?? onWeekPod();
   let total = 0;
@@ -165,7 +170,7 @@ export function weightedStaffableOnCampaign(
       !isStaffableSender(account, {
         fleetEmails: opts.fleetEmails,
         now: opts.now,
-        requireOnWeekPod: true,
+        requireOnWeekPod: !opts.ignorePodWeek,
         onWeek: week,
       })
     ) {
@@ -179,10 +184,17 @@ export function weightedStaffableOnCampaign(
 export function understaffed(
   campaign: SlimCampaign,
   accounts: SlimAccount[],
-  opts?: { fleetEmails?: readonly string[]; now?: number },
+  opts?: {
+    fleetEmails?: readonly string[];
+    now?: number;
+    floor?: number;
+    ignorePodWeek?: boolean;
+    living?: boolean;
+  },
 ): number | null {
-  if (!isActiveStatus(campaign.status)) return null;
-  const floor = minFloorForClient(campaign.clientId);
+  const living = opts?.living ?? isActiveStatus(campaign.status);
+  if (!living) return null;
+  const floor = opts?.floor ?? minFloorForClient(campaign.clientId);
   const have = weightedStaffableOnCampaign(campaign, accounts, opts);
   if (have + 1e-6 >= floor) return null;
   return Math.ceil(floor - have - 1e-6);

@@ -578,18 +578,16 @@ export class PostgresStore implements V2Store {
     await this.pool.query(
       `INSERT INTO esp_inbox_rates
         (campaign_id, day, campaign_name, g_to_g, g_to_ms, ms_to_g, ms_to_ms, test_id, source, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+       VALUES ($1,$2,$3,$4,NULL,NULL,$5,$6,$7,NOW())
        ON CONFLICT (campaign_id, day) DO UPDATE SET
          campaign_name = EXCLUDED.campaign_name, g_to_g = EXCLUDED.g_to_g,
-         g_to_ms = EXCLUDED.g_to_ms, ms_to_g = EXCLUDED.ms_to_g, ms_to_ms = EXCLUDED.ms_to_ms,
+         g_to_ms = NULL, ms_to_g = NULL, ms_to_ms = EXCLUDED.ms_to_ms,
          test_id = EXCLUDED.test_id, source = EXCLUDED.source, updated_at = NOW()`,
       [
         row.campaignId,
         row.day,
         row.campaignName ?? null,
         row.gToG,
-        row.gToMs,
-        row.msToG,
         row.msToMs,
         row.testId ?? null,
         row.source ?? null,
@@ -607,8 +605,6 @@ export class PostgresStore implements V2Store {
       campaignName: row.campaign_name ?? undefined,
       day: String(row.day).slice(0, 10),
       gToG: row.g_to_g == null ? null : Number(row.g_to_g),
-      gToMs: row.g_to_ms == null ? null : Number(row.g_to_ms),
-      msToG: row.ms_to_g == null ? null : Number(row.ms_to_g),
       msToMs: row.ms_to_ms == null ? null : Number(row.ms_to_ms),
       testId: row.test_id ?? undefined,
       source: row.source ?? undefined,

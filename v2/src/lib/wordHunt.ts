@@ -85,13 +85,27 @@ function offerSubstitute(text: string): string {
   const phrase = extractOfferPhrase(text);
   if (!phrase) return offerLead("that on me.");
   const experiential = /jet[\s-]?ski|round of golf|tee time/i.test(phrase);
+  // D277 — never suggest AirPods, tickets, TJ, or free POC in REPLACE WITH.
   if (/air\s*pods?|airpods/i.test(phrase)) {
-    return offerLead("a pair of AirPods if you would like, on me.");
+    return offerLead("a pair of headphones if you would like, on me.");
   }
   if (experiential) {
     return offerLead(`a ${phrase.replace(/^a\s+/i, "")} outing on me.`);
   }
-  return offerLead(`${phrase} if you're interested.`);
+  if (/tickets?/i.test(phrase)) {
+    return offerLead("a local game outing if you're interested.");
+  }
+  return offerLead(`${sanitizeBannedNouns(phrase)} if you're interested.`);
+}
+
+function sanitizeBannedNouns(text: string): string {
+  return text
+    .replace(/\bair\s*pods?\b/gi, "headphones")
+    .replace(/\btickets?\b/gi, "outing")
+    .replace(/\bTJ\b/g, "")
+    .replace(/\bfree\s+(?:poc|proof of concept)\b/gi, "complimentary trial")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function extractCompanyBrand(text: string): string | undefined {
@@ -159,32 +173,45 @@ export function isBannedCopySwap(swap: string): boolean {
   if (/Quick note/i.test(swap)) return true;
   if (/pen-test/i.test(swap)) return true;
   if (/from our school-district/i.test(swap)) return true;
+  if (/\bair\s*pods?\b/i.test(swap)) return true;
+  if (/\btickets?\b/i.test(swap)) return true;
+  if (/\bTJ\b/.test(swap)) return true;
+  if (/\bfree\s+(?:poc|proof of concept)\b/i.test(swap)) return true;
   return false;
+}
+
+function finalizeSwap(swap: string, fallback: string): string {
+  let out = preferEllipsis(swap);
+  if (isBannedCopySwap(out)) out = preferEllipsis(softenGeneric(fallback));
+  if (isBannedCopySwap(out)) out = preferEllipsis(sanitizeBannedNouns(out));
+  if (isBannedCopySwap(out)) return "";
+  return out;
 }
 
 export function suggestedCopySwap(element: string): string {
   const trimmed = element.trim();
   const key = trimmed.toLowerCase();
   if (Object.prototype.hasOwnProperty.call(COPY_SYNONYMS, key)) {
-    return preferEllipsis(COPY_SYNONYMS[key]!);
+    return finalizeSwap(COPY_SYNONYMS[key]!, trimmed);
   }
   const job = classifyLineJob(trimmed);
   if (job === "spam-token") return "";
   if (job === "gift-or-experience-offer") {
-    return preferEllipsis(offerSubstitute(trimmed));
+    return finalizeSwap(offerSubstitute(trimmed), trimmed);
   }
   if (job === "cta") {
-    return preferEllipsis(
+    return finalizeSwap(
       isOfferLine(trimmed)
         ? offerSubstitute(trimmed)
         : "Happy to send more if that would help.",
+      trimmed,
     );
   }
   if (isCompanyIdentityLine(trimmed)) {
-    return preferEllipsis(companyIdentitySubstitute(trimmed));
+    return finalizeSwap(companyIdentitySubstitute(trimmed), trimmed);
   }
   if (trimmed.length > 40 || /\s/.test(trimmed)) {
-    return preferEllipsis(softenGeneric(trimmed));
+    return finalizeSwap(softenGeneric(trimmed), trimmed);
   }
   return "";
 }

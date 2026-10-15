@@ -20,9 +20,7 @@ before cutover.
 | D77 / D106 | QA-unpause START after sigs / 85% bar | Campaign status belongs elsewhere; D40 never auto-START |
 | D136 | Domain→client advisory audit | NICE |
 | D147 | Bounce resurrection / resend | Support loop; v2 classifies and never pauses |
-| D182 | Send-window converge Mon–Thu ET | Hand-set windows must not be overwritten |
 | D205 / D246 | Hold-enforcement PAUSE list / Insight SEG | v2 does not PAUSE live campaigns |
-| D223 / D236 / D254 | POC engagement 60-seat fill | Thin floor is 40 (TechEvo 30); POC is a name-list extra |
 | D260 | Domain-lifecycle continue-past-refusal | NICE retire/cover worker |
 
 ## Cutover-only (decided, but no live write in SHADOW)

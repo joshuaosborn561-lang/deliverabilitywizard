@@ -150,6 +150,24 @@ describe("ported canon that Josh said v2 was missing", () => {
     assert.match(srcBlob, /gToG|G_G/, stop("ESP matrix", "G→G lane missing"));
     assert.match(srcBlob, /acquireQaLease/, stop("QA lease", "lease missing"));
   });
+  it("D273 drops cross-ESP rate pairs", () => {
+    assert.doesNotMatch(
+      srcBlob,
+      /gToMs|msToG|G_MS|MS_G/,
+      stop("D273", "cross-ESP G→MS / MS→G lanes returned"),
+    );
+  });
+  it("D274/D275/D276/D277 live in v2 src", () => {
+    assert.match(srcBlob, /enable_ai_esp_matching|enableAiEspMatching/, stop("D274", "ESP matching check missing"));
+    assert.match(srcBlob, /send_as_plain_text|sendAsPlainText/, stop("D275", "plain text check missing"));
+    assert.match(srcBlob, /inStaffingHours|quiet_hours/, stop("D276", "quiet hours missing"));
+    assert.doesNotMatch(
+      srcBlob,
+      /a pair of AirPods if you would like/,
+      stop("D277", "AirPods still appears as a REPLACE WITH substitute"),
+    );
+    assert.match(srcBlob, /\\bTJ\\b/, stop("D277", "TJ ban missing from isBannedCopySwap"));
+  });
 });
 
 describe("shadow is structural, not a comment", () => {

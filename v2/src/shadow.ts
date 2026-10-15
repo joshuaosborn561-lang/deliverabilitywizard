@@ -1,4 +1,5 @@
 import { writesAllowed, type AppConfig } from "./config.js";
+import { isQuietHours } from "./lib/quietHours.js";
 import type { V2Store } from "./store.js";
 import type { ActionKind, IntendedAction } from "./types.js";
 
@@ -43,9 +44,14 @@ export class WriteGate {
     email?: string;
     payload: Record<string, unknown>;
     run: () => Promise<T>;
+    now?: Date;
   }): Promise<GateResult<T>> {
-    const blocked = this.blockedReason();
-    const shadowed = !this.allowed();
+    const quiet = opts.kind === "slack" && isQuietHours(opts.now ?? new Date());
+    const blockedParts = [this.blockedReason(), quiet ? "quiet_hours" : undefined].filter(
+      Boolean,
+    ) as string[];
+    const blocked = blockedParts.length ? blockedParts.join(" ") : undefined;
+    const shadowed = !this.allowed() || quiet;
     if (shadowed) {
       const action = await this.store.logIntended({
         kind: opts.kind,

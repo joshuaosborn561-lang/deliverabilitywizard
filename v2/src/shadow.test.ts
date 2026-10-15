@@ -37,4 +37,18 @@ describe("hard SHADOW write barrier", () => {
     assert.equal(logged.length, kinds.length);
     assert.ok(logged.every((a) => a.shadowed && !a.executed));
   });
+
+  it("D276: slack intends are quiet-hours blocked even if a write were allowed", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const saturday = new Date("2026-10-17T15:00:00.000Z");
+    const result = await gate.intend({
+      kind: "slack",
+      payload: { text: "hi" },
+      now: saturday,
+      run: async () => "posted",
+    });
+    assert.equal(result.executed, false);
+    assert.match(String(result.action.blockedReason ?? ""), /quiet_hours/);
+  });
 });

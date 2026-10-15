@@ -10,6 +10,7 @@ import { runInboxkitSweep } from "./jobs/inboxkit.js";
 import { runIsolationTick } from "./jobs/isolation.js";
 import { runStaffTick } from "./jobs/staff.js";
 import { SharedSmartleadLimiter } from "./lib/limiter.js";
+import { inStaffingHours } from "./lib/quietHours.js";
 import { WriteGate } from "./shadow.js";
 import { MemoryStore, PostgresStore, type V2Store } from "./store.js";
 
@@ -65,6 +66,11 @@ function fleetFromBook(accounts: { email: string; tags: string[] }[]): string[] 
 async function staffPass(): Promise<void> {
   const stage = "staff";
   try {
+    if (!inStaffingHours()) {
+      await store.stampOk(stage);
+      console.log("[v2] staff skip — quiet hours (weekdays 6am–8pm CT)");
+      return;
+    }
     const book = await fetchBook();
     const result = await runStaffTick({
       book,
@@ -88,6 +94,11 @@ async function staffPass(): Promise<void> {
 async function isolationPass(): Promise<void> {
   const stage = "isolation";
   try {
+    if (!inStaffingHours()) {
+      await store.stampOk(stage);
+      console.log("[v2] isolation skip — quiet hours (weekdays 6am–8pm CT)");
+      return;
+    }
     if (!smartDelivery) throw new Error("SMARTDELIVERY_API_KEY missing");
     const book = (await store.loadInventory()) ?? (await fetchBook());
     const tests = await smartDelivery.listTests();
@@ -114,6 +125,11 @@ async function isolationPass(): Promise<void> {
 async function inboxkitPass(): Promise<void> {
   const stage = "inboxkit";
   try {
+    if (!inStaffingHours()) {
+      await store.stampOk(stage);
+      console.log("[v2] inboxkit skip — quiet hours (weekdays 6am–8pm CT)");
+      return;
+    }
     if (!inboxkit) {
       await store.stampOk(stage);
       return;
@@ -155,18 +171,30 @@ if (runHttp) {
 }
 
 if (runStaff) {
-  cron.schedule("*/15 * * * *", () => {
-    void staffPass();
-  });
-  cron.schedule("16 8 * * 1-5", () => {
-    void inboxkitPass();
-  }, { timezone: "America/Chicago" });
+  cron.schedule(
+    "*/15 * * * *",
+    () => {
+      void staffPass();
+    },
+    { timezone: "America/Chicago" },
+  );
+  cron.schedule(
+    "16 8 * * 1-5",
+    () => {
+      void inboxkitPass();
+    },
+    { timezone: "America/Chicago" },
+  );
 }
 
 if (runIsolation) {
-  cron.schedule("*/15 * * * *", () => {
-    void isolationPass();
-  });
+  cron.schedule(
+    "*/15 * * * *",
+    () => {
+      void isolationPass();
+    },
+    { timezone: "America/Chicago" },
+  );
 }
 
 process.on("SIGTERM", () => process.exit(0));

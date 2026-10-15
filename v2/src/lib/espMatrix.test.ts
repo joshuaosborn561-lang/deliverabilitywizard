@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { espInboxMatrix, seedEsp, senderEsp, toEspInboxDay } from "./espMatrix.js";
 
-describe("ESP-to-ESP inbox matrix", () => {
+describe("ESP-matched inbox matrix (D273)", () => {
   it("classifies Gmail vs Microsoft from email and seed provider", () => {
     assert.equal(senderEsp("ada@gmail.com"), "G");
     assert.equal(senderEsp("ada@client.info"), "MS");
@@ -10,7 +10,7 @@ describe("ESP-to-ESP inbox matrix", () => {
     assert.equal(seedEsp("Outlook"), "MS");
   });
 
-  it("stores G→G, G→MS, MS→G, MS→MS rates", () => {
+  it("stores G→G and MS→MS only — drops cross-ESP pairs", () => {
     const m = espInboxMatrix([
       { email: "g@gmail.com", inbox: true, provider: "gmail" },
       { email: "g@gmail.com", inbox: false, provider: "outlook" },
@@ -18,12 +18,12 @@ describe("ESP-to-ESP inbox matrix", () => {
       { email: "m@contoso.info", inbox: true, provider: "outlook" },
     ]);
     assert.equal(m.G_G, 100);
-    assert.equal(m.G_MS, 0);
-    assert.equal(m.MS_G, 100);
     assert.equal(m.MS_MS, 100);
+    assert.equal("G_MS" in m, false);
+    assert.equal("MS_G" in m, false);
   });
 
-  it("writes a per-campaign per-day row", () => {
+  it("writes a per-campaign per-day row without cross-ESP fields", () => {
     const row = toEspInboxDay({
       campaignId: 1,
       day: "2026-10-15",
@@ -32,6 +32,8 @@ describe("ESP-to-ESP inbox matrix", () => {
     });
     assert.equal(row.day, "2026-10-15");
     assert.equal(row.gToG, 100);
-    assert.equal(row.gToMs, null);
+    assert.equal(row.msToMs, null);
+    assert.equal("gToMs" in row, false);
+    assert.equal("msToG" in row, false);
   });
 });

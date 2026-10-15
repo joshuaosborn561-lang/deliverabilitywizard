@@ -45,6 +45,14 @@ export const CALLER_FOLLOWUP_BRIDGE_SENDERS = [
 export const CALLER_FOLLOWUP_OWNED_LOCAL_PART = "gabe";
 export const POC_TAG = "POC";
 export const POC_FILL_SEATS = 60;
+export const QUIET_HOURS_TIMEZONE = "America/Chicago";
+export const STAFFING_HOUR_START = 6;
+export const STAFFING_HOUR_END = 20;
+export const SEND_WINDOW_TIMEZONE = "America/New_York";
+export const SEND_WINDOW_DAYS = [1, 2, 3, 4] as const;
+export const SEND_WINDOW_START = "08:00";
+export const SEND_WINDOW_END = "19:00";
+export const TRACK_OFF = ["DONT_TRACK_EMAIL_OPEN", "DONT_TRACK_LINK_CLICK"] as const;
 export const COPY_CANARY_FLEET_SIZE = 10;
 export const COPY_CANARY_FLEET_MIN_GOOGLE_DOMAINS = 1;
 export const COPY_CANARY_FLEET_MIN_MICROSOFT_DOMAINS = 1;
@@ -122,6 +130,10 @@ export const CANON_CORE_KINDS = [
   "ugly_without_isolation",
   "isolation_deadline",
   "duplicate_canary_test",
+  "esp_matching",
+  "plain_text",
+  "html_body",
+  "send_window",
 ] as const;
 
 export function defaultReleasedCanaryEmails(): string[] {

@@ -77,7 +77,8 @@ describe("two canary types classify sender vs copy", () => {
     assert.ok(result.wordHunts >= 1);
     const hunt = result.intended.find((a) => a.kind === "word_hunt");
     assert.ok(hunt && hunt.shadowed && !hunt.executed);
-    assert.match(String(hunt?.payload.swap ?? ""), /AirPods|I'd like to offer/);
+    assert.match(String(hunt?.payload.swap ?? ""), /I'd like to offer/);
+    assert.doesNotMatch(String(hunt?.payload.swap ?? ""), /air\s*pods?|\btickets?\b|\bTJ\b|free\s+poc/i);
   });
 });
 

@@ -19,17 +19,7 @@ export class SmartleadReader {
   async listCampaigns(): Promise<SlimCampaign[]> {
     const raw = await this.schedule(() => getJson<unknown>(this.url("campaigns")));
     const rows = Array.isArray(raw) ? raw : [];
-    return rows.map((row) => {
-      const r = row as Record<string, unknown>;
-      return {
-        id: Number(r.id),
-        name: String(r.name ?? ""),
-        status: String(r.status ?? "").toUpperCase(),
-        clientId: r.client_id == null ? null : Number(r.client_id),
-        minTimeBtwnEmails:
-          r.min_time_btwn_emails == null ? null : Number(r.min_time_btwn_emails),
-      };
-    });
+    return rows.map((row) => normalizeCampaign(row as Record<string, unknown>));
   }
 
   async listAccounts(): Promise<SlimAccount[]> {
@@ -49,6 +39,62 @@ export class SmartleadReader {
     }
     return out;
   }
+}
+
+function asStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.map((v) => String(v)).filter(Boolean);
+}
+
+function asNumberArray(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+  return value.map((v) => Number(v)).filter((n) => Number.isFinite(n));
+}
+
+function nestedSchedule(r: Record<string, unknown>): Record<string, unknown> {
+  const schedule = r.schedule ?? r.scheduler_cron_value;
+  return schedule && typeof schedule === "object" ? (schedule as Record<string, unknown>) : {};
+}
+
+function normalizeCampaign(r: Record<string, unknown>): SlimCampaign {
+  const schedule = nestedSchedule(r);
+  const track = asStringArray(r.track_settings) ?? asStringArray(r.trackSettings);
+  const days =
+    asNumberArray(r.days_of_the_week) ??
+    asNumberArray(schedule.days_of_the_week) ??
+    asNumberArray(schedule.daysOfTheWeek);
+  return {
+    id: Number(r.id),
+    name: String(r.name ?? ""),
+    status: String(r.status ?? "").toUpperCase(),
+    clientId: r.client_id == null ? null : Number(r.client_id),
+    minTimeBtwnEmails:
+      r.min_time_btwn_emails == null && schedule.min_time_btw_emails == null
+        ? null
+        : Number(r.min_time_btwn_emails ?? schedule.min_time_btw_emails),
+    enableAiEspMatching:
+      r.enable_ai_esp_matching == null ? null : Boolean(r.enable_ai_esp_matching),
+    sendAsPlainText: r.send_as_plain_text == null ? null : Boolean(r.send_as_plain_text),
+    trackSettings: track,
+    timezone: r.timezone != null ? String(r.timezone) : schedule.timezone != null ? String(schedule.timezone) : null,
+    daysOfTheWeek: days,
+    startHour:
+      r.start_hour != null
+        ? String(r.start_hour)
+        : schedule.start_hour != null
+          ? String(schedule.start_hour)
+          : null,
+    endHour:
+      r.end_hour != null
+        ? String(r.end_hour)
+        : schedule.end_hour != null
+          ? String(schedule.end_hour)
+          : null,
+    maxLeadsPerDay:
+      r.max_leads_per_day == null && schedule.max_leads_per_day == null
+        ? null
+        : Number(r.max_leads_per_day ?? schedule.max_leads_per_day),
+  };
 }
 
 function normalizeAccount(r: Record<string, unknown>): SlimAccount {

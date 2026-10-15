@@ -52,6 +52,16 @@ export class WriteGate {
     ) as string[];
     const blocked = blockedParts.length ? blockedParts.join(" ") : undefined;
     const shadowed = !this.allowed() || quiet;
+    const pending = await this.store.findPendingIntent({
+      kind: opts.kind,
+      campaignId: opts.campaignId,
+      accountId: opts.accountId,
+      email: opts.email,
+      payload: opts.payload,
+    });
+    if (pending) {
+      return { executed: pending.executed, shadowed: pending.shadowed, action: pending };
+    }
     if (shadowed) {
       const action = await this.store.logIntended({
         kind: opts.kind,

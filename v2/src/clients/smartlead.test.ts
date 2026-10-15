@@ -9,6 +9,28 @@ afterEach(() => {
 });
 
 describe("staff email-account inventory paging", () => {
+  it("requests fetch_campaigns=true and coerces string campaign_ids to numbers", async () => {
+    const keys: string[] = [];
+    globalThis.fetch = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      keys.push(u.searchParams.get("fetch_campaigns") ?? "");
+      return new Response(
+        JSON.stringify([
+          {
+            id: 7,
+            from_email: "ada@x.test",
+            campaign_ids: ["3847940", 3921850],
+            campaigns: [{ id: "3921852" }],
+          },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    const accounts = await new SmartleadReader("LIVESECRET", (fn) => fn(), 0).listAccounts();
+    assert.deepEqual(keys, ["true"]);
+    assert.deepEqual(accounts[0]?.campaignIds.sort((a, b) => a - b), [3847940, 3921850, 3921852]);
+  });
+
   it("delays between pages and does not put the api key in thrown errors", async () => {
     const offsets: string[] = [];
     globalThis.fetch = (async (url: string | URL) => {

@@ -166,6 +166,152 @@ describe("staff tick", () => {
     assert.ok(!result.intended.some((a) => a.kind === "attach" && a.email === "off@pool.info"));
   });
 
+  it("intends only the deficit to the floor and does not re-log an identical pending attach", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const { onWeekPod } = await import("../lib/staffable.js");
+    const week = onWeekPod();
+    const pod = week === "A" ? "POD-A" : "POD-B";
+    const members = Array.from({ length: 5 }, (_, i) =>
+      account({
+        id: i + 1,
+        email: `n${i}@techevolution.info`,
+        clientId: 521881,
+        campaignIds: [300],
+        tags: [pod, "type:google"],
+      }),
+    );
+    const spares = Array.from({ length: 40 }, (_, i) =>
+      account({
+        id: 100 + i,
+        email: `spare${i}@techevolution.info`,
+        clientId: 521881,
+        campaignIds: [],
+        tags: [pod, "type:google"],
+      }),
+    );
+    const book = {
+      fetchedAt: new Date().toISOString(),
+      campaigns: [
+        { id: 300, name: "TechEvo | Owners", status: "ACTIVE" as const, clientId: 521881 },
+      ],
+      accounts: [...members, ...spares],
+    };
+    const first = await runStaffTick({
+      book,
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    const attaches = first.intended.filter((a) => a.kind === "attach" && a.payload.reason === "min40_floor");
+    assert.equal(attaches.length, 25, "TechEvo floor 30 minus 5 staffable");
+    assert.ok(first.findings.some((f) => f.kind === "understaffed"));
+    const second = await runStaffTick({
+      book,
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.equal(
+      second.intended.filter((a) => a.kind === "attach" && a.payload.reason === "min40_floor").length,
+      0,
+    );
+    assert.equal((await store.listIntended()).filter((a) => a.kind === "attach").length, 25);
+  });
+
+  it("does not invent 40 attaches per campaign when campaign_ids are empty", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const campaigns = Array.from({ length: 8 }, (_, i) => ({
+      id: 1000 + i,
+      name: `Client ${i} | A`,
+      status: "ACTIVE" as const,
+      clientId: 10,
+    }));
+    const result = await runStaffTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns,
+        accounts: Array.from({ length: 50 }, (_, i) =>
+          account({
+            id: i + 1,
+            email: `a${i}@acme.info`,
+            campaignIds: [],
+            tags: [],
+          }),
+        ),
+      },
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.equal(result.intended.filter((a) => a.kind === "attach").length, 0);
+    assert.equal(result.findings.filter((f) => f.kind === "understaffed").length, 0);
+  });
+
+  it("flags generic_idle when named on-week staffable already meets the floor", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const { onWeekPod } = await import("../lib/staffable.js");
+    const week = onWeekPod();
+    const pod = week === "A" ? "POD-A" : "POD-B";
+    const named = Array.from({ length: 40 }, (_, i) =>
+      account({
+        id: i + 1,
+        email: `n${i}@acme.info`,
+        campaignIds: [100],
+        tags: [pod],
+      }),
+    );
+    const result = await runStaffTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: [{ id: 100, name: "Acme Outreach", status: "ACTIVE", clientId: 10 }],
+        accounts: [
+          ...named,
+          account({
+            id: 99,
+            email: "idle@pool.info",
+            campaignIds: [100],
+            tags: ["GENERIC", pod],
+          }),
+        ],
+      },
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.ok(result.findings.some((f) => f.kind === "generic_idle" && f.email === "idle@pool.info"));
+  });
+
+  it("QA records missing_signature_tag when the sequence has no signature tag", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const result = await runStaffTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: [{ id: 100, name: "Acme Outreach", status: "ACTIVE", clientId: 10 }],
+        accounts: [],
+      },
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      sequences: [{ campaignId: 100, body: "Hi there, just checking in." }],
+    });
+    assert.ok(result.findings.some((f) => f.kind === "missing_signature_tag"));
+    const runs = await store.listQaRuns();
+    assert.ok(runs.some((r) => r.status === "completed"));
+  });
+
   it("skips CALLER FOLLOW-UP campaigns", async () => {
     const store = new MemoryStore();
     const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);

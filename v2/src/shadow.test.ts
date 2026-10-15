@@ -51,4 +51,27 @@ describe("hard SHADOW write barrier", () => {
     assert.equal(result.executed, false);
     assert.match(String(result.action.blockedReason ?? ""), /quiet_hours/);
   });
+
+  it("does not re-log an identical pending action", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const first = await gate.intend({
+      kind: "attach",
+      campaignId: 1,
+      accountId: 9,
+      email: "a@x.test",
+      payload: { reason: "min40_floor", floor: 40 },
+      run: async () => "wrote",
+    });
+    const second = await gate.intend({
+      kind: "attach",
+      campaignId: 1,
+      accountId: 9,
+      email: "a@x.test",
+      payload: { reason: "min40_floor", floor: 40, week: "A" },
+      run: async () => "wrote",
+    });
+    assert.equal(first.action.id, second.action.id);
+    assert.equal((await store.listIntended()).length, 1);
+  });
 });

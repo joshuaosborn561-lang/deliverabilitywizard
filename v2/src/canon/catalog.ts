@@ -260,6 +260,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 276, title: "quiet hours weekdays 6am–8pm CT", job: "process", status: "implemented", note: "no scheduled job or Slack post outside the window" },
   { d: 277, title: "word-hunt substitutes never AirPods/tickets/TJ/free POC", job: 4, status: "implemented", note: "isBannedCopySwap; supersedes keep-the-gift-noun for those phrases" },
   { d: 278, title: "v2 Smartlead courtesy cap 20/min", job: "process", status: "implemented", note: "Postgres-shared 20/min concurrency 1; 429 backoff+retry; staff inventory every 30m with page delays" },
+  { d: 279, title: "v2 shadow finds old-wizard holes; floor-deficit attaches; stampOk clears overdue", job: "process", status: "implemented", note: "membership hydrate; fillFloor short-pending; pending dedupe; placement_scores (campaign_id, source); stage ok log" },
 ];
 
 export function catalogByD(d: number): CanonRule | undefined {

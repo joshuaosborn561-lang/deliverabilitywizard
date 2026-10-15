@@ -1,7 +1,7 @@
 import { V2_SMARTLEAD_PAGE_DELAY_MS } from "../canon/constants.js";
 import { getJson, type ScheduleFn } from "./http.js";
 import { dedupeById } from "../lib/inventory.js";
-import type { SlimAccount, SlimCampaign } from "../types.js";
+import type { SequenceSample, SlimAccount, SlimCampaign } from "../types.js";
 
 const BASE = "https://server.smartlead.ai/api/v1";
 
@@ -33,7 +33,13 @@ export class SmartleadReader {
     const out: SlimAccount[] = [];
     for (let offset = 0; offset < 20000; offset += 100) {
       const raw = await this.schedule(() =>
-        getJson<unknown>(this.url("email-accounts", { offset: String(offset), limit: "100" })),
+        getJson<unknown>(
+          this.url("email-accounts", {
+            offset: String(offset),
+            limit: "100",
+            fetch_campaigns: "true",
+          }),
+        ),
       );
       const rows = Array.isArray(raw)
         ? raw
@@ -46,6 +52,43 @@ export class SmartleadReader {
       if (this.pageDelayMs > 0) await sleep(this.pageDelayMs);
     }
     return dedupeById(out);
+  }
+
+  async listCampaignAccounts(campaignId: number): Promise<SlimAccount[]> {
+    const raw = await this.schedule(() =>
+      getJson<unknown>(this.url(`campaigns/${campaignId}/email-accounts`)),
+    );
+    const rows = Array.isArray(raw)
+      ? raw
+      : Array.isArray((raw as { data?: unknown }).data)
+        ? ((raw as { data: unknown[] }).data)
+        : [];
+    return dedupeById(rows.map((row) => normalizeAccount(row as Record<string, unknown>)));
+  }
+
+  async listSequences(campaignId: number): Promise<SequenceSample[]> {
+    const raw = await this.schedule(() =>
+      getJson<unknown>(this.url(`campaigns/${campaignId}/sequences`)),
+    );
+    const rows = Array.isArray(raw)
+      ? raw
+      : Array.isArray((raw as { sequences?: unknown }).sequences)
+        ? ((raw as { sequences: unknown[] }).sequences)
+        : [];
+    return rows.map((row) => {
+      const r = row as Record<string, unknown>;
+      return {
+        campaignId,
+        body: String(r.email_body ?? r.sequence_body ?? r.body ?? ""),
+        delayInDays:
+          r.seq_delay_details == null && r.delay_in_days == null
+            ? null
+            : Number(
+                (r.seq_delay_details as { delay_in_days?: number } | undefined)?.delay_in_days ??
+                  r.delay_in_days,
+              ),
+      };
+    });
   }
 }
 
@@ -112,14 +155,7 @@ function normalizeAccount(r: Record<string, unknown>): SlimAccount {
     const o = t as { tag_name?: string; name?: string };
     return String(o.tag_name ?? o.name ?? "");
   }).filter(Boolean);
-  const campaigns = Array.isArray(r.campaigns) ? r.campaigns : [];
-  const campaignIds = [
-    ...((r.campaign_ids as number[] | undefined) ?? []),
-    ...campaigns.map((c) => {
-      const o = c as { id?: number; campaign_id?: number };
-      return Number(o.id ?? o.campaign_id);
-    }),
-  ].filter((n) => Number.isFinite(n));
+  const campaignIds = campaignIdsFromAccount(r);
   const warmup = (r.warmup_details ?? {}) as Record<string, unknown>;
   const email = String(r.from_email ?? r.username ?? r.email ?? "").toLowerCase();
   return {
@@ -144,4 +180,27 @@ function normalizeAccount(r: Record<string, unknown>): SlimAccount {
         : null,
     signature: String(r.signature ?? r.email_signature ?? ""),
   };
+}
+
+function campaignIdsFromAccount(r: Record<string, unknown>): number[] {
+  const ids: number[] = [];
+  const push = (value: unknown) => {
+    if (value == null) return;
+    if (typeof value === "object") {
+      const o = value as { id?: unknown; campaign_id?: unknown };
+      push(o.id ?? o.campaign_id);
+      return;
+    }
+    const n = Number(value);
+    if (Number.isFinite(n) && n > 0) ids.push(n);
+  };
+  const raw = r.campaign_ids ?? r.campaignIds;
+  if (Array.isArray(raw)) {
+    for (const value of raw) push(value);
+  } else {
+    push(raw);
+  }
+  const campaigns = Array.isArray(r.campaigns) ? r.campaigns : [];
+  for (const row of campaigns) push(row);
+  return [...new Set(ids)];
 }

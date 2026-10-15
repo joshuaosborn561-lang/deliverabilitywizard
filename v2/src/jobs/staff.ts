@@ -9,6 +9,8 @@ import {
   STEP2_DELAY_DAYS,
 } from "../canon/constants.js";
 import { isCopyCanaryFleetEmail } from "../lib/fleet.js";
+import { genericIdleFindings } from "../lib/genericIdle.js";
+import { staffingInventoryReady } from "../lib/inventory.js";
 import { mailboxSignatureMismatch } from "../lib/signature.js";
 import {
   azureWouldReplaceGoogle,
@@ -107,30 +109,46 @@ export async function runStaffTick(opts: {
     const members = opts.book.accounts.filter((a) => a.campaignIds.includes(campaign.id));
     const brand = clients.get(campaign.clientId ?? -1) ?? campaign.name.split("|")[0]?.trim();
     const floor = seatTargetForCampaign(campaign);
+    const staffingReady = staffingInventoryReady(opts.book);
 
-    const short = understaffed(campaign, opts.book.accounts, {
-      fleetEmails: opts.fleetEmails,
-      now: now.getTime(),
-      floor,
-      ignorePodWeek: poc,
-      living: poc ? true : isActiveStatus(campaign.status),
-    });
-    if (short != null) {
-      findings.push({
-        kind: "understaffed",
-        campaignId: campaign.id,
-        detail: `${campaign.name} ${poc ? "POC" : "on-week"} staffable short ${short} (floor ${floor})`,
+    if (staffingReady) {
+      const short = understaffed(campaign, opts.book.accounts, {
+        fleetEmails: opts.fleetEmails,
+        now: now.getTime(),
+        floor,
+        ignorePodWeek: poc,
+        living: poc ? true : isActiveStatus(campaign.status),
       });
-    }
-    if (
-      !poc &&
-      espMixBroken(campaign, opts.book.accounts, { fleetEmails: opts.fleetEmails, now: now.getTime() })
-    ) {
-      findings.push({
-        kind: "esp_mix",
-        campaignId: campaign.id,
-        detail: `${campaign.name} on-week ESP mix under 1/3 of real POD size`,
-      });
+      if (short != null) {
+        findings.push({
+          kind: "understaffed",
+          campaignId: campaign.id,
+          detail: `${campaign.name} ${poc ? "POC" : "on-week"} staffable short ${short} (floor ${floor})`,
+        });
+      }
+      if (
+        !poc &&
+        espMixBroken(campaign, opts.book.accounts, { fleetEmails: opts.fleetEmails, now: now.getTime() })
+      ) {
+        findings.push({
+          kind: "esp_mix",
+          campaignId: campaign.id,
+          detail: `${campaign.name} on-week ESP mix under 1/3 of real POD size`,
+        });
+      }
+      if (!poc) {
+        findings.push(
+          ...genericIdleFindings({
+            campaign,
+            accounts: opts.book.accounts,
+            floor,
+            week,
+            fleetEmails: opts.fleetEmails,
+            extraGenericDomains: opts.config.extraGenericDomains,
+            now: now.getTime(),
+          }),
+        );
+      }
     }
 
     if (
@@ -293,33 +311,40 @@ export async function runStaffTick(opts: {
       }
     }
 
-    await fillFloor({
-      campaign,
-      book: opts.book,
-      fleetEmails: opts.fleetEmails,
-      gate: opts.gate,
-      intended,
-      week,
-      now: now.getTime(),
-      skipIds: heldIds,
-      poc,
-      floor,
-    });
+    if (staffingReady) {
+      await fillFloor({
+        campaign,
+        book: opts.book,
+        fleetEmails: opts.fleetEmails,
+        gate: opts.gate,
+        store: opts.store,
+        intended,
+        week,
+        now: now.getTime(),
+        skipIds: heldIds,
+        poc,
+        floor,
+      });
+    }
   }
 
   if (opts.runQa !== false) {
-    const qa = await runQaTick({
-      book: opts.book,
-      role: "staff",
-      trigger: "scheduled",
-      store: opts.store,
-      gate: opts.gate,
-      sequences: opts.sequences,
-      leads: opts.leads,
-      now,
-    });
-    findings.push(...qa.findings);
-    intended.push(...qa.intended);
+    try {
+      const qa = await runQaTick({
+        book: opts.book,
+        role: "staff",
+        trigger: "scheduled",
+        store: opts.store,
+        gate: opts.gate,
+        sequences: opts.sequences,
+        leads: opts.leads,
+        now,
+      });
+      findings.push(...qa.findings);
+      intended.push(...qa.intended);
+    } catch {
+      /* staffing findings still ship if QA ledger write fails */
+    }
   }
 
   return { findings, intended };
@@ -428,6 +453,7 @@ async function fillFloor(opts: {
   book: InventoryBook;
   fleetEmails: readonly string[];
   gate: WriteGate;
+  store: V2Store;
   intended: IntendedAction[];
   week: "A" | "B";
   now: number;
@@ -443,7 +469,14 @@ async function fillFloor(opts: {
     living: true,
   });
   if (short == null) return;
-  let need = short;
+  if (!staffingInventoryReady(opts.book)) return;
+  const already = await opts.store.countPendingIntents(
+    "attach",
+    opts.campaign.id,
+    opts.poc ? "poc_fill" : "min40_floor",
+  );
+  let need = short - already;
+  if (need <= 0) return;
   const used = new Set(
     opts.book.accounts.filter((a) => a.campaignIds.includes(opts.campaign.id)).map((a) => a.id),
   );
@@ -470,14 +503,23 @@ async function fillFloor(opts: {
       (a) => a.campaignIds.includes(opts.campaign.id) && !isStaffableSender(a, { fleetEmails: opts.fleetEmails }),
     );
     if (googleLeaving && azureWouldReplaceGoogle(googleLeaving, account)) continue;
+    const payload = opts.poc
+      ? { reason: "poc_fill", floor: opts.floor, tag: POC_TAG, noPod: true }
+      : { reason: "min40_floor", floor: opts.floor, week: opts.week };
+    const existing = await opts.store.findPendingIntent({
+      kind: "attach",
+      campaignId: opts.campaign.id,
+      accountId: account.id,
+      email: account.email,
+      payload,
+    });
+    if (existing) continue;
     const result = await opts.gate.intend({
       kind: "attach",
       campaignId: opts.campaign.id,
       accountId: account.id,
       email: account.email,
-      payload: opts.poc
-        ? { reason: "poc_fill", floor: opts.floor, tag: POC_TAG, noPod: true }
-        : { reason: "min40_floor", floor: opts.floor, week: opts.week },
+      payload,
       run: async () => undefined,
     });
     opts.intended.push(result.action);

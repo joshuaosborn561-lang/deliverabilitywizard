@@ -71,6 +71,9 @@ CREATE TABLE IF NOT EXISTS intended_actions (
 );
 CREATE INDEX IF NOT EXISTS intended_actions_kind_at ON intended_actions (kind, at DESC);
 CREATE INDEX IF NOT EXISTS intended_actions_campaign ON intended_actions (campaign_id);
+CREATE INDEX IF NOT EXISTS intended_actions_pending
+  ON intended_actions (kind, campaign_id, account_id)
+  WHERE executed = false;
 
 CREATE TABLE IF NOT EXISTS placement_scores (
   campaign_id INTEGER NOT NULL,
@@ -85,6 +88,9 @@ CREATE TABLE IF NOT EXISTS placement_scores (
   failure_class TEXT,
   PRIMARY KEY (campaign_id, source)
 );
+-- DBs created with campaign_id-only PK: ON CONFLICT (campaign_id, source) 500s the isolation tick.
+ALTER TABLE placement_scores DROP CONSTRAINT IF EXISTS placement_scores_pkey;
+ALTER TABLE placement_scores ADD PRIMARY KEY (campaign_id, source);
 
 CREATE TABLE IF NOT EXISTS isolation_suspects (
   campaign_id INTEGER PRIMARY KEY,

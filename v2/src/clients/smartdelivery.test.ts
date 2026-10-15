@@ -4,6 +4,7 @@ import {
   LIST_TESTS_PATH,
   SMARTDELIVERY_BASE,
   SmartDeliveryReader,
+  providerSplitsFromReport,
   sendersFromAccountWise,
 } from "./smartdelivery.js";
 
@@ -74,5 +75,16 @@ describe("SmartDelivery placement-test endpoints", () => {
     assert.equal(senders[0]?.email, "ada@client.info");
     assert.equal(senders[0]?.inbox, true);
     assert.equal(senders[1]?.inbox, false);
+  });
+
+  it("parses providerwise inbox_rate into same-ESP splits", () => {
+    const splits = providerSplitsFromReport({
+      result: [
+        { provider_name: "gmail", inbox_rate: 0 },
+        { provider_name: "outlook", inbox_count: 8, spam_count: 2, tab_count: 0 },
+      ],
+    });
+    assert.equal(splits[0]?.inboxPercent, 0);
+    assert.equal(splits[1]?.inboxPercent, 80);
   });
 });

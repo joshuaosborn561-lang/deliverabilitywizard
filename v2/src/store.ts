@@ -3,6 +3,7 @@ import { join } from "node:path";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { dedupeById } from "./lib/inventory.js";
+import { isIdenticalPending, payloadReason, type PendingIntentQuery } from "./lib/pendingIntent.js";
 import {
   redactSecrets,
   safeErrorText,
@@ -37,6 +38,12 @@ export interface V2Store {
   listFindings(): Promise<Finding[]>;
   logIntended(action: IntendedAction): Promise<IntendedAction>;
   listIntended(since?: Date): Promise<IntendedAction[]>;
+  findPendingIntent(query: PendingIntentQuery): Promise<IntendedAction | undefined>;
+  countPendingIntents(
+    kind: IntendedAction["kind"],
+    campaignId: number,
+    reason?: string,
+  ): Promise<number>;
   upsertScore(score: PlacementScore): Promise<void>;
   listScores(): Promise<PlacementScore[]>;
   upsertSuspect(row: IsolationSuspect): Promise<void>;
@@ -119,6 +126,22 @@ export class MemoryStore implements V2Store {
     if (!since) return [...this.intended];
     return this.intended.filter((a) => Date.parse(a.at ?? "") >= since.getTime());
   }
+  async findPendingIntent(query: PendingIntentQuery): Promise<IntendedAction | undefined> {
+    return [...this.intended].reverse().find((row) => isIdenticalPending(row, query));
+  }
+  async countPendingIntents(
+    kind: IntendedAction["kind"],
+    campaignId: number,
+    reason?: string,
+  ): Promise<number> {
+    return this.intended.filter(
+      (a) =>
+        !a.executed &&
+        a.kind === kind &&
+        a.campaignId === campaignId &&
+        (reason == null || payloadReason(a.payload) === reason),
+    ).length;
+  }
   async upsertScore(score: PlacementScore): Promise<void> {
     this.scores = this.scores.filter(
       (s) => !(s.campaignId === score.campaignId && s.source === score.source),
@@ -145,6 +168,8 @@ export class MemoryStore implements V2Store {
     this.stamps.set(stage, {
       stage,
       lastOkAt: at.toISOString(),
+      lastError: undefined,
+      lastErrorAt: undefined,
       consecutiveFailures: 0,
     });
   }
@@ -471,6 +496,55 @@ export class PostgresStore implements V2Store {
     };
   }
 
+  async findPendingIntent(query: PendingIntentQuery): Promise<IntendedAction | undefined> {
+    const r = await this.pool.query(
+      `SELECT * FROM intended_actions
+       WHERE executed = false
+         AND kind = $1
+         AND campaign_id IS NOT DISTINCT FROM $2
+         AND account_id IS NOT DISTINCT FROM $3
+         AND COALESCE(email, '') = COALESCE($4, '')
+         AND COALESCE(payload->>'reason', '') = $5
+       ORDER BY id DESC LIMIT 1`,
+      [
+        query.kind,
+        query.campaignId ?? null,
+        query.accountId ?? null,
+        query.email ?? "",
+        payloadReason(query.payload),
+      ],
+    );
+    const row = r.rows[0];
+    if (!row) return undefined;
+    return {
+      id: row.id,
+      at: row.at.toISOString(),
+      kind: row.kind,
+      campaignId: row.campaign_id ?? undefined,
+      accountId: row.account_id ?? undefined,
+      email: row.email ?? undefined,
+      payload: row.payload,
+      executed: row.executed,
+      shadowed: row.shadowed,
+      writeEnabled: row.write_enabled,
+      blockedReason: row.blocked_reason ?? undefined,
+    };
+  }
+
+  async countPendingIntents(
+    kind: IntendedAction["kind"],
+    campaignId: number,
+    reason?: string,
+  ): Promise<number> {
+    const r = await this.pool.query(
+      `SELECT COUNT(*)::int AS n FROM intended_actions
+       WHERE executed = false AND kind = $1 AND campaign_id = $2
+         AND ($3::text IS NULL OR COALESCE(payload->>'reason', '') = $3)`,
+      [kind, campaignId, reason ?? null],
+    );
+    return Number(r.rows[0]?.n ?? 0);
+  }
+
   async listIntended(since?: Date): Promise<IntendedAction[]> {
     const r = since
       ? await this.pool.query("SELECT * FROM intended_actions WHERE at >= $1 ORDER BY at DESC", [
@@ -602,10 +676,15 @@ export class PostgresStore implements V2Store {
 
   async stampOk(stage: string, at = new Date()): Promise<void> {
     await this.pool.query(
-      `INSERT INTO stage_health (stage, last_ok_at, consecutive_failures, updated_at)
-       VALUES ($1,$2,0,NOW())
-       ON CONFLICT (stage) DO UPDATE SET last_ok_at = EXCLUDED.last_ok_at,
-         consecutive_failures = 0, in_flight_since = NULL, updated_at = NOW()`,
+      `INSERT INTO stage_health (stage, last_ok_at, last_error, last_error_at, consecutive_failures, updated_at)
+       VALUES ($1,$2,NULL,NULL,0,NOW())
+       ON CONFLICT (stage) DO UPDATE SET
+         last_ok_at = EXCLUDED.last_ok_at,
+         last_error = NULL,
+         last_error_at = NULL,
+         consecutive_failures = 0,
+         in_flight_since = NULL,
+         updated_at = NOW()`,
       [stage, at],
     );
   }

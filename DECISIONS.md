@@ -284,6 +284,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D276 | Live | No scheduled job or Slack post outside weekdays 6am–8pm America/Chicago |
 | D277 | Live | Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC |
 | D278 | Live | v2 shares the old wizard Smartlead key: 20/min concurrency 1, 429 retry, 30-minute inventory |
+| D279 | Live | v2 shadow scoring matches old-wizard findings; attaches are floor deficit + pending dedupe; stampOk clears last_error/overdue; one ok log line per stage |
 
 ---
 
@@ -10091,6 +10092,49 @@ budget.
 after release. Tests: leftover-secret count log prints integers
 only; limiter backs off and retries; cache younger than 30m is
 not refreshed.
+
+---
+
+## D279 — v2 shadow must find what the old wizard finds
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** Live v2 shadow (`api` at
+`wizard-v2-api-production.up.railway.app`) showed `canonCompliant`
+with 0 campaigns scored, no ESP rates, 0 QA runs, and ~2,900
+intended attaches while the old wizard listed understaffed /
+esp_mix / generic_idle / below_launch_bar / missing_signature_tag
+and five ACTIVE 0% campaigns not isolated (#3847940, #3921850,
+#3921852, #3921869, #4037540). v2 must:
+
+1. Score, place, and QA against real inventory, memberships,
+   sequences, and SmartDelivery providerwise/sender rows so those
+   findings actually appear.
+2. Intend attaches equal to the **deficit to the floor** (40,
+   TechEvo 30) per POD, not ~40 × every campaign. An identical
+   pending action is not re-logged on the next tick.
+3. A successful stage `stampOk` NULLs `last_error` and
+   `last_error_at` so `/health` clears overdue.
+4. Log one `[v2] <stage> ok …` line per successful run, with
+   integer counts.
+
+**Why.** Empty `campaign_ids` made every campaign look 40 short;
+`placement_scores` ON CONFLICT used a campaign_id-only PK;
+Postgres `stampOk` left the previous error; sequences and
+providerwise splits were never loaded.
+
+**Rejected.** Leaving scoring to the old wizard. Re-intending the
+same pending attach every 15 minutes. Treating a later success as
+still overdue because `last_error` lingered.
+
+**Supersedes / amends.** D278 limiter/cache stays. This is the
+scoring/staffing/health-stamp contract on top.
+
+**Guards.** Composite `placement_scores` PK; numeric
+`campaign_ids`; membership hydrate; fillFloor = short − pending;
+WriteGate pending dedupe; stampOk clears last_error; stage ok log.
+Tests cover deficit+dedupe, generic_idle, the five 0% ids,
+below_launch_bar, stampOk/overdue, fetch_campaigns.
 
 ---
 

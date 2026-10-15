@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D278** (2026-10-15). One page of current truth. When a new
+Canon as of **D279** (2026-10-15). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -1056,7 +1056,7 @@ only (D273), plus the QA run ledger.
 
 `/health` is public: `inFlight.{health,canonOps,monitor}.{since,stage}`
 and `mutationQueue.{depth,oldestWaitMs,rateLimitStreak}` (D247),
-`smartleadLimiter.{inflight,waiting,rateLimitStreak,pausedForMs,exclusiveHealth}` (D257/D270). v2 (shadow; same Smartlead key) caps itself at 20 requests/min, concurrency 1, Postgres-shared across staff+isolation, retries 429s, and pulls full inventory at most every 30 minutes with page delays so it cannot starve the old wizard's 150/min budget (D278). Stage
+`smartleadLimiter.{inflight,waiting,rateLimitStreak,pausedForMs,exclusiveHealth}` (D257/D270). v2 (shadow; same Smartlead key) caps itself at 20 requests/min, concurrency 1, Postgres-shared across staff+isolation, retries 429s, and pulls full inventory at most every 30 minutes with page delays so it cannot starve the old wizard's 150/min budget (D278). **D279:** v2 scoring, placement, and QA must surface the same canon holes the old wizard does (`understaffed`, `esp_mix`, `generic_idle`, `below_launch_bar`, `missing_signature_tag`, 0% campaigns not isolated); intended attaches are the deficit to the floor (40, TechEvo 30) per POD and an identical pending action is not re-logged; a successful stage run NULLs `last_error` / `last_error_at` so `/health` is not overdue; each successful stage logs one line with counts. Stage
 stamps from the sidecar when the full dump is behind (D249), `canonCompliant` yes/no on the core kinds (staffing
 / on-week staffable 40, ESP mix, exclusivity, 21-day warmup, signatures,
 gap, volume, placement test, both canaries, merge-tag fill,

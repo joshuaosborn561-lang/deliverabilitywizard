@@ -8,6 +8,7 @@ import {
   filterFleetSenderRows,
   isolationOverdue,
   liveCampaignForTest,
+  scoreInputsForTest,
   shouldQueueUglyScore,
 } from "./isolation.js";
 import { matchesAutoPlacementName } from "./names.js";
@@ -44,6 +45,18 @@ describe("isolation A8 on-ramp", () => {
     );
     const mapped = liveCampaignForTest({
       testName: "Auto: BCP Logistics IT",
+      campaigns: [
+        { id: 3921852, name: "BCP Logistics IT", status: "ACTIVE", clientId: 1 },
+      ],
+    });
+    assert.equal(mapped?.campaign.id, 3921852);
+    assert.equal(mapped?.source, "live-placement");
+  });
+
+  it("maps a warmed test by campaignId when Auto: name does not match", () => {
+    const mapped = liveCampaignForTest({
+      testName: "Warmed seeds 3921852",
+      campaignId: "3921852",
       campaigns: [
         { id: 3921852, name: "BCP Logistics IT", status: "ACTIVE", clientId: 1 },
       ],
@@ -103,6 +116,19 @@ describe("isolation A8 on-ramp", () => {
     assert.equal(isolationOverdue(first), true);
     const recent = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     assert.equal(isolationOverdue(recent), false);
+  });
+
+  it("scores providerwise splits when sender rows are missing", () => {
+    const scored = scoreInputsForTest({
+      test: {
+        id: "p",
+        name: "Auto: BCP Logistics IT",
+        providers: [{ name: "gmail", inboxPercent: 0, emails: [] }],
+      },
+      source: "live-placement",
+      fleetEmails: ["living@canary.test"],
+    });
+    assert.equal(scored?.inbox, 0);
   });
 
   it("warmed tests senders; unwarmed tests copy", () => {

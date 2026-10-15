@@ -2,7 +2,17 @@ import cron from "node-cron";
 import { createApi } from "./api.js";
 import { loadConfig, writesAllowed } from "./config.js";
 import { livingFleetEmails } from "./lib/fleet.js";
-import { hasTag } from "./lib/staffable.js";
+import {
+  applyCampaignMembers,
+  campaignsMissingMembers,
+  loadOrRefreshInventory,
+} from "./lib/inventory.js";
+import { prioritizeTestsToHydrate } from "./lib/isolation.js";
+import { isPocEngagementClient, shouldStaffPocCampaign } from "./lib/poc.js";
+import { inStaffingHours } from "./lib/quietHours.js";
+import { formatSecretScrubLog, safeErrorText } from "./lib/redact.js";
+import { countIntendedKind, countKind, formatStageOkLog } from "./lib/stageLog.js";
+import { hasTag, isActiveStatus } from "./lib/staffable.js";
 import { SmartleadReader } from "./clients/smartlead.js";
 import { SmartDeliveryReader } from "./clients/smartdelivery.js";
 import { InboxkitReader } from "./clients/inboxkit.js";
@@ -10,11 +20,9 @@ import { runInboxkitSweep } from "./jobs/inboxkit.js";
 import { runIsolationTick } from "./jobs/isolation.js";
 import { runStaffTick } from "./jobs/staff.js";
 import { SharedSmartleadLimiter } from "./lib/limiter.js";
-import { inStaffingHours } from "./lib/quietHours.js";
-import { loadOrRefreshInventory } from "./lib/inventory.js";
-import { formatSecretScrubLog, safeErrorText } from "./lib/redact.js";
 import { WriteGate } from "./shadow.js";
 import { MemoryStore, PostgresStore, type V2Store } from "./store.js";
+import type { SequenceSample } from "./types.js";
 
 const config = loadConfig();
 const store: V2Store = config.databaseUrl
@@ -47,7 +55,17 @@ const inboxkit = config.inboxkitApiKey ? new InboxkitReader(config.inboxkitApiKe
 async function fetchBook() {
   if (!smartlead) throw new Error("SMARTLEAD_API_KEY missing");
   const campaigns = await smartlead.listCampaigns();
-  const accounts = await smartlead.listAccounts();
+  let accounts = await smartlead.listAccounts();
+  const living = campaigns.filter(
+    (campaign) =>
+      isActiveStatus(campaign.status) ||
+      (isPocEngagementClient({ clientId: campaign.clientId, name: campaign.name }) &&
+        shouldStaffPocCampaign(campaign)),
+  );
+  for (const campaign of campaignsMissingMembers(living, accounts)) {
+    const members = await smartlead.listCampaignAccounts(campaign.id);
+    accounts = applyCampaignMembers(accounts, campaign.id, members);
+  }
   const book = {
     fetchedAt: new Date().toISOString(),
     campaigns,
@@ -55,6 +73,19 @@ async function fetchBook() {
   };
   await store.saveInventory(book);
   return book;
+}
+
+async function loadSequences(campaigns: { id: number; status: string }[]) {
+  if (!smartlead) return [];
+  const out: SequenceSample[] = [];
+  for (const campaign of campaigns.filter((c) => isActiveStatus(c.status))) {
+    try {
+      out.push(...(await smartlead.listSequences(campaign.id)));
+    } catch (error) {
+      console.error(`[v2] sequences failed campaign=${campaign.id}`, safeErrorText(error));
+    }
+  }
+  return out;
 }
 
 function fleetFromBook(accounts: { email: string; tags: string[] }[]): string[] {
@@ -77,18 +108,27 @@ async function staffPass(): Promise<void> {
     if (!loaded.refreshed) {
       console.log(`[v2] staff inventory cache hit age_ms=${loaded.ageMs}`);
     }
+    const sequences = await loadSequences(book.campaigns);
     const result = await runStaffTick({
       book,
       fleetEmails: fleetFromBook(book.accounts),
       gate,
       store,
       config,
+      sequences,
     });
     const keep = (await store.listFindings()).filter((f) => ISOLATION_FINDING_KINDS.has(f.kind));
     await store.replaceFindings([...keep, ...result.findings]);
     await store.stampOk(stage);
     console.log(
-      `[v2] staff ok findings=${result.findings.length} intended=${result.intended.length}`,
+      formatStageOkLog("staff", {
+        findings: result.findings.length,
+        understaffed: countKind(result.findings, "understaffed"),
+        esp_mix: countKind(result.findings, "esp_mix"),
+        generic_idle: countKind(result.findings, "generic_idle"),
+        intended: result.intended.length,
+        attach: countIntendedKind(result.intended, "attach"),
+      }),
     );
   } catch (error) {
     await store.stampError(stage, safeErrorText(error));
@@ -107,7 +147,9 @@ async function isolationPass(): Promise<void> {
     if (!smartDelivery) throw new Error("SMARTDELIVERY_API_KEY missing");
     const book = (await store.loadInventory()) ?? (await fetchBook());
     const listed = await smartDelivery.listTests();
-    const tests = await smartDelivery.hydrateSenders(listed);
+    const ranked = prioritizeTestsToHydrate(listed, book.campaigns);
+    const withSenders = await smartDelivery.hydrateSenders(ranked);
+    const tests = await smartDelivery.hydrateProviderSplits(withSenders);
     const result = await runIsolationTick({
       book,
       tests,
@@ -120,7 +162,15 @@ async function isolationPass(): Promise<void> {
     await store.replaceFindings([...keep, ...result.findings]);
     await store.stampOk(stage);
     console.log(
-      `[v2] isolation ok scored=${result.scored} queued=${result.queued} evaluated=${result.evaluated} overdue=${result.overdue}`,
+      formatStageOkLog("isolation", {
+        scored: result.scored,
+        ugly: countKind(result.findings, "ugly_without_isolation"),
+        below_launch_bar: countKind(result.findings, "below_launch_bar"),
+        queued: result.queued,
+        evaluated: result.evaluated,
+        overdue: result.overdue,
+        word_hunts: result.wordHunts,
+      }),
     );
   } catch (error) {
     await store.stampError(stage, safeErrorText(error));
@@ -138,6 +188,7 @@ async function inboxkitPass(): Promise<void> {
     }
     if (!inboxkit) {
       await store.stampOk(stage);
+      console.log(formatStageOkLog("inboxkit", { intendedDeletes: 0, skipped: "no_key" }));
       return;
     }
     const book = await store.loadInventory();
@@ -148,7 +199,7 @@ async function inboxkitPass(): Promise<void> {
       gate,
     });
     await store.stampOk(stage);
-    console.log(`[v2] inboxkit sweep intendedDeletes=${result.deleted}`);
+    console.log(formatStageOkLog("inboxkit", { intendedDeletes: result.deleted }));
   } catch (error) {
     await store.stampError(stage, safeErrorText(error));
     console.error("[v2] inboxkit failed", safeErrorText(error));
@@ -161,8 +212,7 @@ const ISOLATION_FINDING_KINDS = new Set([
   "missing_canary",
   "duplicate_canary_test",
   "no_placement_test",
-  "merge_tag_blank",
-  "missing_signature_tag",
+  "below_launch_bar",
 ]);
 
 const runHttp = config.role === "api" || config.role === "all";

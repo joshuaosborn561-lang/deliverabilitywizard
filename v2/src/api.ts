@@ -4,6 +4,7 @@ import type { AppConfig } from "./config.js";
 import { writesAllowed } from "./config.js";
 import { ISOLATION_DEADLINE_MS } from "./canon/constants.js";
 import { isolationOverdue, uglyWithoutIsolation } from "./lib/isolation.js";
+import { stageIsOverdue } from "./lib/stageLog.js";
 import { safeErrorText } from "./lib/redact.js";
 import { isActiveStatus } from "./lib/staffable.js";
 import type { V2Store } from "./store.js";
@@ -32,10 +33,7 @@ export function createApi(opts: { config: AppConfig; store: V2Store }): Express 
           Boolean(book?.campaigns.some((c) => c.id === id && isActiveStatus(c.status))),
       });
       const overdueHoles = holes.filter((h) => isolationOverdue(h.scoredAt));
-      const overdueStages = stamps.filter((s) => {
-        if (!s.lastOkAt) return true;
-        return Date.now() - Date.parse(s.lastOkAt) > 20 * 60 * 1000;
-      });
+      const overdueStages = stamps.filter((s) => stageIsOverdue(s));
       res.json({
         ok: true,
         role: opts.config.role,
@@ -54,7 +52,11 @@ export function createApi(opts: { config: AppConfig; store: V2Store }): Express 
         stageHealth: Object.fromEntries(
           stamps.map((s) => [
             s.stage,
-            { ...s, lastError: s.lastError ? safeErrorText(s.lastError) : s.lastError },
+            {
+              ...s,
+              lastError: s.lastError ? safeErrorText(s.lastError) : s.lastError,
+              overdue: stageIsOverdue(s),
+            },
           ]),
         ),
         overdueStages: overdueStages.map((s) => s.stage),

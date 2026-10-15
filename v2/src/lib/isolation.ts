@@ -63,6 +63,57 @@ export function minSameEspInbox(providers: ProviderSplit[]): number | null {
   return Math.min(...providers.map((row) => row.inboxPercent));
 }
 
+/** Sender rows first; providerwise splits when the list omitted seeds. */
+export function scoreInputsForTest(opts: {
+  test: SpamTest;
+  source: "canary-copy" | "live-placement";
+  fleetEmails: readonly string[];
+}): {
+  inbox: number;
+  senders: Array<{ email: string; inbox?: boolean; provider?: string }>;
+  releasedIgnored: number;
+} | null {
+  const raw = opts.test.senders ?? [];
+  if (opts.source === "canary-copy") {
+    const { kept, releasedIgnored } = filterFleetSenderRows(raw, opts.fleetEmails);
+    if (kept.length) {
+      const inbox = minSameEspInbox(sameEspSplits(kept));
+      if (inbox == null) return null;
+      return { inbox, senders: kept, releasedIgnored };
+    }
+  } else {
+    const senders = raw.filter((s) => s.email && !isReleasedCanaryEmail(s.email));
+    if (senders.length) {
+      const inbox = minSameEspInbox(sameEspSplits(senders));
+      if (inbox == null) return null;
+      return { inbox, senders, releasedIgnored: 0 };
+    }
+  }
+  const providers = opts.test.providers ?? [];
+  if (!providers.length) return null;
+  const inbox = minSameEspInbox(providers);
+  if (inbox == null) return null;
+  return { inbox, senders: [], releasedIgnored: 0 };
+}
+
+export function prioritizeTestsToHydrate(
+  tests: SpamTest[],
+  campaigns: SlimCampaign[],
+): SpamTest[] {
+  const active = campaigns.filter((c) => isActiveSendingStatus(c.status));
+  const ids = new Set(active.map((c) => c.id));
+  const names = active.map((c) => c.name);
+  const rank = (test: SpamTest): number => {
+    const fromCanary = campaignIdFromCanaryTestName(test.name);
+    if (fromCanary != null && ids.has(fromCanary)) return 0;
+    const cid = Number(test.campaignId);
+    if (Number.isFinite(cid) && ids.has(cid)) return 1;
+    if (names.some((name) => matchesAutoPlacementName(test.name, name))) return 1;
+    return 2;
+  };
+  return [...tests].sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
+}
+
 export function sameEspInboxUgly(
   providers: ProviderSplit[],
   threshold = INBOX_THRESHOLD,
@@ -86,6 +137,7 @@ export function classifyCanaryFailure(opts: {
 
 export function liveCampaignForTest(opts: {
   testName?: string;
+  campaignId?: string | number;
   campaigns: SlimCampaign[];
 }): { campaign: SlimCampaign; source: "canary-copy" | "live-placement" } | undefined {
   const fromCanary = campaignIdFromCanaryTestName(opts.testName);
@@ -97,11 +149,18 @@ export function liveCampaignForTest(opts: {
     return undefined;
   }
   if (isCanaryCopyTestName(opts.testName)) return undefined;
-  const campaign = opts.campaigns.find((c) =>
+  const byName = opts.campaigns.find((c) =>
     matchesAutoPlacementName(opts.testName, c.name),
   );
-  if (campaign && isActiveSendingStatus(campaign.status)) {
-    return { campaign, source: "live-placement" };
+  if (byName && isActiveSendingStatus(byName.status)) {
+    return { campaign: byName, source: "live-placement" };
+  }
+  const fromId = Number(opts.campaignId);
+  if (Number.isFinite(fromId) && fromId > 0) {
+    const campaign = opts.campaigns.find((c) => c.id === fromId);
+    if (campaign && isActiveSendingStatus(campaign.status)) {
+      return { campaign, source: "live-placement" };
+    }
   }
   return undefined;
 }

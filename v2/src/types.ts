@@ -203,6 +203,8 @@ export interface SpamTest {
   campaignId?: string;
   status?: string;
   senders?: Array<{ email: string; inbox?: boolean; provider?: string }>;
+  /** Same-ESP splits from providerwise when sender rows are missing. */
+  providers?: ProviderSplit[];
 }
 
 export interface StageStamp {

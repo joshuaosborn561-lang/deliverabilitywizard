@@ -1,11 +1,12 @@
 import { getJson, postJson, type ScheduleFn } from "./http.js";
-import type { SpamTest } from "../types.js";
+import type { ProviderSplit, SpamTest } from "../types.js";
 
 /** Same base the old wizard uses (`src/clients/smartdelivery.ts`). */
 export const SMARTDELIVERY_BASE = "https://smartdelivery.smartlead.ai/api/v1/";
 export const LIST_TESTS_PATH = "spam-test/report";
 export const DEFAULT_TEST_LIST_LIMIT = 100;
 export const SENDER_HYDRATE_CAP = 80;
+export const PROVIDERWISE_HYDRATE_CAP = 80;
 
 export class SmartDeliveryReader {
   constructor(
@@ -44,6 +45,16 @@ export class SmartDeliveryReader {
     );
   }
 
+  /** Same-ESP inbox splits. POST empty body — a read, not a write. */
+  async getProviderwiseReport(testId: string): Promise<unknown> {
+    return this.schedule(() =>
+      postJson<unknown>(
+        this.url(`spam-test/report/${encodeURIComponent(testId)}/providerwise`),
+        {},
+      ),
+    );
+  }
+
   /**
    * Report list omits per-seed inbox rows. Hydrate sender-account-wise
    * for tests that still have no senders (cap so we cannot 429 the board).
@@ -61,6 +72,34 @@ export class SmartDeliveryReader {
         const raw = await this.getSenderAccountWise(test.id);
         const senders = sendersFromAccountWise(raw);
         out.push(senders.length ? { ...test, senders } : test);
+      } catch {
+        out.push(test);
+      }
+    }
+    return out;
+  }
+
+  async hydrateProviderSplits(
+    tests: SpamTest[],
+    cap = PROVIDERWISE_HYDRATE_CAP,
+  ): Promise<SpamTest[]> {
+    const out: SpamTest[] = [];
+    let used = 0;
+    for (const test of tests) {
+      if (
+        (test.providers?.length ?? 0) > 0 ||
+        (test.senders?.length ?? 0) > 0 ||
+        !test.id ||
+        used >= cap
+      ) {
+        out.push(test);
+        continue;
+      }
+      used += 1;
+      try {
+        const raw = await this.getProviderwiseReport(test.id);
+        const providers = providerSplitsFromReport(raw);
+        out.push(providers.length ? { ...test, providers } : test);
       } catch {
         out.push(test);
       }
@@ -121,6 +160,43 @@ export function sendersFromAccountWise(raw: unknown): NonNullable<SpamTest["send
     out.push(senderFromUnknown(obj, email));
   }
   return out;
+}
+
+export function providerSplitsFromReport(raw: unknown): ProviderSplit[] {
+  const rows = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object"
+      ? ((raw as Record<string, unknown>).result as unknown[]) ||
+        ((raw as Record<string, unknown>).data as unknown[]) ||
+        []
+      : [];
+  const out: ProviderSplit[] = [];
+  for (const row of rows) {
+    if (!row || typeof row !== "object") continue;
+    const obj = row as Record<string, unknown>;
+    const name = String(obj.provider_name ?? obj.provider ?? obj.name ?? "").trim();
+    const inbox = inboxPercentFromProvider(obj);
+    if (!name || inbox == null) continue;
+    out.push({ name, inboxPercent: inbox, emails: [] });
+  }
+  return out;
+}
+
+export function inboxPercentFromProvider(row: Record<string, unknown>): number | null {
+  const rate = row.inbox_rate;
+  if (typeof rate === "number" && Number.isFinite(rate)) {
+    return rate <= 1 ? rate * 100 : rate;
+  }
+  const inbox = Number(row.inbox_count ?? 0);
+  const tab = Number(row.tab_count ?? 0);
+  const spam = Number(row.spam_count ?? 0);
+  const total =
+    Number(row.adjusted_total_email_count ?? 0) ||
+    Number(row.total_email_count ?? 0) ||
+    Number(row.mailbox_count ?? 0) ||
+    inbox + tab + spam;
+  if (!total) return null;
+  return (inbox / total) * 100;
 }
 
 function senderFromUnknown(

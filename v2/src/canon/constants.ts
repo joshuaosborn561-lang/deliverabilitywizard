@@ -75,6 +75,8 @@ export const V2_SMARTLEAD_MIN_GAP_MS = 3_000;
 export const V2_SMARTLEAD_PAGE_DELAY_MS = 2_500;
 export const V2_SMARTLEAD_429_MAX_ATTEMPTS = 4;
 export const V2_INVENTORY_MAX_AGE_MS = 30 * 60 * 1000;
+/** /health overdue: lastOk older than this, or lastError after lastOk. */
+export const STAGE_OVERDUE_MS = 20 * 60 * 1000;
 export const QA_LEASE_NAME = "qa";
 export const QA_LEASE_TTL_MS = 12 * 60 * 1000;
 export const PREWARMED_DOMAINS = [
@@ -140,6 +142,7 @@ export const CANON_CORE_KINDS = [
   "ugly_without_isolation",
   "isolation_deadline",
   "duplicate_canary_test",
+  "below_launch_bar",
   "esp_matching",
   "plain_text",
   "html_body",

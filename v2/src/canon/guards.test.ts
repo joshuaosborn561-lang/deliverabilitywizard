@@ -178,6 +178,10 @@ describe("ported canon that Josh said v2 was missing", () => {
     assert.match(srcBlob, /\\bTJ\\b/, stop("D277", "TJ ban missing from isBannedCopySwap"));
     assert.match(srcBlob, /countUnredactedSecretRows/, stop("D278", "leftover-secret count missing"));
     assert.match(srcBlob, /loadOrRefreshInventory/, stop("D278", "30-minute inventory cache missing"));
+    assert.match(srcBlob, /last_error = NULL/, stop("D279", "stampOk must NULL last_error"));
+    assert.match(srcBlob, /formatStageOkLog/, stop("D279", "stage ok log missing"));
+    assert.match(srcBlob, /countPendingIntents/, stop("D279", "pending attach deficit missing"));
+    assert.match(srcBlob, /below_launch_bar/, stop("D279", "below_launch_bar missing"));
   });
 });
 

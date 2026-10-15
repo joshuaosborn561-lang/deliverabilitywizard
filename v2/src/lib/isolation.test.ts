@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import { defaultReleasedCanaryEmails } from "../canon/constants.js";
 import { isReleasedCanaryEmail } from "./fleet.js";
 import {
+  classifyCanaryFailure,
   decideIsolationVerdict,
   filterFleetSenderRows,
   isolationOverdue,
@@ -102,6 +103,11 @@ describe("isolation A8 on-ramp", () => {
     assert.equal(isolationOverdue(first), true);
     const recent = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     assert.equal(isolationOverdue(recent), false);
+  });
+
+  it("warmed tests senders; unwarmed tests copy", () => {
+    assert.equal(classifyCanaryFailure({ kind: "warmed", inboxPercent: 10 }), "sender");
+    assert.equal(classifyCanaryFailure({ kind: "unwarmed", inboxPercent: 10 }), "copy");
   });
 
   it("COPY vs INFRA from unwarmed vs warmed", () => {

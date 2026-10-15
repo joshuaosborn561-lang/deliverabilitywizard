@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { insightSequenceIllegal } from "./signature.js";
-import { mergeTagHoles, step2DelayWrong } from "./qa.js";
+import { mergeTagHoles, qaCopyAndLeads, step2DelayWrong } from "./qa.js";
 import { bounceRateIsEvidence, bounceLoopMayPause, classifyBounceReason } from "./bounce.js";
 
 describe("copy / bounce QA", () => {
+  it("new copy QA requires merge tags to resolve and a signature tag", () => {
+    const findings = qaCopyAndLeads({
+      campaign: { id: 1, name: "Acme", status: "ACTIVE", clientId: 10 },
+      members: [],
+      sequences: [{ campaignId: 1, body: "Hi {{first_name}}" }],
+      leads: [{ campaignId: 1, customFields: { first_name: "" } }],
+    });
+    assert.ok(findings.some((f) => f.kind === "merge_tag_blank"));
+    assert.ok(findings.some((f) => f.kind === "missing_signature_tag"));
+  });
+
   it("D180: blank merge tags are findings, not writes", () => {
     assert.deepEqual(
       mergeTagHoles({

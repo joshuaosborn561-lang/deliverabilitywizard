@@ -9,6 +9,7 @@ import { InboxkitReader } from "./clients/inboxkit.js";
 import { runInboxkitSweep } from "./jobs/inboxkit.js";
 import { runIsolationTick } from "./jobs/isolation.js";
 import { runStaffTick } from "./jobs/staff.js";
+import { SharedSmartleadLimiter } from "./lib/limiter.js";
 import { WriteGate } from "./shadow.js";
 import { MemoryStore, PostgresStore, type V2Store } from "./store.js";
 
@@ -30,9 +31,12 @@ if (writesAllowed(config)) {
 
 await store.migrate();
 
-const smartlead = config.smartleadApiKey ? new SmartleadReader(config.smartleadApiKey) : null;
+const limiter = new SharedSmartleadLimiter(store);
+const smartlead = config.smartleadApiKey
+  ? new SmartleadReader(config.smartleadApiKey, (fn) => limiter.schedule(fn))
+  : null;
 const smartDelivery = config.smartDeliveryApiKey
-  ? new SmartDeliveryReader(config.smartDeliveryApiKey)
+  ? new SmartDeliveryReader(config.smartDeliveryApiKey, (fn) => limiter.schedule(fn))
   : null;
 const inboxkit = config.inboxkitApiKey ? new InboxkitReader(config.inboxkitApiKey) : null;
 
@@ -135,6 +139,8 @@ const ISOLATION_FINDING_KINDS = new Set([
   "missing_canary",
   "duplicate_canary_test",
   "no_placement_test",
+  "merge_tag_blank",
+  "missing_signature_tag",
 ]);
 
 const runHttp = config.role === "api" || config.role === "all";

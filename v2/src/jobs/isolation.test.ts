@@ -34,6 +34,7 @@ describe("isolation worker", () => {
       gate,
       store,
       config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
     });
     assert.equal(result.scored, 0);
     assert.ok(!result.findings.some((f) => f.kind === "ugly_without_isolation"));
@@ -71,6 +72,7 @@ describe("isolation worker", () => {
       gate,
       store,
       config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
     });
     assert.ok(result.findings.some((f) => f.kind === "duplicate_canary_test"));
     assert.ok(result.intended.some((a) => a.kind === "test_stop" && a.payload.testId === "b"));

@@ -2,6 +2,8 @@ import { INBOX_THRESHOLD, ISOLATION_DEADLINE_MS } from "../canon/constants.js";
 import { isCopyCanaryFleetEmail, isReleasedCanaryEmail } from "./fleet.js";
 import { campaignIdFromCanaryTestName, isCanaryCopyTestName, matchesAutoPlacementName } from "./names.js";
 import type {
+  CanaryKind,
+  FailureClass,
   IsolationRun,
   IsolationSuspect,
   PlacementScore,
@@ -66,6 +68,20 @@ export function sameEspInboxUgly(
   threshold = INBOX_THRESHOLD,
 ): boolean {
   return providers.some((row) => row.inboxPercent < threshold);
+}
+
+/** Warmed Auto: tests SENDERS. Unwarmed Canary copy: fleet tests COPY. */
+export function canaryKindForSource(source: PlacementScore["source"]): CanaryKind {
+  return source === "canary-copy" ? "unwarmed" : "warmed";
+}
+
+export function classifyCanaryFailure(opts: {
+  kind: CanaryKind;
+  inboxPercent: number;
+  threshold?: number;
+}): FailureClass {
+  if (opts.inboxPercent >= (opts.threshold ?? INBOX_THRESHOLD)) return "none";
+  return opts.kind === "warmed" ? "sender" : "copy";
 }
 
 export function liveCampaignForTest(opts: {

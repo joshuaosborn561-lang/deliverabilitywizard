@@ -17,7 +17,16 @@ export type ActionKind =
   | "pause"
   | "start"
   | "reconnect"
-  | "tag";
+  | "tag"
+  | "word_hunt"
+  | "mpd_write"
+  | "hold";
+
+export type CanaryKind = "warmed" | "unwarmed";
+export type FailureClass = "sender" | "copy" | "none";
+export type QaRole = "staff" | "isolation";
+export type QaTrigger = "scheduled" | "new_copy" | "new_leads";
+export type QaRunStatus = "scheduled" | "running" | "completed" | "missed";
 
 export interface IntendedAction {
   id?: number;
@@ -82,6 +91,67 @@ export interface PlacementScore {
   scoredAt: string;
   fleetEmailsScored: number;
   releasedEmailsIgnored: number;
+  canaryKind?: CanaryKind;
+  failureClass?: FailureClass;
+}
+
+export interface EspInboxDay {
+  campaignId: number;
+  campaignName?: string;
+  day: string;
+  gToG: number | null;
+  gToMs: number | null;
+  msToG: number | null;
+  msToMs: number | null;
+  testId?: string;
+  source?: "canary-copy" | "live-placement";
+}
+
+export interface QaRun {
+  id: string;
+  scheduledAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  role: QaRole;
+  status: QaRunStatus;
+  trigger: QaTrigger;
+  campaignId?: number;
+  detail?: string;
+  findings?: Finding[];
+}
+
+export interface SeatHold {
+  accountId: number;
+  email: string;
+  reason: "tenant_rate_limit" | "tenant_outbound_block" | "smtp_imap";
+  evidence: string;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface TerlSubstitution {
+  campaignId: number;
+  stoppedAccountId: number;
+  stoppedEmail: string;
+  substituteAccountId: number | null;
+  substituteEmail: string | null;
+  clientId: number | null;
+  tenant: string;
+  stoppedAt: string;
+  restoreAfter: string;
+  restoredAt: string | null;
+  noSubstitute: boolean;
+}
+
+export interface SequenceSample {
+  campaignId: number;
+  body: string;
+  delayInDays?: number | null;
+}
+
+export interface LeadSample {
+  campaignId: number;
+  customFields?: Record<string, string | null | undefined>;
 }
 
 export interface IsolationSuspect {

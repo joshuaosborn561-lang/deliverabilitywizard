@@ -1,17 +1,20 @@
-import { getJson } from "./http.js";
+import { getJson, type ScheduleFn } from "./http.js";
 import type { SpamTest } from "../types.js";
 
 const BASE = "https://smartdelivery.smartlead.ai/api";
 
 export class SmartDeliveryReader {
-  constructor(private readonly apiKey: string) {}
+  constructor(
+    private readonly apiKey: string,
+    private readonly schedule: ScheduleFn = (fn) => fn(),
+  ) {}
 
   /**
    * Failed list is an ERROR. Never `.catch(() => [])`.
    */
   async listTests(): Promise<SpamTest[]> {
     const url = `${BASE}/spam-tests?api_key=${encodeURIComponent(this.apiKey)}`;
-    const raw = await getJson<unknown>(url);
+    const raw = await this.schedule(() => getJson<unknown>(url));
     const rows = normalizeList(raw);
     return rows.map(normalizeTest);
   }

@@ -13,7 +13,10 @@ import {
   INSIGHT_CLIENT_ID,
   ISOLATION_DEADLINE_MS,
   SALESGLIDER_CLIENT_ID,
+  SMARTLEAD_CONCURRENCY,
+  SMARTLEAD_MAX_PER_MIN,
   TECHEVO_CLIENT_ID,
+  TERL_HOLD_MS,
   WARMUP_DAYS,
 } from "./constants.js";
 
@@ -99,6 +102,13 @@ describe("ported live constants", () => {
   it("A8 / Josh SLA: 30-minute isolation deadline", () => {
     assert.equal(ISOLATION_DEADLINE_MS, 30 * 60 * 1000);
   });
+  it("D219: TERRL hold is 24h", () => {
+    assert.equal(TERL_HOLD_MS, 24 * 60 * 60 * 1000);
+  });
+  it("D257: Smartlead limiter is 150/min concurrency 2", () => {
+    assert.equal(SMARTLEAD_MAX_PER_MIN, 150);
+    assert.equal(SMARTLEAD_CONCURRENCY, 2);
+  });
 });
 
 describe("retired machinery stays out of v2", () => {
@@ -124,6 +134,21 @@ describe("retired machinery stays out of v2", () => {
   });
   it("D51: no placement rotation pull", () => {
     assert.doesNotMatch(srcBlob, /placementRotation/, stop("D51", "placement rotation returned"));
+  });
+});
+
+describe("ported canon that Josh said v2 was missing", () => {
+  it("D94 reconnect and D257 limiter live in v2 src", () => {
+    assert.match(srcBlob, /kind:\s*"reconnect"/, stop("D94", "reconnect intended action missing"));
+    assert.match(srcBlob, /SMARTLEAD_MAX_PER_MIN/, stop("D257", "limiter constant missing from src"));
+  });
+  it("D152/D168 word hunt classifies gift-bait", () => {
+    assert.match(srcBlob, /gift-or-experience-offer/, stop("D168", "line-job classifier missing"));
+    assert.match(srcBlob, /I'd like to offer/, stop("D171", "offer lead-in missing"));
+  });
+  it("ESP-to-ESP matrix and QA lease exist", () => {
+    assert.match(srcBlob, /gToG|G_G/, stop("ESP matrix", "G→G lane missing"));
+    assert.match(srcBlob, /acquireQaLease/, stop("QA lease", "lease missing"));
   });
 });
 

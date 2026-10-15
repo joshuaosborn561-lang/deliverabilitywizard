@@ -1,7 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
+import { randomUUID } from "node:crypto";
 import type {
+  EspInboxDay,
   Finding,
   GenericSeat,
   IntendedAction,
@@ -9,9 +11,12 @@ import type {
   IsolationRun,
   IsolationSuspect,
   PlacementScore,
+  QaRun,
+  SeatHold,
   SlimAccount,
   SlimCampaign,
   StageStamp,
+  TerlSubstitution,
 } from "./types.js";
 
 const { Pool } = pg;
@@ -37,6 +42,19 @@ export interface V2Store {
   upsertGeneric(seat: GenericSeat): Promise<void>;
   listGenerics(): Promise<GenericSeat[]>;
   saveComparison(report: unknown): Promise<void>;
+  recordEspMatrix(row: EspInboxDay): Promise<void>;
+  listEspMatrix(sinceDay?: string): Promise<EspInboxDay[]>;
+  acquireQaLease(holder: string, ttlMs: number, now?: Date): Promise<{ acquired: boolean; token?: string }>;
+  releaseQaLease(holder: string, token: string): Promise<void>;
+  insertQaRun(run: QaRun): Promise<QaRun>;
+  completeQaRun(id: string, patch: Partial<QaRun>): Promise<void>;
+  listQaRuns(): Promise<QaRun[]>;
+  upsertHold(hold: SeatHold): Promise<void>;
+  listHolds(): Promise<SeatHold[]>;
+  upsertTerlSub(row: TerlSubstitution): Promise<void>;
+  listTerlSubs(): Promise<TerlSubstitution[]>;
+  acquireRateSlot(maxInflight: number, maxPerMin: number): Promise<boolean>;
+  releaseRateSlot(): Promise<void>;
 }
 
 export class MemoryStore implements V2Store {
@@ -49,6 +67,16 @@ export class MemoryStore implements V2Store {
   stamps = new Map<string, StageStamp>();
   generics: GenericSeat[] = [];
   comparisons: unknown[] = [];
+  espDays: EspInboxDay[] = [];
+  qaRuns: QaRun[] = [];
+  qaLease: { holder: string; token: string; expiresAt: number } | null = null;
+  holds: SeatHold[] = [];
+  terlSubs: TerlSubstitution[] = [];
+  rate: { windowStart: number; tokens: number; inflight: number } = {
+    windowStart: Date.now(),
+    tokens: 0,
+    inflight: 0,
+  };
 
   async migrate(): Promise<void> {}
   async ping(): Promise<boolean> {
@@ -80,7 +108,9 @@ export class MemoryStore implements V2Store {
     return this.intended.filter((a) => Date.parse(a.at ?? "") >= since.getTime());
   }
   async upsertScore(score: PlacementScore): Promise<void> {
-    this.scores = this.scores.filter((s) => s.campaignId !== score.campaignId);
+    this.scores = this.scores.filter(
+      (s) => !(s.campaignId === score.campaignId && s.source === score.source),
+    );
     this.scores.push(score);
   }
   async listScores(): Promise<PlacementScore[]> {
@@ -128,6 +158,79 @@ export class MemoryStore implements V2Store {
   }
   async saveComparison(report: unknown): Promise<void> {
     this.comparisons.push(report);
+  }
+
+  async recordEspMatrix(row: EspInboxDay): Promise<void> {
+    this.espDays = this.espDays.filter(
+      (r) => !(r.campaignId === row.campaignId && r.day === row.day),
+    );
+    this.espDays.push(row);
+  }
+  async listEspMatrix(sinceDay?: string): Promise<EspInboxDay[]> {
+    if (!sinceDay) return [...this.espDays];
+    return this.espDays.filter((r) => r.day >= sinceDay);
+  }
+
+  async acquireQaLease(
+    holder: string,
+    ttlMs: number,
+    now = new Date(),
+  ): Promise<{ acquired: boolean; token?: string }> {
+    const t = now.getTime();
+    if (this.qaLease && this.qaLease.expiresAt > t && this.qaLease.holder !== holder) {
+      return { acquired: false };
+    }
+    const token = randomUUID();
+    this.qaLease = { holder, token, expiresAt: t + ttlMs };
+    return { acquired: true, token };
+  }
+  async releaseQaLease(holder: string, token: string): Promise<void> {
+    if (this.qaLease?.holder === holder && this.qaLease.token === token) {
+      this.qaLease = null;
+    }
+  }
+  async insertQaRun(run: QaRun): Promise<QaRun> {
+    const row = { ...run, id: run.id || randomUUID() };
+    this.qaRuns.push(row);
+    return row;
+  }
+  async completeQaRun(id: string, patch: Partial<QaRun>): Promise<void> {
+    this.qaRuns = this.qaRuns.map((r) => (r.id === id ? { ...r, ...patch } : r));
+  }
+  async listQaRuns(): Promise<QaRun[]> {
+    return [...this.qaRuns];
+  }
+
+  async upsertHold(hold: SeatHold): Promise<void> {
+    this.holds = this.holds.filter((h) => h.accountId !== hold.accountId);
+    this.holds.push(hold);
+  }
+  async listHolds(): Promise<SeatHold[]> {
+    return [...this.holds];
+  }
+  async upsertTerlSub(row: TerlSubstitution): Promise<void> {
+    this.terlSubs = this.terlSubs.filter(
+      (s) => !(s.campaignId === row.campaignId && s.stoppedAccountId === row.stoppedAccountId),
+    );
+    this.terlSubs.push(row);
+  }
+  async listTerlSubs(): Promise<TerlSubstitution[]> {
+    return [...this.terlSubs];
+  }
+
+  async acquireRateSlot(maxInflight: number, maxPerMin: number): Promise<boolean> {
+    const now = Date.now();
+    if (now - this.rate.windowStart >= 60_000) {
+      this.rate = { windowStart: now, tokens: 0, inflight: this.rate.inflight };
+    }
+    if (this.rate.inflight >= maxInflight) return false;
+    if (this.rate.tokens >= maxPerMin) return false;
+    this.rate.tokens += 1;
+    this.rate.inflight += 1;
+    return true;
+  }
+  async releaseRateSlot(): Promise<void> {
+    this.rate.inflight = Math.max(0, this.rate.inflight - 1);
   }
 }
 
@@ -296,13 +399,14 @@ export class PostgresStore implements V2Store {
     await this.pool.query(
       `INSERT INTO placement_scores
         (campaign_id, campaign_name, source, test_id, inbox_percent, scored_at,
-         fleet_emails_scored, released_emails_ignored)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (campaign_id) DO UPDATE SET
-         campaign_name = EXCLUDED.campaign_name, source = EXCLUDED.source,
+         fleet_emails_scored, released_emails_ignored, canary_kind, failure_class)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       ON CONFLICT (campaign_id, source) DO UPDATE SET
+         campaign_name = EXCLUDED.campaign_name,
          test_id = EXCLUDED.test_id, inbox_percent = EXCLUDED.inbox_percent,
          scored_at = EXCLUDED.scored_at, fleet_emails_scored = EXCLUDED.fleet_emails_scored,
-         released_emails_ignored = EXCLUDED.released_emails_ignored`,
+         released_emails_ignored = EXCLUDED.released_emails_ignored,
+         canary_kind = EXCLUDED.canary_kind, failure_class = EXCLUDED.failure_class`,
       [
         score.campaignId,
         score.campaignName ?? null,
@@ -312,6 +416,8 @@ export class PostgresStore implements V2Store {
         score.scoredAt,
         score.fleetEmailsScored,
         score.releasedEmailsIgnored,
+        score.canaryKind ?? null,
+        score.failureClass ?? null,
       ],
     );
   }
@@ -327,6 +433,8 @@ export class PostgresStore implements V2Store {
       scoredAt: row.scored_at.toISOString(),
       fleetEmailsScored: row.fleet_emails_scored,
       releasedEmailsIgnored: row.released_emails_ignored,
+      canaryKind: row.canary_kind ?? undefined,
+      failureClass: row.failure_class ?? undefined,
     }));
   }
 
@@ -464,6 +572,220 @@ export class PostgresStore implements V2Store {
 
   async saveComparison(report: unknown): Promise<void> {
     await this.pool.query("INSERT INTO comparison_reports (report) VALUES ($1)", [report]);
+  }
+
+  async recordEspMatrix(row: EspInboxDay): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO esp_inbox_rates
+        (campaign_id, day, campaign_name, g_to_g, g_to_ms, ms_to_g, ms_to_ms, test_id, source, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
+       ON CONFLICT (campaign_id, day) DO UPDATE SET
+         campaign_name = EXCLUDED.campaign_name, g_to_g = EXCLUDED.g_to_g,
+         g_to_ms = EXCLUDED.g_to_ms, ms_to_g = EXCLUDED.ms_to_g, ms_to_ms = EXCLUDED.ms_to_ms,
+         test_id = EXCLUDED.test_id, source = EXCLUDED.source, updated_at = NOW()`,
+      [
+        row.campaignId,
+        row.day,
+        row.campaignName ?? null,
+        row.gToG,
+        row.gToMs,
+        row.msToG,
+        row.msToMs,
+        row.testId ?? null,
+        row.source ?? null,
+      ],
+    );
+  }
+  async listEspMatrix(sinceDay?: string): Promise<EspInboxDay[]> {
+    const r = sinceDay
+      ? await this.pool.query("SELECT * FROM esp_inbox_rates WHERE day >= $1 ORDER BY day DESC", [
+          sinceDay,
+        ])
+      : await this.pool.query("SELECT * FROM esp_inbox_rates ORDER BY day DESC LIMIT 500");
+    return r.rows.map((row) => ({
+      campaignId: row.campaign_id,
+      campaignName: row.campaign_name ?? undefined,
+      day: String(row.day).slice(0, 10),
+      gToG: row.g_to_g == null ? null : Number(row.g_to_g),
+      gToMs: row.g_to_ms == null ? null : Number(row.g_to_ms),
+      msToG: row.ms_to_g == null ? null : Number(row.ms_to_g),
+      msToMs: row.ms_to_ms == null ? null : Number(row.ms_to_ms),
+      testId: row.test_id ?? undefined,
+      source: row.source ?? undefined,
+    }));
+  }
+
+  async acquireQaLease(
+    holder: string,
+    ttlMs: number,
+    now = new Date(),
+  ): Promise<{ acquired: boolean; token?: string }> {
+    const token = randomUUID();
+    const expires = new Date(now.getTime() + ttlMs);
+    await this.pool.query("DELETE FROM qa_leases WHERE expires_at <= $1", [now]);
+    const existing = await this.pool.query("SELECT holder, token FROM qa_leases WHERE name = 'qa'");
+    if (existing.rowCount && existing.rows[0].holder !== holder) {
+      return { acquired: false };
+    }
+    await this.pool.query(
+      `INSERT INTO qa_leases (name, holder, token, expires_at)
+       VALUES ('qa', $1, $2, $3)
+       ON CONFLICT (name) DO UPDATE SET holder = EXCLUDED.holder, token = EXCLUDED.token,
+         expires_at = EXCLUDED.expires_at`,
+      [holder, token, expires],
+    );
+    return { acquired: true, token };
+  }
+  async releaseQaLease(holder: string, token: string): Promise<void> {
+    await this.pool.query("DELETE FROM qa_leases WHERE name = 'qa' AND holder = $1 AND token = $2", [
+      holder,
+      token,
+    ]);
+  }
+  async insertQaRun(run: QaRun): Promise<QaRun> {
+    const id = run.id || randomUUID();
+    await this.pool.query(
+      `INSERT INTO qa_runs (id, scheduled_at, started_at, completed_at, role, status, trigger, campaign_id, detail, findings)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        id,
+        run.scheduledAt,
+        run.startedAt ?? null,
+        run.completedAt ?? null,
+        run.role,
+        run.status,
+        run.trigger,
+        run.campaignId ?? null,
+        run.detail ?? null,
+        JSON.stringify(run.findings ?? []),
+      ],
+    );
+    return { ...run, id };
+  }
+  async completeQaRun(id: string, patch: Partial<QaRun>): Promise<void> {
+    await this.pool.query(
+      `UPDATE qa_runs SET
+         started_at = COALESCE($2, started_at),
+         completed_at = COALESCE($3, completed_at),
+         status = COALESCE($4, status),
+         role = COALESCE($5, role),
+         detail = COALESCE($6, detail),
+         findings = COALESCE($7, findings)
+       WHERE id = $1`,
+      [
+        id,
+        patch.startedAt ?? null,
+        patch.completedAt ?? null,
+        patch.status ?? null,
+        patch.role ?? null,
+        patch.detail ?? null,
+        patch.findings ? JSON.stringify(patch.findings) : null,
+      ],
+    );
+  }
+  async listQaRuns(): Promise<QaRun[]> {
+    const r = await this.pool.query("SELECT * FROM qa_runs ORDER BY scheduled_at DESC LIMIT 500");
+    return r.rows.map((row) => ({
+      id: row.id,
+      scheduledAt: row.scheduled_at.toISOString(),
+      startedAt: row.started_at ? row.started_at.toISOString() : undefined,
+      completedAt: row.completed_at ? row.completed_at.toISOString() : undefined,
+      role: row.role,
+      status: row.status,
+      trigger: row.trigger,
+      campaignId: row.campaign_id ?? undefined,
+      detail: row.detail ?? undefined,
+      findings: row.findings ?? [],
+    }));
+  }
+
+  async upsertHold(hold: SeatHold): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO holds (account_id, email, reason, evidence, expires_at, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (account_id) DO UPDATE SET
+         email = EXCLUDED.email, reason = EXCLUDED.reason, evidence = EXCLUDED.evidence,
+         expires_at = EXCLUDED.expires_at`,
+      [hold.accountId, hold.email, hold.reason, hold.evidence, hold.expiresAt, hold.createdAt],
+    );
+  }
+  async listHolds(): Promise<SeatHold[]> {
+    const r = await this.pool.query("SELECT * FROM holds");
+    return r.rows.map((row) => ({
+      accountId: row.account_id,
+      email: row.email,
+      reason: row.reason,
+      evidence: row.evidence,
+      expiresAt: row.expires_at ? row.expires_at.toISOString() : null,
+      createdAt: row.created_at.toISOString(),
+    }));
+  }
+  async upsertTerlSub(row: TerlSubstitution): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO terl_substitutions
+        (campaign_id, stopped_account_id, stopped_email, substitute_account_id, substitute_email,
+         client_id, tenant, stopped_at, restore_after, restored_at, no_substitute)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (campaign_id, stopped_account_id) DO UPDATE SET
+         stopped_email = EXCLUDED.stopped_email,
+         substitute_account_id = EXCLUDED.substitute_account_id,
+         substitute_email = EXCLUDED.substitute_email,
+         restored_at = EXCLUDED.restored_at,
+         no_substitute = EXCLUDED.no_substitute,
+         restore_after = EXCLUDED.restore_after`,
+      [
+        row.campaignId,
+        row.stoppedAccountId,
+        row.stoppedEmail,
+        row.substituteAccountId,
+        row.substituteEmail,
+        row.clientId,
+        row.tenant,
+        row.stoppedAt,
+        row.restoreAfter,
+        row.restoredAt,
+        row.noSubstitute,
+      ],
+    );
+  }
+  async listTerlSubs(): Promise<TerlSubstitution[]> {
+    const r = await this.pool.query("SELECT * FROM terl_substitutions");
+    return r.rows.map((row) => ({
+      campaignId: row.campaign_id,
+      stoppedAccountId: row.stopped_account_id,
+      stoppedEmail: row.stopped_email,
+      substituteAccountId: row.substitute_account_id,
+      substituteEmail: row.substitute_email,
+      clientId: row.client_id,
+      tenant: row.tenant,
+      stoppedAt: row.stopped_at.toISOString(),
+      restoreAfter: row.restore_after.toISOString(),
+      restoredAt: row.restored_at ? row.restored_at.toISOString() : null,
+      noSubstitute: row.no_substitute,
+    }));
+  }
+
+  async acquireRateSlot(maxInflight: number, maxPerMin: number): Promise<boolean> {
+    const r = await this.pool.query(
+      `UPDATE smartlead_limiter SET
+         window_start = CASE WHEN NOW() - window_start >= interval '60 seconds' THEN NOW() ELSE window_start END,
+         tokens_used = CASE WHEN NOW() - window_start >= interval '60 seconds' THEN 1 ELSE tokens_used + 1 END,
+         inflight = CASE WHEN NOW() - window_start >= interval '60 seconds' THEN 1 ELSE inflight + 1 END
+       WHERE id = 1
+         AND inflight < $1
+         AND (
+           NOW() - window_start >= interval '60 seconds'
+           OR tokens_used < $2
+         )
+       RETURNING id`,
+      [maxInflight, maxPerMin],
+    );
+    return (r.rowCount ?? 0) > 0;
+  }
+  async releaseRateSlot(): Promise<void> {
+    await this.pool.query(
+      "UPDATE smartlead_limiter SET inflight = GREATEST(inflight - 1, 0) WHERE id = 1",
+    );
   }
 }
 

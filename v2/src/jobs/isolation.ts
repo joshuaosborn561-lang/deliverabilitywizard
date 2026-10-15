@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { INBOX_THRESHOLD, ISOLATION_DEADLINE_MS } from "../canon/constants.js";
+import { COPY_CANARY_FLEET_SIZE, INBOX_THRESHOLD, ISOLATION_DEADLINE_MS } from "../canon/constants.js";
 import type { AppConfig } from "../config.js";
+import { chicagoYmd } from "../clients/inboxkit.js";
+import { toEspInboxDay } from "../lib/espMatrix.js";
 import {
+  canaryKindForSource,
+  classifyCanaryFailure,
   decideIsolationVerdict,
   duplicateCanaryTests,
   filterFleetSenderRows,
@@ -15,7 +19,12 @@ import {
   uglyWithoutIsolation,
 } from "../lib/isolation.js";
 import { canaryCopyTestName, matchesAutoPlacementName } from "../lib/names.js";
+import { huntCopyWords, wordHuntSlackPayload } from "../lib/wordHunt.js";
+import { burnedRetireReason } from "../lib/retireReason.js";
+import { isReleasedCanaryEmail } from "../lib/fleet.js";
 import { isActiveStatus } from "../lib/staffable.js";
+import { intendSpend } from "./spend.js";
+import { runQaTick } from "./qa.js";
 import type { WriteGate } from "../shadow.js";
 import type { V2Store } from "../store.js";
 import type {
@@ -23,7 +32,9 @@ import type {
   IntendedAction,
   InventoryBook,
   IsolationRun,
+  LeadSample,
   PlacementScore,
+  SequenceSample,
   SpamTest,
 } from "../types.js";
 
@@ -34,6 +45,7 @@ export interface IsolationTickResult {
   queued: number;
   evaluated: number;
   overdue: number;
+  wordHunts: number;
 }
 
 export async function runIsolationTick(opts: {
@@ -44,6 +56,9 @@ export async function runIsolationTick(opts: {
   store: V2Store;
   config: AppConfig;
   now?: Date;
+  sequences?: SequenceSample[];
+  leads?: LeadSample[];
+  runQa?: boolean;
 }): Promise<IsolationTickResult> {
   const now = opts.now ?? new Date();
   const findings: Finding[] = [];
@@ -51,6 +66,7 @@ export async function runIsolationTick(opts: {
   let queued = 0;
   let evaluated = 0;
   let overdue = 0;
+  let wordHunts = 0;
 
   const existingScores = await opts.store.listScores();
   const suspects = await opts.store.listSuspects();
@@ -61,6 +77,11 @@ export async function runIsolationTick(opts: {
   }
 
   const scores: PlacementScore[] = [];
+  const copyUgly = new Map<number, PlacementScore>();
+  const senderUgly = new Map<number, PlacementScore>();
+  const copyInboxByCampaign = new Map<number, { inbox: number; total: number }>();
+  const warmedInboxByCampaign = new Map<number, { inbox: number; total: number }>();
+
   const priority = prioritizeCampaigns({
     campaigns: opts.book.campaigns,
     scores: existingScores,
@@ -72,6 +93,25 @@ export async function runIsolationTick(opts: {
         opts.book.campaigns.some((c) => c.id === id && isActiveStatus(c.status)),
     }),
   });
+
+  if (opts.fleetEmails.length < COPY_CANARY_FLEET_SIZE) {
+    intended.push(
+      await intendSpend(
+        {
+          id: `canary-fleet-${chicagoYmd(now)}`,
+          kind: "buy_mailboxes",
+          amountUsd: opts.config.spendCapDomainUsd,
+          payload: {
+            reason: "living canary fleet is under 10 seats",
+            have: opts.fleetEmails.length,
+            want: COPY_CANARY_FLEET_SIZE,
+          },
+        },
+        opts.gate,
+        opts.config,
+      ),
+    );
+  }
 
   for (const campaign of priority) {
     const canaries = duplicateCanaryTests(opts.tests, campaign.id);
@@ -116,84 +156,238 @@ export async function runIsolationTick(opts: {
       );
     }
 
-    const test = copyTest ?? opts.tests.find((t) => matchesAutoPlacementName(t.name, campaign.name));
-    if (!test) continue;
+    const warmedTest = opts.tests.find((t) => matchesAutoPlacementName(t.name, campaign.name));
 
-    const mapped = liveCampaignForTest({ testName: test.name, campaigns: opts.book.campaigns });
-    if (!mapped) continue;
+    if (copyTest) {
+      const mapped = liveCampaignForTest({
+        testName: copyTest.name,
+        campaigns: opts.book.campaigns,
+      });
+      if (mapped) {
+        const { kept, releasedIgnored } = filterFleetSenderRows(
+          copyTest.senders ?? [],
+          opts.fleetEmails,
+        );
+        if (kept.length) {
+          const splits = sameEspSplits(kept);
+          const inbox = minSameEspInbox(splits);
+          if (inbox != null) {
+            const kind = canaryKindForSource("canary-copy");
+            const failureClass = classifyCanaryFailure({ kind, inboxPercent: inbox });
+            const score: PlacementScore = {
+              campaignId: mapped.campaign.id,
+              campaignName: mapped.campaign.name,
+              source: "canary-copy",
+              testId: copyTest.id,
+              inboxPercent: inbox,
+              scoredAt: now.toISOString(),
+              fleetEmailsScored: kept.length,
+              releasedEmailsIgnored: releasedIgnored,
+              canaryKind: kind,
+              failureClass,
+            };
+            scores.push(score);
+            copyInboxByCampaign.set(mapped.campaign.id, {
+              inbox: kept.filter((s) => s.inbox).length,
+              total: kept.length,
+            });
+            await opts.store.upsertScore(score);
+            await opts.store.recordEspMatrix(
+              toEspInboxDay({
+                campaignId: mapped.campaign.id,
+                campaignName: mapped.campaign.name,
+                day: chicagoYmd(now),
+                senders: kept,
+                testId: copyTest.id,
+                source: "canary-copy",
+              }),
+            );
+            if (failureClass === "copy") copyUgly.set(mapped.campaign.id, score);
+          }
+        }
+      }
+    }
 
-    const { kept, releasedIgnored } = filterFleetSenderRows(test.senders ?? [], opts.fleetEmails);
-    if (!kept.length) continue;
-    const splits = sameEspSplits(kept);
-    const inbox = minSameEspInbox(splits);
-    if (inbox == null) continue;
-    const score: PlacementScore = {
-      campaignId: mapped.campaign.id,
-      campaignName: mapped.campaign.name,
-      source: mapped.source,
-      testId: test.id,
-      inboxPercent: inbox,
-      scoredAt: now.toISOString(),
-      fleetEmailsScored: kept.length,
-      releasedEmailsIgnored: releasedIgnored,
+    if (warmedTest) {
+      const mapped = liveCampaignForTest({
+        testName: warmedTest.name,
+        campaigns: opts.book.campaigns,
+      });
+      if (mapped) {
+        const senders = (warmedTest.senders ?? []).filter(
+          (s) => s.email && !isReleasedCanaryEmail(s.email),
+        );
+        if (senders.length) {
+          const splits = sameEspSplits(senders);
+          const inbox = minSameEspInbox(splits);
+          if (inbox != null) {
+            const kind = canaryKindForSource("live-placement");
+            const failureClass = classifyCanaryFailure({ kind, inboxPercent: inbox });
+            const score: PlacementScore = {
+              campaignId: mapped.campaign.id,
+              campaignName: mapped.campaign.name,
+              source: "live-placement",
+              testId: warmedTest.id,
+              inboxPercent: inbox,
+              scoredAt: now.toISOString(),
+              fleetEmailsScored: senders.length,
+              releasedEmailsIgnored: 0,
+              canaryKind: kind,
+              failureClass,
+            };
+            scores.push(score);
+            warmedInboxByCampaign.set(mapped.campaign.id, {
+              inbox: senders.filter((s) => s.inbox).length,
+              total: senders.length,
+            });
+            await opts.store.upsertScore(score);
+            await opts.store.recordEspMatrix(
+              toEspInboxDay({
+                campaignId: mapped.campaign.id,
+                campaignName: mapped.campaign.name,
+                day: chicagoYmd(now),
+                senders,
+                testId: warmedTest.id,
+                source: "live-placement",
+              }),
+            );
+            if (failureClass === "sender") senderUgly.set(mapped.campaign.id, score);
+          }
+        }
+      }
+    }
+
+    const uglyScore = copyUgly.get(campaign.id) ?? senderUgly.get(campaign.id);
+    if (!uglyScore) continue;
+    const suspect = suspects.find((s) => s.campaignId === uglyScore.campaignId);
+    const run = latestBy.get(uglyScore.campaignId);
+    if (!shouldQueueUglyScore({ score: uglyScore, suspect, run })) continue;
+
+    queued += 1;
+    await opts.store.upsertSuspect({
+      campaignId: uglyScore.campaignId,
+      campaignName: uglyScore.campaignName,
+      source: uglyScore.source,
+      testId: uglyScore.testId,
+      queuedAt: now.toISOString(),
+    });
+    intended.push(
+      (
+        await opts.gate.intend({
+          kind: "isolate",
+          campaignId: uglyScore.campaignId,
+          payload: {
+            source: uglyScore.source,
+            inboxPercent: uglyScore.inboxPercent,
+            testId: uglyScore.testId,
+            failureClass: uglyScore.failureClass,
+            canaryKind: uglyScore.canaryKind,
+          },
+          run: async () => undefined,
+        })
+      ).action,
+    );
+
+    const copySplit = copyInboxByCampaign.get(campaign.id);
+    const warmSplit = warmedInboxByCampaign.get(campaign.id);
+    const verdict = decideIsolationVerdict({
+      copyCanary: {
+        unwarmedLanded: copySplit ? copySplit.inbox * 2 >= copySplit.total : null,
+        warmedLanded: warmSplit ? warmSplit.inbox * 2 >= warmSplit.total : null,
+        unwarmedTested: copySplit?.total ?? 0,
+        warmedTested: warmSplit?.total ?? 0,
+      },
+      unwarmedCopyFineAcrossEsps: copySplit
+        ? ((copySplit.inbox / copySplit.total) * 100 >= INBOX_THRESHOLD)
+        : undefined,
+    });
+    evaluated += 1;
+    const runRow: IsolationRun = {
+      id: randomUUID(),
+      campaignId: uglyScore.campaignId,
+      verdict: verdict.verdict,
+      reason: verdict.reason,
+      startedAt: now.toISOString(),
+      finishedAt: now.toISOString(),
+      teardownStarted: verdict.startCopyTeardown,
     };
-    scores.push(score);
-    await opts.store.upsertScore(score);
+    await opts.store.insertRun(runRow);
+    latestBy.set(campaign.id, runRow);
+    await opts.store.upsertSuspect({
+      campaignId: uglyScore.campaignId,
+      campaignName: uglyScore.campaignName,
+      source: uglyScore.source,
+      testId: uglyScore.testId,
+      queuedAt: now.toISOString(),
+      evaluatedAt: now.toISOString(),
+    });
 
-    const suspect = suspects.find((s) => s.campaignId === score.campaignId);
-    const run = latestBy.get(score.campaignId);
-    if (shouldQueueUglyScore({ score, suspect, run })) {
-      queued += 1;
-      await opts.store.upsertSuspect({
-        campaignId: score.campaignId,
-        campaignName: score.campaignName,
-        source: score.source,
-        testId: score.testId,
-        queuedAt: now.toISOString(),
+    if (verdict.verdict === "COPY" || uglyScore.failureClass === "copy") {
+      const body =
+        opts.sequences?.find((s) => s.campaignId === campaign.id)?.body ?? "";
+      const hits = huntCopyWords(body);
+      wordHunts += hits.length ? 1 : 0;
+      for (const hit of hits) {
+        intended.push(
+          (
+            await opts.gate.intend({
+              kind: "word_hunt",
+              campaignId: campaign.id,
+              payload: {
+                phrase: hit.phrase,
+                swap: hit.swap,
+                job: hit.job,
+                reason: "copy_canary_fail",
+              },
+              run: async () => undefined,
+            })
+          ).action,
+        );
+        intended.push(
+          (
+            await opts.gate.intend({
+              kind: "slack",
+              campaignId: campaign.id,
+              payload: wordHuntSlackPayload(hit, campaign.name),
+              run: async () => undefined,
+            })
+          ).action,
+        );
+      }
+      if (verdict.startCopyTeardown) {
+        intended.push(
+          (
+            await opts.gate.intend({
+              kind: "sequence_write",
+              campaignId: campaign.id,
+              payload: { reason: "copy_teardown_intended", hits },
+              run: async () => undefined,
+            })
+          ).action,
+        );
+      }
+    }
+
+    if (verdict.verdict === "INFRA" || uglyScore.failureClass === "sender") {
+      const domain = (opts.book.accounts.find((a) => a.campaignIds.includes(campaign.id))?.email ?? "")
+        .split("@")[1] ?? campaign.name;
+      const reason = burnedRetireReason({
+        domain,
+        isolationVerdict: verdict.verdict === "INFRA" ? "INFRA" : undefined,
       });
       intended.push(
-        (
-          await opts.gate.intend({
-            kind: "isolate",
-            campaignId: score.campaignId,
-            payload: { source: score.source, inboxPercent: score.inboxPercent, testId: score.testId },
-            run: async () => undefined,
-          })
-        ).action,
+        await intendSpend(
+          {
+            id: `retire-${domain}-${campaign.id}`,
+            kind: "retire_domain",
+            clientId: campaign.clientId ?? undefined,
+            amountUsd: opts.config.spendCapDomainUsd,
+            payload: { domain, reason, failureClass: uglyScore.failureClass },
+          },
+          opts.gate,
+          opts.config,
+        ),
       );
-
-      const warmed = opts.tests.find((t) => matchesAutoPlacementName(t.name, campaign.name));
-      const warmedSenders = warmed?.senders ?? [];
-      const warmedInbox = warmedSenders.filter((s) => s.inbox).length;
-      const copyInbox = kept.filter((s) => s.inbox).length;
-      const verdict = decideIsolationVerdict({
-        copyCanary: {
-          unwarmedLanded: kept.length ? copyInbox * 2 >= kept.length : null,
-          warmedLanded: warmedSenders.length ? warmedInbox * 2 >= warmedSenders.length : null,
-          unwarmedTested: kept.length,
-          warmedTested: warmedSenders.length,
-        },
-        unwarmedCopyFineAcrossEsps: inbox >= INBOX_THRESHOLD ? true : false,
-      });
-      evaluated += 1;
-      const runRow: IsolationRun = {
-        id: randomUUID(),
-        campaignId: score.campaignId,
-        verdict: verdict.verdict,
-        reason: verdict.reason,
-        startedAt: now.toISOString(),
-        finishedAt: now.toISOString(),
-        teardownStarted: verdict.startCopyTeardown,
-      };
-      await opts.store.insertRun(runRow);
-      await opts.store.upsertSuspect({
-        campaignId: score.campaignId,
-        campaignName: score.campaignName,
-        source: score.source,
-        testId: score.testId,
-        queuedAt: now.toISOString(),
-        evaluatedAt: now.toISOString(),
-      });
     }
   }
 
@@ -208,7 +402,7 @@ export async function runIsolationTick(opts: {
     findings.push({
       kind: "ugly_without_isolation",
       campaignId: hole.campaignId,
-      detail: `${hole.campaignName ?? hole.campaignId} ${hole.inboxPercent}% ${hole.source}`,
+      detail: `${hole.campaignName ?? hole.campaignId} ${hole.inboxPercent}% ${hole.source} ${hole.failureClass ?? ""}`.trim(),
     });
     if (isolationOverdue(hole.scoredAt, now.getTime(), opts.config.isolationDeadlineMs)) {
       overdue += 1;
@@ -230,7 +424,22 @@ export async function runIsolationTick(opts: {
     }
   }
 
-  return { findings, intended, scored: scores.length, queued, evaluated, overdue };
+  if (opts.runQa !== false) {
+    const qa = await runQaTick({
+      book: opts.book,
+      role: "isolation",
+      trigger: "scheduled",
+      store: opts.store,
+      gate: opts.gate,
+      sequences: opts.sequences,
+      leads: opts.leads,
+      now,
+    });
+    findings.push(...qa.findings);
+    intended.push(...qa.intended);
+  }
+
+  return { findings, intended, scored: scores.length, queued, evaluated, overdue, wordHunts };
 }
 
 export async function loadTestsOrThrow(

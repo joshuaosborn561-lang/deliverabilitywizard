@@ -1,5 +1,5 @@
 import express, { type Express, type Request, type Response } from "express";
-import { buildComparison, canonCompliantFromFindings, countKinds } from "./compare.js";
+import { buildComparison, buildMetrics, canonCompliantFromFindings, countKinds } from "./compare.js";
 import type { AppConfig } from "./config.js";
 import { writesAllowed } from "./config.js";
 import { ISOLATION_DEADLINE_MS } from "./canon/constants.js";
@@ -78,6 +78,8 @@ export function createApi(opts: { config: AppConfig; store: V2Store }): Express 
         findings: await opts.store.listFindings(),
         intended: await opts.store.listIntended(new Date(Date.now() - 24 * 3600_000)),
         scores: await opts.store.listScores(),
+        espInboxRates: await opts.store.listEspMatrix(),
+        qaRuns: await opts.store.listQaRuns(),
       });
       await opts.store.saveComparison(report);
       res.json(report);
@@ -86,12 +88,25 @@ export function createApi(opts: { config: AppConfig; store: V2Store }): Express 
     }
   });
 
+  app.get("/metrics", async (_req: Request, res: Response) => {
+    try {
+      res.json(
+        buildMetrics({
+          espInboxRates: await opts.store.listEspMatrix(),
+          qaRuns: await opts.store.listQaRuns(),
+        }),
+      );
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.get("/", (_req, res) => {
     res.json({
       name: "deliverability-wizard-v2",
       shadow: opts.config.shadow,
       writeEnabled: opts.config.writeEnabled,
-      docs: ["GET /health", "GET /compare", "GET /intended", "GET /findings"],
+      docs: ["GET /health", "GET /compare", "GET /metrics", "GET /intended", "GET /findings"],
     });
   });
 

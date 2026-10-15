@@ -1,5 +1,5 @@
 import { CANON_CORE_KINDS } from "./canon/constants.js";
-import type { Finding, IntendedAction, OldWizardHealth, PlacementScore } from "./types.js";
+import type { EspInboxDay, Finding, IntendedAction, OldWizardHealth, PlacementScore, QaRun } from "./types.js";
 
 export interface ComparisonReport {
   at: string;
@@ -25,7 +25,11 @@ export interface ComparisonReport {
     intendedDetaches: number;
     intendedIsolations: number;
     intendedTests: number;
+    intendedWordHunts: number;
+    intendedReconnects: number;
   };
+  espInboxRates: EspInboxDay[];
+  qa: { scheduled: number; completed: number; missed: number };
   notes: string[];
 }
 
@@ -54,6 +58,8 @@ export function buildComparison(opts: {
   findings: Finding[];
   intended: IntendedAction[];
   scores: PlacementScore[];
+  espInboxRates?: EspInboxDay[];
+  qaRuns?: QaRun[];
   now?: Date;
 }): ComparisonReport {
   const v2Counts = countKinds(opts.findings);
@@ -104,7 +110,37 @@ export function buildComparison(opts: {
       intendedDetaches: intended.detach ?? 0,
       intendedIsolations: intended.isolate ?? 0,
       intendedTests: (intended.test_create ?? 0) + (intended.test_stop ?? 0),
+      intendedWordHunts: intended.word_hunt ?? 0,
+      intendedReconnects: intended.reconnect ?? 0,
+    },
+    espInboxRates: opts.espInboxRates ?? [],
+    qa: {
+      scheduled: (opts.qaRuns ?? []).filter((r) => r.status === "scheduled" || r.status === "missed" || r.status === "completed" || r.status === "running").length,
+      completed: (opts.qaRuns ?? []).filter((r) => r.status === "completed").length,
+      missed: (opts.qaRuns ?? []).filter((r) => r.status === "missed").length,
     },
     notes,
+  };
+}
+
+export function buildMetrics(opts: {
+  espInboxRates: EspInboxDay[];
+  qaRuns: QaRun[];
+  limiter?: { inflight: number; waiting: number; rateLimitStreak: number; pausedForMs: number; requestsInWindow: number; maxPerMin: number };
+}): {
+  espInboxRates: EspInboxDay[];
+  qa: { scheduled: number; completed: number; missed: number; running: number };
+  limiter?: typeof opts.limiter;
+} {
+  const runs = opts.qaRuns;
+  return {
+    espInboxRates: opts.espInboxRates,
+    qa: {
+      scheduled: runs.filter((r) => r.status === "scheduled").length + runs.filter((r) => r.status === "completed" || r.status === "missed" || r.status === "running").length,
+      completed: runs.filter((r) => r.status === "completed").length,
+      missed: runs.filter((r) => r.status === "missed").length,
+      running: runs.filter((r) => r.status === "running").length,
+    },
+    limiter: opts.limiter,
   };
 }

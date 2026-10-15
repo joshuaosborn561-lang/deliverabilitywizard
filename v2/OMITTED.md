@@ -15,32 +15,30 @@ before cutover.
 | D21 | Auto bug remediator / Cursor API | Not a staffing, isolation, QA, lapsed, or spend job |
 | D52 | Lead-runout watch | Leads belong to other systems |
 | D53 | Sending-IP census | Advisory; does not spend |
-| D56 / D89 | Known-good pod-control shell + coverage | Isolation uses `Auto: <name>` warmed tests instead |
+| D56 / D89 | Known-good pod-control shell + coverage | Isolation uses `Auto: <name>` warmed sender tests + unwarmed fleet copy tests instead |
 | D64 | EOD staffing Slack | Shadow logs intended Slack; no EOD worker yet |
 | D77 / D106 | QA-unpause START after sigs / 85% bar | Campaign status belongs elsewhere; D40 never auto-START |
-| D94 | SMTP/IMAP reconnect | NICE; not a seven-job |
 | D136 | Domain→client advisory audit | NICE |
 | D147 | Bounce resurrection / resend | Support loop; v2 classifies and never pauses |
 | D182 | Send-window converge Mon–Thu ET | Hand-set windows must not be overwritten |
 | D205 / D246 | Hold-enforcement PAUSE list / Insight SEG | v2 does not PAUSE live campaigns |
 | D223 / D236 / D254 | POC engagement 60-seat fill | Thin floor is 40 (TechEvo 30); POC is a name-list extra |
-| D212 / D213 / D218 / D219 (TERRL swap) | 24h 5.7.233 substitute + EOD digest | Caps are in v2; the 24h swap worker is NICE |
 | D260 | Domain-lifecycle continue-past-refusal | NICE retire/cover worker |
 
 ## Cutover-only (decided, but no live write in SHADOW)
 
 These rules stay in the catalog as omitted **execute** paths. v2 already
-**intends** the matching attach/detach/test/spend/slack. The write
-payload at `WRITE_ENABLED` must honour them.
+**intends** the matching attach/detach/test/spend/slack/reconnect/TERRL/word-hunt.
+The write payload at `WRITE_ENABLED` must honour them.
 
 | Decision | Feature | Honour at cutover |
 |---|---|---|
 | D20 | Cayden cannot spend / purge / deploy | Keep old Slack auth until cutover |
-| D60 / D137 / D150 / D161 / D174 / D175 / D179 / D181 | Canary/isolation/domain buy + retire | `intendSpend` only; Porkbun/InboxKit buy is NICE |
+| D60 / D137 / D150 / D161 / D174 / D175 / D179 / D181 | Canary/isolation/domain buy + retire | `intendSpend` only; Porkbun/InboxKit buy stays off until cutover |
 | D87 | Bulk signature approve | v2 auto-intends `signature_write` (D92) |
 | D101 / D103 / D104 / D110 | `sequencesForWrite` allowlist | No sequence POST until the allowlist lands |
 | D102 / D112 / D114 / D115 / D117 / D118 / D119 / D120 / D131 | Canary shell seed + PAUSED shell | `test_create` intended; execute on the shell, never the live campaign |
-| D133 / D151 / D152 / D153 / D168 / D170 / D171 | Word-hunt Slack tap + gift-bait substitutes | COPY intends teardown; the tap UI is cutover |
+| D133 / D151 / D153 | Word-hunt Slack tap + Write-my-own modal | COPY hunts and intends the swap; the tap UI is cutover |
 | D134 / D190 / D194 / D195 / D220 / D248 / D266 | Slack buttons, Cayden CTA, Needs-you digest | Job 7 UI; shadow logs `slack` / `spend` |
 | D135 | POD first-tag on untagged seats | Decoration; D234 lock is already coded (never A↔B) |
 | D172 | Reserved attach budget | Process leftover |
@@ -52,7 +50,6 @@ payload at `WRITE_ENABLED` must honour them.
 | D211 / D214 / D215 | Health-chain leftover resume | Workers are independent 15m ticks |
 | D247 / D252 / D265 / D271 / D272 | Freeze watchdog, yielding stringify, pause audit CPU | No 110MB `state.json`; api does not walk inventory |
 | D253 | Dockerfile mirror | Railway nixpacks from `v2/` |
-| D257 | Process-wide 150/min limiter | Split staff vs isolation budgets; add a limiter before cutover |
 
 ## Dead v1 features (retired — must not return)
 
@@ -78,7 +75,7 @@ revive them in v2:
 | `deliveryWatch` evaluate | D159 | absent (on-ramp is isolation worker) |
 | `campaignAudit` 6h | D81/D132 | absent (staff check is the writer) |
 | `warmup-gate-monitor` | D247 | absent (one gate on staff) |
-| Extra 03:00 reconnect cron | D94 | absent |
+| Extra 03:00 reconnect cron | D94 | folded into the staff tick (intended reconnect) |
 | `lead-runout` | D52 | absent |
 | `GET /status` full dump | D167 | absent |
 | `activeSwaps` / `heldInboxes` | D130 | absent |

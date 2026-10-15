@@ -51,6 +51,14 @@ export const COPY_CANARY_FLEET_MIN_MICROSOFT_DOMAINS = 1;
 export const CANARY_COPY_TEST_PREFIX = "Canary copy:";
 export const AUTO_PLACEMENT_TEST_PREFIX = "Auto:";
 export const ISOLATION_DEADLINE_MS = 30 * 60 * 1000;
+/** D219 — Microsoft 550 5.7.233 tenant hold. Rolling 24h, then type cap. */
+export const TERL_HOLD_MS = 24 * 60 * 60 * 1000;
+/** D257 — Smartlead account cap is 200/min; stay at 150 including SmartDelivery. */
+export const SMARTLEAD_MAX_PER_MIN = 150;
+export const SMARTLEAD_CONCURRENCY = 2;
+export const SMARTLEAD_MIN_GAP_MS = 150;
+export const QA_LEASE_NAME = "qa";
+export const QA_LEASE_TTL_MS = 12 * 60 * 1000;
 export const PREWARMED_DOMAINS = [
   "crosslaunchco.com",
   "crossscaleco.com",

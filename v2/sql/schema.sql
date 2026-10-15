@@ -73,14 +73,17 @@ CREATE INDEX IF NOT EXISTS intended_actions_kind_at ON intended_actions (kind, a
 CREATE INDEX IF NOT EXISTS intended_actions_campaign ON intended_actions (campaign_id);
 
 CREATE TABLE IF NOT EXISTS placement_scores (
-  campaign_id INTEGER PRIMARY KEY,
+  campaign_id INTEGER NOT NULL,
   campaign_name TEXT,
   source TEXT NOT NULL,
   test_id TEXT NOT NULL,
   inbox_percent DOUBLE PRECISION NOT NULL,
   scored_at TIMESTAMPTZ NOT NULL,
   fleet_emails_scored INTEGER NOT NULL DEFAULT 0,
-  released_emails_ignored INTEGER NOT NULL DEFAULT 0
+  released_emails_ignored INTEGER NOT NULL DEFAULT 0,
+  canary_kind TEXT,
+  failure_class TEXT,
+  PRIMARY KEY (campaign_id, source)
 );
 
 CREATE TABLE IF NOT EXISTS isolation_suspects (
@@ -154,3 +157,66 @@ CREATE TABLE IF NOT EXISTS comparison_reports (
   at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   report JSONB NOT NULL
 );
+
+-- Existing DBs created with campaign_id-only PK: widen to (campaign_id, source).
+ALTER TABLE placement_scores ADD COLUMN IF NOT EXISTS canary_kind TEXT;
+ALTER TABLE placement_scores ADD COLUMN IF NOT EXISTS failure_class TEXT;
+
+CREATE TABLE IF NOT EXISTS esp_inbox_rates (
+  campaign_id INTEGER NOT NULL,
+  day DATE NOT NULL,
+  campaign_name TEXT,
+  g_to_g DOUBLE PRECISION,
+  g_to_ms DOUBLE PRECISION,
+  ms_to_g DOUBLE PRECISION,
+  ms_to_ms DOUBLE PRECISION,
+  test_id TEXT,
+  source TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (campaign_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS qa_runs (
+  id TEXT PRIMARY KEY,
+  scheduled_at TIMESTAMPTZ NOT NULL,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  role TEXT NOT NULL,
+  status TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  campaign_id INTEGER,
+  detail TEXT,
+  findings JSONB NOT NULL DEFAULT '[]'
+);
+CREATE INDEX IF NOT EXISTS qa_runs_scheduled ON qa_runs (scheduled_at DESC);
+
+CREATE TABLE IF NOT EXISTS qa_leases (
+  name TEXT PRIMARY KEY,
+  holder TEXT NOT NULL,
+  token TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS terl_substitutions (
+  campaign_id INTEGER NOT NULL,
+  stopped_account_id INTEGER NOT NULL,
+  stopped_email TEXT NOT NULL,
+  substitute_account_id INTEGER,
+  substitute_email TEXT,
+  client_id INTEGER,
+  tenant TEXT NOT NULL,
+  stopped_at TIMESTAMPTZ NOT NULL,
+  restore_after TIMESTAMPTZ NOT NULL,
+  restored_at TIMESTAMPTZ,
+  no_substitute BOOLEAN NOT NULL DEFAULT FALSE,
+  PRIMARY KEY (campaign_id, stopped_account_id)
+);
+
+CREATE TABLE IF NOT EXISTS smartlead_limiter (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  window_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  tokens_used INTEGER NOT NULL DEFAULT 0,
+  inflight INTEGER NOT NULL DEFAULT 0,
+  paused_until TIMESTAMPTZ
+);
+INSERT INTO smartlead_limiter (id) VALUES (1) ON CONFLICT (id) DO NOTHING;

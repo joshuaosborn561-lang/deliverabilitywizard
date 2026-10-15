@@ -1,10 +1,13 @@
-import { getJson } from "./http.js";
+import { getJson, type ScheduleFn } from "./http.js";
 import type { SlimAccount, SlimCampaign } from "../types.js";
 
 const BASE = "https://server.smartlead.ai/api/v1";
 
 export class SmartleadReader {
-  constructor(private readonly apiKey: string) {}
+  constructor(
+    private readonly apiKey: string,
+    private readonly schedule: ScheduleFn = (fn) => fn(),
+  ) {}
 
   private url(path: string, extra: Record<string, string> = {}): string {
     const u = new URL(`${BASE}/${path.replace(/^\//, "")}`);
@@ -14,7 +17,7 @@ export class SmartleadReader {
   }
 
   async listCampaigns(): Promise<SlimCampaign[]> {
-    const raw = await getJson<unknown>(this.url("campaigns"));
+    const raw = await this.schedule(() => getJson<unknown>(this.url("campaigns")));
     const rows = Array.isArray(raw) ? raw : [];
     return rows.map((row) => {
       const r = row as Record<string, unknown>;
@@ -32,8 +35,8 @@ export class SmartleadReader {
   async listAccounts(): Promise<SlimAccount[]> {
     const out: SlimAccount[] = [];
     for (let offset = 0; offset < 20000; offset += 100) {
-      const raw = await getJson<unknown>(
-        this.url("email-accounts", { offset: String(offset), limit: "100" }),
+      const raw = await this.schedule(() =>
+        getJson<unknown>(this.url("email-accounts", { offset: String(offset), limit: "100" })),
       );
       const rows = Array.isArray(raw)
         ? raw

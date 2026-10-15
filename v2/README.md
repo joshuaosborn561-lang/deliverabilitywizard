@@ -3,7 +3,7 @@
 Long-lived parallel system. The old wizard on `main` is untouched and
 stays in production.
 
-- **api** — `/health`, `/compare`, `/intended`, `/findings`
+- **api** — `/health`, `/compare`, `/metrics`, `/intended`, `/findings`
 - **staff** — jobs 1, 2, 3, 5, 6 (40/POD, exclusivity + ESP mix,
   warmup peel, copy/sig/merge-tag QA, lapsed delete)
 - **isolation** — job 4 (fleet-only canaries, 30m deadline, `Auto:`

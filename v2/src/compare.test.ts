@@ -32,5 +32,7 @@ describe("comparison report", () => {
     assert.ok(
       report.notes.some((n) => /fleet-only/.test(n) || /uglyWithoutIsolation/.test(n)),
     );
+    assert.deepEqual(report.espInboxRates, []);
+    assert.equal(report.qa.completed, 0);
   });
 });

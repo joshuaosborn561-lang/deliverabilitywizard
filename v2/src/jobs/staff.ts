@@ -27,7 +27,18 @@ import {
 } from "../lib/staffable.js";
 import type { WriteGate } from "../shadow.js";
 import type { V2Store } from "../store.js";
-import type { Finding, IntendedAction, InventoryBook, SlimAccount, SlimCampaign } from "../types.js";
+import { runReconnectTick } from "../lib/reconnect.js";
+import { runTerlTick, writersMustSkipHold, type BounceEvent } from "../lib/terl.js";
+import { runQaTick } from "./qa.js";
+import type {
+  Finding,
+  IntendedAction,
+  InventoryBook,
+  LeadSample,
+  SequenceSample,
+  SlimAccount,
+  SlimCampaign,
+} from "../types.js";
 
 export interface StaffTickResult {
   findings: Finding[];
@@ -41,12 +52,35 @@ export async function runStaffTick(opts: {
   store: V2Store;
   config: AppConfig;
   now?: Date;
+  bounceEvents?: BounceEvent[];
+  sequences?: SequenceSample[];
+  leads?: LeadSample[];
+  runQa?: boolean;
 }): Promise<StaffTickResult> {
   const now = opts.now ?? new Date();
   const findings: Finding[] = [];
   const intended: IntendedAction[] = [];
   const week = onWeekPod(now);
   const clients = clientsOf(opts.book);
+  const holds = await opts.store.listHolds();
+  const heldIds = new Set(
+    holds.filter((h) => writersMustSkipHold(h, now.getTime())).map((h) => h.accountId),
+  );
+
+  const reconnect = await runReconnectTick({ accounts: opts.book.accounts, gate: opts.gate });
+  findings.push(...reconnect.findings);
+  intended.push(...reconnect.intended);
+
+  const terl = await runTerlTick({
+    book: opts.book,
+    events: opts.bounceEvents ?? [],
+    gate: opts.gate,
+    store: opts.store,
+    fleetEmails: opts.fleetEmails,
+    now,
+  });
+  findings.push(...terl.findings);
+  intended.push(...terl.intended);
 
   for (const campaign of opts.book.campaigns) {
     if (isCallerFollowUpCampaign(campaign)) continue;
@@ -111,6 +145,7 @@ export async function runStaffTick(opts: {
       }
 
       if (isCallerReserved(account.tags)) continue;
+      if (heldIds.has(account.id)) continue;
 
       if (owesWarmup(account, opts.fleetEmails, now.getTime()) && isActiveStatus(campaign.status)) {
         findings.push({
@@ -224,7 +259,23 @@ export async function runStaffTick(opts: {
       intended,
       week,
       now: now.getTime(),
+      skipIds: heldIds,
     });
+  }
+
+  if (opts.runQa !== false) {
+    const qa = await runQaTick({
+      book: opts.book,
+      role: "staff",
+      trigger: "scheduled",
+      store: opts.store,
+      gate: opts.gate,
+      sequences: opts.sequences,
+      leads: opts.leads,
+      now,
+    });
+    findings.push(...qa.findings);
+    intended.push(...qa.intended);
   }
 
   return { findings, intended };
@@ -266,6 +317,7 @@ async function fillFloor(opts: {
   intended: IntendedAction[];
   week: "A" | "B";
   now: number;
+  skipIds?: Set<number>;
 }): Promise<void> {
   const short = understaffed(opts.campaign, opts.book.accounts, {
     fleetEmails: opts.fleetEmails,
@@ -279,6 +331,7 @@ async function fillFloor(opts: {
   );
   const candidates = opts.book.accounts.filter((account) => {
     if (used.has(account.id)) return false;
+    if (opts.skipIds?.has(account.id)) return false;
     if (isCopyCanaryFleetEmail(account.email, opts.fleetEmails)) return false;
     if (isCallerReserved(account.tags)) return false;
     if (!isStaffableSender(account, { fleetEmails: opts.fleetEmails, now: opts.now })) return false;

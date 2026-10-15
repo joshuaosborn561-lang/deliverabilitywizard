@@ -3,7 +3,12 @@ import { join } from "node:path";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { dedupeById } from "./lib/inventory.js";
-import { redactSecrets, safeErrorText } from "./lib/redact.js";
+import {
+  redactSecrets,
+  safeErrorText,
+  tallySecretLeftovers,
+  type SecretLeftoverCounts,
+} from "./lib/redact.js";
 import type {
   EspInboxDay,
   Finding,
@@ -57,6 +62,7 @@ export interface V2Store {
   listTerlSubs(): Promise<TerlSubstitution[]>;
   acquireRateSlot(maxInflight: number, maxPerMin: number): Promise<boolean>;
   releaseRateSlot(): Promise<void>;
+  countUnredactedSecretRows(): Promise<SecretLeftoverCounts>;
 }
 
 export class MemoryStore implements V2Store {
@@ -240,6 +246,19 @@ export class MemoryStore implements V2Store {
   }
   async releaseRateSlot(): Promise<void> {
     this.rate.inflight = Math.max(0, this.rate.inflight - 1);
+  }
+
+  async countUnredactedSecretRows(): Promise<SecretLeftoverCounts> {
+    return tallySecretLeftovers({
+      stageHealth: [...this.stamps.values()].map((s) => s.lastError),
+      findings: this.findings.map((f) => f.detail),
+      jsonPayloads: [
+        ...this.intended.map((a) => JSON.stringify(a.payload ?? {})),
+        ...this.comparisons.map((c) => JSON.stringify(c)),
+        ...this.qaRuns.map((r) => JSON.stringify(r)),
+        ...this.runs.map((r) => r.reason),
+      ],
+    });
   }
 }
 
@@ -860,6 +879,35 @@ export class PostgresStore implements V2Store {
     await this.pool.query(
       "UPDATE smartlead_limiter SET inflight = GREATEST(inflight - 1, 0) WHERE id = 1",
     );
+  }
+
+  async countUnredactedSecretRows(): Promise<SecretLeftoverCounts> {
+    const stageHealth = await this.pool.query(
+      "SELECT last_error AS val FROM stage_health WHERE last_error IS NOT NULL",
+    );
+    const findings = await this.pool.query(
+      "SELECT detail AS val FROM findings WHERE detail IS NOT NULL",
+    );
+    const jsonCols: Array<[string, string]> = [
+      ["intended_actions", "payload"],
+      ["spend_asks", "payload"],
+      ["comparison_reports", "report"],
+      ["qa_runs", "findings"],
+      ["qa_runs", "detail"],
+      ["isolation_runs", "reason"],
+    ];
+    const jsonPayloads: unknown[] = [];
+    for (const [table, col] of jsonCols) {
+      const r = await this.pool.query(
+        `SELECT ${col}::text AS val FROM ${table} WHERE ${col} IS NOT NULL`,
+      );
+      for (const row of r.rows) jsonPayloads.push(row.val);
+    }
+    return tallySecretLeftovers({
+      stageHealth: stageHealth.rows.map((row) => row.val),
+      findings: findings.rows.map((row) => row.val),
+      jsonPayloads,
+    });
   }
 }
 

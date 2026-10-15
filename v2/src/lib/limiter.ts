@@ -1,7 +1,8 @@
 import {
-  SMARTLEAD_CONCURRENCY,
-  SMARTLEAD_MAX_PER_MIN,
-  SMARTLEAD_MIN_GAP_MS,
+  V2_SMARTLEAD_429_MAX_ATTEMPTS,
+  V2_SMARTLEAD_CONCURRENCY,
+  V2_SMARTLEAD_MAX_PER_MIN,
+  V2_SMARTLEAD_MIN_GAP_MS,
 } from "../canon/constants.js";
 import { RateLimitError } from "../clients/http.js";
 import type { V2Store } from "../store.js";
@@ -18,9 +19,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function retryAfterFrom(error: unknown): number | undefined {
+  return error instanceof RateLimitError ? error.retryAfterMs : undefined;
+}
+
 /**
- * D257 — 150/min, concurrency 2. Memory for tests / ROLE=all;
- * Postgres-backed slots share the budget across staff + isolation.
+ * D278 — v2's own Smartlead budget (20/min, concurrency 1), Postgres-shared
+ * across staff + isolation so shadow cannot starve the old wizard (D257 150).
+ * 429s release the slot, back off, and retry.
  */
 export class SharedSmartleadLimiter {
   private lastStartAt = 0;
@@ -32,34 +38,43 @@ export class SharedSmartleadLimiter {
 
   constructor(
     private readonly store?: V2Store,
-    private readonly concurrency = SMARTLEAD_CONCURRENCY,
-    private readonly maxPerMin = SMARTLEAD_MAX_PER_MIN,
-    private readonly minGapMs = SMARTLEAD_MIN_GAP_MS,
+    private readonly concurrency = V2_SMARTLEAD_CONCURRENCY,
+    private readonly maxPerMin = V2_SMARTLEAD_MAX_PER_MIN,
+    private readonly minGapMs = V2_SMARTLEAD_MIN_GAP_MS,
+    private readonly maxAttempts = V2_SMARTLEAD_429_MAX_ATTEMPTS,
   ) {}
 
   async schedule<T>(fn: () => Promise<T>): Promise<T> {
-    if (this.store) {
-      await this.acquireShared();
-    } else {
-      await this.acquireLocal();
-    }
-    try {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
       const pause = this.pausedUntil - Date.now();
       if (pause > 0) await sleep(pause);
-      const gap = this.lastStartAt + this.minGapMs - Date.now();
-      if (gap > 0) await sleep(gap);
-      this.lastStartAt = Date.now();
-      this.starts.push(this.lastStartAt);
-      const value = await fn();
-      this.streak = 0;
-      return value;
-    } catch (error) {
-      if (isRateLimitError(error)) this.noteRateLimit();
-      throw error;
-    } finally {
-      if (this.store) await this.store.releaseRateSlot();
-      else this.releaseLocal();
+      if (this.store) {
+        await this.acquireShared();
+      } else {
+        await this.acquireLocal();
+      }
+      try {
+        const gap = this.lastStartAt + this.minGapMs - Date.now();
+        if (gap > 0) await sleep(gap);
+        this.lastStartAt = Date.now();
+        this.starts.push(this.lastStartAt);
+        const value = await fn();
+        this.streak = 0;
+        return value;
+      } catch (error) {
+        lastError = error;
+        if (isRateLimitError(error) && attempt < this.maxAttempts) {
+          this.noteRateLimit(retryAfterFrom(error));
+          continue;
+        }
+        throw error;
+      } finally {
+        if (this.store) await this.store.releaseRateSlot();
+        else this.releaseLocal();
+      }
     }
+    throw lastError;
   }
 
   noteRateLimit(retryAfterMs?: number): void {
@@ -75,6 +90,7 @@ export class SharedSmartleadLimiter {
     pausedForMs: number;
     requestsInWindow: number;
     maxPerMin: number;
+    concurrency: number;
   } {
     this.pruneStarts(Date.now());
     return {
@@ -84,6 +100,7 @@ export class SharedSmartleadLimiter {
       pausedForMs: Math.max(0, this.pausedUntil - Date.now()),
       requestsInWindow: this.starts.length,
       maxPerMin: this.maxPerMin,
+      concurrency: this.concurrency,
     };
   }
 

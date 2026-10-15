@@ -7,10 +7,23 @@ export function isWriteMethod(method: string): boolean {
 }
 
 export class RateLimitError extends Error {
-  constructor(message: string) {
+  readonly retryAfterMs?: number;
+  constructor(message: string, retryAfterMs?: number) {
     super(message);
     this.name = "RateLimitError";
+    this.retryAfterMs = retryAfterMs;
   }
+}
+
+export function parseRetryAfterMs(header: string | null | undefined, now = Date.now()): number | undefined {
+  if (!header) return undefined;
+  const trimmed = header.trim();
+  if (!trimmed) return undefined;
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) return Math.max(0, Math.round(seconds * 1000));
+  const when = Date.parse(trimmed);
+  if (Number.isFinite(when)) return Math.max(0, when - now);
+  return undefined;
 }
 
 export type ScheduleFn = <T>(fn: () => Promise<T>) => Promise<T>;
@@ -35,7 +48,7 @@ export async function requestJson<T>(
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   if (res.status === 429) {
-    throw new RateLimitError(`${label} → 429`);
+    throw new RateLimitError(`${label} → 429`, parseRetryAfterMs(res.headers.get("retry-after")));
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");

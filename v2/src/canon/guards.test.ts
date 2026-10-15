@@ -15,6 +15,9 @@ import {
   SALESGLIDER_CLIENT_ID,
   SMARTLEAD_CONCURRENCY,
   SMARTLEAD_MAX_PER_MIN,
+  V2_INVENTORY_MAX_AGE_MS,
+  V2_SMARTLEAD_CONCURRENCY,
+  V2_SMARTLEAD_MAX_PER_MIN,
   TECHEVO_CLIENT_ID,
   TERL_HOLD_MS,
   WARMUP_DAYS,
@@ -109,6 +112,11 @@ describe("ported live constants", () => {
     assert.equal(SMARTLEAD_MAX_PER_MIN, 150);
     assert.equal(SMARTLEAD_CONCURRENCY, 2);
   });
+  it("D278: v2 courtesy cap is 20/min concurrency 1, inventory every 30m", () => {
+    assert.equal(V2_SMARTLEAD_MAX_PER_MIN, 20);
+    assert.equal(V2_SMARTLEAD_CONCURRENCY, 1);
+    assert.equal(V2_INVENTORY_MAX_AGE_MS, 30 * 60 * 1000);
+  });
 });
 
 describe("retired machinery stays out of v2", () => {
@@ -141,6 +149,7 @@ describe("ported canon that Josh said v2 was missing", () => {
   it("D94 reconnect and D257 limiter live in v2 src", () => {
     assert.match(srcBlob, /kind:\s*"reconnect"/, stop("D94", "reconnect intended action missing"));
     assert.match(srcBlob, /SMARTLEAD_MAX_PER_MIN/, stop("D257", "limiter constant missing from src"));
+    assert.match(srcBlob, /V2_SMARTLEAD_MAX_PER_MIN/, stop("D278", "v2 courtesy limiter missing from src"));
   });
   it("D152/D168 word hunt classifies gift-bait", () => {
     assert.match(srcBlob, /gift-or-experience-offer/, stop("D168", "line-job classifier missing"));
@@ -167,6 +176,8 @@ describe("ported canon that Josh said v2 was missing", () => {
       stop("D277", "AirPods still appears as a REPLACE WITH substitute"),
     );
     assert.match(srcBlob, /\\bTJ\\b/, stop("D277", "TJ ban missing from isBannedCopySwap"));
+    assert.match(srcBlob, /countUnredactedSecretRows/, stop("D278", "leftover-secret count missing"));
+    assert.match(srcBlob, /loadOrRefreshInventory/, stop("D278", "30-minute inventory cache missing"));
   });
 });
 

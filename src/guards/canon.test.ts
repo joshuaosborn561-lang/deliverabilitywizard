@@ -7014,6 +7014,39 @@ describe("owner intent — D277 word-hunt substitutes never AirPods/tickets/TJ/f
   });
 });
 
+describe("owner intent — D278 v2 must not starve the old wizard Smartlead key", () => {
+  it("D278: CANON names the 20/min courtesy cap; ledger records it", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D(278|279|2[89][0-9])\*\*/,
+      stop("CANON is dated D278 or later.", "CANON.md header is before D278."),
+    );
+    assert.match(
+      canon,
+      /20 requests\/min/,
+      stop("CANON names the v2 20/min courtesy cap (D278).", "CANON.md lost D278."),
+    );
+    assert.match(
+      canon,
+      /cannot starve the old wizard/,
+      stop("CANON says v2 must not starve the old wizard (D278).", "CANON.md lost the starve rule."),
+    );
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      decisions,
+      /## D278 — v2 must not starve the old wizard's Smartlead key/,
+      stop("The D278 courtesy cap is in the ledger.", "DECISIONS.md no longer has D278."),
+    );
+    assert.match(
+      decisions,
+      /^\| D278 \|/m,
+      stop("The status index lists D278 (D127).", "DECISIONS.md index has no D278 row."),
+    );
+  });
+});
+
 describe("owner intent — D172 real-client attach is not starved by GENERIC tagging", () => {
   it("D172: reserved attach budget; budget-exhausted advisory; D143 not gated on writesLeft", async () => {
     const { readFile } = await import("node:fs/promises");

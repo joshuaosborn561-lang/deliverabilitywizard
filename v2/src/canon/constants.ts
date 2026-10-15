@@ -65,6 +65,16 @@ export const TERL_HOLD_MS = 24 * 60 * 60 * 1000;
 export const SMARTLEAD_MAX_PER_MIN = 150;
 export const SMARTLEAD_CONCURRENCY = 2;
 export const SMARTLEAD_MIN_GAP_MS = 150;
+/**
+ * D278 — v2 shares the old wizard's Smartlead key. Stay well under the
+ * D257 150/min account budget so shadow pulls cannot 429 production.
+ */
+export const V2_SMARTLEAD_MAX_PER_MIN = 20;
+export const V2_SMARTLEAD_CONCURRENCY = 1;
+export const V2_SMARTLEAD_MIN_GAP_MS = 3_000;
+export const V2_SMARTLEAD_PAGE_DELAY_MS = 2_500;
+export const V2_SMARTLEAD_429_MAX_ATTEMPTS = 4;
+export const V2_INVENTORY_MAX_AGE_MS = 30 * 60 * 1000;
 export const QA_LEASE_NAME = "qa";
 export const QA_LEASE_TTL_MS = 12 * 60 * 1000;
 export const PREWARMED_DOMAINS = [

@@ -1,13 +1,19 @@
+import { V2_SMARTLEAD_PAGE_DELAY_MS } from "../canon/constants.js";
 import { getJson, type ScheduleFn } from "./http.js";
 import { dedupeById } from "../lib/inventory.js";
 import type { SlimAccount, SlimCampaign } from "../types.js";
 
 const BASE = "https://server.smartlead.ai/api/v1";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class SmartleadReader {
   constructor(
     private readonly apiKey: string,
     private readonly schedule: ScheduleFn = (fn) => fn(),
+    private readonly pageDelayMs = V2_SMARTLEAD_PAGE_DELAY_MS,
   ) {}
 
   private url(path: string, extra: Record<string, string> = {}): string {
@@ -37,6 +43,7 @@ export class SmartleadReader {
       if (!rows.length) break;
       for (const row of rows) out.push(normalizeAccount(row as Record<string, unknown>));
       if (rows.length < 100) break;
+      if (this.pageDelayMs > 0) await sleep(this.pageDelayMs);
     }
     return dedupeById(out);
   }

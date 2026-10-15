@@ -11,7 +11,8 @@ import { runIsolationTick } from "./jobs/isolation.js";
 import { runStaffTick } from "./jobs/staff.js";
 import { SharedSmartleadLimiter } from "./lib/limiter.js";
 import { inStaffingHours } from "./lib/quietHours.js";
-import { safeErrorText } from "./lib/redact.js";
+import { loadOrRefreshInventory } from "./lib/inventory.js";
+import { formatSecretScrubLog, safeErrorText } from "./lib/redact.js";
 import { WriteGate } from "./shadow.js";
 import { MemoryStore, PostgresStore, type V2Store } from "./store.js";
 
@@ -32,6 +33,7 @@ if (writesAllowed(config)) {
 }
 
 await store.migrate();
+console.log(formatSecretScrubLog(await store.countUnredactedSecretRows()));
 
 const limiter = new SharedSmartleadLimiter(store);
 const smartlead = config.smartleadApiKey
@@ -44,10 +46,8 @@ const inboxkit = config.inboxkitApiKey ? new InboxkitReader(config.inboxkitApiKe
 
 async function fetchBook() {
   if (!smartlead) throw new Error("SMARTLEAD_API_KEY missing");
-  const [campaigns, accounts] = await Promise.all([
-    smartlead.listCampaigns(),
-    smartlead.listAccounts(),
-  ]);
+  const campaigns = await smartlead.listCampaigns();
+  const accounts = await smartlead.listAccounts();
   const book = {
     fetchedAt: new Date().toISOString(),
     campaigns,
@@ -72,7 +72,11 @@ async function staffPass(): Promise<void> {
       console.log("[v2] staff skip — quiet hours (weekdays 6am–8pm CT)");
       return;
     }
-    const book = await fetchBook();
+    const loaded = await loadOrRefreshInventory(store, fetchBook);
+    const book = loaded.book;
+    if (!loaded.refreshed) {
+      console.log(`[v2] staff inventory cache hit age_ms=${loaded.ageMs}`);
+    }
     const result = await runStaffTick({
       book,
       fleetEmails: fleetFromBook(book.accounts),

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { redactSecrets, requestLabel, safeErrorText, stripUpstreamUrls } from "./redact.js";
+import {
+  formatSecretScrubLog,
+  looksUnredactedSecret,
+  redactSecrets,
+  requestLabel,
+  safeErrorText,
+  stripUpstreamUrls,
+  tallySecretLeftovers,
+} from "./redact.js";
+import { MemoryStore } from "../store.js";
 
 describe("redact secrets from errors / logs / health", () => {
   it("redacts api_key and other key/token query params", () => {
@@ -44,3 +53,47 @@ describe("redact secrets from errors / logs / health", () => {
     );
   });
 });
+
+describe("leftover secret counts after scrub (never values)", () => {
+  it("treats api_key=REDACTED as clean and api_key=LIVE as leftover", () => {
+    assert.equal(looksUnredactedSecret("GET /x?api_key=REDACTED → 404"), false);
+    assert.equal(looksUnredactedSecret("GET /x?api_key=LIVESECRET → 404"), true);
+    assert.equal(looksUnredactedSecret('{"api_key":"REDACTED"}'), false);
+    assert.equal(looksUnredactedSecret('{"api_key":"live-secret"}'), true);
+    assert.equal(looksUnredactedSecret("Authorization: Bearer REDACTED"), false);
+    assert.equal(looksUnredactedSecret("Authorization: Bearer abc.def"), true);
+  });
+
+  it("logs integers only even when rows still hold a raw key", async () => {
+    const store = new MemoryStore();
+    store.stamps.set("isolation", {
+      stage: "isolation",
+      lastError: "GET https://x.test/api?api_key=SUPERSECRET → 404",
+      consecutiveFailures: 1,
+    });
+    store.findings.push({
+      kind: "ugly_without_isolation",
+      detail: "ok",
+    });
+    await store.logIntended({
+      kind: "slack",
+      payload: { url: "https://x.test/?token=LEAKEDTOKEN" },
+      executed: false,
+      shadowed: true,
+      writeEnabled: false,
+    });
+    const counts = await store.countUnredactedSecretRows();
+    assert.equal(counts.stageHealth, 1);
+    assert.equal(counts.findings, 0);
+    assert.equal(counts.jsonPayloads, 1);
+    const line = formatSecretScrubLog(counts);
+    assert.equal(
+      line,
+      "[v2] leftover secrets after scrub: stage_health=1 findings=0 json_payloads=1 total=2",
+    );
+    assert.doesNotMatch(line, /SUPERSECRET|LEAKEDTOKEN|api_key=/);
+    const clean = formatSecretScrubLog(tallySecretLeftovers({}));
+    assert.match(clean, /total=0/);
+  });
+});
+

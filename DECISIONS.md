@@ -283,6 +283,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D275 | Live | Plain text only: no HTML bodies; open and link tracking off; check every ACTIVE and new campaign |
 | D276 | Live | No scheduled job or Slack post outside weekdays 6am–8pm America/Chicago |
 | D277 | Live | Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC |
+| D278 | Live | v2 shares the old wizard Smartlead key: 20/min concurrency 1, 429 retry, 30-minute inventory |
 
 ---
 
@@ -10058,6 +10059,38 @@ substitutes.
 free POC; `offerSubstitute` never emits them. Tests: AirPods and
 tickets openers swap without those words; jet-ski still keeps
 jet ski.
+
+---
+
+## D278 — v2 must not starve the old wizard's Smartlead key
+
+**Date.** 2026-10-15 (Josh).
+
+**Decision.** v2 shares the production Smartlead key. While it
+runs in shadow it uses its own conservative limiter: **20
+requests/min total**, concurrency **1**, Postgres-backed so staff
+and isolation share one budget. On 429, release the slot, back
+off (Retry-After when present), and retry. Staff's full email-
+account / campaign inventory pull is at most every **30 minutes**,
+with delays between pages. The D257 150/min cap stays the old
+wizard's account budget — v2 must not consume it.
+
+**Why.** Staff's email-account pull 429'd the shared key. v2 at
+150/min would starve production.
+
+**Rejected.** Giving v2 the D257 150/min budget. Fetching the
+full inventory on every 15-minute staff tick. Retrying 429s
+while still holding the slot.
+
+**Supersedes / amends.** Does not change D257 / D267 for the
+old wizard. v2's limiter is a courtesy cap underneath that
+budget.
+
+**Guards.** `V2_SMARTLEAD_MAX_PER_MIN=20`, concurrency 1,
+`V2_INVENTORY_MAX_AGE_MS` 30m, page delay, limiter retries 429
+after release. Tests: leftover-secret count log prints integers
+only; limiter backs off and retries; cache younger than 30m is
+not refreshed.
 
 ---
 

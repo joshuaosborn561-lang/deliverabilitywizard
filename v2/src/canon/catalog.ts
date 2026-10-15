@@ -238,7 +238,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 254, title: "POC fills refuse other-client off-week", job: 1, status: "implemented", note: "intended attach refuses foreign client and off-week locked POD" },
   { d: 255, title: "Insight sequences get %signature%", job: 5, status: "implemented", note: "insightSequenceIllegal" },
   { d: 256, title: "TechEvo min-floor 30; PowerGRYD not a never-generics", job: 1, status: "implemented", note: "minFloorForClient" },
-  { d: 257, title: "Smartlead limiter 150/min", job: "process", status: "implemented", note: "shared 150/min concurrency 2 across staff+isolation via Postgres slots" },
+  { d: 257, title: "Smartlead limiter 150/min", job: "process", status: "implemented", note: "account budget 150/min concurrency 2; v2 shadow uses D278 20/min so it cannot starve the old wizard" },
   { d: 258, title: "live client_id wins over stale pool", job: 2, status: "implemented", note: "foreignClient" },
   { d: 259, title: "shortfall ceils; staffable floors", job: 1, status: "implemented", note: "displayShortfall" },
   { d: 260, title: "domain-lifecycle continues past refusal", job: 7, status: "omitted", note: "NICE" },
@@ -259,6 +259,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 275, title: "plain text only; tracking off", job: 5, status: "implemented", note: "no HTML; DONT_TRACK_*; intended sequence/settings write" },
   { d: 276, title: "quiet hours weekdays 6am–8pm CT", job: "process", status: "implemented", note: "no scheduled job or Slack post outside the window" },
   { d: 277, title: "word-hunt substitutes never AirPods/tickets/TJ/free POC", job: 4, status: "implemented", note: "isBannedCopySwap; supersedes keep-the-gift-noun for those phrases" },
+  { d: 278, title: "v2 Smartlead courtesy cap 20/min", job: "process", status: "implemented", note: "Postgres-shared 20/min concurrency 1; 429 backoff+retry; staff inventory every 30m with page delays" },
 ];
 
 export function catalogByD(d: number): CanonRule | undefined {

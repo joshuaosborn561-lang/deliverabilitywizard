@@ -121,9 +121,7 @@ export class SmartDeliveryClient {
           options.onRateLimit?.(retryAfterMs);
         },
       });
-    return this.limiter
-      ? this.limiter.schedule(go, { lane: smartleadLane() })
-      : go();
+    return this.limiter ? this.limiter.schedule(go, { lane: smartleadLane() }) : go();
   }
 
   /**

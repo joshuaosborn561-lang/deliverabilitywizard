@@ -66,15 +66,14 @@ export class SmartleadClient {
 
   /** D257 — every Smartlead HTTP call (read or write) takes a limiter slot. */
   private request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    return this.limiter.schedule(
-      () =>
-        apiRequest<T>(BASE_URL, this.apiKey, path, {
-          ...options,
-          onRateLimit: (retryAfterMs) => {
-            this.limiter.noteRateLimit(retryAfterMs);
-            options.onRateLimit?.(retryAfterMs);
-          },
-        }),
+    return this.limiter.schedule(() =>
+      apiRequest<T>(BASE_URL, this.apiKey, path, {
+        ...options,
+        onRateLimit: (retryAfterMs) => {
+          this.limiter.noteRateLimit(retryAfterMs);
+          options.onRateLimit?.(retryAfterMs);
+        },
+      }),
       { lane: smartleadLane() },
     );
   }

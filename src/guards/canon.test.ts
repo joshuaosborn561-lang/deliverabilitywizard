@@ -17425,12 +17425,12 @@ describe("owner intent — D272 stringify actually yields; chunked index; audit 
     assert.match(
       walk,
       /setTimeout\(resolve, 0\)/,
-      stop("Yield returns to the timer phase (D272).", "stringifyYielding.ts still setImmediate-chains."),
+      stop("Yield returns to the timer phase (D272).", "stringifyYielding.ts never setTimeouts for the watchdog."),
     );
-    assert.doesNotMatch(
+    assert.match(
       walk,
-      /setImmediate\(resolve\)/,
-      stop("Do not starve the watchdog with setImmediate (D272).", "stringifyYielding.ts still yields via setImmediate."),
+      /lastTimerYieldAt/,
+      stop("Yields to timers on a time budget (D272).", "stringifyYielding.ts lost lastTimerYieldAt."),
     );
     assert.match(
       store,

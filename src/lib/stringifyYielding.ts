@@ -28,11 +28,22 @@ export const STRINGIFY_FLUSH_BYTES = 64_000;
 /** D272 — yield before a slice can trip the 1s watchdog log / 3s repeat. */
 export const STRINGIFY_SLICE_MS = 8;
 
+let lastTimerYieldAt = 0;
+
 export function yieldEventLoop(): Promise<void> {
   return new Promise((resolve) => {
-    // D272 — `setImmediate` chains starve timers (freeze watchdog
-    // `setInterval`). `setTimeout(0)` returns to the timer phase.
-    setTimeout(resolve, 0);
+    // D272 — an unbounded `setImmediate` chain starves the freeze
+    // watchdog's `setInterval` (prod `json.stringify:yielding` 10–18s).
+    // Return to the timer phase at least every STRINGIFY_SLICE_MS.
+    // In between, `setImmediate` stays cheap so a 416×1338 min40 fill
+    // is not 4ms × thousands of yields.
+    const now = Date.now();
+    if (now - lastTimerYieldAt >= STRINGIFY_SLICE_MS) {
+      lastTimerYieldAt = now;
+      setTimeout(resolve, 0);
+    } else {
+      setImmediate(resolve);
+    }
   });
 }
 

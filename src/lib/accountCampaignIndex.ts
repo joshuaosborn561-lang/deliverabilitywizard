@@ -13,6 +13,7 @@ export async function indexAccountsByCampaign(
   accounts: SmartleadAccountWithCampaigns[],
 ): Promise<Map<number, SmartleadAccountWithCampaigns[]>> {
   return runWithStallScopeAsync("scan:indexAccountsByCampaign", async () => {
+    await yieldEventLoop();
     const byCampaign = new Map<number, SmartleadAccountWithCampaigns[]>();
     let n = 0;
     for (const account of accounts) {
@@ -32,6 +33,7 @@ export async function indexAccountsByEmail(
   accounts: SmartleadAccountWithCampaigns[],
 ): Promise<Map<string, SmartleadAccountWithCampaigns>> {
   return runWithStallScopeAsync("scan:indexAccountsByEmail", async () => {
+    await yieldEventLoop();
     const byEmail = new Map<string, SmartleadAccountWithCampaigns>();
     let n = 0;
     for (const account of accounts) {

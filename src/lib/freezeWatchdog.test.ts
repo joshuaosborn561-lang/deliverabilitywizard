@@ -26,7 +26,7 @@ describe("D247 freeze watchdog", () => {
       now: 10_000,
       lastBeatAt: 0,
       intervalMs: 5_000,
-      locks: [{ name: "health", stage: "inventory", since: 1, maxMs: 1 }],
+      locks: [{ name: "health", stage: "inventory", since: 8_000, maxMs: 45 * 60 * 1000 }],
       attribution: "stage=health:inventory op=json.parseFile async=PROMISE stack=at parseFile",
     });
     assert.equal(logTick.eventLoopDelayMs, 5_000);

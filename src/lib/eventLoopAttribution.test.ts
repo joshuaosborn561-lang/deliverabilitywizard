@@ -30,15 +30,19 @@ describe("D271 event-loop stall attribution", () => {
   it("runWithStallScope stamps the op the watchdog will read after a stall", async () => {
     const attr = startEventLoopAttribution();
     try {
-      await runWithStallScopeAsync("scan:indexAccountsByCampaign", async () => {
-        runWithStallScope("json.stringify:state", () => undefined);
-        return undefined;
-      });
-      const text = formatStallAttribution([
-        { name: "health", stage: "client-rest", since: 10, maxMs: 1 },
+      const during = runWithStallScope("json.stringify:state", () =>
+        formatStallAttribution([
+          { name: "health", stage: "client-rest", since: 10, maxMs: 1 },
+        ]),
+      );
+      assert.match(during, /stage=health:client-rest/);
+      assert.match(during, /op=json.stringify:state/);
+      await runWithStallScopeAsync("json.parseFile", async () => undefined);
+      const after = formatStallAttribution([
+        { name: "health", stage: "inventory", since: 10, maxMs: 1 },
       ]);
-      assert.match(text, /stage=health:client-rest/);
-      assert.match(text, /op=json.stringify:state/);
+      assert.match(after, /stage=health:inventory/);
+      assert.match(after, /op=json.parseFile/);
     } finally {
       attr.stop();
     }

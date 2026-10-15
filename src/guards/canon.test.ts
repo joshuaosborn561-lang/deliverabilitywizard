@@ -14755,7 +14755,7 @@ describe("owner intent — D247 stuck-pass hardening", () => {
     );
     assert.match(
       store,
-      /stringifyOffThreadToFile\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("state.save writes compact JSON off-thread (D247/D249/D257).", "store.ts lost off-thread stringify."),
     );
     assert.match(
@@ -14925,7 +14925,7 @@ describe("owner intent — D249 persist stamps, unblock the loop, catch up", () 
     );
     assert.match(
       store,
-      /stringifyOffThreadToFile\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("full dump is off-thread compact JSON (D249/D257).", "store.ts still one-shot stringifies state."),
     );
     assert.match(
@@ -15034,7 +15034,7 @@ describe("owner intent — D250 min40 must not pin the event loop", () => {
     );
     assert.match(
       store,
-      /stringifyOffThreadToFile\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("D249/D257 off-thread stringify stays (D250).", "store.ts lost stringifyOffThread."),
     );
     assert.match(
@@ -15719,7 +15719,7 @@ describe("owner intent — D257 stop event-loop freezes", () => {
 
     assert.match(
       store,
-      /stringifyOffThreadToFile\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("full dump stringifies off-thread (D257).", "store.ts still stringifies state on the main thread."),
     );
     assert.match(
@@ -17321,7 +17321,7 @@ describe("owner intent — D271 stall attribution and leftover hotspots", () => 
     );
     assert.match(
       store,
-      /stringifyOffThreadToFile\(this\.state\)/,
+      /stringifyOffThreadToFile\(this\.state/,
       stop("State dump writes to disk without joining (D271).", "store.ts lost stringifyOffThreadToFile."),
     );
     assert.match(

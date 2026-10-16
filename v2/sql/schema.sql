@@ -226,7 +226,8 @@ CREATE TABLE IF NOT EXISTS smartlead_limiter (
   window_start TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   tokens_used INTEGER NOT NULL DEFAULT 0,
   inflight INTEGER NOT NULL DEFAULT 0,
-  paused_until TIMESTAMPTZ
+  paused_until TIMESTAMPTZ,
+  slot_held_since TIMESTAMPTZ
 );
 INSERT INTO smartlead_limiter (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 

@@ -79,4 +79,23 @@ describe("D278 v2 courtesy Smartlead limiter", () => {
     );
     assert.equal(calls, 2);
   });
+
+  it("aborts a waiter instead of looping forever", async () => {
+    const limiter = new SharedSmartleadLimiter(undefined, 1, 20, 0, 1);
+    const ac = new AbortController();
+    const started = limiter.schedule(() => new Promise((r) => setTimeout(r, 500)));
+    await new Promise((r) => setTimeout(r, 10));
+    const waiting = limiter.schedule(async () => "nope", ac.signal);
+    ac.abort();
+    await assert.rejects(() => waiting);
+    await started;
+  });
+
+  it("expires a stuck rate slot by TTL so the next acquire is not deadlocked", async () => {
+    const store = new MemoryStore();
+    assert.equal(await store.acquireRateSlot(1, 20, 30), true);
+    assert.equal(await store.acquireRateSlot(1, 20, 30), false);
+    await new Promise((r) => setTimeout(r, 40));
+    assert.equal(await store.acquireRateSlot(1, 20, 30), true);
+  });
 });

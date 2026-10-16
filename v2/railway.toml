@@ -2,8 +2,8 @@
 # the production wizard at this file. One image, three services via ROLE.
 #
 #   ROLE=api         HTTP /health /compare (always up)
-#   ROLE=staff       jobs 1,2,3,5,6
-#   ROLE=isolation   job 4, own 15m tick, 30m deadline
+#   ROLE=staff       jobs 1,2,3,5,6 — /health only
+#   ROLE=isolation   job 4, own 15m tick, 30m deadline — /health only
 #
 # WRITE_ENABLED stays unset / false. SHADOW stays true.
 

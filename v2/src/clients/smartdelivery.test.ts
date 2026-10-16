@@ -59,6 +59,24 @@ describe("SmartDelivery placement-test endpoints", () => {
     );
   });
 
+  it("caps listTests pages so isolation cannot paginate 50×100 through the limiter", async () => {
+    let pages = 0;
+    globalThis.fetch = (async () => {
+      pages += 1;
+      const rows = Array.from({ length: 100 }, (_, i) => ({
+        spam_test_id: `t-${pages}-${i}`,
+        test_name: `Auto: x ${pages}`,
+      }));
+      return new Response(JSON.stringify({ data: rows }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const tests = await new SmartDeliveryReader("LIVEKEY").listTests({ maxPages: 3 });
+    assert.equal(pages, 3);
+    assert.equal(tests.length, 300);
+  });
+
   it("parses sender-account-wise seed folders into inbox rows", () => {
     const senders = sendersFromAccountWise({
       data: [

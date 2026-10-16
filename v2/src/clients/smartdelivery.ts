@@ -1,3 +1,8 @@
+import {
+  V2_ISOLATION_PROVIDER_HYDRATE_CAP,
+  V2_ISOLATION_SENDER_HYDRATE_CAP,
+  V2_ISOLATION_TEST_PAGE_CAP,
+} from "../canon/constants.js";
 import { getJson, postJson, type ScheduleFn } from "./http.js";
 import type { ProviderSplit, SpamTest } from "../types.js";
 
@@ -5,8 +10,8 @@ import type { ProviderSplit, SpamTest } from "../types.js";
 export const SMARTDELIVERY_BASE = "https://smartdelivery.smartlead.ai/api/v1/";
 export const LIST_TESTS_PATH = "spam-test/report";
 export const DEFAULT_TEST_LIST_LIMIT = 100;
-export const SENDER_HYDRATE_CAP = 80;
-export const PROVIDERWISE_HYDRATE_CAP = 80;
+export const SENDER_HYDRATE_CAP = V2_ISOLATION_SENDER_HYDRATE_CAP;
+export const PROVIDERWISE_HYDRATE_CAP = V2_ISOLATION_PROVIDER_HYDRATE_CAP;
 
 export class SmartDeliveryReader {
   constructor(
@@ -25,33 +30,56 @@ export class SmartDeliveryReader {
    * POST /api/v1/spam-test/report (SmartDelivery list). The unversioned
    * collection path 404s.
    */
-  async listTests(): Promise<SpamTest[]> {
+  async listTests(
+    opts: { signal?: AbortSignal; maxPages?: number; onProgress?: (info: { step: string; page: number }) => void } = {},
+  ): Promise<SpamTest[]> {
     const all: SpamTest[] = [];
     const limit = DEFAULT_TEST_LIST_LIMIT;
-    for (let offset = 0, page = 0; page < 50; page += 1, offset += limit) {
-      const raw = await this.schedule(() =>
-        postJson<unknown>(this.url(LIST_TESTS_PATH), { limit, offset }),
-      );
-      const rows = normalizeList(raw);
-      all.push(...rows.map(normalizeTest));
-      if (rows.length < limit) break;
+    const maxPages = opts.maxPages ?? V2_ISOLATION_TEST_PAGE_CAP;
+    try {
+      for (let offset = 0, page = 0; page < maxPages; page += 1, offset += limit) {
+        opts.onProgress?.({ step: "list_tests", page: page + 1 });
+        const raw = await this.schedule(
+          () => postJson<unknown>(this.url(LIST_TESTS_PATH), { limit, offset }, {}, opts.signal),
+          opts.signal,
+        );
+        const rows = normalizeList(raw);
+        all.push(...rows.map(normalizeTest));
+        if (rows.length < limit) break;
+      }
+    } catch (error) {
+      if (all.length && opts.signal?.aborted) {
+        opts.onProgress?.({ step: "list_tests", page: -1 });
+        return all;
+      }
+      throw error;
     }
     return all;
   }
 
-  async getSenderAccountWise(testId: string): Promise<unknown> {
-    return this.schedule(() =>
-      getJson<unknown>(this.url(`spam-test/report/${encodeURIComponent(testId)}/sender-account-wise`)),
+  async getSenderAccountWise(testId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.schedule(
+      () =>
+        getJson<unknown>(
+          this.url(`spam-test/report/${encodeURIComponent(testId)}/sender-account-wise`),
+          {},
+          signal,
+        ),
+      signal,
     );
   }
 
   /** Same-ESP inbox splits. POST empty body — a read, not a write. */
-  async getProviderwiseReport(testId: string): Promise<unknown> {
-    return this.schedule(() =>
-      postJson<unknown>(
-        this.url(`spam-test/report/${encodeURIComponent(testId)}/providerwise`),
-        {},
-      ),
+  async getProviderwiseReport(testId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.schedule(
+      () =>
+        postJson<unknown>(
+          this.url(`spam-test/report/${encodeURIComponent(testId)}/providerwise`),
+          {},
+          {},
+          signal,
+        ),
+      signal,
     );
   }
 
@@ -59,7 +87,12 @@ export class SmartDeliveryReader {
    * Report list omits per-seed inbox rows. Hydrate sender-account-wise
    * for tests that still have no senders (cap so we cannot 429 the board).
    */
-  async hydrateSenders(tests: SpamTest[], cap = SENDER_HYDRATE_CAP): Promise<SpamTest[]> {
+  async hydrateSenders(
+    tests: SpamTest[],
+    cap = SENDER_HYDRATE_CAP,
+    signal?: AbortSignal,
+    onProgress?: (info: { step: string; n: number; id: string }) => void,
+  ): Promise<SpamTest[]> {
     const out: SpamTest[] = [];
     let used = 0;
     for (const test of tests) {
@@ -68,11 +101,13 @@ export class SmartDeliveryReader {
         continue;
       }
       used += 1;
+      onProgress?.({ step: "hydrate_senders", n: used, id: test.id });
       try {
-        const raw = await this.getSenderAccountWise(test.id);
+        const raw = await this.getSenderAccountWise(test.id, signal);
         const senders = sendersFromAccountWise(raw);
         out.push(senders.length ? { ...test, senders } : test);
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
         out.push(test);
       }
     }
@@ -82,6 +117,8 @@ export class SmartDeliveryReader {
   async hydrateProviderSplits(
     tests: SpamTest[],
     cap = PROVIDERWISE_HYDRATE_CAP,
+    signal?: AbortSignal,
+    onProgress?: (info: { step: string; n: number; id: string }) => void,
   ): Promise<SpamTest[]> {
     const out: SpamTest[] = [];
     let used = 0;
@@ -96,11 +133,13 @@ export class SmartDeliveryReader {
         continue;
       }
       used += 1;
+      onProgress?.({ step: "hydrate_providers", n: used, id: test.id });
       try {
-        const raw = await this.getProviderwiseReport(test.id);
+        const raw = await this.getProviderwiseReport(test.id, signal);
         const providers = providerSplitsFromReport(raw);
         out.push(providers.length ? { ...test, providers } : test);
-      } catch {
+      } catch (error) {
+        if (signal?.aborted) throw error;
         out.push(test);
       }
     }

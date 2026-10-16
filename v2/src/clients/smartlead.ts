@@ -1,13 +1,19 @@
-import { V2_SMARTLEAD_PAGE_DELAY_MS } from "../canon/constants.js";
+import { V2_SMARTLEAD_PAGE_DELAY_MS, V2_STAFF_ACCOUNT_PAGE_CAP } from "../canon/constants.js";
 import { getJson, type ScheduleFn } from "./http.js";
+import { abortableSleep } from "../lib/tickClock.js";
 import { dedupeById } from "../lib/inventory.js";
 import type { SequenceSample, SlimAccount, SlimCampaign } from "../types.js";
 
 const BASE = "https://server.smartlead.ai/api/v1";
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+export type ReaderProgress = (info: {
+  step: string;
+  page?: number;
+  offset?: number;
+  id?: number;
+  n?: number;
+  truncated?: boolean;
+}) => void;
 
 export class SmartleadReader {
   constructor(
@@ -23,40 +29,69 @@ export class SmartleadReader {
     return u.toString();
   }
 
-  async listCampaigns(): Promise<SlimCampaign[]> {
-    const raw = await this.schedule(() => getJson<unknown>(this.url("campaigns")));
+  async listCampaigns(signal?: AbortSignal): Promise<SlimCampaign[]> {
+    const raw = await this.schedule(
+      () => getJson<unknown>(this.url("campaigns"), {}, signal),
+      signal,
+    );
     const rows = Array.isArray(raw) ? raw : [];
     return dedupeById(rows.map((row) => normalizeCampaign(row as Record<string, unknown>)));
   }
 
-  async listAccounts(): Promise<SlimAccount[]> {
+  async listAccounts(
+    opts: { signal?: AbortSignal; maxPages?: number; onProgress?: ReaderProgress } = {},
+  ): Promise<SlimAccount[]> {
+    const maxPages = opts.maxPages ?? V2_STAFF_ACCOUNT_PAGE_CAP;
     const out: SlimAccount[] = [];
-    for (let offset = 0; offset < 20000; offset += 100) {
-      const raw = await this.schedule(() =>
-        getJson<unknown>(
-          this.url("email-accounts", {
-            offset: String(offset),
-            limit: "100",
-            fetch_campaigns: "true",
-          }),
-        ),
-      );
-      const rows = Array.isArray(raw)
-        ? raw
-        : Array.isArray((raw as { data?: unknown }).data)
-          ? ((raw as { data: unknown[] }).data)
-          : [];
-      if (!rows.length) break;
-      for (const row of rows) out.push(normalizeAccount(row as Record<string, unknown>));
-      if (rows.length < 100) break;
-      if (this.pageDelayMs > 0) await sleep(this.pageDelayMs);
+    try {
+      for (let page = 0, offset = 0; page < maxPages; page += 1, offset += 100) {
+        opts.onProgress?.({ step: "list_accounts", page: page + 1, offset });
+        const raw = await this.schedule(
+          () =>
+            getJson<unknown>(
+              this.url("email-accounts", {
+                offset: String(offset),
+                limit: "100",
+                fetch_campaigns: "true",
+              }),
+              {},
+              opts.signal,
+            ),
+          opts.signal,
+        );
+        const rows = Array.isArray(raw)
+          ? raw
+          : Array.isArray((raw as { data?: unknown }).data)
+            ? ((raw as { data: unknown[] }).data)
+            : [];
+        if (!rows.length) break;
+        for (const row of rows) out.push(normalizeAccount(row as Record<string, unknown>));
+        if (rows.length < 100) break;
+        if (page + 1 >= maxPages) {
+          opts.onProgress?.({
+            step: "list_accounts",
+            page: page + 1,
+            offset,
+            truncated: true,
+          });
+          break;
+        }
+        if (this.pageDelayMs > 0) await abortableSleep(this.pageDelayMs, opts.signal);
+      }
+    } catch (error) {
+      if (out.length && opts.signal?.aborted) {
+        opts.onProgress?.({ step: "list_accounts", truncated: true, n: out.length });
+        return dedupeById(out);
+      }
+      throw error;
     }
     return dedupeById(out);
   }
 
-  async listCampaignAccounts(campaignId: number): Promise<SlimAccount[]> {
-    const raw = await this.schedule(() =>
-      getJson<unknown>(this.url(`campaigns/${campaignId}/email-accounts`)),
+  async listCampaignAccounts(campaignId: number, signal?: AbortSignal): Promise<SlimAccount[]> {
+    const raw = await this.schedule(
+      () => getJson<unknown>(this.url(`campaigns/${campaignId}/email-accounts`), {}, signal),
+      signal,
     );
     const rows = Array.isArray(raw)
       ? raw
@@ -66,9 +101,10 @@ export class SmartleadReader {
     return dedupeById(rows.map((row) => normalizeAccount(row as Record<string, unknown>)));
   }
 
-  async listSequences(campaignId: number): Promise<SequenceSample[]> {
-    const raw = await this.schedule(() =>
-      getJson<unknown>(this.url(`campaigns/${campaignId}/sequences`)),
+  async listSequences(campaignId: number, signal?: AbortSignal): Promise<SequenceSample[]> {
+    const raw = await this.schedule(
+      () => getJson<unknown>(this.url(`campaigns/${campaignId}/sequences`), {}, signal),
+      signal,
     );
     const rows = Array.isArray(raw)
       ? raw

@@ -1,3 +1,5 @@
+import { V2_FETCH_TIMEOUT_MS } from "../canon/constants.js";
+import { combineSignals } from "../lib/tickClock.js";
 import { redactSecrets, requestLabel } from "../lib/redact.js";
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -26,7 +28,19 @@ export function parseRetryAfterMs(header: string | null | undefined, now = Date.
   return undefined;
 }
 
-export type ScheduleFn = <T>(fn: () => Promise<T>) => Promise<T>;
+export type ScheduleFn = <T>(fn: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
+
+/** Ref'd timer — AbortSignal.timeout is unref'd and will not abort a hung fetch in tests. */
+function fetchTimeoutSignal(ms: number): { signal: AbortSignal; cancel: () => void } {
+  const ac = new AbortController();
+  const timer = setTimeout(() => {
+    ac.abort(Object.assign(new Error(`fetch timeout ${ms}ms`), { name: "TimeoutError" }));
+  }, ms);
+  return {
+    signal: ac.signal,
+    cancel: () => clearTimeout(timer),
+  };
+}
 
 export async function requestJson<T>(
   url: string,
@@ -34,37 +48,51 @@ export async function requestJson<T>(
     method?: string;
     headers?: Record<string, string>;
     body?: unknown;
+    signal?: AbortSignal;
+    timeoutMs?: number;
   } = {},
 ): Promise<T> {
   const method = (opts.method ?? "GET").toUpperCase();
   const label = requestLabel(method, url);
-  const res = await fetch(url, {
-    method,
-    headers: {
-      Accept: "application/json",
-      ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...opts.headers,
-    },
-    body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-  });
-  if (res.status === 429) {
-    throw new RateLimitError(`${label} → 429`, parseRetryAfterMs(res.headers.get("retry-after")));
+  const timeout = fetchTimeoutSignal(opts.timeoutMs ?? V2_FETCH_TIMEOUT_MS);
+  const signal = combineSignals(opts.signal, timeout.signal);
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        Accept: "application/json",
+        ...(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...opts.headers,
+      },
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      signal,
+    });
+    if (res.status === 429) {
+      throw new RateLimitError(`${label} → 429`, parseRetryAfterMs(res.headers.get("retry-after")));
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`${label} → ${res.status} ${redactSecrets(body.slice(0, 200))}`);
+    }
+    return (await res.json()) as T;
+  } finally {
+    timeout.cancel();
   }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`${label} → ${res.status} ${redactSecrets(body.slice(0, 200))}`);
-  }
-  return (await res.json()) as T;
 }
 
-export function getJson<T>(url: string, headers: Record<string, string> = {}): Promise<T> {
-  return requestJson<T>(url, { method: "GET", headers });
+export function getJson<T>(
+  url: string,
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  return requestJson<T>(url, { method: "GET", headers, signal });
 }
 
 export function postJson<T>(
   url: string,
   body: unknown,
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
-  return requestJson<T>(url, { method: "POST", headers, body });
+  return requestJson<T>(url, { method: "POST", headers, body, signal });
 }

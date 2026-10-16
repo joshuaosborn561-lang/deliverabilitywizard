@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { getJson, parseRetryAfterMs, RateLimitError } from "./http.js";
+import { getJson, parseRetryAfterMs, RateLimitError, requestJson } from "./http.js";
 
 const originalFetch = globalThis.fetch;
 
@@ -34,5 +34,19 @@ describe("Smartlead 429 retry-after", () => {
         return true;
       },
     );
+  });
+
+  it("aborts a hung fetch at the per-request timeout", async () => {
+    globalThis.fetch = ((url: string | URL, init?: RequestInit) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
+        });
+      })) as typeof fetch;
+    const started = Date.now();
+    await assert.rejects(
+      () => requestJson("https://server.smartlead.ai/api/v1/campaigns", { timeoutMs: 25 }),
+    );
+    assert.ok(Date.now() - started < 500);
   });
 });

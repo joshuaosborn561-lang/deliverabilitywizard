@@ -1,10 +1,12 @@
 import {
+  V2_RATE_SLOT_TTL_MS,
   V2_SMARTLEAD_429_MAX_ATTEMPTS,
   V2_SMARTLEAD_CONCURRENCY,
   V2_SMARTLEAD_MAX_PER_MIN,
   V2_SMARTLEAD_MIN_GAP_MS,
 } from "../canon/constants.js";
 import { RateLimitError } from "../clients/http.js";
+import { abortableSleep, throwIfAborted } from "./tickClock.js";
 import type { V2Store } from "../store.js";
 
 export { RateLimitError };
@@ -15,10 +17,6 @@ export function isRateLimitError(error: unknown): boolean {
   return /\b429\b|rate.?limit/i.test(text);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function retryAfterFrom(error: unknown): number | undefined {
   return error instanceof RateLimitError ? error.retryAfterMs : undefined;
 }
@@ -27,6 +25,8 @@ function retryAfterFrom(error: unknown): number | undefined {
  * D278 — v2's own Smartlead budget (20/min, concurrency 1), Postgres-shared
  * across staff + isolation so shadow cannot starve the old wizard (D257 150).
  * 429s release the slot, back off, and retry.
+ * D281 — acquire waits are abortable; a held slot expires by TTL so a hung
+ * fetch cannot pin inflight=1 forever.
  */
 export class SharedSmartleadLimiter {
   private lastStartAt = 0;
@@ -42,21 +42,23 @@ export class SharedSmartleadLimiter {
     private readonly maxPerMin = V2_SMARTLEAD_MAX_PER_MIN,
     private readonly minGapMs = V2_SMARTLEAD_MIN_GAP_MS,
     private readonly maxAttempts = V2_SMARTLEAD_429_MAX_ATTEMPTS,
+    private readonly slotTtlMs = V2_RATE_SLOT_TTL_MS,
   ) {}
 
-  async schedule<T>(fn: () => Promise<T>): Promise<T> {
+  async schedule<T>(fn: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+      throwIfAborted(signal, "limiter");
       const pause = this.pausedUntil - Date.now();
-      if (pause > 0) await sleep(pause);
+      if (pause > 0) await abortableSleep(pause, signal);
       if (this.store) {
-        await this.acquireShared();
+        await this.acquireShared(signal);
       } else {
-        await this.acquireLocal();
+        await this.acquireLocal(signal);
       }
       try {
         const gap = this.lastStartAt + this.minGapMs - Date.now();
-        if (gap > 0) await sleep(gap);
+        if (gap > 0) await abortableSleep(gap, signal);
         this.lastStartAt = Date.now();
         this.starts.push(this.lastStartAt);
         const value = await fn();
@@ -109,27 +111,49 @@ export class SharedSmartleadLimiter {
     this.starts = this.starts.filter((at) => at >= cutoff);
   }
 
-  private async acquireShared(): Promise<void> {
+  private async acquireShared(signal?: AbortSignal): Promise<void> {
     for (;;) {
-      const ok = await this.store!.acquireRateSlot(this.concurrency, this.maxPerMin);
+      throwIfAborted(signal, "limiter");
+      const ok = await this.store!.acquireRateSlot(
+        this.concurrency,
+        this.maxPerMin,
+        this.slotTtlMs,
+      );
       if (ok) return;
-      await sleep(40);
+      await abortableSleep(40, signal);
     }
   }
 
-  private async acquireLocal(): Promise<void> {
+  private async acquireLocal(signal?: AbortSignal): Promise<void> {
     for (;;) {
+      throwIfAborted(signal, "limiter");
       this.pruneStarts(Date.now());
       if (this.starts.length >= this.maxPerMin) {
         const wait = this.starts[0]! + 60_000 - Date.now() + 5;
-        if (wait > 0) await sleep(wait);
+        if (wait > 0) await abortableSleep(wait, signal);
         continue;
       }
       if (this.inflight < this.concurrency) {
         this.inflight += 1;
         return;
       }
-      await new Promise<void>((resolve) => this.waiters.push(resolve));
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          const idx = this.waiters.indexOf(resolve);
+          if (idx >= 0) this.waiters.splice(idx, 1);
+          reject(
+            signal?.reason instanceof Error
+              ? signal.reason
+              : new Error("limiter aborted"),
+          );
+        };
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
+        this.waiters.push(resolve);
+        signal?.addEventListener("abort", onAbort, { once: true });
+      });
     }
   }
 

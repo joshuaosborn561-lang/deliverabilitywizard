@@ -285,7 +285,8 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D277 | Live | Word-hunt substitutes never suggest AirPods, tickets, TJ, or free POC |
 | D278 | Live | v2 shares the old wizard Smartlead key: 20/min concurrency 1, 429 retry, 30-minute inventory |
 | D279 | Live | v2 shadow scoring matches old-wizard findings; attaches are floor deficit + pending dedupe; stampOk clears last_error/overdue; one ok log line per stage |
-| D280 | Live | v2 staff/isolation boot-tick + skip-reason logs; all roles bind /health; idempotent placement_scores unique; unwarmed copy-canary counts; per-campaign settings; purge pre-D279 pending attaches |
+| D280 | Live — tick TTL / health-only worker amended by D281 | v2 staff/isolation boot-tick + skip-reason logs; all roles bind /health; idempotent placement_scores unique; unwarmed copy-canary counts; per-campaign settings; purge pre-D279 pending attaches |
+| D281 | Live | v2 tick hard timeout + AbortController; in-flight lease and rate-slot TTL; isolation off the Smartlead limiter; workers serve /health only; per-tick request budget + progress logs |
 
 ---
 
@@ -10192,6 +10193,53 @@ copy-canary; `COMPARE_ALWAYS_KINDS`; scheduler_cron_value parser;
 unknown settings not flagged. Tests cover the five 0% copy-canary
 ids, live dump ESP/plain/window counts, skip reasons, attach
 purge+deficit.
+
+---
+
+## D281 — v2 ticks must finish: timeout, abort, TTL lease, health-only workers
+
+**Date.** 2026-10-16 (Josh).
+
+**Decision.** D280 verification failed: staff booted 6:34pm CT and
+isolation 6:31pm CT, started their boot tick, and never finished.
+Every later tick skipped `in_flight`, `lastOkAt` never moved, nothing
+scored, findings stayed the old 81s. v2 must:
+
+1. Hard time limit per tick — **staff 10 minutes**, **isolation 8
+   minutes** — with `AbortController` on every fetch. On timeout,
+   release the in-flight lease and log `reason=timeout hung_in=<step>`.
+2. The in-flight lease expires by TTL so a crashed or hung process
+   cannot block forever. Clear stale leases at boot. A held Smartlead
+   rate slot also expires by TTL (`inflight=1` must not deadlock
+   `acquireRateSlot` across a window rollover).
+3. Log progress per sub-step. Isolation SmartDelivery reads do **not**
+   consume the D278 Smartlead 20/min limiter (that stack-up is why a
+   50-page test list + 80+80 hydrates could never finish). Staff
+   budgets account pages, membership hydrates, and sequences per tick
+   so 20/min × 10 minutes cannot overrun the clock.
+4. Workers serve `/health` only. They must not start the full api
+   listener (`/compare`, `/intended`, …).
+
+**Why.** `inFlight` was an in-process boolean with no timeout. `fetch`
+had no abort. Isolation listed up to 50 test pages and hydrated 160
+tests **through the same 20/min concurrency-1 Smartlead limiter** as
+staff inventory, so one hung or slow page pinned both roles. A stuck
+`smartlead_limiter.inflight` never reset on window rollover because
+`WHERE inflight < 1` ran before the SET.
+
+**Rejected.** Raising v2's Smartlead budget (D278 courtesy cap stays).
+Leaving workers on the full api. Waiting forever for pagination.
+
+**Supersedes / amends.** D280 restart contract stays; this is the
+tick-budget + abort + TTL-lease + health-only-worker contract on top.
+D278 limiter/cache stays for Smartlead reads; isolation SmartDelivery
+is off that limiter.
+
+**Guards.** `startTick` / `TickTimeoutError`; `acquireTickLease` +
+`expireStaleTickLeases`; `acquireRateSlot` TTL; `createHealthApp`;
+account/test page caps; isolation does not call `loadOrRefreshInventory`.
+Tests cover timeout abort, stale lease, stuck rate slot, health-only
+404 on `/compare`, page caps.
 
 ---
 

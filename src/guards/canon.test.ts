@@ -7053,8 +7053,8 @@ describe("owner intent — D280 v2 workers tick after restart and score live fie
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D280\*\*/,
-      stop("CANON is dated D280.", "CANON.md header is not D280."),
+      /Canon as of \*\*D(280|28[1-9])\*\*/,
+      stop("CANON is dated D280 or later.", "CANON.md header is not D280+."),
     );
     assert.match(
       canon,
@@ -7081,6 +7081,44 @@ describe("owner intent — D280 v2 workers tick after restart and score live fie
       decisions,
       /^\| D280 \|/m,
       stop("The status index lists D280 (D127).", "DECISIONS.md index has no D280 row."),
+    );
+  });
+});
+
+describe("owner intent — D281 v2 ticks finish: timeout, abort, TTL lease, health-only workers", () => {
+  it("D281: CANON names tick timeout, abort, lease TTL, health-only workers", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    assert.match(
+      canon,
+      /Canon as of \*\*D281\*\*/,
+      stop("CANON is dated D281.", "CANON.md header is not D281."),
+    );
+    assert.match(
+      canon,
+      /hard timeout \(staff 10m, isolation 8m\)/,
+      stop("CANON names the tick timeouts (D281).", "CANON.md lost the tick timeouts."),
+    );
+    assert.match(
+      canon,
+      /in-flight lease and Smartlead rate slot expire by TTL/,
+      stop("CANON names lease TTL (D281).", "CANON.md lost lease TTL."),
+    );
+    assert.match(
+      canon,
+      /serve `\/health` only/,
+      stop("CANON names health-only workers (D281).", "CANON.md lost health-only workers."),
+    );
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    assert.match(
+      decisions,
+      /## D281 — v2 ticks must finish: timeout, abort, TTL lease, health-only workers/,
+      stop("The D281 tick-budget contract is in the ledger.", "DECISIONS.md no longer has D281."),
+    );
+    assert.match(
+      decisions,
+      /^\| D281 \|/m,
+      stop("The status index lists D281 (D127).", "DECISIONS.md index has no D281 row."),
     );
   });
 });

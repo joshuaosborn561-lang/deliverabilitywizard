@@ -9,6 +9,7 @@ describe("D280 tick skip reasons", () => {
     assert.equal(tickSkipReason({ missingKey: "smartdelivery" }), "missing_smartdelivery_key");
     assert.equal(tickSkipReason({ missingKey: "smartlead" }), "missing_smartlead_key");
     assert.equal(tickSkipReason({ missingKey: "inboxkit" }), "missing_inboxkit_key");
+    assert.equal(tickSkipReason({ inventoryUnready: true }), "inventory_unready");
     assert.equal(tickSkipReason({}), null);
     assert.equal(
       formatSkipLog("staff", "quiet_hours"),

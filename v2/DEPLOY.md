@@ -33,9 +33,12 @@ Create **three** Railway services from this GitHub repo. For each:
 | `wizard-v2-staff` | `staff` | yes — `/health` 200 even while migrate is starting |
 | `wizard-v2-isolation` | `isolation` | yes |
 
-Staff and isolation bind HTTP so a Railway healthcheck cannot restart
-them before the first tick. Boot runs one tick immediately; cron `*/15`
-plus a 15-minute `setInterval` backup. Every skip logs `reason=`.
+Staff and isolation bind **`/health` only** (not `/compare` / `/intended`)
+so a Railway healthcheck cannot restart them before the first tick. Boot
+runs one tick immediately with a hard timeout (staff 10m, isolation 8m)
+and AbortController on every fetch; cron `*/15` plus a 15-minute
+`setInterval` backup. Every skip logs `reason=` including `timeout`
+with `hung_in=`. Stale in-flight leases clear at boot.
 
 ## 3. Shared variables (all three)
 

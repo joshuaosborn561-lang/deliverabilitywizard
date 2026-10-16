@@ -10,75 +10,98 @@ import { isActiveStatus } from "./lib/staffable.js";
 import type { V2Store } from "./store.js";
 import type { OldWizardHealth } from "./types.js";
 
-export function createApi(opts: {
+type ApiOpts = {
   config: AppConfig;
   store: V2Store;
   boot?: { starting: boolean };
-}): Express {
+};
+
+async function handleHealth(opts: ApiOpts, res: Response): Promise<void> {
+  if (opts.boot?.starting) {
+    res.json({
+      ok: true,
+      role: opts.config.role,
+      starting: true,
+      shadow: opts.config.shadow,
+      writeEnabled: opts.config.writeEnabled,
+    });
+    return;
+  }
+  try {
+    const findings = await opts.store.listFindings();
+    const stamps = await opts.store.listStamps();
+    const scores = await opts.store.listScores();
+    const suspects = await opts.store.listSuspects();
+    const book = await opts.store.loadInventory();
+    const runs = new Map<number, Awaited<ReturnType<V2Store["latestRun"]>>>();
+    for (const score of scores) {
+      runs.set(score.campaignId, await opts.store.latestRun(score.campaignId));
+    }
+    const holes = uglyWithoutIsolation({
+      scores,
+      suspects,
+      latestRun: (id) => runs.get(id) ?? undefined,
+      keepCampaignId: (id) =>
+        Boolean(book?.campaigns.some((c) => c.id === id && isActiveStatus(c.status))),
+    });
+    const overdueHoles = holes.filter((h) => isolationOverdue(h.scoredAt));
+    const overdueStages = stamps.filter((s) => stageIsOverdue(s));
+    res.json({
+      ok: true,
+      role: opts.config.role,
+      shadow: opts.config.shadow,
+      writeEnabled: opts.config.writeEnabled,
+      writesAllowed: writesAllowed(opts.config),
+      canonCompliant: canonCompliantFromFindings(findings) && overdueHoles.length === 0,
+      canonFindings: countKinds(findings),
+      placementIsolation: {
+        scored: scores.length,
+        ugly: scores.filter((s) => s.inboxPercent < 80).length,
+        uglyWithoutIsolation: holes,
+        isolationDeadlineMs: ISOLATION_DEADLINE_MS,
+        overdueUgly: overdueHoles.length,
+      },
+      stageHealth: Object.fromEntries(
+        stamps.map((s) => [
+          s.stage,
+          {
+            ...s,
+            lastError: s.lastError ? safeErrorText(s.lastError) : s.lastError,
+            overdue: stageIsOverdue(s),
+          },
+        ]),
+      ),
+      overdueStages: overdueStages.map((s) => s.stage),
+      inventoryFetchedAt: book?.fetchedAt ?? null,
+    });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: safeErrorText(error) });
+  }
+}
+
+/** D281 — staff/isolation bind `/health` only so a healthcheck cannot recycle them. */
+export function createHealthApp(opts: ApiOpts): Express {
+  const app = express();
+  app.get("/health", (_req: Request, res: Response) => {
+    void handleHealth(opts, res);
+  });
+  app.get("/", (_req, res) => {
+    res.json({
+      name: "deliverability-wizard-v2",
+      role: opts.config.role,
+      shadow: opts.config.shadow,
+      docs: ["GET /health"],
+    });
+  });
+  return app;
+}
+
+export function createApi(opts: ApiOpts): Express {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
-  app.get("/health", async (_req: Request, res: Response) => {
-    if (opts.boot?.starting) {
-      res.json({
-        ok: true,
-        role: opts.config.role,
-        starting: true,
-        shadow: opts.config.shadow,
-        writeEnabled: opts.config.writeEnabled,
-      });
-      return;
-    }
-    try {
-      const findings = await opts.store.listFindings();
-      const stamps = await opts.store.listStamps();
-      const scores = await opts.store.listScores();
-      const suspects = await opts.store.listSuspects();
-      const book = await opts.store.loadInventory();
-      const runs = new Map<number, Awaited<ReturnType<V2Store["latestRun"]>>>();
-      for (const score of scores) {
-        runs.set(score.campaignId, await opts.store.latestRun(score.campaignId));
-      }
-      const holes = uglyWithoutIsolation({
-        scores,
-        suspects,
-        latestRun: (id) => runs.get(id) ?? undefined,
-        keepCampaignId: (id) =>
-          Boolean(book?.campaigns.some((c) => c.id === id && isActiveStatus(c.status))),
-      });
-      const overdueHoles = holes.filter((h) => isolationOverdue(h.scoredAt));
-      const overdueStages = stamps.filter((s) => stageIsOverdue(s));
-      res.json({
-        ok: true,
-        role: opts.config.role,
-        shadow: opts.config.shadow,
-        writeEnabled: opts.config.writeEnabled,
-        writesAllowed: writesAllowed(opts.config),
-        canonCompliant: canonCompliantFromFindings(findings) && overdueHoles.length === 0,
-        canonFindings: countKinds(findings),
-        placementIsolation: {
-          scored: scores.length,
-          ugly: scores.filter((s) => s.inboxPercent < 80).length,
-          uglyWithoutIsolation: holes,
-          isolationDeadlineMs: ISOLATION_DEADLINE_MS,
-          overdueUgly: overdueHoles.length,
-        },
-        stageHealth: Object.fromEntries(
-          stamps.map((s) => [
-            s.stage,
-            {
-              ...s,
-              lastError: s.lastError ? safeErrorText(s.lastError) : s.lastError,
-              overdue: stageIsOverdue(s),
-            },
-          ]),
-        ),
-        overdueStages: overdueStages.map((s) => s.stage),
-        inventoryFetchedAt: book?.fetchedAt ?? null,
-      });
-    } catch (error) {
-      res.status(500).json({ ok: false, error: safeErrorText(error) });
-    }
+  app.get("/health", (_req: Request, res: Response) => {
+    void handleHealth(opts, res);
   });
 
   app.get("/intended", async (req: Request, res: Response) => {
@@ -126,6 +149,7 @@ export function createApi(opts: {
   app.get("/", (_req, res) => {
     res.json({
       name: "deliverability-wizard-v2",
+      role: opts.config.role,
       shadow: opts.config.shadow,
       writeEnabled: opts.config.writeEnabled,
       docs: ["GET /health", "GET /compare", "GET /metrics", "GET /intended", "GET /findings"],

@@ -106,4 +106,49 @@ describe("staff email-account inventory paging", () => {
     assert.deepEqual(offsets, ["0", "100"]);
     assert.ok(elapsed >= 20, `expected page delay, elapsed=${elapsed}`);
   });
+
+  it("caps account pages so a tick cannot paginate forever", async () => {
+    let pages = 0;
+    globalThis.fetch = (async () => {
+      pages += 1;
+      const rows = Array.from({ length: 100 }, (_, i) => ({ id: pages * 100 + i, from_email: `a${i}@x.test` }));
+      return new Response(JSON.stringify(rows), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const accounts = await new SmartleadReader("LIVESECRET", (fn) => fn(), 0).listAccounts({
+      maxPages: 2,
+    });
+    assert.equal(pages, 2);
+    assert.equal(accounts.length, 200);
+  });
+
+  it("returns pages already fetched when the tick aborts mid-pagination", async () => {
+    let pages = 0;
+    const ac = new AbortController();
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+      if (init?.signal?.aborted) {
+        throw Object.assign(new Error("Aborted"), { name: "AbortError" });
+      }
+      pages += 1;
+      if (pages === 1) {
+        queueMicrotask(() => ac.abort());
+      }
+      const rows = Array.from({ length: 100 }, (_, i) => ({
+        id: pages * 100 + i,
+        from_email: `a${pages}-${i}@x.test`,
+      }));
+      return new Response(JSON.stringify(rows), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    const accounts = await new SmartleadReader("LIVESECRET", (fn) => fn(), 0).listAccounts({
+      signal: ac.signal,
+      maxPages: 10,
+    });
+    assert.equal(pages, 1);
+    assert.equal(accounts.length, 100);
+  });
 });

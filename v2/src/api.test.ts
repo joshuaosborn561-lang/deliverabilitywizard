@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, describe, it } from "node:test";
 import type { AddressInfo } from "node:net";
-import { createApi } from "./api.js";
+import { createApi, createHealthApp } from "./api.js";
 import { loadConfig } from "./config.js";
 import { MemoryStore } from "./store.js";
 
@@ -71,5 +71,24 @@ describe("/health never echoes secrets or upstream URLs", () => {
     assert.equal(body.stageHealth?.staff?.overdue, false);
     assert.ok(!body.overdueStages?.includes("staff"));
     assert.ok(body.stageHealth?.staff?.lastOkAt);
+  });
+});
+
+describe("D281 workers serve /health only", () => {
+  it("health-only app answers /health and not /compare", async () => {
+    const store = new MemoryStore();
+    const app = createHealthApp({
+      config: loadConfig({ ROLE: "staff" } as NodeJS.ProcessEnv),
+      store,
+    });
+    const server = app.listen(0);
+    const { port } = server.address() as AddressInfo;
+    const health = await fetch(`http://127.0.0.1:${port}/health`);
+    assert.equal(health.status, 200);
+    const compare = await fetch(`http://127.0.0.1:${port}/compare`);
+    assert.equal(compare.status, 404);
+    const intended = await fetch(`http://127.0.0.1:${port}/intended`);
+    assert.equal(intended.status, 404);
+    server.close();
   });
 });

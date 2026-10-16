@@ -75,6 +75,22 @@ export const V2_SMARTLEAD_MIN_GAP_MS = 3_000;
 export const V2_SMARTLEAD_PAGE_DELAY_MS = 2_500;
 export const V2_SMARTLEAD_429_MAX_ATTEMPTS = 4;
 export const V2_INVENTORY_MAX_AGE_MS = 30 * 60 * 1000;
+/**
+ * D281 — a hung boot tick left staff/isolation in_flight forever.
+ * Hard timeout per role; every fetch aborts; leases expire by TTL.
+ * Isolation SmartDelivery does not consume the Smartlead 20/min limiter.
+ * Staff budgets pages so 20/min × 10 minutes cannot overrun the clock.
+ */
+export const V2_STAFF_TICK_TIMEOUT_MS = 10 * 60 * 1000;
+export const V2_ISOLATION_TICK_TIMEOUT_MS = 8 * 60 * 1000;
+export const V2_FETCH_TIMEOUT_MS = 20_000;
+export const V2_RATE_SLOT_TTL_MS = 25_000;
+export const V2_STAFF_ACCOUNT_PAGE_CAP = 40;
+export const V2_STAFF_MEMBER_HYDRATE_CAP = 20;
+export const V2_STAFF_SEQUENCE_CAP = 25;
+export const V2_ISOLATION_TEST_PAGE_CAP = 15;
+export const V2_ISOLATION_SENDER_HYDRATE_CAP = 40;
+export const V2_ISOLATION_PROVIDER_HYDRATE_CAP = 40;
 /** /health overdue: lastOk older than this, or lastError after lastOk. */
 export const STAGE_OVERDUE_MS = 20 * 60 * 1000;
 export const QA_LEASE_NAME = "qa";

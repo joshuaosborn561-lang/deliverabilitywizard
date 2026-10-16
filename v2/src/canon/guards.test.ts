@@ -187,6 +187,13 @@ describe("ported canon that Josh said v2 was missing", () => {
     assert.match(srcBlob, /formatSkipLog/, stop("D280", "skip-reason log missing"));
     assert.match(srcBlob, /filterReleasedSenderRows/, stop("D280", "copy-canary must score non-fleet senders"));
     assert.match(srcBlob, /COMPARE_ALWAYS_KINDS/, stop("D280", "/compare must always include below_launch_bar + missing_signature_tag"));
+    assert.match(srcBlob, /createHealthApp/, stop("D281", "workers must serve /health only"));
+    assert.match(srcBlob, /V2_STAFF_TICK_TIMEOUT_MS/, stop("D281", "staff tick timeout missing"));
+    assert.match(srcBlob, /V2_ISOLATION_TICK_TIMEOUT_MS/, stop("D281", "isolation tick timeout missing"));
+    assert.match(srcBlob, /acquireTickLease/, stop("D281", "tick lease missing"));
+    assert.match(srcBlob, /expireStaleTickLeases/, stop("D281", "stale lease clear missing"));
+    assert.match(srcBlob, /V2_STAFF_ACCOUNT_PAGE_CAP/, stop("D281", "account page cap missing"));
+    assert.match(srcBlob, /formatSkipLog\(stage, "timeout"/, stop("D281", "timeout skip log missing"));
   });
 });
 

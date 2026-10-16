@@ -2,7 +2,9 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import pg from "pg";
 import { randomUUID } from "node:crypto";
+import { V2_RATE_SLOT_TTL_MS } from "./canon/constants.js";
 import { dedupeById } from "./lib/inventory.js";
+import { leaseIsStale } from "./lib/tickClock.js";
 import { isIdenticalPending, payloadReason, type PendingIntentQuery } from "./lib/pendingIntent.js";
 import {
   redactSecrets,
@@ -68,8 +70,12 @@ export interface V2Store {
   listHolds(): Promise<SeatHold[]>;
   upsertTerlSub(row: TerlSubstitution): Promise<void>;
   listTerlSubs(): Promise<TerlSubstitution[]>;
-  acquireRateSlot(maxInflight: number, maxPerMin: number): Promise<boolean>;
+  acquireRateSlot(maxInflight: number, maxPerMin: number, ttlMs?: number): Promise<boolean>;
   releaseRateSlot(): Promise<void>;
+  expireStaleRateSlots(ttlMs: number): Promise<void>;
+  acquireTickLease(stage: string, ttlMs: number, now?: Date): Promise<{ acquired: boolean }>;
+  releaseTickLease(stage: string): Promise<void>;
+  expireStaleTickLeases(ttlMs: number, now?: Date): Promise<number>;
   countUnredactedSecretRows(): Promise<SecretLeftoverCounts>;
 }
 
@@ -88,10 +94,11 @@ export class MemoryStore implements V2Store {
   qaLease: { holder: string; token: string; expiresAt: number } | null = null;
   holds: SeatHold[] = [];
   terlSubs: TerlSubstitution[] = [];
-  rate: { windowStart: number; tokens: number; inflight: number } = {
+  rate: { windowStart: number; tokens: number; inflight: number; heldSince: number } = {
     windowStart: Date.now(),
     tokens: 0,
     inflight: 0,
+    heldSince: 0,
   };
 
   async migrate(): Promise<void> {}
@@ -179,6 +186,7 @@ export class MemoryStore implements V2Store {
       lastErrorAt: undefined,
       consecutiveFailures: 0,
       lastSkipReason: skipReason ?? undefined,
+      inFlightSince: undefined,
     });
   }
   async stampError(stage: string, error: string, at = new Date()): Promise<void> {
@@ -189,6 +197,7 @@ export class MemoryStore implements V2Store {
       lastErrorAt: at.toISOString(),
       lastError: safeErrorText(error),
       consecutiveFailures: (prev?.consecutiveFailures ?? 0) + 1,
+      inFlightSince: undefined,
     });
   }
   async listStamps(): Promise<StageStamp[]> {
@@ -266,19 +275,79 @@ export class MemoryStore implements V2Store {
     return [...this.terlSubs];
   }
 
-  async acquireRateSlot(maxInflight: number, maxPerMin: number): Promise<boolean> {
+  async acquireRateSlot(
+    maxInflight: number,
+    maxPerMin: number,
+    ttlMs = V2_RATE_SLOT_TTL_MS,
+  ): Promise<boolean> {
     const now = Date.now();
     if (now - this.rate.windowStart >= 60_000) {
-      this.rate = { windowStart: now, tokens: 0, inflight: this.rate.inflight };
+      this.rate = {
+        windowStart: now,
+        tokens: 0,
+        inflight: this.rate.inflight,
+        heldSince: this.rate.heldSince,
+      };
     }
-    if (this.rate.inflight >= maxInflight) return false;
+    if (this.rate.inflight >= maxInflight) {
+      if (this.rate.heldSince && now - this.rate.heldSince >= ttlMs) {
+        this.rate.inflight = 0;
+        this.rate.heldSince = 0;
+      } else {
+        return false;
+      }
+    }
     if (this.rate.tokens >= maxPerMin) return false;
     this.rate.tokens += 1;
     this.rate.inflight += 1;
+    this.rate.heldSince = now;
     return true;
   }
   async releaseRateSlot(): Promise<void> {
     this.rate.inflight = Math.max(0, this.rate.inflight - 1);
+    if (this.rate.inflight === 0) this.rate.heldSince = 0;
+  }
+  async expireStaleRateSlots(ttlMs: number): Promise<void> {
+    const now = Date.now();
+    if (this.rate.inflight > 0 && now - this.rate.heldSince >= ttlMs) {
+      this.rate.inflight = 0;
+      this.rate.heldSince = 0;
+    }
+  }
+  async acquireTickLease(
+    stage: string,
+    ttlMs: number,
+    now = new Date(),
+  ): Promise<{ acquired: boolean }> {
+    const prev = this.stamps.get(stage);
+    if (prev?.inFlightSince && !leaseIsStale(prev.inFlightSince, ttlMs, now.getTime())) {
+      return { acquired: false };
+    }
+    this.stamps.set(stage, {
+      stage,
+      lastOkAt: prev?.lastOkAt,
+      lastErrorAt: prev?.lastErrorAt,
+      lastError: prev?.lastError,
+      consecutiveFailures: prev?.consecutiveFailures ?? 0,
+      lastSkipReason: prev?.lastSkipReason,
+      inFlightSince: now.toISOString(),
+    });
+    return { acquired: true };
+  }
+  async releaseTickLease(stage: string): Promise<void> {
+    const prev = this.stamps.get(stage);
+    if (!prev) return;
+    this.stamps.set(stage, { ...prev, inFlightSince: undefined });
+  }
+  async expireStaleTickLeases(ttlMs: number, now = new Date()): Promise<number> {
+    let n = 0;
+    for (const [stage, stamp] of this.stamps) {
+      if (stamp.inFlightSince && leaseIsStale(stamp.inFlightSince, ttlMs, now.getTime())) {
+        this.stamps.set(stage, { ...stamp, inFlightSince: undefined });
+        n += 1;
+      }
+    }
+    return n;
   }
 
   async countUnredactedSecretRows(): Promise<SecretLeftoverCounts> {
@@ -323,6 +392,9 @@ export class PostgresStore implements V2Store {
     );
     await this.pool.query(
       "ALTER TABLE stage_health ADD COLUMN IF NOT EXISTS last_skip_reason TEXT",
+    );
+    await this.pool.query(
+      "ALTER TABLE smartlead_limiter ADD COLUMN IF NOT EXISTS slot_held_since TIMESTAMPTZ",
     );
     await this.scrubSecretRows();
   }
@@ -1002,27 +1074,85 @@ export class PostgresStore implements V2Store {
     }));
   }
 
-  async acquireRateSlot(maxInflight: number, maxPerMin: number): Promise<boolean> {
+  async acquireRateSlot(
+    maxInflight: number,
+    maxPerMin: number,
+    ttlMs = V2_RATE_SLOT_TTL_MS,
+  ): Promise<boolean> {
     const r = await this.pool.query(
       `UPDATE smartlead_limiter SET
          window_start = CASE WHEN NOW() - window_start >= interval '60 seconds' THEN NOW() ELSE window_start END,
          tokens_used = CASE WHEN NOW() - window_start >= interval '60 seconds' THEN 1 ELSE tokens_used + 1 END,
-         inflight = CASE WHEN NOW() - window_start >= interval '60 seconds' THEN 1 ELSE inflight + 1 END
+         inflight = 1,
+         slot_held_since = NOW()
        WHERE id = 1
-         AND inflight < $1
+         AND (
+           inflight < $1
+           OR slot_held_since IS NULL
+           OR NOW() - slot_held_since >= make_interval(secs => $3::numeric / 1000)
+         )
          AND (
            NOW() - window_start >= interval '60 seconds'
            OR tokens_used < $2
          )
        RETURNING id`,
-      [maxInflight, maxPerMin],
+      [maxInflight, maxPerMin, ttlMs],
     );
     return (r.rowCount ?? 0) > 0;
   }
   async releaseRateSlot(): Promise<void> {
     await this.pool.query(
-      "UPDATE smartlead_limiter SET inflight = GREATEST(inflight - 1, 0) WHERE id = 1",
+      `UPDATE smartlead_limiter SET inflight = GREATEST(inflight - 1, 0),
+         slot_held_since = CASE WHEN GREATEST(inflight - 1, 0) = 0 THEN NULL ELSE slot_held_since END
+       WHERE id = 1`,
     );
+  }
+  async expireStaleRateSlots(ttlMs: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE smartlead_limiter SET inflight = 0, slot_held_since = NULL
+       WHERE id = 1
+         AND inflight > 0
+         AND (slot_held_since IS NULL OR NOW() - slot_held_since >= make_interval(secs => $1::numeric / 1000))`,
+      [ttlMs],
+    );
+  }
+  async acquireTickLease(
+    stage: string,
+    ttlMs: number,
+    now = new Date(),
+  ): Promise<{ acquired: boolean }> {
+    const cutoff = new Date(now.getTime() - ttlMs);
+    await this.pool.query(
+      `UPDATE stage_health SET in_flight_since = NULL, updated_at = NOW()
+       WHERE stage = $1 AND in_flight_since IS NOT NULL AND in_flight_since <= $2`,
+      [stage, cutoff],
+    );
+    const r = await this.pool.query(
+      `INSERT INTO stage_health (stage, in_flight_since, consecutive_failures, updated_at)
+       VALUES ($1,$2,0,NOW())
+       ON CONFLICT (stage) DO UPDATE SET
+         in_flight_since = EXCLUDED.in_flight_since,
+         updated_at = NOW()
+       WHERE stage_health.in_flight_since IS NULL
+       RETURNING stage`,
+      [stage, now],
+    );
+    return { acquired: (r.rowCount ?? 0) > 0 };
+  }
+  async releaseTickLease(stage: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE stage_health SET in_flight_since = NULL, updated_at = NOW() WHERE stage = $1`,
+      [stage],
+    );
+  }
+  async expireStaleTickLeases(ttlMs: number, now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - ttlMs);
+    const r = await this.pool.query(
+      `UPDATE stage_health SET in_flight_since = NULL, updated_at = NOW()
+       WHERE in_flight_since IS NOT NULL AND in_flight_since <= $1`,
+      [cutoff],
+    );
+    return r.rowCount ?? 0;
   }
 
   async countUnredactedSecretRows(): Promise<SecretLeftoverCounts> {

@@ -783,6 +783,8 @@ export class Min40TopUpService {
       targetPod,
       mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
       assignedClientId: seat.assignedClientId ?? pool?.assignedClientId ?? null,
+      assignedReason: seat.reason,
+      releaseHistory: seat.releaseHistory,
       tags: account.tags,
       assignedPod: seat.assignedPod ?? null,
     });
@@ -802,6 +804,11 @@ export class Min40TopUpService {
     if (!genericMayLinkToCampaigns(account, now)) return false;
     if (this.powerGrydStaffingBlocked(account, email, clientId)) return false;
     return this.genericMayTakePod(account, email, clientId, onWeekCohort(now));
+  }
+
+  /** D283 — never walk the 800-row pool for PowerGRYD. Named seats only. */
+  private neverGenericClient(clientId: number): boolean {
+    return clientId === this.config.powerGrydClientId;
   }
 
   /** D258 — hard block foreign-client / foreign-sig generics onto PowerGRYD. */
@@ -1036,6 +1043,7 @@ export class Min40TopUpService {
     const rejectedPreferNonAzure = new Set<string>();
     const rejectedAny = new Set<string>();
 
+    const skipPoolGenerics = this.neverGenericClient(input.clientId);
     const existing: IndexedSeat[] = [];
     let scanned = 0;
     for (const seat of input.seats) {
@@ -1106,7 +1114,7 @@ export class Min40TopUpService {
       }
     }
 
-    while (placed < input.shortBy - 1e-9) {
+    while (!skipPoolGenerics && placed < input.shortBy - 1e-9) {
       if (input.signal?.aborted) break;
       const platformOrder = espFillOrder(
         espCounts,
@@ -1336,6 +1344,7 @@ export class Min40TopUpService {
         break;
       }
       if (input.pocIds.includes(clientId)) continue;
+      if (this.neverGenericClient(clientId)) continue;
       const floor = minFloorForClient(clientId, this.config.minFloorByClient);
       const brand = input.brandByClientId.get(clientId) || String(clientId);
       const selected = new Set<string>();

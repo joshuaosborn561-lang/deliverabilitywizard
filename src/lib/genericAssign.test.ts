@@ -66,6 +66,31 @@ describe("D230 generic assign lock", () => {
     );
   });
 
+  it("D283: Onboarding-freed PowerGRYD generics are not pool supply", () => {
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 548611,
+        targetPod: "A",
+        mailboxClientId: null,
+        assignedClientId: 592842,
+        assignedReason: "powergryd_dedicated",
+        tags: [{ tag_name: "GENERIC" }],
+      }),
+      false,
+    );
+    assert.equal(
+      genericEligibleForClientPod({
+        clientId: 548611,
+        targetPod: "A",
+        mailboxClientId: null,
+        assignedClientId: null,
+        releaseHistory: [{ reason: "onboarding_freed_powergryd" }],
+        tags: [{ tag_name: "GENERIC" }],
+      }),
+      false,
+    );
+  });
+
   it("rejects another client's generic and the other POD", () => {
     assert.equal(
       genericEligibleForClientPod({

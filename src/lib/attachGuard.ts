@@ -90,6 +90,19 @@ export class AttachForbiddenSeatError extends Error {
   }
 }
 
+/** One pass over the shared inventory book. Never fetches a seat. */
+export function indexAttachForbiddenAccountIds(
+  accounts: Iterable<AttachGuardAccount>,
+  now: Date = new Date(),
+): Set<number> {
+  const out = new Set<number>();
+  for (const account of accounts) {
+    if (typeof account.id !== "number" || !Number.isFinite(account.id)) continue;
+    if (isAttachForbiddenSeat(account, now)) out.add(account.id);
+  }
+  return out;
+}
+
 export function assertAttachAllowedAccountIds(
   campaignId: number,
   accountIds: number[],

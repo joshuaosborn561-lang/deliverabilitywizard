@@ -263,7 +263,11 @@ Caps ramp manually (35 on Oct 12).
   (`assertAttachAllowedAccountIds` / `canAttachMailboxToCampaign`).
   Campaign-fill / top-up must not re-link those 73 held seats
   onto EMCOR or TechEvo. Leftover HOLD-UNTIL still does not
-  *pull* (D51/D128). Never START or unpause STOPPED campaigns.
+  *pull* (D51/D128). Guards read the shared account book
+  (`client_id` / tags already on the seat) — never a per-seat
+  Smartlead GET. min40 skips the pool walk for target 592842
+  (named branded seats only). Never START or unpause STOPPED
+  campaigns.
   **SalesGlider stays 345263** (`salesglider*` only). Insight ≠ SG.
   One-client (D26) plus the named-id attach gate keep them from
   mixing: non-Josh salesglider seats never staff Insight.
@@ -306,7 +310,10 @@ Caps ramp manually (35 on Oct 12).
   must not write 592842 back (`preferredGenericOwnerId` /
   `writeOwnerClientId` / min40 / campaign top-up). A one-time
   cleanup clears owner and reason on those generic-domain seats
-  (e.g. 21592200, 21592202).
+  (e.g. 21592200, 21592202). One-client still treats a just-cleared
+  or leftover-592842-membership generic as freed: peel PowerGRYD
+  only, never D76-restore onto Goliath. Those seats stay idle —
+  not min40 / campaign-top-up / TERRL pool supply.
   **Exception (D242 / D244 CALLER
   FOLLOW-UP):** seats tagged `GABE-VM-RESERVED` (or the configured
   `CALLER_FOLLOWUP` sender tag) — Gabe Lopez voicemail follow-up,

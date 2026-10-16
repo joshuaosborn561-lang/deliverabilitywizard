@@ -628,6 +628,8 @@ export class CampaignTopUpService {
                           ? poolAccount.client_id
                           : null,
                       assignedClientId,
+                      assignedReason: seat.reason,
+                      releaseHistory: seat.releaseHistory,
                       tags: poolAccount.tags,
                       assignedPod: seat.assignedPod,
                     })

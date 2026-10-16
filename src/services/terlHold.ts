@@ -573,6 +573,8 @@ export class TerlHoldService {
           targetPod,
           mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
           assignedClientId: seat.assignedClientId,
+          assignedReason: seat.reason,
+          releaseHistory: seat.releaseHistory,
           tags: account.tags,
           assignedPod: seat.assignedPod,
         })

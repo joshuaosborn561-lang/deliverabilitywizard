@@ -8,6 +8,7 @@
 import { preferredGenericOwnerId } from "./dedicatedGeneric.js";
 import type { GenericAssignedPod, GenericSeatRecord } from "./genericPool.js";
 import { podFromMailboxTags } from "./genericPool.js";
+import { isFreedPowerGrydAttachBlocked } from "./powerGrydFreedCleanup.js";
 
 export const GENERIC_POD_TAG_A = "POD-A";
 export const GENERIC_POD_TAG_B = "POD-B";
@@ -40,12 +41,25 @@ export function genericEligibleForClientPod(input: {
   targetPod: GenericAssignedPod;
   mailboxClientId?: number | null;
   assignedClientId?: number | null;
+  assignedReason?: string | null;
+  releaseHistory?: Array<{ reason?: string | null }>;
   tags?: Array<{ tag_name?: unknown; name?: unknown }> | string[] | null;
   assignedPod?: GenericAssignedPod | null;
 }): boolean {
+  if (
+    isFreedPowerGrydAttachBlocked({
+      mailboxClientId: input.mailboxClientId,
+      assignedClientId: input.assignedClientId,
+      assignedReason: input.assignedReason,
+      releaseHistory: input.releaseHistory,
+    })
+  ) {
+    return false;
+  }
   const owner = preferredGenericOwnerId({
     mailboxClientId: input.mailboxClientId,
     assignedClientId: input.assignedClientId,
+    assignedReason: input.assignedReason,
   });
   if (owner != null && owner !== input.clientId) return false;
   const pod = lockedGenericPod({

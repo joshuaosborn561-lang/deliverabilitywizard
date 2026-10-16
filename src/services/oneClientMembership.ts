@@ -16,7 +16,11 @@ import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
-import { cleanupFreedPowerGrydGenerics } from "../lib/powerGrydFreedCleanup.js";
+import {
+  cleanupFreedPowerGrydGenerics,
+  isFreedPowerGrydOneClientSkip,
+} from "../lib/powerGrydFreedCleanup.js";
+import { isPowerGrydClientId } from "../lib/namedClientIds.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import {
@@ -45,6 +49,7 @@ import {
 } from "../lib/oneClient.js";
 import { isAnyShellCampaign } from "../lib/canaryShell.js";
 import { sleep } from "../lib/http.js";
+import { yieldEventLoop } from "../lib/stringifyYielding.js";
 import { signatureHay } from "../lib/signatureQa.js";
 import type { StateStore } from "../state/store.js";
 import type { SmartleadCampaign } from "../types/index.js";
@@ -57,6 +62,7 @@ import {
 
 const WRITE_BATCH = 25;
 const WRITE_GAP_MS = process.env.NODE_TEST_CONTEXT ? 0 : 400;
+const ONE_CLIENT_YIELD_EVERY = 32;
 
 export interface OneClientMembershipResult {
   dryRun: boolean;
@@ -152,6 +158,9 @@ export class OneClientMembershipService {
       accounts: accounts as SmartleadAccountWithCampaigns[],
       state: this.state,
     });
+    const justClearedFreed = new Set(
+      freed.cleared.map((row) => row.email.trim().toLowerCase()),
+    );
     if (freed.cleared.length) {
       console.log(
         `[one-client] D283 cleared ${freed.cleared.length} Onboarding-freed PowerGRYD pool owner(s)`,
@@ -195,7 +204,10 @@ export class OneClientMembershipService {
       this.state,
     );
 
+    let walked = 0;
     for (const account of accounts as SmartleadAccountWithCampaigns[]) {
+      walked += 1;
+      if (walked % ONE_CLIENT_YIELD_EVERY === 0) await yieldEventLoop();
       const email = accountEmail(account);
       if (!email || !account.id) continue;
       if (isLockedCanarySeat(account, email, this.state)) continue;
@@ -234,6 +246,48 @@ export class OneClientMembershipService {
       result.examined += 1;
 
       const generic = isGenericMailbox(account, email, this.config, this.state);
+      const pool = this.state.getPoolMailbox(email);
+      const tableSeat =
+        typeof this.state.getGenericSeat === "function"
+          ? this.state.getGenericSeat(email)
+          : undefined;
+      const assignedClientId =
+        pool?.assignedClientId ?? tableSeat?.assignedClientId ?? null;
+      const freedPg = isFreedPowerGrydOneClientSkip({
+        generic,
+        mailboxClientId: account.client_id,
+        assignedClientId,
+        assignedReason: tableSeat?.reason,
+        releaseHistory: tableSeat?.releaseHistory,
+        justCleared: justClearedFreed.has(email.trim().toLowerCase()),
+        hasPowerGrydMembership: memberships.some(
+          (row) => !row.shell && isPowerGrydClientId(row.clientId),
+        ),
+      });
+      if (freedPg) {
+        // D283 — stay off PowerGRYD. Peel leftover 592842 links only.
+        // Do not dump onto Goliath / write an owner (that restaff storm
+        // is what timed out inventory / min40 / generic-cleanup).
+        const pull = memberships
+          .filter(
+            (row) =>
+              !row.shell &&
+              !row.protected &&
+              isPowerGrydClientId(row.clientId),
+          )
+          .map((row) => row.campaignId);
+        if (pull.length) {
+          plans.push({
+            email,
+            accountId: account.id,
+            owner: 0,
+            pull,
+            restore: [],
+            writeOwnerClientId: false,
+          });
+        }
+        continue;
+      }
       const dedicatedClientId = generic
         ? resolveDedicatedGenericClientId(
             account,

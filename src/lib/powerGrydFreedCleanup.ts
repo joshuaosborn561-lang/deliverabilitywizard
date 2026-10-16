@@ -26,6 +26,55 @@ export const FREED_POWERGRYD_GENERIC_ACCOUNT_IDS: readonly number[] = [
   21592200, 21592202,
 ];
 
+export const ONBOARDING_FREED_POWERGRYD_REASON = "onboarding_freed_powergryd";
+
+export function seatWasOnboardingFreedPowerGryd(
+  seat?: {
+    reason?: string | null;
+    releaseHistory?: Array<{ reason?: string | null }>;
+  } | null,
+): boolean {
+  if (!seat) return false;
+  const reasons = [
+    seat.reason,
+    ...(seat.releaseHistory ?? []).map((event) => event.reason),
+  ];
+  return reasons.some(
+    (reason) =>
+      String(reason ?? "").trim().toLowerCase() === ONBOARDING_FREED_POWERGRYD_REASON,
+  );
+}
+
+/** D283 — Onboarding-freed generics are idle, not pool supply. */
+export function isFreedPowerGrydAttachBlocked(input: {
+  mailboxClientId?: number | null;
+  assignedClientId?: number | null;
+  assignedReason?: string | null;
+  releaseHistory?: Array<{ reason?: string | null }>;
+  powerGrydClientId?: number;
+}): boolean {
+  if (
+    typeof input.mailboxClientId === "number" &&
+    Number.isFinite(input.mailboxClientId)
+  ) {
+    return false;
+  }
+  if (
+    isFreedPowerGrydPoolOwner({
+      mailboxClientId: input.mailboxClientId,
+      assignedClientId: input.assignedClientId,
+      assignedReason: input.assignedReason,
+      powerGrydClientId: input.powerGrydClientId,
+    })
+  ) {
+    return true;
+  }
+  return seatWasOnboardingFreedPowerGryd({
+    reason: input.assignedReason,
+    releaseHistory: input.releaseHistory,
+  });
+}
+
 export function isFreedPowerGrydPoolOwner(input: {
   mailboxClientId?: number | null;
   assignedClientId?: number | null;
@@ -36,11 +85,72 @@ export function isFreedPowerGrydPoolOwner(input: {
     return false;
   }
   const powerId = input.powerGrydClientId ?? POWERGRYD_CLIENT_ID;
-  if (input.assignedClientId === powerId) return true;
+  const assigned = input.assignedClientId;
+  // Leftover `powergryd_dedicated` on a seat already owned by another
+  // named client is not a free — clearing it every pass restaffed the
+  // fleet and pinned inventory / min40 / generic-cleanup (D283).
+  if (typeof assigned === "number" && Number.isFinite(assigned) && assigned !== powerId) {
+    return false;
+  }
+  if (assigned === powerId) return true;
   return (
     String(input.assignedReason ?? "").trim().toLowerCase() ===
     GENERIC_ASSIGN_REASON_POWERGRYD
   );
+}
+
+/**
+ * D283 — one-client must peel leftover 592842 links and then stop.
+ * Cleanup clears owner/reason in the same pass, so the leftover-owner
+ * check alone misses the seat and D76 dumps it onto Goliath (the
+ * write storm that timed out inventory / min40 / generic-cleanup).
+ */
+export function isFreedPowerGrydOneClientSkip(input: {
+  generic: boolean;
+  mailboxClientId?: number | null;
+  assignedClientId?: number | null;
+  assignedReason?: string | null;
+  releaseHistory?: Array<{ reason?: string | null }>;
+  justCleared?: boolean;
+  hasPowerGrydMembership?: boolean;
+  powerGrydClientId?: number;
+}): boolean {
+  if (!input.generic) return false;
+  if (
+    typeof input.mailboxClientId === "number" &&
+    Number.isFinite(input.mailboxClientId)
+  ) {
+    return false;
+  }
+  if (
+    isFreedPowerGrydPoolOwner({
+      mailboxClientId: input.mailboxClientId,
+      assignedClientId: input.assignedClientId,
+      assignedReason: input.assignedReason,
+      powerGrydClientId: input.powerGrydClientId,
+    })
+  ) {
+    return true;
+  }
+  if (input.justCleared) return true;
+  if (
+    isFreedPowerGrydAttachBlocked({
+      mailboxClientId: input.mailboxClientId,
+      assignedClientId: input.assignedClientId,
+      assignedReason: input.assignedReason,
+      releaseHistory: input.releaseHistory,
+      powerGrydClientId: input.powerGrydClientId,
+    })
+  ) {
+    return true;
+  }
+  const assigned = input.assignedClientId;
+  const otherNamedOwner =
+    typeof assigned === "number" &&
+    Number.isFinite(assigned) &&
+    assigned !== (input.powerGrydClientId ?? POWERGRYD_CLIENT_ID) &&
+    !isPowerGrydClientId(assigned);
+  return Boolean(input.hasPowerGrydMembership) && !otherNamedOwner;
 }
 
 export function poolLooksFreedPowerGryd(
@@ -64,6 +174,8 @@ export interface FreedPowerGrydCleanupState {
     email: string,
     opts?: { now?: Date; reason?: string | null },
   ) => GenericSeatRecord | null;
+  listPoolMailboxes?: () => Array<Pick<PoolMailboxRecord, "email" | "assignedClientId">>;
+  listGenericSeats?: () => GenericSeatRecord[];
 }
 
 export interface FreedPowerGrydCleanupResult {
@@ -99,13 +211,13 @@ export function clearFreedPowerGrydPoolOwner(
     if (typeof state.releaseGenericFromTable === "function") {
       state.releaseGenericFromTable(key, {
         now,
-        reason: "onboarding_freed_powergryd",
+        reason: ONBOARDING_FREED_POWERGRYD_REASON,
       });
     } else if (typeof state.upsertGenericSeat === "function") {
       state.upsertGenericSeat(
         applyReleaseGenericSeat(seat, {
           now,
-          reason: "onboarding_freed_powergryd",
+          reason: ONBOARDING_FREED_POWERGRYD_REASON,
         }),
       );
     }
@@ -129,19 +241,64 @@ export function cleanupFreedPowerGrydGenerics(input: {
   const powerId = input.powerGrydClientId ?? POWERGRYD_CLIENT_ID;
   const now = input.now ?? new Date();
   const cleared: FreedPowerGrydCleanupResult["cleared"] = [];
+  const byEmail = new Map<string, SmartleadAccountWithCampaigns>();
+  const byId = new Map<number, SmartleadAccountWithCampaigns>();
   for (const account of input.accounts) {
-    if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
+    const email = accountEmail(account);
+    if (email) byEmail.set(genericSeatKey(email), account);
+    if (typeof account.id === "number" && Number.isFinite(account.id)) {
+      byId.set(account.id, account);
+    }
+  }
+
+  const candidates = new Set<string>();
+  for (const id of FREED_POWERGRYD_GENERIC_ACCOUNT_IDS) {
+    const account = byId.get(id);
+    const email = account ? accountEmail(account) : null;
+    if (email) candidates.add(genericSeatKey(email));
+  }
+  const canListPool = typeof input.state.listPoolMailboxes === "function";
+  const canListSeats = typeof input.state.listGenericSeats === "function";
+  if (canListPool) {
+    for (const pool of input.state.listPoolMailboxes!()) {
+      if (!pool.email) continue;
+      if (poolLooksFreedPowerGryd(pool, powerId)) {
+        candidates.add(genericSeatKey(pool.email));
+      }
+    }
+  }
+  if (canListSeats) {
+    for (const seat of input.state.listGenericSeats!()) {
+      if (isPowerGrydDedicatedSeat(seat, powerId)) {
+        candidates.add(genericSeatKey(seat.email));
+      }
+    }
+  }
+  if (!canListPool && !canListSeats) {
+    for (const account of input.accounts) {
+      if (typeof account.client_id === "number" && Number.isFinite(account.client_id)) {
+        continue;
+      }
+      const email = accountEmail(account);
+      if (email) candidates.add(genericSeatKey(email));
+    }
+  }
+
+  for (const key of candidates) {
+    const account = byEmail.get(key);
+    if (
+      account &&
+      typeof account.client_id === "number" &&
+      Number.isFinite(account.client_id)
+    ) {
       continue;
     }
-    const email = accountEmail(account);
-    if (!email) continue;
-    if (input.isGeneric && !input.isGeneric(account, email)) continue;
-    const key = genericSeatKey(email);
+    if (account && input.isGeneric && !input.isGeneric(account, key)) continue;
     const pool = input.state.getPoolMailbox(key);
     const seat = input.state.getGenericSeat?.(key);
     if (
       !isFreedPowerGrydPoolOwner({
-        mailboxClientId: account.client_id,
+        mailboxClientId: account?.client_id,
         assignedClientId: pool?.assignedClientId ?? seat?.assignedClientId ?? null,
         assignedReason: seat?.reason,
         powerGrydClientId: powerId,
@@ -149,10 +306,10 @@ export function cleanupFreedPowerGrydGenerics(input: {
     ) {
       continue;
     }
-    if (clearFreedPowerGrydPoolOwner(input.state, email, { now, powerGrydClientId: powerId })) {
+    if (clearFreedPowerGrydPoolOwner(input.state, key, { now, powerGrydClientId: powerId })) {
       cleared.push({
         email: key,
-        accountId: typeof account.id === "number" ? account.id : null,
+        accountId: typeof account?.id === "number" ? account.id : null,
       });
     }
   }

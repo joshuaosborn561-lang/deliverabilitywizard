@@ -253,4 +253,91 @@ describe("D283 freed PowerGRYD seats + CornerStone HOLD-UNTIL attach", () => {
       `CornerStone HOLD-UNTIL seats must not attach: ${JSON.stringify(attached)} ${JSON.stringify(min40.assigned)} ${JSON.stringify(top.assigned)}`,
     );
   });
+
+  it("does not dump Onboarding-freed PowerGRYD generics onto Goliath", async () => {
+    const state = new StateStore(
+      `/tmp/d283-goliath-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "christinaevans@getoutreachdesk.info",
+      domain: "getoutreachdesk.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 21592200,
+      firstName: "Christina",
+      lastName: "Evans",
+      status: "assigned",
+      assignedClientId: 592842,
+      assignedClientName: "PowerGRYD",
+      warmedAt: "2026-01-01T00:00:00Z",
+    });
+    state.upsertGenericSeat({
+      email: "christinaevans@getoutreachdesk.info",
+      slAccountId: 21592200,
+      provider: "GOOGLE",
+      warmReadyAt: "2026-01-01T00:00:00Z",
+      assignedClientId: 592842,
+      assignedCampaignIds: [3001],
+      assignedPod: ON_WEEK,
+      assignedAt: "2026-09-01T00:00:00Z",
+      reason: GENERIC_ASSIGN_REASON_POWERGRYD,
+      releasedAt: null,
+      releaseHistory: [],
+      staffableWeight: 1,
+    });
+    const attached: Array<[number, number[]]> = [];
+    const removed: Array<[number, number[]]> = [];
+    const inventory: InventorySnapshot = {
+      fetchedAt: Date.now(),
+      clients: [
+        { id: 592842, name: "PowerGRYD", logo: "PowerGRYD" },
+        { id: 548611, name: "Dave Ackley", logo: "Goliath Cybersecurity" },
+      ],
+      campaigns: [
+        { id: 3001, name: "PowerGRYD live", status: "ACTIVE", client_id: 592842 },
+        { id: 5486, name: "Goliath live", status: "ACTIVE", client_id: 548611 },
+      ],
+      accounts: [
+        {
+          id: 21592200,
+          from_email: "christinaevans@getoutreachdesk.info",
+          from_name: "Christina Evans",
+          signature: "Christina Evans",
+          client_id: null,
+          type: "GMAIL",
+          is_smtp_success: true,
+          is_imap_success: true,
+          tags: [{ tag_name: "GENERIC" }, { tag_name: `POD-${ON_WEEK}` }],
+          campaign_ids: [3001],
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    const smartlead = {
+      addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+        attached.push([id, [...ids]]);
+      },
+      removeEmailAccountsFromCampaign: async (id: number, ids: number[]) => {
+        removed.push([id, [...ids]]);
+      },
+      updateEmailAccount: async () => undefined,
+    } as unknown as SmartleadClient;
+
+    await new OneClientMembershipService(
+      loadConfig({ DRY_RUN: "false" }),
+      smartlead,
+      state,
+    ).run({ dryRun: false, inventory });
+
+    assert.equal(
+      attached.some((row) => row[0] === 5486),
+      false,
+      `freed PowerGRYD generics must not restore onto Goliath: ${JSON.stringify(attached)}`,
+    );
+    assert.equal(
+      removed.some((row) => row[0] === 3001 && row[1].includes(21592200)),
+      true,
+      `leftover PowerGRYD links still peel: ${JSON.stringify(removed)}`,
+    );
+  });
 });

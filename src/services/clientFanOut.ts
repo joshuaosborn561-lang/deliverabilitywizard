@@ -604,7 +604,10 @@ export class ClientFanOutService {
       // Pool generic branded to this client in state. D283 — live
       // Smartlead null + stale PowerGRYD pool is not an owner.
       const pool = this.state.getPoolMailbox(email);
-      const seat = this.state.getGenericSeat(email);
+      const seat =
+        typeof this.state.getGenericSeat === "function"
+          ? this.state.getGenericSeat(email)
+          : undefined;
       const preferred = preferredGenericOwnerId({
         mailboxClientId: account.client_id,
         assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,

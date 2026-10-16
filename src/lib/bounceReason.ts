@@ -33,11 +33,21 @@ export function ndrBodyFromHistory(history: unknown): string | null {
   const ndr = rows.find(
     (entry) =>
       String(entry.type ?? "").toUpperCase() === "REPLY" &&
-      /delivery has failed|mail delivery|undeliverable|returned/i.test(
-        String(entry.email_body ?? ""),
-      ),
+      isNdrReplyBody(String(entry.email_body ?? "")),
   );
   return ndr ? String(ndr.email_body ?? "") : null;
+}
+
+/**
+ * Classic Exchange NDRs say "Delivery has failed". The 2026-09-30
+ * Mimecast / Forefront cards say "couldn't be delivered" / "Status
+ * code: 550 5.7.352" and never use the old phrase. D140 still has
+ * to read those (EMCOR #4037557 came back "unreadable" otherwise).
+ */
+export function isNdrReplyBody(body: string): boolean {
+  return /delivery has failed|mail delivery|undeliverable|returned|could(?:n'?t| not) be delivered|wasn'?t delivered|status code:\s*550|550\s*5\.7\.\d+|mimecast/i.test(
+    body,
+  );
 }
 
 /** Order matters: the tenant-cap text also contains generic 550 markers. */
@@ -76,6 +86,8 @@ export function classifyBounceText(text: string): BounceClass {
   }
   if (
     /5\.7\.[01]\b/.test(hay) ||
+    /5\.7\.352\b/.test(hay) ||
+    /mimecast/.test(hay) ||
     /spam|content rejected|blocked using|block list|blacklist|listed at|poor reputation|reputation|policy reasons|message rejected|554/.test(
       hay,
     )

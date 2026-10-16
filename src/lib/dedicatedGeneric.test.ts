@@ -122,6 +122,15 @@ describe("dedicatedGenericClientId (D198)", () => {
       521881,
       "D198 — a non-PowerGRYD in-flight pool assign still wins over empty SL",
     );
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: null,
+        assignedClientId: 521881,
+        assignedReason: "powergryd_dedicated",
+      }),
+      521881,
+      "leftover powergryd_dedicated must not clear a live TechEvo assign",
+    );
   });
 
   it("reads a client:<id> mailbox tag", () => {

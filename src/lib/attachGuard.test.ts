@@ -5,6 +5,7 @@ import {
   CORNERSTONE_CLIENT_ID,
   accountHasActiveHoldUntil,
   assertAttachAllowedAccountIds,
+  indexAttachForbiddenAccountIds,
   isAttachForbiddenSeat,
   isCornerstoneClientSeat,
 } from "./attachGuard.js";
@@ -60,5 +61,18 @@ describe("D283 attach guard — CornerStone + HOLD-UNTIL", () => {
     assert.doesNotThrow(() =>
       assertAttachAllowedAccountIds(1001, [99], { accountsById, now }),
     );
+  });
+
+  it("indexes forbidden seats from the inventory book only", () => {
+    const forbidden = indexAttachForbiddenAccountIds(
+      [
+        { id: 73, client_id: CORNERSTONE_CLIENT_ID },
+        { id: 74, tags: [{ tag_name: "HOLD-UNTIL-2026-12-31" }] },
+        { id: 75, client_id: 521881 },
+        { id: 76, tags: [{ tag_name: "HOLD-UNTIL-2020-01-01" }] },
+      ],
+      now,
+    );
+    assert.deepEqual([...forbidden].sort((a, b) => a - b), [73, 74]);
   });
 });

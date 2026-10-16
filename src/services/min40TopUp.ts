@@ -59,6 +59,7 @@ import {
   isPowerGrydEmptyByDesign,
   powerGrydBrandFromClients,
 } from "../lib/powerGrydEmptyByDesign.js";
+import { isPowerGrydClientId } from "../lib/namedClientIds.js";
 import {
   campaignHoldReason,
   holdPolicyFromConfig,
@@ -804,6 +805,14 @@ export class Min40TopUpService {
     return this.genericMayTakePod(account, email, clientId, onWeekCohort(now));
   }
 
+  /** D283 — never walk the 800-row pool for PowerGRYD. Named seats only. */
+  private neverGenericClient(clientId: number): boolean {
+    return (
+      isPowerGrydClientId(clientId) ||
+      clientId === this.config.powerGrydClientId
+    );
+  }
+
   /** D258 — hard block foreign-client / foreign-sig generics onto PowerGRYD. */
   private powerGrydStaffingBlocked(
     account: SmartleadAccountWithCampaigns,
@@ -1036,6 +1045,7 @@ export class Min40TopUpService {
     const rejectedPreferNonAzure = new Set<string>();
     const rejectedAny = new Set<string>();
 
+    const skipPoolGenerics = this.neverGenericClient(input.clientId);
     const existing: IndexedSeat[] = [];
     let scanned = 0;
     for (const seat of input.seats) {
@@ -1106,7 +1116,7 @@ export class Min40TopUpService {
       }
     }
 
-    while (placed < input.shortBy - 1e-9) {
+    while (!skipPoolGenerics && placed < input.shortBy - 1e-9) {
       if (input.signal?.aborted) break;
       const platformOrder = espFillOrder(
         espCounts,
@@ -1336,6 +1346,7 @@ export class Min40TopUpService {
         break;
       }
       if (input.pocIds.includes(clientId)) continue;
+      if (this.neverGenericClient(clientId)) continue;
       const floor = minFloorForClient(clientId, this.config.minFloorByClient);
       const brand = input.brandByClientId.get(clientId) || String(clientId);
       const selected = new Set<string>();

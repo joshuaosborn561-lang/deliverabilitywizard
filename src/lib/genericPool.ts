@@ -132,6 +132,12 @@ export function isPowerGrydDedicatedSeat(
   seat: Pick<GenericSeatRecord, "assignedClientId" | "reason">,
   powerGrydClientId: number = GENERIC_POOL_POWERGRYD_CLIENT_ID,
 ): boolean {
+  if (
+    typeof seat.assignedClientId === "number" &&
+    seat.assignedClientId !== powerGrydClientId
+  ) {
+    return false;
+  }
   if (seat.assignedClientId === powerGrydClientId) return true;
   return String(seat.reason ?? "").trim().toLowerCase() === GENERIC_ASSIGN_REASON_POWERGRYD;
 }

@@ -5,6 +5,7 @@ import { GENERIC_ASSIGN_REASON_POWERGRYD } from "./genericPool.js";
 import {
   FREED_POWERGRYD_GENERIC_ACCOUNT_IDS,
   cleanupFreedPowerGrydGenerics,
+  isFreedPowerGrydOneClientSkip,
   isFreedPowerGrydPoolOwner,
 } from "./powerGrydFreedCleanup.js";
 
@@ -32,7 +33,64 @@ describe("D283 Onboarding-freed PowerGRYD cleanup", () => {
       }),
       false,
     );
+    assert.equal(
+      isFreedPowerGrydPoolOwner({
+        mailboxClientId: null,
+        assignedClientId: 521881,
+        assignedReason: GENERIC_ASSIGN_REASON_POWERGRYD,
+      }),
+      false,
+      "leftover powergryd_dedicated on a TechEvo assign is not a free",
+    );
     assert.deepEqual(FREED_POWERGRYD_GENERIC_ACCOUNT_IDS, [21592200, 21592202]);
+  });
+
+  it("one-client skip survives cleanup that clears owner/reason", () => {
+    assert.equal(
+      isFreedPowerGrydOneClientSkip({
+        generic: true,
+        mailboxClientId: null,
+        assignedClientId: null,
+        assignedReason: null,
+        justCleared: true,
+        hasPowerGrydMembership: false,
+      }),
+      true,
+    );
+    assert.equal(
+      isFreedPowerGrydOneClientSkip({
+        generic: true,
+        mailboxClientId: null,
+        assignedClientId: null,
+        assignedReason: null,
+        justCleared: false,
+        hasPowerGrydMembership: true,
+      }),
+      true,
+    );
+    assert.equal(
+      isFreedPowerGrydOneClientSkip({
+        generic: true,
+        mailboxClientId: null,
+        assignedClientId: 521881,
+        assignedReason: GENERIC_ASSIGN_REASON_POWERGRYD,
+        justCleared: false,
+        hasPowerGrydMembership: true,
+      }),
+      false,
+      "TechEvo table owner is not a free even with a leftover PG link",
+    );
+    assert.equal(
+      isFreedPowerGrydOneClientSkip({
+        generic: true,
+        mailboxClientId: 521881,
+        assignedClientId: null,
+        justCleared: true,
+        hasPowerGrydMembership: true,
+      }),
+      false,
+      "live named Smartlead client_id is never a free",
+    );
   });
 
   it("clears pool owner and reason for the 85-style freed generic seats", async () => {
@@ -117,6 +175,56 @@ describe("D283 Onboarding-freed PowerGRYD cleanup", () => {
     assert.equal(
       state.getPoolMailbox("ada@getintroduced.info")?.assignedClientId,
       521881,
+    );
+  });
+
+  it("does not release a TechEvo assign that still carries leftover powergryd_dedicated", async () => {
+    const state = new StateStore(
+      `/tmp/pg-freed-te-${process.pid}-${Date.now()}.json`,
+    );
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "ada@getintroduced.info",
+      domain: "getintroduced.info",
+      platform: "GOOGLE",
+      smartleadAccountId: 9,
+      firstName: "Ada",
+      lastName: "Pool",
+      status: "assigned",
+      assignedClientId: 521881,
+      assignedClientName: "TechEvolution",
+      warmedAt: "2026-01-01T00:00:00Z",
+    });
+    state.upsertGenericSeat({
+      email: "ada@getintroduced.info",
+      slAccountId: 9,
+      provider: "GOOGLE",
+      warmReadyAt: "2026-01-01T00:00:00Z",
+      assignedClientId: 521881,
+      assignedCampaignIds: [88],
+      assignedPod: "A",
+      assignedAt: "2026-09-01T00:00:00Z",
+      reason: GENERIC_ASSIGN_REASON_POWERGRYD,
+      releasedAt: null,
+      releaseHistory: [],
+      staffableWeight: 1,
+    });
+    const result = cleanupFreedPowerGrydGenerics({
+      accounts: [
+        {
+          id: 9,
+          from_email: "ada@getintroduced.info",
+          client_id: null,
+        },
+      ],
+      state,
+    });
+    assert.deepEqual(result.cleared, []);
+    assert.equal(state.getPoolMailbox("ada@getintroduced.info")?.assignedClientId, 521881);
+    assert.equal(state.getGenericSeat("ada@getintroduced.info")?.assignedClientId, 521881);
+    assert.equal(
+      state.getGenericSeat("ada@getintroduced.info")?.reason,
+      GENERIC_ASSIGN_REASON_POWERGRYD,
     );
   });
 });

@@ -784,6 +784,8 @@ export class Min40TopUpService {
       targetPod,
       mailboxClientId: typeof account.client_id === "number" ? account.client_id : null,
       assignedClientId: seat.assignedClientId ?? pool?.assignedClientId ?? null,
+      assignedReason: seat.reason,
+      releaseHistory: seat.releaseHistory,
       tags: account.tags,
       assignedPod: seat.assignedPod ?? null,
     });

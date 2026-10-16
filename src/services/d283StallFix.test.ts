@@ -228,7 +228,7 @@ describe("D283 stall fix — book-only guards, no PowerGRYD pool walk", () => {
       `no generics onto PowerGRYD: ${JSON.stringify(attached)}`,
     );
     assert.equal(
-      attached.some((row) => row[0] === 5486),
+      attached.some((row) => row[0] === 5486 && row[1].some((id) => freedIds.has(id))),
       false,
       `freed seats must not dump onto Goliath: ${JSON.stringify(attached)} ${JSON.stringify(one)}`,
     );

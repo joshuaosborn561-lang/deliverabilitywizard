@@ -26,6 +26,55 @@ export const FREED_POWERGRYD_GENERIC_ACCOUNT_IDS: readonly number[] = [
   21592200, 21592202,
 ];
 
+export const ONBOARDING_FREED_POWERGRYD_REASON = "onboarding_freed_powergryd";
+
+export function seatWasOnboardingFreedPowerGryd(
+  seat?: {
+    reason?: string | null;
+    releaseHistory?: Array<{ reason?: string | null }>;
+  } | null,
+): boolean {
+  if (!seat) return false;
+  const reasons = [
+    seat.reason,
+    ...(seat.releaseHistory ?? []).map((event) => event.reason),
+  ];
+  return reasons.some(
+    (reason) =>
+      String(reason ?? "").trim().toLowerCase() === ONBOARDING_FREED_POWERGRYD_REASON,
+  );
+}
+
+/** D283 — Onboarding-freed generics are idle, not pool supply. */
+export function isFreedPowerGrydAttachBlocked(input: {
+  mailboxClientId?: number | null;
+  assignedClientId?: number | null;
+  assignedReason?: string | null;
+  releaseHistory?: Array<{ reason?: string | null }>;
+  powerGrydClientId?: number;
+}): boolean {
+  if (
+    typeof input.mailboxClientId === "number" &&
+    Number.isFinite(input.mailboxClientId)
+  ) {
+    return false;
+  }
+  if (
+    isFreedPowerGrydPoolOwner({
+      mailboxClientId: input.mailboxClientId,
+      assignedClientId: input.assignedClientId,
+      assignedReason: input.assignedReason,
+      powerGrydClientId: input.powerGrydClientId,
+    })
+  ) {
+    return true;
+  }
+  return seatWasOnboardingFreedPowerGryd({
+    reason: input.assignedReason,
+    releaseHistory: input.releaseHistory,
+  });
+}
+
 export function isFreedPowerGrydPoolOwner(input: {
   mailboxClientId?: number | null;
   assignedClientId?: number | null;
@@ -61,6 +110,7 @@ export function isFreedPowerGrydOneClientSkip(input: {
   mailboxClientId?: number | null;
   assignedClientId?: number | null;
   assignedReason?: string | null;
+  releaseHistory?: Array<{ reason?: string | null }>;
   justCleared?: boolean;
   hasPowerGrydMembership?: boolean;
   powerGrydClientId?: number;
@@ -83,6 +133,17 @@ export function isFreedPowerGrydOneClientSkip(input: {
     return true;
   }
   if (input.justCleared) return true;
+  if (
+    isFreedPowerGrydAttachBlocked({
+      mailboxClientId: input.mailboxClientId,
+      assignedClientId: input.assignedClientId,
+      assignedReason: input.assignedReason,
+      releaseHistory: input.releaseHistory,
+      powerGrydClientId: input.powerGrydClientId,
+    })
+  ) {
+    return true;
+  }
   const assigned = input.assignedClientId;
   const otherNamedOwner =
     typeof assigned === "number" &&
@@ -150,13 +211,13 @@ export function clearFreedPowerGrydPoolOwner(
     if (typeof state.releaseGenericFromTable === "function") {
       state.releaseGenericFromTable(key, {
         now,
-        reason: "onboarding_freed_powergryd",
+        reason: ONBOARDING_FREED_POWERGRYD_REASON,
       });
     } else if (typeof state.upsertGenericSeat === "function") {
       state.upsertGenericSeat(
         applyReleaseGenericSeat(seat, {
           now,
-          reason: "onboarding_freed_powergryd",
+          reason: ONBOARDING_FREED_POWERGRYD_REASON,
         }),
       );
     }

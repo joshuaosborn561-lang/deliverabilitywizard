@@ -312,7 +312,8 @@ Caps ramp manually (35 on Oct 12).
   cleanup clears owner and reason on those generic-domain seats
   (e.g. 21592200, 21592202). One-client still treats a just-cleared
   or leftover-592842-membership generic as freed: peel PowerGRYD
-  only, never D76-restore onto Goliath.
+  only, never D76-restore onto Goliath. Those seats stay idle —
+  not min40 / campaign-top-up / TERRL pool supply.
   **Exception (D242 / D244 CALLER
   FOLLOW-UP):** seats tagged `GABE-VM-RESERVED` (or the configured
   `CALLER_FOLLOWUP` sender tag) — Gabe Lopez voicemail follow-up,

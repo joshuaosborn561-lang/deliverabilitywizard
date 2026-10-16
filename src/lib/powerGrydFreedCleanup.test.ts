@@ -4,7 +4,9 @@ import { StateStore } from "../state/store.js";
 import { GENERIC_ASSIGN_REASON_POWERGRYD } from "./genericPool.js";
 import {
   FREED_POWERGRYD_GENERIC_ACCOUNT_IDS,
+  ONBOARDING_FREED_POWERGRYD_REASON,
   cleanupFreedPowerGrydGenerics,
+  isFreedPowerGrydAttachBlocked,
   isFreedPowerGrydOneClientSkip,
   isFreedPowerGrydPoolOwner,
 } from "./powerGrydFreedCleanup.js";
@@ -90,6 +92,14 @@ describe("D283 Onboarding-freed PowerGRYD cleanup", () => {
       }),
       false,
       "live named Smartlead client_id is never a free",
+    );
+    assert.equal(
+      isFreedPowerGrydAttachBlocked({
+        mailboxClientId: null,
+        assignedClientId: null,
+        releaseHistory: [{ reason: ONBOARDING_FREED_POWERGRYD_REASON }],
+      }),
+      true,
     );
   });
 

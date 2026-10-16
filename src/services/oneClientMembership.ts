@@ -258,6 +258,7 @@ export class OneClientMembershipService {
         mailboxClientId: account.client_id,
         assignedClientId,
         assignedReason: tableSeat?.reason,
+        releaseHistory: tableSeat?.releaseHistory,
         justCleared: justClearedFreed.has(email.trim().toLowerCase()),
         hasPowerGrydMembership: memberships.some(
           (row) => !row.shell && isPowerGrydClientId(row.clientId),

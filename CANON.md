@@ -1,6 +1,6 @@
 # Canon — what this system does
 
-Canon as of **D282** (2026-10-16). One page of current truth. When a new
+Canon as of **D283** (2026-10-16). One page of current truth. When a new
 decision lands in `DECISIONS.md`, this file is updated **in the same PR** —
 a decision that is not reflected here is not finished shipping (the meta
 guard in `src/guards/meta.test.ts` enforces both).
@@ -254,10 +254,16 @@ Caps ramp manually (35 on Oct 12).
   (`insight` / `joshosborn`) domain. No generics and no other named
   senders (Owen Sanchez, …), even when Insight PODs sit under 40.
   Insight's floor is whatever Josh-seats exist; never backfill
-  (`insightExemptFromSenderTopUp`). `addEmailAccountsToCampaign`
+  (`insightExemptFromSenderTopUp`).   `addEmailAccountsToCampaign`
   hard-rejects a non-Josh link for client 582890. An existing
   violation is an `insight_non_josh_sender` finding (flag only; do
   not auto-unlink). understaffed / min40 findings are suppressed.
+  **D283:** the same shared link path hard-rejects CornerStone
+  client 574088 seats and any unexpired `HOLD-UNTIL-*` tag
+  (`assertAttachAllowedAccountIds` / `canAttachMailboxToCampaign`).
+  Campaign-fill / top-up must not re-link those 73 held seats
+  onto EMCOR or TechEvo. Leftover HOLD-UNTIL still does not
+  *pull* (D51/D128). Never START or unpause STOPPED campaigns.
   **SalesGlider stays 345263** (`salesglider*` only). Insight ≠ SG.
   One-client (D26) plus the named-id attach gate keep them from
   mixing: non-Josh salesglider seats never staff Insight.
@@ -294,6 +300,13 @@ Caps ramp manually (35 on Oct 12).
   reads live Smartlead `client_id` when it disagrees with a stale
   pool `assignedClientId` (D258) — one-client must not peel a
   TechEvo / Insight seat because the pool still says PowerGRYD.
+  **D283:** live Smartlead `client_id=null` is authoritative for
+  seats Onboarding freed. A leftover pool row still naming 592842
+  with reason `powergryd_dedicated` does not invent an owner and
+  must not write 592842 back (`preferredGenericOwnerId` /
+  `writeOwnerClientId` / min40 / campaign top-up). A one-time
+  cleanup clears owner and reason on those generic-domain seats
+  (e.g. 21592200, 21592202).
   **Exception (D242 / D244 CALLER
   FOLLOW-UP):** seats tagged `GABE-VM-RESERVED` (or the configured
   `CALLER_FOLLOWUP` sender tag) — Gabe Lopez voicemail follow-up,
@@ -404,7 +417,10 @@ Caps ramp manually (35 on Oct 12).
   campaigns with a generic whose live Smartlead `client_id`
   or signature belongs to another named client. A stale
   pool `assignedClientId=592842` does not override a live
-  TechEvo 521881 or Insight 582890 `client_id`. **D256:** a client may override the 40 floor via
+  TechEvo 521881 or Insight 582890 `client_id`. **D283:**
+  never staff fleet-pool generics onto PowerGRYD 592842 at
+  all — named branded seats only. `genericBlockedOnPowerGrydStaffing`
+  is a hard no for target 592842. **D256:** a client may override the 40 floor via
   `MIN_FLOOR_BY_CLIENT` (TechEvo 521881 is 30). min40
   fills to that floor and returns surplus generics above it.
   **POC engagement** (D236): a name-list match except Goliath
@@ -427,8 +443,10 @@ Caps ramp manually (35 on Oct 12).
   Insight campaign `client_id` off 582890. **D282:** staffing, restaff,
   POD rotation, generic backfill, and isolation restaff exclude any
   sender that is not a Josh Osborn mailbox on a salesglider* or Insight
-  domain from Insight campaigns (`canAttachMailboxToCampaign` /
-  `assertInsightJoshOnlyAccountIds`). Insight off-week seats
+  domain from Insight campaigns   (`canAttachMailboxToCampaign` /
+  `assertInsightJoshOnlyAccountIds`). **D283** also excludes
+  CornerStone 574088 and HOLD-UNTIL from every attach path.
+  Insight off-week seats
   unlink like any other named client (D229). BCP-owned domains
   count as BCP even with no `client_id` (D99). Resting inboxes are skipped,
   and so is anything that owes warmup days — staffing never hands the gate
@@ -581,6 +599,8 @@ Caps ramp manually (35 on Oct 12).
   `client_id` for dedicated-generic resolution; never staff
   PowerGRYD with a foreign-signature / foreign-client generic
   while branded named seats are still warming (empty-by-design).
+  **D283:** live `client_id=null` also wins (Onboarding-freed);
+  never staff generics onto PowerGRYD.
   A generic assigned to a client that does
   not need it for that POD's 40 is a `generic_idle` finding. The
   **named staffable** count that decides idle (D239) matches Canon

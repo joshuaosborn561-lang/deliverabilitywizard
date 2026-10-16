@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   BCP_CLIENT_ID,
+  CORNERSTONE_CLIENT_ID,
   EMCOR_CLIENT_ID,
   PARLAY_CLIENT_ID,
   POWERGRYD_CLIENT_ID,
   TECHEVO_CLIENT_ID,
+  isCornerstoneClientId,
+  isPowerGrydClientId,
   parseClientIdList,
 } from "./namedClientIds.js";
 
@@ -16,6 +19,10 @@ describe("named client ids", () => {
     assert.equal(PARLAY_CLIENT_ID, 418274);
     assert.equal(EMCOR_CLIENT_ID, 574020);
     assert.equal(POWERGRYD_CLIENT_ID, 592842);
+    assert.equal(CORNERSTONE_CLIENT_ID, 574088);
+    assert.equal(isPowerGrydClientId(592842), true);
+    assert.equal(isCornerstoneClientId(574088), true);
+    assert.equal(isCornerstoneClientId(574020), false);
   });
 
   it("parses a replacement list from env", () => {

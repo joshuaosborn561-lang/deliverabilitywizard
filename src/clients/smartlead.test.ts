@@ -74,6 +74,54 @@ describe("SmartleadClient.addEmailAccountsToCampaign", () => {
     await client.addEmailAccountsToCampaign(3921647, [3]);
     assert.equal(called, true);
   });
+
+  it("D283: refuses CornerStone and HOLD-UNTIL seats before any write", async () => {
+    const { AttachForbiddenSeatError } = await import("../lib/attachGuard.js");
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new SmartleadClient("test-key");
+    client.setInsightJoshLinkContext({
+      campaigns: [
+        { id: 4001, name: "EMCOR Mesa", client_id: 574020 },
+        { id: 4002, name: "TechEvo NE", client_id: 521881 },
+      ],
+      accounts: [
+        {
+          id: 73,
+          client_id: 574088,
+          from_email: "owen@cornerstoneearthworksmy.info",
+        },
+        {
+          id: 74,
+          tags: [{ tag_name: "HOLD-UNTIL-2026-12-31" }],
+          from_email: "held@getmesaco.info",
+        },
+        {
+          id: 75,
+          client_id: 521881,
+          from_email: "ada@techevolution.com",
+        },
+      ],
+    });
+    await assert.rejects(
+      () => client.addEmailAccountsToCampaign(4001, [73]),
+      AttachForbiddenSeatError,
+    );
+    await assert.rejects(
+      () => client.addEmailAccountsToCampaign(4002, [74]),
+      AttachForbiddenSeatError,
+    );
+    assert.equal(called, false);
+    await client.addEmailAccountsToCampaign(4002, [75]);
+    assert.equal(called, true);
+  });
 });
 
 describe("SmartleadClient.updateCampaignStatus", () => {

@@ -9,6 +9,16 @@ export const TECHEVO_CLIENT_ID = 521881;
 export const PARLAY_CLIENT_ID = 418274;
 export const EMCOR_CLIENT_ID = 574020;
 export const POWERGRYD_CLIENT_ID = 592842;
+/** CornerStone Earthworks — held until 2026-12-31 (D283). */
+export const CORNERSTONE_CLIENT_ID = 574088;
+
+export function isPowerGrydClientId(id: number | null | undefined): boolean {
+  return id === POWERGRYD_CLIENT_ID;
+}
+
+export function isCornerstoneClientId(id: number | null | undefined): boolean {
+  return id === CORNERSTONE_CLIENT_ID;
+}
 
 export function parseClientIdList(
   raw: string | undefined,

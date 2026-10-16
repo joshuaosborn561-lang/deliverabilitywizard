@@ -26,6 +26,12 @@ import {
   weightedStaffableOnCampaign,
 } from "../lib/staffable.js";
 import {
+  canStaffInsightCampaign,
+  insightExemptFromSenderTopUp,
+  isInsightJoshAllowedSender,
+  isInsightJoshOnlyCampaign,
+} from "../lib/insight.js";
+import {
   isCallerFollowUpCampaign,
   isGabeFollowUpCampaign,
   isPocEngagementClient,
@@ -111,7 +117,7 @@ export async function runStaffTick(opts: {
     const floor = seatTargetForCampaign(campaign);
     const staffingReady = staffingInventoryReady(opts.book);
 
-    if (staffingReady) {
+    if (staffingReady && !insightExemptFromSenderTopUp(campaign)) {
       const short = understaffed(campaign, opts.book.accounts, {
         fleetEmails: opts.fleetEmails,
         now: now.getTime(),
@@ -136,7 +142,7 @@ export async function runStaffTick(opts: {
           detail: `${campaign.name} on-week ESP mix under 1/3 of real POD size`,
         });
       }
-      if (!poc) {
+      if (!poc && !insightExemptFromSenderTopUp(campaign)) {
         findings.push(
           ...genericIdleFindings({
             campaign,
@@ -204,6 +210,17 @@ export async function runStaffTick(opts: {
       }
 
       if (isCallerReserved(account.tags)) continue;
+
+      if (isInsightJoshOnlyCampaign(campaign) && !isInsightJoshAllowedSender(account)) {
+        findings.push({
+          kind: "insight_non_josh_sender",
+          campaignId: campaign.id,
+          accountId: account.id,
+          email: account.email,
+          detail: `${account.email} is not a Josh Osborn mailbox on a salesglider* or Insight domain (D282)`,
+        });
+      }
+
       if (heldIds.has(account.id)) continue;
 
       if (owesWarmup(account, opts.fleetEmails, now.getTime()) && isActiveStatus(campaign.status)) {
@@ -311,7 +328,7 @@ export async function runStaffTick(opts: {
       }
     }
 
-    if (staffingReady) {
+    if (staffingReady && !insightExemptFromSenderTopUp(campaign)) {
       await fillFloor({
         campaign,
         book: opts.book,
@@ -486,6 +503,7 @@ async function fillFloor(opts: {
     if (isCopyCanaryFleetEmail(account.email, opts.fleetEmails)) return false;
     if (isCallerReserved(account.tags)) return false;
     if (!isStaffableSender(account, { fleetEmails: opts.fleetEmails, now: opts.now })) return false;
+    if (!canStaffInsightCampaign(account, opts.campaign)) return false;
     if (
       account.clientId != null &&
       opts.campaign.clientId != null &&

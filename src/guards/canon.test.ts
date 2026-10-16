@@ -7091,8 +7091,8 @@ describe("owner intent — D281 v2 ticks finish: timeout, abort, TTL lease, heal
     const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
     assert.match(
       canon,
-      /Canon as of \*\*D281\*\*/,
-      stop("CANON is dated D281.", "CANON.md header is not D281."),
+      /Canon as of \*\*D(281|28[2-9])\*\*/,
+      stop("CANON is dated D281 or later.", "CANON.md header lost the D281-era stamp."),
     );
     assert.match(
       canon,

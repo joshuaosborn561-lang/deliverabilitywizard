@@ -263,6 +263,7 @@ export const CANON_CATALOG: readonly CanonRule[] = [
   { d: 279, title: "v2 shadow finds old-wizard holes; floor-deficit attaches; stampOk clears overdue", job: "process", status: "implemented", note: "membership hydrate; fillFloor short-pending; pending dedupe; placement_scores (campaign_id, source); stage ok log" },
   { d: 280, title: "v2 workers boot-tick; copy-canary scores; per-campaign findings; purge stale attaches", job: "process", status: "implemented", note: "all roles bind /health; skip reasons logged; idempotent placement_scores unique; unwarmed copy-canary counts; unknown settings not flagged; pending attach purge on staff boot" },
   { d: 281, title: "v2 tick timeout + abort + TTL lease; health-only workers; isolation off Smartlead limiter", job: "process", status: "implemented", note: "staff 10m / isolation 8m AbortController; lease and rate-slot TTL; progress logs; page/hydrate/sequence caps; createHealthApp" },
+  { d: 282, title: "Insight 582890 Josh-only senders; never backfill", job: 1, status: "implemented", note: "isInsightJoshAllowedSender; skip min40/understaffed; insight_non_josh_sender flag only" },
 ];
 
 export function catalogByD(d: number): CanonRule | undefined {

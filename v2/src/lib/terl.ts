@@ -14,6 +14,7 @@ import {
   podOf,
   weightedStaffableOnCampaign,
 } from "./staffable.js";
+import { canStaffInsightCampaign, insightExemptFromSenderTopUp } from "./insight.js";
 import type { WriteGate } from "../shadow.js";
 import type { V2Store } from "../store.js";
 import type {
@@ -169,6 +170,7 @@ export async function runTerlTick(opts: {
       if (openSubs.some((s) => s.campaignId === campaign.id && s.stoppedAccountId === account.id)) {
         continue;
       }
+      if (insightExemptFromSenderTopUp(campaign)) continue;
       const sub = pickSameClientSubstitute({
         campaign,
         book: opts.book,
@@ -285,6 +287,7 @@ function pickSameClientSubstitute(opts: {
     if (!isStaffableSender(account, { fleetEmails: opts.fleetEmails, now: opts.now })) {
       return false;
     }
+    if (!canStaffInsightCampaign(account, opts.campaign)) return false;
     if (
       account.clientId != null &&
       opts.campaign.clientId != null &&

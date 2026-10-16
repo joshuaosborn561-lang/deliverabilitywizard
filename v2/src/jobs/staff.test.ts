@@ -451,4 +451,64 @@ describe("staff tick", () => {
     assert.equal(result.findings.length, 0);
     assert.equal(result.intended.length, 0);
   });
+
+  it("D282: Insight flags Owen, does not understaff or min40-backfill", async () => {
+    const store = new MemoryStore();
+    const gate = new WriteGate(loadConfig({} as NodeJS.ProcessEnv), store);
+    const josh = account({
+      id: 1,
+      email: "josh@trysalesglider.info",
+      fromName: "Josh Osborn",
+      clientId: 582890,
+      campaignIds: [3921647],
+      tags: ["POD-A"],
+    });
+    const owen = account({
+      id: 2,
+      email: "owen@joshosbornhq.info",
+      fromName: "Owen Sanchez",
+      clientId: 582890,
+      campaignIds: [3921647],
+      tags: ["POD-A"],
+    });
+    const spare = account({
+      id: 3,
+      email: "spare@crosslaunchco.com",
+      fromName: "Harmony Norris",
+      clientId: null,
+      campaignIds: [],
+      tags: ["GENERIC"],
+    });
+    const result = await runStaffTick({
+      book: {
+        fetchedAt: new Date().toISOString(),
+        campaigns: [
+          {
+            id: 3921647,
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
+            clientId: 582890,
+          },
+        ],
+        accounts: [josh, owen, spare],
+      },
+      fleetEmails: [],
+      gate,
+      store,
+      config: loadConfig({} as NodeJS.ProcessEnv),
+      runQa: false,
+    });
+    assert.ok(result.findings.some((f) => f.kind === "insight_non_josh_sender"));
+    assert.equal(result.findings.some((f) => f.kind === "understaffed"), false);
+    assert.equal(
+      result.intended.some((a) => a.kind === "attach"),
+      false,
+      "Insight must not min40-backfill with generics or Owen",
+    );
+    assert.equal(
+      result.intended.some((a) => a.kind === "detach" && a.email === "owen@joshosbornhq.info"),
+      false,
+      "insight_non_josh_sender flags Owen; it does not auto-unlink",
+    );
+  });
 });

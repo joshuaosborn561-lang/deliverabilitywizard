@@ -194,6 +194,9 @@ describe("ported canon that Josh said v2 was missing", () => {
     assert.match(srcBlob, /expireStaleTickLeases/, stop("D281", "stale lease clear missing"));
     assert.match(srcBlob, /V2_STAFF_ACCOUNT_PAGE_CAP/, stop("D281", "account page cap missing"));
     assert.match(srcBlob, /formatSkipLog\(stage, "timeout"/, stop("D281", "timeout skip log missing"));
+    assert.match(srcBlob, /isInsightJoshAllowedSender/, stop("D282", "Josh-only Insight helper missing"));
+    assert.match(srcBlob, /insightExemptFromSenderTopUp/, stop("D282", "Insight min40 skip missing"));
+    assert.match(srcBlob, /insight_non_josh_sender/, stop("D282", "insight_non_josh_sender finding missing"));
   });
 });
 

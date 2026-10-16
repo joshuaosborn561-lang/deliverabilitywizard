@@ -287,6 +287,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D279 | Live | v2 shadow scoring matches old-wizard findings; attaches are floor deficit + pending dedupe; stampOk clears last_error/overdue; one ok log line per stage |
 | D280 | Live — tick TTL / health-only worker amended by D281 | v2 staff/isolation boot-tick + skip-reason logs; all roles bind /health; idempotent placement_scores unique; unwarmed copy-canary counts; per-campaign settings; purge pre-D279 pending attaches |
 | D281 | Live | v2 tick hard timeout + AbortController; in-flight lease and rate-slot TTL; isolation off the Smartlead limiter; workers serve /health only; per-tick request budget + progress logs |
+| D282 | Live | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; floor is Josh-seats only, never backfill; `insight_non_josh_sender` flags existing violations; understaffed/min40 suppressed |
 
 ---
 
@@ -10240,6 +10241,47 @@ is off that limiter.
 account/test page caps; isolation does not call `loadOrRefreshInventory`.
 Tests cover timeout abort, stale lease, stuck rate slot, health-only
 404 on `/compare`, page caps.
+
+---
+
+## D282 — Insight 582890 sends only from Josh Osborn on SalesGlider or Insight domains
+
+**Date.** 2026-10-16 (Josh, 9:40am CT).
+
+**Decision.** Insight (Smartlead client 582890) campaigns may only
+send from **Josh Osborn** inboxes on a SalesGlider (`salesglider*`)
+or Insight (`insight` / `joshosborn`) domain. That means:
+
+1. No generics on Insight. No other named senders (Owen Sanchez,
+   or anyone whose from-name is not Josh Osborn).
+2. Insight's floor is whatever Josh-seats exist. Never backfill to
+   40. min40, generic backfill, TERRL substitute, and understaffed
+   findings skip the class (`insightExemptFromSenderTopUp`).
+3. Staffing, restaff, POD rotation, generic backfill, and isolation
+   restaff exclude a non-Josh sender from Insight campaigns
+   (`canStaffInsightCampaign` / `isInsightJoshAllowedSender`).
+4. An existing violation is a CANON finding `insight_non_josh_sender`
+   — flag only, do not auto-unlink.
+
+D192 mix (Insight ≠ SalesGlider; do not sit on both ACTIVE SG and
+Insight) still stands. D184 exclusive-blank staff stays retired.
+
+**Why.** Josh: Insight PODs under the 40 floor must not pull Owen
+or generics. The sender on Insight is Josh.
+
+**Rejected.** Lowering Insight to 40 with non-Josh fill. Auto-unlinking
+existing Owen / generic seats (flag, then a human). Treating Joshua
+Osborn as Josh Osborn.
+
+**Supersedes / amends.** Amends D192 sender mix and D217/D256/D268
+floor for Insight only — Josh-seats, never 40-backfill. Does not
+reverse D26 one-client, D229 Insight rest, or D255 mailbox sig.
+
+**Guards.** v2 catalog D282; `isInsightJoshAllowedSender`;
+`insightExemptFromSenderTopUp`; `insight_non_josh_sender` in
+`CANON_CORE_KINDS`; staff tick skips understaffed/min40; flags
+Owen without detach. Tests cover Josh-on-salesglider allowed,
+Owen/generic rejected, finding without unlink.
 
 ---
 

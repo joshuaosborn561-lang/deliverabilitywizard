@@ -1350,6 +1350,7 @@ describe("ClientRestService", () => {
         {
           id: 20,
           from_email: insightOn,
+          from_name: "Josh Osborn",
           client_id: 345263,
           campaign_ids: [3921647],
           created_at: WARMED,

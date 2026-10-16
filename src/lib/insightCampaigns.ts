@@ -1,12 +1,12 @@
 /**
- * D192 — Insight is Smartlead client 582890 (Josh personal domains
- * only; mailbox sig `Josh Osborn\nInsight`). SalesGlider stays
- * 345263 (`salesglider*` only). Insight ≠ SG. D184's exclusive-blank
- * Insight staff inside 345263 is retired — never revive.
+ * D192 — Insight is Smartlead client 582890 (mailbox sig
+ * `Josh Osborn\nInsight`). SalesGlider stays 345263 (`salesglider*`
+ * only). Insight ≠ SG. D184's exclusive-blank Insight staff inside
+ * 345263 is retired — never revive.
  *
- * Attach still refuses to mix the two (D26 one-client plus the
- * named-id gate): josh-personal never fans out as 345263 supply
- * onto Insight, and SG Engagers never sit on Insight campaigns.
+ * D282 — Insight live campaigns send only from Josh Osborn inboxes
+ * on a salesglider* or Insight domain. Generics and other named
+ * senders never attach. Mix with ACTIVE SalesGlider still refuses.
  */
 
 import {
@@ -16,6 +16,7 @@ import {
 import type { SmartleadCampaign, SmartleadSequence } from "../types/index.js";
 import { isAnyShellCampaign } from "./canaryShell.js";
 import { findForeignBrand } from "./clientBrand.js";
+import { emailDomainOf } from "./isolationDomain.js";
 import { extractSignatureLines } from "./mailboxSignature.js";
 import {
   INSIGHT_CLOSE_BRAND,
@@ -49,6 +50,158 @@ export function isInsightCampaignId(id: number | null | undefined): boolean {
 
 export function isInsightClientId(id: number | null | undefined): boolean {
   return id === INSIGHT_CLIENT_ID;
+}
+
+/** Visible from-name that may send on Insight (D282). */
+export const INSIGHT_JOSH_FROM_NAME = /^josh\s+osborn$/i;
+
+/**
+ * D282 — Insight (client 582890, named Insight ids, or `Insight ` prefix
+ * on 582890 / leftover 345263). Shells are not this class.
+ */
+export function isInsightJoshOnlyCampaign(
+  campaign:
+    | {
+        id?: number | null;
+        name?: string | null;
+        client_id?: number | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!campaign) return false;
+  if (isAnyShellCampaign(campaign)) return false;
+  if (isInsightClientId(campaign.client_id)) return true;
+  return isInsightRestStickyCampaign(campaign);
+}
+
+function insightSendingDomainBase(domain: string): string {
+  return domain
+    .toLowerCase()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * D282 — SalesGlider (`salesglider*`) or Insight (`insight` / `joshosborn`)
+ * sending domains. Other client brands are never Insight supply.
+ */
+export function isSalesGliderOrInsightSendingDomain(
+  domain: string | null | undefined,
+): boolean {
+  if (!domain) return false;
+  const base = insightSendingDomainBase(domain);
+  if (!base) return false;
+  return (
+    base.includes("salesglider") ||
+    base.includes("joshosborn") ||
+    base.includes("insight")
+  );
+}
+
+export type InsightJoshSenderAccount = {
+  from_name?: string | null;
+  from_email?: string | null;
+  email?: string | null;
+  username?: string | null;
+  signature?: string | null;
+};
+
+export function insightSenderEmail(
+  account: InsightJoshSenderAccount,
+): string | undefined {
+  return (
+    account.from_email?.trim() ||
+    account.email?.trim() ||
+    account.username?.trim() ||
+    undefined
+  );
+}
+
+/**
+ * D282 — a Josh Osborn mailbox on a salesglider* or Insight domain.
+ * Generics and other named senders (Owen Sanchez, …) never qualify.
+ */
+export function isInsightJoshAllowedSender(
+  account: InsightJoshSenderAccount | null | undefined,
+): boolean {
+  if (!account) return false;
+  const from = String(account.from_name ?? "").trim();
+  if (!INSIGHT_JOSH_FROM_NAME.test(from)) return false;
+  const email = insightSenderEmail(account);
+  return isSalesGliderOrInsightSendingDomain(emailDomainOf(email));
+}
+
+/**
+ * D282 — Insight's floor is whatever Josh-seats exist. min40, generic
+ * backfill, TERRL substitute, and understaffed findings skip the class.
+ * Fan-out / rest of Josh seats still run.
+ */
+export function insightExemptFromSenderTopUp(
+  campaign:
+    | {
+        id?: number | null;
+        name?: string | null;
+        client_id?: number | null;
+      }
+    | null
+    | undefined,
+): boolean {
+  return isInsightJoshOnlyCampaign(campaign);
+}
+
+export class InsightNonJoshSenderBlockedError extends Error {
+  readonly blockedIds: number[];
+  readonly campaignId: number;
+
+  constructor(campaignId: number, blockedIds: number[]) {
+    super(
+      `Insight campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains (client 582890, D282): campaign ${campaignId} blocked account ids ${blockedIds.join(",")}`,
+    );
+    this.name = "InsightNonJoshSenderBlockedError";
+    this.blockedIds = blockedIds;
+    this.campaignId = campaignId;
+  }
+}
+
+export function insightJoshLinkCampaignIds(
+  campaigns: Iterable<{
+    id?: number | null;
+    name?: string | null;
+    client_id?: number | null;
+  }> = [],
+): Set<number> {
+  const out = new Set<number>(INSIGHT_CAMPAIGN_IDS);
+  for (const campaign of campaigns) {
+    if (typeof campaign.id !== "number" || !Number.isFinite(campaign.id)) {
+      continue;
+    }
+    if (isInsightJoshOnlyCampaign(campaign)) out.add(campaign.id);
+  }
+  return out;
+}
+
+export function assertInsightJoshOnlyAccountIds(
+  campaignId: number,
+  accountIds: number[],
+  ctx: {
+    insightCampaignIds: ReadonlySet<number>;
+    accountsById: ReadonlyMap<number, InsightJoshSenderAccount>;
+  },
+): void {
+  if (
+    !ctx.insightCampaignIds.has(campaignId) &&
+    !isInsightCampaignId(campaignId)
+  ) {
+    return;
+  }
+  const blocked = accountIds.filter((id) => {
+    const account = ctx.accountsById.get(id);
+    return !account || !isInsightJoshAllowedSender(account);
+  });
+  if (blocked.length) {
+    throw new InsightNonJoshSenderBlockedError(campaignId, blocked);
+  }
 }
 
 /**
@@ -183,8 +336,12 @@ export function mailboxIsExclusiveInsightStaff(
 /**
  * Fan-out / top-up / on-week restore gate. Insight is not default
  * client-345263 fan-out: only mailboxes already on Insight may spread
- * across the Insight set, and never onto ACTIVE SG. ACTIVE SG staff
- * never attach to Insight.
+ * across leftover 345263 Insight ids, and never onto ACTIVE SG.
+ * ACTIVE SG staff never attach to Insight. D282 — Insight live
+ * campaigns also refuse any sender that is not a Josh Osborn mailbox
+ * on a salesglider* or Insight domain. Client 582890 Josh seats
+ * restaff after A/B rest without already sitting on Insight; min40
+ * never backfills the 40 floor.
  */
 export function canAttachMailboxToCampaign(
   account: SmartleadAccountWithCampaigns,
@@ -193,9 +350,17 @@ export function canAttachMailboxToCampaign(
   opts?: { insightRequiresExisting?: boolean },
 ): boolean {
   if (isAnyShellCampaign(target)) return true;
-  if (isInsightCampaignId(target.id)) {
+  if (isInsightJoshOnlyCampaign(target) || isInsightCampaignId(target.id)) {
+    if (!isInsightJoshAllowedSender(account)) return false;
     if (mailboxStaffsActiveSalesGlider(account, campaignById)) return false;
-    if (opts?.insightRequiresExisting) {
+    // D184 leftover: named Insight ids still sitting in 345263 are not
+    // default SalesGlider fan-out. Client 582890 Josh seats are the
+    // Insight fleet — restaff them after A/B rest (D229), never require
+    // they already sit on an Insight campaign.
+    if (
+      opts?.insightRequiresExisting &&
+      !isInsightClientId(target.client_id)
+    ) {
       return mailboxInsightCampaignIds(account, campaignById).length > 0;
     }
     return true;

@@ -5,9 +5,16 @@ import {
   INSIGHT_CAMPAIGN_IDS,
   INSIGHT_CLIENT_ID,
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
+  InsightNonJoshSenderBlockedError,
+  assertInsightJoshOnlyAccountIds,
   insightDualSignatureMismatch,
+  insightExemptFromSenderTopUp,
+  insightJoshLinkCampaignIds,
   insightMailboxSignatureAllowed,
   insightMailboxSecondBrand,
+  isInsightJoshAllowedSender,
+  isInsightJoshOnlyCampaign,
+  isSalesGliderOrInsightSendingDomain,
   canAttachMailboxToCampaign,
   isInsightCampaign,
   isInsightCampaignId,
@@ -22,11 +29,14 @@ import type { SmartleadCampaign } from "../types/index.js";
 
 function account(
   campaignIds: number[],
+  extras: Partial<SmartleadAccountWithCampaigns> = {},
 ): SmartleadAccountWithCampaigns {
   return {
     id: 1,
     from_email: "joshua@salesglidertop.org",
+    from_name: "Josh Osborn",
     campaign_ids: campaignIds,
+    ...extras,
   } as SmartleadAccountWithCampaigns;
 }
 
@@ -353,6 +363,175 @@ describe("D184 Insight campaigns are campaign-scoped", () => {
         clientBrand: "SalesGlider",
       }),
       "Joshua Osborn\nSalesGlider",
+    );
+  });
+});
+
+describe("D282 Insight Josh-only senders", () => {
+  const insight = {
+    id: 3921647,
+    name: "Insight Consolidation Gateway SEG",
+    status: "ACTIVE",
+    client_id: 582890,
+  } as SmartleadCampaign;
+  const insightById = new Map<number, SmartleadCampaign>([[3921647, insight]]);
+
+  it("allows Josh Osborn on salesglider* or insight domains", () => {
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Josh Osborn",
+        from_email: "josh@trysalesglider.info",
+      }),
+      true,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Josh Osborn",
+        from_email: "josh@joshosbornhq.info",
+      }),
+      true,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Josh Osborn",
+        from_email: "josh@getinsight.co",
+      }),
+      true,
+    );
+    assert.equal(isSalesGliderOrInsightSendingDomain("salesglidersdr.info"), true);
+    assert.equal(isSalesGliderOrInsightSendingDomain("techevolution.com"), false);
+  });
+
+  it("rejects generics, Owen Sanchez, Joshua Osborn, and off-brand domains", () => {
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Owen Sanchez",
+        from_email: "owen@joshosbornhq.info",
+      }),
+      false,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Ada Pool",
+        from_email: "ada@getintroduced.info",
+      }),
+      false,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Joshua Osborn",
+        from_email: "joshua@salesglidertop.org",
+      }),
+      false,
+    );
+    assert.equal(
+      isInsightJoshAllowedSender({
+        from_name: "Josh Osborn",
+        from_email: "josh@gmail.com",
+      }),
+      false,
+    );
+  });
+
+  it("classifies client 582890 and named Insight ids; exempts them from min40", () => {
+    assert.equal(isInsightJoshOnlyCampaign(insight), true);
+    assert.equal(
+      isInsightJoshOnlyCampaign({
+        id: 99,
+        name: "Random",
+        client_id: 582890,
+      }),
+      true,
+    );
+    assert.equal(
+      insightExemptFromSenderTopUp({
+        id: 3921647,
+        name: "Insight Consolidation Gateway SEG",
+        client_id: 582890,
+      }),
+      true,
+    );
+    assert.equal(
+      insightExemptFromSenderTopUp({
+        id: 89,
+        name: "SalesGlider Engagers",
+        client_id: 345263,
+      }),
+      false,
+    );
+    assert.ok(insightJoshLinkCampaignIds([insight]).has(3921647));
+    assert.ok(insightJoshLinkCampaignIds([{ id: 99, client_id: 582890 }]).has(99));
+  });
+
+  it("canAttachMailboxToCampaign refuses Owen / generics on Insight", () => {
+    const owen = account([], {
+      id: 8,
+      from_name: "Owen Sanchez",
+      from_email: "owen@joshosbornhq.info",
+    });
+    const generic = account([], {
+      id: 9,
+      from_name: "Ada Pool",
+      from_email: "ada@getintroduced.info",
+    });
+    const josh = account([], {
+      id: 7,
+      from_name: "Josh Osborn",
+      from_email: "josh@trysalesglider.info",
+    });
+    assert.equal(canAttachMailboxToCampaign(owen, insight, insightById), false);
+    assert.equal(canAttachMailboxToCampaign(generic, insight, insightById), false);
+    assert.equal(canAttachMailboxToCampaign(josh, insight, insightById), true);
+    assert.equal(
+      canAttachMailboxToCampaign(josh, insight, insightById, {
+        insightRequiresExisting: true,
+      }),
+      true,
+      "client 582890 Josh seats restaff Insight after A/B rest",
+    );
+    const leftoverInsight = {
+      id: 3921651,
+      name: "Insight other",
+      status: "ACTIVE",
+      client_id: 345263,
+    } as SmartleadCampaign;
+    assert.equal(
+      canAttachMailboxToCampaign(josh, leftoverInsight, insightById, {
+        insightRequiresExisting: true,
+      }),
+      false,
+      "leftover 345263 Insight still requires an existing Insight seat",
+    );
+  });
+
+  it("assertInsightJoshOnlyAccountIds hard-rejects non-Josh on Insight campaigns", () => {
+    const accountsById = new Map([
+      [1, { from_name: "Josh Osborn", from_email: "josh@trysalesglider.info" }],
+      [2, { from_name: "Owen Sanchez", from_email: "owen@joshosbornhq.info" }],
+    ]);
+    const insightCampaignIds = insightJoshLinkCampaignIds([insight]);
+    assert.doesNotThrow(() =>
+      assertInsightJoshOnlyAccountIds(3921647, [1], {
+        insightCampaignIds,
+        accountsById,
+      }),
+    );
+    assert.throws(
+      () =>
+        assertInsightJoshOnlyAccountIds(3921647, [2], {
+          insightCampaignIds,
+          accountsById,
+        }),
+      (error: unknown) =>
+        error instanceof InsightNonJoshSenderBlockedError &&
+        error.blockedIds.join() === "2" &&
+        error.campaignId === 3921647,
+    );
+    assert.doesNotThrow(() =>
+      assertInsightJoshOnlyAccountIds(89, [2], {
+        insightCampaignIds,
+        accountsById,
+      }),
     );
   });
 });

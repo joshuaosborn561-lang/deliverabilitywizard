@@ -26,7 +26,10 @@ import {
 import { isGabeFollowUpCampaign, pocClientId } from "../lib/pocClient.js";
 import { senderIsAttachBlocked } from "../lib/attachBlock.js";
 import { isolationEmailsOf, isIsolationEmail } from "../lib/isolationDomain.js";
-import { mailboxIsExclusiveInsightStaff } from "../lib/insightCampaigns.js";
+import {
+  canAttachMailboxToCampaign,
+  mailboxIsExclusiveInsightStaff,
+} from "../lib/insightCampaigns.js";
 import { desiredMailboxSignature } from "../lib/mailboxSignature.js";
 import {
   countStaffableMemberships,
@@ -329,6 +332,12 @@ export class OneClientMembershipService {
               ) {
                 return false;
               }
+              if (
+                campaign &&
+                !canAttachMailboxToCampaign(account, campaign, campaignById)
+              ) {
+                return false;
+              }
               return true;
             })
           : [];
@@ -409,6 +418,12 @@ export class OneClientMembershipService {
       const allowed = rows.filter((row) => {
         const account = accountById.get(row.accountId);
         if (!account) return false;
+        if (
+          campaign &&
+          !canAttachMailboxToCampaign(account, campaign, campaignById)
+        ) {
+          return false;
+        }
         return callerFollowUpMayAttach({
           email: row.email,
           account,

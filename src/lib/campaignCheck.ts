@@ -16,6 +16,7 @@ export const CAMPAIGN_CHECK_KINDS = [
   "client_mismatch",
   "mailbox_sig",
   "insight_shared_staff",
+  "insight_non_josh_sender",
   "missing_signature_tag",
   "foreign_brand_in_copy",
   "cross_client_membership",

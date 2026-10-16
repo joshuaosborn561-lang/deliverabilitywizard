@@ -71,4 +71,20 @@ describe("campaignMayTakeGenerics", () => {
       "D134 approvals are still recorded; they just do not staff",
     );
   });
+
+  it("D282: Insight campaigns never take generics", () => {
+    assert.equal(
+      campaignMayTakeGenerics(
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          client_id: 582890,
+        },
+        "Insight",
+        ["goliath", "insight"],
+        {},
+      ),
+      false,
+    );
+  });
 });

@@ -199,6 +199,7 @@ const FINDING_LABEL: Record<string, string> = {
   missing_signature_tag: "signature hole",
   mailbox_sig: "signature hole",
   insight_shared_staff: "Insight seat also on SalesGlider",
+  insight_non_josh_sender: "Insight sender is not Josh Osborn on a SalesGlider or Insight domain",
   mailbox_gap: "send gap too tight",
   mailbox_volume: "daily volume off",
   no_placement_test: "no placement test",

@@ -2036,4 +2036,63 @@ describe("D241 GABE-VM-RESERVED campaign-check", () => {
       false,
     );
   });
+
+  it("D282: flags a non-Josh Insight sender and does not page understaffed", async () => {
+    const state = new StateStore(stateFile());
+    await state.load();
+    const removed: Array<[number, number[]]> = [];
+    const sl = {
+      listCampaigns: async () => [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          status: "ACTIVE",
+          client_id: 582890,
+        },
+      ],
+      listAllEmailAccounts: async () => [
+        {
+          id: 1,
+          from_email: "josh@trysalesglider.info",
+          from_name: "Josh Osborn",
+          signature: "Josh Osborn\nStrategic Account Executive\nInsight",
+          client_id: 582890,
+          campaign_ids: [3921647],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: 2,
+          from_email: "owen@joshosbornhq.info",
+          from_name: "Owen Sanchez",
+          signature: "",
+          client_id: 582890,
+          campaign_ids: [3921647],
+          is_smtp_success: true,
+          is_imap_success: true,
+          message_per_day: 30,
+          created_at: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      listClients: async () => [{ id: 582890, name: "Insight", logo: "Insight" }],
+      getCampaignSequences: async () => [
+        { seq_number: 1, email_body: "<div>A note from Insight</div><div>%signature%</div>" },
+      ],
+      updateEmailAccount: async () => {
+        throw new Error("must not rewrite Insight senders for D282");
+      },
+      removeEmailAccountsFromCampaign: async (campaignId: number, ids: number[]) => {
+        removed.push([campaignId, [...ids]]);
+      },
+    } as unknown as SmartleadClient;
+    const service = mkCheck(loadConfig({}), sl, delivery(), state);
+    const hourly = await service.run({ mode: "hourly" });
+    const row = hourly.findings.find((item) => item.campaignId === 3921647);
+    const kinds = (row?.findings ?? []).map((finding) => finding.kind);
+    assert.equal(kinds.includes("insight_non_josh_sender"), true);
+    assert.equal(kinds.includes("understaffed"), false);
+    assert.deepEqual(removed, [], "D282 flags Owen; it does not auto-unlink");
+  });
 });

@@ -42,7 +42,11 @@ import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
   insightDualSignatureMismatch,
+  insightExemptFromSenderTopUp,
+  insightSenderEmail,
   isInsightCampaign,
+  isInsightJoshAllowedSender,
+  isInsightJoshOnlyCampaign,
   mailboxActiveSalesGliderCampaigns,
   mailboxIsExclusiveInsightStaff,
   mailboxStaffsActiveSalesGlider,
@@ -1344,6 +1348,17 @@ export class CampaignCheckService {
       findings.push(...mergeTag.findings);
     }
 
+    if (isInsightJoshOnlyCampaign(campaign)) {
+      for (const account of attached) {
+        if (isInsightJoshAllowedSender(account)) continue;
+        const email = insightSenderEmail(account) ?? accountEmail(account) ?? `#${account.id}`;
+        findings.push({
+          kind: "insight_non_josh_sender",
+          detail: `${email} is not a Josh Osborn mailbox on a salesglider* or Insight domain (D282)`,
+        });
+      }
+    }
+
     if (
       status === "ACTIVE" &&
       !excluded &&
@@ -1351,7 +1366,8 @@ export class CampaignCheckService {
       !isCallerFollowUpCampaign(
         campaign,
         callerFollowUpPolicyFromConfig(this.config),
-      )
+      ) &&
+      !insightExemptFromSenderTopUp(campaign)
     ) {
       const pocEngagement = isPocEngagementClient({
         clientId: campaign.client_id,

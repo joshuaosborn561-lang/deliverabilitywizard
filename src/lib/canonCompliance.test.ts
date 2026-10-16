@@ -75,4 +75,16 @@ describe("canon compliance (D108)", () => {
     );
     assert.equal(campaignCanonYes(["generic_idle: ada@x"]), false);
   });
+
+  it("D282 Insight non-Josh sender flips the campaign yes", () => {
+    assert.ok(
+      (CANON_CORE_KINDS as readonly string[]).includes("insight_non_josh_sender"),
+    );
+    assert.equal(
+      campaignCanonYes([
+        "insight_non_josh_sender: owen@joshosbornhq.info is not a Josh Osborn mailbox",
+      ]),
+      false,
+    );
+  });
 });

@@ -278,6 +278,7 @@ Statuses: **live** (in canon), **superseded** (by the named entry),
 | D270 | Live — stream/parse/stringify amended by D271 | Freeze/restart follow-up after D269: stream fat Smartlead OK bodies (never response.text of fetch_campaigns pages); exclusive health limiter lane; monitor waits on health and retries; leftover skip cannot hide a stale/empty inventory; failed inventory continues on the accepted book; copy-canary attach reuses the shared book |
 | D271 | Live — stringify/index yield amended by D272 | Freeze/restart follow-up after D270: stall logs name the in-flight stage plus sampled stack / async-hooks / perf_hooks attribution; state.json saves stream to disk without joining the blob; load parses off-thread in yielded key/slice chunks; OK Smartlead bodies always stream in 64KB slices; fat campaigns/health-metrics/account JSON stays off-thread; account-by-campaign index yields. Watchdog thresholds unchanged. |
 | D272 | Live | Freeze/restart follow-up after D271: stringify time-slices via setTimeout(0) and emits flushed slices (saveHot included); indexAccountsByCampaign yields on inner campaign ids; campaign-audit pauses CPU while health is live. Watchdog thresholds unchanged. |
+| D282 | Live | Insight (Smartlead client 582890) campaigns may only send from Josh Osborn inboxes on SalesGlider or Insight domains; no generics / other named senders; floor is Josh-seats only, never backfill; `insight_non_josh_sender` flags existing violations; understaffed/min40 suppressed |
 
 ---
 
@@ -9925,6 +9926,50 @@ D158 / D164 / D165, or D268.
 thresholds unchanged. Tests: time-sliced stringify ticks without
 count-based yield; fat `campaigns[]` index ticks; pause waits then
 continues.
+
+---
+
+## D282 — Insight 582890 sends only from Josh Osborn on SalesGlider or Insight domains
+
+**Date.** 2026-10-16 (Josh, 9:40am CT).
+
+**Decision.** Insight (Smartlead client 582890) campaigns may only
+send from **Josh Osborn** inboxes on a SalesGlider (`salesglider*`)
+or Insight (`insight` / `joshosborn`) domain. That means:
+
+1. No generics on Insight. No other named senders (Owen Sanchez,
+   or anyone whose from-name is not Josh Osborn).
+2. Insight's floor is whatever Josh-seats exist. Never backfill to
+   40. min40, generic backfill, TERRL substitute, and understaffed
+   findings skip the class (`insightExemptFromSenderTopUp`).
+3. Staffing, restaff, POD rotation, generic backfill, and isolation
+   restaff exclude a non-Josh sender from Insight campaigns
+   (`canAttachMailboxToCampaign` / `isInsightJoshAllowedSender`).
+4. The shared link path `addEmailAccountsToCampaign` hard-rejects
+   those links for client 582890 (`assertInsightJoshOnlyAccountIds`).
+5. An existing violation is a CANON finding `insight_non_josh_sender`
+   — flag only, do not auto-unlink.
+
+D192 mix (Insight ≠ SalesGlider; do not sit on both ACTIVE SG and
+Insight) still stands. D184 exclusive-blank staff stays retired.
+
+**Why.** Josh: Insight PODs under the 40 floor must not pull Owen
+or generics. The sender on Insight is Josh.
+
+**Rejected.** Lowering Insight to 40 with non-Josh fill. Auto-unlinking
+existing Owen / generic seats (flag, then a human). Treating Joshua
+Osborn as Josh Osborn.
+
+**Supersedes / amends.** Amends D192 sender mix and D217/D256/D268
+floor for Insight only — Josh-seats, never 40-backfill. Does not
+reverse D26 one-client, D229 Insight rest, or D255 mailbox sig.
+
+**Guards.** canon D282: `isInsightJoshAllowedSender`;
+`insightExemptFromSenderTopUp`; `assertInsightJoshOnlyAccountIds` in
+`addEmailAccountsToCampaign`; `insight_non_josh_sender` in
+`CANON_CORE_KINDS`; campaign-check skips understaffed; min40 skips
+the class. Tests cover Josh-on-salesglider allowed, Owen/generic
+rejected, named Insight id + client 582890, finding without unlink.
 
 ---
 

@@ -97,6 +97,7 @@ import {
 } from "../lib/shortStaffedSlack.js";
 import {
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
+  insightExemptFromSenderTopUp,
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import type { StateStore } from "../state/store.js";
@@ -326,6 +327,7 @@ export class Min40TopUpService {
       ) {
         continue;
       }
+      if (insightExemptFromSenderTopUp(campaign)) continue;
       if (typeof campaign.client_id !== "number") continue;
       const poc = pocIds.includes(campaign.client_id);
       if (poc) {
@@ -352,6 +354,7 @@ export class Min40TopUpService {
       ) {
         continue;
       }
+      if (insightExemptFromSenderTopUp(campaign)) continue;
       if (campaignHoldReason(campaign, policy, todayYmd)) continue;
       const clientId = typeof campaign.client_id === "number" ? campaign.client_id : null;
       if (clientId == null) continue;

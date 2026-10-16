@@ -7,6 +7,11 @@ import {
   SmartleadLimiter,
   smartleadLane,
 } from "../lib/smartleadLimiter.js";
+import {
+  assertInsightJoshOnlyAccountIds,
+  insightJoshLinkCampaignIds,
+  type InsightJoshSenderAccount,
+} from "../lib/insightCampaigns.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
 import { sequencesForWrite } from "../lib/signatureQa.js";
 import type {
@@ -56,6 +61,8 @@ export interface SmartleadClientRecord {
 export class SmartleadClient {
   private mutationQueue: MutationQueue | null = null;
   private isolationAccountIds = new Set<number>();
+  private insightCampaignIds = insightJoshLinkCampaignIds();
+  private insightLinkAccounts = new Map<number, InsightJoshSenderAccount>();
   private readonly limiter: SmartleadLimiter;
 
   constructor(
@@ -96,6 +103,29 @@ export class SmartleadClient {
 
   isolationDenylistIds(): number[] {
     return [...this.isolationAccountIds];
+  }
+
+  /**
+   * D282 — inventory book used by addEmailAccountsToCampaign so Insight
+   * (client 582890) rejects non-Josh senders before any Smartlead write.
+   */
+  setInsightJoshLinkContext(input: {
+    campaigns?: Iterable<{
+      id?: number | null;
+      name?: string | null;
+      client_id?: number | null;
+    }>;
+    accounts?: Iterable<InsightJoshSenderAccount & { id?: number | null }>;
+  }): void {
+    this.insightCampaignIds = insightJoshLinkCampaignIds(input.campaigns ?? []);
+    const accounts = new Map<number, InsightJoshSenderAccount>();
+    for (const account of input.accounts ?? []) {
+      if (typeof account.id !== "number" || !Number.isFinite(account.id) || account.id <= 0) {
+        continue;
+      }
+      accounts.set(account.id, account);
+    }
+    this.insightLinkAccounts = accounts;
   }
 
   /**
@@ -343,6 +373,10 @@ export class SmartleadClient {
     try {
       assertNotIsolationAccountIds(emailAccountIds, {
         accountIds: this.isolationAccountIds,
+      });
+      assertInsightJoshOnlyAccountIds(campaignId, emailAccountIds, {
+        insightCampaignIds: this.insightCampaignIds,
+        accountsById: this.insightLinkAccounts,
       });
     } catch (error) {
       return Promise.reject(error);

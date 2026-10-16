@@ -383,6 +383,7 @@ describe("D139 — staffing never hands the gate its next pull", () => {
         {
           id: 44,
           from_email: "insight@salesglidertop.org",
+          from_name: "Josh Osborn",
           created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [3921647],
           client_id: 345263,
@@ -544,7 +545,8 @@ describe("D139 — staffing never hands the gate its next pull", () => {
       listAllEmailAccounts: async () => [
         {
           id: 30,
-          from_email: "off@joshpersonal.com",
+          from_email: "off@joshosbornhq.info",
+          from_name: "Josh Osborn",
           created_at: "2026-06-01T00:00:00Z",
           campaign_ids: [3921647],
           client_id: 582890,

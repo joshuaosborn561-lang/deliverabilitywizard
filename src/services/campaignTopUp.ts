@@ -45,6 +45,7 @@ import {
 import {
   canAttachMailboxToCampaign,
   INSIGHT_MAILBOX_SIGNATURE_BLANK,
+  insightExemptFromSenderTopUp,
   isInsightCampaignId,
 } from "../lib/insightCampaigns.js";
 import { genericEligibleForClientPod } from "../lib/genericAssign.js";
@@ -331,7 +332,10 @@ export class CampaignTopUpService {
     const excluded = this.config.topUpExcludeCampaigns;
     const excludedCampaignIds = new Set(
       (campaigns as SmartleadCampaign[])
-        .filter((campaign) => isExcluded(campaign, excluded))
+        .filter(
+          (campaign) =>
+            isExcluded(campaign, excluded) || insightExemptFromSenderTopUp(campaign),
+        )
         .map((campaign) => campaign.id),
     );
 
@@ -415,7 +419,7 @@ export class CampaignTopUpService {
     const needy: Array<{ campaign: SmartleadCampaign; senders: number }> = (campaigns as SmartleadCampaign[])
       .filter((c) => isManagedCampaign(c))
       .filter((c) => {
-        if (isExcluded(c, excluded)) {
+        if (isExcluded(c, excluded) || insightExemptFromSenderTopUp(c)) {
           result.skipped.push(`${c.id} ${c.name ?? ""} (excluded)`.trim());
           return false;
         }
@@ -498,7 +502,7 @@ export class CampaignTopUpService {
     // Recompute shortfalls against the post-release counts.
     const needyAfter = (campaigns as SmartleadCampaign[])
       .filter((c) => isManagedCampaign(c))
-      .filter((c) => !isExcluded(c, excluded))
+      .filter((c) => !isExcluded(c, excluded) && !insightExemptFromSenderTopUp(c))
       .map((c) => ({ campaign: c, senders: projected.get(c.id) ?? 0 }))
       .filter((row) => row.senders < (floorByCampaign.get(row.campaign.id) ?? 0))
       .sort((a, b) => a.senders - b.senders);

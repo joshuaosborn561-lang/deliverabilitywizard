@@ -43,6 +43,7 @@ import { sleep } from "../lib/http.js";
 import { onWeekCohort } from "../lib/restCohort.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { isOutlookMailboxType } from "../lib/sendCeiling.js";
+import { insightExemptFromSenderTopUp } from "../lib/insightCampaigns.js";
 import { buildPoolSignature, parsePersonName } from "../lib/poolSignature.js";
 import {
   terlEodDigestText,
@@ -242,6 +243,7 @@ export class TerlHoldService {
         if (String(campaign.status ?? "").toUpperCase() !== "ACTIVE") continue;
         if (isAnyShellCampaign(campaign)) continue;
         if (isExcluded(campaign, this.config.topUpExcludeCampaigns)) continue;
+        if (insightExemptFromSenderTopUp(campaign)) continue;
         const campaignClientId = campaign.client_id;
         if (typeof campaignClientId !== "number") continue;
         const existing = this.state.getTerlSubstitution(campaignId, seat.id);

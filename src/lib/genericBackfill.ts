@@ -1,3 +1,4 @@
+import { insightExemptFromSenderTopUp } from "./insightCampaigns.js";
 import { isPocClient } from "./pocClient.js";
 
 export interface GenericBackfillApproval {
@@ -30,11 +31,12 @@ export function hasGenericBackfillApproval(
  * floor with no Slack gate.
  */
 export function campaignMayTakeGenerics(
-  campaign: { id: number; name?: string | null },
+  campaign: { id: number; name?: string | null; client_id?: number | null },
   clientName: string | null | undefined,
   pocPatterns: string[],
   _approvals?: Record<string, GenericBackfillApproval | undefined>,
 ): boolean {
   void _approvals;
+  if (insightExemptFromSenderTopUp(campaign)) return false;
   return isPocClient(`${campaign.name ?? ""} ${clientName ?? ""}`, pocPatterns);
 }

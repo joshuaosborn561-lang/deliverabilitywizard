@@ -35,9 +35,21 @@ export function isSmartleadRateLimit(error: unknown): boolean {
   return /\b429\b|rate limit/i.test(message);
 }
 
+function publishInsightJoshLinkContext(
+  smartlead: Partial<Pick<SmartleadClient, "setInsightJoshLinkContext">>,
+  snapshot: Pick<InventorySnapshot, "campaigns" | "accounts">,
+): void {
+  if (typeof smartlead.setInsightJoshLinkContext === "function") {
+    smartlead.setInsightJoshLinkContext({
+      campaigns: snapshot.campaigns,
+      accounts: snapshot.accounts,
+    });
+  }
+}
+
 export async function fetchInventory(
   smartlead: Pick<SmartleadClient, "listCampaigns" | "listAllEmailAccounts"> &
-    Partial<Pick<SmartleadClient, "listClients">>,
+    Partial<Pick<SmartleadClient, "listClients" | "setInsightJoshLinkContext">>,
   opts?: {
     retryDelayMs?: number;
     sleep?: (ms: number) => Promise<void>;
@@ -64,12 +76,14 @@ export async function fetchInventory(
           : ([] as SmartleadClientRecord[]);
       const slimAccounts = accounts as SmartleadAccountWithCampaigns[];
       await slimInventoryAccounts(slimAccounts);
-      return {
+      const snapshot = {
         campaigns: campaigns as SmartleadCampaign[],
         accounts: slimAccounts,
         clients,
         fetchedAt: Date.now(),
       };
+      publishInsightJoshLinkContext(smartlead, snapshot);
+      return snapshot;
     } catch (error) {
       lastError = error;
       if (!isSmartleadRateLimit(error) || attempt === attempts) {
@@ -191,6 +205,7 @@ export class InventoryBook {
     }
     this.shrunkenStreak = 0;
     this.accepted = snapshot;
+    publishInsightJoshLinkContext(this.smartlead, snapshot);
     return snapshot;
   }
 }

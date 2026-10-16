@@ -18,6 +18,7 @@ export const CANON_CORE_KINDS = [
   "missing_signature_tag",
   "mailbox_sig",
   "insight_shared_staff",
+  "insight_non_josh_sender",
   "mailbox_gap",
   "mailbox_volume",
   "no_placement_test",

@@ -2082,4 +2082,94 @@ describe("Min40TopUpService (D205)", () => {
       `abort must be recorded so the stage can still stamp lastOk: ${result.errors.join(" | ")}`,
     );
   });
+
+  it("D282: does not min40-backfill Insight with generics or Owen", async () => {
+    const attached: Array<[number, number[]]> = [];
+    const state = new StateStore(stateFile());
+    await state.load();
+    state.upsertPoolMailbox({
+      email: "spare@crosslaunchco.com",
+      domain: "crosslaunchco.com",
+      platform: "GOOGLE",
+      smartleadAccountId: 900,
+      firstName: "Harmony",
+      lastName: "Norris",
+      status: "available",
+      warmedAt,
+    });
+    const onWeek = onWeekCohort(new Date("2026-09-29T15:00:00Z"));
+    const josh = Array.from({ length: 5 }, (_, i) => ({
+      id: 100 + i,
+      from_email: `josh${i}@trysalesglider.info`,
+      from_name: "Josh Osborn",
+      client_id: 582890,
+      type: "GMAIL",
+      is_smtp_success: true,
+      is_imap_success: true,
+      tags: [{ tag_name: `POD-${onWeek}` }],
+      campaign_ids: [3921647],
+      created_at: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = new Min40TopUpService(
+      loadConfig({ DRY_RUN: "false" }),
+      {
+        addEmailAccountsToCampaign: async (id: number, ids: number[]) => {
+          attached.push([id, ids]);
+        },
+        updateEmailAccount: async () => undefined,
+        removeEmailAccountsFromCampaign: async () => undefined,
+      } as unknown as SmartleadClient,
+      {
+        send: async () => undefined,
+        notifyIsolationAction: async () => undefined,
+      } as unknown as SlackClient,
+      state,
+    );
+    const result = await service.run({
+      dryRun: false,
+      now: new Date("2026-09-29T15:00:00Z"),
+      inventory: {
+        fetchedAt: Date.now(),
+        clients: [{ id: 582890, name: "Insight", logo: "Insight" }],
+        campaigns: [
+          {
+            id: 3921647,
+            name: "Insight Consolidation Gateway SEG",
+            status: "ACTIVE",
+            client_id: 582890,
+          },
+        ],
+        accounts: [
+          ...josh,
+          {
+            id: 900,
+            from_email: "spare@crosslaunchco.com",
+            from_name: "Harmony Norris",
+            type: "GMAIL",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: "GENERIC" }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: 800,
+            from_email: "owen@joshosbornhq.info",
+            from_name: "Owen Sanchez",
+            client_id: 582890,
+            type: "OUTLOOK",
+            is_smtp_success: true,
+            is_imap_success: true,
+            tags: [{ tag_name: `POD-${onWeek}` }],
+            campaign_ids: [],
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    assert.deepEqual(attached, []);
+    assert.equal(result.assigned.length, 0);
+    assert.equal(result.unfilled.length, 0);
+    assert.equal(result.asked.length, 0);
+  });
 });

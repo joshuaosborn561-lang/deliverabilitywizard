@@ -12,6 +12,7 @@ import {
 import { brandFromClientDisplayName } from "../lib/clientBrand.js";
 import {
   insightDualSignatureMismatch,
+  insightExemptFromSenderTopUp,
   isInsightCampaign,
   mailboxActiveSalesGliderCampaigns,
 } from "../lib/insightCampaigns.js";
@@ -218,7 +219,9 @@ export class CampaignAuditService {
           senders,
           staffable,
           floor,
-          shortBy: Math.max(0, floor - staffable),
+          shortBy: insightExemptFromSenderTopUp(c)
+            ? 0
+            : Math.max(0, floor - staffable),
           hasTest: tested.has(String(c.id)),
           domains: [...(domainsByCampaign.get(c.id) ?? new Map())]
             .map(([domain, count]) => ({ domain, count }))

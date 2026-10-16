@@ -30,6 +30,50 @@ describe("SmartleadClient.addEmailAccountsToCampaign", () => {
     );
     assert.equal(called, false);
   });
+
+  it("D282: refuses a non-Josh sender on an Insight campaign before any write", async () => {
+    const { InsightNonJoshSenderBlockedError } = await import(
+      "../lib/insightCampaigns.js"
+    );
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const client = new SmartleadClient("test-key");
+    client.setInsightJoshLinkContext({
+      campaigns: [
+        {
+          id: 3921647,
+          name: "Insight Consolidation Gateway SEG",
+          client_id: 582890,
+        },
+      ],
+      accounts: [
+        {
+          id: 2,
+          from_name: "Owen Sanchez",
+          from_email: "owen@joshosbornhq.info",
+        },
+        {
+          id: 3,
+          from_name: "Josh Osborn",
+          from_email: "josh@trysalesglider.info",
+        },
+      ],
+    });
+    await assert.rejects(
+      () => client.addEmailAccountsToCampaign(3921647, [2]),
+      InsightNonJoshSenderBlockedError,
+    );
+    assert.equal(called, false);
+    await client.addEmailAccountsToCampaign(3921647, [3]);
+    assert.equal(called, true);
+  });
 });
 
 describe("SmartleadClient.updateCampaignStatus", () => {

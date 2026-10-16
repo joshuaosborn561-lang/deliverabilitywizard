@@ -50,6 +50,7 @@ import { minFloorForClient } from "../lib/minFloorByClient.js";
 import { chicagoWallClock } from "../lib/canonOpsHours.js";
 import {
   isRealNamedClientId,
+  preferredGenericOwnerId,
   resolveDedicatedGenericClientId,
 } from "../lib/dedicatedGeneric.js";
 import {
@@ -743,7 +744,15 @@ export class Min40TopUpService {
       return false;
     }
     const pool = this.state.getPoolMailbox(email.toLowerCase());
-    if (pool?.assignedClientId === clientId) return true;
+    const seat = this.state.getGenericSeat(email);
+    const preferred = preferredGenericOwnerId({
+      mailboxClientId: account.client_id,
+      assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,
+      assignedReason: seat?.reason,
+      powerGrydClientId: this.config.powerGrydClientId,
+    });
+    if (preferred != null && preferred !== clientId) return false;
+    if (preferred === clientId) return true;
     const dedicated = resolveDedicatedGenericClientId(
       account,
       email,

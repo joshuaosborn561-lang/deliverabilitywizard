@@ -468,8 +468,13 @@ export async function syncGenericSeatsFromInventory(
       isRealNamedClientId(account.client_id, isMarker)
         ? account.client_id
         : null;
+    const liveAssigned =
+      liveClients.length === 1 ? liveClients[0]! : null;
+    // D283 — live Smartlead null is authoritative for Onboarding-freed
+    // PowerGRYD generics. Do not re-own them from leftover campaign links.
     const assignedClientId =
-      mailboxClient ?? (liveClients.length === 1 ? liveClients[0]! : null);
+      mailboxClient ??
+      (liveAssigned === powerId ? null : liveAssigned);
     const assignedCampaignIds = campaignIdsOf(withCampaigns).filter((id) => {
       const clientId = campaignClientById.get(id);
       return assignedClientId != null && clientId === assignedClientId;
@@ -486,6 +491,21 @@ export async function syncGenericSeatsFromInventory(
     const pool = input.state.getPoolMailbox(email);
     if (mailboxClient != null) {
       realignStalePoolAssignment(input.state, email, mailboxClient, now);
+    } else if (
+      pool?.assignedClientId === powerId ||
+      existing?.reason === GENERIC_ASSIGN_REASON_POWERGRYD ||
+      existing?.assignedClientId === powerId
+    ) {
+      // D283 — clear stale powergryd_dedicated owner/reason.
+      if (typeof input.state.upsertPoolMailbox === "function" && pool) {
+        input.state.upsertPoolMailbox({
+          ...pool,
+          status: pool.status === "assigned" ? "available" : pool.status,
+          assignedClientId: null,
+          assignedClientName: undefined,
+          assignedAt: undefined,
+        });
+      }
     }
     const warmReadyAt =
       existing?.warmReadyAt ??

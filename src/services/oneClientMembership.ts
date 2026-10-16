@@ -16,6 +16,7 @@ import { isGabeVmReserved, isLockedCanarySeat } from "../lib/canaryLock.js";
 import { isGenericMailbox, isPoolGenericSeat } from "../lib/clientInbox.js";
 import { resolveDedicatedGenericClientId } from "../lib/dedicatedGeneric.js";
 import { realignStalePoolAssignment } from "../lib/genericPoolRealign.js";
+import { cleanupFreedPowerGrydGenerics } from "../lib/powerGrydFreedCleanup.js";
 import { campaignMayTakeGenerics } from "../lib/genericBackfill.js";
 import { GENERIC_TAG } from "../lib/markerClients.js";
 import {
@@ -147,6 +148,15 @@ export class OneClientMembershipService {
       domain: this.config.isolationDomain || undefined,
     };
     const genericOwnerId = pocClientId(clients, this.config.pocClientNamePatterns);
+    const freed = cleanupFreedPowerGrydGenerics({
+      accounts: accounts as SmartleadAccountWithCampaigns[],
+      state: this.state,
+    });
+    if (freed.cleared.length) {
+      console.log(
+        `[one-client] D283 cleared ${freed.cleared.length} Onboarding-freed PowerGRYD pool owner(s)`,
+      );
+    }
     const approvals =
       typeof this.state.listGenericBackfillApprovals === "function"
         ? this.state.listGenericBackfillApprovals()

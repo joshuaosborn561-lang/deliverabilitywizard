@@ -94,6 +94,36 @@ describe("dedicatedGenericClientId (D198)", () => {
     );
   });
 
+  it("D283: live Smartlead null is authoritative for Onboarding-freed PowerGRYD seats", () => {
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: null,
+        assignedClientId: 592842,
+        assignedReason: "powergryd_dedicated",
+      }),
+      null,
+    );
+    assert.equal(
+      dedicatedGenericClientId(
+        { client_id: null, tags: [{ tag_name: "GENERIC" }] },
+        "christinaevans@getoutreachdesk.info",
+        {
+          getPoolMailbox: () => ({ assignedClientId: 592842 }),
+        },
+        { genericOwnerId: 548611 },
+      ),
+      null,
+    );
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: null,
+        assignedClientId: 521881,
+      }),
+      521881,
+      "D198 — a non-PowerGRYD in-flight pool assign still wins over empty SL",
+    );
+  });
+
   it("reads a client:<id> mailbox tag", () => {
     assert.equal(
       dedicatedGenericClientId(

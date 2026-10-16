@@ -504,6 +504,46 @@ describe("D282 Insight Josh-only senders", () => {
     );
   });
 
+  it("D283: canAttachMailboxToCampaign refuses CornerStone and HOLD-UNTIL", () => {
+    const emcor = {
+      id: 4001,
+      name: "EMCOR Mesa",
+      status: "ACTIVE",
+      client_id: 574020,
+    } as SmartleadCampaign;
+    const techevo = {
+      id: 4002,
+      name: "TechEvo NE",
+      status: "ACTIVE",
+      client_id: 521881,
+    } as SmartleadCampaign;
+    const byId = new Map<number, SmartleadCampaign>([
+      [4001, emcor],
+      [4002, techevo],
+    ]);
+    const cornerstone = account([], {
+      id: 73,
+      client_id: 574088,
+      from_email: "owen@cornerstoneearthworksmy.info",
+    });
+    const held = account([], {
+      id: 74,
+      client_id: 574088,
+      tags: [{ tag_name: "HOLD-UNTIL-2026-12-31" }],
+      from_email: "held@cornerstoneearthworksmy.info",
+    });
+    const teSeat = account([], {
+      id: 75,
+      client_id: 521881,
+      from_email: "ada@techevolution.com",
+    });
+    assert.equal(canAttachMailboxToCampaign(cornerstone, emcor, byId), false);
+    assert.equal(canAttachMailboxToCampaign(cornerstone, techevo, byId), false);
+    assert.equal(canAttachMailboxToCampaign(held, emcor, byId), false);
+    assert.equal(canAttachMailboxToCampaign(held, techevo, byId), false);
+    assert.equal(canAttachMailboxToCampaign(teSeat, techevo, byId), true);
+  });
+
   it("assertInsightJoshOnlyAccountIds hard-rejects non-Josh on Insight campaigns", () => {
     const accountsById = new Map([
       [1, { from_name: "Josh Osborn", from_email: "josh@trysalesglider.info" }],

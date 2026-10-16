@@ -17545,8 +17545,8 @@ describe("owner intent — D282 Insight Josh-only senders", () => {
 
     assert.match(
       canon,
-      /Canon as of \*\*D282\*\*/,
-      stop("CANON is dated D282.", "CANON.md header is not D282."),
+      /Canon as of \*\*D(282|28[3-9]|29[0-9])\*\*/,
+      stop("CANON is dated D282 or later.", "CANON.md header is before D282."),
     );
     assert.match(
       canon,
@@ -17613,6 +17613,102 @@ describe("owner intent — D282 Insight Josh-only senders", () => {
       stop(
         "insight_non_josh_sender does not auto-unlink (D282).",
         "campaignCheck.ts auto-unlinks non-Josh Insight senders.",
+      ),
+    );
+  });
+});
+
+describe("owner intent — D283 freed PowerGRYD seats; CornerStone / HOLD-UNTIL never attach", () => {
+  it("D283: SL-null wins over powergryd_dedicated; no generics on PG; CornerStone/HOLD-UNTIL hard-exclude", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { preferredGenericOwnerId } = await import("../lib/dedicatedGeneric.js");
+    const { genericBlockedOnPowerGrydStaffing } = await import(
+      "../lib/powerGrydEmptyByDesign.js"
+    );
+    const { isAttachForbiddenSeat, CORNERSTONE_CLIENT_ID } = await import(
+      "../lib/attachGuard.js"
+    );
+    const stop = (want: string, got: string) => `${want} ${got}`;
+
+    assert.equal(
+      preferredGenericOwnerId({
+        mailboxClientId: null,
+        assignedClientId: 592842,
+        assignedReason: "powergryd_dedicated",
+      }),
+      null,
+      stop(
+        "Onboarding-freed SL-null wins over stale PG pool (D283).",
+        "preferredGenericOwnerId still preferred powergryd_dedicated.",
+      ),
+    );
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: { client_id: null, signature: "Christina Evans" },
+        email: "christinaevans@getoutreachdesk.info",
+        targetClientId: 592842,
+        emptyByDesign: false,
+        mailboxClientId: null,
+        assignedClientId: 592842,
+      }),
+      true,
+      "PowerGRYD must never take generics (D283).",
+    );
+    assert.equal(
+      isAttachForbiddenSeat({
+        client_id: CORNERSTONE_CLIENT_ID,
+        tags: [{ tag_name: "HOLD-UNTIL-2026-12-31" }],
+      }),
+      true,
+    );
+
+    const canon = await readFile(new URL("../../CANON.md", import.meta.url), "utf8");
+    const decisions = await readFile(new URL("../../DECISIONS.md", import.meta.url), "utf8");
+    const client = await readFile(
+      new URL("../clients/smartlead.ts", import.meta.url),
+      "utf8",
+    );
+    const dedicated = await readFile(
+      new URL("../lib/dedicatedGeneric.ts", import.meta.url),
+      "utf8",
+    );
+
+    assert.match(
+      canon,
+      /Canon as of \*\*D283\*\*/,
+      stop("CANON is dated D283.", "CANON.md header is not D283."),
+    );
+    assert.match(
+      canon,
+      /assertAttachAllowedAccountIds/,
+      stop("CANON names the D283 attach guard.", "CANON.md lost assertAttachAllowedAccountIds."),
+    );
+    assert.match(
+      canon,
+      /never staff fleet-pool generics onto PowerGRYD/,
+      stop("CANON forbids generics on PowerGRYD (D283).", "CANON.md lost the PowerGRYD never-generics rule."),
+    );
+    assert.match(
+      decisions,
+      /## D283 — /,
+      stop("The ledger records D283.", "DECISIONS.md has no D283 entry."),
+    );
+    assert.match(
+      decisions,
+      /^\| D283 \|/m,
+      stop("The status index lists D283 (D127).", "DECISIONS.md status index has no D283 row."),
+    );
+    assert.match(
+      dedicated,
+      /isFreedPowerGrydPoolOwner/,
+      stop("Resolver treats SL-null + PG pool as freed (D283).", "dedicatedGeneric.ts lost the freed-PG carve-out."),
+    );
+    assert.match(
+      client,
+      /assertAttachAllowedAccountIds/,
+      stop(
+        "addEmailAccountsToCampaign hard-rejects CornerStone / HOLD-UNTIL (D283).",
+        "smartlead.ts lost assertAttachAllowedAccountIds.",
       ),
     );
   });

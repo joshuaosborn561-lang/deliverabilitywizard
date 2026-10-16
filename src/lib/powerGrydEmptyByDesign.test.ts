@@ -96,4 +96,24 @@ describe("D258 PowerGRYD empty-by-design", () => {
       "the block is PowerGRYD-target only — TechEvo may keep its own seat",
     );
   });
+
+  it("D283: never staff any generic onto PowerGRYD", () => {
+    assert.equal(
+      genericBlockedOnPowerGrydStaffing({
+        account: {
+          id: 21592200,
+          from_email: "christinaevans@getoutreachdesk.info",
+          from_name: "Christina Evans",
+          signature: "Christina Evans",
+          client_id: null,
+        } as SmartleadAccountWithCampaigns,
+        email: "christinaevans@getoutreachdesk.info",
+        targetClientId: 592842,
+        emptyByDesign: false,
+        mailboxClientId: null,
+        assignedClientId: 592842,
+      }),
+      true,
+    );
+  });
 });

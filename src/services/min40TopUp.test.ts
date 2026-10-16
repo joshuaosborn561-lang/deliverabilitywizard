@@ -478,9 +478,10 @@ describe("Min40TopUpService (D205)", () => {
       false,
       "BCP named seat must not land on PowerGRYD",
     );
-    assert.ok(
-      attached.some((row) => row[0] === 51 && row[1].includes(801)),
-      "same-client PowerGRYD generic must share onto the other ACTIVE",
+    assert.equal(
+      attached.some((row) => row[1].includes(801)),
+      false,
+      "D283 — never staff generics onto PowerGRYD",
     );
     assert.equal(result.asked.length, 0);
     assert.equal(

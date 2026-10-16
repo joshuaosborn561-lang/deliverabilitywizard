@@ -33,6 +33,7 @@ import {
   type InventorySnapshot,
 } from "./inventory.js";
 import { canAttachMailboxToCampaign } from "../lib/insightCampaigns.js";
+import { preferredGenericOwnerId } from "../lib/dedicatedGeneric.js";
 import { isOffWeekPodSeat } from "../lib/podInventory.js";
 import { mailboxMessagePerDayTarget } from "../lib/sendCeiling.js";
 import { accountOnBounceHold } from "../lib/bounceHold.js";
@@ -600,9 +601,19 @@ export class ClientFanOutService {
         clientsById,
       );
       if (resolved.clientId === clientId) return true;
-      // Pool generic branded to this client in state.
+      // Pool generic branded to this client in state. D283 — live
+      // Smartlead null + stale PowerGRYD pool is not an owner.
       const pool = this.state.getPoolMailbox(email);
-      if (pool?.assignedClientId === clientId) return true;
+      const seat =
+        typeof this.state.getGenericSeat === "function"
+          ? this.state.getGenericSeat(email)
+          : undefined;
+      const preferred = preferredGenericOwnerId({
+        mailboxClientId: account.client_id,
+        assignedClientId: seat?.assignedClientId ?? pool?.assignedClientId ?? null,
+        assignedReason: seat?.reason,
+      });
+      if (preferred === clientId) return true;
       return campaignIdsOf(account).some(
         (id) => campaignClientById.get(id) === clientId,
       );

@@ -1,4 +1,6 @@
 import { brandInText } from "./clientBrand.js";
+import { POWERGRYD_CLIENT_ID } from "./namedClientIds.js";
+import { isFreedPowerGrydPoolOwner } from "./powerGrydFreedCleanup.js";
 import { signatureHay } from "./signatureQa.js";
 
 /**
@@ -7,6 +9,9 @@ import { signatureHay } from "./signatureQa.js";
  * Marks (first match wins):
  *   1. D258 — live Smartlead `client_id` when it and the pool
  *      `assignedClientId` are different real named clients
+ *   1b. D283 — live Smartlead `client_id=null` is authoritative for
+ *      Onboarding-freed seats: a stale PowerGRYD / `powergryd_dedicated`
+ *      pool row is not an owner
  *   2. pool-mailbox `assignedClientId` (wins over leftover /
  *      marker / Goliath mailbox ids — D198)
  *   3. Smartlead mailbox `client_id` when the pool has no named owner
@@ -88,6 +93,8 @@ function clientIdFromTags(
 export function preferredGenericOwnerId(input: {
   mailboxClientId?: number | null;
   assignedClientId?: number | null;
+  assignedReason?: string | null;
+  powerGrydClientId?: number;
   isMarkerClientId?: (id: number | null | undefined) => boolean;
   genericOwnerId?: number | null;
 }): number | null {
@@ -105,6 +112,18 @@ export function preferredGenericOwnerId(input: {
   const assigned = input.assignedClientId;
   if (isNamed(mailbox) && isNamed(assigned) && mailbox !== assigned) {
     return mailbox;
+  }
+  // D283 — Onboarding-freed: live Smartlead null wins over a stale
+  // PowerGRYD pool assignment / powergryd_dedicated reason.
+  if (
+    isFreedPowerGrydPoolOwner({
+      mailboxClientId: mailbox,
+      assignedClientId: assigned,
+      assignedReason: input.assignedReason,
+      powerGrydClientId: input.powerGrydClientId ?? POWERGRYD_CLIENT_ID,
+    })
+  ) {
+    return null;
   }
   if (isNamed(assigned)) return assigned;
   if (isNamed(mailbox)) return mailbox;

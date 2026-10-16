@@ -24,6 +24,7 @@ import {
   sequenceBodiesContainInsight,
   signatureHay,
 } from "./signatureQa.js";
+import { isAttachForbiddenSeat } from "./attachGuard.js";
 
 /** Live Insight campaigns Josh named (now client 582890 — D192). */
 export const INSIGHT_CAMPAIGN_IDS: readonly number[] = [
@@ -349,6 +350,10 @@ export function canAttachMailboxToCampaign(
   campaignById: Map<number, SmartleadCampaign>,
   opts?: { insightRequiresExisting?: boolean },
 ): boolean {
+  // D283 — CornerStone client seats and HOLD-UNTIL never attach,
+  // including onto EMCOR / TechEvo campaign-fill. Shells stay open
+  // for instrumentation only when the seat is not hold-blocked.
+  if (isAttachForbiddenSeat(account)) return false;
   if (isAnyShellCampaign(target)) return true;
   if (isInsightJoshOnlyCampaign(target) || isInsightCampaignId(target.id)) {
     if (!isInsightJoshAllowedSender(account)) return false;

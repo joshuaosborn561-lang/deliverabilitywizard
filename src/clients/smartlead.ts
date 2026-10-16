@@ -12,6 +12,10 @@ import {
   insightJoshLinkCampaignIds,
   type InsightJoshSenderAccount,
 } from "../lib/insightCampaigns.js";
+import {
+  assertAttachAllowedAccountIds,
+  type AttachGuardAccount,
+} from "../lib/attachGuard.js";
 import { assertNotIsolationAccountIds } from "../lib/isolationDomain.js";
 import { sequencesForWrite } from "../lib/signatureQa.js";
 import type {
@@ -62,7 +66,7 @@ export class SmartleadClient {
   private mutationQueue: MutationQueue | null = null;
   private isolationAccountIds = new Set<number>();
   private insightCampaignIds = insightJoshLinkCampaignIds();
-  private insightLinkAccounts = new Map<number, InsightJoshSenderAccount>();
+  private insightLinkAccounts = new Map<number, InsightJoshSenderAccount & AttachGuardAccount>();
   private readonly limiter: SmartleadLimiter;
 
   constructor(
@@ -106,8 +110,9 @@ export class SmartleadClient {
   }
 
   /**
-   * D282 — inventory book used by addEmailAccountsToCampaign so Insight
-   * (client 582890) rejects non-Josh senders before any Smartlead write.
+   * D282 / D283 — inventory book used by addEmailAccountsToCampaign so
+   * Insight (client 582890) rejects non-Josh senders, and CornerStone /
+   * HOLD-UNTIL seats never attach, before any Smartlead write.
    */
   setInsightJoshLinkContext(input: {
     campaigns?: Iterable<{
@@ -115,10 +120,12 @@ export class SmartleadClient {
       name?: string | null;
       client_id?: number | null;
     }>;
-    accounts?: Iterable<InsightJoshSenderAccount & { id?: number | null }>;
+    accounts?: Iterable<
+      InsightJoshSenderAccount & AttachGuardAccount & { id?: number | null }
+    >;
   }): void {
     this.insightCampaignIds = insightJoshLinkCampaignIds(input.campaigns ?? []);
-    const accounts = new Map<number, InsightJoshSenderAccount>();
+    const accounts = new Map<number, InsightJoshSenderAccount & AttachGuardAccount>();
     for (const account of input.accounts ?? []) {
       if (typeof account.id !== "number" || !Number.isFinite(account.id) || account.id <= 0) {
         continue;
@@ -376,6 +383,9 @@ export class SmartleadClient {
       });
       assertInsightJoshOnlyAccountIds(campaignId, emailAccountIds, {
         insightCampaignIds: this.insightCampaignIds,
+        accountsById: this.insightLinkAccounts,
+      });
+      assertAttachAllowedAccountIds(campaignId, emailAccountIds, {
         accountsById: this.insightLinkAccounts,
       });
     } catch (error) {

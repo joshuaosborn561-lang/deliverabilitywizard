@@ -386,7 +386,7 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
     );
     assertOfferSwap(
       "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
-      /Air\s*Pods/i,
+      /headphones/i,
     );
   });
 
@@ -401,16 +401,17 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
   it("keeps Red Sox / Local_Sports_Team ticket offers", () => {
     assertOfferSwap(
       "I've got Red Sox tickets if you want them.",
-      /tickets|Red Sox/i,
+      /outing|I'd like to offer/i,
     );
     assertOfferSwap(
       "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
-      /tickets/i,
+      /outing|I'd like to offer/i,
     );
     const local = suggestedCopySwap(
       "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
     );
-    assert.match(local, /Local_Sports_Team|tickets/i);
+    assert.doesNotMatch(local, /\btickets?\b/i);
+    assert.match(local, /outing|I'd like to offer/i);
   });
 
   it("uses fuller sentence context when the hunt slice hid the offer", () => {
@@ -421,7 +422,7 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
       classifyLineJob(sliced, { context: full }),
       "gift-or-experience-offer",
     );
-    assertOfferSwap(sliced, /Air\s*Pods/i, full);
+    assertOfferSwap(sliced, /headphones/i, full);
   });
 
   it("does not emit Quick note — or school-district pen-test for offers", () => {
@@ -440,7 +441,8 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
       "I've got a pair of Air Pods for you.",
       { campaignName: "Goliath L1 AirPods", client: "Goliath" },
     );
-    assert.match(goliath, /Air\s*Pods/i);
+    assert.doesNotMatch(goliath, /air\s*pods?/i);
+    assert.match(goliath, /headphones|I'd like to offer/i);
     assert.doesNotMatch(goliath, /pen-test|school-district|Quick note/i);
   });
 
@@ -448,7 +450,7 @@ describe("suggestedCopySwap — D152 / D168 keep the line's job", () => {
     const swap = suggestedCopySwap(
       "P.S. Tickets are yours either way just for your time.",
     );
-    assert.match(swap, /tickets/i);
+    assert.doesNotMatch(swap, /\btickets?\b/i);
     assert.match(swap, /\{I'd like to offer\|/);
     assert.doesNotMatch(swap, /receipts report|pen-test|Quick note/i);
   });
@@ -499,13 +501,15 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     const updated = store.pendingIsolationActions()[0];
     assert.ok(updated);
     assert.equal(updated.id, stale.id);
-    assert.match(String(updated.detail.swap), /Air\s*Pods/i);
+    assert.match(String(updated.detail.swap), /headphones|I'd like to offer/i);
+    assert.doesNotMatch(String(updated.detail.swap), /air\s*pods?|\btickets?\b/i);
     assert.doesNotMatch(String(updated.detail.swap), /Quick note|pen-test|school-district/i);
     assert.doesNotMatch(String(updated.detail.swap), /—/);
     assert.match(updated.proof, /Air\s*Pods/i);
     assert.doesNotMatch(updated.proof, /Quick note/);
     assert.equal(notified.length, 1);
-    assert.match(notified[0]?.suggestedSwap ?? "", /Air\s*Pods/i);
+    assert.match(notified[0]?.suggestedSwap ?? "", /headphones|I'd like to offer/i);
+    assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /air\s*pods?|\btickets?\b/i);
     assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /Quick note|pen-test/i);
   });
 
@@ -574,7 +578,8 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     const sliced = "I've got a couple {{Local_Sports_Team";
     assert.equal(classifyLineJob(sliced), "gift-or-experience-offer");
     const swap = suggestedCopySwap(sliced);
-    assert.match(swap, /Local_Sports_Team|tickets/i);
+    assert.match(swap, /outing|I'd like to offer/i);
+    assert.doesNotMatch(swap, /\btickets?\b/i);
     assert.doesNotMatch(swap, /Quick note|pen-test|school-district/i);
     assert.doesNotMatch(swap, /—/);
   });
@@ -616,7 +621,7 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     assert.equal(OFFER_LEAD_SPINTAX, "{I'd like to offer|Happy to offer}");
     assert.equal(
       suggestedCopySwap("{I've got|I have} a pair of Air Pods for you."),
-      `${OFFER_LEAD_SPINTAX} a pair of AirPods if you would like, on me.`,
+      `${OFFER_LEAD_SPINTAX} a pair of headphones if you would like, on me.`,
     );
     assert.equal(
       suggestedCopySwap("I've got a jet ski you can take out this weekend."),
@@ -626,11 +631,11 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
       suggestedCopySwap(
         "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
       ),
-      `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if you're interested.`,
+      `${OFFER_LEAD_SPINTAX} a local game outing if you're interested.`,
     );
     assert.equal(
       suggestedCopySwap("I've got Red Sox tickets if you want them."),
-      `${OFFER_LEAD_SPINTAX} Red Sox tickets if you're interested.`,
+      `${OFFER_LEAD_SPINTAX} a local game outing if you're interested.`,
     );
     const identity = suggestedCopySwap(
       "Hey, we're TechEvolution and we help IT teams stay online.",
@@ -644,13 +649,14 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
     for (const [line, offer] of [
       [
         "{I've got|I have} {an extra|a spare} pair of Air Pods {for you|with your name on them}.",
-        /Air\s*Pods/i,
+        /headphones/i,
       ],
       ["I've got a jet ski you can take out this weekend.", /jet\s*ski/i],
     ] as const) {
       const swap = suggestedCopySwap(line);
       assert.match(swap, offer);
       assert.doesNotMatch(swap, /Quick note|pen-test|school-district|—/);
+      assert.doesNotMatch(swap, /air\s*pods?|\btickets?\b|\bTJ\b|free\s+poc/i);
     }
   });
 
@@ -678,8 +684,9 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
       }),
     });
     assert.ok(posted);
-    assert.match(String(posted?.detail.swap), /Air\s*Pods/i);
-    assert.match(notified[0]?.suggestedSwap ?? "", /Air\s*Pods/i);
+    assert.doesNotMatch(String(posted?.detail.swap), /air\s*pods?/i);
+    assert.match(String(posted?.detail.swap), /headphones|I'd like to offer/i);
+    assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /air\s*pods?/i);
     assert.doesNotMatch(notified[0]?.suggestedSwap ?? "", /Quick note/);
   });
 });
@@ -687,8 +694,9 @@ describe("D170 — refresh stale swap_copy on remind; classifier harden", () => 
 describe("D195 — Josh soft-gift voice + identity substitute", () => {
   it("AirPods land on me, not 'if useful'", () => {
     const swap = suggestedCopySwap("{I've got|I have} a pair of Air Pods for you.");
-    assert.equal(swap, `${OFFER_LEAD_SPINTAX} a pair of AirPods if you would like, on me.`);
+    assert.equal(swap, `${OFFER_LEAD_SPINTAX} a pair of headphones if you would like, on me.`);
     assert.doesNotMatch(swap, /if useful/i);
+    assert.doesNotMatch(swap, /air\s*pods?/i);
   });
 
   it("jet ski is an outing on me", () => {
@@ -699,12 +707,13 @@ describe("D195 — Josh soft-gift voice + identity substitute", () => {
 
   it("tickets are offered if you're interested", () => {
     const swap = suggestedCopySwap("I've got Red Sox tickets if you want them.");
-    assert.equal(swap, `${OFFER_LEAD_SPINTAX} Red Sox tickets if you're interested.`);
+    assert.equal(swap, `${OFFER_LEAD_SPINTAX} a local game outing if you're interested.`);
     const local = suggestedCopySwap(
       "I've got a couple {{Local_Sports_Team}} tickets — want them, on me?",
     );
-    assert.equal(local, `${OFFER_LEAD_SPINTAX} {{Local_Sports_Team}} tickets if you're interested.`);
+    assert.equal(local, `${OFFER_LEAD_SPINTAX} a local game outing if you're interested.`);
     assert.doesNotMatch(swap, /if useful/i);
+    assert.doesNotMatch(swap, /\btickets?\b/i);
   });
 
   it("no offer default anywhere ends in 'if useful.'", () => {

@@ -1,0 +1,18 @@
+# Deploy this directory as a SEPARATE Railway service. Do not point
+# the production wizard at this file. One image, three services via ROLE.
+#
+#   ROLE=api         HTTP /health /compare (always up)
+#   ROLE=staff       jobs 1,2,3,5,6 — /health only
+#   ROLE=isolation   job 4, own 15m tick, 30m deadline — /health only
+#
+# WRITE_ENABLED stays unset / false. SHADOW stays true.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "npm run start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ALWAYS"
+restartPolicyMaxRetries = 10

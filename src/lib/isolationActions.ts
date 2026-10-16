@@ -630,6 +630,10 @@ export function isBannedCopySwap(swap: string): boolean {
   if (/Quick note/i.test(swap)) return true;
   if (/pen-test/i.test(swap)) return true;
   if (/from our school-district/i.test(swap)) return true;
+  if (/\bair\s*pods?\b/i.test(swap)) return true;
+  if (/\btickets?\b/i.test(swap)) return true;
+  if (/\bTJ\b/.test(swap)) return true;
+  if (/\bfree\s+(?:poc|proof of concept)\b/i.test(swap)) return true;
   return false;
 }
 
@@ -828,22 +832,35 @@ function offerLead(rest: string): string {
 }
 
 /**
- * D195 — Josh-locked TechEvo soft-gift voice. The offer is a gift, not a
- * weak "if useful": AirPods land "if you would like, on me.", experiences
- * are "on me.", and tickets are "if you're interested." The D171 lead-in
- * (`{I'd like to offer|Happy to offer}`) is unchanged.
+ * D195 / D277 — Josh-locked TechEvo soft-gift voice. Experiences stay
+ * "on me." The D171 lead-in (`{I'd like to offer|Happy to offer}`) is
+ * unchanged. D277: never name AirPods, tickets, TJ, or free POC in
+ * REPLACE WITH — headphones / local game outing instead.
  */
+function sanitizeBannedNouns(text: string): string {
+  return text
+    .replace(/\bair\s*pods?\b/gi, "headphones")
+    .replace(/\btickets?\b/gi, "outing")
+    .replace(/\bTJ\b/g, "")
+    .replace(/\bfree\s+(?:poc|proof of concept)\b/gi, "complimentary trial")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 function offerSubstitute(text: string): string {
   const phrase = extractOfferPhrase(text);
   if (!phrase) return offerLead("that on me.");
   const experiential = /jet[\s-]?ski|round of golf|tee time/i.test(phrase);
   if (/air\s*pods?|airpods/i.test(phrase)) {
-    return offerLead("a pair of AirPods if you would like, on me.");
+    return offerLead("a pair of headphones if you would like, on me.");
   }
   if (experiential) {
     return offerLead(`a ${phrase.replace(/^a\s+/i, "")} outing on me.`);
   }
-  return offerLead(`${phrase} if you're interested.`);
+  if (/tickets?/i.test(phrase)) {
+    return offerLead("a local game outing if you're interested.");
+  }
+  return offerLead(`${sanitizeBannedNouns(phrase)} if you're interested.`);
 }
 
 function ctaSubstitute(text: string): string {
@@ -943,15 +960,16 @@ function escapeRegExp(value: string): string {
  * never the default for an opener, offer, or CTA the campaign still
  * needs.
  *
- * Offer openers keep the gift / tickets / jet-ski / AirPods intent and
- * drop bait phrasing. Gift/offer REPLACE WITH defaults lead with
- * `{I'd like to offer|Happy to offer}` (D171) — not bare "Happy to
- * send" / "Happy to offer" only. The school-district pen-test bridge
- * is retired. "Quick note —" is not a default for offer or opener
- * jobs. Identity openers ("we're TechEvolution") keep the company
- * name with a light soften — they are not this offer template.
- * Defaults use "..." never an em dash. Pending asks are recomputed
- * on remind (D170) so a pre-D168 freeze cannot be re-paged.
+ * Offer openers keep experiential intent (jet-ski / golf) and drop bait
+ * phrasing. D277: REPLACE WITH never names AirPods, tickets, TJ, or
+ * free POC. Gift/offer defaults lead with `{I'd like to offer|Happy to
+ * offer}` (D171) — not bare "Happy to send" / "Happy to offer" only.
+ * The school-district pen-test bridge is retired. "Quick note —" is
+ * not a default for offer or opener jobs. Identity openers
+ * ("we're TechEvolution") keep the company name with a light soften —
+ * they are not this offer template. Defaults use "..." never an em
+ * dash. Pending asks are recomputed on remind (D170) so a pre-D168
+ * freeze cannot be re-paged.
  */
 export function suggestedCopySwap(
   element: string,
@@ -959,8 +977,15 @@ export function suggestedCopySwap(
 ): string {
   const trimmed = element.trim();
   const key = trimmed.toLowerCase();
+  const finalize = (swap: string): string => {
+    let out = swap;
+    if (isBannedCopySwap(out)) out = plainProseSubstitute(trimmed, softenGeneric(trimmed));
+    if (isBannedCopySwap(out)) out = preferEllipsis(sanitizeBannedNouns(out));
+    if (isBannedCopySwap(out)) return "";
+    return out;
+  };
   if (Object.prototype.hasOwnProperty.call(COPY_SYNONYMS, key)) {
-    return plainProseSubstitute(trimmed, COPY_SYNONYMS[key]!);
+    return finalize(plainProseSubstitute(trimmed, COPY_SYNONYMS[key]!));
   }
 
   const text = resolveSwapText(trimmed, opts?.context);
@@ -968,20 +993,20 @@ export function suggestedCopySwap(
 
   if (job === "spam-token") return "";
   if (job === "gift-or-experience-offer") {
-    return plainProseSubstitute(trimmed, offerSubstitute(text));
+    return finalize(plainProseSubstitute(trimmed, offerSubstitute(text)));
   }
-  if (job === "cta") return plainProseSubstitute(trimmed, ctaSubstitute(text));
+  if (job === "cta") return finalize(plainProseSubstitute(trimmed, ctaSubstitute(text)));
 
   // D170/D195 — "we're TechEvolution" identity openers keep the company
   // name as "so you know, we're {Brand}." Never "Quick note —".
   if (isCompanyIdentityLine(text)) {
-    return plainProseSubstitute(trimmed, companyIdentitySubstitute(text));
+    return finalize(plainProseSubstitute(trimmed, companyIdentitySubstitute(text)));
   }
 
   // Generic: keep the line, lightly softened. Never "Quick note —" and
   // never another client's pitch.
   if (trimmed.length > 40 || /\s/.test(trimmed)) {
-    return plainProseSubstitute(trimmed, softenGeneric(text));
+    return finalize(plainProseSubstitute(trimmed, softenGeneric(text)));
   }
   return "";
 }

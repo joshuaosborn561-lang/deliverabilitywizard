@@ -59,7 +59,6 @@ import {
   isPowerGrydEmptyByDesign,
   powerGrydBrandFromClients,
 } from "../lib/powerGrydEmptyByDesign.js";
-import { isPowerGrydClientId } from "../lib/namedClientIds.js";
 import {
   campaignHoldReason,
   holdPolicyFromConfig,
@@ -809,10 +808,7 @@ export class Min40TopUpService {
 
   /** D283 — never walk the 800-row pool for PowerGRYD. Named seats only. */
   private neverGenericClient(clientId: number): boolean {
-    return (
-      isPowerGrydClientId(clientId) ||
-      clientId === this.config.powerGrydClientId
-    );
+    return clientId === this.config.powerGrydClientId;
   }
 
   /** D258 — hard block foreign-client / foreign-sig generics onto PowerGRYD. */

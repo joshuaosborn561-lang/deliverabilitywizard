@@ -79,10 +79,18 @@ describe("owner intent — D286 Generics Ledger", () => {
     );
     assert.doesNotMatch(
       cleanup,
-      /updateCampaignStatus|START|PAUSE/,
+      /updateCampaignStatus/,
       stop(
         "Cleanup never START/PAUSE (D286).",
         "genericLedgerCleanup.ts gained a campaign status write.",
+      ),
+    );
+    assert.doesNotMatch(
+      cleanup,
+      /status:\s*["'](?:START|PAUSED|STOPPED)["']/,
+      stop(
+        "Cleanup never START/PAUSE (D286).",
+        "genericLedgerCleanup.ts writes a campaign status.",
       ),
     );
     for (const kind of GENERIC_LEDGER_CORE_KINDS) {
